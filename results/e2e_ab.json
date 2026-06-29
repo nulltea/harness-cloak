@@ -1,0 +1,28 @@
+[
+  {
+    "cache": "data/vocab",
+    "eps": 3.0,
+    "noise_scale": 0.3664,
+    "anisotropy_cos": 0.613,
+    "rel_spread": 0.089,
+    "Cr/V": 0.046,
+    "retention_cos(o,r)": 0.788,
+    "e2e_leakage": 0.42,
+    "e2e_utility": 0.667,
+    "e2e_utility_control": 0.651,
+    "e2e_overlap": 0.03
+  },
+  {
+    "cache": "data/vocab_qwen3matrix",
+    "eps": 3.0,
+    "noise_scale": 0.9246,
+    "anisotropy_cos": 0.019,
+    "rel_spread": 0.0197,
+    "Cr/V": 0.057,
+    "retention_cos(o,r)": 0.227,
+    "e2e_leakage": 0.421,
+    "e2e_utility": 0.654,
+    "e2e_utility_control": 0.608,
+    "e2e_overlap": 0.088
+  }
+]

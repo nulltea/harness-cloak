@@ -1,0 +1,10 @@
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Regenerable vocab-embedding matrices (rebuild via embeddings.py)
+data/*.npy
+
+# Cached LLM responses ($INFERDPT_LLM_CACHE)
+data/llm_cache/

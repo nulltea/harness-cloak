@@ -1,0 +1,9 @@
+openai>=2,<3
+numpy>=1.26
+tokenizers>=0.20
+# probes/attacks (CPU): BERT mask attack + PII detection + scorer matrix builder
+torch>=2
+transformers>=4.51
+presidio-analyzer>=2.2
+spacy>=3.7
+# also: python -m spacy download en_core_web_sm

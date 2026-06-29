@@ -1,0 +1,179 @@
+{
+  "version": 1,
+  "skills": {
+    "arxiv": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/arxiv/SKILL.md",
+      "computedHash": "c59fad4399f0abf4181ed75248fe0465343ce7b2d2877c6c19c4efb12af13910"
+    },
+    "auto-review-loop": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/auto-review-loop/SKILL.md",
+      "computedHash": "e70e7366cdf7efa0942ae507cbad50f8f6caacfcebb5c810d32bc5ae18fc7ebf"
+    },
+    "codebase-design": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/codebase-design/SKILL.md",
+      "computedHash": "2426dc4accf1a85dedfb560edb3a877ec8828b7375ea08c970df2b6c900a2a22"
+    },
+    "diagnosing-bugs": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/diagnosing-bugs/SKILL.md",
+      "computedHash": "1a993ce9b2aaa653ee441c8d7efb7f27de03493c722be6dfb8137bcb8db1bc72"
+    },
+    "domain-modeling": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/domain-modeling/SKILL.md",
+      "computedHash": "67343881f5def98487d56243155716110afbcbf22ec92421c882d532b941cb17"
+    },
+    "experiment-audit": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/experiment-audit/SKILL.md",
+      "computedHash": "2e3b0070edae6342cc51fc921c76b9d7af9a63cae849590769fa906f3ab744ee"
+    },
+    "experiment-bridge": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/experiment-bridge/SKILL.md",
+      "computedHash": "04f2652688f83b7f9927671f2912962d9077982842020aa774e1338be57a5bb8"
+    },
+    "experiment-plan": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/experiment-plan/SKILL.md",
+      "computedHash": "6def2886b6f1d9228d2d9a951905702b3daf902d05177ac8a01839c391cadd76"
+    },
+    "gemini-search": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/gemini-search/SKILL.md",
+      "computedHash": "b52aab6edf15f192f76df3a2e6aa7949005d91c74c08bb8d538478e0b275b46c"
+    },
+    "grill-me": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/grill-me/SKILL.md",
+      "computedHash": "6b697d999172d4db3648cee4937eb35384f39a964bcd4bed690fef3daaa16846"
+    },
+    "handoff": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/handoff/SKILL.md",
+      "computedHash": "5d0f81e38abe6b984e1feaa731927de5291d040982106ac513cf54ec240e00ec"
+    },
+    "humanize": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing/humanize/SKILL.md",
+      "computedHash": "73a1558c47f88fd86b8553206fa78d2764342b8ad9739b4f5eb08c410079ddf0"
+    },
+    "improve-codebase-architecture": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/improve-codebase-architecture/SKILL.md",
+      "computedHash": "aa23ed4d1c105d67c2f4a183d141e9dc823e4359249310a69cfc5ee9f3e0538f"
+    },
+    "kill-argument": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/kill-argument/SKILL.md",
+      "computedHash": "34a340adbc20db008b8b7402d515588123641f701ce2f6a5167080a5df5e9c50"
+    },
+    "paper-figure": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing/paper-figure/SKILL.md",
+      "computedHash": "757ad8a7116d2aa6c35e2d43b0a88a973d52503b15b7ec05b6823a9989812a79"
+    },
+    "paper-plan": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing/paper-plan/SKILL.md",
+      "computedHash": "a9f0f02df1046ae4e99fa456da9f886423af10d4a6f2fe4c4cc37462e775f42c"
+    },
+    "proof-checker": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/proof-checker/SKILL.md",
+      "computedHash": "5b3aa4a7c386ea4dff36ca4836c9d68ac3a307bbd171b492a2bcc19b998b7704"
+    },
+    "proof-writer": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/proof-writer/SKILL.md",
+      "computedHash": "29582623697c8001795072a4925ba6f389e9207e56c61401718f6a1af8d2490f"
+    },
+    "proofread": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing/proofread/SKILL.md",
+      "computedHash": "e245b4cfc3cb581a1192dc763bd6a1c5e5c385dc35ff0294df43e7f7dee3f1c0"
+    },
+    "research-lit": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/research-lit/SKILL.md",
+      "computedHash": "799f43907fb86cdfe79615e959ce22c1492e249e809010209ea1e37300cd900b"
+    },
+    "research-wiki": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/research-wiki/SKILL.md",
+      "computedHash": "8c6673a5937597d31628b0b1fc15c36b5640a1f1205e35991452a508a2d2472b"
+    },
+    "result-to-claim": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/result-to-claim/SKILL.md",
+      "computedHash": "324ba228369090eddc3d9653b0a3d1744ef607831723eadd0c996732dbc50d3c"
+    },
+    "semantic-scholar": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/semantic-scholar/SKILL.md",
+      "computedHash": "4c2e7bcfd85f573db6d9d8d95e7f4b582912b359cfc9f11436d7057973556810"
+    },
+    "specification-writing": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing/specification-writing/SKILL.md",
+      "computedHash": "4e7d0bb7f028b3f3a0444b02d2d536f8dadfddbaf8ea7a265d3c71b72aadc21e"
+    },
+    "teach": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/teach/SKILL.md",
+      "computedHash": "9cd31ea42b40915ea5fd3949ed229b217d1dfad07dd93d9b0db771dcdd6a6c8a"
+    },
+    "validate-bib": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing/validate-bib/SKILL.md",
+      "computedHash": "40ab9d0da7bcc61dfe29bd89303cef993e2534a99ea4771d56dd313e876d1e99"
+    },
+    "verify-claims": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/writing/verify-claims/SKILL.md",
+      "computedHash": "88cb3ea8318eec8feec1c14da370e873011ae3ca9e960f6458d1e8a922bf5240"
+    },
+    "wiki-enrich": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/research/wiki-enrich/SKILL.md",
+      "computedHash": "61e6b2b537e53d38e6347ed6e5bd690a94bce5db05f6584708c7cc24b5500209"
+    },
+    "writing-great-skills": {
+      "source": "nulltea/skills",
+      "sourceType": "github",
+      "skillPath": "skills/productivity/writing-great-skills/SKILL.md",
+      "computedHash": "581f78b50b3d81b095de86b5c18a4d9fa932fbe414cc82bd26d627d4da518f07"
+    }
+  }
+}
