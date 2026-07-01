@@ -1,6 +1,11 @@
 {
   "version": 1,
   "skills": {
+    "abstract": {
+      "source": "/home/timo/repos/skills",
+      "sourceType": "local",
+      "computedHash": "1665bf848a666cbe13ab1090508289951e5e682036a8337303e01dae086e691e"
+    },
     "arxiv": {
       "source": "nulltea/skills",
       "sourceType": "github",

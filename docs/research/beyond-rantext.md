@@ -50,9 +50,9 @@ the extractor is load-bearing (E1). These directions decompose the knob and relo
 | **RD5** | Targeted reconstruction architectures | E1, E2 |
 
 ```
-RD0 (units) ──┬──▶ RD2 (PII typing) ──┬──▶ RD3 (structured surrogate) ──┐
+RD0 (units) ──┬──▶ RD2 (PII typing) ───┬──▶ RD3 (structured surrogate) ──┐
               ├──▶ RD1 (budgeting) ◀───┘                                 ├──▶ RD5 (reconstruction)
-              └──────────────────────────▶ RD4 (learned substitution) ──┘
+              └──────────────────────────▶ RD4 (learned substitution) ───┘
 ```
 RD0 is foundational. RD1↔RD2 are coupled: typing feeds budgeting, and the QI/combination problem RD2
 must solve *is* the A1/F4 correlation problem. RD3/RD4 are the programmable/learned substitution

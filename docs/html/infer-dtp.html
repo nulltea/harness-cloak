@@ -1,512 +1,2117 @@
 <!doctype html>
 <html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>agent-cloak — InferDPT &amp; RANTEXT</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/site.css">
-</head>
-<body>
-<div class="sheet">
-  <span class="crosshair tl"></span>
-  <span class="crosshair tr"></span>
-  <span class="crosshair bl"></span>
-  <span class="crosshair br"></span>
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width,initial-scale=1" />
+        <title>HarnessCloak · InferDPT &amp; RANTEXT</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap"
+            rel="stylesheet"
+        />
+        <link rel="stylesheet" href="css/site.css" />
+    </head>
+    <body>
+        <div class="sheet">
+            <span class="crosshair tl"></span>
+            <span class="crosshair tr"></span>
+            <span class="crosshair bl"></span>
+            <span class="crosshair br"></span>
 
-  <!-- ─── TOPNAV ─── -->
-  <div class="topnav">
-    <a class="brand" href="#introduction">agent<span class="dot">·</span>cloak</a>
-    <span class="links">
-      <a href="#introduction">intro</a>
-      <a href="#preliminaries">preliminaries</a>
-      <a href="#method">method</a>
-      <a href="#measures">measures</a>
-      <a href="#results">results</a>
-      <a href="#findings">findings</a>
-      <a href="#analysis">analysis</a>
-      <a href="#discussion">discussion</a>
-    </span>
-  </div>
+            <!-- ─── TOPNAV ─── -->
+            <div class="topnav" id="site-nav"></div>
 
-  <!-- ─── MASTHEAD ─── -->
-  <header class="masthead">
-    <div>
-      <h1 class="title">InferDPT &amp; RANTEXT<br><em>— what governs the privacy–utility outcome</em></h1>
-      <p class="subtitle">InferDPT performs privacy-preserving inference with a closed-box remote model: the client perturbs its prompt under token-level local differential privacy (RANTEXT), sends the perturbed prompt to the remote model, and reconstructs an aligned output with a local model. This page measures the scheme through three design levers, the privacy budget ε, the embedding map φ, and the local extraction model X, with attack-independent leakage probes (mutual information, plausible deniability, PII survival) paired against reconstruction attacks (embedding inversion, masked-LM inference). The result: on a modern sentence-embedding space the perturbation mechanism reduces to near-uniform substitution at every ε, because the embedding map, not ε, sets the operating point.</p>
-      <span class="rev">research report · 2026-06-29</span>
-    </div>
-  </header>
+            <!-- ─── MASTHEAD ─── -->
+            <header class="masthead">
+                <div>
+                    <h1 class="title">
+                        InferDPT &amp; RANTEXT<span class="title-sub"
+                            >Privacy vs Utility analysis</span
+                        >
+                    </h1>
+                    <div class="rev">research report · 2026-06-29</div>
+                    <div class="abstract">
+                        <div class="abstract-label">Abstract</div>
+                    <p class="subtitle">
+                        InferDPT rewrites a prompt under token-level local differential privacy (RANTEXT), queries a black-box model, and rebuilds the answer with a trusted local model. We reimplemented it and measured its three factors: the budget ε, the embedding map φ, and the extractor X. The published noise calibration degenerates even on the paper's own text-embedding-ada-002 vectors, where the candidate set spans 13 to 39% of the vocabulary and the perturbed prompt is near-random at every ε. Refit per embedding, ε trades privacy for coherence monotonically (inversion recovery 0.67 to 0.99) while end-to-end utility stays flat near 0.90. That utility is an extraction artifact: the local model reaches 0.83 from the true prefix alone, and the private channel adds only 0.05 to 0.11. Single-seed, 60 documents, cosine utility proxy.
+                    </p>
+                    </div>
+                </div>
+            </header>
 
-  <!-- ═════ §01 INTRODUCTION ═════ -->
-  <section id="introduction">
-    <header class="section-head">
-      <div class="section-num">§01</div>
-      <h2 class="section-title">Introduction</h2>
-      <div class="section-meta">the problem, the threat model, the headline number</div>
-    </header>
-    <p class="lede">
-      RANTEXT replaces every in-vocabulary token of a document with a semantically near token sampled under ε-local differential privacy, so the perturbed prompt sent to a remote model reveals little about the original. Whether this preserves utility depends on the geometry of the embedding map φ that defines "near". We find that on a modern sentence-embedding space the mechanism collapses: at ε=1 the per-token mutual information between a raw token and its replacement is 0.0 bits, and at every ε the replacement cosine sits at the random-pair floor (0.61), i.e. the replacement is statistically a random token.
-    </p>
-    <div class="prose">
-      <p><strong>Threat model.</strong> The remote model is honest-but-curious. The adversary knows the mechanism, the vocabulary V, the embedding map φ, and the budget ε, and attempts to recover the raw tokens from the perturbed text it receives. The local extraction model is trusted and never leaves the client.</p>
-      <p><strong>Three levers.</strong> The privacy–utility outcome is set by (1) the budget <strong>ε</strong>, which is intended to trade privacy for utility but is largely inert here, (2) the embedding map <strong>φ</strong>, which sets whether "near" is meaningful and is the binding constraint, and (3) the local extraction model <strong>X</strong>, which recovers utility downstream and does not affect privacy. The headline finding is that φ dominates: substituting an isotropic LLM input-embedding matrix for the sentence-embedding map removes the anisotropy but lowers perturbation faithfulness further (replacement cosine 0.23 against 0.79), because its distances are even more concentrated.</p>
-    </div>
-  </section>
+            <!-- ═════ §01 INTRODUCTION ═════ -->
+            <section id="introduction">
+                <header class="section-head">
+                    <div class="section-num">§01</div>
+                    <h2 class="section-title">Introduction</h2>
+                    <div class="section-meta">
+                        the problem, the threat model, the headline number
+                    </div>
+                </header>
+                <p class="lede">
+                    RANTEXT replaces every in-vocabulary token of a document
+                    with a semantically near token sampled under ε-local
+                    differential privacy, so the perturbed prompt sent to a
+                    remote model reveals little about the original. Whether it
+                    works at all hinges on the noise radius being matched to the
+                    distance scale of the embedding map φ: the paper's
+                    calibration is fitted to a single embedding and (applied to
+                    any other, or even to its own ada-002 vectors) inflates the
+                    candidate set to 13–39% of the vocabulary and turns the
+                    perturbed prompt into word-salad (near-random substitution:
+                    the exponential mechanism samples near-uniformly from the
+                    saturated candidate set, so each replacement is a
+                    statistically random token). Once the radius is refit per
+                    embedding, ε becomes a genuine privacy↔coherence factor; but
+                    the end-to-end utility is largely supplied by the trusted
+                    local extractor, which re-grounds on the true document and
+                    so disguises how much the perturbation actually destroyed.
+                </p>
+                <div class="prose">
+                    <p>
+                        <strong>Threat model.</strong> The remote model is
+                        honest-but-curious. The adversary knows the mechanism,
+                        the vocabulary V, the embedding map φ, and the budget ε,
+                        and attempts to recover the raw tokens from the
+                        perturbed text it receives. The local extraction model
+                        is trusted and never leaves the client.
+                    </p>
+                    <p>
+                        <strong>Three factors.</strong> The privacy–utility
+                        outcome is set by (1) the budget <strong>ε</strong>, a
+                        genuine monotone privacy↔coherence factor once the noise
+                        radius is calibrated per embedding; (2) the embedding
+                        map <strong>φ</strong>, which sets the distance scale
+                        the radius must be matched to but is not itself a
+                        utility or privacy control (in a controlled same-matrix
+                        test, anisotropy does not drive the tradeoff); and (3)
+                        the local extraction model <strong>X</strong>, which
+                        recovers and in fact dominates the end-to-end utility,
+                        masking the perturbation upstream. The headline finding
+                        is that the scheme's advertised privacy↔utility number
+                        lives mostly in X, not in the private channel.
+                    </p>
+                </div>
+            </section>
 
-  <!-- ═════ §02 PRELIMINARIES ═════ -->
-  <section id="preliminaries">
-    <header class="section-head">
-      <div class="section-num">§02</div>
-      <h2 class="section-title">Preliminaries</h2>
-      <div class="section-meta">definitions &amp; glossary</div>
-    </header>
-    <table class="spec">
-      <thead><tr><th style="width:22%">Term</th><th>Definition</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Doc / Doc_p</strong></td><td>The raw private document and its perturbed version (the prompt sent to the remote model).</td></tr>
-        <tr><td><strong>Gen_p</strong></td><td>The remote model's generation on the perturbed prompt.</td></tr>
-        <tr><td><strong>X, Y</strong></td><td>Y = the remote closed-box generation model (untrusted). X = the local extraction model (trusted) that reconstructs the aligned output from Doc and Gen_p.</td></tr>
-        <tr><td><strong>φ(·)</strong></td><td>The embedding map from a token to a vector. RANTEXT measures token similarity as Euclidean distance in this space.</td></tr>
-        <tr><td><strong>ε</strong></td><td>The local-DP budget. Smaller ε gives more privacy. In RANTEXT ε both sets the noise radius and sharpens the sampling distribution.</td></tr>
-        <tr><td><strong>C_r(t)</strong></td><td>The random adjacency list: the candidate replacement tokens for t, those within a per-token random radius (the length of a Laplace noise vector) of φ(t).</td></tr>
-        <tr><td><strong>exponential mechanism</strong></td><td>Samples a replacement y from C_r with probability proportional to exp(ε/2 · u), u = 1 − d/radius; closer candidates are more likely.</td></tr>
-        <tr><td><strong>S_w / N_w</strong></td><td>Plausible-deniability statistics (Feyisetan et al.): S_w = P[M(w)=w] (self-substitution, lower is more private); N_w = number of distinct outputs over repeated runs (higher is more private).</td></tr>
-        <tr><td><strong>token MI</strong></td><td>I(X;Y) in bits for the per-token channel, computed from the analytic conditional p(y|x). The attack-independent leakage measure; 0 bits = the replacement is independent of the raw token.</td></tr>
-        <tr><td><strong>replacement similarity (retention)</strong></td><td>Mean cosine between an original token and its sampled replacement (0.61 = random baseline, 1.0 = unchanged). Equal to the random baseline means no semantic faithfulness.</td></tr>
-        <tr><td><strong>anisotropy</strong></td><td>Mean cosine of random token pairs. 0 = isotropic; large = all vectors share a common direction, which compresses the distance range.</td></tr>
-        <tr><td><strong>PII semantic leakage / reconstruction recall</strong></td><td>Presidio detects PII spans in Doc; the probe scores each entity's maximum cosine to the target text. On Doc_p (lower is more private); on the final output (higher is more faithful).</td></tr>
-        <tr><td><strong>embedding inversion</strong></td><td>Attack: for each perturbed token return the top-K nearest vocabulary tokens in φ; a hit means the raw token is recovered. recovery@K.</td></tr>
-        <tr><td><strong>masked-LM (BERT) inference</strong></td><td>Attack: mask each perturbed token and predict it with a pretrained masked language model from the perturbed context; success if the prediction equals the raw token.</td></tr>
-      </tbody>
-    </table>
-  </section>
+            <!-- ═════ §02 PRELIMINARIES ═════ -->
+            <section id="preliminaries">
+                <header class="section-head">
+                    <div class="section-num">§02</div>
+                    <h2 class="section-title">Preliminaries</h2>
+                    <div class="section-meta">definitions &amp; glossary</div>
+                </header>
+                <table class="spec">
+                    <thead>
+                        <tr>
+                            <th style="width: 22%">Term</th>
+                            <th>Definition</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><strong>Doc / Doc_p</strong></td>
+                            <td>
+                                The raw private document and its perturbed
+                                version (the prompt sent to the remote model).
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>Gen_p</strong></td>
+                            <td>
+                                The remote model's generation on the perturbed
+                                prompt.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>X, Y</strong></td>
+                            <td>
+                                Y = the remote closed-box generation model
+                                (untrusted). X = the local extraction model
+                                (trusted) that reconstructs the aligned output
+                                from Doc and Gen_p.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>φ(·)</strong></td>
+                            <td>
+                                The embedding map from a token to a vector.
+                                RANTEXT measures token similarity as Euclidean
+                                distance in this space.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>ε</strong></td>
+                            <td>
+                                The local-DP budget. Smaller ε gives more
+                                privacy. In RANTEXT ε both sets the noise radius
+                                and sharpens the sampling distribution.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>C_r(t)</strong></td>
+                            <td>
+                                The random adjacency list: the candidate
+                                replacement tokens for t, those within a
+                                per-token random radius (the length of a Laplace
+                                noise vector) of φ(t).
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>exponential mechanism</strong></td>
+                            <td>
+                                Samples a replacement y from C_r with
+                                probability proportional to exp(ε/2 · u), u = 1
+                                − d/radius; closer candidates are more likely.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>S_w / N_w</strong></td>
+                            <td>
+                                Plausible-deniability statistics (Feyisetan et
+                                al.): S_w = P[M(w)=w] (self-substitution, lower
+                                is more private); N_w = number of distinct
+                                outputs over repeated runs (higher is more
+                                private).
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>token MI</strong></td>
+                            <td>
+                                I(X;Y) in bits for the per-token channel,
+                                computed from the analytic conditional p(y|x).
+                                The attack-independent leakage measure; 0 bits =
+                                the replacement is independent of the raw token.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <strong
+                                    >replacement similarity (retention)</strong
+                                >
+                            </td>
+                            <td>
+                                Mean cosine between an original token and its
+                                sampled replacement (0.61 = random baseline, 1.0
+                                = unchanged). Equal to the random baseline means
+                                no semantic faithfulness.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>anisotropy</strong></td>
+                            <td>
+                                Mean cosine of random token pairs. 0 =
+                                isotropic; large = all vectors share a common
+                                direction, which compresses the distance range.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td>
+                                <strong
+                                    >PII semantic leakage / reconstruction
+                                    recall</strong
+                                >
+                            </td>
+                            <td>
+                                Presidio detects PII spans in Doc; the probe
+                                scores each entity's maximum cosine to the
+                                target text. On Doc_p (lower is more private);
+                                on the final output (higher is more faithful).
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>embedding inversion</strong></td>
+                            <td>
+                                Attack: for each perturbed token return the
+                                top-K nearest vocabulary tokens in φ; a hit
+                                means the raw token is recovered. recovery@K.
+                            </td>
+                        </tr>
+                        <tr>
+                            <td><strong>masked-LM (BERT) inference</strong></td>
+                            <td>
+                                Attack: mask each perturbed token and predict it
+                                with a pretrained masked language model from the
+                                perturbed context; success if the prediction
+                                equals the raw token.
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
 
-  <!-- ═════ §03 METHOD ═════ -->
-  <section id="method">
-    <header class="section-head">
-      <div class="section-num">§03</div>
-      <h2 class="section-title">Method</h2>
-      <div class="section-meta">InferDPT pipeline, RANTEXT mechanism, and the measurement loop</div>
-    </header>
-    <div class="prose">
-      <p><strong>InferDPT (three modules).</strong> (1) The <em>perturbation module</em> tokenises Doc, and for each in-vocabulary token samples a replacement under ε-LDP, producing Doc_p; out-of-vocabulary tokens are discarded. (2) The remote model returns Gen_p = generate(instruction ∥ Doc_p). (3) The <em>extraction module</em>, a local trusted model X, is given the raw Doc as prefix and Gen_p as material, and writes a continuation aligned to Doc. Privacy holds because the remote model only ever sees Doc_p; utility is recovered because X re-grounds on the true Doc.</p>
-      <p><strong>RANTEXT (per token).</strong> Embed the token, eb_t = φ(x). Draw a Laplace noise vector and set the radius to its norm. The candidate set C_r is every vocabulary token whose embedding lies within that radius of eb_t. Score each candidate u = 1 − d/radius and sample one with probability proportional to exp(ε/2 · u). The radius is random per token (the "random adjacency list"), and ε controls both the radius scale and the sampling sharpness.</p>
-    </div>
-    <div class="diagram-frame">
-      <div class="diagram-cap"><span class="l">FIG. 01 — InferDPT pipeline: perturb (ε, φ) → remote generate → local extract, with the attack and probe loops</span><span>navy = client (trusted) · plum = ε / φ locus · slate = remote model and adversary (untrusted) · amber = recovery / output</span></div>
-      <svg class="flow" viewBox="0 0 1180 360" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="The InferDPT pipeline: the client tokenises and perturbs the document under RANTEXT at the epsilon and phi locus, sends the perturbed document to the untrusted remote model which generates, and the client extraction model reconstructs the output; the adversary and the attack-independent probes both read the perturbed document.">
-        <defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
-        <rect x="0" y="36" width="560" height="300" class="zone-band zone-band-client"/>
-        <rect x="560" y="36" width="620" height="300" class="zone-band zone-band-gpu"/>
-        <text x="18" y="58" class="zone-label">Client — trusted (data owner)</text>
-        <text x="18" y="74" class="zone-sublabel">tokenise · perturb (RANTEXT) · extract with local model X</text>
-        <text x="578" y="58" class="zone-label">Untrusted — remote model Y &amp; adversary</text>
-        <text x="578" y="74" class="zone-sublabel">generates on Doc_p · attempts to recover Doc from Doc_p</text>
-        <rect x="200" y="96" width="200" height="92" class="zone-band zone-band-crypto" style="opacity:.5;"/>
-        <text x="212" y="114" class="zone-sublabel">ε / φ locus (perturbation)</text>
-        <line x1="560" y1="36" x2="560" y2="336" class="boundary"/>
-        <text x="564" y="332" class="boundary-label">release (Doc_p crosses to the remote model and the adversary)</text>
+            <!-- ═════ §03 METHOD ═════ -->
+            <section id="method">
+                <header class="section-head">
+                    <div class="section-num">§03</div>
+                    <h2 class="section-title">Method</h2>
+                    <div class="section-meta">
+                        InferDPT pipeline, RANTEXT mechanism, and the
+                        measurement loop
+                    </div>
+                </header>
+                <div class="prose">
+                    <p>
+                        <strong>InferDPT (three modules).</strong> (1) The
+                        <em>perturbation module</em> tokenises Doc, and for each
+                        in-vocabulary token samples a replacement under ε-LDP,
+                        producing Doc_p; out-of-vocabulary tokens are discarded.
+                        (2) The remote model returns Gen_p =
+                        generate(instruction ∥ Doc_p). (3) The
+                        <em>extraction module</em>, a local trusted model X, is
+                        given the raw Doc as prefix and Gen_p as material, and
+                        writes a continuation aligned to Doc. Privacy holds
+                        because the remote model only ever sees Doc_p; utility
+                        is recovered because X re-grounds on the true Doc.
+                    </p>
+                    <p>
+                        <strong>RANTEXT (per token).</strong> Embed the token,
+                        eb_t = φ(x). Draw a Laplace noise vector and set the
+                        radius to its norm. The candidate set C_r is every
+                        vocabulary token whose embedding lies within that radius
+                        of eb_t. Score each candidate u = 1 − d/radius and
+                        sample one with probability proportional to exp(ε/2 ·
+                        u). The radius is random per token (the "random
+                        adjacency list"), and ε controls both the radius scale
+                        and the sampling sharpness.
+                    </p>
+                </div>
+                <div class="diagram-frame">
+                    <div class="diagram-cap">
+                        <span class="l"
+                            >FIG. 01: InferDPT pipeline: perturb (ε, φ) → remote
+                            generate → local extract, with the attack and probe
+                            loops</span
+                        ><span
+                            >navy = client (trusted) · plum = ε / φ locus ·
+                            slate = remote model and adversary (untrusted) ·
+                            amber = recovery / output</span
+                        >
+                    </div>
+                    <svg
+                        class="flow"
+                        viewBox="0 0 1180 360"
+                        xmlns="http://www.w3.org/2000/svg"
+                        role="img"
+                        aria-label="The InferDPT pipeline: the client tokenises and perturbs the document under RANTEXT at the epsilon and phi locus, sends the perturbed document to the untrusted remote model which generates, and the client extraction model reconstructs the output; the adversary and the attack-independent probes both read the perturbed document."
+                    >
+                        <defs>
+                            <marker
+                                id="ah"
+                                viewBox="0 0 10 10"
+                                refX="9"
+                                refY="5"
+                                markerWidth="6"
+                                markerHeight="6"
+                                orient="auto-start-reverse"
+                            >
+                                <path
+                                    d="M0,0 L10,5 L0,10 z"
+                                    fill="context-stroke"
+                                />
+                            </marker>
+                        </defs>
+                        <rect
+                            x="0"
+                            y="36"
+                            width="560"
+                            height="300"
+                            class="zone-band zone-band-client"
+                        />
+                        <rect
+                            x="560"
+                            y="36"
+                            width="620"
+                            height="300"
+                            class="zone-band zone-band-gpu"
+                        />
+                        <text x="18" y="58" class="zone-label">
+                            Client — trusted (data owner)
+                        </text>
+                        <text x="18" y="74" class="zone-sublabel">
+                            tokenise · perturb (RANTEXT) · extract with local
+                            model X
+                        </text>
+                        <text x="578" y="58" class="zone-label">
+                            Untrusted — remote model Y &amp; adversary
+                        </text>
+                        <text x="578" y="74" class="zone-sublabel">
+                            generates on Doc_p · attempts to recover Doc from
+                            Doc_p
+                        </text>
+                        <rect
+                            x="200"
+                            y="96"
+                            width="200"
+                            height="92"
+                            class="zone-band zone-band-crypto"
+                            style="opacity: 0.5"
+                        />
+                        <text x="212" y="114" class="zone-sublabel">
+                            ε / φ locus (perturbation)
+                        </text>
+                        <line
+                            x1="560"
+                            y1="36"
+                            x2="560"
+                            y2="336"
+                            class="boundary"
+                        />
+                        <text x="564" y="332" class="boundary-label">
+                            release (Doc_p crosses to the remote model and the
+                            adversary)
+                        </text>
 
-        <rect x="20" y="120" width="170" height="64" class="box box-strong box-client"/>
-        <text x="34" y="144" class="box-label">① tokenise</text>
-        <text x="34" y="162" class="box-sub">Doc → tokens (secret)</text>
+                        <rect
+                            x="20"
+                            y="120"
+                            width="170"
+                            height="64"
+                            class="box box-strong box-client"
+                        />
+                        <text x="34" y="144" class="box-label">① tokenise</text>
+                        <text x="34" y="162" class="box-sub">
+                            Doc → tokens (secret)
+                        </text>
 
-        <rect x="200" y="116" width="200" height="84" class="box box-strong box-crypto"/>
-        <text x="214" y="140" class="box-label">② RANTEXT perturb</text>
-        <text x="214" y="158" class="box-mono">radius = ‖Laplace‖ · C_r</text>
-        <text x="214" y="176" class="box-mono">sample exp(ε/2·u)</text>
+                        <rect
+                            x="200"
+                            y="116"
+                            width="200"
+                            height="84"
+                            class="box box-strong box-crypto"
+                        />
+                        <text x="214" y="140" class="box-label">
+                            ② RANTEXT perturb
+                        </text>
+                        <text x="214" y="158" class="box-mono">
+                            radius = ‖Laplace‖ · C_r
+                        </text>
+                        <text x="214" y="176" class="box-mono">
+                            sample exp(ε/2·u)
+                        </text>
 
-        <rect x="410" y="120" width="130" height="64" class="box box-strong box-client"/>
-        <text x="424" y="144" class="box-label">Doc_p</text>
-        <text x="424" y="162" class="box-sub">perturbed prompt</text>
+                        <rect
+                            x="410"
+                            y="120"
+                            width="130"
+                            height="64"
+                            class="box box-strong box-client"
+                        />
+                        <text x="424" y="144" class="box-label">Doc_p</text>
+                        <text x="424" y="162" class="box-sub">
+                            perturbed prompt
+                        </text>
 
-        <rect x="600" y="104" width="220" height="64" class="box box-strong box-gpu"/>
-        <text x="614" y="128" class="box-label">③ remote generate (Y)</text>
-        <text x="614" y="146" class="box-sub">closed-box · returns Gen_p</text>
+                        <rect
+                            x="600"
+                            y="104"
+                            width="220"
+                            height="64"
+                            class="box box-strong box-gpu"
+                        />
+                        <text x="614" y="128" class="box-label">
+                            ③ remote generate (Y)
+                        </text>
+                        <text x="614" y="146" class="box-sub">
+                            closed-box · returns Gen_p
+                        </text>
 
-        <rect x="600" y="200" width="260" height="92" class="box box-strong box-gpu box-warn"/>
-        <text x="614" y="224" class="box-label warn">④ attacks (on Doc_p)</text>
-        <text x="614" y="244" class="box-mono">embedding inversion (top-K)</text>
-        <text x="614" y="262" class="box-mono">masked-LM (BERT) inference</text>
-        <text x="614" y="280" class="box-sub">readout = token recovery t̂</text>
+                        <rect
+                            x="600"
+                            y="200"
+                            width="260"
+                            height="92"
+                            class="box box-strong box-gpu box-warn"
+                        />
+                        <text x="614" y="224" class="box-label warn">
+                            ④ attacks (on Doc_p)
+                        </text>
+                        <text x="614" y="244" class="box-mono">
+                            embedding inversion (top-K)
+                        </text>
+                        <text x="614" y="262" class="box-mono">
+                            masked-LM (BERT) inference
+                        </text>
+                        <text x="614" y="280" class="box-sub">
+                            readout = token recovery t̂
+                        </text>
 
-        <rect x="890" y="200" width="270" height="92" class="box box-gpu" style="opacity:.92;"/>
-        <text x="904" y="224" class="box-label">⑤ probes (no attack)</text>
-        <text x="904" y="244" class="box-mono">token MI · S_w/N_w · PII survival</text>
-        <text x="904" y="262" class="box-mono">overlap · n-gram MI</text>
-        <text x="904" y="280" class="box-sub">bits / rates, attack-independent</text>
+                        <rect
+                            x="890"
+                            y="200"
+                            width="270"
+                            height="92"
+                            class="box box-gpu"
+                            style="opacity: 0.92"
+                        />
+                        <text x="904" y="224" class="box-label">
+                            ⑤ probes (no attack)
+                        </text>
+                        <text x="904" y="244" class="box-mono">
+                            token MI · S_w/N_w · PII survival
+                        </text>
+                        <text x="904" y="262" class="box-mono">
+                            overlap · n-gram MI
+                        </text>
+                        <text x="904" y="280" class="box-sub">
+                            bits / rates, attack-independent
+                        </text>
 
-        <rect x="330" y="248" width="210" height="72" class="box box-strong box-client"/>
-        <text x="344" y="272" class="box-label">⑥ extract (X)</text>
-        <text x="344" y="290" class="box-sub">Doc + Gen_p → aligned output</text>
+                        <rect
+                            x="330"
+                            y="248"
+                            width="210"
+                            height="72"
+                            class="box box-strong box-client"
+                        />
+                        <text x="344" y="272" class="box-label">
+                            ⑥ extract (X)
+                        </text>
+                        <text x="344" y="290" class="box-sub">
+                            Doc + Gen_p → aligned output
+                        </text>
 
-        <rect x="40" y="248" width="150" height="72" class="box box-strong box-client box-warn"/>
-        <text x="54" y="272" class="box-label warn">output</text>
-        <text x="54" y="290" class="box-sub">to the user (local)</text>
+                        <rect
+                            x="40"
+                            y="248"
+                            width="150"
+                            height="72"
+                            class="box box-strong box-client box-warn"
+                        />
+                        <text x="54" y="272" class="box-label warn">
+                            output
+                        </text>
+                        <text x="54" y="290" class="box-sub">
+                            to the user (local)
+                        </text>
 
-        <path d="M190 152 L200 152" class="arrow arrow-secret" marker-end="url(#ah)"/>
-        <path d="M400 158 L410 152" class="arrow arrow-masked" marker-end="url(#ah)"/>
-        <path d="M540 150 L600 136" class="arrow arrow-masked" marker-end="url(#ah)"/>
-        <text x="546" y="130" class="arrow-label masked">Doc_p</text>
-        <path d="M540 168 C560 230 580 240 600 244" class="arrow arrow-masked" marker-end="url(#ah)"/>
-        <path d="M820 150 C860 150 540 280 540 282" class="arrow arrow-masked" marker-end="url(#ah)"/>
-        <text x="700" y="186" class="arrow-label masked">Gen_p → extract</text>
-        <path d="M330 284 L190 284" class="arrow arrow-warn" marker-end="url(#ah)"/>
-      </svg>
-    </div>
-    <div class="diagram-frame">
-      <div class="diagram-cap"><span class="l">FIG. 02 — InferDPT overview and RANTEXT workflow (source figures)</span><span>source: Tong et al. 2023, arXiv:2310.12214 (Fig. 2 and Fig. 5)</span></div>
-      <img src="img/x2.png" alt="InferDPT overview: a local user perturbs the private document, sends it to a remote black-box model, and a local model extracts an aligned generation." style="width:100%;height:auto;display:block;margin-bottom:10px;"/>
-      <img src="img/x6.png" alt="RANTEXT workflow: compute a random adjacency list per token via random embedding and Euclidean distance, then sample a perturbed token via epsilon-local differential privacy." style="width:100%;height:auto;display:block;"/>
-    </div>
-    <div class="prose">
-      <p><strong>Measurement loop.</strong> For each lever setting we (1) run the full pipeline on a development corpus, (2) compute attack-independent probes on the perturbation and on the outputs, (3) run reconstruction attacks on Doc_p, and (4) read the privacy and utility together. Implementation: <span class="mono">src/inferdpt/{rantext,probes,attacks,diagnostics,eval}.py</span>; remote and extraction calls through one OpenAI-compatible client; φ is a cached vocabulary-embedding matrix. The corpus is small (5 documents) and single-seed, so quantitative claims below are preliminary.</p>
-    </div>
-  </section>
+                        <path
+                            d="M190 152 L200 152"
+                            class="arrow arrow-secret"
+                            marker-end="url(#ah)"
+                        />
+                        <path
+                            d="M400 158 L410 152"
+                            class="arrow arrow-masked"
+                            marker-end="url(#ah)"
+                        />
+                        <path
+                            d="M540 150 L600 136"
+                            class="arrow arrow-masked"
+                            marker-end="url(#ah)"
+                        />
+                        <text x="546" y="130" class="arrow-label masked">
+                            Doc_p
+                        </text>
+                        <path
+                            d="M540 168 C560 230 580 240 600 244"
+                            class="arrow arrow-masked"
+                            marker-end="url(#ah)"
+                        />
+                        <path
+                            d="M820 150 C860 150 540 280 540 282"
+                            class="arrow arrow-masked"
+                            marker-end="url(#ah)"
+                        />
+                        <text x="700" y="186" class="arrow-label masked">
+                            Gen_p → extract
+                        </text>
+                        <path
+                            d="M330 284 L190 284"
+                            class="arrow arrow-warn"
+                            marker-end="url(#ah)"
+                        />
+                    </svg>
+                </div>
+                <div class="diagram-frame">
+                    <div class="diagram-cap">
+                        <span class="l"
+                            >FIG. 02: InferDPT overview and RANTEXT workflow
+                            (source figures)</span
+                        ><span
+                            >source: Tong et al. 2023, arXiv:2310.12214 (Fig. 2
+                            and Fig. 5)</span
+                        >
+                    </div>
+                    <img
+                        src="https://arxiv.org/html/2310.12214v8/x2.png"
+                        alt="InferDPT overview: a local user perturbs the private document, sends it to a remote black-box model, and a local model extracts an aligned generation."
+                        style="
+                            width: 100%;
+                            height: auto;
+                            display: block;
+                            margin-bottom: 10px;
+                        "
+                    />
+                    <img
+                        src="https://arxiv.org/html/2310.12214v8/x6.png"
+                        alt="RANTEXT workflow: compute a random adjacency list per token via random embedding and Euclidean distance, then sample a perturbed token via epsilon-local differential privacy."
+                        style="width: 100%; height: auto; display: block"
+                    />
+                </div>
+                <div class="prose">
+                    <p>
+                        <strong>Measurement loop.</strong> For each factor
+                        setting we (1) run the full pipeline on a development
+                        corpus, (2) compute attack-independent probes on the
+                        perturbation and on the outputs, (3) run reconstruction
+                        attacks on Doc_p, and (4) read the privacy and utility
+                        together. Implementation:
+                        <span class="mono"
+                            >src/inferdpt/{rantext,probes,attacks,diagnostics,eval}.py</span
+                        >; remote and extraction calls through one
+                        OpenAI-compatible client; φ is a cached
+                        vocabulary-embedding matrix. The sweeps use N=60
+                        documents (N=10 for the anisotropy control),
+                        single-seed, so quantitative claims below are
+                        preliminary.
+                    </p>
+                </div>
+            </section>
 
-  <!-- ═════ §04 LEAKAGE MEASURES ═════ -->
-  <section id="measures">
-    <header class="section-head">
-      <div class="section-num">§04</div>
-      <h2 class="section-title">Leakage Measures</h2>
-      <div class="section-meta">attack-independent probes and the reconstruction attacks they predict</div>
-    </header>
-    <p class="prose">Probes are computed without running an attack, so a correlation between a probe and an attack is not circular. Cosine probes use a fixed sentence-embedding scorer on full text (in-distribution), independent of the φ under test, so they are comparable across embedding maps. Each probe states the quantity it bounds.</p>
-    <table class="spec spec--wide">
-      <thead><tr><th>measure</th><th>type</th><th>what it reports</th><th class="num">direction</th></tr></thead>
-      <tbody>
-        <tr><td>token MI</td><td>probe (bits)</td><td>I(token;replacement) of the per-token channel; upper-bounds any adversary's per-token recovery via Fano</td><td class="num">↓ private</td></tr>
-        <tr><td>S_w / N_w</td><td>probe</td><td>self-substitution probability / output support, the plausible-deniability statistics</td><td class="num">S_w ↓ · N_w ↑</td></tr>
-        <tr><td>overlap</td><td>probe</td><td>content-word survival from Doc into Doc_p (verbatim)</td><td class="num">↓ private</td></tr>
-        <tr><td>PII semantic leakage</td><td>probe</td><td>maximum cosine of each raw PII entity to Doc_p (Presidio spans)</td><td class="num">↓ private</td></tr>
-        <tr><td>n-gram MI</td><td>probe (bits)</td><td>empirical MI of aligned raw/perturbed n-grams (local-context proxy; needs a large corpus)</td><td class="num">↓ private</td></tr>
-        <tr><td>utility / utility_control</td><td>probe</td><td>cos(Doc, output) / cos(non-private generation, output)</td><td class="num">↑ faithful</td></tr>
-        <tr><td>PII reconstruction recall</td><td>probe</td><td>fraction of raw PII entities recovered in the final (local) output</td><td class="num">↑ faithful</td></tr>
-        <tr><td>embedding inversion</td><td>attack</td><td>recovery@K: raw token among the K nearest to the perturbed token in φ</td><td class="num">↓ private</td></tr>
-        <tr><td>masked-LM inference</td><td>attack</td><td>top-1 recovery of the raw token from perturbed context (bert-base-uncased)</td><td class="num">↓ private</td></tr>
-      </tbody>
-    </table>
-  </section>
+            <!-- ═════ §04 LEAKAGE MEASURES ═════ -->
+            <section id="measures">
+                <header class="section-head">
+                    <div class="section-num">§04</div>
+                    <h2 class="section-title">Leakage Measures</h2>
+                    <div class="section-meta">
+                        attack-independent probes and the reconstruction attacks
+                        they predict
+                    </div>
+                </header>
+                <p class="prose">
+                    Probes are computed without running an attack, so a
+                    correlation between a probe and an attack is not circular.
+                    Cosine probes use a fixed sentence-embedding scorer on full
+                    text (in-distribution), independent of the φ under test, so
+                    they are comparable across embedding maps. Each probe states
+                    the quantity it bounds.
+                </p>
+                <table class="spec spec--wide">
+                    <thead>
+                        <tr>
+                            <th>measure</th>
+                            <th>type</th>
+                            <th>what it reports</th>
+                            <th class="num">direction</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>token MI</td>
+                            <td>probe (bits)</td>
+                            <td>
+                                I(token;replacement) of the per-token channel;
+                                upper-bounds any adversary's per-token recovery
+                                via Fano
+                            </td>
+                            <td class="num">↓ private</td>
+                        </tr>
+                        <tr>
+                            <td>S_w / N_w</td>
+                            <td>probe</td>
+                            <td>
+                                self-substitution probability / output support,
+                                the plausible-deniability statistics
+                            </td>
+                            <td class="num">S_w ↓ · N_w ↑</td>
+                        </tr>
+                        <tr>
+                            <td>overlap</td>
+                            <td>probe</td>
+                            <td>
+                                content-word survival from Doc into Doc_p
+                                (verbatim)
+                            </td>
+                            <td class="num">↓ private</td>
+                        </tr>
+                        <tr>
+                            <td>PII semantic leakage</td>
+                            <td>probe</td>
+                            <td>
+                                maximum cosine of each raw PII entity to Doc_p
+                                (Presidio spans)
+                            </td>
+                            <td class="num">↓ private</td>
+                        </tr>
+                        <tr>
+                            <td>n-gram MI</td>
+                            <td>probe (bits)</td>
+                            <td>
+                                empirical MI of aligned raw/perturbed n-grams
+                                (local-context proxy; needs a large corpus)
+                            </td>
+                            <td class="num">↓ private</td>
+                        </tr>
+                        <tr>
+                            <td>utility / utility_control</td>
+                            <td>probe</td>
+                            <td>
+                                cos(Doc, output) / cos(non-private generation,
+                                output)
+                            </td>
+                            <td class="num">↑ faithful</td>
+                        </tr>
+                        <tr>
+                            <td>PII reconstruction recall</td>
+                            <td>probe</td>
+                            <td>
+                                fraction of raw PII entities recovered in the
+                                final (local) output
+                            </td>
+                            <td class="num">↑ faithful</td>
+                        </tr>
+                        <tr>
+                            <td>embedding inversion</td>
+                            <td>attack</td>
+                            <td>
+                                recovery@K: raw token among the K nearest to the
+                                perturbed token in φ
+                            </td>
+                            <td class="num">↓ private</td>
+                        </tr>
+                        <tr>
+                            <td>masked-LM inference</td>
+                            <td>attack</td>
+                            <td>
+                                top-1 recovery of the raw token from perturbed
+                                context (bert-base-uncased)
+                            </td>
+                            <td class="num">↓ private</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </section>
 
-  <!-- ═════ §05 RESULTS ═════ -->
-  <section id="results">
-    <header class="section-head">
-      <div class="section-num">§05</div>
-      <h2 class="section-title">Results</h2>
-      <div class="section-meta">by design lever: ε, embedding map φ, extraction model X</div>
-    </header>
+            <!-- ═════ §05 RESULTS ═════ -->
+            <section id="results">
+                <header class="section-head">
+                    <div class="section-num">§05</div>
+                    <h2 class="section-title">Results</h2>
+                    <div class="section-meta">
+                        by design factor: ε, embedding map φ, extraction model X
+                    </div>
+                </header>
 
-    <h4 style="font-family:'Fraunces',serif;font-size:18px;margin:24px 0 8px;">§5.1 — Lever 1: privacy budget ε</h4>
-    <p class="prose">Embedding map: <strong>pythia-410m</strong> input-embedding matrix (isotropic, anisotropy 0.011), 12k cl100k tokens, cased CNN/Daily Mail (N=60). The setting that controls how aggressively a token is replaced is the <strong>noise radius</strong>, set by the calibration factor Z(ε). The reference RANTEXT constants for Z are a <em>curve-fit to one token ("happy") in OpenAI's ada-002 space</em> (paper Appendix B), and they mis-size the radius on any other embedding — applied to this map they saturate the candidate set and ε goes inert. We instead <strong>refit Z per embedding</strong> to a fixed candidate-set target |C_r|/|V| ≈ 1% (the paper's own calibration method, not a per-model fudge of a secondary quantity), so the operating point is held constant and ε is isolated as the only moving knob. Grid ε ∈ {2, 6, 10, 14}.</p>
-    <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 03 — ε sweep: leakage, utility, and mechanism diagnostics (per-φ Z calibrated to |C_r|≈1%, grid ε∈{2,6,10,14})</span><span class="r" id="fig03-src">source: results/dp_sweep_pythia410m.json · pythia-410m · 60 docs · single seed</span></div>
-      <div class="fig03-toggle" style="display:flex;gap:8px;margin:2px 0 12px;align-items:center;">
-        <span style="font-size:11px;text-transform:uppercase;letter-spacing:.08em;opacity:.6;">embedding map φ</span>
-        <button type="button" data-model="pythia" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,.25);border-radius:4px;background:transparent;cursor:pointer;">pythia-410m · isotropic</button>
-        <button type="button" data-model="ada" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,.25);border-radius:4px;background:transparent;cursor:pointer;">ada-002 · anisotropic (paper φ)</button>
-      </div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;">
-        <div id="plot-eps-leak" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
-        <div id="plot-eps-util" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
-      </div>
-      <div id="plot-eps-diag" style="width:100%;height:340px;"></div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">Top (leakage, lower = more private): overlap, self-substitution S_w, PII-leak recall, and embedding inversion@10 all rise steeply and monotonically with ε. Middle (utility, higher = more faithful): perturbation-side coherence of Gen_p and u_p_control rise with ε (more meaning kept in Doc_p), while the reranker utility sits near 1.0 at every ε because the local extraction model re-grounds on the true Doc. Bottom (diagnostics): the candidate set is held at ~1% across ε by the calibration (so the trend is ε acting, not a radius artifact), while replacement similarity and token leakage rise with ε — each normalised to its own max, one ε bar per cluster (hover for raw values). ε is a genuine monotone privacy↔perturbation-fidelity lever once the radius is calibrated to the embedding. Toggle the embedding map above the chart to switch to <strong>ada-002</strong> (the paper's anisotropic φ) at the same calibrated |C_r|: the same ε-monotone trends hold, but its anisotropy depresses both perturbation-side coherence and the inversion attack (lower inv@10), the coherence↔privacy trade documented in §5.2.</span></div>
-    </div>
-    <p class="prose"><strong>Conclusion.</strong> With the radius calibrated to the embedding (not the ada-002 constants), ε is a genuine, monotone lever. Leakage rises steeply with ε — overlap 0.22 → 0.78, self-substitution S_w 0.20 → 0.66, PII-leak recall 0.13 → 0.57, token leakage 4.6 → 5.2 bits, embedding inversion@10 0.67 → 0.99 across ε 2 to 14 — while the candidate set is held at ~1% throughout, so this is ε acting, not a radius artifact. Perturbation-side fidelity rises in step (replacement cosine 0.51 → 0.97, Gen_p coherence 0.54 → 0.74, u_p_control 0.55 → 0.76): higher ε keeps more of the document's meaning in Doc_p. The final extracted output, by contrast, stays faithful at every ε (reranker utility and PII reconstruction recall ~1.0, SimCSE utility 0.90 → 0.93), because the trusted extraction model re-grounds on the true Doc. So ε trades privacy for perturbation-side fidelity along a clean Pareto curve; because the final output is ε-robust, the practical choice is to run ε as low as the downstream task tolerates. This corrects the earlier reading that ε is inert — that was an artifact of the ada-002 noise constants applied to a different embedding, not a property of the mechanism.</p>
+                <h4
+                    style="
+                        font-family: &quot;Fraunces&quot;, serif;
+                        font-size: 20px;
+                        margin: 24px 0 8px;
+                    "
+                >
+                    §5.1 Factor 1: privacy budget ε
+                </h4>
+                <p class="prose">
+                    Embedding map: <strong>pythia-410m</strong> input-embedding
+                    matrix (isotropic, anisotropy 0.011), 12k cl100k tokens,
+                    cased CNN/Daily Mail (N=60). The setting that controls how
+                    aggressively a token is replaced is the
+                    <strong>noise radius</strong>, set by the calibration factor
+                    Z(ε). The reference RANTEXT constants for Z are a
+                    <em
+                        >curve-fit to one token ("happy") in OpenAI's ada-002
+                        space</em
+                    >
+                    (paper Appendix B), and they mis-size the radius on any
+                    other embedding: applied to this map they saturate the
+                    candidate set and ε goes inert. We instead
+                    <strong>refit Z per embedding</strong> to a fixed
+                    candidate-set target |C_r|/|V| ≈ 1% (the paper's own
+                    calibration method, not a per-model adjustment of a
+                    secondary quantity), so the operating point is held constant
+                    and ε is isolated as the only moving parameter. Grid ε ∈ {2,
+                    6, 10, 14}.
+                </p>
+                <div class="plot-frame">
+                    <div class="plot-cap">
+                        <span class="l"
+                            >FIG · 03: ε sweep: leakage, utility, and mechanism
+                            diagnostics (per-φ Z calibrated to |C_r|≈1%, grid
+                            ε∈{2,6,10,14})</span
+                        ><span class="r" id="fig03-src"
+                            >source: results/dp_sweep_pythia410m.json ·
+                            pythia-410m · 60 docs · single seed</span
+                        >
+                    </div>
+                    <div
+                        class="fig03-toggle"
+                        style="
+                            display: flex;
+                            gap: 8px;
+                            margin: 2px 0 12px;
+                            align-items: center;
+                        "
+                    >
+                        <span
+                            style="
+                                font-size: 11px;
+                                text-transform: uppercase;
+                                letter-spacing: 0.08em;
+                                opacity: 0.6;
+                            "
+                            >embedding map φ</span
+                        >
+                        <button
+                            type="button"
+                            data-model="pythia"
+                            style="
+                                font: inherit;
+                                font-size: 12px;
+                                padding: 4px 12px;
+                                border: 1px solid rgba(20, 24, 28, 0.25);
+                                border-radius: 4px;
+                                background: transparent;
+                                cursor: pointer;
+                            "
+                        >
+                            pythia-410m · isotropic
+                        </button>
+                        <button
+                            type="button"
+                            data-model="ada"
+                            style="
+                                font: inherit;
+                                font-size: 12px;
+                                padding: 4px 12px;
+                                border: 1px solid rgba(20, 24, 28, 0.25);
+                                border-radius: 4px;
+                                background: transparent;
+                                cursor: pointer;
+                            "
+                        >
+                            ada-002 · anisotropic (paper φ)
+                        </button>
+                    </div>
+                    <div style="display: flex; gap: 14px; flex-wrap: wrap">
+                        <div
+                            id="plot-eps-leak"
+                            style="
+                                flex: 1 1 320px;
+                                min-width: 300px;
+                                height: 320px;
+                            "
+                        ></div>
+                        <div
+                            id="plot-eps-util"
+                            style="
+                                flex: 1 1 320px;
+                                min-width: 300px;
+                                height: 320px;
+                            "
+                        ></div>
+                    </div>
+                    <div
+                        id="plot-eps-diag"
+                        style="width: 100%; height: 340px"
+                    ></div>
+                    <div class="plot-cap" style="margin: 8px 0 0">
+                        <span class="l">Read</span
+                        ><span
+                            class="r"
+                            style="
+                                text-transform: none;
+                                letter-spacing: 0;
+                                font-size: 11px;
+                            "
+                            >Top (leakage, lower = more private): overlap,
+                            self-substitution S_w, PII-leak recall, and
+                            embedding inversion@10 all rise steeply and
+                            monotonically with ε. Middle (utility, higher = more
+                            faithful): perturbation-side coherence of Gen_p and
+                            u_p_control rise with ε (more meaning kept in
+                            Doc_p), while the reranker utility sits near 1.0 at
+                            every ε because the local extraction model
+                            re-grounds on the true Doc. Bottom (diagnostics):
+                            the candidate set is held at ~1% across ε by the
+                            calibration (so the trend is ε acting, not a radius
+                            artifact), while replacement similarity and token
+                            leakage rise with ε, each normalised to its own max,
+                            one ε bar per cluster (hover for raw values). ε is a
+                            genuine monotone privacy↔perturbation-fidelity
+                            factor once the radius is calibrated to the
+                            embedding. Toggle the embedding map above the chart
+                            to switch to <strong>ada-002</strong> (the paper's
+                            anisotropic φ) at the same calibrated |C_r|: the
+                            same ε-monotone trends hold, but its anisotropy
+                            depresses both perturbation-side coherence and the
+                            inversion attack (lower inv@10), the
+                            coherence↔privacy trade documented in §5.2.</span
+                        >
+                    </div>
+                </div>
+                <p class="prose">
+                    <strong>Conclusion.</strong> With the radius calibrated to
+                    the embedding (not the ada-002 constants), ε is a genuine,
+                    monotone factor. Leakage rises steeply with ε, overlap 0.22
+                    → 0.78, self-substitution S_w 0.20 → 0.66, PII-leak recall
+                    0.13 → 0.57, token leakage 4.6 → 5.2 bits, embedding
+                    inversion@10 0.67 → 0.99 across ε 2 to 14, while the
+                    candidate set is held at ~1% throughout, so this is ε
+                    acting, not a radius artifact. Perturbation-side fidelity
+                    rises in step (replacement cosine 0.51 → 0.97, Gen_p
+                    coherence 0.54 → 0.74, u_p_control 0.55 → 0.76): higher ε
+                    keeps more of the document's meaning in Doc_p. The final
+                    extracted output, by contrast, stays faithful at every ε
+                    (reranker utility and PII reconstruction recall ~1.0, SimCSE
+                    utility 0.90 → 0.93), because the trusted extraction model
+                    re-grounds on the true Doc. So ε trades privacy for
+                    perturbation-side fidelity along a clean Pareto curve;
+                    because the final output is ε-robust, the practical choice
+                    is to run ε as low as the downstream task tolerates. This
+                    corrects the earlier reading that ε is inert: that was an
+                    artifact of the ada-002 noise constants applied to a
+                    different embedding, not a property of the mechanism.
+                </p>
 
-    <h4 style="font-family:'Fraunces',serif;font-size:18px;margin:24px 0 8px;">§5.2 — Lever 2: embedding map φ (anisotropy &amp; the noise radius)</h4>
-    <p class="prose">φ enters RANTEXT only through Euclidean distances, so its one structural property is the <strong>distance scale</strong>. <strong>Anisotropy</strong> — a large shared direction in every token vector — compresses that scale into a thin shell, with two consequences. First, the <strong>noise radius</strong> (the Laplace-norm threshold that defines the candidate set C_r, set by Z(ε)) must be matched to the shell. The paper's fixed Z is a curve-fit to one token in ada-002 (§5.1), so on any other φ it mis-sizes: too large and C_r becomes a big slice of V, the sampling goes near-uniform, and Doc_p is word-salad. Second, even at a <em>matched</em> radius the compressed shell blurs the candidate ranking, which trades Doc_p coherence against the inversion attack.</p>
+                <h4
+                    style="
+                        font-family: &quot;Fraunces&quot;, serif;
+                        font-size: 20px;
+                        margin: 24px 0 8px;
+                    "
+                >
+                    §5.2 Factor 2: embedding map φ (anisotropy &amp; the noise
+                    radius)
+                </h4>
+                <p class="prose">
+                    φ enters RANTEXT only through Euclidean distances, so its
+                    one structural property is the
+                    <strong>distance scale</strong>.
+                    <strong>Anisotropy</strong>, a large shared direction in
+                    every token vector, compresses that scale into a thin shell,
+                    with two consequences. First, the
+                    <strong>noise radius</strong> (the Laplace-norm threshold
+                    that defines the candidate set C_r, set by Z(ε)) must be
+                    matched to the shell. The paper's fixed Z is a curve-fit to
+                    one token in ada-002 (§5.1), so on any other φ it mis-sizes:
+                    too large and C_r becomes a big slice of V, the sampling
+                    goes near-uniform, and Doc_p is word-salad. Second, even at
+                    a <em>matched</em> radius the compressed shell blurs the
+                    candidate ranking, which trades Doc_p coherence against the
+                    inversion attack.
+                </p>
 
-    <p class="prose" style="margin-bottom:4px;"><strong>1 · The noise radius is the control.</strong> The mechanism's real knob is the size of the noise radius — equivalently the candidate-set fraction <span class="mono">|C_r|/V</span> it admits. As the radius shrinks (pythia-410m, the prompt below, ε=6):</p>
-    <div style="overflow-x:auto;">
-    <table class="spec spec--wide">
-      <thead><tr><th class="num" style="width:12%">|C_r|/V</th><th>perturbed prompt Doc_p</th></tr></thead>
-      <tbody>
-        <tr><td class="num warn">57%</td><td class="mono" style="font-size:11px;">polymer Development templates his Portuguese University samsung women Collins Diego arch yield accused Die partners painter dinner</td></tr>
-        <tr><td class="num warn">19%</td><td class="mono" style="font-size:11px;">MY style vase she Bennett car amigos character moderate starts old UK hp stay than pew husband</td></tr>
-        <tr><td class="num">4%</td><td class="mono" style="font-size:11px;">Mi name avis She Phillips and amigos several thirty became old living within Japan with asian husband</td></tr>
-        <tr><td class="num accent">1%</td><td class="mono" style="font-size:11px;">Her name ais William Thompson of ama five fourth days old living by Canada with mead husband</td></tr>
-      </tbody>
-    </table>
-    </div>
-    <p class="prose" style="font-size:12px;opacity:.75;">original: <span class="mono">"My name is Sarah Johnson and I am thirty four years old living in Boston with my husband."</span> — pythia-410m, ε=6, seed 1. At a large radius the candidate set is most of V, sampling is near-uniform, and Doc_p is word-salad — the failure our initial runs hit. RANTEXT's Z(ε) is a per-embedding curve-fit (paper Appendix B) that targets a small |C_r|; matched to ≈1% the original's structure returns (name→name <span class="mono">Sarah Johnson→William Thompson</span>, <span class="mono">Boston→Canada</span>).</p>
+                <p class="prose" style="margin-bottom: 4px">
+                    <strong>1 · The noise radius is the control.</strong> The
+                    mechanism's real parameter is the size of the noise radius,
+                    equivalently the candidate-set fraction
+                    <span class="mono">|C_r|/V</span> it admits. As the radius
+                    shrinks (pythia-410m, the prompt below, ε=6):
+                </p>
+                <div style="overflow-x: auto">
+                    <table class="spec spec--wide">
+                        <thead>
+                            <tr>
+                                <th class="num" style="width: 12%">|C_r|/V</th>
+                                <th>perturbed prompt Doc_p</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td class="num warn">57%</td>
+                                <td class="mono" style="font-size: 11px">
+                                    polymer Development templates his Portuguese
+                                    University samsung women Collins Diego arch
+                                    yield accused Die partners painter dinner
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="num warn">19%</td>
+                                <td class="mono" style="font-size: 11px">
+                                    MY style vase she Bennett car amigos
+                                    character moderate starts old UK hp stay
+                                    than pew husband
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="num">4%</td>
+                                <td class="mono" style="font-size: 11px">
+                                    Mi name avis She Phillips and amigos several
+                                    thirty became old living within Japan with
+                                    asian husband
+                                </td>
+                            </tr>
+                            <tr>
+                                <td class="num accent">1%</td>
+                                <td class="mono" style="font-size: 11px">
+                                    Her name ais William Thompson of ama five
+                                    fourth days old living by Canada with mead
+                                    husband
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="prose" style="font-size: 12px; opacity: 0.75">
+                    original:
+                    <span class="mono"
+                        >"My name is Sarah Johnson and I am thirty four years
+                        old living in Boston with my husband."</span
+                    >, pythia-410m, ε=6, seed 1. At a large radius the candidate
+                    set is most of V, sampling is near-uniform, and Doc_p is
+                    word-salad, the failure our initial runs hit. RANTEXT's Z(ε)
+                    is a per-embedding curve-fit (paper Appendix B) that targets
+                    a small |C_r|; matched to ≈1% the original's structure
+                    returns (name→name
+                    <span class="mono">Sarah Johnson→William Thompson</span>,
+                    <span class="mono">Boston→Canada</span>).
+                </p>
 
-    <p class="prose" style="margin:16px 0 4px;"><strong>2 · At |C_r|≈1% (target), across φ and ε.</strong> Three private prompts, each perturbed by <strong>ada-002</strong> (paper φ, anisotropic), <strong>pythia-410m</strong> (isotropic), and <strong>qwen3-embedding</strong> (sentence embedder, anisotropic). The isotropic map reads more cleanly and the anisotropic maps scramble harder — a difference that *correlates* with anisotropy but is confounded (vocabulary coverage, and realized |C_r| that is not actually equal across φ); see the conclusion. Higher ε keeps more of the original everywhere.</p>
+                <p class="prose" style="margin: 16px 0 4px">
+                    <strong>2 · At |C_r|≈1% (target), across φ and ε.</strong>
+                    Three private prompts, each perturbed by
+                    <strong>ada-002</strong> (paper φ, anisotropic),
+                    <strong>pythia-410m</strong> (isotropic), and
+                    <strong>qwen3-embedding</strong> (sentence embedder,
+                    anisotropic). The isotropic map reads more cleanly and the
+                    anisotropic maps scramble harder, a difference that
+                    <em>correlates</em> with anisotropy but is confounded
+                    (vocabulary coverage, and realized |C_r| that is not
+                    actually equal across φ); see the conclusion. Higher ε keeps
+                    more of the original everywhere.
+                </p>
 
-    <p class="prose" style="margin:10px 0 2px;font-size:12px;">P1 original: <span class="mono">"My name is Sarah Johnson and I am thirty four years old living in Boston with my husband."</span></p>
-    <div style="overflow-x:auto;">
-    <table class="spec spec--wide">
-      <thead><tr><th style="width:11%">φ</th><th>ε=2</th><th>ε=6</th><th>ε=10</th></tr></thead>
-      <tbody>
-        <tr><td>ada-002</td><td class="mono" style="font-size:10px;">My nome should and i aw twenty six different Living inner Boston with My journalist</td><td class="mono" style="font-size:10px;">My nome is and i am thirty four old living input Boston with my desk</td><td class="mono" style="font-size:10px;">My Name is and i am thirty four old living in Boston with my husband</td></tr>
-        <tr><td>pythia-410m</td><td class="mono" style="font-size:10px;">myself word avis William Thompson of amigo ten Seven Year old living IN LA with mead husband</td><td class="mono" style="font-size:10px;">Her name ais William Thompson of ama five fourth days old living by Canada with mead husband</td><td class="mono" style="font-size:10px;">My name were George Wilson and am Four four years old living in Angeles with mead husband</td></tr>
-        <tr><td>qwen3-emb</td><td class="mono" style="font-size:10px;">mai es mall she Reynolds find mend an Four decades age living PE Washington condition junction brother</td><td class="mono" style="font-size:10px;">vie et Besides she Reynolds under hem st Four age old living gate Washington od junction husband</td><td class="mono" style="font-size:10px;">personal name mane She Tyler us oz from fir years old living AG Chicago With zen husband</td></tr>
-      </tbody>
-    </table>
-    </div>
+                <p class="prose" style="margin: 10px 0 2px; font-size: 12px">
+                    P1 original:
+                    <span class="mono"
+                        >"My name is Sarah Johnson and I am thirty four years
+                        old living in Boston with my husband."</span
+                    >
+                </p>
+                <div style="overflow-x: auto">
+                    <table class="spec spec--wide">
+                        <thead>
+                            <tr>
+                                <th style="width: 11%">φ</th>
+                                <th>ε=2</th>
+                                <th>ε=6</th>
+                                <th>ε=10</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>ada-002</td>
+                                <td class="mono" style="font-size: 10px">
+                                    My nome should and i aw twenty six different
+                                    Living inner Boston with My journalist
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    My nome is and i am thirty four old living
+                                    input Boston with my desk
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    My Name is and i am thirty four old living
+                                    in Boston with my husband
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>pythia-410m</td>
+                                <td class="mono" style="font-size: 10px">
+                                    myself word avis William Thompson of amigo
+                                    ten Seven Year old living IN LA with mead
+                                    husband
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    Her name ais William Thompson of ama five
+                                    fourth days old living by Canada with mead
+                                    husband
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    My name were George Wilson and am Four four
+                                    years old living in Angeles with mead
+                                    husband
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>qwen3-emb</td>
+                                <td class="mono" style="font-size: 10px">
+                                    mai es mall she Reynolds find mend an Four
+                                    decades age living PE Washington condition
+                                    junction brother
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    vie et Besides she Reynolds under hem st
+                                    Four age old living gate Washington od
+                                    junction husband
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    personal name mane She Tyler us oz from fir
+                                    years old living AG Chicago With zen husband
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
-    <p class="prose" style="margin:10px 0 2px;font-size:12px;">P2 original: <span class="mono">"The patient was diagnosed with diabetes and depression by her psychiatrist at Mercy Hospital."</span></p>
-    <div style="overflow-x:auto;">
-    <table class="spec spec--wide">
-      <thead><tr><th style="width:11%">φ</th><th>ε=2</th><th>ε=6</th><th>ε=10</th></tr></thead>
-      <tbody>
-        <tr><td>ada-002</td><td class="mono" style="font-size:10px;">What patron something WITH diabetes and Psych were she ANT clinic</td><td class="mono" style="font-size:10px;">This applicant want along diabetes and suicide they her AT Airport</td><td class="mono" style="font-size:10px;">The viewer was with diabetes and depression by her at Hospital</td></tr>
-        <tr><td>pythia-410m</td><td class="mono" style="font-size:10px;">His sample ais patients tote cancer or mental BY She with medical</td><td class="mono" style="font-size:10px;">An hospital Was patients tote cancer and symptoms using her at Hotel</td><td class="mono" style="font-size:10px;">The patient were cancer ais diabetes and depression by her at Hospital</td></tr>
-        <tr><td>qwen3-emb</td><td class="mono" style="font-size:10px;">pairs patients WORK disease utter disease vice death ting toward into hospital</td><td class="mono" style="font-size:10px;">NA patient worthy disease utter diseases blind pain Ana iron about Hospital</td><td class="mono" style="font-size:10px;">HERE patient WA disease ions diabetes Nu suffering bid Hen are Hospital</td></tr>
-      </tbody>
-    </table>
-    </div>
+                <p class="prose" style="margin: 10px 0 2px; font-size: 12px">
+                    P2 original:
+                    <span class="mono"
+                        >"The patient was diagnosed with diabetes and depression
+                        by her psychiatrist at Mercy Hospital."</span
+                    >
+                </p>
+                <div style="overflow-x: auto">
+                    <table class="spec spec--wide">
+                        <thead>
+                            <tr>
+                                <th style="width: 11%">φ</th>
+                                <th>ε=2</th>
+                                <th>ε=6</th>
+                                <th>ε=10</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>ada-002</td>
+                                <td class="mono" style="font-size: 10px">
+                                    What patron something WITH diabetes and
+                                    Psych were she ANT clinic
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    This applicant want along diabetes and
+                                    suicide they her AT Airport
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    The viewer was with diabetes and depression
+                                    by her at Hospital
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>pythia-410m</td>
+                                <td class="mono" style="font-size: 10px">
+                                    His sample ais patients tote cancer or
+                                    mental BY She with medical
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    An hospital Was patients tote cancer and
+                                    symptoms using her at Hotel
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    The patient were cancer ais diabetes and
+                                    depression by her at Hospital
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>qwen3-emb</td>
+                                <td class="mono" style="font-size: 10px">
+                                    pairs patients WORK disease utter disease
+                                    vice death ting toward into hospital
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    NA patient worthy disease utter diseases
+                                    blind pain Ana iron about Hospital
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    HERE patient WA disease ions diabetes Nu
+                                    suffering bid Hen are Hospital
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
 
-    <p class="prose" style="margin:10px 0 2px;font-size:12px;">P3 original: <span class="mono">"He works as a lawyer at Goldman Sachs and earns two hundred thousand dollars a year in Chicago."</span></p>
-    <div style="overflow-x:auto;">
-    <table class="spec spec--wide">
-      <thead><tr><th style="width:11%">φ</th><th>ε=2</th><th>ε=6</th><th>ε=10</th></tr></thead>
-      <tbody>
-        <tr><td>ada-002</td><td class="mono" style="font-size:10px;">she works as s servant AT or single six monthly o inch in</td><td class="mono" style="font-size:10px;">He works as a regulator at and down billion thousand a decade in</td><td class="mono" style="font-size:10px;">He works as a litigation at and two hundred thousand a player in</td></tr>
-        <tr><td>pythia-410m</td><td class="mono" style="font-size:10px;">Her works asian law ford of eight several fifty millions years that Vegas</td><td class="mono" style="font-size:10px;">You works andre law ford of six five millions dollars year in Arizona</td><td class="mono" style="font-size:10px;">He works como court At and two hundred thousand dollars year in Chicago</td></tr>
-        <tr><td>qwen3-emb</td><td class="mono" style="font-size:10px;">ink works equality law zen find orient your thousands dollar year UN NH</td><td class="mono" style="font-size:10px;">ama works ups law ALSO under divided all thou dollars year Imp Atlanta</td><td class="mono" style="font-size:10px;">Hal works differently Law td us combined per thousand dollars year pare Toronto</td></tr>
-      </tbody>
-    </table>
-    </div>
-    <p class="prose" style="font-size:12px;opacity:.75;">source: RANTEXT at |C_r|≈1% (per-φ calibrated Z), cased prompts, seed 1. Names swap to names and cities to cities where they are in-vocab (<span class="mono">Sarah Johnson→George Wilson</span>, <span class="mono">Boston→Chicago/LA</span>); out-of-vocab spans (<span class="mono">Goldman Sachs</span>, <span class="mono">Mercy</span>) drop; in-vocab sensitive words (<span class="mono">diabetes</span>, <span class="mono">depression</span>) survive at high ε — the no-detector limitation.</p>
+                <p class="prose" style="margin: 10px 0 2px; font-size: 12px">
+                    P3 original:
+                    <span class="mono"
+                        >"He works as a lawyer at Goldman Sachs and earns two
+                        hundred thousand dollars a year in Chicago."</span
+                    >
+                </p>
+                <div style="overflow-x: auto">
+                    <table class="spec spec--wide">
+                        <thead>
+                            <tr>
+                                <th style="width: 11%">φ</th>
+                                <th>ε=2</th>
+                                <th>ε=6</th>
+                                <th>ε=10</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td>ada-002</td>
+                                <td class="mono" style="font-size: 10px">
+                                    she works as s servant AT or single six
+                                    monthly o inch in
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    He works as a regulator at and down billion
+                                    thousand a decade in
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    He works as a litigation at and two hundred
+                                    thousand a player in
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>pythia-410m</td>
+                                <td class="mono" style="font-size: 10px">
+                                    Her works asian law ford of eight several
+                                    fifty millions years that Vegas
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    You works andre law ford of six five
+                                    millions dollars year in Arizona
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    He works como court At and two hundred
+                                    thousand dollars year in Chicago
+                                </td>
+                            </tr>
+                            <tr>
+                                <td>qwen3-emb</td>
+                                <td class="mono" style="font-size: 10px">
+                                    ink works equality law zen find orient your
+                                    thousands dollar year UN NH
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    ama works ups law ALSO under divided all
+                                    thou dollars year Imp Atlanta
+                                </td>
+                                <td class="mono" style="font-size: 10px">
+                                    Hal works differently Law td us combined per
+                                    thousand dollars year pare Toronto
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="prose" style="font-size: 12px; opacity: 0.75">
+                    source: RANTEXT at |C_r|≈1% (per-φ calibrated Z), cased
+                    prompts, seed 1. Names swap to names and cities to cities
+                    where they are in-vocab (<span class="mono"
+                        >Sarah Johnson→George Wilson</span
+                    >, <span class="mono">Boston→Chicago/LA</span>);
+                    out-of-vocab spans (<span class="mono">Goldman Sachs</span>,
+                    <span class="mono">Mercy</span>) drop; in-vocab sensitive
+                    words (<span class="mono">diabetes</span>,
+                    <span class="mono">depression</span>) survive at high ε, the
+                    no-detector limitation.
+                </p>
 
-    <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 04 — the apparent φ trade (confounded, left) vs the controlled anisotropy test (right)</span><span class="r">source: results/dp_sweep_{ada002,pythia410m,qwen_raw,qwen_centered}.json</span></div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;">
-        <div id="plot-phi" style="flex:1 1 340px;min-width:300px;height:380px;"></div>
-        <div id="plot-phi-ctrl" style="flex:1 1 340px;min-width:300px;height:380px;"></div>
-      </div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">Both panels: <strong>orange = anisotropic, blue = isotropic</strong>; lower inv@10 / PII-leak = more private. <strong>LEFT (confounded)</strong> — ada-002 vs pythia-410m, two <em>different</em> embeddings (also differ in vocabulary, dimension, family): the isotropic one (pythia) looks <em>worse</em> on privacy — higher inv@10 and PII-leak. <strong>RIGHT (controlled)</strong> — the <em>same</em> qwen matrix, raw vs mean-centered, so <em>only</em> anisotropy changes: the isotropic one is <em>better</em> on privacy — lower inv@10 and PII-leak, with coherence and utility flat. The two panels point opposite ways, so the left-panel gap is vocabulary / dimension / family, <strong>not anisotropy</strong> — anisotropy does not create a coherence↔privacy trade. Left = ε=6; right = mean over ε=2/6/10, matched |C_r|; N=10 single seed (directional).</span></div>
-    </div>
-    <p class="prose"><strong>Conclusion.</strong> φ is <em>not</em> an end-to-end utility lever (final utility is flat, extraction-dominated). Its <em>one established effect</em> is <strong>(a) a calibration constraint</strong> — the noise radius must be refit per φ or the mechanism degenerates to salad. The apparent <strong>(b) coherence↔leakage trade</strong> across ada-002 vs pythia-410m turns out to be a <strong>confound, not anisotropy</strong>: the controlled test — the <em>same</em> qwen matrix raw (aniso 0.61) vs mean-centered (aniso 0.00), identical vocabulary and matched realized |C_r|, varying only anisotropy — does <em>not</em> reproduce it. At matched |C_r| (ε=2/6/10) centering leaves coherence and utility unchanged and, if anything, <em>lowers</em> inv@10 (−0.14 to −0.24) and PII-leak — the opposite sign from the ada-vs-pythia comparison. So the ada-vs-pythia trade was driven by vocabulary coverage (ada drops names → less PII), effective dimension, and embedding family — not by anisotropy. Anisotropy matters only through (a): it sets the distance scale the radius must be matched to. (N=10, single seed — directional; firm with N≥30 + seeds + a dose-response.)</p>
+                <div class="plot-frame">
+                    <div class="plot-cap">
+                        <span class="l"
+                            >FIG · 04: the apparent φ trade (confounded, left)
+                            vs the controlled anisotropy test (right)</span
+                        ><span class="r"
+                            >source:
+                            results/dp_sweep_{ada002,pythia410m,qwen_raw,qwen_centered}.json</span
+                        >
+                    </div>
+                    <div style="display: flex; gap: 14px; flex-wrap: wrap">
+                        <div
+                            id="plot-phi"
+                            style="
+                                flex: 1 1 340px;
+                                min-width: 300px;
+                                height: 380px;
+                            "
+                        ></div>
+                        <div
+                            id="plot-phi-ctrl"
+                            style="
+                                flex: 1 1 340px;
+                                min-width: 300px;
+                                height: 380px;
+                            "
+                        ></div>
+                    </div>
+                    <div class="plot-cap" style="margin: 8px 0 0">
+                        <span class="l">Read</span
+                        ><span
+                            class="r"
+                            style="
+                                text-transform: none;
+                                letter-spacing: 0;
+                                font-size: 11px;
+                            "
+                            >Both panels:
+                            <strong
+                                >violet = anisotropic, green = isotropic</strong
+                            >; lower inv@10 / PII-leak = more private.
+                            <strong>LEFT (confounded)</strong>, ada-002 vs
+                            pythia-410m, two <em>different</em> embeddings (also
+                            differ in vocabulary, dimension, family): the
+                            isotropic one (pythia) looks <em>worse</em> on
+                            privacy, higher inv@10 and PII-leak.
+                            <strong>RIGHT (controlled)</strong>, the
+                            <em>same</em> qwen matrix, raw vs mean-centered, so
+                            <em>only</em> anisotropy changes: the isotropic one
+                            is <em>better</em> on privacy, lower inv@10 and
+                            PII-leak, with coherence and utility flat. The two
+                            panels point opposite ways, so the left-panel gap is
+                            vocabulary / dimension / family,
+                            <strong>not anisotropy</strong>, anisotropy does not
+                            create a coherence↔privacy trade. Left = ε=6; right
+                            = mean over ε=2/6/10, matched |C_r|; N=10 single
+                            seed (directional).</span
+                        >
+                    </div>
+                </div>
+                <p class="prose">
+                    <strong>Conclusion.</strong> φ is <em>not</em> an end-to-end
+                    utility factor (final utility is flat,
+                    extraction-dominated). Its
+                    <em>one established effect</em> is
+                    <strong>(a) a calibration constraint</strong>, the noise
+                    radius must be refit per φ or the mechanism degenerates to
+                    salad. The apparent
+                    <strong>(b) coherence↔leakage trade</strong> across ada-002
+                    vs pythia-410m turns out to be a
+                    <strong>confound, not anisotropy</strong>: the controlled
+                    test, the <em>same</em> qwen matrix raw (aniso 0.61) vs
+                    mean-centered (aniso 0.00), identical vocabulary and matched
+                    realized |C_r|, varying only anisotropy, does
+                    <em>not</em> reproduce it. At matched |C_r| (ε=2/6/10)
+                    centering leaves coherence and utility unchanged and, if
+                    anything, <em>lowers</em> inv@10 (−0.14 to −0.24) and
+                    PII-leak, the opposite sign from the ada-vs-pythia
+                    comparison. So the ada-vs-pythia trade was driven by
+                    vocabulary coverage (ada drops names → less PII), effective
+                    dimension, and embedding family, not by anisotropy.
+                    Anisotropy matters only through (a): it sets the distance
+                    scale the radius must be matched to. (N=10, single seed,
+                    directional; firm with N≥30 + seeds + a dose-response.)
+                </p>
 
-    <h4 style="font-family:'Fraunces',serif;font-size:18px;margin:24px 0 8px;">§5.3 — Lever 3: extraction model X (why the headline utility is misleading)</h4>
-    <p class="prose">X is the <em>trusted</em> local model, and it is handed the <strong>true Doc</strong> as prefix — only Gen_p comes from the perturbed prompt. So X re-grounds on the real document and reconstructs its content <em>no matter how badly ε or φ damaged Doc_p</em>. That makes end-to-end utility a poor gauge of the perturbation: it stays ~0.9 even when Doc_p is word-salad, because most of it is X working from the clean prefix — not privacy-preserving remote inference. The extraction model therefore <strong>disguises</strong> the two upstream levers and creates a false sense that the private channel is doing the work.</p>
+                <h4
+                    style="
+                        font-family: &quot;Fraunces&quot;, serif;
+                        font-size: 20px;
+                        margin: 24px 0 8px;
+                    "
+                >
+                    §5.3 Factor 3: extraction model X (why the headline
+                    utility is misleading)
+                </h4>
+                <p class="prose">
+                    X is the <em>trusted</em> local model, and it is handed the
+                    <strong>true Doc</strong> as prefix, only Gen_p comes from
+                    the perturbed prompt. So X re-grounds on the real document
+                    and reconstructs its content
+                    <em>no matter how badly ε or φ damaged Doc_p</em>. That
+                    makes end-to-end utility a poor gauge of the perturbation:
+                    it stays ~0.9 even when Doc_p is word-salad, because most of
+                    it is X working from the clean prefix, not
+                    privacy-preserving remote inference. The extraction model
+                    therefore <strong>disguises</strong> the two upstream
+                    factors and creates a false sense that the private channel
+                    is doing the work.
+                </p>
 
-    <p class="prose" style="margin-bottom:4px;"><strong>How much does the private remote channel actually add?</strong> Compare InferDPT (X given Doc + remote Gen_p) against a <strong>local-only baseline</strong> (X given Doc alone, empty Gen_p) — pythia-410m φ, N=60:</p>
-    <table class="spec spec--wide">
-      <thead><tr><th class="num">ε</th><th class="num">local-only (Doc alone)</th><th class="num">InferDPT (Doc + Gen_p)</th><th class="num">remote's marginal</th></tr></thead>
-      <tbody>
-        <tr><td class="num">2</td><td class="num">0.828</td><td class="num">0.899</td><td class="num">+0.072</td></tr>
-        <tr><td class="num">6</td><td class="num">0.828</td><td class="num">0.901</td><td class="num">+0.073</td></tr>
-        <tr><td class="num">10</td><td class="num">0.828</td><td class="num">0.929</td><td class="num">+0.101</td></tr>
-        <tr><td class="num">14</td><td class="num">0.828</td><td class="num">0.933</td><td class="num">+0.105</td></tr>
-      </tbody>
-    </table>
-    <p class="prose" style="font-size:12px;opacity:.75;">source: <span class="mono">results/dp_sweep_pythia410m.json</span> (gen_marginal = InferDPT − local-only). Local-only is ε-independent (0.828). ada-002 is the same shape: local-only 0.839, InferDPT 0.892→0.937, marginal +0.05→+0.10.</p>
-    <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 05 — extraction disguises the perturbation: final utility (left) vs what the private channel actually delivered (right)</span><span class="r">source: results/dp_sweep_pythia410m.json · N=60</span></div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;">
-        <div id="plot-x" style="flex:1 1 340px;min-width:300px;height:340px;"></div>
-        <div id="plot-x2" style="flex:1 1 340px;min-width:300px;height:340px;"></div>
-      </div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;"><strong>LEFT (cos → Doc).</strong> The final InferDPT utility (solid) barely exceeds the local-only baseline (dashed — X on the true Doc with <em>no</em> remote output, flat ~0.83); the private channel adds only a shrinking sliver. <strong>RIGHT (cos → the non-private remote generation).</strong> The raw perturbed generation Gen_p (dashed, <span class="mono">u_p_control</span>) is heavily degraded and ε-dependent (0.55→0.76), yet the <em>extracted</em> output (solid, <span class="mono">utility_control</span>) sits well above it — especially at low ε (0.78 vs 0.55) — because extraction re-grounds on the true Doc and repairs the damage. Both panels: the utility you see is mostly the trusted local model, not the private inference; extraction hides how much the perturbation destroyed.</span></div>
-    </div>
-    <p class="prose" style="font-size:12px;opacity:.75;"><strong>Not supported:</strong> the stronger claim that InferDPT is <em>worse</em> than local-only (context contamination from garbled Gen_p) does not hold on this metric — the marginal is positive throughout, so even salad Gen_p carries a little topical signal that nudges cos(Doc,output) up. A contamination penalty might surface on a task metric (QA / summarisation) that cosine-to-Doc cannot see; unproven either way.</p>
-    <p class="prose"><strong>Conclusion.</strong> X is a utility-only lever that <em>masks</em> the perturbation: the headline utility mostly measures the trusted local model re-reading the true Doc, barely moves with ε or φ, and overstates what the perturbation + remote channel actually contribute (+0.05–0.11). The honest privacy↔utility question lives at <strong>Doc_p</strong> — coherence and leakage, upstream of X — not in the end-to-end number.</p>
-  </section>
+                <p class="prose" style="margin-bottom: 4px">
+                    <strong
+                        >How much does the private remote channel actually
+                        add?</strong
+                    >
+                    Compare InferDPT (X given Doc + remote Gen_p) against a
+                    <strong>local-only baseline</strong> (X given Doc alone,
+                    empty Gen_p), pythia-410m φ, N=60:
+                </p>
+                <table class="spec spec--wide">
+                    <thead>
+                        <tr>
+                            <th class="num">ε</th>
+                            <th class="num">local-only (Doc alone)</th>
+                            <th class="num">InferDPT (Doc + Gen_p)</th>
+                            <th class="num">remote's marginal</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td class="num">2</td>
+                            <td class="num">0.828</td>
+                            <td class="num">0.899</td>
+                            <td class="num">+0.072</td>
+                        </tr>
+                        <tr>
+                            <td class="num">6</td>
+                            <td class="num">0.828</td>
+                            <td class="num">0.901</td>
+                            <td class="num">+0.073</td>
+                        </tr>
+                        <tr>
+                            <td class="num">10</td>
+                            <td class="num">0.828</td>
+                            <td class="num">0.929</td>
+                            <td class="num">+0.101</td>
+                        </tr>
+                        <tr>
+                            <td class="num">14</td>
+                            <td class="num">0.828</td>
+                            <td class="num">0.933</td>
+                            <td class="num">+0.105</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p class="prose" style="font-size: 12px; opacity: 0.75">
+                    source:
+                    <span class="mono">results/dp_sweep_pythia410m.json</span>
+                    (gen_marginal = InferDPT − local-only). Local-only is
+                    ε-independent (0.828). ada-002 is the same shape: local-only
+                    0.839, InferDPT 0.892→0.937, marginal +0.05→+0.10.
+                </p>
+                <div class="plot-frame">
+                    <div class="plot-cap">
+                        <span class="l"
+                            >FIG · 05: extraction disguises the perturbation:
+                            final utility (left) vs what the private channel
+                            actually delivered (right)</span
+                        ><span class="r"
+                            >source: results/dp_sweep_pythia410m.json ·
+                            N=60</span
+                        >
+                    </div>
+                    <div style="display: flex; gap: 14px; flex-wrap: wrap">
+                        <div
+                            id="plot-x"
+                            style="
+                                flex: 1 1 340px;
+                                min-width: 300px;
+                                height: 340px;
+                            "
+                        ></div>
+                        <div
+                            id="plot-x2"
+                            style="
+                                flex: 1 1 340px;
+                                min-width: 300px;
+                                height: 340px;
+                            "
+                        ></div>
+                    </div>
+                    <div class="plot-cap" style="margin: 8px 0 0">
+                        <span class="l">Read</span
+                        ><span
+                            class="r"
+                            style="
+                                text-transform: none;
+                                letter-spacing: 0;
+                                font-size: 11px;
+                            "
+                            ><strong>LEFT (cos → Doc).</strong> The final
+                            InferDPT utility (solid) barely exceeds the
+                            local-only baseline (dashed, X on the true Doc with
+                            <em>no</em> remote output, flat ~0.83); the private
+                            channel adds only a shrinking margin.
+                            <strong
+                                >RIGHT (cos → the non-private remote
+                                generation).</strong
+                            >
+                            The raw perturbed generation Gen_p (dashed,
+                            <span class="mono">u_p_control</span>) is heavily
+                            degraded and ε-dependent (0.55→0.76), yet the
+                            <em>extracted</em> output (solid,
+                            <span class="mono">utility_control</span>) sits well
+                            above it, especially at low ε (0.78 vs 0.55),
+                            because extraction re-grounds on the true Doc and
+                            repairs the damage. Both panels: the utility you see
+                            is mostly the trusted local model, not the private
+                            inference; extraction hides how much the
+                            perturbation destroyed.</span
+                        >
+                    </div>
+                </div>
+                <p class="prose" style="font-size: 12px; opacity: 0.75">
+                    <strong>Not supported:</strong> the stronger claim that
+                    InferDPT is <em>worse</em> than local-only (context
+                    contamination from garbled Gen_p) does not hold on this
+                    metric, the marginal is positive throughout, so even salad
+                    Gen_p carries a little topical signal that nudges
+                    cos(Doc,output) up. A contamination penalty might surface on
+                    a task metric (QA / summarisation) that cosine-to-Doc cannot
+                    see; unproven either way.
+                </p>
+                <p class="prose">
+                    <strong>Conclusion.</strong> X is a utility-only factor that
+                    <em>masks</em> the perturbation: the headline utility mostly
+                    measures the trusted local model re-reading the true Doc,
+                    barely moves with ε or φ, and overstates what the
+                    perturbation + remote channel actually contribute
+                    (+0.05–0.11). The honest privacy↔utility question lives at
+                    <strong>Doc_p</strong>, coherence and leakage, upstream of
+                    X, not in the end-to-end number.
+                </p>
+            </section>
 
-  <!-- ═════ §06 FINDINGS ═════ -->
-  <section id="findings">
-    <header class="section-head">
-      <div class="section-num">§06</div>
-      <h2 class="section-title">Findings</h2>
-      <div class="section-meta">claims · grounds · scope (each judged by an external cross-model gate)</div>
-    </header>
-    <div class="prose">
-      <p><strong>1 · The published mechanism does not reproduce its own Table II; Z(ε) is a utility knob, not a privacy quantity (Supported).</strong> Run on the paper's <em>own</em> ada-002 embeddings with the published Z(ε), the realized candidate set is 13–39% of the vocabulary and Doc_p is word-salad at every ε up to 14. Theorem 2's proof (Appendix C) is the plain exponential-mechanism argument — Δu=1, 0&lt;u≤1 ⇒ ratio ≤ eᵋ — in which Z, the radius, and the noise never appear; Z is a <span class="mono">scipy.curve_fit</span> to the single token "happy" in ada-002 (Appendix B). Grounds: §5.1, <span class="mono">rantext.md</span>. Scope: assumes our reimplementation faithfully matches the public repo.</p>
-      <p><strong>2 · After per-φ radius calibration, ε is a genuine monotone privacy↔coherence lever, but end-to-end utility is ε-flat (Supported).</strong> Holding realized |C_r|≈1%, leakage (overlap, S_w, inv@10, PII-leak, token-MI) and Doc_p coherence rise monotonically with ε, while final utility barely moves (0.90→0.93). Grounds: §5.1. Scope: the lever acts on the perturbation-side / privacy observables; the final number is not responsive.</p>
-      <p><strong>3 · φ is not a utility lever, and anisotropy does not explain the φ tradeoff (Partial).</strong> Final utility is flat (~0.9) across every φ. The coherence↔leakage difference seen <em>across</em> embeddings (ada-002 vs pythia) is <em>not</em> reproduced by the controlled same-matrix raw-vs-centered test — coherence stays flat and the leakage signs reverse — so anisotropy is not sufficient to cause it. Attributing the cross-embedding gap specifically to vocabulary coverage / effective dimension / family is plausible but not yet proven. Grounds: §5.2. Scope: control is N=10, single seed, within-qwen (ε=14 |C_r| unmatched) — the least settled claim here.</p>
-      <p><strong>4 · The extraction model disguises the perturbation (Supported).</strong> A local-only baseline — the trusted model given the true Doc with no remote output — already reaches ~0.83 of the ~0.90 end-to-end utility; the private remote channel adds only +0.05–0.11 (smaller at lower ε), and its raw output (u_p_control) is degraded (0.55–0.76). So the headline utility mostly measures the local model, not private inference. <em>Not</em> claimed: that InferDPT is worse than local-only — the marginal is positive on cos-to-Doc. Grounds: §5.3.</p>
-      <p><strong>5 · What is protectable is set by the vocabulary, not ε (Supported).</strong> With cl100k BPE + cased text a common name is a single token; whether it is dropped (privacy-by-removal) or substituted is decided by vocabulary coverage (ada's 10129 drops names, our 12000 substitutes), independent of ε. Grounds: §5.2.</p>
-    </div>
-  </section>
+            <!-- ═════ §06 FINDINGS ═════ -->
+            <section id="findings">
+                <header class="section-head">
+                    <div class="section-num">§06</div>
+                    <h2 class="section-title">Findings</h2>
+                    <div class="section-meta">
+                        claims · grounds · scope (each judged by an external
+                        cross-model gate)
+                    </div>
+                </header>
+                <div class="prose">
+                    <p>
+                        <strong
+                            >1 · The published mechanism does not reproduce its
+                            own Table II; Z(ε) is a utility parameter, not a
+                            privacy quantity (Supported).</strong
+                        >
+                        Run on the paper's <em>own</em> ada-002 embeddings with
+                        the published Z(ε), the realized candidate set is 13–39%
+                        of the vocabulary and Doc_p is word-salad at every ε up
+                        to 14. Theorem 2's proof (Appendix C) is the plain
+                        exponential-mechanism argument, Δu=1, 0&lt;u≤1 ⇒ ratio ≤
+                        eᵋ, in which Z, the radius, and the noise never appear;
+                        Z is a <span class="mono">scipy.curve_fit</span> to the
+                        single token "happy" in ada-002 (Appendix B). Grounds:
+                        §5.1, <span class="mono">rantext.md</span>. Scope:
+                        assumes our reimplementation faithfully matches the
+                        public repo.
+                    </p>
+                    <p>
+                        <strong
+                            >2 · After per-φ radius calibration, ε is a genuine
+                            monotone privacy↔coherence factor
+                            (Supported).</strong
+                        >
+                        Holding realized |C_r|≈1%, both leakage (overlap, S_w,
+                        inv@10, PII-leak, token-MI) and, the quantity that
+                        actually matters, Doc_p coherence rise monotonically
+                        with ε. End-to-end utility is nearly ε-flat (0.90→0.93),
+                        but <em>not</em> because ε fails to change quality: the
+                        trusted extraction model supplies the utility regardless
+                        of how garbled Doc_p is (Finding 4), so the final number
+                        is blind to what ε moves. The real, ε-responsive quality
+                        is <strong>coherence</strong> on the perturbation side,
+                        not the end-to-end utility. Grounds: §5.1, §5.3.
+                    </p>
+                    <p>
+                        <strong
+                            >3 · φ is not a utility factor, and anisotropy does
+                            not explain the φ tradeoff (Partial).</strong
+                        >
+                        Final utility is flat (~0.9) across every φ. The
+                        coherence↔leakage difference seen
+                        <em>across</em> embeddings (ada-002 vs pythia) is
+                        <em>not</em> reproduced by the controlled same-matrix
+                        raw-vs-centered test, coherence stays flat and the
+                        leakage signs reverse, so anisotropy is not sufficient
+                        to cause it. Attributing the cross-embedding gap
+                        specifically to vocabulary coverage / effective
+                        dimension / family is plausible but not yet proven.
+                        Grounds: §5.2. Scope: control is N=10, single seed,
+                        within-qwen (ε=14 |C_r| unmatched), the least settled
+                        claim here.
+                    </p>
+                    <p>
+                        <strong
+                            >4 · The extraction model disguises the perturbation
+                            (Supported).</strong
+                        >
+                        A local-only baseline, the trusted model given the true
+                        Doc with no remote output, already reaches ~0.83 of the
+                        ~0.90 end-to-end utility; the private remote channel
+                        adds only +0.05–0.11 (smaller at lower ε), and its raw
+                        output (u_p_control) is degraded (0.55–0.76). So the
+                        headline utility mostly measures the local model, not
+                        private inference. <em>Not</em> claimed: that InferDPT
+                        is worse than local-only, the marginal is positive on
+                        cos-to-Doc. Grounds: §5.3.
+                    </p>
+                    <p>
+                        <strong
+                            >5 · What is protectable is set by the vocabulary,
+                            not ε (Supported).</strong
+                        >
+                        With cl100k BPE + cased text a common name is a single
+                        token; whether it is dropped (privacy-by-removal) or
+                        substituted is decided by vocabulary coverage (ada's
+                        10129 drops names, our 12000 substitutes), independent
+                        of ε. Grounds: §5.2.
+                    </p>
+                </div>
+            </section>
 
-  <!-- ═════ §07 ANALYSIS ═════ -->
-  <section id="analysis">
-    <header class="section-head">
-      <div class="section-num">§07</div>
-      <h2 class="section-title">Analysis</h2>
-      <div class="section-meta">why each finding holds — the mechanism behind the numbers</div>
-    </header>
-    <div class="prose">
-      <p><strong>Why the radius must be recalibrated, and why ada-002 salads.</strong> φ enters RANTEXT only through Euclidean distances, and the noise radius = ‖Laplace(Δφ/Z)‖. Z(ε) is fitted to ada-002's "happy" distance scale and saturates for ε≥2, so on any embedding whose distance shell differs the radius over- or under-shoots. On ada-002 itself the radius (~0.6) exceeds the anisotropic inter-token distance (nearest-neighbour ~0.5), so C_r swallows a large slice of V and the score u = 1 − d/radius flattens → near-uniform sampling → salad. Re-fitting Z per φ to a |C_r| target restores a graded candidate set.</p>
-      <p><strong>Why ε works once |C_r| is pinned.</strong> With the radius calibrated the candidate set is fixed, so ε drives only the exponential sharpness exp(ε/2·u): higher ε concentrates probability on the nearest tokens → smaller change → higher coherence and higher leakage. That is why the tradeoff becomes a clean monotone curve only after calibration — ε is a sharpness dial at a fixed operating point, not a radius dial.</p>
-      <p><strong>Why anisotropy is not the lever.</strong> Anisotropy's only role is to set the distance scale — which the radius calibration already absorbs. With |C_r| matched, toggling anisotropy (mean-centering the same matrix) leaves coherence and utility unchanged and slightly lowers leakage; the cross-embedding differences (ada vs pythia) therefore trace to vocabulary coverage and dimensionality, not the shared-direction geometry. inv@10 is consequently not a clean cross-φ privacy metric.</p>
-      <p><strong>Why extraction dominates, and what MI bounds.</strong> X is handed the true Doc, so the final output is mostly the local model re-grounding on the real prefix; the private channel contributes a shrinking increment. On privacy, the per-token channel p(y|x) is analytic, so I(token;replacement) upper-bounds per-token recovery by Fano — but RANTEXT is memoryless while the source is correlated (I(x_i;Y_{1..n}) ≥ I(x_i;Y_i)), so a context-aware LM adversary can exceed it. The measured inv@10 / masked-LM attacks are weak lower bounds, not the worst case. See <span class="mono">docs/research/mi-probes.md</span>.</p>
-    </div>
-  </section>
+            <!-- ═════ §07 ANALYSIS ═════ -->
+            <section id="analysis">
+                <header class="section-head">
+                    <div class="section-num">§07</div>
+                    <h2 class="section-title">Analysis</h2>
+                    <div class="section-meta">
+                        why each finding holds, the mechanism behind the numbers
+                    </div>
+                </header>
+                <div class="prose">
+                    <p>
+                        <strong
+                            >Why the radius must be recalibrated, and why
+                            ada-002 degenerates.</strong
+                        >
+                        φ enters RANTEXT only through Euclidean distances, and
+                        the noise radius = ‖Laplace(Δφ/Z)‖. Z(ε) is fitted to
+                        ada-002's "happy" distance scale and saturates for ε≥2,
+                        so on any embedding whose distance shell differs the
+                        radius over- or under-shoots. On ada-002 itself the
+                        radius (~0.6) exceeds the anisotropic inter-token
+                        distance (nearest-neighbour ~0.5), so C_r swallows a
+                        large slice of V and the score u = 1 − d/radius flattens
+                        → near-uniform sampling → salad. Re-fitting Z per φ to a
+                        |C_r| target restores a graded candidate set.
+                    </p>
+                    <p>
+                        <strong>Why ε works once |C_r| is pinned.</strong> With
+                        the radius calibrated the candidate set is fixed, so ε
+                        drives only the exponential sharpness exp(ε/2·u): higher
+                        ε concentrates probability on the nearest tokens →
+                        smaller change → higher coherence and higher leakage.
+                        That is why the tradeoff becomes a clean monotone curve
+                        only after calibration, ε is a sharpness control at a
+                        fixed operating point, not a radius control.
+                    </p>
+                    <p>
+                        <strong>Why anisotropy is not the factor.</strong>
+                        Anisotropy's only role is to set the distance scale,
+                        which the radius calibration already absorbs. With |C_r|
+                        matched, toggling anisotropy (mean-centering the same
+                        matrix) leaves coherence and utility unchanged and
+                        slightly lowers leakage; the cross-embedding differences
+                        (ada vs pythia) therefore trace to vocabulary coverage
+                        and dimensionality, not the shared-direction geometry.
+                        inv@10 is consequently not a clean cross-φ privacy
+                        metric.
+                    </p>
+                    <p>
+                        <strong
+                            >Why extraction dominates, and what MI
+                            bounds.</strong
+                        >
+                        X is handed the true Doc, so the final output is mostly
+                        the local model re-grounding on the real prefix; the
+                        private channel contributes a shrinking increment. On
+                        privacy, the per-token channel p(y|x) is analytic, so
+                        I(token;replacement) upper-bounds per-token recovery by
+                        Fano, but RANTEXT is memoryless while the source is
+                        correlated (I(x_i;Y_{1..n}) ≥ I(x_i;Y_i)), so a
+                        context-aware LM adversary can exceed it. The measured
+                        inv@10 / masked-LM attacks are weak lower bounds, not
+                        the worst case. See
+                        <span class="mono">docs/research/mi-probes.md</span>.
+                    </p>
+                </div>
+            </section>
 
-  <!-- ═════ §08 DISCUSSION ═════ -->
-  <section id="discussion">
-    <header class="section-head">
-      <div class="section-num">§08</div>
-      <h2 class="section-title">Discussion</h2>
-      <div class="section-meta">what the scheme buys, design implications, limitations, next</div>
-    </header>
-    <div class="prose">
-      <p><strong>What the scheme actually buys.</strong> At a fair operating point the privacy↔coherence tradeoff <em>is</em> tunable by ε at the Doc_p level, but the end-to-end utility is dominated by the trusted local extraction model, so the headline utility overstates the value of the private remote channel (a +0.05–0.11 increment over local-only). The honest privacy↔utility question therefore lives at Doc_p — coherence and leakage — not in the final number.</p>
-      <p><strong>Design implications.</strong> (a) Z must be calibrated per embedding; the paper's fixed constants do not transfer and silently degenerate. (b) φ choice is second-order — pick one whose distance scale is calibratable; anisotropy/isotropy is not a privacy dial. (c) Always report a local-only baseline when claiming utility, or you are measuring X, not the mechanism. (d) What is protectable is governed by the vocabulary and OOV handling, not by ε — RANTEXT has no sensitivity detector, so in-vocabulary sensitive content leaks at any utility-preserving ε.</p>
-      <p><strong>Limitations.</strong> Single seed throughout; N=60 for the main sweeps, N=10 for the anisotropy control (within-qwen, ε=14 |C_r| unmatched). MAUVE is invalid at this corpus size (k-means needs ≥234 points) and is excluded. Utility is SimCSE cos(Doc, output), a proxy — a task-level metric could expose effects (e.g. context contamination) that cosine misses. inv@10 assumes the adversary knows φ and is weak relative to a context-aware LM reconstruction. The non-reproducibility finding assumes our reimplementation matches the public repo.</p>
-      <p><strong>Next.</strong> N≥30 with multiple seeds and CIs for the anisotropy control, plus a dose-response (subtract α·mean for several α); a context-aware LM reconstruction attack (the real worst case) and a task-level utility metric, both reported against the local-only baseline.</p>
-    </div>
-  </section>
+            <!-- ═════ §08 DISCUSSION ═════ -->
+            <section id="discussion">
+                <header class="section-head">
+                    <div class="section-num">§08</div>
+                    <h2 class="section-title">Discussion</h2>
+                    <div class="section-meta">
+                        what the scheme provides, design implications,
+                        limitations, next
+                    </div>
+                </header>
+                <div class="prose">
+                    <p>
+                        <strong>What the scheme actually provides.</strong> At a
+                        fair operating point the privacy↔coherence tradeoff
+                        <em>is</em> tunable by ε at the Doc_p level, but the
+                        end-to-end utility is dominated by the trusted local
+                        extraction model, so the headline utility overstates the
+                        value of the private remote channel (a +0.05–0.11
+                        increment over local-only). The honest privacy↔utility
+                        question therefore lives at Doc_p, coherence and
+                        leakage, not in the final number.
+                    </p>
+                    <p>
+                        <strong>Design implications.</strong> (a) Z must be
+                        calibrated per embedding; the paper's fixed constants do
+                        not transfer and silently degenerate. (b) φ choice is
+                        second-order, pick one whose distance scale is
+                        calibratable; anisotropy/isotropy is not a privacy
+                        control. (c) Always report a local-only baseline when
+                        claiming utility, or you are measuring X, not the
+                        mechanism. (d) What is protectable is governed by the
+                        vocabulary and OOV handling, not by ε, RANTEXT has no
+                        sensitivity detector, so in-vocabulary sensitive content
+                        leaks at any utility-preserving ε.
+                    </p>
+                    <p>
+                        <strong>Limitations.</strong> Single seed throughout;
+                        N=60 for the main sweeps, N=10 for the anisotropy
+                        control (within-qwen, ε=14 |C_r| unmatched). MAUVE is
+                        invalid at this corpus size (k-means needs ≥234 points)
+                        and is excluded. Utility is SimCSE cos(Doc, output), a
+                        proxy, a task-level metric could expose effects (e.g.
+                        context contamination) that cosine misses. inv@10
+                        assumes the adversary knows φ and is weak relative to a
+                        context-aware LM reconstruction. The non-reproducibility
+                        finding assumes our reimplementation matches the public
+                        repo.
+                    </p>
+                    <p>
+                        <strong>Next.</strong> N≥30 with multiple seeds and CIs
+                        for the anisotropy control, plus a dose-response
+                        (subtract α·mean for several α); a context-aware LM
+                        reconstruction attack (the real worst case) and a
+                        task-level utility metric, both reported against the
+                        local-only baseline.
+                    </p>
+                </div>
+            </section>
 
-  <!-- ─── FOOTER ─── -->
-  <footer class="colophon" style="margin-top:48px;display:grid;grid-template-columns:repeat(3,1fr);gap:24px;">
-    <div>
-      <h5>Code &amp; data</h5>
-      <ul>
-        <li><code>src/inferdpt/rantext.py</code> · RANTEXT mechanism</li>
-        <li><code>src/inferdpt/probes/{leakage,utility,mi}.py</code></li>
-        <li><code>src/inferdpt/attacks/{embedding_inversion,mask_bert}.py</code></li>
-        <li><code>src/inferdpt/{diagnostics,eval}.py</code></li>
-        <li><code>results/dp_sweep_{ada002,pythia410m}.json</code> · §5.1–5.2</li>
-      </ul>
-    </div>
-    <div>
-      <h5>Companion notes</h5>
-      <ul>
-        <li><code>docs/research/rantext.md</code></li>
-        <li><code>docs/research/mi-probes.md</code></li>
-        <li><code>docs/perturbation-sota.md</code></li>
-      </ul>
-    </div>
-    <div>
-      <h5>External references</h5>
-      <ul>
-        <li>InferDPT · Tong et al. · <a href="https://arxiv.org/abs/2310.12214">arXiv 2310.12214</a></li>
-        <li>Calibrated multivariate perturbations · Feyisetan et al. 2020</li>
-        <li>Usable information (V-information) · Xu et al. 2020</li>
-        <li>DP as a mutual information constraint · Cuff &amp; Yu 2016</li>
-      </ul>
-    </div>
-  </footer>
-</div>
+            <!-- ─── FOOTER ─── -->
+            <footer class="colophon" style="margin-top: 48px;">
+                <div>
+                    <h5>Code</h5>
+                    <ul>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/rantext.py">src/inferdpt/rantext.py</a> · RANTEXT + per-φ Z calibration</li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/probes/leakage.py">probes/leakage.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/probes/utility.py">probes/utility.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/probes/mi.py">probes/mi.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/attacks/embedding_inversion.py">attacks/embedding_inversion.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/attacks/mask_bert.py">attacks/mask_bert.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/diagnostics.py">diagnostics.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/inferdpt/eval.py">eval.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/dp_sweep.py">scripts/dp_sweep.py</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/dp_sweep_ada002.json">results/dp_sweep_ada002.json</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/dp_sweep_pythia410m.json">results/dp_sweep_pythia410m.json</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>Notes</h5>
+                    <ul>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/research/rantext.md">rantext.md</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/research/embedding-map.md">embedding-map.md</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/research/mi-probes.md">mi-probes.md</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/research/perturbation-sota.md">perturbation-sota.md</a></li>
+                    </ul>
+                </div>
+                <div>
+                    <h5>References</h5>
+                    <ul>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md">InferDPT · Tong et al. 2023</a> · <a href="https://arxiv.org/abs/2310.12214">arXiv 2310.12214</a></li>
+                        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/research-wiki/papers/feyisetan2019_privacy_utilitypreserving_textual.md">Calibrated multivariate perturbations · Feyisetan et al. 2020</a> · <a href="https://arxiv.org/abs/1910.08902">arXiv 1910.08902</a></li>
+                        <li>Usable information (V-information) · Xu et al. 2020 · <a href="https://arxiv.org/abs/2002.10689">arXiv 2002.10689</a></li>
+                    </ul>
+                </div>
+            </footer>
+        </div>
 
-<script src="js/plotly-basic.min.js"></script>
-<script>
-(function () {
-  if (typeof Plotly === "undefined") return;
-  var INK = "#14181c", GRID = "rgba(20,24,28,0.08)";
-  var font = {family:"'JetBrains Mono', monospace", size:11, color:INK};
-  var base = {paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)", font:font};
-  var C = {emb:"#b55831", emb2:"#c98a3e", matrix:"#2f5e87", x1:"#2f7d8a", x2:"#6a4c93", floor:"#999"};
+        <script src="js/nav.js"></script>
+        <script src="js/plotly-basic.min.js"></script>
+        <script>
+            (function () {
+                if (typeof Plotly === "undefined") return;
+                var INK = "#14181c",
+                    GRID = "rgba(20,24,28,0.08)";
+                var font = {
+                    family: "'JetBrains Mono', monospace",
+                    size: 11,
+                    color: INK,
+                };
+                var base = {
+                    paper_bgcolor: "rgba(0,0,0,0)",
+                    plot_bgcolor: "rgba(0,0,0,0)",
+                    font: font,
+                };
+                // Standardized plot palette (grilled scheme):
+                //   privacy/leakage = amber family, utility/coherence = navy family (see LEAKCOL/UTILCOL),
+                //   ε = amber sequential ramp (epsCol), entity comparisons = plum + slate, baseline = gray.
+                var C = {
+                    emb: "#7a5aa8", // violet — anisotropic entity (FIG.04 ada, raw)
+                    matrix: "#57a94a", // green  — isotropic entity (FIG.04 pythia, centered)
+                    x2: "#5e4a7a", // plum  — primary series (FIG.05)
+                    x1: "#8a8a8a", // gray  — baseline series (FIG.05, dashed)
+                    floor: "#999",
+                };
 
-  // FIG.03 — ε sweep, 3 panels per embedding map, toggled. Both at per-φ Z calibrated to |C_r|≈1%, N=60.
-  // data: results/dp_sweep_{pythia410m,ada002}.json
-  var EPS = [2,6,10,14];
-  var FIG03 = {
-    pythia: {
-      src: "source: results/dp_sweep_pythia410m.json · pythia-410m (isotropic, aniso 0.011) · 60 docs · single seed",
-      leak: {"overlap":[0.219,0.442,0.681,0.781], "S_w":[0.204,0.403,0.574,0.662], "PII leak":[0.129,0.246,0.478,0.572], "inversion@10":[0.666,0.770,0.912,0.991]},
-      util: {"utility (SimCSE)":[0.899,0.901,0.929,0.933], "utility_control (SimCSE)":[0.784,0.793,0.803,0.817], "coherence (Gen_p)":[0.535,0.589,0.716,0.741], "utility (reranker)":[0.998,0.983,1.0,1.0]},
-      diag: {"candidate set %":[1.2,1.1,0.7,0.8], "replacement cos":[0.514,0.714,0.891,0.965], "token MI (bits)":[4.644,4.791,5.024,5.196]}
-    },
-    ada: {
-      src: "source: results/dp_sweep_ada002.json · ada-002 (anisotropic, aniso 0.79, paper φ) · 60 docs · single seed",
-      leak: {"overlap":[0.135,0.283,0.455,0.56], "S_w":[0.179,0.372,0.604,0.721], "PII leak":[0.046,0.086,0.114,0.139], "inversion@10":[0.452,0.59,0.79,0.933]},
-      util: {"utility (SimCSE)":[0.892,0.894,0.921,0.937], "utility_control (SimCSE)":[0.782,0.775,0.795,0.792], "coherence (Gen_p)":[0.389,0.448,0.578,0.652], "utility (reranker)":[0.998,0.998,0.999,1.0]},
-      diag: {"candidate set %":[0.8,1.4,1.4,1.3], "replacement cos":[0.905,0.935,0.967,0.99], "token MI (bits)":[4.636,4.758,4.99,5.187]}
-    }
-  };
-  var LEAKCOL = {"overlap":"#b55831","S_w":"#c98a3e","PII leak":"#6a4c93","inversion@10":"#8c3b3b"};
-  var UTILCOL = {"utility (SimCSE)":"#2f7d8a","utility_control (SimCSE)":"#2f5e87","coherence (Gen_p)":"#b55831","utility (reranker)":"#c98a3e"};
-  var epsCol = ["#cfe8ef","#9ec9d6","#5fa3b5","#2f7d8a"];
-  function linePanel(div, title, series, colors, yrange) {
-    var tr = Object.keys(series).map(function (k) {
-      return {x:EPS, y:series[k], name:k, mode:"lines+markers", line:{color:colors[k],width:2},
-        marker:{color:colors[k],size:7}, hovertemplate:k+"<br>ε=%{x}<br>%{y:.3f}<extra></extra>"};
-    });
-    Plotly.react(div, tr, Object.assign({height:320, margin:{t:34,r:16,b:74,l:54},
-      title:{text:title, font:{size:13,color:INK}, x:0, xanchor:"left"},
-      xaxis:{title:"ε", tickvals:EPS, gridcolor:GRID, zeroline:false},
-      yaxis:{range:yrange, gridcolor:GRID, zeroline:false},
-      legend:{orientation:"h", y:-0.30, x:0.5, xanchor:"center", font:{size:10}}}, base),
-      {displayModeBar:false, responsive:true});
-  }
-  function diagPanel(div, DG) {
-    var cats = Object.keys(DG), mx = {};
-    cats.forEach(function (c) { mx[c] = Math.max.apply(null, DG[c]); });
-    var dtr = EPS.map(function (e, i) {
-      return {type:"bar", name:"ε="+e, x:cats, y:cats.map(function (c) { return DG[c][i]/mx[c]; }),
-        customdata:cats.map(function (c) { return DG[c][i]; }), marker:{color:epsCol[i]},
-        hovertemplate:"ε="+e+"<br>%{x}<br>raw %{customdata:.3f} (norm %{y:.2f})<extra></extra>"};
-    });
-    Plotly.react(div, dtr, Object.assign({height:340, barmode:"group", margin:{t:34,r:16,b:74,l:54},
-      title:{text:"mechanism diagnostics  (each normalised to its own max; ε bars within each cluster)", font:{size:13,color:INK}, x:0, xanchor:"left"},
-      xaxis:{gridcolor:GRID}, yaxis:{title:"value ÷ metric max", range:[0,1.05], gridcolor:GRID, zeroline:false},
-      legend:{orientation:"h", y:-0.30, x:0.5, xanchor:"center", font:{size:10}}}, base), {displayModeBar:false, responsive:true});
-  }
-  function drawFig03(model) {
-    var d = FIG03[model];
-    linePanel("plot-eps-leak", "leakage vs ε  (↓ more private)", d.leak, LEAKCOL, [0,1.05]);
-    linePanel("plot-eps-util", "utility vs ε  (↑ more faithful)", d.util, UTILCOL, [0.35,1.04]);
-    diagPanel("plot-eps-diag", d.diag);
-    var src = document.getElementById("fig03-src"); if (src) src.textContent = d.src;
-    document.querySelectorAll(".fig03-toggle button").forEach(function (b) {
-      var on = b.dataset.model === model;
-      b.style.background = on ? INK : "transparent";
-      b.style.color = on ? "#fff" : INK;
-      b.style.fontWeight = on ? "600" : "400";
-    });
-  }
-  document.querySelectorAll(".fig03-toggle button").forEach(function (b) {
-    b.addEventListener("click", function () { drawFig03(b.dataset.model); });
-  });
-  drawFig03("pythia");  // ada-002 hidden until toggled
+                // FIG.03 — ε sweep, 3 panels per embedding map, toggled. Both at per-φ Z calibrated to |C_r|≈1%, N=60.
+                // data: results/dp_sweep_{pythia410m,ada002}.json
+                var EPS = [2, 6, 10, 14];
+                var FIG03 = {
+                    pythia: {
+                        src: "source: results/dp_sweep_pythia410m.json · pythia-410m (isotropic, aniso 0.011) · 60 docs · single seed",
+                        leak: {
+                            overlap: [0.219, 0.442, 0.681, 0.781],
+                            S_w: [0.204, 0.403, 0.574, 0.662],
+                            "PII leak": [0.129, 0.246, 0.478, 0.572],
+                            "inversion@10": [0.666, 0.77, 0.912, 0.991],
+                        },
+                        util: {
+                            "utility (SimCSE)": [0.899, 0.901, 0.929, 0.933],
+                            "utility_control (SimCSE)": [
+                                0.784, 0.793, 0.803, 0.817,
+                            ],
+                            "coherence (Gen_p)": [0.535, 0.589, 0.716, 0.741],
+                            "utility (reranker)": [0.998, 0.983, 1.0, 1.0],
+                        },
+                        diag: {
+                            "candidate set %": [1.2, 1.1, 0.7, 0.8],
+                            "replacement cos": [0.514, 0.714, 0.891, 0.965],
+                            "token MI (bits)": [4.644, 4.791, 5.024, 5.196],
+                        },
+                    },
+                    ada: {
+                        src: "source: results/dp_sweep_ada002.json · ada-002 (anisotropic, aniso 0.79, paper φ) · 60 docs · single seed",
+                        leak: {
+                            overlap: [0.135, 0.283, 0.455, 0.56],
+                            S_w: [0.179, 0.372, 0.604, 0.721],
+                            "PII leak": [0.046, 0.086, 0.114, 0.139],
+                            "inversion@10": [0.452, 0.59, 0.79, 0.933],
+                        },
+                        util: {
+                            "utility (SimCSE)": [0.892, 0.894, 0.921, 0.937],
+                            "utility_control (SimCSE)": [
+                                0.782, 0.775, 0.795, 0.792,
+                            ],
+                            "coherence (Gen_p)": [0.389, 0.448, 0.578, 0.652],
+                            "utility (reranker)": [0.998, 0.998, 0.999, 1.0],
+                        },
+                        diag: {
+                            "candidate set %": [0.8, 1.4, 1.4, 1.3],
+                            "replacement cos": [0.905, 0.935, 0.967, 0.99],
+                            "token MI (bits)": [4.636, 4.758, 4.99, 5.187],
+                        },
+                    },
+                };
+                var LEAKCOL = {
+                    overlap: "#a3460a",
+                    S_w: "#cf7a2e",
+                    "PII leak": "#6e4a2b",
+                    "inversion@10": "#8c3b3b",
+                };
+                var UTILCOL = {
+                    "utility (SimCSE)": "#2a5092",
+                    "utility_control (SimCSE)": "#5b86b5",
+                    "coherence (Gen_p)": "#2e6a5e",
+                    "utility (reranker)": "#3a3f6b",
+                };
+                var epsCol = ["#cfe0f0", "#8fb0d6", "#4f7bb0", "#2a5092"];
+                function linePanel(div, title, series, colors, yrange) {
+                    var tr = Object.keys(series).map(function (k) {
+                        return {
+                            x: EPS,
+                            y: series[k],
+                            name: k,
+                            mode: "lines+markers",
+                            line: { color: colors[k], width: 2 },
+                            marker: { color: colors[k], size: 7 },
+                            hovertemplate:
+                                k + "<br>ε=%{x}<br>%{y:.3f}<extra></extra>",
+                        };
+                    });
+                    Plotly.react(
+                        div,
+                        tr,
+                        Object.assign(
+                            {
+                                height: 320,
+                                margin: { t: 34, r: 16, b: 74, l: 54 },
+                                title: {
+                                    text: title,
+                                    font: { size: 13, color: INK },
+                                    x: 0,
+                                    xanchor: "left",
+                                },
+                                xaxis: {
+                                    title: "ε",
+                                    tickvals: EPS,
+                                    gridcolor: GRID,
+                                    zeroline: false,
+                                },
+                                yaxis: {
+                                    range: yrange,
+                                    gridcolor: GRID,
+                                    zeroline: false,
+                                },
+                                legend: {
+                                    orientation: "h",
+                                    y: -0.3,
+                                    x: 0.5,
+                                    xanchor: "center",
+                                    font: { size: 10 },
+                                },
+                            },
+                            base,
+                        ),
+                        { displayModeBar: false, responsive: true },
+                    );
+                }
+                function diagPanel(div, DG) {
+                    var cats = Object.keys(DG),
+                        mx = {};
+                    cats.forEach(function (c) {
+                        mx[c] = Math.max.apply(null, DG[c]);
+                    });
+                    var dtr = EPS.map(function (e, i) {
+                        return {
+                            type: "bar",
+                            name: "ε=" + e,
+                            x: cats,
+                            y: cats.map(function (c) {
+                                return DG[c][i] / mx[c];
+                            }),
+                            customdata: cats.map(function (c) {
+                                return DG[c][i];
+                            }),
+                            marker: { color: epsCol[i] },
+                            hovertemplate:
+                                "ε=" +
+                                e +
+                                "<br>%{x}<br>raw %{customdata:.3f} (norm %{y:.2f})<extra></extra>",
+                        };
+                    });
+                    Plotly.react(
+                        div,
+                        dtr,
+                        Object.assign(
+                            {
+                                height: 340,
+                                barmode: "group",
+                                margin: { t: 34, r: 16, b: 74, l: 54 },
+                                title: {
+                                    text: "mechanism diagnostics  (each normalised to its own max; ε bars within each cluster)",
+                                    font: { size: 13, color: INK },
+                                    x: 0,
+                                    xanchor: "left",
+                                },
+                                xaxis: { gridcolor: GRID },
+                                yaxis: {
+                                    title: "value ÷ metric max",
+                                    range: [0, 1.05],
+                                    gridcolor: GRID,
+                                    zeroline: false,
+                                },
+                                legend: {
+                                    orientation: "h",
+                                    y: -0.3,
+                                    x: 0.5,
+                                    xanchor: "center",
+                                    font: { size: 10 },
+                                },
+                            },
+                            base,
+                        ),
+                        { displayModeBar: false, responsive: true },
+                    );
+                }
+                function drawFig03(model) {
+                    var d = FIG03[model];
+                    linePanel(
+                        "plot-eps-leak",
+                        "leakage vs ε  (↓ more private)",
+                        d.leak,
+                        LEAKCOL,
+                        [0, 1.05],
+                    );
+                    linePanel(
+                        "plot-eps-util",
+                        "utility vs ε  (↑ more faithful)",
+                        d.util,
+                        UTILCOL,
+                        [0.35, 1.04],
+                    );
+                    diagPanel("plot-eps-diag", d.diag);
+                    var src = document.getElementById("fig03-src");
+                    if (src) src.textContent = d.src;
+                    document
+                        .querySelectorAll(".fig03-toggle button")
+                        .forEach(function (b) {
+                            var on = b.dataset.model === model;
+                            b.style.background = on ? INK : "transparent";
+                            b.style.color = on ? "#fff" : INK;
+                            b.style.fontWeight = on ? "600" : "400";
+                        });
+                }
+                document
+                    .querySelectorAll(".fig03-toggle button")
+                    .forEach(function (b) {
+                        b.addEventListener("click", function () {
+                            drawFig03(b.dataset.model);
+                        });
+                    });
+                drawFig03("pythia"); // ada-002 hidden until toggled
 
-  // FIG.04 — anisotropy trade at matched |C_r|≈1%, ε=6 (ada-002 vs pythia-410m).
-  // FIG.04 — two panels: LEFT confounded (ada vs pythia, ε=6); RIGHT controlled (qwen raw vs centered).
-  var phiMetrics = ["anisotropy","coherence","inv@10 ↓","PII-leak ↓","utility"];
-  function phiPanel(div, title, aniso, iso, anisoName, isoName) {
-    Plotly.newPlot(div, [
-      {x:phiMetrics, y:aniso, name:anisoName, type:"bar", marker:{color:C.emb},
-        hovertemplate:anisoName+"<br>%{x}=%{y:.3f}<extra></extra>"},
-      {x:phiMetrics, y:iso, name:isoName, type:"bar", marker:{color:C.matrix},
-        hovertemplate:isoName+"<br>%{x}=%{y:.3f}<extra></extra>"}
-    ], Object.assign({height:380, barmode:"group", margin:{t:30,r:12,b:72,l:44},
-      title:{text:title, font:{size:12,color:INK}, x:0, xanchor:"left"},
-      xaxis:{gridcolor:GRID}, yaxis:{title:"value", range:[0,1.0], gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
-      legend:{orientation:"h", y:-0.22, x:0.5, xanchor:"center", font:{size:9}}}, base),
-      {displayModeBar:false, responsive:true});
-  }
-  // LEFT — confounded: different embeddings (ε=6)
-  phiPanel("plot-phi", "confounded — two different embeddings (ε=6)",
-    [0.788,0.448,0.590,0.086,0.894], [0.011,0.589,0.770,0.246,0.901],
-    "ada-002 (anisotropic 0.79)", "pythia-410m (isotropic 0.01)");
-  // RIGHT — controlled: same matrix ±anisotropy (mean ε=2/6/10, matched |C_r|)
-  phiPanel("plot-phi-ctrl", "controlled — same matrix, ±anisotropy (mean ε=2/6/10)",
-    [0.613,0.500,0.517,0.258,0.898], [0.000,0.455,0.327,0.121,0.897],
-    "qwen raw (anisotropic 0.61)", "qwen centered (isotropic 0.00)");
+                // FIG.04 — anisotropy trade at matched |C_r|≈1%, ε=6 (ada-002 vs pythia-410m).
+                // FIG.04 — two panels: LEFT confounded (ada vs pythia, ε=6); RIGHT controlled (qwen raw vs centered).
+                var phiMetrics = [
+                    "anisotropy",
+                    "coherence",
+                    "inv@10 ↓",
+                    "PII-leak ↓",
+                    "utility",
+                ];
+                function phiPanel(div, title, aniso, iso, anisoName, isoName) {
+                    Plotly.newPlot(
+                        div,
+                        [
+                            {
+                                x: phiMetrics,
+                                y: aniso,
+                                name: anisoName,
+                                type: "bar",
+                                marker: { color: C.emb },
+                                hovertemplate:
+                                    anisoName +
+                                    "<br>%{x}=%{y:.3f}<extra></extra>",
+                            },
+                            {
+                                x: phiMetrics,
+                                y: iso,
+                                name: isoName,
+                                type: "bar",
+                                marker: { color: C.matrix },
+                                hovertemplate:
+                                    isoName +
+                                    "<br>%{x}=%{y:.3f}<extra></extra>",
+                            },
+                        ],
+                        Object.assign(
+                            {
+                                height: 380,
+                                barmode: "group",
+                                margin: { t: 30, r: 12, b: 72, l: 44 },
+                                title: {
+                                    text: title,
+                                    font: { size: 12, color: INK },
+                                    x: 0,
+                                    xanchor: "left",
+                                },
+                                xaxis: { gridcolor: GRID },
+                                yaxis: {
+                                    title: "value",
+                                    range: [0, 1.0],
+                                    gridcolor: GRID,
+                                    zeroline: true,
+                                    zerolinecolor: GRID,
+                                },
+                                legend: {
+                                    orientation: "h",
+                                    y: -0.22,
+                                    x: 0.5,
+                                    xanchor: "center",
+                                    font: { size: 9 },
+                                },
+                            },
+                            base,
+                        ),
+                        { displayModeBar: false, responsive: true },
+                    );
+                }
+                // LEFT — confounded: different embeddings (ε=6)
+                phiPanel(
+                    "plot-phi",
+                    "confounded — two different embeddings (ε=6)",
+                    [0.788, 0.448, 0.59, 0.086, 0.894],
+                    [0.011, 0.589, 0.77, 0.246, 0.901],
+                    "ada-002 (anisotropic 0.79)",
+                    "pythia-410m (isotropic 0.01)",
+                );
+                // RIGHT — controlled: same matrix ±anisotropy (mean ε=2/6/10, matched |C_r|)
+                phiPanel(
+                    "plot-phi-ctrl",
+                    "controlled — same matrix, ±anisotropy (mean ε=2/6/10)",
+                    [0.613, 0.5, 0.517, 0.258, 0.898],
+                    [0.0, 0.455, 0.327, 0.121, 0.897],
+                    "qwen raw (anisotropic 0.61)",
+                    "qwen centered (isotropic 0.00)",
+                );
 
-  // FIG.05 — extraction disguises perturbation: two panels vs ε (pythia-410m, N=60).
-  var xEPS = [2,6,10,14];
-  function xPanel(div, title, ytitle, solidN, solidY, dashN, dashY, yr) {
-    Plotly.newPlot(div, [
-      {x:xEPS, y:solidY, name:solidN, mode:"lines+markers", line:{color:C.x2,width:2}, marker:{color:C.x2,size:7},
-        hovertemplate:solidN+"<br>ε=%{x}: %{y:.3f}<extra></extra>"},
-      {x:xEPS, y:dashY, name:dashN, mode:"lines+markers", line:{color:C.x1,width:2,dash:"dash"}, marker:{color:C.x1,size:7},
-        hovertemplate:dashN+"<br>ε=%{x}: %{y:.3f}<extra></extra>"}
-    ], Object.assign({height:340, margin:{t:30,r:12,b:72,l:52},
-      title:{text:title, font:{size:12,color:INK}, x:0, xanchor:"left"},
-      xaxis:{title:"ε", tickvals:xEPS, gridcolor:GRID, zeroline:false},
-      yaxis:{title:ytitle, range:yr, gridcolor:GRID, zeroline:false},
-      legend:{orientation:"h", y:-0.30, x:0.5, xanchor:"center", font:{size:9}}}, base),
-      {displayModeBar:false, responsive:true});
-  }
-  // LEFT — final utility (cos → Doc): extraction dominates
-  xPanel("plot-x", "final utility (cos → Doc): extraction dominates", "cos(Doc, ·)",
-    "InferDPT (Doc + Gen_p)", [0.899,0.901,0.929,0.933],
-    "local-only (Doc alone)", [0.827,0.828,0.828,0.828], [0.75,0.98]);
-  // RIGHT — vs the non-private generation (cos → control): extraction repairs the channel
-  xPanel("plot-x2", "vs non-private generation (cos → control)", "cos(control, ·)",
-    "extracted output (utility_control)", [0.784,0.793,0.803,0.817],
-    "Gen_p, raw channel (u_p_control)", [0.553,0.619,0.713,0.762], [0.50,0.90]);
-})();
-</script>
-</body>
+                // FIG.05 — extraction disguises perturbation: two panels vs ε (pythia-410m, N=60).
+                var xEPS = [2, 6, 10, 14];
+                function xPanel(
+                    div,
+                    title,
+                    ytitle,
+                    solidN,
+                    solidY,
+                    dashN,
+                    dashY,
+                    yr,
+                ) {
+                    Plotly.newPlot(
+                        div,
+                        [
+                            {
+                                x: xEPS,
+                                y: solidY,
+                                name: solidN,
+                                mode: "lines+markers",
+                                line: { color: C.x2, width: 2 },
+                                marker: { color: C.x2, size: 7 },
+                                hovertemplate:
+                                    solidN +
+                                    "<br>ε=%{x}: %{y:.3f}<extra></extra>",
+                            },
+                            {
+                                x: xEPS,
+                                y: dashY,
+                                name: dashN,
+                                mode: "lines+markers",
+                                line: { color: C.x1, width: 2, dash: "dash" },
+                                marker: { color: C.x1, size: 7 },
+                                hovertemplate:
+                                    dashN +
+                                    "<br>ε=%{x}: %{y:.3f}<extra></extra>",
+                            },
+                        ],
+                        Object.assign(
+                            {
+                                height: 340,
+                                margin: { t: 30, r: 12, b: 72, l: 52 },
+                                title: {
+                                    text: title,
+                                    font: { size: 12, color: INK },
+                                    x: 0,
+                                    xanchor: "left",
+                                },
+                                xaxis: {
+                                    title: "ε",
+                                    tickvals: xEPS,
+                                    gridcolor: GRID,
+                                    zeroline: false,
+                                },
+                                yaxis: {
+                                    title: ytitle,
+                                    range: yr,
+                                    gridcolor: GRID,
+                                    zeroline: false,
+                                },
+                                legend: {
+                                    orientation: "h",
+                                    y: -0.3,
+                                    x: 0.5,
+                                    xanchor: "center",
+                                    font: { size: 9 },
+                                },
+                            },
+                            base,
+                        ),
+                        { displayModeBar: false, responsive: true },
+                    );
+                }
+                // LEFT — final utility (cos → Doc): extraction dominates
+                xPanel(
+                    "plot-x",
+                    "final utility (cos → Doc): extraction dominates",
+                    "cos(Doc, ·)",
+                    "InferDPT (Doc + Gen_p)",
+                    [0.899, 0.901, 0.929, 0.933],
+                    "local-only (Doc alone)",
+                    [0.827, 0.828, 0.828, 0.828],
+                    [0.75, 0.98],
+                );
+                // RIGHT — vs the non-private generation (cos → control): extraction repairs the channel
+                xPanel(
+                    "plot-x2",
+                    "vs non-private generation (cos → control)",
+                    "cos(control, ·)",
+                    "extracted output (utility_control)",
+                    [0.784, 0.793, 0.803, 0.817],
+                    "Gen_p, raw channel (u_p_control)",
+                    [0.553, 0.619, 0.713, 0.762],
+                    [0.5, 0.9],
+                );
+            })();
+        </script>
+    </body>
 </html>
