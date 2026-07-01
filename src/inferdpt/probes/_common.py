@@ -90,21 +90,24 @@ def _simcse():
         import torch
         from transformers import AutoModel, AutoTokenizer
 
-        torch.set_num_threads(__import__("os").cpu_count() or 4)
+        # GPU when available (host `.venv` runs on the ROCm GPU); CPU fallback otherwise.
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        if device == "cpu":
+            torch.set_num_threads(__import__("os").cpu_count() or 4)
         tok = AutoTokenizer.from_pretrained(SIMCSE_MODEL)
-        mdl = AutoModel.from_pretrained(SIMCSE_MODEL).eval()
-        _SIMCSE = (tok, mdl, torch)
+        mdl = AutoModel.from_pretrained(SIMCSE_MODEL).eval().to(device)
+        _SIMCSE = (tok, mdl, torch, device)
     return _SIMCSE
 
 
-def simcse_embed(texts: list[str]) -> np.ndarray:
+def simcse_embed(texts: list[str], *, batch: int = 64) -> np.ndarray:
     """SimCSE sentence embeddings (CLS pooling, unit-normalised) — the utility cosine scorer."""
-    tok, mdl, torch = _simcse()
+    tok, mdl, torch, device = _simcse()
     out = []
     with torch.no_grad():
-        for i in range(0, len(texts), 16):
-            enc = tok(texts[i:i + 16], padding=True, truncation=True, max_length=256,
-                      return_tensors="pt")
+        for i in range(0, len(texts), batch):
+            enc = tok(texts[i:i + batch], padding=True, truncation=True, max_length=256,
+                      return_tensors="pt").to(device)
             out.append(mdl(**enc).last_hidden_state[:, 0].cpu().numpy())  # [CLS]
     M = np.concatenate(out, 0).astype(np.float32)
     return M / (np.linalg.norm(M, axis=1, keepdims=True) + 1e-8)

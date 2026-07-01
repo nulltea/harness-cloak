@@ -6,7 +6,7 @@ idea_id: "idea:llm-matrix-phi"
 verdict: no
 confidence: high
 date: ""
-hardware: "ROCm container (matrix build) + API (gen/extract/scorer)"
+hardware: "host .venv GPU (matrix build) + API (gen/extract/scorer)"
 duration: ""
 provenance: "src/inferdpt/eval.py + results/e2e_ab.json; diagnostics.py"
 added: 2026-06-29T13:33:58Z

@@ -106,7 +106,7 @@ if __name__ == "__main__":
         def surfaces(self, t):
             return t.split()
 
-    p = Perturber(ve, _NoTok(), noise_scale=0.5)
+    p = Perturber(ve, _NoTok())
     words = ve.vocab[:12]
     lo = token_channel_mi(p, words, 0.5, runs=80)["mi_bits"]
     hi = token_channel_mi(p, words, 12.0, runs=80)["mi_bits"]

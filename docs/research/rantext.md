@@ -2,8 +2,9 @@
 type: research
 status: current
 created: 2026-06-29
-updated: 2026-06-29
-tags: [inferdpt, rantext, differential-privacy, ldp, perturbation]
+updated: 2026-07-01
+tags: [inferdpt, rantext, differential-privacy, ldp, perturbation, noise-radius]
+companion: docs/research/embedding-map.md
 ---
 
 # RANTEXT — RANdom adjacency list TEXT perturbation
@@ -22,10 +23,10 @@ Source: paper §V (Algorithm 2); reference `perturb_sentence` in
 | Term | Meaning |
 |---|---|
 | **`Doc` / `Doc_p`** | Raw document `⟨x₁…x_L⟩` / its perturbed version `⟨r₁…r_L⟩`. |
-| **`V`** | Token vocabulary — the curated word-list RANTEXT perturbs over (paper: first ~11k English cl100k tokens). Tokens outside `V` are discarded. |
+| **`V`** | Token vocabulary — the **cl100k BPE tokens** RANTEXT perturbs over. Paper: first ~11k. Impl (`tokeniser.py`): the *same* cl100k tokenizer (tiktoken) both splits `Doc` (`surfaces`) and defines `V` (`english_vocab`, first ~12k tokens containing a letter), so surface tokens are looked up directly. One leading space is stripped from every token (matching the reference). Tokens outside `V` are discarded. |
 | **`φ(·)`** | Embedding function `V → ℝ^N`, mapping a token to a vector. |
 | **`d_e(a,b)`** | Euclidean distance `√Σ(aᵢ−bᵢ)²`. |
-| **`Δφ`** | Sensitivity of `φ` — the bounded coordinate range of the embedding space. Sets the Laplace noise scale; must be finite for the DP guarantee. |
+| **`Δφ`** | Sensitivity of `φ` — the **per-dimension** coordinate range vector `δ_d = max_t φ(t)_d − min_t φ(t)_d` over `V`. Each dim `d` calibrates its own Laplace scale `δ_d/Z(ε)`. **Not** a scalar `max_d δ_d`: collapsing to the max inflates the random radius by `δ_max/RMS(δ) ≈ 2.5–3×`, pushing it past the bounded unit-norm distance cloud → `|C_r|`→100% → uniform word salad. (Reference: `delta_f_new` per-dim vector in `func.py`.) |
 | **`ε`** | Privacy budget (`ε ≥ 0`). Smaller ε = stronger privacy, weaker utility. |
 | **ε-LDP** | ε-local differential privacy: a randomized `M` is ε-LDP if for any inputs `x,x'` and output `y`, `Pr[M(x)=y] / Pr[M(x')=y] ≤ e^ε`. Perturbation happens locally, before upload, with no trusted aggregator. |
 | **Exponential mechanism** | DP primitive that samples output `y` with `Pr[y] ∝ exp(ε·u(x,y) / 2Δu)` for a scoring function `u`. |
@@ -33,7 +34,7 @@ Source: paper §V (Algorithm 2); reference `perturb_sentence` in
 | **`C_e(t)`** | Random adjacent **embeddings**: all points within radius `d_e(φ̂(t), φ(t))` of `φ(t)`. |
 | **`C_r(t)`** | Random adjacency **list**: the tokens whose embeddings fall in `C_e(t)` — the candidate replacements for `t`. |
 | **`u(x,y)`** | Scoring function `1 − d_e(φ(x),φ(y)) / threshold` ∈ (0,1]; closer candidate → higher score. `Δu = 1`. |
-| **`Z(ε)`** | Calibration factor for the noise scale (see §"ε is used twice"). |
+| **`Z(ε)`** | Factor setting the Laplace noise scale `δ_d/Z` (hence the radius). A *utility* knob, not a privacy quantity — see §"`Z(ε)` is a utility knob" and §"Noise-radius calibration". |
 
 ## Overview
 
@@ -51,11 +52,15 @@ inside that ball as the candidate set, then samples one via the exponential mech
 
 ## Phase 1 — per-token perturbation (online)
 
-Tokenise `Doc = ⟨x₁…x_L⟩`. For each token `xᵢ`:
+Tokenise `Doc = ⟨x₁…x_L⟩` with the cl100k tokenizer (leading space stripped). Because it is
+BPE and **cased**, a common cased word/name is usually one token (`" Boston"→"Boston"`) and is
+perturbed whole; a lowercased or rare word fragments (`" boston"→["b","oston"]`), and each
+fragment is perturbed or dropped independently. For each token `xᵢ`:
 
 1. **Filter / guards.**
-   - `xᵢ ∉ V` → **discard** (no out-of-vocab / proper-noun leakage).
-   - numeric → replace with a random number (reference: `randint(1,1000)`), then skip.
+   - `xᵢ ∉ V` → **discard** (out-of-vocab / rarer proper-noun fragments removed).
+   - numeric (`isdigit`) → replace with a random number (`randint(1,1000)`), then skip.
+     *Only digit tokens; spelled-out numbers ("thirty four") are perturbed as ordinary words.*
 2. **Embed:** `eb_t = φ(xᵢ)`.
 3. **Random radius.** Draw a Laplace noise vector `Y` (scale from `Δφ`, `ε`), add it:
    `eb_n = eb_t + Y`. Set `threshold = ‖eb_n − eb_t‖` — the radius is the *length of the
@@ -71,20 +76,67 @@ Tokenise `Doc = ⟨x₁…x_L⟩`. For each token `xᵢ`:
 
 Concatenate `⟨r₁…r_L⟩` → `Doc_p`.
 
-## ε is used twice (and why `Z(ε)` exists)
+## `Z(ε)` is a utility knob, NOT a privacy calibration
 
-`ε` controls both (a) the **radius** via the Laplace noise and (b) the **sampling
-sharpness** `exp(ε/2·u)`. Because the radius is itself random, naive accounting would
-break the guarantee, so the noise scale uses a calibrated factor:
+A common misreading (which this doc previously stated) is that `Z(ε)` is what makes the
+mechanism ε-LDP. **It is not.** The proof of **Theorem 2** (paper Appendix C, Eq 27–32) is
+the *standard exponential-mechanism argument*: for `x,x',y ∈ C_r(t)`,
+`Pr[y|x]/Pr[y|x'] = [exp(ε·u(x,y)/2)/exp(ε·u(x',y)/2)]·[Σexp(ε·u(x',y')/2)/Σexp(ε·u(x,y')/2)]`,
+and since `Δu=1` and `0<u≤1` each factor is `≤ exp(ε/2)`, so the product `≤ eᵋ`. **`Z`, the
+radius, and the Laplace noise appear nowhere in the proof.** The ε-LDP guarantee comes
+entirely from the exponential mechanism's `ε/2` factor; the radius/`C_r` is treated as fixed
+and given. (The `/2` is the textbook EM factor — numerator and denominator both shift — *not*
+"ε spent twice on radius + sampling.")
+
+So `Z` does **not** affect the formal privacy at all. What it controls is the **radius →
+`|C_r|` operating point** (bigger radius = more candidates = more empirical noise, less
+utility). `Z` is defined in paper **Appendix B**: a `scipy.curve_fit` chosen so the ratio
+`|C_r|/|V|` of the reference token **"happy"** in the paper's **ada-002** space hits a target
+schedule (Table XI). The published constants
 
 ```
 Z = ε                       if ε < 2
 Z = a·log(b·ε + c) + d       otherwise   (a≈0.0165, b≈19.0648, c≈−38.1294, d≈9.3111)
 ```
 
-This calibration is what lets the paper prove **Theorem 2: per-token sampling is ε-LDP**.
-Each token is perturbed **exactly once**, so there is **no composition** — the budget per
-token stays `ε` across the whole document.
+therefore **encode ada-002's geometry around one token** and are *meaningless on any other
+embedding*. Verified empirically: running the faithful mechanism on the paper's *own* ada-002
+embeddings with these constants gives `|C_r|` 13–39% (token-dependent) → word-salad `Doc_p`,
+i.e. the public repo does **not** reproduce its Table II.
+
+Each token is perturbed **exactly once**, so there is **no composition** — the per-token
+budget stays `ε` regardless of `Z`.
+
+## Noise-radius calibration — the curve-fit algorithm
+
+Because `Z` is a free utility knob, the radius must be *chosen*. Both the paper and our
+implementation choose it by targeting a candidate-set fraction `|C_r|/|V|`.
+
+**Paper (Appendix B).** Quote: *"generating adjacency lists directly with Laplace distribution
+led to excessively large sizes. To tackle this, we created an adjusted random vector by
+`curve_fit`, aiming to achieve specific probability targets for the ratio |C_r|/|V| of the
+token 'happy'."* The procedure:
+
+1. Pick one **reference token** (paper: `"happy"`).
+2. Pick a target `|C_r|/|V|` schedule over ε (Table XI: ε = 2/6/10/14 → 1.5%/9.0%/10.0%/10.5%).
+3. `scipy.curve_fit` the closed form `Z(ε) = a·log(b·ε + c) + d` so the reference token's
+   `|C_r|` hits the schedule → the published `a,b,c,d`.
+
+⇒ those constants encode **ada-002's** geometry around **one token**; they are not universal.
+
+**Ours (`rantext.calibrate_noise_fn`, per-φ).** Same idea, re-fit to each φ, and exact rather
+than a stochastic curve-fit. Key identity: `radius = ‖Laplace(0, Δφ)‖ / Z`, so the radius is a
+deterministic function of `Z` once base draws are fixed:
+
+1. Draw a fixed batch of `‖Laplace(0, Δφ)‖` samples (base radii); `radius(Z) = base / Z`.
+2. For a small set of reference tokens, `|C_r|(Z)` is monotone-decreasing in `Z` → **bisect**
+   `Z` so the mean `|C_r|/|V|` equals the target (default **1%**).
+3. Return a constant `noise_fn(ε) = Z`. (The paper's `Z(ε)` is near-flat for ε≥2, so one `Z`
+   reproduces it; `ε` then drives only the exponential-mechanism sharpness `exp(ε/2·u)`.)
+
+For a cross-φ comparison, hold the **`|C_r|` target** equal across φ (equal operating point) —
+never hold `Z` equal, since a fixed `Z` lands at different `|C_r|` per embedding.
+See `embedding-map.md` (the empirical-honesty rule: fix ε + the |C_r| target, never a per-model fudge).
 
 ## Comparison to baselines
 

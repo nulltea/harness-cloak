@@ -8,3 +8,6 @@ data/*.npy
 
 # Cached LLM responses ($INFERDPT_LLM_CACHE)
 data/llm_cache/
+
+.claude
+.aris

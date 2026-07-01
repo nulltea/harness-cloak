@@ -1,80 +1,48 @@
-"""Tokeniser — wraps a Gemma tokenizer and builds the English perturbation vocab.
+"""Tokeniser — cl100k (tiktoken) BPE tokenizer + the RANTEXT perturbation vocab V.
 
-The tokeniser does two jobs for RANTEXT:
-1. split a document into token surface strings (`surfaces`), and
-2. define the vocabulary V of candidate replacement tokens (`english_vocab`).
+Matches the InferDPT reference (`func.py`): the document splitter and V live in the
+**same cl100k token space**, so each surface token is looked up directly in V. There is
+no whole-word/dictionary filter — that filter is what dropped names and rare words
+entirely (a token split like ``sarah → ['sar','ah']`` must hit V, not vanish).
 
-Gemma's tokenizer is loaded offline from the HF cache (ungated `unsloth/gemma-2-2b`
-mirror), so no auth/network is needed. Gemma 2 / 3n share the same SentencePiece
-vocab; the perturbed text is re-tokenised by the remote model anyway, so an exact
-match to the served E4B is not required.
+One leading space is stripped from every token to match the reference's
+``if origin_token[0]==' ': origin_token=origin_token[1:]`` normalisation and the keys
+already stored in ``data/vocab.json`` (the canonical 12k cl100k V).
 """
 
 from __future__ import annotations
 
-import glob
-import os
+import tiktoken
 
-from tokenizers import Tokenizer
-
-SPACE = "▁"  # SentencePiece word-boundary marker (▁)
-_CACHE_GLOB = "~/.cache/huggingface/hub/models--*gemma-2*/snapshots/*/tokenizer.json"
-_WORDLIST = "/usr/share/dict/words"
-
-
-def _resolve(path: str | None) -> str:
-    if path:
-        return path
-    hits = glob.glob(os.path.expanduser(_CACHE_GLOB))
-    if not hits:
-        raise FileNotFoundError(
-            "No gemma tokenizer.json in HF cache; pass path= explicitly."
-        )
-    return hits[0]
-
-
-def _english_words() -> set[str]:
-    with open(_WORDLIST, encoding="latin-1") as f:
-        return {w.strip().lower() for w in f if w.strip().isalpha()}
+ENCODING = "cl100k_base"
 
 
 class Tokeniser:
-    def __init__(self, path: str | None = None) -> None:
-        self.tok = Tokenizer.from_file(_resolve(path))
+    def __init__(self, encoding: str = ENCODING) -> None:
+        self.enc = tiktoken.get_encoding(encoding)
+
+    def _piece(self, tid: int) -> str:
+        """Decode one token id to its surface string, stripping a single leading space."""
+        s = self.enc.decode_single_token_bytes(tid).decode("latin-1")
+        return s[1:] if s[:1] == " " else s
 
     def surfaces(self, text: str) -> list[str]:
-        """Token surface strings for `text` (▁ stripped; special tokens dropped)."""
-        out: list[str] = []
-        for i in self.tok.encode(text).ids:
-            piece = self.tok.id_to_token(i)
-            if piece is None or (piece.startswith("<") and piece.endswith(">")):
-                continue  # skip <bos>/<eos>/etc.
-            out.append(piece.replace(SPACE, ""))
-        return out
+        """cl100k token surface strings for `text` (one leading space stripped)."""
+        return [self._piece(t) for t in self.enc.encode(text)]
 
-    def english_vocab(self, limit: int = 12000, min_len: int = 2) -> list[str]:
-        """Word-start (▁) tokens that are English dictionary words.
-
-        Returned in Gemma id order (≈ frequency), truncated to `limit` — so the
-        vocab is the ~`limit` most common English words.
-        """
-        words = _english_words()
-        cand: list[tuple[int, str]] = []
-        for piece, i in self.tok.get_vocab().items():
-            if not piece.startswith(SPACE):
-                continue
-            w = piece[len(SPACE):]
-            if len(w) < min_len or not (w.isascii() and w.isalpha()):
-                continue
-            if w.lower() in words:
-                cand.append((i, w))
-        cand.sort()  # by id ≈ frequency
+    def english_vocab(self, limit: int = 12000) -> list[str]:
+        """V = the first `limit` cl100k tokens that contain a letter/digit
+        (space-stripped, deduped, id order ≈ frequency). Sub-word pieces are kept on
+        purpose: it is what lets names tokenise into in-V pieces and be perturbed rather
+        than dropped. Reproduces ``data/vocab.json``."""
         seen: set[str] = set()
         vocab: list[str] = []
-        for _, w in cand:
-            if w not in seen:
-                seen.add(w)
-                vocab.append(w)
+        for tid in range(self.enc.n_vocab):
+            p = self._piece(tid)
+            if not p or p in seen or not any(c.isalpha() for c in p):
+                continue
+            seen.add(p)
+            vocab.append(p)
             if len(vocab) >= limit:
                 break
         return vocab

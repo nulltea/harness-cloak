@@ -1,0 +1,48 @@
+{
+  "phi": "data/vocab",
+  "gen_model": "Qwen3.6-35B-A3B",
+  "ext_model": "gemma 4 (E4B)",
+  "docs": 8,
+  "geometry": {
+    "mean_cos_random_pairs": 0.6131,
+    "mean_abs_cos": 0.6131,
+    "top1_pc_var": 0.0363,
+    "top10_pc_var": 0.201,
+    "eff_dim": 129.701,
+    "mean": 0.8768,
+    "std": 0.0776,
+    "rel_spread_std/mean": 0.0885,
+    "p1": 0.6724,
+    "p50": 0.8808,
+    "p99": 1.0408
+  },
+  "sweep": [
+    {
+      "eps": 6.0,
+      "Cr_pct": 5.8,
+      "repl_cos": 0.793,
+      "sampling_entropy": 0.921,
+      "S_w": 0.095,
+      "N_w": 77.9,
+      "overlap": 0.116,
+      "pii_leak_recall": 0.201,
+      "token_MI_bits": 2.709,
+      "ngram_MI_bits": 7.526,
+      "utility": 0.891,
+      "utility_control": 0.817,
+      "u_p_control": 0.436,
+      "gen_marginal": 0.097,
+      "diversity": 0.916,
+      "diversity_gen_p": 0.875,
+      "coherence_gen_p": 0.403,
+      "mauve": null,
+      "utility_rerank": 0.998,
+      "utility_control_rerank": 0.303,
+      "pii_recon_recall": 1.0,
+      "inv@1": 0.117,
+      "inv@10": 0.242,
+      "mlm_top1": 0.017,
+      "mlm_top5": 0.033
+    }
+  ]
+}

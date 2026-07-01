@@ -25,7 +25,7 @@ EMBED_MODEL = "qwen3-embedding-0.6b"
 def embed(texts: list[str], *, model: str = EMBED_MODEL, base_url: str = EMBED_BASE_URL,
           batch: int = 256) -> np.ndarray:
     """Embed `texts`, returning a float32 [n, dim] array (in input order)."""
-    from openai import OpenAI  # lazy: the GPU container has no openai, only the matrix path
+    from openai import OpenAI  # lazy: only the served-API embed path needs openai
 
     client = OpenAI(base_url=base_url, api_key="not-needed")
     vecs: list[list[float]] = []
@@ -46,9 +46,13 @@ class VocabEmbeddings:
         self.index = {w: i for i, w in enumerate(self.vocab)}
 
     @property
-    def sensitivity(self) -> float:
-        """Δφ: largest per-dimension coordinate range — the φ sensitivity bound."""
-        return float((self.matrix.max(0) - self.matrix.min(0)).max())
+    def sensitivity(self) -> np.ndarray:
+        """Δφ: per-dimension coordinate range (max−min over V), shape [dim] — the φ
+        sensitivity vector. Each dim calibrates its own Laplace scale δ_dim/Z(ε),
+        matching the reference (`delta_f_new` in mengtong0110/InferDPT func.py).
+        NOT a scalar max: collapsing to max_dim δ_dim inflates the random radius by
+        δ_max/RMS(δ) → |C_r| saturates to 100% → word salad."""
+        return (self.matrix.max(0) - self.matrix.min(0)).astype(np.float64)
 
     @classmethod
     def load(cls, name: str | Path) -> "VocabEmbeddings":
@@ -69,7 +73,11 @@ def build(out: str | Path, *, limit: int = 12000, tokeniser_path: str | None = N
     """Build and persist the vocab-embedding cache."""
     from inferdpt.tokeniser import Tokeniser
 
-    vocab = Tokeniser(tokeniser_path).english_vocab(limit=limit)
+    vocab = Tokeniser().english_vocab(limit=limit)  # cl100k V (tokeniser_path is legacy/unused)
+    # Served embedding models (qwen3-embedding-0.6b, jina) already return unit-norm
+    # vectors — like OpenAI ada-002 in the reference — so no re-normalization here.
+    # In-process sources with raw norms (build_from_model_matrix / _static_vectors /
+    # _sentence_model) normalize in their own handler. Contract: every cached φ is unit-norm.
     matrix = embed(vocab, model=model, base_url=base_url)
     ve = VocabEmbeddings(vocab, matrix)
     ve.save(out)
@@ -79,8 +87,8 @@ def build(out: str | Path, *, limit: int = 12000, tokeniser_path: str | None = N
 def build_from_model_matrix(words: list[str], model_id: str, out: str | Path,
                             *, normalize: bool = True) -> VocabEmbeddings:
     """Build φ from an LLM's input-embedding matrix (tier-1), mean-pooling a word's
-    subword token rows. Runs offline from the HF cache; needs torch+transformers
-    (ROCm container). Keeps the given `words` order for a fair A/B against the API cache."""
+    subword token rows. Runs offline from the HF cache (torch+transformers on the host
+    `.venv` GPU). Keeps the given `words` order for a fair A/B against the API cache."""
     import os
 
     os.environ.setdefault("HF_HUB_OFFLINE", "1")
@@ -99,6 +107,48 @@ def build_from_model_matrix(words: list[str], model_id: str, out: str | Path,
         vecs.append(emb[ids].mean(0))
         kept.append(w)
     M = np.asarray(vecs, dtype=np.float32)
+    if normalize:
+        M /= np.linalg.norm(M, axis=1, keepdims=True) + 1e-8
+    ve = VocabEmbeddings(kept, M)
+    ve.save(out)
+    return ve
+
+
+def build_from_sentence_model(words: list[str], model_id: str, out: str | Path,
+                              *, normalize: bool = True, batch: int = 256) -> VocabEmbeddings:
+    """Build φ from a sentence-transformers model (e.g. Phrase-BERT). Embeds each token
+    string directly; row-aligned to `words`. CPU-runnable for ~110M models."""
+    from sentence_transformers import SentenceTransformer
+
+    model = SentenceTransformer(model_id, device="cpu")
+    M = model.encode(words, batch_size=batch, normalize_embeddings=normalize,
+                     show_progress_bar=False).astype(np.float32)
+    ve = VocabEmbeddings(list(words), M)
+    ve.save(out)
+    return ve
+
+
+def load_static_vectors(path: str | Path) -> dict[str, np.ndarray]:
+    """Read a word2vec-style text file (`word v1 v2 …` per line, no header) into a
+    {word: vector} dict. Covers counter-fitted / GloVe / paragram .txt."""
+    vecs: dict[str, np.ndarray] = {}
+    with open(path, encoding="utf-8", errors="ignore") as fh:
+        for line in fh:
+            parts = line.rstrip().split(" ")
+            if len(parts) < 3:  # skip a possible "n dim" header line
+                continue
+            vecs[parts[0]] = np.asarray(parts[1:], dtype=np.float32)
+    return vecs
+
+
+def build_from_static_vectors(words: list[str], path: str | Path, out: str | Path,
+                              *, normalize: bool = True) -> VocabEmbeddings:
+    """Build φ from static word vectors, keeping only `words` present in the file (in the
+    given order → row-aligned for a fair A/B). Words absent from the file are dropped;
+    the caller decides OOV handling (here: skip-perturb sub-vocab). CPU, offline."""
+    table = load_static_vectors(path)
+    kept = [w for w in words if w in table]
+    M = np.stack([table[w] for w in kept]).astype(np.float32)
     if normalize:
         M /= np.linalg.norm(M, axis=1, keepdims=True) + 1e-8
     ve = VocabEmbeddings(kept, M)
@@ -139,5 +189,7 @@ if __name__ == "__main__":
     if args.whiten:
         ve = VocabEmbeddings(ve.vocab, whiten(ve.matrix, args.whiten))
         ve.save(args.out)
-    print(f"built {len(ve.vocab)} tokens, dim {ve.matrix.shape[1]}, Δφ={ve.sensitivity:.4f}")
+    d = ve.sensitivity
+    print(f"built {len(ve.vocab)} tokens, dim {ve.matrix.shape[1]}, "
+          f"Δφ[mean={d.mean():.4f} max={d.max():.4f}]")
     print(f"saved to {args.out}.json / .npy")

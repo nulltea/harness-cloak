@@ -1,9 +1,16 @@
 openai>=2,<3
 numpy>=1.26
 tokenizers>=0.20
-# probes/attacks (CPU): BERT mask attack + PII detection + scorer matrix builder
-torch>=2
+# torch is NOT pip-managed: it's the host gfx1151 ROCm wheel (torch 2.10.0+rocm7.2.3) — see
+# ~/docs/torch-gpu.md / `uv pip install --no-deps <wheel>`. A plain `pip install torch` pulls the
+# CPU wheel and shadows the GPU build, so torch is intentionally omitted here. Do NOT `--upgrade` it.
+# probes/attacks: BERT mask attack + PII detection + matrix builder + SimCSE/Phrase-BERT (GPU)
 transformers>=4.51
+sentence-transformers
 presidio-analyzer>=2.2
 spacy>=3.7
-# also: python -m spacy download en_core_web_sm
+rapidfuzz
+nltk
+gguf
+# also: python -m spacy download en_core_web_sm ; python -c "import nltk; nltk.download('wordnet')"
+tiktoken
