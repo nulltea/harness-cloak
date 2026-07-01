@@ -24,3 +24,8 @@ _Append-only timeline._
 - `2026-07-01T11:02:03Z` ingest_paper: added paper:pang2024_reconstruction_dp_text_llm (RANTEXT-family limitation evidence; cited in docs/research/rantext-limitations.md)
 - `2026-07-01T11:02:03Z` ingest_paper: added paper:meisenbacher2025_double_edged_reconstruction (RANTEXT-family limitation evidence; cited in docs/research/rantext-limitations.md)
 - `2026-07-01T11:02:03Z` add_edge: +5 edges (limitation/attack papers -> InferDPT/SanText)
+- `2026-07-01T13:19:27Z` ingest_paper: added paper:igamberdiev2023_dp_bart (RD4/RD0-RD2 anchor; cited in docs/research/beyond-rantext.md)
+- `2026-07-01T13:19:27Z` ingest_paper: added paper:meisenbacher2024_dp_mlm (RD4/RD0-RD2 anchor; cited in docs/research/beyond-rantext.md)
+- `2026-07-01T13:19:27Z` ingest_paper: added paper:lison2021_anonymisation_models_text (RD4/RD0-RD2 anchor; cited in docs/research/beyond-rantext.md)
+- `2026-07-01T13:19:27Z` add_edge: +2 edges (DP-BART/DP-MLM extend prior DP text-rewriting)
+- `2026-07-01T13:19:27Z` doc: added docs/research/beyond-rantext.md (RD0-RD5 research directions)

@@ -25,7 +25,6 @@
       <a href="#method">method</a>
       <a href="#measures">measures</a>
       <a href="#results">results</a>
-      <a href="#comparison">comparison</a>
       <a href="#findings">findings</a>
       <a href="#analysis">analysis</a>
       <a href="#discussion">discussion</a>
@@ -235,7 +234,7 @@
     </div>
     <p class="prose" style="font-size:12px;opacity:.75;">original: <span class="mono">"My name is Sarah Johnson and I am thirty four years old living in Boston with my husband."</span> — pythia-410m, ε=6, seed 1. At a large radius the candidate set is most of V, sampling is near-uniform, and Doc_p is word-salad — the failure our initial runs hit. RANTEXT's Z(ε) is a per-embedding curve-fit (paper Appendix B) that targets a small |C_r|; matched to ≈1% the original's structure returns (name→name <span class="mono">Sarah Johnson→William Thompson</span>, <span class="mono">Boston→Canada</span>).</p>
 
-    <p class="prose" style="margin:16px 0 4px;"><strong>2 · At the matched radius (|C_r|≈1%), across φ and ε.</strong> Three private prompts, each perturbed by <strong>ada-002</strong> (paper φ, anisotropic), <strong>pythia-410m</strong> (isotropic), and <strong>qwen3-embedding</strong> (sentence embedder, anisotropic). The isotropic map stays more readable; the anisotropic maps scramble harder at the same |C_r|; higher ε keeps more of the original everywhere.</p>
+    <p class="prose" style="margin:16px 0 4px;"><strong>2 · At |C_r|≈1% (target), across φ and ε.</strong> Three private prompts, each perturbed by <strong>ada-002</strong> (paper φ, anisotropic), <strong>pythia-410m</strong> (isotropic), and <strong>qwen3-embedding</strong> (sentence embedder, anisotropic). The isotropic map reads more cleanly and the anisotropic maps scramble harder — a difference that *correlates* with anisotropy but is confounded (vocabulary coverage, and realized |C_r| that is not actually equal across φ); see the conclusion. Higher ε keeps more of the original everywhere.</p>
 
     <p class="prose" style="margin:10px 0 2px;font-size:12px;">P1 original: <span class="mono">"My name is Sarah Johnson and I am thirty four years old living in Boston with my husband."</span></p>
     <div style="overflow-x:auto;">
@@ -275,91 +274,84 @@
     <p class="prose" style="font-size:12px;opacity:.75;">source: RANTEXT at |C_r|≈1% (per-φ calibrated Z), cased prompts, seed 1. Names swap to names and cities to cities where they are in-vocab (<span class="mono">Sarah Johnson→George Wilson</span>, <span class="mono">Boston→Chicago/LA</span>); out-of-vocab spans (<span class="mono">Goldman Sachs</span>, <span class="mono">Mercy</span>) drop; in-vocab sensitive words (<span class="mono">diabetes</span>, <span class="mono">depression</span>) survive at high ε — the no-detector limitation.</p>
 
     <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 04 — anisotropy trades Doc_p coherence for attack-resistance (matched |C_r|≈1%, ε=6)</span><span class="r">source: results/dp_sweep_{ada002,pythia410m}.json</span></div>
-      <div id="plot-phi" style="width:100%;height:400px;"></div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">At a matched candidate-set size, the isotropic map (pythia-410m) gives more coherent Gen_p but is more invertible (higher inv@10) and leaks more PII; the anisotropic map (ada-002) gives less coherent Doc_p but the nearest-neighbour inversion attack degrades, so its inv@10 and PII-leak are lower. The low inv@10 is an attack-weakening artifact of the compressed geometry, not stronger privacy.</span></div>
+      <div class="plot-cap"><span class="l">FIG · 04 — the apparent φ trade (confounded, left) vs the controlled anisotropy test (right)</span><span class="r">source: results/dp_sweep_{ada002,pythia410m,qwen_raw,qwen_centered}.json</span></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div id="plot-phi" style="flex:1 1 340px;min-width:300px;height:380px;"></div>
+        <div id="plot-phi-ctrl" style="flex:1 1 340px;min-width:300px;height:380px;"></div>
+      </div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">Both panels: <strong>orange = anisotropic, blue = isotropic</strong>; lower inv@10 / PII-leak = more private. <strong>LEFT (confounded)</strong> — ada-002 vs pythia-410m, two <em>different</em> embeddings (also differ in vocabulary, dimension, family): the isotropic one (pythia) looks <em>worse</em> on privacy — higher inv@10 and PII-leak. <strong>RIGHT (controlled)</strong> — the <em>same</em> qwen matrix, raw vs mean-centered, so <em>only</em> anisotropy changes: the isotropic one is <em>better</em> on privacy — lower inv@10 and PII-leak, with coherence and utility flat. The two panels point opposite ways, so the left-panel gap is vocabulary / dimension / family, <strong>not anisotropy</strong> — anisotropy does not create a coherence↔privacy trade. Left = ε=6; right = mean over ε=2/6/10, matched |C_r|; N=10 single seed (directional).</span></div>
     </div>
-    <p class="prose"><strong>Conclusion.</strong> φ's leverage is the distance scale, set by anisotropy — not an end-to-end utility lever (final utility is flat, extraction-dominated). It acts in two ways: (a) a calibration constraint — the noise radius must be refit per φ or the mechanism degenerates to salad — and (b) at a matched radius, a coherence↔attack-resistance trade. Neither pole is free: isotropic buys readable Doc_p at the cost of a working inversion attack; anisotropic buys attack-degradation at the cost of coherence.</p>
+    <p class="prose"><strong>Conclusion.</strong> φ is <em>not</em> an end-to-end utility lever (final utility is flat, extraction-dominated). Its <em>one established effect</em> is <strong>(a) a calibration constraint</strong> — the noise radius must be refit per φ or the mechanism degenerates to salad. The apparent <strong>(b) coherence↔leakage trade</strong> across ada-002 vs pythia-410m turns out to be a <strong>confound, not anisotropy</strong>: the controlled test — the <em>same</em> qwen matrix raw (aniso 0.61) vs mean-centered (aniso 0.00), identical vocabulary and matched realized |C_r|, varying only anisotropy — does <em>not</em> reproduce it. At matched |C_r| (ε=2/6/10) centering leaves coherence and utility unchanged and, if anything, <em>lowers</em> inv@10 (−0.14 to −0.24) and PII-leak — the opposite sign from the ada-vs-pythia comparison. So the ada-vs-pythia trade was driven by vocabulary coverage (ada drops names → less PII), effective dimension, and embedding family — not by anisotropy. Anisotropy matters only through (a): it sets the distance scale the radius must be matched to. (N=10, single seed — directional; firm with N≥30 + seeds + a dose-response.)</p>
 
-    <h4 style="font-family:'Fraunces',serif;font-size:18px;margin:24px 0 8px;">§5.3 — Lever 3: extraction model X</h4>
-    <p class="prose">Remote model fixed (gemma-4-E4B), φ = qwen3-embedding, ε=3. The local extraction model X is varied. Higher-capability X raises utility while the privacy measures, set upstream by the perturbation, are unchanged. PII reconstruction recall is high for both, because X re-grounds on the true Doc, which it is trusted to see.</p>
+    <h4 style="font-family:'Fraunces',serif;font-size:18px;margin:24px 0 8px;">§5.3 — Lever 3: extraction model X (why the headline utility is misleading)</h4>
+    <p class="prose">X is the <em>trusted</em> local model, and it is handed the <strong>true Doc</strong> as prefix — only Gen_p comes from the perturbed prompt. So X re-grounds on the real document and reconstructs its content <em>no matter how badly ε or φ damaged Doc_p</em>. That makes end-to-end utility a poor gauge of the perturbation: it stays ~0.9 even when Doc_p is word-salad, because most of it is X working from the clean prefix — not privacy-preserving remote inference. The extraction model therefore <strong>disguises</strong> the two upstream levers and creates a false sense that the private channel is doing the work.</p>
+
+    <p class="prose" style="margin-bottom:4px;"><strong>How much does the private remote channel actually add?</strong> Compare InferDPT (X given Doc + remote Gen_p) against a <strong>local-only baseline</strong> (X given Doc alone, empty Gen_p) — pythia-410m φ, N=60:</p>
     <table class="spec spec--wide">
-      <thead><tr><th>extraction model X</th><th class="num">utility (cos Doc,out)</th><th class="num">utility_control (cos control,out)</th><th class="num">PII reconstruction recall</th></tr></thead>
+      <thead><tr><th class="num">ε</th><th class="num">local-only (Doc alone)</th><th class="num">InferDPT (Doc + Gen_p)</th><th class="num">remote's marginal</th></tr></thead>
       <tbody>
-        <tr><td>gemma-4-E4B</td><td class="num">0.646</td><td class="num">0.587</td><td class="num">0.917</td></tr>
-        <tr><td>Qwen3.6-35B-A3B</td><td class="num accent">0.747</td><td class="num accent">0.632</td><td class="num">0.917</td></tr>
+        <tr><td class="num">2</td><td class="num">0.828</td><td class="num">0.899</td><td class="num">+0.072</td></tr>
+        <tr><td class="num">6</td><td class="num">0.828</td><td class="num">0.901</td><td class="num">+0.073</td></tr>
+        <tr><td class="num">10</td><td class="num">0.828</td><td class="num">0.929</td><td class="num">+0.101</td></tr>
+        <tr><td class="num">14</td><td class="num">0.828</td><td class="num">0.933</td><td class="num">+0.105</td></tr>
       </tbody>
     </table>
-    <p class="prose" style="font-size:12px;opacity:.75;">source: extraction-model sweep (Y=gemma-4-E4B fixed, 4 documents). Paper Table IX reports the analogous local-model effect (Vicuna-7b, Llama2-7b, Llama3.1-8b).</p>
+    <p class="prose" style="font-size:12px;opacity:.75;">source: <span class="mono">results/dp_sweep_pythia410m.json</span> (gen_marginal = InferDPT − local-only). Local-only is ε-independent (0.828). ada-002 is the same shape: local-only 0.839, InferDPT 0.892→0.937, marginal +0.05→+0.10.</p>
     <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 05 — extraction model is a utility-only lever</span><span class="r">source: extraction sweep</span></div>
-      <div id="plot-x" style="width:100%;height:340px;"></div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">A stronger extraction model raises utility and utility_control; PII reconstruction recall is unchanged. Privacy is set by the perturbation (ε, φ) upstream, not by X.</span></div>
+      <div class="plot-cap"><span class="l">FIG · 05 — extraction disguises the perturbation: final utility (left) vs what the private channel actually delivered (right)</span><span class="r">source: results/dp_sweep_pythia410m.json · N=60</span></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div id="plot-x" style="flex:1 1 340px;min-width:300px;height:340px;"></div>
+        <div id="plot-x2" style="flex:1 1 340px;min-width:300px;height:340px;"></div>
+      </div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;"><strong>LEFT (cos → Doc).</strong> The final InferDPT utility (solid) barely exceeds the local-only baseline (dashed — X on the true Doc with <em>no</em> remote output, flat ~0.83); the private channel adds only a shrinking sliver. <strong>RIGHT (cos → the non-private remote generation).</strong> The raw perturbed generation Gen_p (dashed, <span class="mono">u_p_control</span>) is heavily degraded and ε-dependent (0.55→0.76), yet the <em>extracted</em> output (solid, <span class="mono">utility_control</span>) sits well above it — especially at low ε (0.78 vs 0.55) — because extraction re-grounds on the true Doc and repairs the damage. Both panels: the utility you see is mostly the trusted local model, not the private inference; extraction hides how much the perturbation destroyed.</span></div>
     </div>
-    <p class="prose"><strong>Conclusion.</strong> X recovers utility and does not affect privacy. It is the utility end of the design space, separate from the privacy end set by ε and φ.</p>
+    <p class="prose" style="font-size:12px;opacity:.75;"><strong>Not supported:</strong> the stronger claim that InferDPT is <em>worse</em> than local-only (context contamination from garbled Gen_p) does not hold on this metric — the marginal is positive throughout, so even salad Gen_p carries a little topical signal that nudges cos(Doc,output) up. A contamination penalty might surface on a task metric (QA / summarisation) that cosine-to-Doc cannot see; unproven either way.</p>
+    <p class="prose"><strong>Conclusion.</strong> X is a utility-only lever that <em>masks</em> the perturbation: the headline utility mostly measures the trusted local model re-reading the true Doc, barely moves with ε or φ, and overstates what the perturbation + remote channel actually contribute (+0.05–0.11). The honest privacy↔utility question lives at <strong>Doc_p</strong> — coherence and leakage, upstream of X — not in the end-to-end number.</p>
   </section>
 
-  <!-- ═════ §06 COMPARISON ═════ -->
-  <section id="comparison">
-    <header class="section-head">
-      <div class="section-num">§06</div>
-      <h2 class="section-title">Comparison to InferDPT</h2>
-      <div class="section-meta">reference numbers from the paper, with setup caveats</div>
-    </header>
-    <p class="prose">The paper uses a different configuration: remote model GPT-4, embedding map text-embedding-ada-002, vocabulary the first 11k English cl100k tokens, extraction model Vicuna-7b/Llama. Its embedding map has usable distance range (Table V distances move with ε), where ours is concentrated. The numbers below are reference context, not a head-to-head comparison.</p>
-    <table class="spec spec--wide">
-      <thead><tr><th>InferDPT + RANTEXT (CNN/Daily Mail)</th><th class="num">ε=1</th><th class="num">ε=2</th><th class="num">ε=3</th><th class="num">GPT-4 (non-private)</th></tr></thead>
-      <tbody>
-        <tr><td>MAUVE ↑</td><td class="num">0.542</td><td class="num">0.563</td><td class="num">0.587</td><td class="num">0.671</td></tr>
-        <tr><td>coherence ↑</td><td class="num">0.723</td><td class="num">0.735</td><td class="num">0.736</td><td class="num">0.632</td></tr>
-        <tr><td>diversity ↑</td><td class="num">0.970</td><td class="num">0.970</td><td class="num">0.971</td><td class="num">0.983</td></tr>
-      </tbody>
-    </table>
-    <div class="prose">
-      <p><strong>Privacy protection (paper).</strong> With ε=6 and top-10 embedding inversion, RANTEXT reports an average protection level above 0.90, against 0.58× for SANTEXT+ and 3.35× for CUSTEXT+. Against masked-LM inference RANTEXT exceeds 80% protection across ε from 0.01 to 18. Our masked-LM top-1 recovery is near zero and embedding inversion@10 is 0.13–0.19, consistent with strong perturbation, but our utility is the part that does not transfer: with a concentrated embedding map the replacement is near-random, so the perturbed generation carries little of the document's themes and the apparent utility comes from the extraction model re-grounding on Doc.</p>
-      <p><strong>Reading the two together.</strong> The paper attains both privacy and utility because ada-002 gives a usable distance range; on a concentrated sentence-embedding space the same mechanism keeps the privacy but loses the perturbation-side utility. This is the embedding-map dependence the paper did not have to confront.</p>
-    </div>
-  </section>
-
-  <!-- ═════ §07 FINDINGS ═════ -->
+  <!-- ═════ §06 FINDINGS ═════ -->
   <section id="findings">
     <header class="section-head">
-      <div class="section-num">§07</div>
+      <div class="section-num">§06</div>
       <h2 class="section-title">Findings</h2>
-      <div class="section-meta">claims, grounds, scope</div>
+      <div class="section-meta">claims · grounds · scope (each judged by an external cross-model gate)</div>
     </header>
     <div class="prose">
-      <p><strong>Embedding geometry, not ε, is the binding constraint (Supported).</strong> On the qwen3-embedding map, at the paper noise scale, per-token mutual information is 0.0 bits at ε=1 and the replacement similarity stays at the random baseline at every ε; the candidate set is the whole vocabulary regardless of ε. Grounds: §5.1. Scope: single embedding map, small corpus, single seed.</p>
-      <p><strong>Anisotropy is harmful but isotropy is insufficient (Supported).</strong> The isotropic LLM matrix (anisotropy 0.019) is more distance-concentrated (relative spread 0.020) and reconstructs less faithfully (retention 0.227 against 0.788). Grounds: §5.2. The binding requirements are distance dynamic range and synonym-structured neighbourhoods, not isotropy alone.</p>
-      <p><strong>The extraction model is a utility-only lever (Supported).</strong> A stronger X raises utility from 0.646 to 0.747 with the privacy measures unchanged. Grounds: §5.3.</p>
-      <p><strong>The studied reconstruction attacks are weak against the perturbation (Preliminary).</strong> Masked-LM top-1 recovery is near zero and embedding inversion@10 is 0.13–0.19; the realistic worst case is a context-aware language-model reconstruction, which is documented but not yet run.</p>
+      <p><strong>1 · The published mechanism does not reproduce its own Table II; Z(ε) is a utility knob, not a privacy quantity (Supported).</strong> Run on the paper's <em>own</em> ada-002 embeddings with the published Z(ε), the realized candidate set is 13–39% of the vocabulary and Doc_p is word-salad at every ε up to 14. Theorem 2's proof (Appendix C) is the plain exponential-mechanism argument — Δu=1, 0&lt;u≤1 ⇒ ratio ≤ eᵋ — in which Z, the radius, and the noise never appear; Z is a <span class="mono">scipy.curve_fit</span> to the single token "happy" in ada-002 (Appendix B). Grounds: §5.1, <span class="mono">rantext.md</span>. Scope: assumes our reimplementation faithfully matches the public repo.</p>
+      <p><strong>2 · After per-φ radius calibration, ε is a genuine monotone privacy↔coherence lever, but end-to-end utility is ε-flat (Supported).</strong> Holding realized |C_r|≈1%, leakage (overlap, S_w, inv@10, PII-leak, token-MI) and Doc_p coherence rise monotonically with ε, while final utility barely moves (0.90→0.93). Grounds: §5.1. Scope: the lever acts on the perturbation-side / privacy observables; the final number is not responsive.</p>
+      <p><strong>3 · φ is not a utility lever, and anisotropy does not explain the φ tradeoff (Partial).</strong> Final utility is flat (~0.9) across every φ. The coherence↔leakage difference seen <em>across</em> embeddings (ada-002 vs pythia) is <em>not</em> reproduced by the controlled same-matrix raw-vs-centered test — coherence stays flat and the leakage signs reverse — so anisotropy is not sufficient to cause it. Attributing the cross-embedding gap specifically to vocabulary coverage / effective dimension / family is plausible but not yet proven. Grounds: §5.2. Scope: control is N=10, single seed, within-qwen (ε=14 |C_r| unmatched) — the least settled claim here.</p>
+      <p><strong>4 · The extraction model disguises the perturbation (Supported).</strong> A local-only baseline — the trusted model given the true Doc with no remote output — already reaches ~0.83 of the ~0.90 end-to-end utility; the private remote channel adds only +0.05–0.11 (smaller at lower ε), and its raw output (u_p_control) is degraded (0.55–0.76). So the headline utility mostly measures the local model, not private inference. <em>Not</em> claimed: that InferDPT is worse than local-only — the marginal is positive on cos-to-Doc. Grounds: §5.3.</p>
+      <p><strong>5 · What is protectable is set by the vocabulary, not ε (Supported).</strong> With cl100k BPE + cased text a common name is a single token; whether it is dropped (privacy-by-removal) or substituted is decided by vocabulary coverage (ada's 10129 drops names, our 12000 substitutes), independent of ε. Grounds: §5.2.</p>
     </div>
   </section>
 
-  <!-- ═════ §08 ANALYSIS ═════ -->
+  <!-- ═════ §07 ANALYSIS ═════ -->
   <section id="analysis">
     <header class="section-head">
-      <div class="section-num">§08</div>
+      <div class="section-num">§07</div>
       <h2 class="section-title">Analysis</h2>
-      <div class="section-meta">why the mechanism collapses, and what mutual information measures here</div>
+      <div class="section-meta">why each finding holds — the mechanism behind the numbers</div>
     </header>
     <div class="prose">
-      <p><strong>Why ε is inert.</strong> The replacement faithfulness is governed by the candidate set and the score range. With unit-normalised embeddings the pairwise distances concentrate in a thin shell (1st to 99th percentile 0.67 to 1.04, relative spread 0.089). The Laplace noise norm over 1024 dimensions is about 2.0, which exceeds the shell, so the candidate set is all of V and the score u = 1 − d/radius is nearly constant; the exponential mechanism is then close to uniform. The calibration factor Z(ε) saturates for ε ≥ 2, so even the radius barely moves with ε. The replacement cosine therefore equals the random-pair floor (0.61), which is itself a consequence of anisotropy (a large shared component inflates every cosine).</p>
-      <p><strong>What the per-token MI bounds, and its limit.</strong> The channel p(y|x) is analytic, so I(token;replacement) is computed directly in bits; by Fano it upper-bounds any adversary's per-token recovery. RANTEXT is memoryless, so total leakage is bounded by the sum of per-token MI, but recovery of a single token from the whole perturbed sequence can exceed the per-token value, because the source is correlated: I(x_i; Y_{1..n}) ≥ I(x_i; Y_i). A context-aware language-model adversary exploits exactly this. The honest measure of that is usable (V-)information, which is documented and deferred (it requires the language-model reconstruction attack and a no-context control). See <span class="mono">docs/research/mi-probes.md</span>.</p>
+      <p><strong>Why the radius must be recalibrated, and why ada-002 salads.</strong> φ enters RANTEXT only through Euclidean distances, and the noise radius = ‖Laplace(Δφ/Z)‖. Z(ε) is fitted to ada-002's "happy" distance scale and saturates for ε≥2, so on any embedding whose distance shell differs the radius over- or under-shoots. On ada-002 itself the radius (~0.6) exceeds the anisotropic inter-token distance (nearest-neighbour ~0.5), so C_r swallows a large slice of V and the score u = 1 − d/radius flattens → near-uniform sampling → salad. Re-fitting Z per φ to a |C_r| target restores a graded candidate set.</p>
+      <p><strong>Why ε works once |C_r| is pinned.</strong> With the radius calibrated the candidate set is fixed, so ε drives only the exponential sharpness exp(ε/2·u): higher ε concentrates probability on the nearest tokens → smaller change → higher coherence and higher leakage. That is why the tradeoff becomes a clean monotone curve only after calibration — ε is a sharpness dial at a fixed operating point, not a radius dial.</p>
+      <p><strong>Why anisotropy is not the lever.</strong> Anisotropy's only role is to set the distance scale — which the radius calibration already absorbs. With |C_r| matched, toggling anisotropy (mean-centering the same matrix) leaves coherence and utility unchanged and slightly lowers leakage; the cross-embedding differences (ada vs pythia) therefore trace to vocabulary coverage and dimensionality, not the shared-direction geometry. inv@10 is consequently not a clean cross-φ privacy metric.</p>
+      <p><strong>Why extraction dominates, and what MI bounds.</strong> X is handed the true Doc, so the final output is mostly the local model re-grounding on the real prefix; the private channel contributes a shrinking increment. On privacy, the per-token channel p(y|x) is analytic, so I(token;replacement) upper-bounds per-token recovery by Fano — but RANTEXT is memoryless while the source is correlated (I(x_i;Y_{1..n}) ≥ I(x_i;Y_i)), so a context-aware LM adversary can exceed it. The measured inv@10 / masked-LM attacks are weak lower bounds, not the worst case. See <span class="mono">docs/research/mi-probes.md</span>.</p>
     </div>
   </section>
 
-  <!-- ═════ §09 DISCUSSION ═════ -->
+  <!-- ═════ §08 DISCUSSION ═════ -->
   <section id="discussion">
     <header class="section-head">
-      <div class="section-num">§09</div>
+      <div class="section-num">§08</div>
       <h2 class="section-title">Discussion</h2>
-      <div class="section-meta">operating window, the fix axis, limitations</div>
+      <div class="section-meta">what the scheme buys, design implications, limitations, next</div>
     </header>
     <div class="prose">
-      <p><strong>Operating window.</strong> On a concentrated embedding map there is no ε that gives both privacy and perturbation-side utility: small ε and large ε both produce near-random replacements, and the final utility comes from the trusted extraction model, not from the remote model's themes. The corrective lever is the embedding map, not the budget.</p>
-      <p><strong>The fix axis (deferred).</strong> The candidate documentation identifies counter-fitted static vectors (synonym-structured), whitening of any embedding map (all-but-the-top), and a rank-based candidate set (k nearest, immune to distance concentration) as the directions that restore a usable distance range. See <span class="mono">docs/perturbation-sota.md</span>.</p>
-      <p><strong>Limitations.</strong> The corpus is 5 documents and single-seed, so the quantitative results are preliminary. The n-gram MI estimate is unreliable at this corpus size. The strongest attack (context-aware language-model reconstruction) and the V-information leakage probe are documented but not yet run. PII semantic-leakage degree is floored by anisotropy and reported only as recall.</p>
+      <p><strong>What the scheme actually buys.</strong> At a fair operating point the privacy↔coherence tradeoff <em>is</em> tunable by ε at the Doc_p level, but the end-to-end utility is dominated by the trusted local extraction model, so the headline utility overstates the value of the private remote channel (a +0.05–0.11 increment over local-only). The honest privacy↔utility question therefore lives at Doc_p — coherence and leakage — not in the final number.</p>
+      <p><strong>Design implications.</strong> (a) Z must be calibrated per embedding; the paper's fixed constants do not transfer and silently degenerate. (b) φ choice is second-order — pick one whose distance scale is calibratable; anisotropy/isotropy is not a privacy dial. (c) Always report a local-only baseline when claiming utility, or you are measuring X, not the mechanism. (d) What is protectable is governed by the vocabulary and OOV handling, not by ε — RANTEXT has no sensitivity detector, so in-vocabulary sensitive content leaks at any utility-preserving ε.</p>
+      <p><strong>Limitations.</strong> Single seed throughout; N=60 for the main sweeps, N=10 for the anisotropy control (within-qwen, ε=14 |C_r| unmatched). MAUVE is invalid at this corpus size (k-means needs ≥234 points) and is excluded. Utility is SimCSE cos(Doc, output), a proxy — a task-level metric could expose effects (e.g. context contamination) that cosine misses. inv@10 assumes the adversary knows φ and is weak relative to a context-aware LM reconstruction. The non-reproducibility finding assumes our reimplementation matches the public repo.</p>
+      <p><strong>Next.</strong> N≥30 with multiple seeds and CIs for the anisotropy control, plus a dose-response (subtract α·mean for several α); a context-aware LM reconstruction attack (the real worst case) and a task-level utility metric, both reported against the local-only baseline.</p>
     </div>
   </section>
 
@@ -468,28 +460,52 @@
   drawFig03("pythia");  // ada-002 hidden until toggled
 
   // FIG.04 — anisotropy trade at matched |C_r|≈1%, ε=6 (ada-002 vs pythia-410m).
-  var metrics = ["anisotropy","coherence (Gen_p)","inversion@10 ↓","PII-leak ↓"];
-  var adaV    = [0.788,0.448,0.590,0.086];
-  var pytV    = [0.011,0.589,0.770,0.246];
-  Plotly.newPlot("plot-phi", [
-    {x:metrics, y:adaV, name:"ada-002 (anisotropic, paper φ)", type:"bar", marker:{color:C.emb},
-      hovertemplate:"ada-002<br>%{x}=%{y:.3f}<extra></extra>"},
-    {x:metrics, y:pytV, name:"pythia-410m (isotropic)", type:"bar", marker:{color:C.matrix},
-      hovertemplate:"pythia-410m<br>%{x}=%{y:.3f}<extra></extra>"}
-  ], Object.assign({height:400, barmode:"group", margin:{t:16,r:16,b:54,l:48},
-    xaxis:{gridcolor:GRID}, yaxis:{title:"value", range:[0,1.0], gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
-    legend:{orientation:"h", y:1.12, x:0.5, xanchor:"center", font:{size:10}}}, base), {displayModeBar:false, responsive:true});
+  // FIG.04 — two panels: LEFT confounded (ada vs pythia, ε=6); RIGHT controlled (qwen raw vs centered).
+  var phiMetrics = ["anisotropy","coherence","inv@10 ↓","PII-leak ↓","utility"];
+  function phiPanel(div, title, aniso, iso, anisoName, isoName) {
+    Plotly.newPlot(div, [
+      {x:phiMetrics, y:aniso, name:anisoName, type:"bar", marker:{color:C.emb},
+        hovertemplate:anisoName+"<br>%{x}=%{y:.3f}<extra></extra>"},
+      {x:phiMetrics, y:iso, name:isoName, type:"bar", marker:{color:C.matrix},
+        hovertemplate:isoName+"<br>%{x}=%{y:.3f}<extra></extra>"}
+    ], Object.assign({height:380, barmode:"group", margin:{t:30,r:12,b:72,l:44},
+      title:{text:title, font:{size:12,color:INK}, x:0, xanchor:"left"},
+      xaxis:{gridcolor:GRID}, yaxis:{title:"value", range:[0,1.0], gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
+      legend:{orientation:"h", y:-0.22, x:0.5, xanchor:"center", font:{size:9}}}, base),
+      {displayModeBar:false, responsive:true});
+  }
+  // LEFT — confounded: different embeddings (ε=6)
+  phiPanel("plot-phi", "confounded — two different embeddings (ε=6)",
+    [0.788,0.448,0.590,0.086,0.894], [0.011,0.589,0.770,0.246,0.901],
+    "ada-002 (anisotropic 0.79)", "pythia-410m (isotropic 0.01)");
+  // RIGHT — controlled: same matrix ±anisotropy (mean ε=2/6/10, matched |C_r|)
+  phiPanel("plot-phi-ctrl", "controlled — same matrix, ±anisotropy (mean ε=2/6/10)",
+    [0.613,0.500,0.517,0.258,0.898], [0.000,0.455,0.327,0.121,0.897],
+    "qwen raw (anisotropic 0.61)", "qwen centered (isotropic 0.00)");
 
-  // FIG.05 — extraction model X bars.
-  var xm = ["utility","utility_control","PII recon recall"];
-  Plotly.newPlot("plot-x", [
-    {x:xm, y:[0.646,0.587,0.917], name:"gemma-4-E4B", type:"bar", marker:{color:C.x1},
-      hovertemplate:"gemma-4-E4B<br>%{x}=%{y:.3f}<extra></extra>"},
-    {x:xm, y:[0.747,0.632,0.917], name:"Qwen3.6-35B-A3B", type:"bar", marker:{color:C.x2},
-      hovertemplate:"Qwen3.6-35B<br>%{x}=%{y:.3f}<extra></extra>"}
-  ], Object.assign({height:340, barmode:"group", margin:{t:16,r:16,b:40,l:48},
-    xaxis:{gridcolor:GRID}, yaxis:{title:"score", range:[0,1.0], gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
-    legend:{orientation:"h", y:1.14, x:0.5, xanchor:"center", font:{size:10}}}, base), {displayModeBar:false, responsive:true});
+  // FIG.05 — extraction disguises perturbation: two panels vs ε (pythia-410m, N=60).
+  var xEPS = [2,6,10,14];
+  function xPanel(div, title, ytitle, solidN, solidY, dashN, dashY, yr) {
+    Plotly.newPlot(div, [
+      {x:xEPS, y:solidY, name:solidN, mode:"lines+markers", line:{color:C.x2,width:2}, marker:{color:C.x2,size:7},
+        hovertemplate:solidN+"<br>ε=%{x}: %{y:.3f}<extra></extra>"},
+      {x:xEPS, y:dashY, name:dashN, mode:"lines+markers", line:{color:C.x1,width:2,dash:"dash"}, marker:{color:C.x1,size:7},
+        hovertemplate:dashN+"<br>ε=%{x}: %{y:.3f}<extra></extra>"}
+    ], Object.assign({height:340, margin:{t:30,r:12,b:72,l:52},
+      title:{text:title, font:{size:12,color:INK}, x:0, xanchor:"left"},
+      xaxis:{title:"ε", tickvals:xEPS, gridcolor:GRID, zeroline:false},
+      yaxis:{title:ytitle, range:yr, gridcolor:GRID, zeroline:false},
+      legend:{orientation:"h", y:-0.30, x:0.5, xanchor:"center", font:{size:9}}}, base),
+      {displayModeBar:false, responsive:true});
+  }
+  // LEFT — final utility (cos → Doc): extraction dominates
+  xPanel("plot-x", "final utility (cos → Doc): extraction dominates", "cos(Doc, ·)",
+    "InferDPT (Doc + Gen_p)", [0.899,0.901,0.929,0.933],
+    "local-only (Doc alone)", [0.827,0.828,0.828,0.828], [0.75,0.98]);
+  // RIGHT — vs the non-private generation (cos → control): extraction repairs the channel
+  xPanel("plot-x2", "vs non-private generation (cos → control)", "cos(control, ·)",
+    "extracted output (utility_control)", [0.784,0.793,0.803,0.817],
+    "Gen_p, raw channel (u_p_control)", [0.553,0.619,0.713,0.762], [0.50,0.90]);
 })();
 </script>
 </body>

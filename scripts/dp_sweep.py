@@ -42,7 +42,7 @@ def _pmap(fn, items, workers):
 
 
 def run(cache, eps_grid, corpus, gen_model, ext_model, out, seed=0, workers=8, limit=0,
-        cr_target=0.01):
+        cr_target=0.01, no_mauve=False):
     docs, golds = load_corpus(corpus)  # golds = gold human continuations (MAUVE ref), or None
     if limit:
         docs = docs[:limit]
@@ -117,7 +117,9 @@ def run(cache, eps_grid, corpus, gen_model, ext_model, out, seed=0, workers=8, l
             per["mlm_top1"].append(mlm["top1_recovery"]); per["mlm_top5"].append(mlm["top5_recovery"])
 
         # MAUVE vs gold human continuations (paper-faithful); falls back to control if no gold.
-        mauve = utility.mauve_score(outs, golds if golds is not None else controls)
+        # Invalid below ~234 docs (k-means needs the points), so skippable via --no-mauve.
+        mauve = {"mauve": None} if no_mauve else \
+            utility.mauve_score(outs, golds if golds is not None else controls)
         row = {"eps": eps,
                "Cr_pct": round(100 * mech["|C_r|/V"], 1),
                "repl_cos": round(mech["cos(orig,repl)"], 3),
@@ -163,8 +165,9 @@ if __name__ == "__main__":
     ap.add_argument("--ext-model", default="gemma 4 (E4B)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--cr-target", type=float, default=0.01, help="|C_r|/|V| target for per-φ Z calibration")
+    ap.add_argument("--no-mauve", action="store_true", help="skip MAUVE (invalid below ~234 docs)")
     ap.add_argument("--out", default="results/dp_sweep.json")
     args = ap.parse_args()
     run(args.cache, [float(x) for x in args.eps.split(",")],
         args.corpus, args.gen_model, args.ext_model, args.out, workers=args.workers,
-        limit=args.limit, cr_target=args.cr_target)
+        limit=args.limit, cr_target=args.cr_target, no_mauve=args.no_mauve)

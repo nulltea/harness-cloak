@@ -22,15 +22,18 @@ cased CNN/DM, cl100k vocabulary, `results/dp_sweep_{ada002,pythia410m}.json`).
 
 ## Bottom line
 
-φ is **not an end-to-end utility lever** — final extracted utility is flat (~0.89–0.93) across
-every φ, because the extraction module re-grounds on the true prefix. φ has exactly two effects:
+φ is **not an end-to-end utility lever** — final utility is flat (~0.89–0.93) across every φ,
+because extraction re-grounds on the true prefix. Its **one established effect** is:
 
 1. **A calibration constraint.** The noise radius (via `Z(ε)`) must be re-fit to each φ's
    distance scale, or the candidate set `|C_r|` degenerates and `Doc_p` becomes word-salad.
-2. **A coherence↔attack-resistance trade, governed by anisotropy.** At a *matched* `|C_r|`,
-   an isotropic φ gives more coherent `Doc_p` but a working inversion attack; an anisotropic
-   φ gives less coherent `Doc_p` but the nearest-neighbour attack degrades — a lower `inv@10`
-   that is an **artifact of compressed geometry, not real privacy**.
+   The paper's `Z` constants fit only ada-002.
+
+The coherence↔leakage "trade" seen *across* embeddings (ada-002 vs pythia, §3) is a **confound**
+— vocabulary coverage, effective dimension, embedding family — **not anisotropy**. The controlled
+test (same matrix raw vs mean-centered, matched `|C_r|`, §3a) does **not** reproduce it and the
+leakage signs reverse. So **anisotropy is not a privacy↔coherence dial**; it only mattered because
+it changes the distance scale that the radius calibration (effect 1) must be matched to.
 
 ## Definitions
 
@@ -71,26 +74,84 @@ The fix is `rantext.calibrate_noise_fn`: re-fit `Z` per φ to a fixed `|C_r|` ta
 | 4%  | `Mi name avis She Phillips and amigos several thirty became old living within Japan…` |
 | 1%  | `Her name ais William Thompson … living by Canada with mead husband` (readable) |
 
-## 3. At a matched `|C_r|`, anisotropy trades coherence for attack-resistance
+## 3. A coherence↔leakage difference between the two φ — correlated with anisotropy, confounded
 
-Both φ calibrated to `|C_r|≈1%`, N=60, cased CNN/DM. Lower `inv@10`/`PII-leak` = more private;
-higher `coherence`/`utility` = more faithful.
+Both φ *targeted* `|C_r|=1%`, N=60, cased CNN/DM. Lower `inv@10`/`PII-leak` = more private;
+higher `coherence` = more faithful `Doc_p`. Realized `|C_r|` is shown because it is **not**
+actually matched per ε (see confounds).
 
-| φ (aniso) | ε | coherence (Gen_p) | inv@10 ↓ | PII-leak ↓ | utility (final) |
+| φ (aniso · |V| · eff_dim) | ε | realized \|C_r\| | coherence | inv@10 ↓ | PII-leak ↓ | utility (final) |
+|---|---|---|---|---|---|---|
+| ada-002 (0.79 · 10129 · 116) | 2 | 0.8% | 0.389 | 0.452 | 0.046 | 0.892 |
+| ada-002 | 6 | 1.4% | 0.448 | 0.590 | 0.086 | 0.894 |
+| ada-002 | 10 | 1.4% | 0.578 | 0.790 | 0.114 | 0.921 |
+| pythia-410m (0.011 · 12000 · 570) | 2 | 1.2% | 0.535 | 0.666 | 0.129 | 0.899 |
+| pythia-410m | 6 | 1.1% | 0.589 | 0.770 | 0.246 | 0.901 |
+| pythia-410m | 10 | 0.7% | 0.716 | 0.912 | 0.478 | 0.929 |
+
+**Observed (descriptive only).** The lower-anisotropy map (pythia) is more coherent yet more
+invertible and leakier at every ε; `token_MI` (~4.6→5.0 bits) and final utility (~0.9) are tied
+across both. Note **utility does not move** — φ is not a utility lever (§4); the difference is
+coherence↔leakage, not utility↔leakage.
+
+**The cause is NOT established (result-to-claim verdict: NO, high confidence).** This is a
+2-point comparison of non-matched systems; at least four factors move *with* anisotropy and each
+alone can produce the observed signs:
+
+- **Vocabulary coverage.** ada's `|V|` is smaller (10129 vs 12000) and lacks cased name tokens,
+  so it **drops** them (privacy-by-removal) — mechanically lowering ada's `PII-leak` and coherence
+  with no geometry involved. Tell: the `PII-leak` gap *grows* with ε (0.08→0.43), the signature of
+  a coverage/`|C_r|` artifact, not a fixed geometric offset.
+- **`|C_r|` not actually matched.** Realized `|C_r|` (ada/pythia) ranges 0.67× to **2.0×**
+  (ε=10: ada 1.4% vs pythia 0.7%). More candidates = more perturbation → directly moves both
+  coherence and leakage.
+- **Effective dimension** differs 5× (116 vs 570) — a separate concentration axis.
+- **Bundled systems** — contrastive text-embedder vs LM `embed_tokens`, dim 1536 vs 1024,
+  different tokenizer/coverage. Anisotropy is one of several simultaneous differences.
+
+So `inv@10` is still suspect as a cross-φ privacy metric (it can be attack-weakening from
+concentrated geometry), but attributing the trade to **anisotropy specifically** is a
+*hypothesis* — **tested and refuted** in §3a.
+
+**Plausible mechanism (hypothesis).** Removing the shared common direction raises distance/rank
+*contrast* among neighbours, which would simultaneously (a) improve semantic neighbour selection
+→ ↑coherence and (b) sharpen the neighbourhood constraint on the original token → ↑inversion.
+This predicts the observed double-edge — but the 2-point data cannot separate it from the
+confounds above, and the controlled test (§3a) **refutes** it.
+
+## 3a. Isolating anisotropy — the controlled test → **mechanism REFUTED**
+
+Held *everything but anisotropy* fixed: **qwen3-embedding RAW** (aniso 0.613) vs the **same
+matrix mean-centered** (aniso 0.000) — identical vocabulary/token-set (12000), dim, tokenizer,
+docs, seed, pipeline, attacker; centering only removes the shared direction. Realized `|C_r|`
+matched to ~1.3% at ε=2/6/10 (ε=14 came out unmatched, 0.8% vs 1.4% — discounted). N=10, single
+seed → directional, not tight. Δ = centered(iso) − raw(aniso), `results/dp_sweep_qwen_{raw,centered}.json`:
+
+| ε | \|C_r\| raw/cen | coherence Δ | inv@10 Δ | pii_leak Δ | utility |
 |---|---|---|---|---|---|
-| ada-002 (0.79) | 2 | 0.389 | **0.452** | **0.046** | 0.892 |
-| ada-002 (0.79) | 6 | 0.448 | **0.590** | **0.086** | 0.894 |
-| ada-002 (0.79) | 10 | 0.578 | **0.790** | **0.114** | 0.921 |
-| pythia-410m (0.011) | 2 | 0.535 | 0.666 | 0.129 | 0.899 |
-| pythia-410m (0.011) | 6 | 0.589 | 0.770 | 0.246 | 0.901 |
-| pythia-410m (0.011) | 10 | 0.716 | 0.912 | 0.478 | 0.929 |
+| 2 | 1.2% / 1.5% | −0.031 | −0.20 | −0.07 | ≈equal |
+| 6 | 1.4% / 1.4% | −0.112 | −0.24 | −0.13 | ≈equal |
+| 10 | 1.3% / 1.3% | +0.007 | −0.14 | −0.20 | ≈equal |
+| *14* | *0.8% / 1.4%* | *+0.012* | *+0.07* | *−0.12* | *(|C_r| unmatched)* |
 
-**Reading.** At every ε, the isotropic map (pythia) is **more coherent** yet **more invertible
-and leakier**; the anisotropic map (ada-002) is **less coherent** yet shows **lower `inv@10`
-and `PII-leak`**. Crucially the token-channel MI is ~identical across φ (≈4.64→5.02 bits both):
-the *channel capacity* is the same — the difference is only whether the nearest-neighbour attack
-can exploit it. So a low `inv@10` on an anisotropic φ is **attack-weakening from compressed
-distances, not genuine privacy**. `inv@10` is therefore not a clean cross-φ privacy metric.
+**Verdict: the §2-hypothesis is refuted.** Isolating anisotropy does **not** reproduce the
+§3 (ada-vs-pythia) trade:
+
+- **Coherence:** no consistent effect (mixed, ≈0 net). The pythia coherence edge in §3 was the
+  vocabulary-coverage / `|C_r|` confound, not anisotropy. (Centering's *visible* salad-fix earlier
+  in the project was escaping `|C_r|` saturation at the mis-set radius — a *calibration* effect,
+  §2 — not an intrinsic coherence gain at matched `|C_r|`.)
+- **inv@10 and PII-leak:** centering (more isotropic) moves them the **opposite** way from §3 —
+  it *lowers* both. So the §3 signs ("isotropic → higher inv@10/PII-leak") were confound-driven
+  (vocab coverage, eff_dim, embedding family), **not** anisotropy. This also refutes the older
+  "anisotropy weakens the inversion attack" reading.
+- **Utility:** unchanged — φ is not a utility lever (§4 holds).
+
+So **anisotropy is not the cause of a coherence↔attackability trade.** At matched `|C_r|`,
+removing it costs nothing on coherence/utility and *slightly reduces* leakage/attackability —
+but that direction is weak (N=10, one seed; ε=14 `|C_r|` unmatched and flips inv@10). Firming it
+needs N≥30, multiple seeds, CIs, and a dose-response (subtract α·mean); and it is within-qwen
+only, not across embedding families.
 
 ## 4. End-to-end utility is φ-independent
 
@@ -116,12 +177,11 @@ looks. **φ cannot buy end-to-end utility.**
 
 ## Open
 
-- `inv@10` confounds privacy with anisotropy; a matched-anisotropy comparison or a
-  context-aware LM reconstruction attack is needed to test whether the anisotropy "protection"
-  is real or evaporates against a stronger adversary.
+- **Isolate anisotropy** — the raw-vs-centered qwen control (§3a) at matched realized `|C_r|`;
+  this is the decisive experiment and is the current blocker on any causal claim.
+- A context-aware LM reconstruction attack would test whether the anisotropy "protection"
+  (low `inv@10`) survives a stronger adversary, or is only nearest-neighbour-attack weakening.
 - Single seed, N=60; MAUVE needs N≥234 to be valid (the current runs are under-powered for it).
-- The coherence↔`inv@10` trade is measured only for ada-002 (anisotropic) vs pythia-410m
-  (isotropic); a mid-anisotropy φ would fill in the curve.
 
 ## Probes → code
 `diagnostics.anisotropy` / `concentration` (aniso, dynamic range), `diagnostics.mechanism`
