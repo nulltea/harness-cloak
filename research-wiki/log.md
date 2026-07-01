@@ -18,3 +18,9 @@ _Append-only timeline._
 - `2026-06-29T13:33:58Z` upsert_idea: added idea:llm-matrix-phi [stage=piloted outcome=negative]
 - `2026-06-29T13:33:58Z` add_experiment: added exp:ab-phi-emb-vs-matrix [verdict=no confidence=high]
 - `2026-06-29T13:33:58Z` add_claim: added claim:anisotropy-bad-but-insufficient [status=drafted] prov=docs/perturbation-sota.md; results/e2e_ab.json; experiments exp:geom-diag-qwen3emb, exp:ab-phi-emb-vs-matrix
+- `2026-06-29T22:51:55Z` result-to-claim: exp:lever2-phi-model-ab verdict=partial for claim:anisotropy-bad-but-insufficient (P2 binds; retention artifact; P1/P3 controls insufficient; C3 e2e null pilot)
+- `2026-07-01T11:02:03Z` ingest_paper: added paper:mattern2022_limits_word_level_dp (RANTEXT-family limitation evidence; cited in docs/research/rantext-limitations.md)
+- `2026-07-01T11:02:03Z` ingest_paper: added paper:tong2025_vulnerability_text_sanitization (RANTEXT-family limitation evidence; cited in docs/research/rantext-limitations.md)
+- `2026-07-01T11:02:03Z` ingest_paper: added paper:pang2024_reconstruction_dp_text_llm (RANTEXT-family limitation evidence; cited in docs/research/rantext-limitations.md)
+- `2026-07-01T11:02:03Z` ingest_paper: added paper:meisenbacher2025_double_edged_reconstruction (RANTEXT-family limitation evidence; cited in docs/research/rantext-limitations.md)
+- `2026-07-01T11:02:03Z` add_edge: +5 edges (limitation/attack papers -> InferDPT/SanText)
