@@ -1,1 +1,0 @@
-- 2026-06-29_223801  EXPERIMENT_PLAN.md / EXPERIMENT_TRACKER.md — Lever 2 φ A/B plan (companion: docs/research/embedding-map.md)

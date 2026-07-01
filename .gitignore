@@ -3,11 +3,12 @@
 __pycache__/
 *.pyc
 
-# Regenerable vocab-embedding matrices (rebuild via embeddings.py)
-data/*.npy
+# Regenerable / large data: vocab lists + embedding matrices + LLM cache (rebuild via embeddings.py)
+data/
 
-# Cached LLM responses ($INFERDPT_LLM_CACHE)
-data/llm_cache/
+# Scratch process logs / staging (not part of the repo)
+refine-logs/
+review-stage/
 
 .claude
 .aris
