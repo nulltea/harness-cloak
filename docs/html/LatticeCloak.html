@@ -489,6 +489,142 @@
       </tbody>
     </table>
     </div>
+
+    <p class="prose">The three prompts whose answers cite substituted facts, as forward-path diagrams
+    (doc_orig &rarr; doc_p &rarr; gen_p; the inverted out_final and no-privacy out_ctrl are in the tables
+    above). <span style="color:#2f7d4f;font-weight:600;">Green</span> = spans the substitutor removes;
+    <span style="color:#b4560a;font-weight:600;">amber</span> = their placeholders / generalizations as they
+    ride through the remote answer.</p>
+
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · 06 — forward path: prompt 1, self-introduction</span>
+        <span>detector+substitutor &rarr; remote LLM</span>
+      </div>
+      <svg class="flow" viewBox="0 0 1120 356" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Prompt 1 forward path: doc_orig (Sarah Johnson, thirty four, Boston) is masked to doc_p (PERSON_1, thirty-something, a city in Massachusetts); the remote LLM answers on doc_p keeping those placeholders and generalizations.">
+        <defs><marker id="ahp1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
+
+        <rect x="20" y="36" width="1080" height="72" rx="6" class="box box-client"/>
+        <foreignObject x="20" y="36" width="1080" height="72">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:72px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_orig · raw text (client, plaintext)</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">My name is <span style="color:#2f7d4f;font-weight:600;">Sarah Johnson</span> and I am <span style="color:#2f7d4f;font-weight:600;">thirty four</span> years old living in <span style="color:#2f7d4f;font-weight:600;">Boston</span> with my husband.</div>
+          </div>
+        </foreignObject>
+
+        <path d="M560,108 L560,150" class="arrow" marker-end="url(#ahp1)"/>
+        <text x="576" y="128" class="arrow-label">detector + substitutor</text>
+        <text x="576" y="141" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
+
+        <rect x="20" y="152" width="1080" height="72" rx="6" class="box box-crypto"/>
+        <foreignObject x="20" y="152" width="1080" height="72">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:72px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_p · masked, sent to the remote model</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">My name is <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> and I am <span style="color:#b4560a;font-weight:600;">thirty-something</span> living in <span style="color:#b4560a;font-weight:600;">a city in Massachusetts</span> with my husband.</div>
+          </div>
+        </foreignObject>
+
+        <path d="M560,224 L560,266" class="arrow arrow-masked" marker-end="url(#ahp1)"/>
+        <text x="576" y="244" class="arrow-label masked">remote LLM</text>
+        <text x="576" y="257" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+
+        <rect x="20" y="268" width="1080" height="72" rx="6" class="box box-gpu"/>
+        <foreignObject x="20" y="268" width="1080" height="72">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:72px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_p · remote answer on doc_p</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> is a <span style="color:#b4560a;font-weight:600;">thirty-something</span> individual residing in a <span style="color:#b4560a;font-weight:600;">Massachusetts city</span> with their husband. The provided text does not specify their job or financial details.</div>
+          </div>
+        </foreignObject>
+      </svg>
+    </div>
+
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · 07 — forward path: prompt 3, job and salary (spelled-out amount)</span>
+        <span>detector+substitutor &rarr; remote LLM</span>
+      </div>
+      <svg class="flow" viewBox="0 0 1120 356" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Prompt 3 forward path: doc_orig (lawyer, Goldman Sachs, two hundred thousand dollars, Chicago) is masked to doc_p (a person, a financial institution, a salary range, a city in Illinois); the remote LLM answers on doc_p keeping those generalizations.">
+        <defs><marker id="ahp3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
+
+        <rect x="20" y="36" width="1080" height="72" rx="6" class="box box-client"/>
+        <foreignObject x="20" y="36" width="1080" height="72">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:72px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_orig · raw text (client, plaintext)</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">He works as a <span style="color:#2f7d4f;font-weight:600;">lawyer</span> at <span style="color:#2f7d4f;font-weight:600;">Goldman Sachs</span> and earns <span style="color:#2f7d4f;font-weight:600;">two hundred thousand dollars</span> a year in <span style="color:#2f7d4f;font-weight:600;">Chicago</span>.</div>
+          </div>
+        </foreignObject>
+
+        <path d="M560,108 L560,150" class="arrow" marker-end="url(#ahp3)"/>
+        <text x="576" y="128" class="arrow-label">detector + substitutor</text>
+        <text x="576" y="141" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
+
+        <rect x="20" y="152" width="1080" height="72" rx="6" class="box box-crypto"/>
+        <foreignObject x="20" y="152" width="1080" height="72">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:72px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_p · masked, sent to the remote model</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">He works as <span style="color:#b4560a;font-weight:600;">a person</span> at <span style="color:#b4560a;font-weight:600;">a financial institution</span> and earns <span style="color:#b4560a;font-weight:600;">between 100,000 and 400,000 dollars</span> a year in <span style="color:#b4560a;font-weight:600;">a city in Illinois</span>.</div>
+          </div>
+        </foreignObject>
+
+        <path d="M560,224 L560,266" class="arrow arrow-masked" marker-end="url(#ahp3)"/>
+        <text x="576" y="244" class="arrow-label masked">remote LLM</text>
+        <text x="576" y="257" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+
+        <rect x="20" y="268" width="1080" height="72" rx="6" class="box box-gpu"/>
+        <foreignObject x="20" y="268" width="1080" height="72">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:72px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_p · remote answer on doc_p</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">He is a <span style="color:#b4560a;font-weight:600;">financial institution</span> employee living in <span style="color:#b4560a;font-weight:600;">a city in Illinois</span> who earns an annual income <span style="color:#b4560a;font-weight:600;">between $100,000 and $400,000</span>.</div>
+          </div>
+        </foreignObject>
+      </svg>
+    </div>
+
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · 08 — forward path: prompt 4, the stress case (relocation, employer, salary, age, month)</span>
+        <span>detector+substitutor &rarr; remote LLM</span>
+      </div>
+      <svg class="flow" viewBox="0 0 1120 380" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Prompt 4 forward path: doc_orig (Last spring, Dmitri, Cambridge, Sberbank, 95k, turned 40 in May) is masked to doc_p (Some time ago, PERSON_1, a city in England, a financial institution, a salary range, forty-something, the spring); the remote LLM answers on doc_p keeping those placeholders and generalizations.">
+        <defs><marker id="ahp4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
+
+        <rect x="20" y="36" width="1080" height="84" rx="6" class="box box-client"/>
+        <foreignObject x="20" y="36" width="1080" height="84">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:84px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_orig · raw text (client, plaintext)</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;"><span style="color:#2f7d4f;font-weight:600;">Last spring</span>, <span style="color:#2f7d4f;font-weight:600;">Dmitri</span> moved from <span style="color:#2f7d4f;font-weight:600;">Cambridge</span> to work at <span style="color:#2f7d4f;font-weight:600;">Sberbank</span> as a data scientist; his salary doubled to <span style="color:#2f7d4f;font-weight:600;">95k</span> and he turned <span style="color:#2f7d4f;font-weight:600;">40</span> in <span style="color:#2f7d4f;font-weight:600;">May</span>.</div>
+          </div>
+        </foreignObject>
+
+        <path d="M560,120 L560,162" class="arrow" marker-end="url(#ahp4)"/>
+        <text x="576" y="140" class="arrow-label">detector + substitutor</text>
+        <text x="576" y="153" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
+
+        <rect x="20" y="164" width="1080" height="84" rx="6" class="box box-crypto"/>
+        <foreignObject x="20" y="164" width="1080" height="84">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:84px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_p · masked, sent to the remote model</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">Some time ago</span>, <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> moved from <span style="color:#b4560a;font-weight:600;">a city in England</span> to work at <span style="color:#b4560a;font-weight:600;">a financial institution</span> as a data scientist; his salary doubled to <span style="color:#b4560a;font-weight:600;">between 47,500 and 190,000</span> and he turned <span style="color:#b4560a;font-weight:600;">forty-something</span> in <span style="color:#b4560a;font-weight:600;">the spring</span>.</div>
+          </div>
+        </foreignObject>
+
+        <path d="M560,248 L560,290" class="arrow arrow-masked" marker-end="url(#ahp4)"/>
+        <text x="576" y="268" class="arrow-label masked">remote LLM</text>
+        <text x="576" y="281" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+
+        <rect x="20" y="292" width="1080" height="72" rx="6" class="box box-gpu"/>
+        <foreignObject x="20" y="292" width="1080" height="72">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:72px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_p · remote answer on doc_p</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> is a <span style="color:#b4560a;font-weight:600;">forty-something</span> data scientist who relocated from <span style="color:#b4560a;font-weight:600;">a city in England</span> to work at <span style="color:#b4560a;font-weight:600;">a financial institution</span>. His salary doubled to a range <span style="color:#b4560a;font-weight:600;">between &pound;47,500 and &pound;190,000</span>.</div>
+          </div>
+        </foreignObject>
+      </svg>
+    </div>
+
     <p class="prose">Prompt 4 also contains a comprehension reversal: the no-privacy control
     misread the relocation direction ("based in Cambridge"; he left Cambridge), while the round-trip output
     preserved "relocated from Cambridge" correctly. The privatized path is not uniformly dominated even at the
