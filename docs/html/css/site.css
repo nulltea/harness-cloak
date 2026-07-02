@@ -392,8 +392,9 @@ section {
 /* ────── HEADING ANCHORS ────── */
 /* Click target next to a heading that links to that heading's own
    anchor. Hidden by default; appears on hover of the parent heading
-   or when the heading is the URL target. Used on h2.section-title
-   and the §08 / §09 h3 subsections. */
+   or when the heading is the URL target. Injected by js/nav.js on
+   h2.section-title (linking the enclosing section[id]) and on h3/h4
+   subsections (which get a slug id). */
 .heading-anchor {
   display: inline-block;
   margin-left: 8px;
@@ -408,9 +409,18 @@ section {
 }
 .section-title:hover .heading-anchor,
 h3:hover .heading-anchor,
+h4:hover .heading-anchor,
 .heading-anchor:focus,
 :target > .heading-anchor {
   opacity: 1;
+}
+/* jump targets clear the page top; subsections get their own margin */
+section h3[id],
+section h4[id] {
+  scroll-margin-top: 40px;
+}
+html {
+  scroll-behavior: smooth;
 }
 .heading-anchor:hover {
   color: var(--accent);
