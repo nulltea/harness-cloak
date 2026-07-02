@@ -67,3 +67,13 @@ it is not a privacy↔coherence dial. At matched |C_r|, centering is weakly priv
 (↓inv@10, ↓pii, flat coherence/utility) — needs N≥30 + seeds + dose-response to firm.
 
 Docs updated: embedding-map.md §3a (verdict) + bottom line + §3; HTML §5.2 conclusion.
+
+## 2026-07-02 · result-to-claim gate on LatticeCloak.html §06 (D1 prototype)
+Codex (xhigh) verdicts on the five findings: **C2 yes/high** (QUASI weak categories DEM 0.56 / MISC 0.21 /
+QUANTITY 0.25); **C1, C3, C4, C5 partial/medium**. Applied revisions: C1 is a benchmark detection result,
+not a privacy guarantee (any-overlap leniency; numeric-reference regex added after inspecting misses on the
+same test set — headline is not a frozen-detector hold-out); C3 scoped to detected spans on one corpus (route
+counts ≠ substitution quality); C4 scoped to a 36-entity pilot (no blind accuracy of accepted candidates, no
+gate false-accept rate); C5 scoped to the 32-answer smoke (inversion mostly unexercised). Missing-evidence
+list retained in trace: .aris/traces/result-to-claim/2026-07-02_run01/. Follow-up C6 (tau sweep: knob moves, surface probes flat) also partial/medium — scoped wording applied. No attacker/utility numbers exist yet;
+nothing on the page claims a privacy-utility trade-off.

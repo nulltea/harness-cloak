@@ -93,3 +93,11 @@ put with `status: stale` + `archive_reason`. `companion:` references repo-local 
   link** — `([arXiv 1234.56789](https://arxiv.org/abs/1234.56789))` (or DOI / ACL / venue link when there
   is no arXiv), placed right after the wiki-page link, inline and in any Sources list. Pull the id from the
   page's `external_ids` frontmatter, never from memory.
+
+## Naming — no plan-level identifiers in code or HTML
+
+Plan/phase identifiers (`D1`, `P0`, `RD4`, …) live only in `docs/plans/` and `docs/research/`.
+**Never** use them in code (file names, module/function names, data/result paths) or in HTML pages —
+name artifacts after the method or feature (`latticecloak_tau_sweep.py`,
+`results/latticecloak_detection_gate.json`). Citing a plan *document path* in a docstring is fine;
+baking the plan's numbering into an identifier is not (plans get renumbered; methods keep their names).

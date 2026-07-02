@@ -3,7 +3,8 @@
 // Each page needs: <div class="topnav" id="site-nav"></div> and <script src="js/nav.js"></script>.
 (function () {
   var PAGES = [
-    { href: "infer-dtp.html", label: "InferDPT &amp; RANTEXT" }
+    { href: "infer-dtp.html", label: "InferDPT &amp; RANTEXT" },
+    { href: "LatticeCloak.html", label: "LatticeCloak" }
   ];
   var here = location.pathname.split("/").pop() || "infer-dtp.html";
   var links = PAGES.map(function (p) {

@@ -6,7 +6,7 @@ as detected on any character overlap ("any"); "typed" additionally requires the 
 to match. Gate rule (plan P0.3): DIRECT any-recall < 0.95 -> controlled condition runs
 on gold spans and the detector gap is a finding.
 
-Run: PYTHONPATH=src .venv/bin/python -u scripts/d1_detection_gate.py
+Run: PYTHONPATH=src .venv/bin/python -u scripts/latticecloak_detection_gate.py
 """
 import argparse
 import json
@@ -34,7 +34,7 @@ def main():
     ap.add_argument("--corpus", default="corpora/tab/echr_test.json")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--threshold", type=float, default=0.3)
-    ap.add_argument("--out", default="results/d1_detection_gate.json")
+    ap.add_argument("--out", default="results/latticecloak_detection_gate.json")
     args = ap.parse_args()
 
     docs = json.load(open(args.corpus))

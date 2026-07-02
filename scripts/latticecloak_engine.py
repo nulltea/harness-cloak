@@ -2,11 +2,11 @@
 
 Remote task model = Qwen3.6-35B-A3B via the ts-proxy (same as the InferDPT baseline's gen
 model). Substitution is local/GPU (sequential); remote calls are threaded and disk-cached
-via $INFERDPT_LLM_CACHE. Tuples -> data/d1_tuples/tau<tau>.jsonl (append-safe by rerun:
+via $INFERDPT_LLM_CACHE. Tuples -> data/latticecloak_tuples/tau<tau>.jsonl (append-safe by rerun:
 existing (author, task_id) pairs are skipped).
 
 Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
-       .venv/bin/python -u scripts/d1_engine.py --limit 8 --tau 0.02
+       .venv/bin/python -u scripts/latticecloak_engine.py --limit 8 --tau 0.02
 """
 import argparse
 import json
@@ -28,7 +28,7 @@ def main():
     ap.add_argument("--workers", type=int, default=8)
     args = ap.parse_args()
 
-    out_path = Path(f"data/d1_tuples/tau{args.tau}.jsonl")
+    out_path = Path(f"data/latticecloak_tuples/tau{args.tau}.jsonl")
     out_path.parent.mkdir(exist_ok=True)
     done = set()
     if out_path.exists():

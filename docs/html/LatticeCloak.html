@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HarnessCloak · LatticeCloak</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+<div class="sheet">
+  <span class="crosshair tl"></span><span class="crosshair tr"></span>
+  <span class="crosshair bl"></span><span class="crosshair br"></span>
+
+  <!-- global navbar (single source of truth: edit js/nav.js) -->
+  <div class="topnav" id="site-nav"></div>
+
+  <!-- ─── MASTHEAD ─── -->
+  <header class="masthead">
+    <h1 class="title">LatticeCloak<span class="title-sub">typed placeholders and truthful generalization lattices for closed-box LLM inference</span></h1>
+    <div class="rev">research report · 2026-07-02</div>
+    <div class="abstract">
+      <div class="abstract-label">Abstract</div>
+      <p class="subtitle">LatticeCloak anonymizes prompts for closed-box LLM inference: typed placeholders
+      replace direct identifiers, truthful generalizations from per-span lattices replace quasi-identifiers,
+      and a client-side substitution record lets rules invert the remote answer. Its per-token noise
+      predecessor tied identity removal, premise preservation, and recovery to one scalar budget; LatticeCloak
+      separates them. Direct-identifier detection reached 0.998 observed recall on the Text Anonymization
+      Benchmark, and 97.8% of detected SynthPAI spans routed to zero-cost sources, leaving a 36-entity teacher
+      residue. The per-span threshold &tau; shifted lattice levels (26&rarr;34 accepted at most-specific), yet
+      aggregate surface probes stayed flat (lexical overlap 0.989, utility 0.971&ndash;0.972) and only a
+      candidate-sensitive masked-LM attack responded, so pricing the knob requires an adversarial attacker:
+      that evaluation, and the privacy-utility Pareto, are the explicitly pending next stage; round-trip
+      evidence is smoke-scale.</p>
+    </div>
+  </header>
+
+  <!-- ═════ §01 INTRODUCTION ═════ -->
+  <section id="introduction">
+    <header class="section-head">
+      <div class="section-num">§01</div>
+      <h2 class="section-title">Introduction</h2>
+      <div class="section-meta">problem · threat/setup · headline result</div>
+    </header>
+    <p class="lede">LatticeCloak is the successor to the abandoned InferDPT/RANTEXT line: instead of per-token
+    &epsilon;-LDP swaps, it replaces direct identifiers with typed placeholders and quasi-identifiers with
+    truthful generalizations drawn from a per-span lattice, keeping a client-side substitution record R that a
+    rule-based extractor inverts on the way back. On the TAB benchmark the detection stack reaches 0.998
+    observed direct-identifier recall (the gate for the placeholder path), 97.5&ndash;97.8% of detected spans
+    on SynthPAI route to zero-cost sources (rules, GeoNames, WordNet), and the full round trip runs end to end,
+    with constructed prompts showing facts restored wherever the remote answer cites a recoverable substituted
+    span.</p>
+    <div class="prose">
+      <p>The setting is a privacy layer for closed-box inference: a local client rewrites a prompt
+      <code>doc_orig</code> into an anonymized <code>doc_p</code>, sends it to an untrusted remote LLM, receives
+      <code>out_p</code>, and locally maps it back to <code>out_final</code>. The predecessor report
+      (<a href="infer-dtp.html">InferDPT &amp; RANTEXT</a>) established why the per-token mechanism fails: one
+      scalar &epsilon; jointly governs identity removal, premise preservation, and extraction signal, and the
+      end-to-end utility of that pipeline was produced by the extractor seeing the raw document, not by the
+      perturbation. LatticeCloak decomposes the knob: placeholders carry the identifier load exactly and
+      reversibly, lattices carry the premise load truthfully at an adjustable coarseness, and a masked-token
+      probe (&tau;) sets the operating point per span rather than globally.</p>
+      <p>This page documents the prototype design and the measurements taken so far: the detection gate on TAB,
+      span routing and teacher-cascade economics on SynthPAI, and a smoke-scale round trip with rule-only
+      extraction. The adversarial evaluation (frontier-LLM attribute inference at matched realized privacy
+      against the InferDPT baseline) is the next stage and is not claimed here.</p>
+    </div>
+  </section>
+
+  <!-- ═════ §02 PRELIMINARIES ═════ -->
+  <section id="preliminaries">
+    <header class="section-head">
+      <div class="section-num">§02</div><h2 class="section-title">Preliminaries</h2>
+      <div class="section-meta">definitions &amp; glossary</div>
+    </header>
+    <table class="spec">
+      <thead><tr><th style="width:22%">Term</th><th>Definition</th></tr></thead>
+      <tbody>
+        <tr><td><strong>doc_orig / doc_p</strong></td><td>Raw document / its anonymized rewrite sent to the remote model.</td></tr>
+        <tr><td><strong>out_p / out_final</strong></td><td>Remote answer computed on <code>doc_p</code> / its local inversion back to plaintext referents.</td></tr>
+        <tr><td><strong>R (substitution record)</strong></td><td>Client-side per-span record: surface, type, coref chain, chosen replacement, full lattice, probe risk. Never sent remotely; drives extraction.</td></tr>
+        <tr><td><strong>direct / quasi identifier</strong></td><td>Identifying alone (names, codes) / identifying in combination (location, age, occupation). Direct spans get placeholders; quasi spans get generalizations.</td></tr>
+        <tr><td><strong>truthful generalization</strong></td><td>A broader phrase the original is an instance of ("Oslo" &rarr; "a city in Norway"). Invertible by narrowing for the client, and it never feeds the remote model a falsehood.</td></tr>
+        <tr><td><strong>lattice</strong></td><td>Ordered generalization candidates for one span, most specific first.</td></tr>
+        <tr><td><strong>&tau; (probe threshold)</strong></td><td>The privacy knob: the walk accepts the first lattice level whose guess-back risk falls below &tau;.</td></tr>
+        <tr><td><strong>MTI probe</strong></td><td>Masked-token inference: mask the replacement in context and sum the MLM probability of the original's content tokens. Candidate-invariant, so it detects "contextually inferable anyway" spans.</td></tr>
+        <tr><td><strong>NLI gate</strong></td><td>Entailment check on every teacher lattice level: the original sentence must entail the sentence with the generalization substituted. Fails closed.</td></tr>
+        <tr><td><strong>teacher cascade</strong></td><td>gemma&nbsp;4 (E4B) writes lattices for entities no offline source covers; NLI rejections regenerate once via Qwen3.6-35B-A3B; double failures floor to the entity-type label. All local (llama-swap).</td></tr>
+        <tr><td><strong>TAB / SynthPAI</strong></td><td>Text Anonymization Benchmark (1,268 ECtHR cases, gold spans typed direct/quasi) / 300 synthetic Reddit profiles with 8 gold personal attributes.</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═════ §03 METHOD ═════ -->
+  <section id="method">
+    <header class="section-head">
+      <div class="section-num">§03</div><h2 class="section-title">Method</h2>
+      <div class="section-meta">design choices · roles · pipeline stages</div>
+    </header>
+    <div class="prose">
+      <p><strong>Design choices.</strong> Three commitments shape the system. First, no autoregressive LLM runs
+      in the deployed local path: the substitutor decomposes into detection, lookup, ranking, and inversion,
+      each served by encoders or dictionaries (the whole stack is under 1B parameters and batches on an iGPU).
+      Second, substitution is deterministic and auditable: replacements come from rule buckets, geographic and
+      lexical hierarchies, or a cached teacher lattice, never from proximity sampling in an embedding space,
+      which the predecessor page showed either preserves the referent or destroys the premise. Third, every
+      failure is designed to fall toward abstention: an unresolvable span becomes a coarse type label
+      (utility cost) rather than a leak (privacy cost).</p>
+      <p><strong>Roles.</strong> Model assignments are fixed and disjoint where trust requires it:</p>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="spec spec--wide">
+      <thead><tr><th>role</th><th>model</th><th>where</th><th>size</th></tr></thead>
+      <tbody>
+        <tr><td>span detection</td><td>GLiNER small-v2.1 (zero-shot, TAB's 8 categories as labels) &cup; Presidio patterns</td><td>local GPU</td><td class="num">166M</td></tr>
+        <tr><td>coreference</td><td>surface alias chains (string overlap per type)</td><td>local CPU</td><td class="num">0</td></tr>
+        <tr><td>lattice: dates, quantities</td><td>rule buckets (regex + word-numeral parser)</td><td>local CPU</td><td class="num">0</td></tr>
+        <tr><td>lattice: places</td><td>GeoNames city &rarr; region &rarr; country chains</td><td>local CPU</td><td class="num">16 MB</td></tr>
+        <tr><td>lattice: common nouns</td><td>WordNet hypernym paths</td><td>local CPU</td><td class="num">0</td></tr>
+        <tr><td>lattice: residual entities</td><td>teacher cascade: gemma 4 (E4B) &rarr; Qwen3.6-35B-A3B, cached</td><td>local llama-swap</td><td class="num">offline</td></tr>
+        <tr><td>truthfulness gate</td><td>DeBERTa-v3-base MNLI entailment</td><td>local GPU</td><td class="num">184M</td></tr>
+        <tr><td>selection probe</td><td>roberta-base masked-token inference</td><td>local GPU</td><td class="num">125M</td></tr>
+        <tr><td>extraction (rung A)</td><td>deterministic inversion of R: exact, then fuzzy alignment</td><td>local CPU</td><td class="num">0</td></tr>
+        <tr><td>remote task model</td><td>Qwen3.6-35B-A3B (untrusted; same model the InferDPT baseline uses)</td><td>remote proxy</td><td class="num">35B</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · M1 — LatticeCloak pipeline: detect &rarr; route &rarr; walk at &tau; &rarr; remote &rarr; invert</span>
+        <span>navy = client (trusted) · amber = remote (untrusted) · dashed = R, never leaves the client</span>
+      </div>
+      <svg class="flow" viewBox="0 0 1180 430" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="LatticeCloak pipeline: the client detects spans, routes them to lattice sources, walks each lattice at threshold tau using the MTI probe, sends the anonymized document to the untrusted remote model, and inverts the substitution record R over the remote answer locally.">
+        <defs><marker id="ah2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
+        <rect x="0" y="30" width="850" height="392" class="zone-band zone-band-client"/>
+        <rect x="850" y="30" width="330" height="392" class="zone-band zone-band-gpu"/>
+        <text x="16" y="52" class="zone-label">Client — trusted</text>
+        <text x="866" y="52" class="zone-label">Remote — untrusted</text>
+
+        <rect x="16" y="120" width="92" height="40" class="box box-client"/>
+        <text x="62" y="138" text-anchor="middle" class="box-label">doc_orig</text>
+        <text x="62" y="151" text-anchor="middle" class="box-sub">raw text</text>
+
+        <rect x="140" y="98" width="170" height="84" class="box box-client"/>
+        <text x="225" y="116" text-anchor="middle" class="box-label">Detection</text>
+        <text x="225" y="130" text-anchor="middle" class="box-sub">GLiNER ∪ Presidio</text>
+        <text x="225" y="143" text-anchor="middle" class="box-sub">dedupe · noise filters</text>
+        <text x="225" y="156" text-anchor="middle" class="box-sub">alias coref chains</text>
+        <text x="225" y="172" text-anchor="middle" class="box-sub">166M + patterns</text>
+
+        <rect x="342" y="112" width="96" height="56" class="box box-client"/>
+        <text x="390" y="136" text-anchor="middle" class="box-label">Router</text>
+        <text x="390" y="150" text-anchor="middle" class="box-sub">by span type</text>
+
+        <rect x="470" y="66" width="176" height="36" class="box box-client"/>
+        <text x="558" y="82" text-anchor="middle" class="box-label">placeholders</text>
+        <text x="558" y="94" text-anchor="middle" class="box-sub">direct ids · per coref chain</text>
+
+        <rect x="470" y="112" width="176" height="36" class="box box-client"/>
+        <text x="558" y="128" text-anchor="middle" class="box-label">rule buckets</text>
+        <text x="558" y="140" text-anchor="middle" class="box-sub">dates · ages · amounts</text>
+
+        <rect x="470" y="158" width="176" height="36" class="box box-client"/>
+        <text x="558" y="174" text-anchor="middle" class="box-label">GeoNames · WordNet</text>
+        <text x="558" y="186" text-anchor="middle" class="box-sub">places · common nouns</text>
+
+        <rect x="470" y="204" width="176" height="36" class="box box-storage"/>
+        <text x="558" y="220" text-anchor="middle" class="box-label">lattice cache</text>
+        <text x="558" y="232" text-anchor="middle" class="box-sub">teacher cascade, FIG M2</text>
+
+        <rect x="678" y="112" width="150" height="72" class="box box-client box-strong"/>
+        <text x="753" y="132" text-anchor="middle" class="box-label">lattice walk @ τ</text>
+        <text x="753" y="146" text-anchor="middle" class="box-sub">MTI probe (125M)</text>
+        <text x="753" y="159" text-anchor="middle" class="box-sub">leak-token filter</text>
+        <text x="753" y="172" text-anchor="middle" class="box-sub">most specific first</text>
+
+        <rect x="678" y="230" width="150" height="40" class="box box-crypto"/>
+        <text x="753" y="248" text-anchor="middle" class="box-label">R (record)</text>
+        <text x="753" y="261" text-anchor="middle" class="box-sub">span → lattice · risk</text>
+
+        <rect x="890" y="120" width="250" height="56" class="box box-gpu"/>
+        <text x="1015" y="142" text-anchor="middle" class="box-label">remote task LLM</text>
+        <text x="1015" y="156" text-anchor="middle" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+
+        <rect x="678" y="320" width="150" height="64" class="box box-client box-strong"/>
+        <text x="753" y="340" text-anchor="middle" class="box-label">rung A inversion</text>
+        <text x="753" y="354" text-anchor="middle" class="box-sub">exact match → fuzzy align</text>
+        <text x="753" y="367" text-anchor="middle" class="box-sub">placeholder swap-back</text>
+
+        <rect x="500" y="332" width="120" height="40" class="box box-client"/>
+        <text x="560" y="350" text-anchor="middle" class="box-label">out_final</text>
+        <text x="560" y="363" text-anchor="middle" class="box-sub">to the user</text>
+
+        <path d="M108,140 L136,140" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M310,140 L338,140" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M438,128 L466,90" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M438,134 L466,130" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M438,146 L466,176" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M438,152 L466,220" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M646,84 L674,120" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M646,130 L674,138" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M646,176 L674,152" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M646,222 L674,166" class="arrow" marker-end="url(#ah2)"/>
+        <path d="M828,140 L886,144" class="arrow arrow-masked" marker-end="url(#ah2)"/>
+        <text x="838" y="130" class="arrow-label masked">doc_p</text>
+        <path d="M753,184 L753,226" class="arrow arrow-secret" marker-end="url(#ah2)"/>
+        <path d="M1015,176 C1015,352 900,352 832,352" class="arrow arrow-masked" marker-end="url(#ah2)"/>
+        <text x="960" y="368" class="arrow-label masked">out_p</text>
+        <path d="M753,270 L753,316" class="arrow arrow-secret" marker-end="url(#ah2)"/>
+        <text x="762" y="296" class="arrow-label secret">R</text>
+        <path d="M674,352 L624,352" class="arrow" marker-end="url(#ah2)"/>
+      </svg>
+    </div>
+
+    <div class="prose">
+      <p><strong>Detection.</strong> GLiNER takes TAB's eight entity categories as free-text zero-shot labels,
+      the only surveyed detector covering DEM, QUANTITY and CODE at all; Presidio contributes pattern
+      recognizers (reference codes, money including spelled-out amounts, contact data). Spans merge widest-wins;
+      pure-symbol spans and bare pronouns are dropped; lowercase "person" hits (occupations, roles) are retyped
+      as demographic attributes so they generalize instead of becoming placeholders. Alias chains give every
+      name variant one chain id, so "Sarah Johnson" and "Sarah" share one placeholder.</p>
+      <p><strong>Lattice building.</strong> Dates and quantities bucket by rule ("March 3, 2021" &rarr;
+      "March 2021" &rarr; "the early 2020s"; exact values never survive into any level). Places walk the
+      GeoNames hierarchy; common nouns walk WordNet hypernyms. Only the residue, named entities no offline
+      source covers, reaches the teacher cascade: E4B writes three candidate levels from the mention in
+      context; every level must pass the NLI gate (with degenerate-substitution and self-reference rejections);
+      failures regenerate once through Qwen3.6 with a chain-of-thought prompt; double failures floor to the
+      type label. Results cache to disk keyed by entity and sense context, so runtime substitution is a
+      dictionary lookup.</p>
+      <p>The cascade itself is the one component with internal moving parts:</p>
+    </div>
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · M2 — teacher cascade with the NLI truthfulness gate (all local, offline, cached)</span>
+        <span>measured on 36 entities: 31 settled at E4B · 4 escalated · 1 floored</span>
+      </div>
+      <svg class="flow" viewBox="0 0 1180 300" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Teacher cascade: E4B writes candidate lattices, candidates pass self-reference and degeneracy filters then an NLI entailment gate; failures regenerate once through Qwen3.6 with chain-of-thought; double failures floor to the entity type label; accepted lattices are cached.">
+        <defs><marker id="ah3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
+        <rect x="0" y="20" width="1180" height="264" class="zone-band zone-band-client"/>
+        <text x="16" y="44" class="zone-label">Client — offline asset build (llama-swap)</text>
+
+        <rect x="16" y="120" width="120" height="52" class="box box-client"/>
+        <text x="76" y="141" text-anchor="middle" class="box-label">entity</text>
+        <text x="76" y="155" text-anchor="middle" class="box-sub">+ context sentence</text>
+
+        <rect x="168" y="112" width="160" height="68" class="box box-client"/>
+        <text x="248" y="132" text-anchor="middle" class="box-label">gemma 4 (E4B)</text>
+        <text x="248" y="146" text-anchor="middle" class="box-sub">6 slots · temp 0 · no-think</text>
+        <text x="248" y="159" text-anchor="middle" class="box-sub">3 levels, specific → general</text>
+
+        <rect x="360" y="104" width="180" height="84" class="box box-client box-strong"/>
+        <text x="450" y="124" text-anchor="middle" class="box-label">NLI gate (184M)</text>
+        <text x="450" y="139" text-anchor="middle" class="box-sub">self-reference reject</text>
+        <text x="450" y="152" text-anchor="middle" class="box-sub">degenerate-sub reject</text>
+        <text x="450" y="165" text-anchor="middle" class="box-sub">orig ⊨ generalized ≥ 0.6</text>
+        <text x="450" y="180" text-anchor="middle" class="box-sub">fail-closed</text>
+
+        <rect x="586" y="60" width="150" height="44" class="box box-storage"/>
+        <text x="661" y="79" text-anchor="middle" class="box-label">lattice cache</text>
+        <text x="661" y="93" text-anchor="middle" class="box-sub">tier: e4b (31/36)</text>
+
+        <rect x="586" y="152" width="170" height="64" class="box box-client"/>
+        <text x="671" y="172" text-anchor="middle" class="box-label">Qwen3.6-35B retry</text>
+        <text x="671" y="186" text-anchor="middle" class="box-sub">chain-of-thought prompt</text>
+        <text x="671" y="199" text-anchor="middle" class="box-sub">one escalation only</text>
+
+        <rect x="800" y="120" width="170" height="72" class="box box-client box-strong"/>
+        <text x="885" y="140" text-anchor="middle" class="box-label">NLI gate (same)</text>
+        <text x="885" y="155" text-anchor="middle" class="box-sub">pass → cache, tier qwen (4)</text>
+        <text x="885" y="169" text-anchor="middle" class="box-sub">fail → type-label floor (1)</text>
+
+        <rect x="1010" y="60" width="150" height="44" class="box box-storage"/>
+        <text x="1085" y="79" text-anchor="middle" class="box-label">lattice cache</text>
+        <text x="1085" y="93" text-anchor="middle" class="box-sub">tier: qwen / floor</text>
+
+        <path d="M136,146 L164,146" class="arrow" marker-end="url(#ah3)"/>
+        <path d="M328,146 L356,146" class="arrow" marker-end="url(#ah3)"/>
+        <path d="M540,120 L582,90" class="arrow" marker-end="url(#ah3)"/>
+        <text x="540" y="100" class="arrow-label">pass</text>
+        <path d="M540,170 L582,180" class="arrow arrow-masked" marker-end="url(#ah3)"/>
+        <text x="546" y="192" class="arrow-label masked">reject</text>
+        <path d="M756,180 L796,160" class="arrow" marker-end="url(#ah3)"/>
+        <path d="M970,140 L1006,96" class="arrow" marker-end="url(#ah3)"/>
+      </svg>
+    </div>
+    <div class="prose">
+      <p><strong>Substitution.</strong> Direct identifiers become numbered typed placeholders per chain
+      (<code>&lt;PERSON_1&gt;</code>, <code>&lt;CODE_2&gt;</code>). Each quasi identifier walks its lattice most
+      specific first and accepts the first level whose MTI guess-back risk is below &tau;; candidates carrying
+      the original's numbers or proper names are filtered before the walk. The output is <code>doc_p</code>
+      plus R.</p>
+      <p><strong>Extraction.</strong> Rung A inverts R without any model: placeholders swap back exactly;
+      generalization mentions in <code>out_p</code> are located by word-boundary exact match, then by fuzzy
+      alignment snapped to word boundaries, and replaced with the original surface. A learned rung B
+      (flan-t5-base LoRA over synthesized inversions) is specified but deliberately unbuilt until the measured
+      rung A residue justifies it; the gap between the two is the prototype's central hypothesis test.</p>
+    </div>
+  </section>
+
+  <!-- ═════ §04 MEASURES ═════ -->
+  <section id="measures">
+    <header class="section-head">
+      <div class="section-num">§04</div><h2 class="section-title">Measures</h2>
+      <div class="section-meta">what each metric reports and which direction is better</div>
+    </header>
+    <table class="spec spec--wide">
+      <thead><tr><th>measure</th><th>what it reports</th><th class="num">direction</th></tr></thead>
+      <tbody>
+        <tr><td>detection recall (any / typed)</td><td>share of gold TAB mentions overlapped by a detected span / additionally with the correct type; the privacy ceiling of the whole design</td><td class="num">&uarr;</td></tr>
+        <tr><td>entity-level DIRECT recall</td><td>share of direct-identifier entities with <em>every</em> mention caught (one missed alias re-identifies)</td><td class="num">&uarr;</td></tr>
+        <tr><td>precision proxy</td><td>share of predicted spans overlapping any annotated mention; low values cost utility, not privacy</td><td class="num">&uarr;</td></tr>
+        <tr><td>route share</td><td>fraction of detected spans served per lattice source; the teacher share prices the generative residue</td><td class="num">context</td></tr>
+        <tr><td>cascade tier rate</td><td>entities settled by E4B / escalated to Qwen3.6 / floored; the escalation rate measures whether the small teacher is adequate</td><td class="num">e4b &uarr;</td></tr>
+        <tr><td>MTI risk</td><td>MLM probability mass on the original given the masked context; above &tau; at every level means the span is contextually inferable regardless</td><td class="num">&darr;</td></tr>
+        <tr><td>inversion stats</td><td>per round trip: placeholders swapped, generalizations narrowed exactly / fuzzily, absent from the answer</td><td class="num">context</td></tr>
+        <tr><td>overlap</td><td>content-word verbatim survival of <code>doc_orig</code> in <code>doc_p</code> (same instrument as the InferDPT report)</td><td class="num">&darr;</td></tr>
+        <tr><td>PII survival</td><td>fuzzy survival of probe-detected PII spans into <code>doc_p</code> (same instrument as the InferDPT report; its detector is noisy, see §5.3)</td><td class="num">&darr;</td></tr>
+        <tr><td>utility (SimCSE)</td><td>embedding cosine of <code>out_final</code> against the no-privacy reference answer</td><td class="num">&uarr;</td></tr>
+        <tr><td>attacker success · utility on out_final</td><td>the headline pair (frontier-LLM attribute inference; ROUGE/BERTScore/EM against references): <strong>pending, next stage</strong></td><td class="num">&darr; · &uarr;</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═════ §05 RESULTS ═════ -->
+  <section id="results">
+    <header class="section-head">
+      <div class="section-num">§05</div><h2 class="section-title">Results</h2>
+      <div class="section-meta">by pipeline stage</div>
+    </header>
+
+    <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.1 Detection gate on TAB</h4>
+    <p class="prose">All 127 TAB test documents, gold = union of all annotators' DIRECT/QUASI mentions (the
+    strictest recall target), any-character-overlap matching, 44 s wall time. Aggregate: DIRECT any-recall
+    0.998 (typed 0.980, n=407), entity-level DIRECT recall 0.997, QUASI any-recall 0.857 (typed 0.783,
+    n=6,524), precision proxy 0.716. The gate rule (DIRECT any-recall &ge; 0.95) passes, so the placeholder
+    path does not need gold-span fallback.</p>
+
+    <div class="plot-frame">
+      <div class="plot-cap"><span class="l">FIG · 01 — TAB recall per entity type, direct vs quasi</span><span class="r">source: results/latticecloak_detection_gate.json · N=127 docs</span></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div id="plot-gate-any" style="flex:1 1 320px;min-width:300px;height:340px;"></div>
+        <div id="plot-gate-typed" style="flex:1 1 320px;min-width:300px;height:340px;"></div>
+      </div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">violet = DIRECT, green = QUASI. Direct identifiers are near-ceiling everywhere; the quasi weaknesses concentrate in DEM, MISC and QUANTITY, the categories needing document-level reasoning rather than span matching.</span></div>
+    </div>
+    <p class="prose"><strong>Conclusion.</strong> The detection gate passes (0.998 any-overlap, 0.997
+    entity-level, both observed on this test set). The measured weak categories (QUASI DEM 0.56, MISC 0.21,
+    QUANTITY 0.25 any-recall) are the fuzzy "demographic attribute / other identifying event" spans; on the
+    round-trip corpus their impact is priced by the attacker, not hidden by the detector. One smoke-run fix
+    mattered: every initially missed DIRECT mention was an ECtHR application number, eliminated by a single
+    numeric-reference pattern rather than threshold tuning.</p>
+
+    <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.2 Span routing and teacher economics on SynthPAI</h4>
+    <p class="prose">Routing of detected spans across lattice sources on the full 300-profile corpus
+    (2,438 spans, post noise-cleanup: pure-symbol spans, bare pronouns and anchor-free temporals excluded).
+    The teacher cascade serves 2.2% of spans (54 mentions, 36 unique entities); everything else is rules,
+    GeoNames, WordNet, or placeholders. Full-corpus detection takes 49 s; the cascade settled 31 of 36
+    entities at E4B, escalated 4 to Qwen3.6, floored 1. The 60-document working slice used elsewhere on this
+    page routes the same way (teacher share 2.5%, same rank order of sources), so the slice is representative
+    of the corpus for routing purposes.</p>
+
+    <div class="plot-frame">
+      <div class="plot-cap"><span class="l">FIG · 02 — route shares of detected spans, full corpus</span><span class="r">source: results/latticecloak_inventory.json · N=2,438 spans / 300 docs</span></div>
+      <div id="plot-routes" style="width:100%;height:360px;"></div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">gray bars = share of detected spans per lattice source. The generative teacher is a 2.2% residue: substitution is almost entirely dictionaries and rules.</span></div>
+    </div>
+    <p class="prose"><strong>Conclusion.</strong> The zero-call bootstrap thesis holds at corpus scale:
+    97.8% of detected spans never touch a generative model, the full-corpus lattice cache builds in
+    under two minutes on-box, and E4B handled most of the pilot's lattice writing (4/36 escalations, 1
+    floor). Scaling the substitutor is not a cost concern; the metered cost lives entirely in the evaluation
+    round trips.</p>
+
+    <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.3 The &tau; knob: leakage and utility probes across operating points</h4>
+    <p class="prose">LatticeCloak has no privacy budget &epsilon;; its operating-point knob is <strong>&tau;</strong>,
+    the guess-back threshold. Lowering &tau; demands lower contextual inferability before a lattice level is
+    accepted, pushing quasi spans toward coarser levels and type-label floors; raising it admits more specific
+    levels. Unlike &epsilon; it acts per span, not globally. To read LatticeCloak on the same instruments as
+    the <a href="infer-dtp.html">InferDPT report</a>, the same probe families were computed over a &tau; sweep
+    {0.005, 0.02, 0.1, 0.5} on the smoke slice (8 docs, 32 task answers per point). Leakage: overlap (the
+    fraction of <code>doc_orig</code>'s content words surviving verbatim into <code>doc_p</code>), PII leak
+    (fuzzy survival of probe-detected PII spans), and MLM guess-back, the span analog of their inversion@10:
+    the attacker reads <code>doc_p</code> with the replacement visible and a masked-LM guesses the original
+    slot (top-50 hit rate; candidate-sensitive, so specific levels help the attacker). Utility:
+    utility_control (SimCSE of <code>out_final</code> against the no-privacy control answer),
+    utility_p_control (same for the raw <code>out_p</code>), coherence(gen_p) (SimCSE of <code>out_p</code>
+    against its own prompt <code>doc_p</code>), and coherence(doc_p) (SimCSE of <code>doc_p</code> against
+    <code>doc_orig</code>). Corpora and tasks differ between the two reports, so scales are comparable per
+    instrument, not across pages.</p>
+
+    <div class="plot-frame">
+      <div class="plot-cap"><span class="l">FIG · 03 — &tau; sweep: leakage, utility, and mechanism</span><span class="r">source: results/latticecloak_tau_sweep.json · N=8 docs, 36 generalized spans</span></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div id="plot-tau-leak" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
+        <div id="plot-tau-util" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
+      </div>
+      <div id="plot-tau-mech" style="width:100%;height:300px;margin-top:10px;"></div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">Top left (leakage, lower = more private): overlap and PII survival are flat; MLM guess-back, the span analog of inversion@10, is the only instrument that responds, rising to 0.21 at the loosest &tau;. Top right (utility, higher = more faithful): utility_control and utility_p_control coincide (inversion unexercised); coherence(doc_p) stays near 0.99. Bottom (mechanism, &tau; bars light&rarr;dark): the knob repositions the lattice, most-specific 26&rarr;34, floors 13&rarr;5.</span></div>
+    </div>
+    <p class="prose"><strong>Conclusion.</strong> &tau; demonstrably moves the substitution operating point
+    (mechanism panel), but the aggregate surface instruments barely register it: overlap is 0.989 everywhere
+    (span-targeted substitution leaves the document's lexical surface intact by design, unlike per-token
+    perturbation, for which overlap is the natural instrument), coherence(doc_p) is 0.994 everywhere (the
+    perturbed document stays semantically faithful), utility_control is 0.971&ndash;0.972 with
+    <code>out_final</code> = <code>out_p</code> (inversion unexercised on these tasks), and PII leak is 0.842
+    at every &tau;. Inspection shows that survival number is dominated by the probe's own detector counting
+    deliberately kept generic temporals ("daily", "Sundays") and misdetections ("Nah", "USB"), though it also
+    catches one genuine miss class: an education phrase ("Sci Master's") survives, consistent with the DEM
+    weakness measured on TAB. The one instrument that responds is the candidate-sensitive one: MLM guess-back
+    rises from 0.18 to 0.21 at the loosest &tau;, directionally as designed, though within noise for 36
+    spans. The methodological consequence is the predecessor taxonomy's F4 lesson landing on this method too:
+    <strong>aggregate surface probes cannot price LatticeCloak's knob; attack-shaped instruments respond, and
+    the full adversarial evaluation is what the next stage runs</strong>.</p>
+
+    <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.4 Round trip and rule-only extraction</h4>
+    <p class="prose">Smoke scale: 8 SynthPAI documents &times; (1 summarization + up to 3 teacher-generated QA)
+    = 32 task tuples through the remote model, then rung A inversion. Inversion statistics over the 32 answers:
+    0 placeholders to swap (first-person corpus, no named persons in the slice), 0 exact and 0 fuzzy narrowings,
+    128 substituted spans never mentioned in the answers. On these task types the remote answers paraphrase
+    around the substituted details, so rule extraction has little to do and the outputs are already coherent.
+    The behavior under answers that <em>do</em> cite substituted facts is shown by four constructed prompts
+    (fact-restating task, same remote model), with the no-privacy control for comparison:</p>
+
+    <div style="overflow-x:auto;">
+    <table class="spec spec--wide">
+      <thead><tr><th style="width:13%">prompt 1</th><th>self-introduction</th></tr></thead>
+      <tbody>
+        <tr><td>doc_orig</td><td>My name is Sarah Johnson and I am thirty four years old living in Boston with my husband.</td></tr>
+        <tr><td>doc_p</td><td>My name is &lt;PERSON_1&gt; and I am thirty-something living in a city in Massachusetts with my husband.</td></tr>
+        <tr><td>out_p</td><td>&lt;PERSON_1&gt; is a thirty-something individual residing in a Massachusetts city with their husband. The provided text does not specify their job or financial details.</td></tr>
+        <tr><td>out_final</td><td>Sarah Johnson is a thirty four years old individual residing in a Massachusetts city with their husband. The provided text does not specify their job or financial details.</td></tr>
+        <tr><td>out_ctrl</td><td>Sarah Johnson is a 34-year-old woman residing in Boston with her husband. The provided text does not specify her occupation or financial status.</td></tr>
+      </tbody>
+    </table>
+    <table class="spec spec--wide" style="margin-top:14px;">
+      <thead><tr><th style="width:13%">prompt 2</th><th>medical premise (health conditions deliberately kept: premise, not identifier)</th></tr></thead>
+      <tbody>
+        <tr><td>doc_orig</td><td>The patient was diagnosed with diabetes and depression by her psychiatrist at Mercy Hospital.</td></tr>
+        <tr><td>doc_p</td><td>&lt;PERSON_1&gt; was diagnosed with diabetes and depression by her psychiatrist at a medical building.</td></tr>
+        <tr><td>out_p</td><td>The provided text does not contain sufficient information to state the person's age, location, job, or financial status. It only indicates that &lt;PERSON_1&gt; was diagnosed with diabetes and depression by a psychiatrist at a medical building.</td></tr>
+        <tr><td>out_final</td><td>The provided text does not contain sufficient information to state the person's age, location, job, or financial status. It only indicates that The patient was diagnosed with diabetes and depression by a psychiatrist at Mercy Hospital.</td></tr>
+        <tr><td>out_ctrl</td><td>The provided text does not contain sufficient information to state the person's age, location, job, or finances, as it only identifies them as a patient diagnosed with diabetes and depression at Mercy Hospital.</td></tr>
+      </tbody>
+    </table>
+    <table class="spec spec--wide" style="margin-top:14px;">
+      <thead><tr><th style="width:13%">prompt 3</th><th>job and salary (spelled-out amount)</th></tr></thead>
+      <tbody>
+        <tr><td>doc_orig</td><td>He works as a lawyer at Goldman Sachs and earns two hundred thousand dollars a year in Chicago.</td></tr>
+        <tr><td>doc_p</td><td>He works as a person at a financial institution and earns between 100,000 and 400,000 dollars a year in a city in Illinois.</td></tr>
+        <tr><td>out_p</td><td>He is a financial institution employee living in a city in Illinois who earns an annual income between $100,000 and $400,000.</td></tr>
+        <tr><td>out_final</td><td>He is Goldman Sachs employee living in Chicago who earns an annual income between $100,000 and $400,000.</td></tr>
+        <tr><td>out_ctrl</td><td>He is a lawyer at Goldman Sachs in Chicago who earns an annual salary of $200,000.</td></tr>
+      </tbody>
+    </table>
+    <table class="spec spec--wide" style="margin-top:14px;">
+      <thead><tr><th style="width:13%">prompt 4</th><th>relocation, employer, salary, age, month (the stress case)</th></tr></thead>
+      <tbody>
+        <tr><td>doc_orig</td><td>Last spring, Dmitri moved from Cambridge to work at Sberbank as a data scientist; his salary doubled to 95k and he turned 40 in May.</td></tr>
+        <tr><td>doc_p</td><td>Some time ago, &lt;PERSON_1&gt; moved from a city in England to work at a financial institution as a data scientist; his salary doubled to between 47,500 and 190,000 and he turned forty-something in the spring.</td></tr>
+        <tr><td>out_p</td><td>&lt;PERSON_1&gt; is a forty-something data scientist who relocated from a city in England to work at a financial institution. His salary doubled to a range between &pound;47,500 and &pound;190,000.</td></tr>
+        <tr><td>out_final</td><td>Dmitri is a 40 data scientist who relocated from Cambridge to work at Sberbank. His salary doubled to a range 95k.</td></tr>
+        <tr><td>out_ctrl</td><td>Dmitri is a 40-year-old data scientist based in Cambridge who recently moved to work for Sberbank. He earns an annual salary of 95k, which doubled from his previous income.</td></tr>
+      </tbody>
+    </table>
+    </div>
+    <p class="prose">Prompt 4 also contains a comprehension reversal: the no-privacy control
+    misread the relocation direction ("based in Cambridge"; he left Cambridge), while the round-trip output
+    preserved "relocated from Cambridge" correctly. The privatized path is not uniformly dominated even at the
+    comprehension level. Its own defects are equally visible: "a 40 data scientist" and "a range 95k" are
+    narrowing grammar seams, and the Cambridge sense chosen by the GeoNames popularity prior is unverifiable
+    from this prompt (accepted as a rule-based ceiling; deferred to the learned-substitutor comparison).</p>
+    <p class="prose"><strong>Conclusion.</strong> The remote model reasons validly on the coarsened premises
+    (it even correctly reports "occupation not specified" where the generalization removed it, rather than
+    hallucinating). Rung A restores every fact the answer cites via a recoverable phrase (placeholders, "a
+    financial institution" &rarr; Goldman Sachs, "a city in Illinois" &rarr; Chicago, "a medical building"
+    &rarr; Mercy Hospital). The residue against the control decomposes into three classes: precision the
+    substitution deliberately suppressed (a salary range instead of $200,000), narrowing misses when the remote
+    rephrases or reformats the mention ("a Massachusetts city" for "a city in Massachusetts", currency-symbol
+    drift), and grammar seams after narrowing ("a 40 data scientist"). The latter two are the training target
+    for rung B; the first is the privacy price the Pareto will put a number on.</p>
+  </section>
+
+  <!-- ═════ §06 FINDINGS ═════ -->
+  <section id="findings">
+    <header class="section-head">
+      <div class="section-num">§06</div><h2 class="section-title">Findings</h2>
+      <div class="section-meta">claims · grounds · scope</div>
+    </header>
+    <div class="prose">
+      <p><strong>1 · On TAB, the placeholder path achieves near-complete observed DIRECT recall
+      (Partial).</strong> Any-overlap recall 0.998, entity-level 0.997, typed 0.980 (n=407 mentions, 127
+      docs). This is a benchmark detection result, not a privacy guarantee: any-overlap matching is lenient,
+      and the numeric-reference pattern that eliminated the miss class was added after inspecting failures on
+      five documents from the same test set, so the headline number is not a frozen-detector hold-out.
+      Grounds: §5.1. Scope: union-of-annotators gold; legal-domain English; GLiNER small + Presidio.</p>
+      <p><strong>2 · TAB quasi-identifier detection has measured recall weaknesses in DEM, MISC and QUANTITY
+      (Supported, negative finding).</strong> QUASI any-recall: DEM 0.56, MISC 0.21, QUANTITY 0.25 against
+      0.86 overall, with substantial denominators (n=474/411/287). Grounds: §5.1. Scope: these categories
+      require document-level inference, and misses pass into <code>doc_p</code> unprotected; the planned
+      attacker evaluation prices this, the detector number alone does not.</p>
+      <p><strong>3 · On SynthPAI, detected-span substitution is dominated by dictionary and rule routes
+      (Partial).</strong> 97.5&ndash;97.8% of detected spans route to zero-cost sources; the generative
+      teacher covers 36 unique entities across 300 profiles, built once in under two minutes on-box. Route
+      counts do not measure substitution <em>quality</em>, and the denominator is detected spans on one
+      informal-register corpus; the general form of the claim needs multi-domain replication and a
+      substitution-correctness audit. Grounds: §5.2.</p>
+      <p><strong>4 · In a 36-entity pilot, a 4B-class local teacher handled most lattice writing when paired
+      with a verification cascade (Partial).</strong> 31/36 settled at E4B; 4 escalations to Qwen3.6, 1
+      type-label floor; the NLI gate plus degeneracy and self-reference rejections caught the failure modes
+      observed in this pilot (wrong-sense hypernyms, vacuous entailments, self-referential candidates).
+      Adequacy in general is not established: n=36, one corpus, no blind accuracy measurement of accepted
+      candidates, no gate false-accept rate. Grounds: §5.2, §3.</p>
+      <p><strong>5 · In the 32-answer smoke test, summarization/QA outputs did not reuse substituted spans,
+      so inversion went mostly unexercised (Partial).</strong> 128/128 substituted spans were absent from the
+      answers; outputs were coherent without inversion. Constructed fact-restating prompts show rung A
+      restoring the recoverable cited facts with three residue classes (§5.4). Whether answers "rarely" cite
+      substituted spans in general, and whether rule-only extraction suffices, remains a hypothesis for the
+      Pareto stage: 8 documents, one task suite, one remote model, no utility metric yet.</p>
+      <p><strong>6 · In the 8-doc &tau; sweep, the knob mechanically changed lattice operating points, but the
+      tested aggregate surface probes were effectively flat (Partial).</strong> Most-specific acceptances rose
+      26&rarr;34 of 36 spans and floors fell 13&rarr;5 across &tau; = 0.005&ndash;0.5, while overlap (0.989),
+      PII leak (0.842), coherence(doc_p) (0.994) and utility_control (0.971&ndash;0.972) did not move; the one
+      responsive instrument was the candidate-sensitive MLM guess-back (0.18&rarr;0.21 at the loosest &tau;,
+      within noise for n=36). This suggests aggregate probes are too coarse for span-targeted substitution
+      while attack-shaped ones respond, and motivates adversarial pricing in the next stage; it does not prove
+      surface probes in general cannot be made sensitive. The PII-leak diagnosis (probe-detector noise plus
+      one genuine education-phrase miss) rests on manual inspection of one document. Grounds: §5.3.</p>
+    </div>
+  </section>
+
+  <!-- ═════ §07 ANALYSIS ═════ -->
+  <section id="analysis">
+    <header class="section-head">
+      <div class="section-num">§07</div><h2 class="section-title">Analysis</h2>
+      <div class="section-meta">why each finding holds — the mechanism behind the numbers</div>
+    </header>
+    <div class="prose">
+      <p><strong>Why direct recall is near ceiling while quasi lags.</strong> Direct identifiers are
+      surface-regular (names, codes) and sit squarely in the detector's pattern and NER competence; the one
+      systematic miss class (application numbers) was a regex away. DEM/MISC/QUANTITY spans are open-class and
+      contextual ("a mother of three", "the incident that spring"): recognizing them is inference, not
+      matching, which is the known boundary of span-level detection and the reason the evaluation design
+      measures privacy as attacker outcome rather than detector recall.</p>
+      <p><strong>Why the teacher residue is so small.</strong> SynthPAI's quasi-identifiers are dominated by
+      occupations, education, locations, ages and incomes: common nouns, places and values, which WordNet,
+      GeoNames and rule buckets already cover. Only branded or culturally specific entities (Netflix, IKEA,
+      konbini) fall through, and their number grows sublinearly with corpus size because entities repeat.</p>
+      <p><strong>Why the cascade's checks are load-bearing.</strong> Three observed failure classes never
+      reached the cache: fluent wrong-sense hypernyms for rare foreign terms, vacuous entailments from
+      degenerate substitutions in fragmentary contexts, and candidates containing the entity itself. Each was
+      caught by a targeted rejection (case-insensitive substitution with fail-closed matching, repeated-word
+      degeneracy check, self-reference filter) in front of the entailment score, not by the score alone. One
+      probe property matters for interpretation: masking hides the candidate, so MTI risk measures whether the
+      <em>context</em> gives the original away, and a span inferable at every lattice level correctly lands on
+      the most general form with its risk recorded in R.</p>
+      <p><strong>Why the surface probes are flat across &tau;.</strong> The sweep only re-chooses lattice
+      levels for 36 generalized spans inside documents whose remaining thousands of content words are
+      untouched: document-level lexical overlap is dominated by the untouched text, so it cannot register
+      which level a span sits at. Per-token perturbation, which rewrites every token as &epsilon; moves, is
+      the regime those probes were built for. The utility probe is similarly saturated because the remote
+      answers paraphrase around the substituted details regardless of their coarseness on these tasks. The
+      instruments are not wrong, they are aimed at a different mechanism; the operating point of a
+      span-targeted method has to be priced where its effect lives, in what an adversary can infer. The MLM
+      guess-back result is the small confirmation: the only probe that reads <code>doc_p</code> the way an
+      attacker would (replacement visible, original guessed) is also the only one that moves with &tau;.</p>
+      <p><strong>Why answers rarely cite substituted spans.</strong> Summaries and short QA answers compress:
+      they mention what the question demands and paraphrase the rest. Substituted details are exactly the
+      specifics such answers drop. The corollary cuts both ways: utility survives substitution largely without
+      extraction on these tasks, and extraction value concentrates in tasks whose answers must restate the
+      protected attributes, which is where the rung A residue classes (rephrase misses, grammar seams) become
+      the binding constraint and rung B earns or fails to earn its keep.</p>
+    </div>
+  </section>
+
+  <!-- ═════ §08 DISCUSSION ═════ -->
+  <section id="discussion">
+    <header class="section-head">
+      <div class="section-num">§08</div><h2 class="section-title">Discussion</h2>
+      <div class="section-meta">what it buys · implications · limitations · next</div>
+    </header>
+    <div class="prose">
+      <p><strong>Implications.</strong> The predecessor page located InferDPT's failure in one scalar &epsilon;
+      doing three jobs; LatticeCloak's measurements so far are consistent with the decomposition: identifiers
+      route into exact, reversible placeholders (0.998 observed benchmark recall), premises are handled
+      truthfully at tunable coarseness (lattices, &tau; per span), and in the smoke evidence the extraction
+      burden shrank to a rule pass wherever the task did not restate protected attributes. The remote model reasoning correctly on coarsened premises,
+      including declining to invent removed facts, is the property token-level noise could not deliver.</p>
+      <p><strong>Limitations.</strong> No adversarial privacy number yet: the frontier-LLM attribute-inference
+      attacker and the utility metrics on <code>out_final</code> are the next stage, so nothing here is a
+      privacy&ndash;utility claim at matched realized privacy. The round-trip evidence is smoke-scale (8
+      documents, 32 answers) plus four constructed prompts. Detection weakness on DEM/MISC/QUANTITY is measured
+      on legal text and unmeasured implicit disclosures ("my 9-to-5 at the hospital") never enter any span
+      denominator. Coreference is surface aliasing, adequate for first-person Reddit text and known-inadequate
+      for nominal anaphora in legal documents. Sense ambiguity in offline lookups (Cambridge, UK vs MA) is
+      accepted as a rule-based ceiling by design decision, deferred to the learned-substitutor comparison.</p>
+      <p><strong>Next.</strong> The Pareto stage: &tau; sweep against the InferDPT &epsilon; sweep on identical
+      documents and tasks, privacy scored by held-out frontier attackers on <code>doc_p</code> and
+      <code>out_final</code>, utility scored against references and gold answers; then rung B trained on
+      synthesized inversions to price the measured rung A residue. Kill criteria are pre-registered: if rung B
+      does not beat rules at matched realized privacy, the finding is that R plus rules suffice.</p>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER ─── -->
+  <footer class="colophon" style="margin-top: 48px;">
+    <div>
+      <h5>Code</h5>
+      <ul>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/detect.py">src/cloak/detect.py</a> · detection stack</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/lattice.py">src/cloak/lattice.py</a> · lattices + cascade</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/substitute.py">src/cloak/substitute.py</a> · doc_p + R</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/extract.py">src/cloak/extract.py</a> · rung A inversion</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_detection_gate.py">scripts/latticecloak_detection_gate.py</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_engine.py">scripts/latticecloak_engine.py</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_tau_sweep.py">scripts/latticecloak_tau_sweep.py</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_tau_sweep.json">results/latticecloak_tau_sweep.json</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_detection_gate.json">results/latticecloak_detection_gate.json</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_inventory.json">results/latticecloak_inventory.json</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Notes</h5>
+      <ul>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/plans/2026-07-02-d1-prototype-implementation.md">d1-prototype-implementation.md</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/plans/2026-07-02-codesign-next-stage.md">codesign-next-stage.md</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/research/learned-substitution.md">learned-substitution.md</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/research/beyond-rantext.md">beyond-rantext.md</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/research/rantext-limitations.md">rantext-limitations.md</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>References</h5>
+      <ul>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md">InferDPT · Tong et al. 2023</a> · <a href="https://arxiv.org/abs/2310.12214">arXiv 2310.12214</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/research-wiki/papers/pilan2024_truthful_sanitization.md">INTACT · Pilán et al. 2024</a> · <a href="https://arxiv.org/abs/2412.12928">arXiv 2412.12928</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/research-wiki/papers/meisenbacher2024_dp_mlm.md">DP-MLM · Meisenbacher et al. 2024</a> · <a href="https://arxiv.org/abs/2407.00637">arXiv 2407.00637</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/research-wiki/papers/staab2024_llm_anonymizers.md">LLM Anonymizers · Staab et al. 2024</a> · <a href="https://arxiv.org/abs/2402.13846">arXiv 2402.13846</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/research-wiki/papers/dou2024_self_disclosure_abstraction.md">Self-Disclosure Abstraction · Dou et al. 2024</a> · <a href="https://arxiv.org/abs/2311.09538">arXiv 2311.09538</a></li>
+        <li>GLiNER · Zaratiana et al. · <a href="https://github.com/urchade/GLiNER">github.com/urchade/GLiNER</a></li>
+      </ul>
+    </div>
+  </footer>
+</div>
+
+<script src="js/nav.js"></script>
+<script src="js/plotly-basic.min.js"></script>
+<script>
+(function () {
+  if (typeof Plotly === "undefined") return;
+  var INK = "#14181c", GRID = "rgba(20,24,28,0.08)";
+  var base = {paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
+              font:{family:"'JetBrains Mono', monospace", size:11, color:INK}};
+  var ENT1 = "#7a5aa8", ENT2 = "#57a94a", BASE = "#8a8a8a"; // comparison pair + gray baseline
+
+  function barPanel(div, title, cats, aName, aVals, bName, bVals, yrange) {
+    Plotly.react(div, [
+      {x:cats, y:aVals, name:aName, type:"bar", marker:{color:ENT1}},
+      {x:cats, y:bVals, name:bName, type:"bar", marker:{color:ENT2}}
+    ], Object.assign({height:340, barmode:"group", margin:{t:34,r:12,b:70,l:48},
+      title:{text:title, font:{size:13,color:INK}, x:0, xanchor:"left"},
+      xaxis:{gridcolor:GRID}, yaxis:{range:yrange, gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
+      legend:{orientation:"h", y:-0.22, x:0.5, xanchor:"center", font:{size:9}}}, base),
+      {displayModeBar:false, responsive:true});
+  }
+
+  // FIG 01 — TAB recall per entity type (source: results/latticecloak_detection_gate.json)
+  var types = ["CODE","DATETIME","ORG","PERSON","DEM","LOC","MISC","QUANTITY"];
+  var directAny  = [1.000, 1.000, 1.000, 0.996, null, null, null, null];
+  var quasiAny   = [0.757, 0.993, 0.924, 0.975, 0.563, 0.966, 0.214, 0.254];
+  var directTyp  = [0.966, 1.000, 0.667, 0.996, null, null, null, null];
+  var quasiTyp   = [0.680, 0.993, 0.706, 0.968, 0.316, 0.929, 0.000, 0.226];
+  barPanel("plot-gate-any", "any-overlap recall (↑)", types,
+           "DIRECT", directAny, "QUASI", quasiAny, [0, 1.05]);
+  barPanel("plot-gate-typed", "typed recall (↑)", types,
+           "DIRECT", directTyp, "QUASI", quasiTyp, [0, 1.05]);
+
+  // FIG 02 — route shares, full corpus (source: results/latticecloak_inventory.json)
+  var routes = ["bucket","placeholder","geonames","wordnet","teacher"];
+  var n300 = 2438.0;
+  var share300 = [928/n300, 432/n300, 622/n300, 402/n300, 54/n300];
+  Plotly.react("plot-routes", [
+    {x:routes, y:share300, type:"bar", marker:{color:BASE},
+     hovertemplate:"%{x}: %{y:.1%}<extra></extra>"}
+  ], Object.assign({height:360, margin:{t:34,r:12,b:56,l:48},
+    title:{text:"route share of detected spans (N=2,438)", font:{size:13,color:INK}, x:0, xanchor:"left"},
+    xaxis:{gridcolor:GRID}, yaxis:{range:[0,0.45], tickformat:".0%", gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
+    showlegend:false}, base), {displayModeBar:false, responsive:true});
+
+  // FIG 03 — tau sweep (source: results/latticecloak_tau_sweep.json)
+  var LEAKCOL = {"overlap":"#a3460a", "PII leak":"#6e4a2b", "MLM guess-back":"#8c3b3b"};
+  var UTILCOL = {"utility_control (SimCSE)":"#5b86b5", "utility_p_control (SimCSE)":"#2a5092",
+                 "coherence (gen_p)":"#2e6a5e", "coherence (doc_p)":"#3a3f6b"};
+  var TAURAMP = ["#cfe0f0","#8fb0d6","#4f7bb0","#2a5092"]; // tau (ordered) ramp
+  var taus = ["0.005","0.02","0.1","0.5"];
+  function lines(div, title, series, colors, yrange) {
+    var tr = Object.keys(series).map(function (k) {
+      return {x:taus, y:series[k], name:k, mode:"lines+markers",
+        line:{color:colors[k],width:2}, marker:{color:colors[k],size:7},
+        hovertemplate:k+"<br>τ=%{x}: %{y:.3f}<extra></extra>"};
+    });
+    Plotly.react(div, tr, Object.assign({height:320, margin:{t:34,r:16,b:74,l:54},
+      title:{text:title, font:{size:13,color:INK}, x:0, xanchor:"left"},
+      xaxis:{title:{text:"τ",font:{size:10}}, type:"category", gridcolor:GRID, zeroline:false},
+      yaxis:{range:yrange, gridcolor:GRID, zeroline:false},
+      legend:{orientation:"h", y:-0.3, x:0.5, xanchor:"center", font:{size:9}}}, base),
+      {displayModeBar:false, responsive:true});
+  }
+  lines("plot-tau-leak", "leakage vs τ  (↓ more private)",
+    {"overlap":[0.9893,0.9893,0.9893,0.9893], "PII leak":[0.8421,0.8421,0.8421,0.8421],
+     "MLM guess-back":[0.1882,0.1808,0.1808,0.2121]}, LEAKCOL, [0,1.05]);
+  lines("plot-tau-util", "utility vs τ  (↑ more faithful)",
+    {"utility_control (SimCSE)":[0.9716,0.9706,0.9711,0.9712],
+     "utility_p_control (SimCSE)":[0.9716,0.9706,0.9711,0.9712],
+     "coherence (gen_p)":[0.5569,0.5573,0.5591,0.5574],
+     "coherence (doc_p)":[0.9937,0.9937,0.9935,0.9935]}, UTILCOL, [0,1.05]);
+  // mechanism diagnostics: grouped bars, tau within each cluster (light -> dark)
+  Plotly.react("plot-tau-mech", taus.map(function (t, i) {
+    return {x:["at most-specific level","at type-label floor"],
+            y:[[26,30,32,34][i],[13,9,7,5][i]], name:"τ="+t, type:"bar",
+            marker:{color:TAURAMP[i]},
+            hovertemplate:"τ="+t+"<br>%{x}: %{y} of 36<extra></extra>"};
+  }), Object.assign({height:300, barmode:"group", margin:{t:34,r:16,b:56,l:54},
+    title:{text:"mechanism diagnostics: lattice level chosen (count of 36 spans; τ bars within each cluster)",
+           font:{size:13,color:INK}, x:0, xanchor:"left"},
+    xaxis:{gridcolor:GRID}, yaxis:{range:[0,36], gridcolor:GRID, zeroline:false},
+    legend:{orientation:"h", y:-0.25, x:0.5, xanchor:"center", font:{size:9}}}, base),
+    {displayModeBar:false, responsive:true});
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{{SITE}} · {{PAGE TITLE}}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+<div class="sheet">
+  <span class="crosshair tl"></span><span class="crosshair tr"></span>
+  <span class="crosshair bl"></span><span class="crosshair br"></span>
+
+  <!-- global navbar (single source of truth: edit js/nav.js) -->
+  <div class="topnav" id="site-nav"></div>
+
+  <!-- ─── MASTHEAD (academic header: centered title, date, Abstract) ─── -->
+  <header class="masthead">
+    <h1 class="title">{{TITLE}}<span class="title-sub">{{one-line subtitle}}</span></h1>
+    <div class="rev">research report · {{YYYY-MM-DD}}</div>
+    <div class="abstract">
+      <div class="abstract-label">Abstract</div>
+      <!-- ~100 words, results-first. Generate with the /abstract skill. -->
+      <p class="subtitle">{{ABSTRACT}}</p>
+    </div>
+  </header>
+
+  <!-- ═════ §01 INTRODUCTION ═════ -->
+  <section id="introduction">
+    <header class="section-head">
+      <div class="section-num">§01</div>
+      <h2 class="section-title">Introduction</h2>
+      <div class="section-meta">problem · threat/setup · headline result</div>
+    </header>
+    <p class="lede">{{lede: the problem and the single headline finding, self-contained}}</p>
+    <div class="prose"><p>{{context; what governs the outcome}}</p></div>
+  </section>
+
+  <!-- ═════ §02 PRELIMINARIES (glossary — required for dense vocab) ═════ -->
+  <section id="preliminaries">
+    <header class="section-head">
+      <div class="section-num">§02</div><h2 class="section-title">Preliminaries</h2>
+      <div class="section-meta">definitions &amp; glossary</div>
+    </header>
+    <table class="spec">
+      <thead><tr><th style="width:22%">Term</th><th>Definition</th></tr></thead>
+      <tbody>
+        <tr><td><strong>{{term}}</strong></td><td>{{definition}}</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ═════ §03 METHOD ═════ -->
+  <section id="method">
+    <header class="section-head">
+      <div class="section-num">§03</div><h2 class="section-title">Method</h2>
+      <div class="section-meta">pipeline · mechanism · measurement loop</div>
+    </header>
+    <div class="prose"><p>{{how it works; what you measured and how}}</p></div>
+  </section>
+
+  <!-- ═════ §04 MEASURES ═════ -->
+  <section id="measures">
+    <header class="section-head">
+      <div class="section-num">§04</div><h2 class="section-title">Measures</h2>
+      <div class="section-meta">what each metric reports and which direction is better</div>
+    </header>
+    <table class="spec spec--wide">
+      <thead><tr><th>measure</th><th>what it reports</th><th class="num">direction</th></tr></thead>
+      <tbody><tr><td>{{metric}}</td><td>{{meaning}}</td><td class="num">↓ / ↑</td></tr></tbody>
+    </table>
+  </section>
+
+  <!-- ═════ §05 RESULTS (subsections per factor/lever) ═════ -->
+  <section id="results">
+    <header class="section-head">
+      <div class="section-num">§05</div><h2 class="section-title">Results</h2>
+      <div class="section-meta">by factor</div>
+    </header>
+
+    <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.1 Factor 1: {{name}}</h4>
+    <p class="prose">{{setup: what is fixed, what varies, N, seeds}}</p>
+
+    <div class="plot-frame">
+      <div class="plot-cap"><span class="l">FIG · 01 — {{caption}}</span><span class="r">source: results/{{file}}.json · N={{n}}</span></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div id="plot-leak" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
+        <div id="plot-util" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
+      </div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">{{what the reader should take away; warm = privacy-side, cool = utility-side}}</span></div>
+    </div>
+    <p class="prose"><strong>Conclusion.</strong> {{what this factor does}}</p>
+
+    <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.2 Factor 2: {{name}}</h4>
+    <div class="plot-frame">
+      <div class="plot-cap"><span class="l">FIG · 02 — {{A vs B comparison}}</span><span class="r">source: {{files}}</span></div>
+      <div id="plot-ab" style="width:100%;height:360px;"></div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">{{violet vs green = the two conditions; baseline = gray dashed}}</span></div>
+    </div>
+  </section>
+
+  <!-- ═════ §06 FINDINGS · §07 ANALYSIS · §08 DISCUSSION ═════ -->
+  <section id="findings">
+    <header class="section-head">
+      <div class="section-num">§06</div><h2 class="section-title">Findings</h2>
+      <div class="section-meta">claims · grounds · scope (each judged by an external cross-model gate)</div>
+    </header>
+    <div class="prose">
+      <p><strong>1 · {{claim}} ({{Supported|Partial|Refuted}}).</strong> {{one-line grounds + headline number}}. Grounds: §5.x. Scope: {{N, seeds, caveat}}.</p>
+    </div>
+  </section>
+  <section id="analysis">
+    <header class="section-head">
+      <div class="section-num">§07</div><h2 class="section-title">Analysis</h2>
+      <div class="section-meta">why each finding holds — the mechanism behind the numbers</div>
+    </header>
+    <div class="prose"><p><strong>{{why}}.</strong> {{mechanism}}</p></div>
+  </section>
+  <section id="discussion">
+    <header class="section-head">
+      <div class="section-num">§08</div><h2 class="section-title">Discussion</h2>
+      <div class="section-meta">what it buys · implications · limitations · next</div>
+    </header>
+    <div class="prose">
+      <p><strong>Implications.</strong> {{...}}</p>
+      <p><strong>Limitations.</strong> {{seeds, N, proxy metrics, attacker assumptions}}</p>
+      <p><strong>Next.</strong> {{...}}</p>
+    </div>
+  </section>
+
+  <!-- ─── FOOTER (3 equal columns, one link per line) ─── -->
+  <footer class="colophon" style="margin-top: 48px;">
+    <div>
+      <h5>Code</h5>
+      <ul>
+        <li><a href="{{REPO}}/blob/main/src/{{file}}.py">src/{{file}}.py</a> · {{what}}</li>
+        <li><a href="{{REPO}}/blob/main/results/{{file}}.json">results/{{file}}.json</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Notes</h5>
+      <ul><li><a href="{{REPO}}/blob/main/docs/research/{{note}}.md">{{note}}.md</a></li></ul>
+    </div>
+    <div>
+      <h5>References</h5>
+      <ul>
+        <li><a href="{{REPO}}/blob/main/research-wiki/papers/{{slug}}.md">{{Paper · Authors YEAR}}</a> · <a href="https://arxiv.org/abs/{{id}}">arXiv {{id}}</a></li>
+        <li>{{Paper · Authors YEAR}} · <a href="https://arxiv.org/abs/{{id}}">arXiv {{id}}</a></li>
+      </ul>
+    </div>
+  </footer>
+</div>
+
+<script src="js/nav.js"></script>
+<script src="js/plotly-basic.min.js"></script>
+<script>
+(function () {
+  if (typeof Plotly === "undefined") return;
+  var INK = "#14181c", GRID = "rgba(20,24,28,0.08)";
+  var base = {paper_bgcolor:"rgba(0,0,0,0)", plot_bgcolor:"rgba(0,0,0,0)",
+              font:{family:"'JetBrains Mono', monospace", size:11, color:INK}};
+
+  // ── STANDARDIZED PALETTE — color encodes METRIC ROLE (see SPEC.md §colors) ──
+  // privacy/leakage = amber family · utility/coherence = navy family
+  var PRIV = {overlap:"#a3460a", S_w:"#cf7a2e", "PII leak":"#6e4a2b", "inversion@10":"#8c3b3b"};
+  var UTIL = {utility:"#2a5092", control:"#5b86b5", coherence:"#2e6a5e", reranker:"#3a3f6b"};
+  var EPS  = ["#cfe0f0","#8fb0d6","#4f7bb0","#2a5092"];   // ε (ordered) = navy ramp
+  var ENT1 = "#7a5aa8", ENT2 = "#57a94a", BASE = "#8a8a8a"; // comparison: violet / green / gray baseline
+
+  // metric-role line panel (one series per metric; color from PRIV or UTIL)
+  function linePanel(div, title, xs, series, colors, yrange) {
+    var tr = Object.keys(series).map(function (k) {
+      return {x:xs, y:series[k], name:k, mode:"lines+markers",
+        line:{color:colors[k],width:2}, marker:{color:colors[k],size:7},
+        hovertemplate:k+"<br>%{x}: %{y:.3f}<extra></extra>"};
+    });
+    Plotly.react(div, tr, Object.assign({height:320, margin:{t:34,r:16,b:74,l:54},
+      title:{text:title, font:{size:13,color:INK}, x:0, xanchor:"left"},
+      xaxis:{gridcolor:GRID, zeroline:false}, yaxis:{range:yrange, gridcolor:GRID, zeroline:false},
+      legend:{orientation:"h", y:-0.3, x:0.5, xanchor:"center", font:{size:9}}}, base),
+      {displayModeBar:false, responsive:true});
+  }
+
+  // grouped-bar A/B panel (color = entity: violet vs green)
+  function barPanel(div, title, cats, aName, aVals, bName, bVals, yrange) {
+    Plotly.react(div, [
+      {x:cats, y:aVals, name:aName, type:"bar", marker:{color:ENT1}},
+      {x:cats, y:bVals, name:bName, type:"bar", marker:{color:ENT2}}
+    ], Object.assign({height:360, barmode:"group", margin:{t:16,r:12,b:70,l:48},
+      xaxis:{gridcolor:GRID}, yaxis:{range:yrange, gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
+      legend:{orientation:"h", y:-0.22, x:0.5, xanchor:"center", font:{size:9}}}, base),
+      {displayModeBar:false, responsive:true});
+  }
+
+  // ── EXAMPLE CALLS (replace with real data) ──
+  var eps = [2,6,10,14];
+  linePanel("plot-leak", "leakage vs ε  (↓ more private)", eps,
+    {"overlap":[0.2,0.4,0.6,0.8], "inversion@10":[0.4,0.6,0.8,0.95]}, PRIV, [0,1]);
+  linePanel("plot-util", "utility vs ε  (↑ more faithful)", eps,
+    {"utility":[0.9,0.9,0.92,0.93], "coherence":[0.5,0.6,0.7,0.75]}, UTIL, [0.4,1]);
+  barPanel("plot-ab", "condition A vs B (matched operating point)",
+    ["metric1","metric2","metric3"], "condition A", [0.7,0.5,0.3], "condition B", [0.6,0.6,0.5], [0,1]);
+})();
+</script>
+</body>
+</html>

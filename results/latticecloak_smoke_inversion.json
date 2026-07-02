@@ -1,0 +1,10 @@
+{
+  "tuples": 32,
+  "docs": 8,
+  "tau": 0.02,
+  "ph_swapped": 0,
+  "gen_exact": 0,
+  "gen_fuzzy": 0,
+  "gen_absent": 128,
+  "ph_residue": 0
+}

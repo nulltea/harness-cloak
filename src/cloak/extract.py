@@ -8,7 +8,7 @@
 
 ponytail: exact+fuzzy only — MiniLM window matching for paraphrased mentions is rung A',
 add when the unmatched rate justifies it. Rung B (learned) trains on the residue.
-Plan P3.
+Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 """
 import re
 

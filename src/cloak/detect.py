@@ -1,6 +1,6 @@
 """PII/QI span detection: GLiNER (zero-shot, TAB categories) ∪ Presidio (patterns).
 
-Plan: docs/plans/2026-07-02-d1-prototype-implementation.md P0.3/P1.
+Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 """
 import re
 from dataclasses import dataclass

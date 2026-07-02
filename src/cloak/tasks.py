@@ -1,14 +1,14 @@
 """Task construction over SynthPAI docs: summarization + teacher-generated QA.
 
 QA pairs are generated once from doc_orig by the local teacher (llama-swap Qwen3.6),
-cached to data/d1_qa.json — gold answers are grounded in doc_orig, so QA scoring
-needs no model. Plan P2.
+cached to data/latticecloak_qa.json — gold answers are grounded in doc_orig, so QA scoring
+needs no model. Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 """
 import json
 import re
 from pathlib import Path
 
-QA_PATH = Path("data/d1_qa.json")
+QA_PATH = Path("data/latticecloak_qa.json")
 
 SUMMARIZE = ("Summarize this Reddit user's interests, life situation and personality "
              "in 3-4 sentences, based only on their comments below.\n\nComments:\n{doc}")

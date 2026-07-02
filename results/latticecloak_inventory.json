@@ -1,0 +1,32 @@
+{
+  "60": {
+    "docs": 60,
+    "routes": {
+      "geonames": 126,
+      "wordnet": 77,
+      "bucket": 179,
+      "placeholder": 95,
+      "teacher": 12
+    },
+    "teacher_unique": 9,
+    "wall_s": 15.0
+  },
+  "300": {
+    "docs": 300,
+    "routes": {
+      "geonames": 622,
+      "wordnet": 402,
+      "bucket": 928,
+      "placeholder": 432,
+      "teacher": 54
+    },
+    "teacher_unique": 36,
+    "wall_s": 48.8,
+    "cascade_tiers": {
+      "e4b": 31,
+      "floor": 1,
+      "qwen": 4
+    },
+    "cascade_wall_s": 0.1
+  }
+}

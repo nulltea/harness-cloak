@@ -3,7 +3,7 @@
 Routes (plan P1): PERSON/CODE -> placeholder (direct); DATETIME/QUANTITY -> rule bucket;
 LOC -> geonames; other types whose head lemma is in WordNet -> wordnet; else -> teacher.
 
-Run: PYTHONPATH=src .venv/bin/python -u scripts/d1_inventory.py
+Run: PYTHONPATH=src .venv/bin/python -u scripts/latticecloak_inventory.py
 """
 import json
 import time
@@ -74,7 +74,7 @@ def main():
                      for k, v in sorted(teacher.items(), key=lambda kv: -kv[1]["count"])},
         "wall_s": round(time.time() - t0, 1),
     }
-    json.dump(out, open("data/d1_teacher_entities.json", "w"), indent=2)
+    json.dump(out, open("data/latticecloak_teacher_entities.json", "w"), indent=2)
     print(json.dumps({k: out[k] for k in ("route_counts", "teacher_unique", "wall_s")}, indent=2))
     print("top teacher entities:",
           [k for k in list(out["entities"])[:12]])

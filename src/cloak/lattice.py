@@ -2,7 +2,7 @@
 and the E4B->Qwen teacher cascade with an NLI truthfulness gate.
 
 A lattice is an ordered list of surface phrases, most specific -> most general.
-Plan: docs/plans/2026-07-02-d1-prototype-implementation.md P1.2.
+Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 """
 import json
 import re
