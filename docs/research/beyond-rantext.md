@@ -89,10 +89,10 @@ OOV" (F3b) with typed placeholders: holes both hurt utility *and* mark where the
 - **Microsoft Presidio** (open-source analyzer + anonymizer) — normalize → NER + pattern + context →
   typed placeholder. *Fit:* the production reference for "normalize before typing" and for replacing
   deletion with typed placeholders (`<PERSON_1>`).
-- **[Hide-and-Seek (HaS)](../../research-wiki/papers/chen2023_hide_seek_has.md)** (Chen et al. 2023) —
+- **[Hide-and-Seek (HaS)](../../research-wiki/papers/chen2023_hide_seek_has.md)** ([arXiv 2309.03057](https://arxiv.org/abs/2309.03057)) (Chen et al. 2023) —
   anonymize→de-anonymize round-trip for LLM prompts. *Fit:* demonstrates typed placeholders are stable
   enough to be reversed, validating the placeholder as a first-class protectable unit.
-- **[Lison et al. 2021 SoK](../../research-wiki/papers/lison2021_anonymisation_models_text.md)** —
+- **[Lison et al. 2021 SoK](../../research-wiki/papers/lison2021_anonymisation_models_text.md)** ([ACL 2021](https://aclanthology.org/2021.acl-long.323/)) —
   argues anonymisation should model spans and disclosure risk, not tokens. *Fit:* the field-level
   statement of RD0's core move (unit = span).
 
@@ -127,13 +127,13 @@ misspellings, cross-lingual variants).
 - **Personalized / heterogeneous DP** (Jorgensen et al. 2015, ICDE, "Personalized Differential
   Privacy") — different records get different ε. *Fit:* the formal precedent that ε need not be uniform;
   RD1 is the per-span analogue for text.
-- **[Mahalanobis mDP](../../research-wiki/papers/xu2020_differentially_private_text.md)** (Xu et al.
+- **[Mahalanobis mDP](../../research-wiki/papers/xu2020_differentially_private_text.md)** ([arXiv 2010.11947](https://arxiv.org/abs/2010.11947)) (Xu et al.
   2020) — noise shaped by local word density. *Fit:* a geometric ancestor of role-weighting — already
   makes perturbation non-uniform across the embedding space, though keyed on density, not role.
 - **DynText** (ACL Findings 2025, [PDF](https://aclanthology.org/2025.findings-acl.1038.pdf)) — DP
   semantic-density sizes each token's adjacency list dynamically. *Fit:* the closest existing thing to
   RD1 — it already varies the mechanism per token; RD1 generalizes the key from density to role+salience.
-- **[CusText](../../research-wiki/papers/chen2022_customized_text_sanitization.md)** (Chen et al. 2022)
+- **[CusText](../../research-wiki/papers/chen2022_customized_text_sanitization.md)** ([arXiv 2207.01193](https://arxiv.org/abs/2207.01193)) (Chen et al. 2022)
   — per-token customized output sets. *Fit:* the mechanism-level hook for "different tokens, different
   treatment" — the substrate a role policy drives.
 - **Adaptive Token-Weighted DP** ([2509.23246](https://arxiv.org/abs/2509.23246)) — allocate budget by
@@ -187,7 +187,7 @@ aggregate leakage of F4.
   transfers to text spans.
 - **NISTIR 8053** (Garfinkel 2015, NIST) — de-identification taxonomy, direct vs quasi identifiers.
   *Fit:* the authoritative typing schema for RD2's role labels; standards-grade definitions.
-- **[Lison et al. 2021 SoK](../../research-wiki/papers/lison2021_anonymisation_models_text.md)** —
+- **[Lison et al. 2021 SoK](../../research-wiki/papers/lison2021_anonymisation_models_text.md)** ([ACL 2021](https://aclanthology.org/2021.acl-long.323/)) —
   argues past sequence labelling toward explicit disclosure-risk modelling. *Fit:* RD2's mandate stated
   at field level — detection must model inference risk, not just tag spans.
 - **Text Anonymization Benchmark (TAB)** (Pilán et al. 2022, [2202.00443](https://arxiv.org/abs/2202.00443))
@@ -247,7 +247,7 @@ no reconstruction, shrinking the extractor's job to the non-reversible residue.
 - **BRATsynthetic** ([2210.16125](https://arxiv.org/abs/2210.16125)) — compares consistent / random /
   Markov surrogate strategies; consistent mapping roughly halves residual leakage. *Fit:* quantifies why
   RD3 needs *consistent* entity→surrogate mapping (coreference-stable), not per-occurrence randomness.
-- **[Hide-and-Seek (HaS)](../../research-wiki/papers/chen2023_hide_seek_has.md)** (Chen et al. 2023) —
+- **[Hide-and-Seek (HaS)](../../research-wiki/papers/chen2023_hide_seek_has.md)** ([arXiv 2309.03057](https://arxiv.org/abs/2309.03057)) (Chen et al. 2023) —
   H masks entities, S trains a local model to de-anonymize the LLM output. *Fit:* the reversible
   round-trip realized for LLM prompts — the RD3→RD5 bridge with a client-side de-anonymizer.
 - **EmojiPrompt** ([2402.05868](https://arxiv.org/abs/2402.05868)) — map sensitive spans to a symbolic
@@ -297,18 +297,18 @@ seq2seq models — substitution *is* their pretraining objective.**
 - **Swords benchmark** (Lee et al. 2021, [2106.04102](https://arxiv.org/abs/2106.04102)) — high-coverage
   lexical-substitution evaluation. *Fit:* the harness to measure whether a learned substitutor picks
   meaning-preserving, sense-correct swaps — RD4's utility metric.
-- **[DP-Prompt](../../research-wiki/papers/utpala2023_locally_differentially_private.md)** (Utpala et al.
+- **[DP-Prompt](../../research-wiki/papers/utpala2023_locally_differentially_private.md)** ([arXiv 2310.16111](https://arxiv.org/abs/2310.16111)) (Utpala et al.
   2023) — zero-shot paraphrase under an exponential mechanism on outputs. *Fit:* the whole-sequence
   *paraphrase* branch of RD4 with a DP guarantee, no finetuning.
-- **[DP-BART](../../research-wiki/papers/igamberdiev2023_dp_bart.md)** (Igamberdiev & Habernal 2023) —
+- **[DP-BART](../../research-wiki/papers/igamberdiev2023_dp_bart.md)** ([arXiv 2302.07636](https://arxiv.org/abs/2302.07636)) (Igamberdiev & Habernal 2023) —
   latent-space noise in a seq2seq rewriter; diagnoses the LDP adjacency-constraint noise blow-up. *Fit:*
   shows both the promise (contextual whole-sequence rewrite) and the formal cost of learned DP rewriting
   — frames RD4's guarantee problem.
-- **[DP-MLM](../../research-wiki/papers/meisenbacher2024_dp_mlm.md)** (Meisenbacher et al. 2024) —
+- **[DP-MLM](../../research-wiki/papers/meisenbacher2024_dp_mlm.md)** ([arXiv 2407.00637](https://arxiv.org/abs/2407.00637)) (Meisenbacher et al. 2024) —
   encoder-only MLM per-token DP rewrite; better utility at low ε than decoder paraphrasing. *Fit:* the
   most on-point RD4 result — an MLM substitutor beats decoder rewriting, supporting "finetune an MLM."
 - **Paraphrase-anonymization** (Mattern et al. 2022, the fix half of
-  [Limits of Word-Level DP](../../research-wiki/papers/mattern2022_limits_word_level_dp.md)) — a finetuned
+  [Limits of Word-Level DP](../../research-wiki/papers/mattern2022_limits_word_level_dp.md), [arXiv 2205.02130](https://arxiv.org/abs/2205.02130)) — a finetuned
   paraphraser with a formal guarantee. *Fit:* the original argument that a learned rewriter beats
   word-level DP on privacy *and* utility *and* fluency simultaneously.
 - **MI on MLMs** (Mireshghallah et al. 2022, [2203.03929](https://arxiv.org/abs/2203.03929)) — MLMs leak
@@ -375,13 +375,13 @@ specialized.
 - **Grammar-constrained decoding** ([2502.05111](https://arxiv.org/abs/2502.05111)) — mask decoding to a
   grammar/automaton. *Fit:* enforce typed-slot structure (dates, IDs) during reconstruction without
   retraining — pairs directly with RD3 surrogates.
-- **[Split-and-Denoise](../../research-wiki/papers/mai2023_splitanddenoise_protect_large.md)** (Mai et al.
+- **[Split-and-Denoise](../../research-wiki/papers/mai2023_splitanddenoise_protect_large.md)** ([arXiv 2310.09130](https://arxiv.org/abs/2310.09130)) (Mai et al.
   2023) — client noise + client denoise. *Fit:* an existing zero-budget local reconstructor; proof the
   architecture works end to end.
-- **[Double-edged Sword](../../research-wiki/papers/meisenbacher2025_double_edged_reconstruction.md)**
+- **[Double-edged Sword](../../research-wiki/papers/meisenbacher2025_double_edged_reconstruction.md)** ([arXiv 2508.18976](https://arxiv.org/abs/2508.18976))
   (Meisenbacher et al. 2025) — reconstruction as adversarial *hardening* post-process. *Fit:* reframes
   RD5 as a privacy tool, not just utility repair — the duality turned productive.
-- **[InferDPT extraction](../../research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md)**
+- **[InferDPT extraction](../../research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md)** ([arXiv 2310.12214](https://arxiv.org/abs/2310.12214))
   (Tong et al. 2023) — the broad-decoder extractor RD5 replaces. *Fit:* the baseline; its E1 flatness
   result is the reason to specialize the architecture.
 
@@ -414,21 +414,21 @@ that capability, not against surface metrics.
 
 ## Sources
 
-Registered anchors (wiki): [InferDPT](../../research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md),
-[Limits of Word-Level DP](../../research-wiki/papers/mattern2022_limits_word_level_dp.md),
-[Vulnerability of Text Sanitization](../../research-wiki/papers/tong2025_vulnerability_text_sanitization.md),
-[Reconstruction via LLMs](../../research-wiki/papers/pang2024_reconstruction_dp_text_llm.md),
-[Double-edged Sword](../../research-wiki/papers/meisenbacher2025_double_edged_reconstruction.md),
-[CusText](../../research-wiki/papers/chen2022_customized_text_sanitization.md),
-[SanText](../../research-wiki/papers/yue2021_differential_privacy_text.md),
-[HaS](../../research-wiki/papers/chen2023_hide_seek_has.md),
-[Split-and-Denoise](../../research-wiki/papers/mai2023_splitanddenoise_protect_large.md),
-[DP-Prompt](../../research-wiki/papers/utpala2023_locally_differentially_private.md),
-[DP-Fusion](../../research-wiki/papers/thareja2025_dpfusion_tokenlevel_differentially.md),
-[Mahalanobis mDP](../../research-wiki/papers/xu2020_differentially_private_text.md),
-[Feyisetan calibrated mDP](../../research-wiki/papers/feyisetan2019_privacy_utilitypreserving_textual.md),
-[d_X curse of dimensionality](../../research-wiki/papers/asghar2024_dxprivacy_text_curse.md),
-[DP-BART](../../research-wiki/papers/igamberdiev2023_dp_bart.md),
-[DP-MLM](../../research-wiki/papers/meisenbacher2024_dp_mlm.md),
-[Lison anonymisation SoK](../../research-wiki/papers/lison2021_anonymisation_models_text.md).
+Registered anchors (wiki): [InferDPT](../../research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md) ([arXiv 2310.12214](https://arxiv.org/abs/2310.12214)),
+[Limits of Word-Level DP](../../research-wiki/papers/mattern2022_limits_word_level_dp.md) ([arXiv 2205.02130](https://arxiv.org/abs/2205.02130)),
+[Vulnerability of Text Sanitization](../../research-wiki/papers/tong2025_vulnerability_text_sanitization.md) ([arXiv 2410.17052](https://arxiv.org/abs/2410.17052)),
+[Reconstruction via LLMs](../../research-wiki/papers/pang2024_reconstruction_dp_text_llm.md) ([arXiv 2410.12443](https://arxiv.org/abs/2410.12443)),
+[Double-edged Sword](../../research-wiki/papers/meisenbacher2025_double_edged_reconstruction.md) ([arXiv 2508.18976](https://arxiv.org/abs/2508.18976)),
+[CusText](../../research-wiki/papers/chen2022_customized_text_sanitization.md) ([arXiv 2207.01193](https://arxiv.org/abs/2207.01193)),
+[SanText](../../research-wiki/papers/yue2021_differential_privacy_text.md) ([arXiv 2106.01221](https://arxiv.org/abs/2106.01221)),
+[HaS](../../research-wiki/papers/chen2023_hide_seek_has.md) ([arXiv 2309.03057](https://arxiv.org/abs/2309.03057)),
+[Split-and-Denoise](../../research-wiki/papers/mai2023_splitanddenoise_protect_large.md) ([arXiv 2310.09130](https://arxiv.org/abs/2310.09130)),
+[DP-Prompt](../../research-wiki/papers/utpala2023_locally_differentially_private.md) ([arXiv 2310.16111](https://arxiv.org/abs/2310.16111)),
+[DP-Fusion](../../research-wiki/papers/thareja2025_dpfusion_tokenlevel_differentially.md) ([arXiv 2507.04531](https://arxiv.org/abs/2507.04531)),
+[Mahalanobis mDP](../../research-wiki/papers/xu2020_differentially_private_text.md) ([arXiv 2010.11947](https://arxiv.org/abs/2010.11947)),
+[Feyisetan calibrated mDP](../../research-wiki/papers/feyisetan2019_privacy_utilitypreserving_textual.md) ([arXiv 1910.08902](https://arxiv.org/abs/1910.08902)),
+[d_X curse of dimensionality](../../research-wiki/papers/asghar2024_dxprivacy_text_curse.md) ([arXiv 2411.13784](https://arxiv.org/abs/2411.13784)),
+[DP-BART](../../research-wiki/papers/igamberdiev2023_dp_bart.md) ([arXiv 2302.07636](https://arxiv.org/abs/2302.07636)),
+[DP-MLM](../../research-wiki/papers/meisenbacher2024_dp_mlm.md) ([arXiv 2407.00637](https://arxiv.org/abs/2407.00637)),
+[Lison anonymisation SoK](../../research-wiki/papers/lison2021_anonymisation_models_text.md) ([ACL 2021](https://aclanthology.org/2021.acl-long.323/)).
 Other references cited inline with arXiv/DOI/standard IDs.
