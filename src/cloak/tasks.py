@@ -19,6 +19,14 @@ QA_GEN = ("Read this Reddit user's comments. Write exactly 3 factual questions a
           "a short answer quoted or paraphrased from the text. Reply with ONLY a JSON list: "
           '[{{"q": "...", "a": "..."}}, ...]\n\nComments:\n{doc}')
 
+# Task-oriented templates whose output must restate the input's entities (docs/specs/benchmarks.md).
+CLINICAL_NOTE = ("Write a clinical visit note for the following doctor-patient dialogue, using "
+                 "standard note sections. Base it only on the dialogue.\n\nDialogue:\n{doc}")
+EMAIL_SUBJECT = ("Write a concise subject line (a few words) for the following email. "
+                 "Reply with only the subject line.\n\nEmail:\n{doc}")
+TASK_TEMPLATE = {"aci": CLINICAL_NOTE, "mts": CLINICAL_NOTE, "clinical": CLINICAL_NOTE,
+                 "aeslc": EMAIL_SUBJECT}
+
 
 def _teacher():
     from inferdpt.llm import LLMClient

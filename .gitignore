@@ -15,3 +15,5 @@ review-stage/
 .zed
 corpora/tab/
 corpora/synthpai/
+corpora/clinical/
+corpora/aeslc/

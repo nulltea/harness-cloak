@@ -293,6 +293,29 @@
       specific first and accepts the first level whose MTI guess-back risk is below &tau;; candidates carrying
       the original's numbers or proper names are filtered before the walk. The output is <code>doc_p</code>
       plus R.</p>
+      <p><strong>How the &tau;-walk chooses, and what it cannot see.</strong> Every choice is a fixed local
+      heuristic. When the substitutor hits a quasi-identifier like "Oslo" it has a ladder of candidate
+      replacements &mdash; the lattice, most specific first:</p>
+    </div>
+    <div style="overflow-x:auto;">
+    <table class="spec">
+      <thead><tr><th style="width:16%">level</th><th>replacement</th></tr></thead>
+      <tbody>
+        <tr><td class="num">0</td><td>Oslo <em>(original, most specific)</em></td></tr>
+        <tr><td class="num">1</td><td>a Norwegian city</td></tr>
+        <tr><td class="num">2</td><td>a Scandinavian capital</td></tr>
+        <tr><td class="num">3</td><td>a European city <em>(coarsest)</em></td></tr>
+      </tbody>
+    </table>
+    </div>
+    <div class="prose">
+      <p>The walk starts at level 0, runs the cheap local MTI probe ("if I mask this span, does an MLM guess
+      'Oslo' back?"), and takes the first level whose guess-back risk drops below the threshold &tau;. This
+      decision is made per span, in isolation, using only the probe &mdash; it never sees what happens
+      downstream: whether the remote LLM's answer survived the coarsening, whether the extractor could still map
+      the output back, or whether the combination of choices across spans re-identifies the person anyway. That
+      myopia is the operating assumption this prototype tests and the limitation the co-design next stage is
+      meant to address.</p>
       <p><strong>Extraction.</strong> Rung A inverts R without any model: placeholders swap back exactly;
       generalization mentions in <code>out_p</code> are located by word-boundary exact match, then by fuzzy
       alignment snapped to word boundaries, and replaced with the original surface. A learned rung B

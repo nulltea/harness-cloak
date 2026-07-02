@@ -47,3 +47,7 @@ _Append-only timeline._
 - `2026-07-02T10:54:47Z` ingest_paper: added paper:morris2024_diri (RD4 round-2 research; cited in docs/research/learned-substitution.md)
 - `2026-07-02T10:54:47Z` add_edge: +6 edges (round-2: DP-Rewrite, Truthful-Sanitization, AgentStealth, Tree-Search, DIRI)
 - `2026-07-02T10:54:47Z` doc: updated docs/research/learned-substitution.md with round-2 RL/attack-guided/search-based branch
+- `2026-07-02T19:00:00Z` ingest_paper: added paper:yim2023_acibench_visit_note_generation (task-oriented PII-rich utility benchmark, clinical note gen; adopted for LatticeCloak next-stage eval, docs/specs/benchmarks.md)
+- `2026-07-02T19:00:00Z` ingest_paper: added paper:benabacha2023_mtsdialog_clinical_note (MTS-Dialog clinical note gen; adopted for LatticeCloak next-stage eval)
+- `2026-07-02T19:00:00Z` ingest_paper: added paper:zhang2019_aeslc_subject_line_generation (AESLC email gen on Enron; email domain for LatticeCloak next-stage eval)
+- `2026-07-02T19:00:00Z` add_edge: +1 edge (ACI-Bench extends MTS-Dialog note-generation line)
