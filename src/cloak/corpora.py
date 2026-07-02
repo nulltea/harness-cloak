@@ -14,14 +14,20 @@ FILES = {
     "mts": ["clinical/mts.jsonl"],
     "clinical": ["clinical/aci.jsonl", "clinical/mts.jsonl"],
     "aeslc": ["aeslc/test.jsonl"],
+    "enron": ["enron/replies.jsonl"],
 }
 
 
 def load_task_docs(corpus: str, n: int | None = None) -> list[dict]:
-    """Deterministic slice (file order); first n."""
-    rows = []
-    for rel in FILES[corpus]:
-        rows += [json.loads(l) for l in open(CORPORA / rel, encoding="utf-8")]
+    """Deterministic slice. Multi-file corpora (clinical) round-robin across files so a
+    slice hits every sub-corpus; single-file corpora keep file order."""
+    per_file = [[json.loads(l) for l in open(CORPORA / rel, encoding="utf-8")]
+                for rel in FILES[corpus]]
+    if len(per_file) == 1:
+        rows = per_file[0]
+    else:
+        from itertools import chain, zip_longest
+        rows = [d for d in chain.from_iterable(zip_longest(*per_file)) if d is not None]
     return rows[:n] if n else rows
 
 

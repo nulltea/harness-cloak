@@ -1,0 +1,109 @@
+{
+  "corpus": "clinical",
+  "docs": 16,
+  "gen_model": "Qwen3.6-35B-A3B",
+  "taus": [
+    0.005,
+    0.02,
+    0.1,
+    0.5
+  ],
+  "utility_ctrl": {
+    "rougeL": 0.2182,
+    "bertscore_f1": 0.8469
+  },
+  "sweep": [
+    {
+      "tau": 0.005,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.2481,
+        "bertscore_f1": 0.8483
+      },
+      "utility_p": {
+        "rougeL": 0.2444,
+        "bertscore_f1": 0.8479
+      },
+      "gen_spans": 586,
+      "at_most_specific": 583,
+      "at_floor": 44,
+      "inversion_totals": {
+        "ph_swapped": 9,
+        "gen_exact": 7,
+        "gen_fuzzy": 0,
+        "gen_absent": 67,
+        "ph_residue": 0
+      },
+      "wall_s": 140.8
+    },
+    {
+      "tau": 0.02,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.2498,
+        "bertscore_f1": 0.849
+      },
+      "utility_p": {
+        "rougeL": 0.2461,
+        "bertscore_f1": 0.8486
+      },
+      "gen_spans": 586,
+      "at_most_specific": 584,
+      "at_floor": 43,
+      "inversion_totals": {
+        "ph_swapped": 9,
+        "gen_exact": 7,
+        "gen_fuzzy": 0,
+        "gen_absent": 67,
+        "ph_residue": 0
+      },
+      "wall_s": 42.1
+    },
+    {
+      "tau": 0.1,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.2497,
+        "bertscore_f1": 0.848
+      },
+      "utility_p": {
+        "rougeL": 0.246,
+        "bertscore_f1": 0.8476
+      },
+      "gen_spans": 586,
+      "at_most_specific": 586,
+      "at_floor": 41,
+      "inversion_totals": {
+        "ph_swapped": 9,
+        "gen_exact": 7,
+        "gen_fuzzy": 0,
+        "gen_absent": 66,
+        "ph_residue": 0
+      },
+      "wall_s": 50.9
+    },
+    {
+      "tau": 0.5,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.2497,
+        "bertscore_f1": 0.848
+      },
+      "utility_p": {
+        "rougeL": 0.246,
+        "bertscore_f1": 0.8476
+      },
+      "gen_spans": 586,
+      "at_most_specific": 586,
+      "at_floor": 41,
+      "inversion_totals": {
+        "ph_swapped": 9,
+        "gen_exact": 7,
+        "gen_fuzzy": 0,
+        "gen_absent": 66,
+        "ph_residue": 0
+      },
+      "wall_s": 33.0
+    }
+  ]
+}

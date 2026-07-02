@@ -14,6 +14,25 @@ from cloak.probe import guess_back_risk
 DIRECT_TYPES = {"PERSON", "CODE"}
 
 
+def _is_role_phrase(text: str) -> bool:
+    """True if a lowercase PERSON hit is a common-noun role ("patient", "the applicant"),
+    not a name. Privacy-safe bias: keep PERSON unless clearly a role, so lowercase names in
+    dialogue/informal text ("martha") still get placeholders instead of generalizing.
+
+    ponytail: WordNet single-token noun + article prefix. A name that is also a common noun
+    ("Bill", "Rose", "May") lowercased still misroutes to DEM — inherent lowercase ambiguity;
+    upgrade with a names gazetteer if it bites.
+    """
+    from nltk.corpus import wordnet as wn
+    t = text.strip().lower()
+    if re.match(r"(?:the|a|an|this|that|my|his|her|their)\b", t):  # "the applicant", "a nurse"
+        return True
+    toks = re.findall(r"[a-z]+", t)
+    if len(toks) != 1:  # multi-word bare phrase is a proper name ("mary jane") -> keep PERSON
+        return False
+    return bool(wn.synsets(toks[0], pos=wn.NOUN))
+
+
 def _sentence_around(text: str, start: int, end: int) -> str:
     lo = max(text.rfind(".", 0, start), text.rfind("\n", 0, start)) + 1
     hi_candidates = [i for i in (text.find(".", end), text.find("\n", end)) if i != -1]
@@ -30,8 +49,8 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             r"\d|january|february|march|april|may|june|july|august|september|october"
             r"|november|december|year[s]?[\s-]old|\b(?:last|next|previous|past)\b",
             s.text, re.IGNORECASE))]
-    for s in spans:  # lowercase "PERSON" is a common noun (lawyer, patient), not a name
-        if s.type == "PERSON" and s.text[0].islower():
+    for s in spans:  # a lowercase "PERSON" role noun (lawyer, patient) generalizes; a
+        if s.type == "PERSON" and s.text[0].islower() and _is_role_phrase(s.text):  # name stays
             s.type = "DEM"
     spans = coref_chains(text, spans)
     counters: dict[str, int] = {}
@@ -103,4 +122,10 @@ if __name__ == "__main__":
     assert "120,000" not in doc_p, doc_p  # income is a SynthPAI gold attribute
     ph = [r["replacement"] for r in R if r["surface"].startswith("Sarah")]
     assert len(set(ph)) == 1, ph  # same chain -> same placeholder
+
+    # lowercase-name routing: names stay PERSON, role nouns generalize
+    assert not _is_role_phrase("martha") and not _is_role_phrase("dmitri")
+    assert not _is_role_phrase("mary jane")  # multi-word bare name
+    assert _is_role_phrase("patient") and _is_role_phrase("nurse")
+    assert _is_role_phrase("the applicant") and _is_role_phrase("a cardiologist")
     print("substitute.py self-check OK")

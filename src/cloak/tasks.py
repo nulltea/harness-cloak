@@ -24,8 +24,10 @@ CLINICAL_NOTE = ("Write a clinical visit note for the following doctor-patient d
                  "standard note sections. Base it only on the dialogue.\n\nDialogue:\n{doc}")
 EMAIL_SUBJECT = ("Write a concise subject line (a few words) for the following email. "
                  "Reply with only the subject line.\n\nEmail:\n{doc}")
+EMAIL_REPLY = ("Write a brief reply to the following email. Reply with only the message "
+               "body.\n\nEmail:\n{doc}")
 TASK_TEMPLATE = {"aci": CLINICAL_NOTE, "mts": CLINICAL_NOTE, "clinical": CLINICAL_NOTE,
-                 "aeslc": EMAIL_SUBJECT}
+                 "aeslc": EMAIL_SUBJECT, "enron": EMAIL_REPLY}
 
 
 def _teacher():

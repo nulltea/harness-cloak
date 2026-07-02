@@ -47,8 +47,8 @@ SynthPAI has (1), not (2). Generation / rewriting / note-writing / reply-draftin
 ### Email — Enron (real PII, direct + quasi)
 
 - Wiki: [`zhang2019_aeslc_subject_line_generation`](../../research-wiki/papers/zhang2019_aeslc_subject_line_generation.md) ([arXiv 1906.03497](https://arxiv.org/abs/1906.03497) · [ACL P19-1043](https://aclanthology.org/P19-1043/)).
-- AESLC = subject-line generation (multi-reference, short → light restatement). For a **fuller** restatement load use email reply / body generation on the same Enron base (output cites names, orgs, dates, amounts = direct placeholders + quasi spans). Real people → real PII.
-- Start with AESLC (has gold references); add a reply/body-generation variant if the subject-line restatement load proves too light.
+- **`aeslc`** — subject-line generation (multi-reference gold, short → **light** restatement; smoke confirmed inversion barely fires).
+- **`enron`** — email reply generation (fuller restatement: reply cites names/orgs/dates/amounts). CMU Enron strips threading headers, so gold pairs are mined from **quoted top-posted replies within one message**: gold = the new top text, parent = the quoted original (`build_enron` in build_task_corpora.py). Real people → real PII. This is the direct-placeholder stress test the clinical de-identified notes can't provide.
 
 ## Pipeline & metrics
 
@@ -68,10 +68,16 @@ Kept separate; do **not** conflate with the utility benchmarks above.
 
 ## Harness
 
-`scripts/latticecloak_task_eval.py` (`--corpus {aci,mts,clinical,aeslc}`): doc → `Substitutor(tau)` →
-remote gen (`out_p`, `out_ctrl`) → `extract.invert` → `out_final` → `score.score_batch` (ROUGE-L always,
-BERTScore behind `--bertscore`). `--dry-run` validates load+substitute+score with no remote. Corpora built by
-`scripts/build_task_corpora.py`; loaders in `src/cloak/corpora.py`, templates in `src/cloak/tasks.py`.
+`--corpus {aci,mts,clinical,aeslc,enron}` across two scripts, both: doc → substitute(tau) → remote gen
+(`out_p`, `out_ctrl`) → `extract.invert` → `out_final` → `score.score_batch` (ROUGE-L always, BERTScore
+behind `--bertscore`).
+
+- `scripts/latticecloak_task_eval.py` — single-tau eval (`--dry-run` validates load+substitute+score, no remote).
+- `scripts/latticecloak_task_tau_sweep.py` — tau sweep; efficient (detect once, `out_ctrl` once, substitute
+  per tau), records lattice mechanics (`at_most_specific`/`at_floor`) + inversion totals.
+
+Corpora built by `scripts/build_task_corpora.py`; loaders `src/cloak/corpora.py` (clinical round-robins
+aci+mts so a slice hits both), templates `src/cloak/tasks.py`.
 
 ## Smoke results (2026-07-02, tau=0.02, ROUGE-L)
 
@@ -89,11 +95,13 @@ Tiny, not a claim — validates the pipeline and the selection criterion.
 
 ## Open items
 
-- [x] Data materialized: `corpora/clinical/{aci.jsonl (67), mts.jsonl (200)}`, `corpora/aeslc/test.jsonl (200)`.
+- [x] Data materialized: `corpora/clinical/{aci (67), mts (200)}`, `corpora/aeslc/test (200)`, `corpora/enron/replies (200)`.
 - [x] Harness + scorer wired and smoked (ACI, AESLC).
+- [x] Enron reply variant built (quoted top-post pairs; AESLC subject-line load too light per smoke).
+- [x] Fixed lowercase-name → demographic routing: role nouns generalize, names hit the PERSON placeholder path (WordNet discriminator, `substitute._is_role_phrase`).
+- [x] Real tau-sweep on ACI/MTS with `--bertscore` (`latticecloak_task_tau_sweep.py`).
 - [ ] License check before redistributing slices (microsoft clinical corpus; Enron/AESLC).
-- [ ] Add Enron reply/body-generation variant — AESLC subject-line restatement load is too light (smoke).
-- [ ] Fix lowercase-name → demographic routing so patient names hit the PERSON placeholder path.
 - [ ] Confirm clinical note references usable as gold without penalizing licensed omission (add entity/fact-F1).
-- [ ] Scale + perf-gate a real tau-sweep on ACI/MTS (with `--bertscore`); then the privacy Pareto.
-- [ ] Register LLM-PBE when the attacker stage lands.
+- [ ] Ceiling: a name that is also a common noun ("Bill", "Rose") lowercased still misroutes to DEM — add a names gazetteer if it bites.
+- [ ] Batch MTI probing across spans — sequential (batch=1) probing is the tau-sweep bottleneck at scale.
+- [ ] The privacy Pareto (attacker axis); register LLM-PBE when that stage lands.

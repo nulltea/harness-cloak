@@ -1,0 +1,23 @@
+{
+  "corpus": "enron",
+  "tau": 0.02,
+  "n": 4,
+  "gen_model": "Qwen3.6-35B-A3B",
+  "utility_final": {
+    "rougeL": 0.0947
+  },
+  "utility_ctrl": {
+    "rougeL": 0.1049
+  },
+  "utility_p": {
+    "rougeL": 0.0943
+  },
+  "inversion_totals": {
+    "ph_swapped": 3,
+    "gen_exact": 1,
+    "gen_fuzzy": 0,
+    "gen_absent": 11,
+    "ph_residue": 0
+  },
+  "wall_s": 23.9
+}
