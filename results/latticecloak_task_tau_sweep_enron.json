@@ -16,6 +16,11 @@
     {
       "tau": 0.005,
       "n": 16,
+      "leakage": {
+        "overlap": 0.8559,
+        "PII leak": 0.2654,
+        "MLM guess-back": 0.3062
+      },
       "utility_final": {
         "rougeL": 0.0955,
         "bertscore_f1": 0.8338
@@ -34,11 +39,16 @@
         "gen_absent": 79,
         "ph_residue": 0
       },
-      "wall_s": 35.5
+      "wall_s": 22.8
     },
     {
       "tau": 0.02,
       "n": 16,
+      "leakage": {
+        "overlap": 0.8559,
+        "PII leak": 0.2654,
+        "MLM guess-back": 0.3101
+      },
       "utility_final": {
         "rougeL": 0.0967,
         "bertscore_f1": 0.8337
@@ -57,11 +67,16 @@
         "gen_absent": 78,
         "ph_residue": 0
       },
-      "wall_s": 18.4
+      "wall_s": 19.4
     },
     {
       "tau": 0.1,
       "n": 16,
+      "leakage": {
+        "overlap": 0.8559,
+        "PII leak": 0.2654,
+        "MLM guess-back": 0.3218
+      },
       "utility_final": {
         "rougeL": 0.0969,
         "bertscore_f1": 0.8345
@@ -80,11 +95,16 @@
         "gen_absent": 77,
         "ph_residue": 0
       },
-      "wall_s": 17.9
+      "wall_s": 18.0
     },
     {
       "tau": 0.5,
       "n": 16,
+      "leakage": {
+        "overlap": 0.8559,
+        "PII leak": 0.2654,
+        "MLM guess-back": 0.3478
+      },
       "utility_final": {
         "rougeL": 0.098,
         "bertscore_f1": 0.8335
@@ -103,7 +123,7 @@
         "gen_absent": 74,
         "ph_residue": 0
       },
-      "wall_s": 18.6
+      "wall_s": 17.7
     }
   ]
 }

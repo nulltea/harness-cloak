@@ -11,6 +11,7 @@ Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
 import argparse
 import copy
 import json
+import math
 import time
 from statistics import mean
 
@@ -22,6 +23,8 @@ from cloak.substitute import substitute
 from cloak.tasks import TASK_TEMPLATE
 from inferdpt.llm import LLMClient
 from inferdpt.pipeline import pmap
+from inferdpt.probes.leakage import overlap, pii_leakage
+from latticecloak_tau_sweep import mlm_guess_back  # span-inversion attacker probe
 
 
 def _agg(sc: dict) -> dict:
@@ -74,7 +77,14 @@ def main():
             of, st = invert(op, subbed[d["id"]][1])
             finals.append(of)
             inv.append(st)
+        # leakage probes (same instruments as the extend-prefix/InferDPT sweep): overlap,
+        # PII survival, and the candidate-sensitive MLM guess-back attacker on doc_p
+        pii = [pii_leakage(d["text"], subbed[d["id"]][0])["recall"] for d in docs]
+        leak = {"overlap": round(mean(overlap(d["text"], subbed[d["id"]][0]) for d in docs), 4),
+                "PII leak": round(mean(v for v in pii if not math.isnan(v)), 4),
+                "MLM guess-back": round(mean(mlm_guess_back(*subbed[d["id"]]) for d in docs), 4)}
         rec = {"tau": tau, "n": len(docs),
+               "leakage": leak,
                "utility_final": _agg(score_batch(finals, refs_list, args.bertscore)),
                "utility_p": _agg(score_batch(outs_p, refs_list, args.bertscore)),
                "gen_spans": n_gen, "at_most_specific": lvl_specific, "at_floor": lvl_floor,
