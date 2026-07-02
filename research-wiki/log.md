@@ -51,3 +51,8 @@ _Append-only timeline._
 - `2026-07-02T19:00:00Z` ingest_paper: added paper:benabacha2023_mtsdialog_clinical_note (MTS-Dialog clinical note gen; adopted for LatticeCloak next-stage eval)
 - `2026-07-02T19:00:00Z` ingest_paper: added paper:zhang2019_aeslc_subject_line_generation (AESLC email gen on Enron; email domain for LatticeCloak next-stage eval)
 - `2026-07-02T19:00:00Z` add_edge: +1 edge (ACI-Bench extends MTS-Dialog note-generation line)
+- `2026-07-02T19:01:24Z` ingest_paper: added paper:kim2025_seal_adversarial_distillation (SEAL, NeurIPS 2025; mandated pre-D2 overlap check — no contribution collision with round-trip GRPO plan; trajectories/critique-distillation flagged as reusable)
+- `2026-07-02T19:01:24Z` add_edge: +1 edge (SEAL extends Staab adversarial anonymization)
+- `2026-07-02T19:40:00Z` ingest_paper: added paper:gao2022_reward_overoptimization, paper:jiang2025_s3_search_agent, paper:chen2025_mmoa_rag (RL background for round-trip GRPO plan: frozen-proxy Goodharting, frozen-partner pipeline RL, shared-reward multi-component training)
+- `2026-07-02T19:40:00Z` add_edge: +2 edges (s3→Gao overoptimization; MMOA-RAG extends two-component pipeline RL)
+- `2026-07-02T22:30:00Z` result-to-claim: LatticeCloak §06/§07/§08 overhaul — C1 partial, C2 partial, C3 yes, C4 partial, C5 no (no matched-realized-privacy head-to-head); improvements over InferDPT are architectural/component-level only. Trace: .aris/traces/result-to-claim/2026-07-02_run01/

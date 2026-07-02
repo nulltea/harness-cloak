@@ -684,44 +684,70 @@
       <div class="section-meta">claims · grounds · scope</div>
     </header>
     <div class="prose">
-      <p><strong>1 · On TAB, the placeholder path achieves near-complete observed DIRECT recall
-      (Partial).</strong> Any-overlap recall 0.998, entity-level 0.997, typed 0.980 (n=407 mentions, 127
-      docs). This is a benchmark detection result, not a privacy guarantee: any-overlap matching is lenient,
-      and the numeric-reference pattern that eliminated the miss class was added after inspecting failures on
-      five documents from the same test set, so the headline number is not a frozen-detector hold-out.
-      Grounds: §5.1. Scope: union-of-annotators gold; legal-domain English; GLiNER small + Presidio.</p>
-      <p><strong>2 · TAB quasi-identifier detection has measured recall weaknesses in DEM, MISC and QUANTITY
-      (Supported, negative finding).</strong> QUASI any-recall: DEM 0.56, MISC 0.21, QUANTITY 0.25 against
-      0.86 overall, with substantial denominators (n=474/411/287). Grounds: §5.1. Scope: these categories
-      require document-level inference, and misses pass into <code>doc_p</code> unprotected; the planned
-      attacker evaluation prices this, the detector number alone does not.</p>
-      <p><strong>3 · On SynthPAI, detected-span substitution is dominated by dictionary and rule routes
-      (Partial).</strong> 97.5&ndash;97.8% of detected spans route to zero-cost sources; the generative
-      teacher covers 36 unique entities across 300 profiles, built once in under two minutes on-box. Route
-      counts do not measure substitution <em>quality</em>, and the denominator is detected spans on one
-      informal-register corpus; the general form of the claim needs multi-domain replication and a
-      substitution-correctness audit. Grounds: §5.2.</p>
-      <p><strong>4 · In a 36-entity pilot, a 4B-class local teacher handled most lattice writing when paired
-      with a verification cascade (Partial).</strong> 31/36 settled at E4B; 4 escalations to Qwen3.6, 1
-      type-label floor; the NLI gate plus degeneracy and self-reference rejections caught the failure modes
-      observed in this pilot (wrong-sense hypernyms, vacuous entailments, self-referential candidates).
-      Adequacy in general is not established: n=36, one corpus, no blind accuracy measurement of accepted
-      candidates, no gate false-accept rate. Grounds: §5.2, §3.</p>
-      <p><strong>5 · In the 32-answer smoke test, summarization/QA outputs did not reuse substituted spans,
-      so inversion went mostly unexercised (Partial).</strong> 128/128 substituted spans were absent from the
-      answers; outputs were coherent without inversion. Constructed fact-restating prompts show rung A
-      restoring the recoverable cited facts with three residue classes (§5.4). Whether answers "rarely" cite
-      substituted spans in general, and whether rule-only extraction suffices, remains a hypothesis for the
-      Pareto stage: 8 documents, one task suite, one remote model, no utility metric yet.</p>
-      <p><strong>6 · In the 8-doc &tau; sweep, the knob mechanically changed lattice operating points, but the
-      tested aggregate surface probes were effectively flat (Partial).</strong> Most-specific acceptances rose
-      26&rarr;34 of 36 spans and floors fell 13&rarr;5 across &tau; = 0.005&ndash;0.5, while overlap (0.989),
-      PII leak (0.842), coherence(doc_p) (0.994) and utility_control (0.971&ndash;0.972) did not move; the one
-      responsive instrument was the candidate-sensitive MLM guess-back (0.18&rarr;0.21 at the loosest &tau;,
-      within noise for n=36). This suggests aggregate probes are too coarse for span-targeted substitution
-      while attack-shaped ones respond, and motivates adversarial pricing in the next stage; it does not prove
-      surface probes in general cannot be made sensitive. The PII-leak diagnosis (probe-detector noise plus
-      one genuine education-phrase miss) rests on manual inspection of one document. Grounds: §5.3.</p>
+      <p>The results license <em>architectural and component-level</em> fixes to specific InferDPT/RANTEXT
+      failure modes; they do <strong>not</strong> yet license a privacy&ndash;utility win over InferDPT
+      (Finding&nbsp;8 is the gate). Verdicts below were adjudicated by an external model against all measured
+      results (trace in <code>.aris/traces/result-to-claim/</code>).</p>
+
+      <p><strong>1 · Direct-identifier removal is near-ceiling and exactly reversible on TAB &mdash; an
+      improvement over &epsilon;-noise (Partial).</strong> Any-overlap DIRECT recall 0.998, entity-level 0.997,
+      typed 0.980 (n=407, 127 docs); detected direct spans become typed placeholders that swap back exactly,
+      where token-level &epsilon; both destroys the surface and cannot invert. The improvement is scoped to
+      detection + reversibility, not privacy: any-overlap matching is lenient, the numeric-reference regex that
+      cleared the miss class was added after inspecting five docs of the same test set (not a frozen hold-out),
+      and reversibility is smoke-scale (Finding&nbsp;5). Grounds: §5.1, §5.4.</p>
+
+      <p><strong>2 · Quasi-identifier detection is weak on DEM, MISC, QUANTITY and CODE (Supported, negative).
+      </strong> QUASI any-recall DEM 0.56, MISC 0.21, QUANTITY 0.25, CODE 0.76 against 0.86 overall (n=6,524).
+      These open-class, contextual spans are recognized by inference, not matching; misses pass into
+      <code>doc_p</code> unprotected. The detector number alone cannot price this &mdash; only the (pending)
+      attacker can. Grounds: §5.1.</p>
+
+      <p><strong>3 · Substitution is cheap and mostly local &mdash; no autoregressive model in the hot path
+      (Yes, scoped).</strong> 97.8% of 2,438 detected spans route to zero-cost sources (rules, GeoNames,
+      WordNet, placeholders); the generative teacher covers 36 unique entities across 300 profiles, cached in
+      under two minutes on-box. Scope: measured corpora only &mdash; this is a cost/routing result, not a
+      substitution-<em>quality</em> audit, and needs multi-domain replication. Grounds: §5.2.</p>
+
+      <p><strong>4 · A 4B-class local teacher wrote most lattices when gated by a verification cascade
+      (Partial).</strong> 31/36 entities settled at E4B, 4 escalated to Qwen3.6, 1 floored; the NLI gate plus
+      degeneracy and self-reference rejections caught the observed failure classes. Adequacy in general is
+      unestablished: n=36, one corpus, no blind accuracy of accepted candidates, no gate false-accept rate.
+      Grounds: §5.2, §3.</p>
+
+      <p><strong>5 · The raw-document extractor leak is closed by design; rule-only inversion recovers cited
+      facts for exact/near-exact restatement only (Partial).</strong> Recovery reads the client-side record R,
+      never the raw document &mdash; structurally removing InferDPT's E1 leak (its end-to-end utility came from
+      the extractor seeing <code>doc_orig</code>). After the lowercase-name routing fix, direct-identifier
+      inversion now fires (clinical ph_swapped 9, gen_exact 7; email ph_swapped 4), and constructed prompts
+      show facts restored ("a financial institution"&rarr;Goldman Sachs, "a city in Illinois"&rarr;Chicago).
+      But rule-only inversion misses paraphrase, reformatting, narrowing and deliberately-suppressed precision
+      (three residue classes, §5.4), and the SynthPAI smoke left inversion unexercised (128/128 substituted
+      spans absent from answers). Evidence is smoke-scale (8&ndash;16 docs) plus four constructed prompts.
+      Grounds: §5.4.</p>
+
+      <p><strong>6 · &tau; separates the operating point per span, but is not a legible aggregate or task knob
+      (Partial).</strong> Across the three-regime sweep (FIG&nbsp;03): on clinical the lattice is
+      <em>pinned</em> at most-specific even at &tau;=0.005 (583&rarr;586 of 586, &tau; inert); on email &tau;
+      genuinely repositions it (most-specific 115&rarr;137, floors 103&rarr;81); on extend-prefix 26&rarr;34.
+      Yet every aggregate/task instrument stays flat &mdash; overlap, PII survival, ROUGE-L/BERTScore and SimCSE
+      do not move &mdash; and the only responsive one is the candidate-sensitive MLM guess-back (email
+      0.31&rarr;0.35, extend 0.19&rarr;0.21, clinical flat 0.14). So the knob is observable, not yet shown to be
+      a controllable privacy&ndash;utility dial. Grounds: §5.3.</p>
+
+      <p><strong>7 · Task utility is not yet a win, and inversion is often inert (Partial, negative).</strong>
+      On the task corpora <code>out_final</code>&nbsp;&asymp;&nbsp;<code>out_p</code>: clinical ROUGE-L
+      0.248&ndash;0.250 vs no-privacy control 0.218 (a small, one-reference gain), email 0.096&ndash;0.098
+      <em>below</em> control 0.124. These are one-reference generation metrics, so the privatized&ndash;control
+      <em>gap</em>, not the level, is what a Pareto would report; on current tasks the gap is small or negative.
+      Grounds: §5.3, §5.4.</p>
+
+      <p><strong>8 · No privacy&ndash;utility improvement over InferDPT is demonstrated (Not supported &mdash;
+      the gate).</strong> There is no head-to-head at matched realized privacy, no frontier-LLM
+      re-identification/attribute-inference attacker on <code>doc_p</code> or <code>out_final</code>, and the
+      MLM guess-back is a weak candidate-sensitive proxy, not an adversary. Every "better than InferDPT"
+      statement in this report is therefore architectural/component-level and must be gated by this until the
+      Pareto stage runs. Grounds: §5.3, §08.</p>
     </div>
   </section>
 
@@ -737,11 +763,14 @@
       systematic miss class (application numbers) was a regex away. DEM/MISC/QUANTITY spans are open-class and
       contextual ("a mother of three", "the incident that spring"): recognizing them is inference, not
       matching, which is the known boundary of span-level detection and the reason the evaluation design
-      measures privacy as attacker outcome rather than detector recall.</p>
+      measures privacy as attacker outcome rather than detector recall. This asymmetry is why the honest
+      improvement over &epsilon;-noise is confined to the direct-identifier path: there LatticeCloak both
+      detects near-ceiling and inverts exactly, whereas the quasi path inherits detection's contextual ceiling.</p>
       <p><strong>Why the teacher residue is so small.</strong> SynthPAI's quasi-identifiers are dominated by
       occupations, education, locations, ages and incomes: common nouns, places and values, which WordNet,
       GeoNames and rule buckets already cover. Only branded or culturally specific entities (Netflix, IKEA,
-      konbini) fall through, and their number grows sublinearly with corpus size because entities repeat.</p>
+      konbini) fall through, and their number grows sublinearly with corpus size because entities repeat &mdash;
+      which is what makes the "no autoregressive model in the hot path" property hold at corpus scale.</p>
       <p><strong>Why the cascade's checks are load-bearing.</strong> Three observed failure classes never
       reached the cache: fluent wrong-sense hypernyms for rare foreign terms, vacuous entailments from
       degenerate substitutions in fragmentary contexts, and candidates containing the entity itself. Each was
@@ -750,22 +779,31 @@
       probe property matters for interpretation: masking hides the candidate, so MTI risk measures whether the
       <em>context</em> gives the original away, and a span inferable at every lattice level correctly lands on
       the most general form with its risk recorded in R.</p>
-      <p><strong>Why the surface probes are flat across &tau;.</strong> The sweep only re-chooses lattice
-      levels for 36 generalized spans inside documents whose remaining thousands of content words are
-      untouched: document-level lexical overlap is dominated by the untouched text, so it cannot register
-      which level a span sits at. Per-token perturbation, which rewrites every token as &epsilon; moves, is
-      the regime those probes were built for. The utility probe is similarly saturated because the remote
-      answers paraphrase around the substituted details regardless of their coarseness on these tasks. The
-      instruments are not wrong, they are aimed at a different mechanism; the operating point of a
-      span-targeted method has to be priced where its effect lives, in what an adversary can infer. The MLM
-      guess-back result is the small confirmation: the only probe that reads <code>doc_p</code> the way an
-      attacker would (replacement visible, original guessed) is also the only one that moves with &tau;.</p>
-      <p><strong>Why answers rarely cite substituted spans.</strong> Summaries and short QA answers compress:
-      they mention what the question demands and paraphrase the rest. Substituted details are exactly the
-      specifics such answers drop. The corollary cuts both ways: utility survives substitution largely without
-      extraction on these tasks, and extraction value concentrates in tasks whose answers must restate the
-      protected attributes, which is where the rung A residue classes (rephrase misses, grammar seams) become
-      the binding constraint and rung B earns or fails to earn its keep.</p>
+      <p><strong>Why &tau; is inert on clinical but live on email.</strong> The walk accepts a level once its
+      masked guess-back risk falls below &tau;; whether that happens at the most-specific level depends on how
+      inferable the span is from context. Clinical spans (ages, conditions, med names in a scaffolded note
+      dialogue) have low contextual guess-back already, so even the strictest &tau;=0.005 accepts level&nbsp;0
+      &mdash; the lattice is pinned and the knob does nothing. Email spans (dates, organizations in short
+      threads) are more contextually inferable, so tightening &tau; pushes them to coarser levels &mdash; the
+      lattice moves. This also explains the leakage panel: only the candidate-sensitive MLM guess-back rises
+      with &tau; on email, because more specific levels hand the attacker more signal; overlap and PII survival,
+      which read the untouched surrounding text, cannot see a handful of re-leveled spans on either corpus.</p>
+      <p><strong>Why the aggregate/task metrics can't price &tau;.</strong> The sweep re-chooses levels for
+      tens to hundreds of spans inside documents whose remaining content is untouched, so document-level
+      overlap and reference-scored ROUGE-L/BERTScore are dominated by everything the substitution left alone.
+      Per-token &epsilon; perturbation, which rewrites every token, is the regime those probes were built for.
+      The operating point of a span-targeted method has to be priced where its effect lives &mdash; in what an
+      adversary can infer &mdash; which is exactly why the pending frontier-attacker Pareto, not these
+      instruments, is the load-bearing evaluation.</p>
+      <p><strong>Why closing the extractor leak matters but buys less than it did for InferDPT.</strong>
+      InferDPT's measured end-to-end utility came from its extractor reading <code>doc_orig</code>; LatticeCloak
+      moves recovery entirely client-side (invert R), so the remote model and the extractor never see the raw
+      document &mdash; the leak is gone by construction. The catch is that this only helps when the answer
+      actually restates a substituted span: summaries and short QA compress and paraphrase, dropping exactly the
+      specifics, so on those tasks <code>out_final</code>&nbsp;&asymp;&nbsp;<code>out_p</code> and inversion is
+      inert. Extraction value therefore concentrates in restatement-heavy tasks (notes, replies), where the
+      rung&nbsp;A residue classes (rephrase misses, grammar seams, suppressed precision) become the binding
+      constraint and a learned rung&nbsp;B either earns its keep or does not.</p>
     </div>
   </section>
 
@@ -776,25 +814,42 @@
       <div class="section-meta">what it buys · implications · limitations · next</div>
     </header>
     <div class="prose">
-      <p><strong>Implications.</strong> The predecessor page located InferDPT's failure in one scalar &epsilon;
-      doing three jobs; LatticeCloak's measurements so far are consistent with the decomposition: identifiers
-      route into exact, reversible placeholders (0.998 observed benchmark recall), premises are handled
-      truthfully at tunable coarseness (lattices, &tau; per span), and in the smoke evidence the extraction
-      burden shrank to a rule pass wherever the task did not restate protected attributes. The remote model reasoning correctly on coarsened premises,
-      including declining to invent removed facts, is the property token-level noise could not deliver.</p>
-      <p><strong>Limitations.</strong> No adversarial privacy number yet: the frontier-LLM attribute-inference
-      attacker and the utility metrics on <code>out_final</code> are the next stage, so nothing here is a
-      privacy&ndash;utility claim at matched realized privacy. The round-trip evidence is smoke-scale (8
-      documents, 32 answers) plus four constructed prompts. Detection weakness on DEM/MISC/QUANTITY is measured
-      on legal text and unmeasured implicit disclosures ("my 9-to-5 at the hospital") never enter any span
-      denominator. Coreference is surface aliasing, adequate for first-person Reddit text and known-inadequate
-      for nominal anaphora in legal documents. Sense ambiguity in offline lookups (Cambridge, UK vs MA) is
-      accepted as a rule-based ceiling by design decision, deferred to the learned-substitutor comparison.</p>
-      <p><strong>Next.</strong> The Pareto stage: &tau; sweep against the InferDPT &epsilon; sweep on identical
-      documents and tasks, privacy scored by held-out frontier attackers on <code>doc_p</code> and
-      <code>out_final</code>, utility scored against references and gold answers; then rung B trained on
-      synthesized inversions to price the measured rung A residue. Kill criteria are pre-registered: if rung B
-      does not beat rules at matched realized privacy, the finding is that R plus rules suffice.</p>
+      <p><strong>The gate (read this first).</strong> Nothing here is a privacy&ndash;utility improvement over
+      InferDPT. There is no head-to-head at matched realized privacy, no frontier-LLM attacker on
+      <code>doc_p</code> or <code>out_final</code>, and the one responsive in-house probe (MLM guess-back) is a
+      weak candidate-sensitive proxy, not an adversary. What the results license are <em>architectural and
+      component-level</em> fixes to specific InferDPT/RANTEXT failure modes &mdash; not a better frontier.</p>
+      <p><strong>What it buys over InferDPT (scoped).</strong> The predecessor located InferDPT's failure in one
+      scalar &epsilon; doing three jobs, in RANTEXT degenerating on a faithful mechanism, and in its utility
+      coming from an extractor that read the raw document. LatticeCloak addresses each at the mechanism level:
+      identity removal is a typed, exactly reversible placeholder rather than a destructive random swap
+      (near-ceiling direct detection on TAB); premises are coarsened by <em>truthful</em> generalizations that
+      never feed the remote model a falsehood; substitution is mostly local dictionaries/rules (97.8%
+      zero-call); and recovery reads a client-side record R, so the extractor never sees <code>doc_orig</code>
+      &mdash; closing the E1 leak by construction. The remote model reasoning on coarsened premises, including
+      declining to invent removed facts, is a property token-level noise could not deliver. Each of these is a
+      component result at the measured scope, not an end-to-end win.</p>
+      <p><strong>Where it underperforms or is unproven.</strong> (1) The central gap is the missing matched-privacy
+      comparison above. (2) Quasi-identifier detection is weak on DEM/MISC/QUANTITY/CODE, and those misses pass
+      into <code>doc_p</code> unprotected; implicit disclosures ("my 9-to-5 at the hospital") never enter any
+      span denominator at all. (3) &tau; is not a legible operating dial: it is inert on clinical (spans pinned
+      at most-specific) and, even where it moves the lattice (email), leaves every aggregate/task metric flat.
+      (4) Utility is not a win &mdash; <code>out_final</code>&nbsp;&asymp;&nbsp;<code>out_p</code> on most tasks,
+      email sits below the no-privacy control, and clinical's gain is small under a one-reference metric. (5)
+      Round-trip evidence is smoke-scale (8&ndash;16 docs + four constructed prompts) and rule-only inversion is
+      brittle to paraphrase, reformatting and suppressed precision; no learned rung&nbsp;B exists. (6) The
+      evaluation itself carries leakage risks: lenient any-overlap matching, a regex tuned after inspecting the
+      test set, a precision <em>proxy</em>, and no frozen hold-out. (7) Residual substitution-quality defects
+      &mdash; detection misfires (Anthrax/Bunche&rarr;PERSON), coref over-merge (Doctor Kumar), and the GeoNames
+      sense prior (Cambridge UK vs MA) &mdash; are accepted rule-based ceilings deferred to the learned
+      substitutor.</p>
+      <p><strong>Next.</strong> The Pareto stage that turns the scoped component claims into (or refutes as) an
+      end-to-end result: &tau; sweep against the InferDPT &epsilon; sweep on identical documents and tasks,
+      privacy scored by held-out frontier attackers on <code>doc_p</code> and <code>out_final</code>, utility
+      scored against references and gold answers; then rung&nbsp;B trained on synthesized inversions to price the
+      measured rung&nbsp;A residue. Kill criteria are pre-registered: if LatticeCloak does not beat InferDPT at
+      matched realized privacy, that is the finding; if rung&nbsp;B does not beat rules there, R plus rules
+      suffice.</p>
     </div>
   </section>
 
