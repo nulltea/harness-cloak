@@ -23,6 +23,13 @@ def _sentence_around(text: str, start: int, end: int) -> str:
 
 def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, list[dict]]:
     """Returns (doc_p, R). Spans must be non-overlapping (Detector dedupes)."""
+    # generic temporals ("daily", "these days", "summer") are not identifiers: substituting
+    # them wrecks readability for zero privacy; only dated/aged DATETIMEs are processed
+    spans = [s for s in spans if not (
+        s.type == "DATETIME" and not re.search(
+            r"\d|january|february|march|april|may|june|july|august|september|october"
+            r"|november|december|year[s]?[\s-]old|\b(?:last|next|previous|past)\b",
+            s.text, re.IGNORECASE))]
     for s in spans:  # lowercase "PERSON" is a common noun (lawyer, patient), not a name
         if s.type == "PERSON" and s.text[0].islower():
             s.type = "DEM"

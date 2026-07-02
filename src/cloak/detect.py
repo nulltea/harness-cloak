@@ -2,6 +2,7 @@
 
 Plan: docs/plans/2026-07-02-d1-prototype-implementation.md P0.3/P1.
 """
+import re
 from dataclasses import dataclass
 
 # Zero-shot label phrase -> TAB entity_type. Phrasing matters for GLiNER; tune only here.
@@ -20,10 +21,14 @@ GLINER_LABELS = {
 PRESIDIO_MAP = {
     "PERSON": "PERSON", "LOCATION": "LOC", "NRP": "DEM", "DATE_TIME": "DATETIME",
     "EMAIL_ADDRESS": "CODE", "PHONE_NUMBER": "CODE", "IBAN_CODE": "CODE",
-    "CREDIT_CARD": "CODE", "US_SSN": "CODE", "URL": "CODE", "IP_ADDRESS": "CODE",
+    "CREDIT_CARD": "CODE", "US_SSN": "CODE", "IP_ADDRESS": "CODE",
     "MEDICAL_LICENSE": "CODE", "US_DRIVER_LICENSE": "CODE", "US_PASSPORT": "CODE",
     "REF_CODE": "CODE", "MONEY": "QUANTITY",
+    # URL deliberately unmapped: Reddit ellipses ("here...co") false-positive as .co domains
 }
+
+_PRONOUNS = {"i", "me", "my", "mine", "you", "your", "he", "him", "his", "she", "her",
+             "it", "its", "we", "us", "our", "they", "them", "their", "rn", "ngl"}
 
 
 @dataclass
@@ -91,6 +96,8 @@ class Detector:
             if r.entity_type in PRESIDIO_MAP:
                 spans.append(Span(r.start, r.end, text[r.start:r.end],
                                   PRESIDIO_MAP[r.entity_type], r.score, "presidio"))
+        spans = [s for s in spans  # pure symbol/emoji spans or bare pronouns: never identifiers
+                 if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in _PRONOUNS]
         return _dedupe(spans)
 
 
