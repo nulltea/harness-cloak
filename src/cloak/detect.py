@@ -66,11 +66,18 @@ class Detector:
         self.presidio.registry.add_recognizer(PatternRecognizer(
             supported_entity="REF_CODE", name="numeric_reference",
             patterns=[Pattern("num-slash-num", r"\b\d{3,6}/\d{2,4}\b", 0.6)]))
+        _numword = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+                    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+                    r"thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|"
+                    r"million|billion|and|a)")
         self.presidio.registry.add_recognizer(PatternRecognizer(
             supported_entity="MONEY", name="money_amount",
             patterns=[Pattern("amount-currency",
                               r"(?:[$€£]\s?[\d,]+(?:\.\d+)?[kKmM]?|\b[\d,]+(?:\.\d+)?[kKmM]?\s?"
-                              r"(?:dollars?|euros?|pounds?|USD|EUR|GBP|NOK|kr)\b)", 0.6)]))
+                              r"(?:dollars?|euros?|pounds?|USD|EUR|GBP|NOK|kr)\b)", 0.6),
+                      Pattern("bare-k-amount", r"\b\d{1,4}(?:\.\d+)?[kKmM]\b", 0.4),
+                      Pattern("spelled-amount",
+                              rf"(?i)\b(?:{_numword}[\s-]+){{1,6}}(?:dollars?|euros?|pounds?)\b", 0.6)]))
         self.labels = list(GLINER_LABELS)
 
     def detect(self, text: str) -> list[Span]:

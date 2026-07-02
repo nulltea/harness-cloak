@@ -217,6 +217,12 @@ values they already cover, so the teacher sees only the named-entity residue.
   attribute inference) and are never merged into one number.
 - **Irrecoverable precision:** tasks whose answers require the suppressed specificity lose it by design;
   reported per-task, not engineered around.
+- **Scope decisions (2026-07-02, demo-prompt review):** health conditions ("diabetes") are *kept* in
+  `doc_p` — they are premise, not identifier, on our corpora (no HEALTH category; revisit if medical
+  text enters scope). Context-dependent sense ambiguity (Cambridge UK-vs-MA via the GeoNames
+  popularity prior) is *accepted* as a rule-based ceiling: enumerating contextual exceptions is
+  unbounded, and resolving them is precisely the learned substitutor's advantage — measured in D2 /
+  the distilled-student eval, not patched with more rules.
 
 ## Distilled student (deferred; deployment path + D2)
 

@@ -23,6 +23,9 @@ def _sentence_around(text: str, start: int, end: int) -> str:
 
 def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, list[dict]]:
     """Returns (doc_p, R). Spans must be non-overlapping (Detector dedupes)."""
+    for s in spans:  # lowercase "PERSON" is a common noun (lawyer, patient), not a name
+        if s.type == "PERSON" and s.text[0].islower():
+            s.type = "DEM"
     spans = coref_chains(text, spans)
     counters: dict[str, int] = {}
     chain_ph: dict[int, str] = {}
@@ -55,11 +58,15 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
                 if risk < tau:
                     chosen = cand
                     break
+            prev = text[:s.start].rstrip()
+            sent_start = not prev or prev[-1] in ".!?\n"
+            chosen = (chosen[0].upper() if sent_start else chosen[0].lower()) + chosen[1:]
             entry.update(action="generalize", replacement=chosen, lattice=lattice,
                          risk=round(risk, 4) if risk is not None else None)
         out = out[:s.start] + entry["replacement"] + out[s.end:]
         record.append(entry)
-    out = re.sub(r"\b[Tt]he (an?|the)\b", r"\1", out)  # "the university hospital" -> "the" + "a X"
+    out = re.sub(r"\b([Aa]n?|[Tt]he) (?=(?:an?|the)\b)", "", out)  # "a a person", "the a structure"
+    out = re.sub(r"\b[Ii]n (?=in\b)", "", out)                    # "in in the spring"
     return out, record[::-1]
 
 
