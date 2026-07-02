@@ -547,115 +547,107 @@
     placeholders swap back, and on the note a generalization narrows back
     (<code>fifty-something</code>&rarr;<code>50-year-old</code>).</p>
 
-        <div class="diagram-frame">
+            <div class="diagram-frame">
       <div class="diagram-cap">
-        <span class="l">FIG · 04 — round trip through the components: clinical note (ACI-Bench, aci/D2N001)</span>
-        <span>detector+substitutor &rarr; remote LLM &rarr; rule extractor · amber = removed, green = restored</span>
+        <span class="l">FIG · 04 — full round trip through the components: clinical note (ACI-Bench) and email reply (Enron)</span>
+        <span>columns = examples · rows = stages · green = removed, amber = masked, green = restored</span>
       </div>
-      <svg class="flow" viewBox="0 0 1120 628" xmlns="http://www.w3.org/2000/svg" role="img"
-           aria-label="Clinical round trip: doc_orig (raw dialogue naming martha, age 50) is transformed by the detector plus substitutor into doc_p (name to PERSON_2 placeholder, age to fifty-something); the remote LLM writes a note citing PERSON_2 and fifty-something; the rule extractor inverts R, restoring martha and 50-year-old in gen_final.">
-        <defs><marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
+      <svg class="flow" viewBox="0 0 1120 884" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Full round trip for two examples side by side: left clinical note (ACI-Bench), right email reply (Enron); each flows doc_orig to doc_p (detector plus substitutor) to gen_p (remote LLM) to gen_final (rule extractor); green removed, amber masked, green restored.">
+        <defs><marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker><marker id="ahe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
 
-        <rect x="20" y="36" width="1080" height="111" rx="6" class="box box-client"/>
-        <foreignObject x="20" y="36" width="1080" height="111">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:111px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <text x="284" y="30" text-anchor="middle" class="box-label">clinical · dialogue&rarr;note (ACI-Bench)</text>
+        <rect x="16" y="44" width="536" height="167" rx="6" class="box box-client"/>
+        <foreignObject x="16" y="44" width="536" height="167">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:167px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_orig · raw dialogue (client, plaintext)</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">[doctor] hi , <span style="color:#2f7d4f;font-weight:600;">martha</span> . how are you ? [patient] i'm doing okay . how are you ? [doctor] i'm doing okay . so , i know the nurse told you about <span style="color:#2f7d4f;font-weight:600;">dax</span> . i'd like to tell <span style="color:#2f7d4f;font-weight:600;">dax</span> a little bit about you , okay ? [patient] okay . [doctor] <span style="color:#2f7d4f;font-weight:600;">martha</span> is a <span style="color:#2f7d4f;font-weight:600;">50-year-old</span> female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam . so , <span style="color:#2f7d4f;font-weight:600;">martha</span> , it's been a year since i've seen you . how are you doing ? [patient] i'm doing well . i've been traveling a lot recently since things have , have gotten a bit lighter . and i got my , my vaccine , so i feel safer about traveling . i've been doing a lot of hiking &#8230;</div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">[doctor] hi , <span style="color:#2f7d4f;font-weight:600;">martha</span> . how are you ? [patient] i'm doing okay . how are you ? [doctor] i'm doing okay . so , i know the nurse told you about <span style="color:#2f7d4f;font-weight:600;">dax</span> . i'd like to tell <span style="color:#2f7d4f;font-weight:600;">dax</span> a little bit about you , okay ? [patient] okay . [doctor] <span style="color:#2f7d4f;font-weight:600;">martha</span> is a <span style="color:#2f7d4f;font-weight:600;">50-year-old</span> female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam . so , <span style="color:#2f7d4f;font-weight:600;">martha</span> , it's been a year since i've seen you . how are you doing ? [patient] i'm doing well . i've been traveling a lot recently since things have , have gotten a bit lighter . and i got my , my vaccine , so i feel safer about traveling . i've been doing a lot of hiking &#8230;</div>
           </div>
         </foreignObject>
 
-        <path d="M560,147 L560,191" class="arrow" marker-end="url(#ahc)"/>
-        <text x="576" y="163" class="arrow-label">detector + substitutor</text>
-        <text x="576" y="176" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
+        <path d="M50,211 L50,253" class="arrow" marker-end="url(#ahc)"/>
+        <text x="66" y="226" class="arrow-label">detector + substitutor</text>
+        <text x="66" y="239" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
 
-        <rect x="20" y="191" width="1080" height="111" rx="6" class="box box-crypto"/>
-        <foreignObject x="20" y="191" width="1080" height="111">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:111px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <rect x="16" y="253" width="536" height="182" rx="6" class="box box-crypto"/>
+        <foreignObject x="16" y="253" width="536" height="182">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:182px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_p · masked, sent to the remote model</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">[a medical practitioner] hi , <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> . how are you ? [a sick person] i'm doing okay . how are you ? [a medical practitioner] i'm doing okay . so , i know the nurse told you about <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> . i'd like to tell <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> a little bit about you , okay ? [patient] okay . [a medical practitioner] <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> is a <span style="color:#b4560a;font-weight:600;">fifty-something</span> female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam . so , <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> , it's been a year since i've seen you . how are you doing ? [patient] i'm doing well . i've been traveling a lot recently since things have , have gotten a bit lighter . and i got &#8230;</div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">[a medical practitioner] hi , <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> . how are you ? [a sick person] i'm doing okay . how are you ? [a medical practitioner] i'm doing okay . so , i know the nurse told you about <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> . i'd like to tell <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> a little bit about you , okay ? [patient] okay . [a medical practitioner] <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> is a <span style="color:#b4560a;font-weight:600;">fifty-something</span> female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam . so , <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> , it's been a year since i've seen you . how are you doing ? [patient] i'm doing well . i've been traveling a lot recently since things have , have gotten a bit lighter . and i got &#8230;</div>
           </div>
         </foreignObject>
 
-        <path d="M560,302 L560,346" class="arrow arrow-masked" marker-end="url(#ahc)"/>
-        <text x="576" y="318" class="arrow-label masked">remote LLM</text>
-        <text x="576" y="331" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+        <path d="M50,435 L50,477" class="arrow arrow-masked" marker-end="url(#ahc)"/>
+        <text x="66" y="450" class="arrow-label masked">remote LLM</text>
+        <text x="66" y="463" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
 
-        <rect x="20" y="346" width="1080" height="111" rx="6" class="box box-gpu"/>
-        <foreignObject x="20" y="346" width="1080" height="111">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:111px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <rect x="16" y="477" width="536" height="167" rx="6" class="box box-gpu"/>
+        <foreignObject x="16" y="477" width="536" height="167">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:167px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_p · remote answer on doc_p</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">**Clinical Visit Note** **Patient:** <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> **Age/Sex:** 50s Female **Visit Type:** Annual Physical Examination **History of Present Illness:** <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> is a <span style="color:#b4560a;font-weight:600;">fifty-something</span> female presenting for her annual exam. It has been one year since her last visit. She reports feeling well overall and has been traveling and hiking recently, noting that she feels safer doing so after receiving her vaccines. She endorses good adherence to a low-sodium diet, having successfully avoided salty foods such as tater tots and soft pretzels. She denies chest pain, shortness of breath, or new swelling in her legs. **Past Medical History:** * Congestive Heart Failure (CHF) * &#8230;</div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">**Clinical Visit Note** **Patient:** <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> **Age/Sex:** 50s Female **Visit Type:** Annual Physical Examination **History of Present Illness:** <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> is a <span style="color:#b4560a;font-weight:600;">fifty-something</span> female presenting for her annual exam. It has been one year since her last visit. She reports feeling well overall and has been traveling and hiking recently, noting that she feels safer doing so after receiving her vaccines. She endorses good adherence to a low-sodium diet, having successfully avoided salty foods such as tater tots and soft pretzels. She denies chest pain, shortness of breath, or new swelling in her legs. **Past Medical History:** * Congestive Heart Failure (CHF) * &#8230;</div>
           </div>
         </foreignObject>
 
-        <path d="M560,457 L560,501" class="arrow arrow-secret" marker-end="url(#ahc)"/>
-        <text x="576" y="473" class="arrow-label secret">rule extractor</text>
-        <text x="576" y="486" class="box-sub">invert R · ph_swapped 2, gen_exact 1</text>
+        <path d="M50,644 L50,686" class="arrow arrow-secret" marker-end="url(#ahc)"/>
+        <text x="66" y="659" class="arrow-label secret">rule extractor</text>
+        <text x="66" y="672" class="box-sub">invert R · ph_swapped 2, gen_exact 1</text>
 
-        <rect x="20" y="501" width="1080" height="111" rx="6" class="box box-client"/>
-        <foreignObject x="20" y="501" width="1080" height="111">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:111px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <rect x="16" y="686" width="536" height="182" rx="6" class="box box-client"/>
+        <foreignObject x="16" y="686" width="536" height="182">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:182px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_final · after rule inversion (client, restored)</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">**Clinical Visit Note** **Patient:** <span style="color:#2f7d4f;font-weight:600;">martha</span> **Age/Sex:** 50s Female **Visit Type:** Annual Physical Examination **History of Present Illness:** <span style="color:#2f7d4f;font-weight:600;">martha</span> is a <span style="color:#2f7d4f;font-weight:600;">50-year-old</span> female presenting for her annual exam. It has been one year since her last visit. She reports feeling well overall and has been traveling and hiking recently, noting that she feels safer doing so after receiving her vaccines. She endorses good adherence to a low-sodium diet, having successfully avoided salty foods such as tater tots and soft pretzels. She denies chest pain, shortness of breath, or new swelling in her legs. **Past Medical History:** * Congestive Heart Failure (CHF) * Depression &#8230;</div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">**Clinical Visit Note** **Patient:** <span style="color:#2f7d4f;font-weight:600;">martha</span> **Age/Sex:** 50s Female **Visit Type:** Annual Physical Examination **History of Present Illness:** <span style="color:#2f7d4f;font-weight:600;">martha</span> is a <span style="color:#2f7d4f;font-weight:600;">50-year-old</span> female presenting for her annual exam. It has been one year since her last visit. She reports feeling well overall and has been traveling and hiking recently, noting that she feels safer doing so after receiving her vaccines. She endorses good adherence to a low-sodium diet, having successfully avoided salty foods such as tater tots and soft pretzels. She denies chest pain, shortness of breath, or new swelling in her legs. **Past Medical History:** * Congestive Heart Failure (CHF) * Depression &#8230;</div>
           </div>
         </foreignObject>
-      </svg>
-    </div>
-
-        <div class="diagram-frame">
-      <div class="diagram-cap">
-        <span class="l">FIG · 05 — round trip through the components: email reply (Enron, enron/1)</span>
-        <span>&lt;PERSON_3&gt; here is a detection misfire on &ldquo;Bunche&rdquo; (precision, not privacy)</span>
-      </div>
-      <svg class="flow" viewBox="0 0 1120 432" xmlns="http://www.w3.org/2000/svg" role="img"
-           aria-label="Email round trip: doc_orig (an announcement naming HOWARD and Ira Aldridge) becomes doc_p with those names as PERSON placeholders and dates generalized; the remote LLM writes a reply citing the placeholders; the rule extractor restores HOWARD and Ira Aldridge in gen_final.">
-        <defs><marker id="ahe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
-
-        <rect x="20" y="36" width="1080" height="62" rx="6" class="box box-client"/>
-        <foreignObject x="20" y="36" width="1080" height="62">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:62px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <text x="852" y="30" text-anchor="middle" class="box-label">email · reply (Enron)</text>
+        <rect x="584" y="228" width="536" height="90" rx="6" class="box box-client"/>
+        <foreignObject x="584" y="228" width="536" height="90">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:90px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_orig · raw email (client, plaintext)</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">WHAT IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? Experts Offer Answers on Anthrax (11/08/01) Free Dinner Theater Features Documentary on Bunche (11/13/01) WHAT ELSE IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? -Free Flu Shots, HIV Testing for Students (TODAY, 10 a.m.) -"Piano Lesson" Begins in <span style="color:#2f7d4f;font-weight:600;">Ira Aldridge</span> (TONIGHT, &#8230;</div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">WHAT IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? Experts Offer Answers on Anthrax (11/08/01) Free Dinner Theater Features Documentary on Bunche (11/13/01) WHAT ELSE IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? -Free Flu Shots, HIV Testing for Students (TODAY, 10 a.m.) -"Piano Lesson" Begins in <span style="color:#2f7d4f;font-weight:600;">Ira Aldridge</span> (TONIGHT, &#8230;</div>
           </div>
         </foreignObject>
 
-        <path d="M560,98 L560,142" class="arrow" marker-end="url(#ahe)"/>
-        <text x="576" y="114" class="arrow-label">detector + substitutor</text>
-        <text x="576" y="127" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
+        <path d="M618,318 L618,360" class="arrow" marker-end="url(#ahe)"/>
+        <text x="634" y="333" class="arrow-label">detector + substitutor</text>
+        <text x="634" y="346" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
 
-        <rect x="20" y="142" width="1080" height="62" rx="6" class="box box-crypto"/>
-        <foreignObject x="20" y="142" width="1080" height="62">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:62px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <rect x="584" y="360" width="536" height="90" rx="6" class="box box-crypto"/>
+        <foreignObject x="584" y="360" width="536" height="90">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:90px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_p · masked, sent to the remote model</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">WHAT IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? Experts Offer Answers on <span style="color:#b4560a;font-weight:600;">&lt;PERSON_4&gt;</span> (<span style="color:#b4560a;font-weight:600;">at some point</span>) Free Dinner Theater Features Documentary on <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> (<span style="color:#b4560a;font-weight:600;">at some point</span>) WHAT ELSE IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? &#8230; -"Piano Lesson" Begins in <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> &#8230;</div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">WHAT IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? Experts Offer Answers on <span style="color:#b4560a;font-weight:600;">&lt;PERSON_4&gt;</span> (<span style="color:#b4560a;font-weight:600;">at some point</span>) Free Dinner Theater Features Documentary on <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> (<span style="color:#b4560a;font-weight:600;">at some point</span>) WHAT ELSE IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? &#8230; -"Piano Lesson" Begins in <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> &#8230;</div>
           </div>
         </foreignObject>
 
-        <path d="M560,204 L560,248" class="arrow arrow-masked" marker-end="url(#ahe)"/>
-        <text x="576" y="220" class="arrow-label masked">remote LLM</text>
-        <text x="576" y="233" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+        <path d="M618,450 L618,492" class="arrow arrow-masked" marker-end="url(#ahe)"/>
+        <text x="634" y="465" class="arrow-label masked">remote LLM</text>
+        <text x="634" y="478" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
 
-        <rect x="20" y="248" width="1080" height="62" rx="6" class="box box-gpu"/>
-        <foreignObject x="20" y="248" width="1080" height="62">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:62px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <rect x="584" y="492" width="536" height="75" rx="6" class="box box-gpu"/>
+        <foreignObject x="584" y="492" width="536" height="75">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:75px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_p · remote answer on doc_p</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">Subject: Re: WHAT IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? Hi, Thanks for sharing this list. I'll make sure to check out the "Piano Lesson" tonight and look into the free flu shots and HIV testing available today. Best, <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span></div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">Subject: Re: WHAT IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? Hi, Thanks for sharing this list. I'll make sure to check out the "Piano Lesson" tonight and look into the free flu shots and HIV testing available today. Best, <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span></div>
           </div>
         </foreignObject>
 
-        <path d="M560,310 L560,354" class="arrow arrow-secret" marker-end="url(#ahe)"/>
-        <text x="576" y="326" class="arrow-label secret">rule extractor</text>
-        <text x="576" y="339" class="box-sub">invert R · ph_swapped 2</text>
+        <path d="M618,567 L618,609" class="arrow arrow-secret" marker-end="url(#ahe)"/>
+        <text x="634" y="582" class="arrow-label secret">rule extractor</text>
+        <text x="634" y="595" class="box-sub">invert R · ph_swapped 2</text>
 
-        <rect x="20" y="354" width="1080" height="62" rx="6" class="box box-client"/>
-        <foreignObject x="20" y="354" width="1080" height="62">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:62px;padding:6px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+        <rect x="584" y="609" width="536" height="75" rx="6" class="box box-client"/>
+        <foreignObject x="584" y="609" width="536" height="75">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:75px;padding:6px 13px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
             <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_final · after rule inversion (client, restored)</div>
-            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">Subject: Re: WHAT IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? Hi, Thanks for sharing this list. I'll make sure to check out the "Piano Lesson" tonight and look into the free flu shots and HIV testing available today. Best, <span style="color:#2f7d4f;font-weight:600;">Ira Aldridge</span></div>
+            <div style="font-size:11px;line-height:1.4;color:#2b3036;">Subject: Re: WHAT IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? Hi, Thanks for sharing this list. I'll make sure to check out the "Piano Lesson" tonight and look into the free flu shots and HIV testing available today. Best, <span style="color:#2f7d4f;font-weight:600;">Ira Aldridge</span></div>
           </div>
         </foreignObject>
       </svg>
     </div>
+
+        
   </section>
 
   <!-- ═════ §06 FINDINGS ═════ -->
