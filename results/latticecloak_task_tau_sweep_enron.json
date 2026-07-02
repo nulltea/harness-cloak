@@ -1,0 +1,109 @@
+{
+  "corpus": "enron",
+  "docs": 16,
+  "gen_model": "Qwen3.6-35B-A3B",
+  "taus": [
+    0.005,
+    0.02,
+    0.1,
+    0.5
+  ],
+  "utility_ctrl": {
+    "rougeL": 0.1245,
+    "bertscore_f1": 0.8363
+  },
+  "sweep": [
+    {
+      "tau": 0.005,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.0955,
+        "bertscore_f1": 0.8338
+      },
+      "utility_p": {
+        "rougeL": 0.0951,
+        "bertscore_f1": 0.8324
+      },
+      "gen_spans": 140,
+      "at_most_specific": 115,
+      "at_floor": 103,
+      "inversion_totals": {
+        "ph_swapped": 4,
+        "gen_exact": 2,
+        "gen_fuzzy": 0,
+        "gen_absent": 79,
+        "ph_residue": 0
+      },
+      "wall_s": 35.5
+    },
+    {
+      "tau": 0.02,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.0967,
+        "bertscore_f1": 0.8337
+      },
+      "utility_p": {
+        "rougeL": 0.0965,
+        "bertscore_f1": 0.8328
+      },
+      "gen_spans": 140,
+      "at_most_specific": 121,
+      "at_floor": 97,
+      "inversion_totals": {
+        "ph_swapped": 4,
+        "gen_exact": 3,
+        "gen_fuzzy": 0,
+        "gen_absent": 78,
+        "ph_residue": 0
+      },
+      "wall_s": 18.4
+    },
+    {
+      "tau": 0.1,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.0969,
+        "bertscore_f1": 0.8345
+      },
+      "utility_p": {
+        "rougeL": 0.0968,
+        "bertscore_f1": 0.8337
+      },
+      "gen_spans": 140,
+      "at_most_specific": 131,
+      "at_floor": 87,
+      "inversion_totals": {
+        "ph_swapped": 4,
+        "gen_exact": 3,
+        "gen_fuzzy": 0,
+        "gen_absent": 77,
+        "ph_residue": 0
+      },
+      "wall_s": 17.9
+    },
+    {
+      "tau": 0.5,
+      "n": 16,
+      "utility_final": {
+        "rougeL": 0.098,
+        "bertscore_f1": 0.8335
+      },
+      "utility_p": {
+        "rougeL": 0.0979,
+        "bertscore_f1": 0.8331
+      },
+      "gen_spans": 140,
+      "at_most_specific": 137,
+      "at_floor": 81,
+      "inversion_totals": {
+        "ph_swapped": 4,
+        "gen_exact": 2,
+        "gen_fuzzy": 1,
+        "gen_absent": 74,
+        "ph_residue": 0
+      },
+      "wall_s": 18.6
+    }
+  ]
+}

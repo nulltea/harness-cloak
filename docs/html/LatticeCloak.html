@@ -412,16 +412,26 @@
     utility_p_control (same for the raw <code>out_p</code>), coherence(gen_p) (SimCSE of <code>out_p</code>
     against its own prompt <code>doc_p</code>), and coherence(doc_p) (SimCSE of <code>doc_p</code> against
     <code>doc_orig</code>). Corpora and tasks differ between the two reports, so scales are comparable per
-    instrument, not across pages.</p>
+    instrument, not across pages. FIG&nbsp;03 toggles across three eval regimes: the extend-prefix probes just
+    described (SynthPAI), and the &tau; reruns on the two task-oriented corpora (clinical dialogue&rarr;note,
+    email&rarr;reply), where utility is scored as ROUGE-L and BERTScore of <code>out_final</code> against the
+    gold output (<code>out_ctrl</code> = no-privacy reference) and the mechanism panel is the share of
+    generalized spans left at the most-specific level vs floored to the type label.</p>
 
     <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 03 — &tau; sweep: leakage, utility, and mechanism</span><span class="r">source: results/latticecloak_tau_sweep.json · N=8 docs, 36 generalized spans</span></div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;">
-        <div id="plot-tau-leak" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
-        <div id="plot-tau-util" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
+      <div class="plot-cap"><span class="l">FIG · 03 — &tau; sweep across eval regimes: leakage/utility and lattice mechanism</span><span class="r" id="fig03-src"></span></div>
+      <div class="fig03-toggle" style="display:flex;gap:8px;margin:2px 0 12px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.08em;opacity:0.6;">eval regime</span>
+        <button type="button" data-ds="extend" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">extend prefix (SynthPAI)</button>
+        <button type="button" data-ds="clinical" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">clinical notes (ACI-Bench)</button>
+        <button type="button" data-ds="email" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">email replies (Enron)</button>
       </div>
-      <div id="plot-tau-mech" style="width:100%;height:300px;margin-top:10px;"></div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">Top left (leakage, lower = more private): overlap and PII survival are flat; MLM guess-back, the span analog of inversion@10, is the only instrument that responds, rising to 0.21 at the loosest &tau;. Top right (utility, higher = more faithful): utility_control and utility_p_control coincide (inversion unexercised); coherence(doc_p) stays near 0.99. Bottom (mechanism, &tau; bars light&rarr;dark): the knob repositions the lattice, most-specific 26&rarr;34, floors 13&rarr;5.</span></div>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;">
+        <div id="plot-tau-a" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
+        <div id="plot-tau-b" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
+      </div>
+      <div id="plot-tau-c" style="width:100%;height:300px;margin-top:10px;"></div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" id="fig03-read" style="text-transform:none;letter-spacing:0;font-size:11px;"></span></div>
     </div>
     <p class="prose"><strong>Conclusion.</strong> &tau; demonstrably moves the substitution operating point
     (mechanism panel), but the aggregate surface instruments barely register it: overlap is 0.989 everywhere
@@ -437,6 +447,16 @@
     spans. The methodological consequence is the predecessor taxonomy's F4 lesson landing on this method too:
     <strong>aggregate surface probes cannot price LatticeCloak's knob; attack-shaped instruments respond, and
     the full adversarial evaluation is what the next stage runs</strong>.</p>
+    <p class="prose">The task-oriented reruns (FIG&nbsp;03, clinical and email tabs; 16 docs each) sharpen the
+    same point on reference-scored utility. On clinical the knob is <em>inert</em>: nearly all 586 generalized
+    spans already sit at the most-specific level even at &tau;&nbsp;=&nbsp;0.005 (their contextual guess-back is
+    already low), so ROUGE-L (~0.25) and BERTScore (~0.85) are flat. On email the knob is <em>live</em> &mdash;
+    &tau; visibly repositions the lattice (share at most-specific 0.82&rarr;0.98, floors 0.74&rarr;0.58 as &tau;
+    loosens) &mdash; yet task utility still moves only within noise (ROUGE-L 0.096&rarr;0.098). Both cases make
+    the methodological verdict concrete: whether or not &tau; moves the mechanism, it is not legible in the
+    end-to-end task metric, so the operating point has to be priced against an adversary. (Utility is low in
+    absolute terms on both &mdash; clinical notes and email replies are one-reference generation tasks &mdash;
+    which is why the privatized/control <em>gap</em>, not the level, is the quantity the Pareto will report.)</p>
 
     <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.4 Round trip and rule-only extraction</h4>
     <p class="prose">Smoke scale: 8 SynthPAI documents &times; (1 summarization + up to 3 teacher-generated QA)
@@ -783,7 +803,10 @@
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_detection_gate.py">scripts/latticecloak_detection_gate.py</a></li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_engine.py">scripts/latticecloak_engine.py</a></li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_tau_sweep.py">scripts/latticecloak_tau_sweep.py</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_task_tau_sweep.py">scripts/latticecloak_task_tau_sweep.py</a></li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_tau_sweep.json">results/latticecloak_tau_sweep.json</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_task_tau_sweep_clinical.json">results/latticecloak_task_tau_sweep_clinical.json</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_task_tau_sweep_enron.json">results/latticecloak_task_tau_sweep_enron.json</a></li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_detection_gate.json">results/latticecloak_detection_gate.json</a></li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/results/latticecloak_inventory.json">results/latticecloak_inventory.json</a></li>
       </ul>
@@ -856,16 +879,22 @@
     xaxis:{gridcolor:GRID}, yaxis:{range:[0,0.45], tickformat:".0%", gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
     showlegend:false}, base), {displayModeBar:false, responsive:true});
 
-  // FIG 03 — tau sweep (source: results/latticecloak_tau_sweep.json)
-  var LEAKCOL = {"overlap":"#a3460a", "PII leak":"#6e4a2b", "MLM guess-back":"#8c3b3b"};
-  var UTILCOL = {"utility_control (SimCSE)":"#5b86b5", "utility_p_control (SimCSE)":"#2a5092",
-                 "coherence (gen_p)":"#2e6a5e", "coherence (doc_p)":"#3a3f6b"};
+  // FIG 03 — tau sweep across eval regimes (toggle: extend-prefix / clinical / email)
   var TAURAMP = ["#cfe0f0","#8fb0d6","#4f7bb0","#2a5092"]; // tau (ordered) ramp
   var taus = ["0.005","0.02","0.1","0.5"];
-  function lines(div, title, series, colors, yrange) {
+  var LEAKCOL = {"overlap":"#a3460a","PII leak":"#6e4a2b","MLM guess-back":"#8c3b3b"};
+  var SIMCOL  = {"utility_control (SimCSE)":"#5b86b5","utility_p_control (SimCSE)":"#2a5092",
+                 "coherence (gen_p)":"#2e6a5e","coherence (doc_p)":"#3a3f6b"};
+  var TASKCOL = {"ROUGE-L (out_final)":"#2a5092","BERTScore (out_final)":"#2e6a5e",
+                 "ROUGE-L (out_ctrl)":"#9db8d6","BERTScore (out_ctrl)":"#93c2b4"};
+  var MECHCOL = {"at most-specific":"#7a5aa8","at type-label floor":"#a3460a"};
+  var CTRLDASH = ["ROUGE-L (out_ctrl)","BERTScore (out_ctrl)"];
+  function linesP(div, title, series, colors, yrange, dashset) {
     var tr = Object.keys(series).map(function (k) {
+      var dash = dashset && dashset.indexOf(k) >= 0;
       return {x:taus, y:series[k], name:k, mode:"lines+markers",
-        line:{color:colors[k],width:2}, marker:{color:colors[k],size:7},
+        line:{color:colors[k], width:2, dash:dash?"dot":"solid"},
+        marker:{color:colors[k], size:6, symbol:dash?"circle-open":"circle"},
         hovertemplate:k+"<br>τ=%{x}: %{y:.3f}<extra></extra>"};
     });
     Plotly.react(div, tr, Object.assign({height:320, margin:{t:34,r:16,b:74,l:54},
@@ -875,26 +904,59 @@
       legend:{orientation:"h", y:-0.3, x:0.5, xanchor:"center", font:{size:9}}}, base),
       {displayModeBar:false, responsive:true});
   }
-  lines("plot-tau-leak", "leakage vs τ  (↓ more private)",
-    {"overlap":[0.9893,0.9893,0.9893,0.9893], "PII leak":[0.8421,0.8421,0.8421,0.8421],
-     "MLM guess-back":[0.1882,0.1808,0.1808,0.2121]}, LEAKCOL, [0,1.05]);
-  lines("plot-tau-util", "utility vs τ  (↑ more faithful)",
-    {"utility_control (SimCSE)":[0.9716,0.9706,0.9711,0.9712],
-     "utility_p_control (SimCSE)":[0.9716,0.9706,0.9711,0.9712],
-     "coherence (gen_p)":[0.5569,0.5573,0.5591,0.5574],
-     "coherence (doc_p)":[0.9937,0.9937,0.9935,0.9935]}, UTILCOL, [0,1.05]);
-  // mechanism diagnostics: grouped bars, tau within each cluster (light -> dark)
-  Plotly.react("plot-tau-mech", taus.map(function (t, i) {
-    return {x:["at most-specific level","at type-label floor"],
-            y:[[26,30,32,34][i],[13,9,7,5][i]], name:"τ="+t, type:"bar",
-            marker:{color:TAURAMP[i]},
-            hovertemplate:"τ="+t+"<br>%{x}: %{y} of 36<extra></extra>"};
-  }), Object.assign({height:300, barmode:"group", margin:{t:34,r:16,b:56,l:54},
-    title:{text:"mechanism diagnostics: lattice level chosen (count of 36 spans; τ bars within each cluster)",
-           font:{size:13,color:INK}, x:0, xanchor:"left"},
-    xaxis:{gridcolor:GRID}, yaxis:{range:[0,36], gridcolor:GRID, zeroline:false},
-    legend:{orientation:"h", y:-0.25, x:0.5, xanchor:"center", font:{size:9}}}, base),
-    {displayModeBar:false, responsive:true});
+  function mechBars(div, spec, floor, total) {
+    Plotly.react(div, taus.map(function (t, i) {
+      return {x:["at most-specific","at type-label floor"], y:[spec[i],floor[i]], name:"τ="+t,
+              type:"bar", marker:{color:TAURAMP[i]},
+              hovertemplate:"τ="+t+"<br>%{x}: %{y} of "+total+"<extra></extra>"};
+    }), Object.assign({height:300, barmode:"group", margin:{t:34,r:16,b:56,l:54},
+      title:{text:"lattice level chosen (count of "+total+" spans; τ light→dark)",
+             font:{size:13,color:INK}, x:0, xanchor:"left"},
+      xaxis:{gridcolor:GRID}, yaxis:{range:[0,total], gridcolor:GRID, zeroline:false},
+      legend:{orientation:"h", y:-0.25, x:0.5, xanchor:"center", font:{size:9}}}, base),
+      {displayModeBar:false, responsive:true});
+  }
+  var FIG03 = {
+    extend: {kind:"probe",
+      src:"source: results/latticecloak_tau_sweep.json · 8 docs (SynthPAI summarize/QA) · 36 generalized spans",
+      read:"Extend-prefix regime (SynthPAI summarize/QA). Leakage (↓ more private): overlap and PII survival flat; only the candidate-sensitive MLM guess-back responds (0.19→0.21). Utility (SimCSE): utility_control and utility_p_control coincide (inversion unexercised on these tasks); coherence(doc_p) ≈0.99. Mechanism: τ moves the lattice, most-specific 26→34, floors 13→5.",
+      leak:{"overlap":[0.9893,0.9893,0.9893,0.9893],"PII leak":[0.8421,0.8421,0.8421,0.8421],"MLM guess-back":[0.1882,0.1808,0.1808,0.2121]},
+      util:{"utility_control (SimCSE)":[0.9716,0.9706,0.9711,0.9712],"utility_p_control (SimCSE)":[0.9716,0.9706,0.9711,0.9712],"coherence (gen_p)":[0.5569,0.5573,0.5591,0.5574],"coherence (doc_p)":[0.9937,0.9937,0.9935,0.9935]},
+      spec:[26,30,32,34], floor:[13,9,7,5], total:36},
+    clinical: {kind:"task",
+      src:"source: results/latticecloak_task_tau_sweep_clinical.json · 16 docs · 586 generalized spans",
+      read:"Clinical dialogue→note. Utility (ROUGE-L, BERTScore of out_final vs the gold note; out_ctrl dashed): flat across τ. Mechanism: ~all 586 spans stay at the most-specific level even at τ=0.005 (0.99→1.00) — τ is inert here because contextual guess-back is already low at the specific level.",
+      util:{"ROUGE-L (out_final)":[0.2481,0.2498,0.2497,0.2497],"BERTScore (out_final)":[0.8483,0.8490,0.8480,0.8480],"ROUGE-L (out_ctrl)":[0.2182,0.2182,0.2182,0.2182],"BERTScore (out_ctrl)":[0.8469,0.8469,0.8469,0.8469]},
+      mech:{"at most-specific":[0.995,0.997,1.000,1.000],"at type-label floor":[0.075,0.073,0.070,0.070]}},
+    email: {kind:"task",
+      src:"source: results/latticecloak_task_tau_sweep_enron.json · 16 docs · 140 generalized spans",
+      read:"Email reply. Utility (ROUGE-L, BERTScore of out_final vs the gold reply; out_ctrl dashed): flat. Mechanism: here τ genuinely repositions the lattice — share at most-specific 0.82→0.98 and floors 0.74→0.58 as τ loosens — yet task utility still barely moves (ROUGE-L 0.096→0.098). The knob acts; the aggregate metric cannot see it.",
+      util:{"ROUGE-L (out_final)":[0.0955,0.0967,0.0969,0.0980],"BERTScore (out_final)":[0.8338,0.8337,0.8345,0.8335],"ROUGE-L (out_ctrl)":[0.1245,0.1245,0.1245,0.1245],"BERTScore (out_ctrl)":[0.8363,0.8363,0.8363,0.8363]},
+      mech:{"at most-specific":[0.821,0.864,0.936,0.979],"at type-label floor":[0.736,0.693,0.621,0.579]}}
+  };
+  function drawFig03(ds) {
+    var d = FIG03[ds], c = document.getElementById("plot-tau-c");
+    if (d.kind === "probe") {
+      linesP("plot-tau-a", "leakage vs τ  (↓ more private)", d.leak, LEAKCOL, [0,1.05]);
+      linesP("plot-tau-b", "utility vs τ  (↑ more faithful)", d.util, SIMCOL, [0,1.05]);
+      c.style.display = "block"; mechBars("plot-tau-c", d.spec, d.floor, d.total);
+    } else {
+      linesP("plot-tau-a", "utility vs τ  (↑ more faithful)", d.util, TASKCOL, [0,1.0], CTRLDASH);
+      linesP("plot-tau-b", "lattice mechanism vs τ  (share of generalized spans)", d.mech, MECHCOL, [0,1.05]);
+      Plotly.purge("plot-tau-c"); c.style.display = "none";
+    }
+    var s = document.getElementById("fig03-src"); if (s) s.textContent = d.src;
+    var r = document.getElementById("fig03-read"); if (r) r.textContent = d.read;
+    document.querySelectorAll(".fig03-toggle button").forEach(function (b) {
+      var on = b.dataset.ds === ds;
+      b.style.background = on ? INK : "transparent"; b.style.color = on ? "#fff" : INK;
+      b.style.fontWeight = on ? "600" : "400";
+    });
+  }
+  document.querySelectorAll(".fig03-toggle button").forEach(function (b) {
+    b.addEventListener("click", function () { drawFig03(b.dataset.ds); });
+  });
+  drawFig03("extend");
 })();
 </script>
 </body>
