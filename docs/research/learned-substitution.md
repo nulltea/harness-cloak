@@ -74,6 +74,7 @@ Mattern paraphrase-anon (2022) ─ DP-BART (2023) ─ DP-Prompt (2023) ─ DP-ML
 | Group / multi-granular | **DP-GTR** | doc+word rewriting + in-context aggregation | multi-granularity; prompt plug-in | no answer-recovery step |
 | Word-level metric-DP (efficient) | 1-Diffractor | geometric "diffraction" over 1-D lists | ~15× faster, low memory | word-level only (F1a persists) |
 | Non-DP LLM-adversarial | **Staab**; **RUPTA** | infer→rewrite loop, evaluator-guided | best empirical trade-off; RUPTA distills to a local model | no formal DP guarantee |
+| RL / reward-guided (local) | **AgentStealth**; **Tree Search** | online RL from adversarial feedback / reward-guided tree search on a local model | self-improving, on-device; training-free (search) variant | reward hacking; no formal DP |
 
 The trajectory: continuous-latent noise (fragile) → per-token exp-mech (DP-MLM, solid) → decompose-and-
 reconstruct (DP-ST) and LLM-adversarial (Staab/RUPTA).
@@ -88,6 +89,37 @@ reconstruct (DP-ST) and LLM-adversarial (Staab/RUPTA).
   empirical trade-off, no formal DP. The other frontier.
 - **[Staab et al.](../../research-wiki/papers/staab2024_llm_anonymizers.md)** (ICLR 2025, [arXiv 2402.13846](https://arxiv.org/abs/2402.13846))
   — adversarial anonymization: infer-then-rewrite; the duality embodied (best anonymizer = best re-identifier).
+
+## Round-2 additions: RL, attack-guided, and search-based rewriting
+
+A second literature pass (arXiv + Semantic Scholar; OpenAlex/Gemini unavailable) surfaced sub-families
+the first pass missed:
+
+- **RL-guided anonymization (local).** [AgentStealth](../../research-wiki/papers/shao2025_agentstealth.md)
+  (Shao et al. 2025, [arXiv 2506.22508](https://arxiv.org/abs/2506.22508)) trains a *locally deployed
+  small* LLM via in-context contrastive learning + **online RL** on its own adversarial feedback (+12.3%
+  anonymization, +6.8% utility). The self-improving, on-device version of the Staab/RUPTA loop — arguably
+  the strongest local-substitutor direction; cost: reward-hacking risk, no formal DP.
+- **Attack-guided (truthful) sanitization.** [Truthful Text Sanitization](../../research-wiki/papers/pilan2024_truthful_sanitization.md)
+  (Pilán, Manzanares-Salor, Sánchez, Lison 2024, [arXiv 2412.12928](https://arxiv.org/abs/2412.12928))
+  replaces PII with **truthful generalizations** ranked by an inference-attack evaluator — realizing
+  Lison 2021's "model disclosure risk, not spans" and beating Presidio on truthfulness. A middle ground
+  between RD3 typed placeholders and RD4 free rewriting (RD2∩RD4).
+- **Search-based rewriting.** [Iterative Tree Search](../../research-wiki/papers/huang2025_tree_search_rewriting.md)
+  (Huang et al. 2025, [arXiv 2509.20838](https://arxiv.org/abs/2509.20838)) rewrites sensitive segments
+  via reward-model-guided tree search — an inference-time-search alternative to finetuning/RL.
+- **Adversarial evaluation instrument.** [DIRI](../../research-wiki/papers/morris2024_diri.md) (Morris et
+  al. 2024, [arXiv 2410.17035](https://arxiv.org/abs/2410.17035)) re-identifies redacted clinical notes
+  with an LLM (9% even after ClinicalBERT masking) — the concrete "score RD4 against an LLM attacker" tool.
+- **Reproducibility tooling.** [DP-Rewrite](../../research-wiki/papers/igamberdiev2022_dp_rewrite.md)
+  (Igamberdiev, Arnold, Habernal 2022, [arXiv 2208.10400](https://arxiv.org/abs/2208.10400)) — the
+  framework whose ADePT case study *found the privacy leak* Habernal later formalized; the lineage's
+  transparency node.
+
+**Net effect on the map:** the "keep a guarantee" vs "maximize empirical" split from §Conclusions gains a
+third pole — **RL/search-guided local anonymizers** (AgentStealth, tree search) — which is where the
+empirical branch is heading, and attack-guided generalization (Truthful) is the most principled non-DP
+option because its objective *is* the adversary.
 
 ## Crossovers with the rest of the taxonomy
 
@@ -158,4 +190,11 @@ Registered anchors (wiki, with arXiv):
 [Staab LLM anonymizers](../../research-wiki/papers/staab2024_llm_anonymizers.md) ([arXiv 2402.13846](https://arxiv.org/abs/2402.13846)),
 [InferDPT](../../research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md) ([arXiv 2310.12214](https://arxiv.org/abs/2310.12214)),
 [HaS](../../research-wiki/papers/chen2023_hide_seek_has.md) ([arXiv 2309.03057](https://arxiv.org/abs/2309.03057)).
+
+Round-2 anchors:
+[DP-Rewrite](../../research-wiki/papers/igamberdiev2022_dp_rewrite.md) ([arXiv 2208.10400](https://arxiv.org/abs/2208.10400)),
+[Truthful Text Sanitization](../../research-wiki/papers/pilan2024_truthful_sanitization.md) ([arXiv 2412.12928](https://arxiv.org/abs/2412.12928)),
+[AgentStealth](../../research-wiki/papers/shao2025_agentstealth.md) ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)),
+[Iterative Tree Search](../../research-wiki/papers/huang2025_tree_search_rewriting.md) ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838)),
+[DIRI](../../research-wiki/papers/morris2024_diri.md) ([arXiv 2410.17035](https://arxiv.org/abs/2410.17035)).
 Other references cited inline with arXiv IDs.

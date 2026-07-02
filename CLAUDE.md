@@ -1,31 +1,49 @@
-# agent-cloak — RANTEXT / InferDPT embedding-map (φ) research
+# agent-cloak — privacy layer for closed-box LLM inference
 
-## Objective
-Study the embedding map **φ** in RANTEXT (InferDPT's per-token ε-LDP perturbation): does the choice of φ
-move the outcomes that matter? **The only metrics that matter: privacy + inversion/attacks vs utility, at a
-fixed ε.** Geometry/composition proxies (retention, `syn_prec`, `|C_r|` size, anisotropy, eff_dim) are
-*diagnostics only* — never goals, never the basis of a model comparison.
+## Goal
+A **privacy layer for closed-box (remote) LLM inference**: locally rewrite a prompt `doc_orig` →
+anonymized `doc_p`, send `doc_p` to the remote LLM, receive `out_p`, then locally **un-perturb**
+`out_p` → `out_final`. Hide the sensitive content of `doc_orig` from the remote model while preserving
+the utility of `out_final`.
+
+**Legacy (abandoned): InferDPT + RANTEXT.** A single global/scalar ε budget applied per token ruins the
+privacy↔utility tradeoff — one knob is forced to govern identity-removal, premise-preservation, and
+extraction-signal at once. Write-up: report `docs/html/infer-dtp.html`, taxonomy
+`docs/research/rantext-limitations.md`.
+
+**Current direction:**
+1. **Learned context-aware substitution** for the rewrite (`doc_orig`→`doc_p`), replacing RANTEXT's
+   per-token metric-LDP token swaps — see `docs/research/learned-substitution.md`.
+2. **An efficient, tailored model architecture** for extraction (`out_p`→`out_final`), replacing the naive
+   general-LLM extractor — a denoise/edit reconstructor, local, zero DP cost by post-processing immunity.
+
+**What matters (the only comparison that counts):** privacy vs utility at **matched realized privacy** —
+privacy measured against an **LLM re-identification attacker**, utility measured on `out_final`.
+Everything else (embedding geometry, lexical overlap, `|C_r|`) is a diagnostic, never the basis of a
+method comparison.
 
 ## Empirical honesty (hard rule — do not break)
-- Compare candidates (φ, mechanisms) **only at fixed ε and identical mechanism settings**. **Never** invent
-  or implicitly apply a per-model calibration/normalization knob (e.g. tuning `noise_scale` to equalize
-  `|C_r|` or retention): it places models at *different real privacy levels* and invalidates the
-  privacy↔utility comparison. This already produced a wrong conclusion once.
-- Measure privacy/attack/utility as **outcomes**. If the mechanism degenerates at fixed settings (e.g.
-  `|C_r|`→100% saturation / curse of dimensionality), **that is the finding — report it, don't engineer
-  around it.**
-- Move operating points only with the legitimate knob (**ε**); to compare across operating points use an
-  ε-sweep / Pareto curve at equal *realized* privacy — never a per-model fudge factor.
+- Compare methods (substitutors, reconstructors, mechanisms) **only at matched realized privacy and
+  identical settings**. **Never** invent or implicitly apply a per-model calibration/normalization knob to
+  equalize a secondary quantity — it places methods at *different real privacy levels* and invalidates the
+  privacy↔utility comparison. This already produced a wrong conclusion once (RANTEXT `noise_scale`).
+- **Measure privacy against an adversary, not a surface metric.** Report privacy as the success of an LLM
+  re-identification / inference attacker on `doc_p` (and `out_final`); n-gram overlap, self-substitution,
+  and embedding distance overstate protection. Watch the substitutor's own memorization as a leak channel.
+- Measure privacy/attack/utility as **outcomes**. If a method degenerates at fixed settings, **that is the
+  finding — report it, don't engineer around it.**
+- Move operating points only with a method's legitimate privacy knob (ε for DP methods; the privacy target
+  otherwise); compare across operating points with a Pareto curve at equal *realized* privacy — never a
+  per-model fudge factor.
 - No result claims without the run output; state degeneracies, confounds, and caveats plainly.
 
 ## GPU — run heavy workflows in the host `.venv`
 
-The host `.venv` **runs on the GPU directly** — no container. Use it for **all** heavy workflows
-(capture, PVI/MDL/CLUB probes, inversion attacks, `talens.cli`, `calibrate_capture`) and for
+The host `.venv` **runs on the GPU directly** — no container. Use it for **all** heavy workflows —
+rewriter/reconstructor training + inference, leakage/MI/utility probes, re-identification attacks, and
 `pytest`:
 
 ```bash
-.venv/bin/python src/inferdpt/eval.py --caches data/vocab_cf,data/vocab_qwen_sub --attacks
 # sanity: .venv/bin/python -c 'import torch; print(torch.cuda.is_available())'   # -> True
 ```
 
@@ -66,7 +84,12 @@ put with `status: stale` + `archive_reason`. `companion:` references repo-local 
   relevant information — use the template sections as a loose guide, add new sections where they
   fit. Every page must say **why the paper was surfaced** and **why it's relevant to the research
   topic at hand** (the `Relevance to This Project` section), plus its concrete Key Results and the
-  RANTEXT-family limitation(s) it bears on. `_TODO._`-only pages are not acceptable.
+  design question it bears on (substitution/extraction architecture, privacy attack, RANTEXT-family
+  limitation, …). `_TODO._`-only pages are not acceptable.
 - **When writing a `docs/research/` report, link the registered papers it draws on** from
   `research-wiki/papers/` (relative path), rather than citing raw URLs alone — the wiki page is the
   canonical entry. If a cited paper isn't yet registered, register it first.
+- **Every research-wiki reference in `docs/**/*.md` must also carry the paper's remote identifier as a
+  link** — `([arXiv 1234.56789](https://arxiv.org/abs/1234.56789))` (or DOI / ACL / venue link when there
+  is no arXiv), placed right after the wiki-page link, inline and in any Sources list. Pull the id from the
+  page's `external_ids` frontmatter, never from memory.

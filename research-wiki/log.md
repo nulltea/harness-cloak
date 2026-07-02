@@ -40,3 +40,10 @@ _Append-only timeline._
 - `2026-07-02T10:42:33Z` ingest_paper: added paper:staab2024_llm_anonymizers (RD4 learned-substitution deep-dive; cited in docs/research/learned-substitution.md)
 - `2026-07-02T10:42:33Z` add_edge: +8 edges (RD4 lineage: ADePT/Habernal, DP-ST/Spend-Budget/Just-Rewrite/1-Diffractor, DP-GTR, RUPTA/Staab)
 - `2026-07-02T10:42:33Z` doc: added docs/research/learned-substitution.md (RD4 deep-dive: lineage, architectures, SOTA, reverse process)
+- `2026-07-02T10:54:47Z` ingest_paper: added paper:igamberdiev2022_dp_rewrite (RD4 round-2 research; cited in docs/research/learned-substitution.md)
+- `2026-07-02T10:54:47Z` ingest_paper: added paper:pilan2024_truthful_sanitization (RD4 round-2 research; cited in docs/research/learned-substitution.md)
+- `2026-07-02T10:54:47Z` ingest_paper: added paper:shao2025_agentstealth (RD4 round-2 research; cited in docs/research/learned-substitution.md)
+- `2026-07-02T10:54:47Z` ingest_paper: added paper:huang2025_tree_search_rewriting (RD4 round-2 research; cited in docs/research/learned-substitution.md)
+- `2026-07-02T10:54:47Z` ingest_paper: added paper:morris2024_diri (RD4 round-2 research; cited in docs/research/learned-substitution.md)
+- `2026-07-02T10:54:47Z` add_edge: +6 edges (round-2: DP-Rewrite, Truthful-Sanitization, AgentStealth, Tree-Search, DIRI)
+- `2026-07-02T10:54:47Z` doc: updated docs/research/learned-substitution.md with round-2 RL/attack-guided/search-based branch
