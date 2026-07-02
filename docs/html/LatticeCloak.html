@@ -518,45 +518,53 @@
         <span class="l">FIG · 04 — round trip through the components: clinical note (ACI-Bench, aci/D2N001)</span>
         <span>detector+substitutor &rarr; remote LLM &rarr; rule extractor · amber = removed, green = restored</span>
       </div>
-      <svg class="flow" viewBox="0 0 1120 484" xmlns="http://www.w3.org/2000/svg" role="img"
+      <svg class="flow" viewBox="0 0 1120 550" xmlns="http://www.w3.org/2000/svg" role="img"
            aria-label="Clinical round trip: doc_orig (raw dialogue naming martha, age 50) is transformed by the detector plus substitutor into doc_p (name to PERSON_2 placeholder, age to fifty-something); the remote LLM writes a note citing PERSON_2 and fifty-something; the rule extractor inverts R, restoring martha and 50-year-old in gen_final.">
         <defs><marker id="ahc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
 
-        <rect x="20" y="40" width="1080" height="72" rx="6" class="box box-client"/>
-        <text x="32" y="57" class="box-label">doc_orig · raw dialogue (client, plaintext)</text>
-        <text x="32" y="76" class="box-mono" font-size="11.5">[doctor] hi , <tspan fill="#2f7d4f" font-weight="600">martha</tspan> . &#8230; <tspan fill="#2f7d4f" font-weight="600">martha</tspan> is a <tspan fill="#2f7d4f" font-weight="600">50-year-old</tspan> female with a past medical</text>
-        <text x="32" y="91" class="box-mono" font-size="11.5">history significant for congestive heart failure , depression and hypertension</text>
-        <text x="32" y="106" class="box-mono" font-size="11.5">who presents for her annual exam . &#8230;</text>
+        <rect x="20" y="36" width="1080" height="92" rx="6" class="box box-client"/>
+        <foreignObject x="20" y="36" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_orig · raw dialogue (client, plaintext)</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">[doctor] hi , <span style="color:#2f7d4f;font-weight:600;">martha</span> . how are you ? [patient] i'm doing okay . [doctor] i know the nurse told you about <span style="color:#2f7d4f;font-weight:600;">dax</span> . i'd like to tell <span style="color:#2f7d4f;font-weight:600;">dax</span> a little bit about you . [doctor] <span style="color:#2f7d4f;font-weight:600;">martha</span> is a <span style="color:#2f7d4f;font-weight:600;">50-year-old</span> female with a past medical history significant for &#8230;[truncated]</div>
+          </div>
+        </foreignObject>
 
-        <path d="M560,112 L560,156" class="arrow" marker-end="url(#ahc)"/>
-        <text x="576" y="132" class="arrow-label">detector + substitutor</text>
-        <text x="576" y="145" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
+        <path d="M560,128 L560,170" class="arrow" marker-end="url(#ahc)"/>
+        <text x="576" y="148" class="arrow-label">detector + substitutor</text>
+        <text x="576" y="161" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
 
-        <rect x="20" y="158" width="1080" height="72" rx="6" class="box box-crypto"/>
-        <text x="32" y="175" class="box-label">doc_p · masked, sent to the remote model</text>
-        <text x="32" y="194" class="box-mono" font-size="11.5">[a medical practitioner] hi , <tspan fill="#b4560a" font-weight="600">&lt;PERSON_2&gt;</tspan> . &#8230; <tspan fill="#b4560a" font-weight="600">&lt;PERSON_2&gt;</tspan> is a</text>
-        <text x="32" y="209" class="box-mono" font-size="11.5"><tspan fill="#b4560a" font-weight="600">fifty-something</tspan> female with a past medical history significant for</text>
-        <text x="32" y="224" class="box-mono" font-size="11.5">congestive heart failure , depression and hypertension &#8230;</text>
+        <rect x="20" y="172" width="1080" height="92" rx="6" class="box box-crypto"/>
+        <foreignObject x="20" y="172" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_p · masked, sent to the remote model</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">[a medical practitioner] hi , <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> . how are you ? [a sick person] i'm doing okay . [a medical practitioner] i know the nurse told you about <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> . i'd like to tell <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> a little bit about you . [a medical practitioner] <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> is a <span style="color:#b4560a;font-weight:600;">fifty-something</span> female with a past medical history significant for &#8230;[truncated]</div>
+          </div>
+        </foreignObject>
 
-        <path d="M560,230 L560,274" class="arrow arrow-masked" marker-end="url(#ahc)"/>
-        <text x="576" y="250" class="arrow-label masked">remote LLM</text>
-        <text x="576" y="263" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+        <path d="M560,264 L560,306" class="arrow arrow-masked" marker-end="url(#ahc)"/>
+        <text x="576" y="284" class="arrow-label masked">remote LLM</text>
+        <text x="576" y="297" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
 
-        <rect x="20" y="276" width="1080" height="72" rx="6" class="box box-gpu"/>
-        <text x="32" y="293" class="box-label">gen_p · remote answer on doc_p</text>
-        <text x="32" y="312" class="box-mono" font-size="11.5">**Patient:** <tspan fill="#b4560a" font-weight="600">&lt;PERSON_2&gt;</tspan>   **Age/Sex:** 50s Female</text>
-        <text x="32" y="327" class="box-mono" font-size="11.5"><tspan fill="#b4560a" font-weight="600">&lt;PERSON_2&gt;</tspan> is a <tspan fill="#b4560a" font-weight="600">fifty-something</tspan> female presenting for her annual exam.</text>
-        <text x="32" y="342" class="box-mono" font-size="11.5">&#8230; Past Medical History: CHF , depression , hypertension &#8230;</text>
+        <rect x="20" y="308" width="1080" height="92" rx="6" class="box box-gpu"/>
+        <foreignObject x="20" y="308" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_p · remote answer on doc_p</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">**Clinical Visit Note** **Patient:** <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> **Age/Sex:** 50s Female **Visit Type:** Annual Physical Examination **HPI:** <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> is a <span style="color:#b4560a;font-weight:600;">fifty-something</span> female presenting for her annual exam. It has been one year since her last visit. She reports feeling well overall &#8230;[truncated]</div>
+          </div>
+        </foreignObject>
 
-        <path d="M560,348 L560,392" class="arrow arrow-secret" marker-end="url(#ahc)"/>
-        <text x="576" y="368" class="arrow-label secret">rule extractor</text>
-        <text x="576" y="381" class="box-sub">invert R · ph_swapped 2, gen_exact 1</text>
+        <path d="M560,400 L560,442" class="arrow arrow-secret" marker-end="url(#ahc)"/>
+        <text x="576" y="420" class="arrow-label secret">rule extractor</text>
+        <text x="576" y="433" class="box-sub">invert R · ph_swapped 2, gen_exact 1</text>
 
-        <rect x="20" y="394" width="1080" height="72" rx="6" class="box box-client"/>
-        <text x="32" y="411" class="box-label">gen_final · after rule inversion (client, restored)</text>
-        <text x="32" y="430" class="box-mono" font-size="11.5">**Patient:** <tspan fill="#2f7d4f" font-weight="600">martha</tspan>   **Age/Sex:** 50s Female</text>
-        <text x="32" y="445" class="box-mono" font-size="11.5"><tspan fill="#2f7d4f" font-weight="600">martha</tspan> is a <tspan fill="#2f7d4f" font-weight="600">50-year-old</tspan> female presenting for her annual exam.</text>
-        <text x="32" y="460" class="box-mono" font-size="11.5">&#8230; Past Medical History: CHF , depression , hypertension &#8230;</text>
+        <rect x="20" y="444" width="1080" height="92" rx="6" class="box box-client"/>
+        <foreignObject x="20" y="444" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_final · after rule inversion (client, restored)</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">**Clinical Visit Note** **Patient:** <span style="color:#2f7d4f;font-weight:600;">martha</span> **Age/Sex:** 50s Female **Visit Type:** Annual Physical Examination **HPI:** <span style="color:#2f7d4f;font-weight:600;">martha</span> is a <span style="color:#2f7d4f;font-weight:600;">50-year-old</span> female presenting for her annual exam. It has been one year since her last visit. She reports feeling well overall &#8230;[truncated]</div>
+          </div>
+        </foreignObject>
       </svg>
     </div>
 
@@ -565,41 +573,53 @@
         <span class="l">FIG · 05 — round trip through the components: email reply (Enron, enron/1)</span>
         <span>&lt;PERSON_3&gt; here is a detection misfire on &ldquo;Bunche&rdquo; (precision, not privacy)</span>
       </div>
-      <svg class="flow" viewBox="0 0 1120 428" xmlns="http://www.w3.org/2000/svg" role="img"
+      <svg class="flow" viewBox="0 0 1120 550" xmlns="http://www.w3.org/2000/svg" role="img"
            aria-label="Email round trip: doc_orig (an announcement naming HOWARD and Ira Aldridge) becomes doc_p with those names as PERSON placeholders and dates generalized; the remote LLM writes a reply citing the placeholders; the rule extractor restores HOWARD and Ira Aldridge in gen_final.">
         <defs><marker id="ahe" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
 
-        <rect x="20" y="40" width="1080" height="58" rx="6" class="box box-client"/>
-        <text x="32" y="57" class="box-label">doc_orig · raw email (client, plaintext)</text>
-        <text x="32" y="76" class="box-mono" font-size="11.5">WHAT IS <tspan fill="#2f7d4f" font-weight="600">HOWARD</tspan> TALKING ABOUT TODAY? &#8230; Documentary on Bunche (11/13/01)</text>
-        <text x="32" y="91" class="box-mono" font-size="11.5">&#8230; &quot;Piano Lesson&quot; Begins in <tspan fill="#2f7d4f" font-weight="600">Ira Aldridge</tspan> &#8230;</text>
+        <rect x="20" y="36" width="1080" height="92" rx="6" class="box box-client"/>
+        <foreignObject x="20" y="36" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_orig · raw email (client, plaintext)</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">WHAT IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? Experts Offer Answers on Anthrax (11/08/01) Free Dinner Theater Features Documentary on Bunche (11/13/01) WHAT ELSE IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? -Free Flu Shots, HIV Testing for Students (TODAY, 10 a.m.) -"Piano Lesson" Begins in <span style="color:#2f7d4f;font-weight:600;">Ira Aldridge</span> (TONIGHT, &#8230;[truncated]</div>
+          </div>
+        </foreignObject>
 
-        <path d="M560,98 L560,142" class="arrow" marker-end="url(#ahe)"/>
-        <text x="576" y="118" class="arrow-label">detector + substitutor</text>
-        <text x="576" y="131" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
+        <path d="M560,128 L560,170" class="arrow" marker-end="url(#ahe)"/>
+        <text x="576" y="148" class="arrow-label">detector + substitutor</text>
+        <text x="576" y="161" class="box-sub">GLiNER &cup; Presidio &rarr; lattice walk @ &tau;</text>
 
-        <rect x="20" y="144" width="1080" height="58" rx="6" class="box box-crypto"/>
-        <text x="32" y="161" class="box-label">doc_p · masked, sent to the remote model</text>
-        <text x="32" y="180" class="box-mono" font-size="11.5">WHAT IS <tspan fill="#b4560a" font-weight="600">&lt;PERSON_2&gt;</tspan> TALKING ABOUT TODAY? &#8230; Documentary on <tspan fill="#b4560a" font-weight="600">&lt;PERSON_3&gt;</tspan> (<tspan fill="#b4560a" font-weight="600">at some point</tspan>)</text>
-        <text x="32" y="195" class="box-mono" font-size="11.5">&#8230; &quot;Piano Lesson&quot; Begins in <tspan fill="#b4560a" font-weight="600">&lt;PERSON_1&gt;</tspan> &#8230;</text>
+        <rect x="20" y="172" width="1080" height="92" rx="6" class="box box-crypto"/>
+        <foreignObject x="20" y="172" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">doc_p · masked, sent to the remote model</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">WHAT IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? Experts Offer Answers on <span style="color:#b4560a;font-weight:600;">&lt;PERSON_4&gt;</span> (<span style="color:#b4560a;font-weight:600;">at some point</span>) Free Dinner Theater Features Documentary on <span style="color:#b4560a;font-weight:600;">&lt;PERSON_3&gt;</span> (<span style="color:#b4560a;font-weight:600;">at some point</span>) WHAT ELSE IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? &#8230; -"Piano Lesson" Begins in <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> &#8230;[truncated]</div>
+          </div>
+        </foreignObject>
 
-        <path d="M560,202 L560,246" class="arrow arrow-masked" marker-end="url(#ahe)"/>
-        <text x="576" y="222" class="arrow-label masked">remote LLM</text>
-        <text x="576" y="235" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
+        <path d="M560,264 L560,306" class="arrow arrow-masked" marker-end="url(#ahe)"/>
+        <text x="576" y="284" class="arrow-label masked">remote LLM</text>
+        <text x="576" y="297" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
 
-        <rect x="20" y="248" width="1080" height="58" rx="6" class="box box-gpu"/>
-        <text x="32" y="265" class="box-label">gen_p · remote answer on doc_p</text>
-        <text x="32" y="284" class="box-mono" font-size="11.5">Subject: Re: WHAT IS <tspan fill="#b4560a" font-weight="600">&lt;PERSON_2&gt;</tspan> TALKING ABOUT TODAY?</text>
-        <text x="32" y="299" class="box-mono" font-size="11.5">Hi, Thanks for sharing this list. &#8230; Best, <tspan fill="#b4560a" font-weight="600">&lt;PERSON_1&gt;</tspan></text>
+        <rect x="20" y="308" width="1080" height="92" rx="6" class="box box-gpu"/>
+        <foreignObject x="20" y="308" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_p · remote answer on doc_p</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">Subject: Re: WHAT IS <span style="color:#b4560a;font-weight:600;">&lt;PERSON_2&gt;</span> TALKING ABOUT TODAY? Hi, Thanks for sharing this list. I'll make sure to check out the "Piano Lesson" tonight and look into the free flu shots and HIV testing available today. Best, <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span></div>
+          </div>
+        </foreignObject>
 
-        <path d="M560,306 L560,350" class="arrow arrow-secret" marker-end="url(#ahe)"/>
-        <text x="576" y="326" class="arrow-label secret">rule extractor</text>
-        <text x="576" y="339" class="box-sub">invert R · ph_swapped 2</text>
+        <path d="M560,400 L560,442" class="arrow arrow-secret" marker-end="url(#ahe)"/>
+        <text x="576" y="420" class="arrow-label secret">rule extractor</text>
+        <text x="576" y="433" class="box-sub">invert R · ph_swapped 2</text>
 
-        <rect x="20" y="352" width="1080" height="58" rx="6" class="box box-client"/>
-        <text x="32" y="369" class="box-label">gen_final · after rule inversion (client, restored)</text>
-        <text x="32" y="388" class="box-mono" font-size="11.5">Subject: Re: WHAT IS <tspan fill="#2f7d4f" font-weight="600">HOWARD</tspan> TALKING ABOUT TODAY?</text>
-        <text x="32" y="403" class="box-mono" font-size="11.5">Hi, Thanks for sharing this list. &#8230; Best, <tspan fill="#2f7d4f" font-weight="600">Ira Aldridge</tspan></text>
+        <rect x="20" y="444" width="1080" height="92" rx="6" class="box box-client"/>
+        <foreignObject x="20" y="444" width="1080" height="92">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:92px;padding:7px 14px;font-family:'JetBrains Mono',monospace;overflow:hidden;">
+            <div style="font-size:10px;font-weight:600;letter-spacing:.04em;color:#5a5f66;margin-bottom:3px;">gen_final · after rule inversion (client, restored)</div>
+            <div style="font-size:11.5px;line-height:1.42;color:#2b3036;">Subject: Re: WHAT IS <span style="color:#2f7d4f;font-weight:600;">HOWARD</span> TALKING ABOUT TODAY? Hi, Thanks for sharing this list. I'll make sure to check out the "Piano Lesson" tonight and look into the free flu shots and HIV testing available today. Best, <span style="color:#2f7d4f;font-weight:600;">Ira Aldridge</span></div>
+          </div>
+        </foreignObject>
       </svg>
     </div>
   </section>
