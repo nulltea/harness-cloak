@@ -22,7 +22,7 @@ PRESIDIO_MAP = {
     "EMAIL_ADDRESS": "CODE", "PHONE_NUMBER": "CODE", "IBAN_CODE": "CODE",
     "CREDIT_CARD": "CODE", "US_SSN": "CODE", "URL": "CODE", "IP_ADDRESS": "CODE",
     "MEDICAL_LICENSE": "CODE", "US_DRIVER_LICENSE": "CODE", "US_PASSPORT": "CODE",
-    "REF_CODE": "CODE",
+    "REF_CODE": "CODE", "MONEY": "QUANTITY",
 }
 
 
@@ -34,6 +34,7 @@ class Span:
     type: str      # TAB entity_type
     score: float
     source: str    # "gliner" | "presidio"
+    chain: int = -1  # coref chain id (set by coref_chains), -1 = unclustered
 
 
 def _chunks(text: str, max_chars: int = 1200):
@@ -65,6 +66,11 @@ class Detector:
         self.presidio.registry.add_recognizer(PatternRecognizer(
             supported_entity="REF_CODE", name="numeric_reference",
             patterns=[Pattern("num-slash-num", r"\b\d{3,6}/\d{2,4}\b", 0.6)]))
+        self.presidio.registry.add_recognizer(PatternRecognizer(
+            supported_entity="MONEY", name="money_amount",
+            patterns=[Pattern("amount-currency",
+                              r"(?:[$€£]\s?[\d,]+(?:\.\d+)?[kKmM]?|\b[\d,]+(?:\.\d+)?[kKmM]?\s?"
+                              r"(?:dollars?|euros?|pounds?|USD|EUR|GBP|NOK|kr)\b)", 0.6)]))
         self.labels = list(GLINER_LABELS)
 
     def detect(self, text: str) -> list[Span]:
@@ -88,6 +94,30 @@ def _dedupe(spans: list[Span]) -> list[Span]:
         if not any(s.start < o.end and o.start < s.end for o in out):
             out.append(s)
     return out
+
+
+def coref_chains(text: str, spans: list[Span]) -> list[Span]:
+    """Attach chain ids by surface aliasing: same-type spans whose casefolded token sets
+    overlap (or one contains the other) share a chain.
+
+    ponytail: string-alias coref — fastcoref 2.1.6 is incompatible with transformers 5.12
+    (FCorefModel hits removed modeling internals). Aliasing covers placeholder consistency
+    across name variants; upgrade to a real coref model for the TAB pass, where nominal
+    anaphora ("the applicant") matters.
+    """
+    chains: list[tuple[str, set]] = []  # (type, token set)
+    for s in sorted(spans, key=lambda s: s.start):
+        toks = {t for t in s.text.lower().split() if len(t) > 2}
+        s.chain = -1
+        for ci, (ctype, ctoks) in enumerate(chains):
+            if ctype == s.type and toks and (toks & ctoks):
+                s.chain = ci
+                ctoks |= toks
+                break
+        if s.chain < 0:
+            chains.append((s.type, toks))
+            s.chain = len(chains) - 1
+    return spans
 
 
 if __name__ == "__main__":  # offline-ish self-check (downloads models on first run)
