@@ -430,7 +430,15 @@
         <div id="plot-tau-a" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
         <div id="plot-tau-b" style="flex:1 1 320px;min-width:300px;height:320px;"></div>
       </div>
-      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:10px;">
+      <p class="prose" style="margin:16px 0 2px;font-size:12px;">
+        <strong>Mechanism diagnostics.</strong> How far the &tau;-walk actually coarsens the generalized
+        spans. Each bar is one &tau; value (light&rarr;dark = 0.005&rarr;0.5); height is a <em>count of
+        spans</em> (of the total named in each title). <strong>Left:</strong> spans accepted at the
+        most-specific lattice level (level&nbsp;0 &mdash; original kept, least coarsened). <strong>Right:</strong>
+        spans pushed all the way to the type-label floor (coarsest, e.g. "a location"). Bars flat across &tau;
+        mean the knob is not repositioning the lattice; bars that shift mean it is.
+      </p>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:4px;">
         <div id="plot-tau-c" style="flex:1 1 320px;min-width:300px;height:300px;"></div>
         <div id="plot-tau-d" style="flex:1 1 320px;min-width:300px;height:300px;"></div>
       </div>
