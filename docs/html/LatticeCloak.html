@@ -482,80 +482,102 @@
     The behavior under answers that <em>do</em> cite substituted facts is shown by four constructed prompts
     (fact-restating task, same remote model), with the no-privacy control for comparison:</p>
 
-    <p class="prose">The three prompts whose answers cite substituted facts, as one forward-path grid
-    (rows = stages doc_orig &rarr; doc_p &rarr; gen_p, columns = prompts; the inverted out_final and
-    no-privacy out_ctrl are in the tables above). <span style="color:#2f7d4f;font-weight:600;">Green</span> = spans the substitutor removes;
-    <span style="color:#b4560a;font-weight:600;">amber</span> = their placeholders / generalizations as they
-    ride through the remote answer.</p>
+    <p class="prose">The three prompts whose answers cite substituted facts, as one round-trip grid
+    (rows = stages doc_orig &rarr; doc_p &rarr; gen_p &rarr; gen_final, columns = prompts).
+    <span style="color:#2f7d4f;font-weight:600;">Green</span> = spans the substitutor removes and the rule
+    extractor restores in <code>gen_final</code>; <span style="color:#b4560a;font-weight:600;">amber</span> =
+    their placeholders / generalizations riding through the remote answer, and in <code>gen_final</code> the
+    residue the rules could not recover (a rephrase miss, "a Massachusetts city"; suppressed precision, the
+    salary range).</p>
 
-        <div class="diagram-frame">
+            <div class="diagram-frame">
       <div class="diagram-cap">
-        <span class="l">FIG · 06 — forward path (doc_orig &rarr; doc_p &rarr; gen_p) for three constructed prompts</span>
-        <span>rows = pipeline stages · columns = prompts · green = removed, amber = masked</span>
+        <span class="l">FIG · 06 — round trip (doc_orig &rarr; doc_p &rarr; gen_p &rarr; gen_final) for three constructed prompts</span>
+        <span>rows = pipeline stages · columns = prompts · green = removed / restored, amber = masked / unrecovered residue</span>
       </div>
-      <svg class="flow" viewBox="0 0 1120 406" xmlns="http://www.w3.org/2000/svg" role="img"
-           aria-label="Three constructed prompts as a grid: rows are stages doc_orig, doc_p, gen_p; columns are prompt 1, prompt 3, prompt 4; green marks removed spans, amber their placeholders and generalizations.">
+      <svg class="flow" viewBox="0 0 1120 518" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="Three constructed prompts as a round-trip grid: rows are stages doc_orig, doc_p, gen_p, gen_final; columns are prompt 1, prompt 3, prompt 4; green marks removed spans and restored values, amber their placeholders/generalizations and unrecovered residue.">
         <defs><marker id="ahg" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker></defs>
 
         <text x="286" y="30" text-anchor="middle" class="box-label">prompt 1 · self-introduction</text>
         <text x="618" y="30" text-anchor="middle" class="box-label">prompt 3 · job &amp; salary</text>
         <text x="950" y="30" text-anchor="middle" class="box-label">prompt 4 · the stress case</text>
 
-        <text x="60" y="78" text-anchor="middle" class="box-label">doc_orig</text>
-        <text x="60" y="91" text-anchor="middle" class="box-sub">input</text>
-        <rect x="128" y="44" width="316" height="76" rx="6" class="box box-client"/>
-        <foreignObject x="128" y="44" width="316" height="76">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:76px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">My name is <span style="color:#2f7d4f;font-weight:600;">Sarah Johnson</span> and I am <span style="color:#2f7d4f;font-weight:600;">thirty four</span> years old living in <span style="color:#2f7d4f;font-weight:600;">Boston</span> with my husband.</div>
+        <text x="60" y="77" text-anchor="middle" class="box-label">doc_orig</text>
+        <text x="60" y="90" text-anchor="middle" class="box-sub">input</text>
+        <rect x="128" y="44" width="316" height="74" rx="6" class="box box-client"/>
+        <foreignObject x="128" y="44" width="316" height="74">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:74px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">My name is <span style="color:#2f7d4f;font-weight:600;">Sarah Johnson</span> and I am <span style="color:#2f7d4f;font-weight:600;">thirty four</span> years old living in <span style="color:#2f7d4f;font-weight:600;">Boston</span> with my husband.</div>
         </foreignObject>
-        <rect x="460" y="44" width="316" height="76" rx="6" class="box box-client"/>
-        <foreignObject x="460" y="44" width="316" height="76">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:76px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">He works as a <span style="color:#2f7d4f;font-weight:600;">lawyer</span> at <span style="color:#2f7d4f;font-weight:600;">Goldman Sachs</span> and earns <span style="color:#2f7d4f;font-weight:600;">two hundred thousand dollars</span> a year in <span style="color:#2f7d4f;font-weight:600;">Chicago</span>.</div>
+        <rect x="460" y="44" width="316" height="74" rx="6" class="box box-client"/>
+        <foreignObject x="460" y="44" width="316" height="74">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:74px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">He works as a <span style="color:#2f7d4f;font-weight:600;">lawyer</span> at <span style="color:#2f7d4f;font-weight:600;">Goldman Sachs</span> and earns <span style="color:#2f7d4f;font-weight:600;">two hundred thousand dollars</span> a year in <span style="color:#2f7d4f;font-weight:600;">Chicago</span>.</div>
         </foreignObject>
-        <rect x="792" y="44" width="316" height="76" rx="6" class="box box-client"/>
-        <foreignObject x="792" y="44" width="316" height="76">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:76px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#2f7d4f;font-weight:600;">Last spring</span>, <span style="color:#2f7d4f;font-weight:600;">Dmitri</span> moved from <span style="color:#2f7d4f;font-weight:600;">Cambridge</span> to work at <span style="color:#2f7d4f;font-weight:600;">Sberbank</span> as a data scientist; his salary doubled to <span style="color:#2f7d4f;font-weight:600;">95k</span> and he turned <span style="color:#2f7d4f;font-weight:600;">40</span> in <span style="color:#2f7d4f;font-weight:600;">May</span>.</div>
-        </foreignObject>
-
-        <text x="60" y="205" text-anchor="middle" class="box-label">doc_p</text>
-        <text x="60" y="218" text-anchor="middle" class="box-sub">sent</text>
-        <rect x="128" y="164" width="316" height="91" rx="6" class="box box-crypto"/>
-        <foreignObject x="128" y="164" width="316" height="91">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:91px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">My name is <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> and I am <span style="color:#b4560a;font-weight:600;">thirty-something</span> living in <span style="color:#b4560a;font-weight:600;">a city in Massachusetts</span> with my husband.</div>
-        </foreignObject>
-        <rect x="460" y="164" width="316" height="91" rx="6" class="box box-crypto"/>
-        <foreignObject x="460" y="164" width="316" height="91">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:91px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">He works as <span style="color:#b4560a;font-weight:600;">a person</span> at <span style="color:#b4560a;font-weight:600;">a financial institution</span> and earns <span style="color:#b4560a;font-weight:600;">between 100,000 and 400,000 dollars</span> a year in <span style="color:#b4560a;font-weight:600;">a city in Illinois</span>.</div>
-        </foreignObject>
-        <rect x="792" y="164" width="316" height="91" rx="6" class="box box-crypto"/>
-        <foreignObject x="792" y="164" width="316" height="91">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:91px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">Some time ago</span>, <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> moved from <span style="color:#b4560a;font-weight:600;">a city in England</span> to work at <span style="color:#b4560a;font-weight:600;">a financial institution</span> as a data scientist; his salary doubled to <span style="color:#b4560a;font-weight:600;">between 47,500 and 190,000</span> and he turned <span style="color:#b4560a;font-weight:600;">forty-something</span> in <span style="color:#b4560a;font-weight:600;">the spring</span>.</div>
+        <rect x="792" y="44" width="316" height="74" rx="6" class="box box-client"/>
+        <foreignObject x="792" y="44" width="316" height="74">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:74px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#2f7d4f;font-weight:600;">Last spring</span>, <span style="color:#2f7d4f;font-weight:600;">Dmitri</span> moved from <span style="color:#2f7d4f;font-weight:600;">Cambridge</span> to work at <span style="color:#2f7d4f;font-weight:600;">Sberbank</span> as a data scientist; his salary doubled to <span style="color:#2f7d4f;font-weight:600;">95k</span> and he turned <span style="color:#2f7d4f;font-weight:600;">40</span> in <span style="color:#2f7d4f;font-weight:600;">May</span>.</div>
         </foreignObject>
 
-        <text x="60" y="340" text-anchor="middle" class="box-label">gen_p</text>
-        <text x="60" y="353" text-anchor="middle" class="box-sub">answer</text>
-        <rect x="128" y="299" width="316" height="91" rx="6" class="box box-gpu"/>
-        <foreignObject x="128" y="299" width="316" height="91">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:91px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> is a <span style="color:#b4560a;font-weight:600;">thirty-something</span> individual residing in a <span style="color:#b4560a;font-weight:600;">Massachusetts city</span> with their husband. The provided text does not specify their job or financial details.</div>
+        <text x="60" y="202" text-anchor="middle" class="box-label">doc_p</text>
+        <text x="60" y="215" text-anchor="middle" class="box-sub">sent</text>
+        <rect x="128" y="162" width="316" height="89" rx="6" class="box box-crypto"/>
+        <foreignObject x="128" y="162" width="316" height="89">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:89px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">My name is <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> and I am <span style="color:#b4560a;font-weight:600;">thirty-something</span> living in <span style="color:#b4560a;font-weight:600;">a city in Massachusetts</span> with my husband.</div>
         </foreignObject>
-        <rect x="460" y="299" width="316" height="91" rx="6" class="box box-gpu"/>
-        <foreignObject x="460" y="299" width="316" height="91">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:91px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">He is a <span style="color:#b4560a;font-weight:600;">financial institution</span> employee living in <span style="color:#b4560a;font-weight:600;">a city in Illinois</span> who earns an annual income <span style="color:#b4560a;font-weight:600;">between $100,000 and $400,000</span>.</div>
+        <rect x="460" y="162" width="316" height="89" rx="6" class="box box-crypto"/>
+        <foreignObject x="460" y="162" width="316" height="89">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:89px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">He works as <span style="color:#b4560a;font-weight:600;">a person</span> at <span style="color:#b4560a;font-weight:600;">a financial institution</span> and earns <span style="color:#b4560a;font-weight:600;">between 100,000 and 400,000 dollars</span> a year in <span style="color:#b4560a;font-weight:600;">a city in Illinois</span>.</div>
         </foreignObject>
-        <rect x="792" y="299" width="316" height="91" rx="6" class="box box-gpu"/>
-        <foreignObject x="792" y="299" width="316" height="91">
-          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:91px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> is a <span style="color:#b4560a;font-weight:600;">forty-something</span> data scientist who relocated from <span style="color:#b4560a;font-weight:600;">a city in England</span> to work at <span style="color:#b4560a;font-weight:600;">a financial institution</span>. His salary doubled to a range <span style="color:#b4560a;font-weight:600;">between &pound;47,500 and &pound;190,000</span>.</div>
+        <rect x="792" y="162" width="316" height="89" rx="6" class="box box-crypto"/>
+        <foreignObject x="792" y="162" width="316" height="89">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:89px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">Some time ago</span>, <span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> moved from <span style="color:#b4560a;font-weight:600;">a city in England</span> to work at <span style="color:#b4560a;font-weight:600;">a financial institution</span> as a data scientist; his salary doubled to <span style="color:#b4560a;font-weight:600;">between 47,500 and 190,000</span> and he turned <span style="color:#b4560a;font-weight:600;">forty-something</span> in <span style="color:#b4560a;font-weight:600;">the spring</span>.</div>
         </foreignObject>
 
-        <path d="M286,120 L286,164" class="arrow" marker-end="url(#ahg)"/>
-        <path d="M618,120 L618,164" class="arrow" marker-end="url(#ahg)"/>
-        <path d="M950,120 L950,164" class="arrow" marker-end="url(#ahg)"/>
-        <text x="60" y="138" text-anchor="middle" class="arrow-label">detector +</text>
-        <text x="60" y="151" text-anchor="middle" class="arrow-label">substitutor</text>
-        <path d="M286,255 L286,299" class="arrow arrow-masked" marker-end="url(#ahg)"/>
-        <path d="M618,255 L618,299" class="arrow arrow-masked" marker-end="url(#ahg)"/>
-        <path d="M950,255 L950,299" class="arrow arrow-masked" marker-end="url(#ahg)"/>
-        <text x="60" y="273" text-anchor="middle" class="arrow-label masked">remote</text>
-        <text x="60" y="286" text-anchor="middle" class="arrow-label masked">LLM</text>      </svg>
+        <text x="60" y="335" text-anchor="middle" class="box-label">gen_p</text>
+        <text x="60" y="348" text-anchor="middle" class="box-sub">answer</text>
+        <rect x="128" y="295" width="316" height="89" rx="6" class="box box-gpu"/>
+        <foreignObject x="128" y="295" width="316" height="89">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:89px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> is a <span style="color:#b4560a;font-weight:600;">thirty-something</span> individual residing in a <span style="color:#b4560a;font-weight:600;">Massachusetts city</span> with their husband. The provided text does not specify their job or financial details.</div>
+        </foreignObject>
+        <rect x="460" y="295" width="316" height="89" rx="6" class="box box-gpu"/>
+        <foreignObject x="460" y="295" width="316" height="89">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:89px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">He is a <span style="color:#b4560a;font-weight:600;">financial institution</span> employee living in <span style="color:#b4560a;font-weight:600;">a city in Illinois</span> who earns an annual income <span style="color:#b4560a;font-weight:600;">between $100,000 and $400,000</span>.</div>
+        </foreignObject>
+        <rect x="792" y="295" width="316" height="89" rx="6" class="box box-gpu"/>
+        <foreignObject x="792" y="295" width="316" height="89">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:89px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#b4560a;font-weight:600;">&lt;PERSON_1&gt;</span> is a <span style="color:#b4560a;font-weight:600;">forty-something</span> data scientist who relocated from <span style="color:#b4560a;font-weight:600;">a city in England</span> to work at <span style="color:#b4560a;font-weight:600;">a financial institution</span>. His salary doubled to a range <span style="color:#b4560a;font-weight:600;">between &pound;47,500 and &pound;190,000</span>.</div>
+        </foreignObject>
+
+        <text x="60" y="461" text-anchor="middle" class="box-label">gen_final</text>
+        <text x="60" y="474" text-anchor="middle" class="box-sub">restored</text>
+        <rect x="128" y="428" width="316" height="74" rx="6" class="box box-client"/>
+        <foreignObject x="128" y="428" width="316" height="74">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:74px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#2f7d4f;font-weight:600;">Sarah Johnson</span> is a <span style="color:#2f7d4f;font-weight:600;">thirty four</span> years old individual residing in <span style="color:#b4560a;font-weight:600;">a Massachusetts city</span> with their husband. The provided text does not specify their job or financial details.</div>
+        </foreignObject>
+        <rect x="460" y="428" width="316" height="74" rx="6" class="box box-client"/>
+        <foreignObject x="460" y="428" width="316" height="74">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:74px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;">He is <span style="color:#2f7d4f;font-weight:600;">Goldman Sachs</span> employee living in <span style="color:#2f7d4f;font-weight:600;">Chicago</span> who earns an annual income <span style="color:#b4560a;font-weight:600;">between $100,000 and $400,000</span>.</div>
+        </foreignObject>
+        <rect x="792" y="428" width="316" height="74" rx="6" class="box box-client"/>
+        <foreignObject x="792" y="428" width="316" height="74">
+          <div xmlns="http://www.w3.org/1999/xhtml" style="box-sizing:border-box;height:74px;padding:6px 11px;font-family:'JetBrains Mono',monospace;overflow:hidden;font-size:11px;line-height:1.4;color:#2b3036;"><span style="color:#2f7d4f;font-weight:600;">Dmitri</span> is a <span style="color:#2f7d4f;font-weight:600;">40</span> data scientist who relocated from <span style="color:#2f7d4f;font-weight:600;">Cambridge</span> to work at <span style="color:#2f7d4f;font-weight:600;">Sberbank</span>. His salary doubled to a range <span style="color:#2f7d4f;font-weight:600;">95k</span>.</div>
+        </foreignObject>
+
+        <path d="M286,118 L286,162" class="arrow" marker-end="url(#ahg)"/>
+        <path d="M618,118 L618,162" class="arrow" marker-end="url(#ahg)"/>
+        <path d="M950,118 L950,162" class="arrow" marker-end="url(#ahg)"/>
+        <text x="60" y="136" text-anchor="middle" class="arrow-label">detector +</text>
+        <text x="60" y="149" text-anchor="middle" class="arrow-label">substitutor</text>
+        <path d="M286,251 L286,295" class="arrow arrow-masked" marker-end="url(#ahg)"/>
+        <path d="M618,251 L618,295" class="arrow arrow-masked" marker-end="url(#ahg)"/>
+        <path d="M950,251 L950,295" class="arrow arrow-masked" marker-end="url(#ahg)"/>
+        <text x="60" y="269" text-anchor="middle" class="arrow-label masked">remote</text>
+        <text x="60" y="282" text-anchor="middle" class="arrow-label masked">LLM</text>
+        <path d="M286,384 L286,428" class="arrow arrow-secret" marker-end="url(#ahg)"/>
+        <path d="M618,384 L618,428" class="arrow arrow-secret" marker-end="url(#ahg)"/>
+        <path d="M950,384 L950,428" class="arrow arrow-secret" marker-end="url(#ahg)"/>
+        <text x="60" y="402" text-anchor="middle" class="arrow-label secret">rule</text>
+        <text x="60" y="415" text-anchor="middle" class="arrow-label secret">extractor</text>      </svg>
     </div>
 
     <p class="prose">Prompt 4 also contains a comprehension reversal: the no-privacy control
