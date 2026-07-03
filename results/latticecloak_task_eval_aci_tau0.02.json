@@ -1,0 +1,23 @@
+{
+  "corpus": "aci",
+  "tau": 0.02,
+  "n": 2,
+  "gen_model": "Qwen3.6-35B-A3B",
+  "utility_final": {
+    "rougeL": 0.3201
+  },
+  "utility_ctrl": {
+    "rougeL": 0.2818
+  },
+  "utility_p": {
+    "rougeL": 0.3168
+  },
+  "inversion_totals": {
+    "ph_swapped": 0,
+    "gen_exact": 1,
+    "gen_fuzzy": 1,
+    "gen_absent": 18,
+    "ph_residue": 0
+  },
+  "wall_s": 68.1
+}

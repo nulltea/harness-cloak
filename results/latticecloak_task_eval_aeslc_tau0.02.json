@@ -1,0 +1,23 @@
+{
+  "corpus": "aeslc",
+  "tau": 0.02,
+  "n": 3,
+  "gen_model": "Qwen3.6-35B-A3B",
+  "utility_final": {
+    "rougeL": 0.471
+  },
+  "utility_ctrl": {
+    "rougeL": 0.5212
+  },
+  "utility_p": {
+    "rougeL": 0.471
+  },
+  "inversion_totals": {
+    "ph_swapped": 0,
+    "gen_exact": 0,
+    "gen_fuzzy": 0,
+    "gen_absent": 5,
+    "ph_residue": 0
+  },
+  "wall_s": 15.2
+}

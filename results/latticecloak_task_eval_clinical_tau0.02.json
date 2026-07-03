@@ -1,0 +1,23 @@
+{
+  "corpus": "clinical",
+  "tau": 0.02,
+  "n": 2,
+  "gen_model": "Qwen3.6-35B-A3B",
+  "utility_final": {
+    "rougeL": 0.3141
+  },
+  "utility_ctrl": {
+    "rougeL": 0.2675
+  },
+  "utility_p": {
+    "rougeL": 0.3096
+  },
+  "inversion_totals": {
+    "ph_swapped": 2,
+    "gen_exact": 1,
+    "gen_fuzzy": 0,
+    "gen_absent": 8,
+    "ph_residue": 0
+  },
+  "wall_s": 32.6
+}
