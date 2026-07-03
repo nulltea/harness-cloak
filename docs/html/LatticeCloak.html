@@ -61,7 +61,11 @@
       end-to-end utility of that pipeline was produced by the extractor seeing the raw document, not by the
       perturbation. LatticeCloak decomposes the knob: placeholders carry the identifier load exactly and
       reversibly, lattices carry the premise load truthfully at an adjustable coarseness, and a masked-token
-      probe (&tau;) sets the operating point per span rather than globally.</p>
+      probe (&tau;) sets the operating point per span rather than globally. The truthful-generalization idea
+      &mdash; coarsen a span to a broader truth rather than delete or falsify it &mdash; follows INTACT's
+      inference-attack-guided sanitization (Pilán et al. 2024,
+      <a href="https://arxiv.org/abs/2412.12928">arXiv&nbsp;2412.12928</a>) and the self-disclosure
+      abstraction of Dou et al. 2024 (<a href="https://arxiv.org/abs/2311.09538">arXiv&nbsp;2311.09538</a>).</p>
       <p>This page documents the prototype design and the measurements taken so far: the detection gate on TAB,
       span routing and teacher-cascade economics on SynthPAI, and a smoke-scale round trip with rule-only
       extraction. The adversarial evaluation (frontier-LLM attribute inference at matched realized privacy
