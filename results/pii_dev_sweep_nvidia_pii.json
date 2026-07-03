@@ -1,0 +1,90 @@
+{
+  "corpus": "corpora/tab/echr_dev.json",
+  "docs": 127,
+  "threshold": 0.3,
+  "gliner_model": "nvidia/gliner-PII",
+  "recall": {
+    "DIRECT": {
+      "any": 1.0,
+      "typed": 0.9863013698630136,
+      "n": 438
+    },
+    "QUASI": {
+      "any": 0.8125470136903866,
+      "typed": 0.7401835414472695,
+      "n": 6647
+    }
+  },
+  "recall_by_type": {
+    "DIRECT/CODE": {
+      "any": 1.0,
+      "typed": 0.9936305732484076,
+      "n": 157
+    },
+    "DIRECT/DATETIME": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 9
+    },
+    "DIRECT/MISC": {
+      "any": 1.0,
+      "typed": 0.0,
+      "n": 3
+    },
+    "DIRECT/ORG": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 1
+    },
+    "DIRECT/PERSON": {
+      "any": 1.0,
+      "typed": 0.9925373134328358,
+      "n": 268
+    },
+    "QUASI/CODE": {
+      "any": 0.9437086092715232,
+      "typed": 0.8642384105960265,
+      "n": 302
+    },
+    "QUASI/DATETIME": {
+      "any": 0.9962644751587598,
+      "typed": 0.9962644751587598,
+      "n": 2677
+    },
+    "QUASI/DEM": {
+      "any": 0.4954296160877514,
+      "typed": 0.3473491773308958,
+      "n": 547
+    },
+    "QUASI/LOC": {
+      "any": 0.9774266365688488,
+      "typed": 0.8781038374717833,
+      "n": 443
+    },
+    "QUASI/MISC": {
+      "any": 0.14058355437665782,
+      "typed": 0.0,
+      "n": 377
+    },
+    "QUASI/ORG": {
+      "any": 0.6922320550639135,
+      "typed": 0.44542772861356933,
+      "n": 1017
+    },
+    "QUASI/PERSON": {
+      "any": 0.9634655532359081,
+      "typed": 0.9509394572025052,
+      "n": 958
+    },
+    "QUASI/QUANTITY": {
+      "any": 0.19938650306748465,
+      "typed": 0.15030674846625766,
+      "n": 326
+    }
+  },
+  "entity_level_direct_recall": 1.0,
+  "precision_proxy": 0.9576038199971061,
+  "n_pred": 6911,
+  "wall_s": 151.4,
+  "gate_pass": true
+}

@@ -1,0 +1,9 @@
+=== P7(large) small_v2.1 = urchade/gliner_small-v2.1 ===
+    "VEHI": 0.875
+  }
+}
+=== P7(large) know_pii_base = knowledgator/gliner-pii-base-v1.0 ===
+    "VEHI": 1.0
+  }
+}
+=== DONE ===

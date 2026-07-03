@@ -1,0 +1,205 @@
+A = urchade/gliner_small-v2.1
+B = knowledgator/gliner-pii-base-v1.0
+
+################################################################################
+# clinical/aci  (chars=7708)  A_subs=79  B_subs=33
+################################################################################
+----- doc_orig -----
+[doctor] hi , martha . how are you ?
+[patient] i'm doing okay . how are you ?
+[doctor] i'm doing okay . so , i know the nurse told you about dax . i'd like to tell dax a little bit about you , okay ?
+[patient] okay .
+[doctor] martha is a 50-year-old female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam . so , martha , it's been a year since i've seen you . how are you doing ?
+[patient] i'm doing well . i've been traveling a lot recently since things have , have gotten a bit lighter . and i got my , my vaccine , so i feel safer about traveling . i've been doing a lot of hiking . uh , went to washington last weekend to hike in northern cascades, like around the mount baker area .
+[doctor] nice . that's great . i'm glad to hear that you're staying active , you know . i , i just love this weather . i'm so happy the summer is over . i'm definitely more of a fall person .
+[patient] yes , fall foliage is the best .
+[doctor] yeah . um , so tell me , how are you doing with the congestive heart failure ? how are you doing watching your diet ? i know we've talked about watching a low sodium diet . are you doing okay with that ?
+[patient] i've been doing well with that . i resisted , as much , as i could , from the tater tots , you know , the soft pretzels , the salty foods that i , i love to eat . and i've been doing a really good job .
+[doctor] okay , all right . well , i'm glad to hear that . and you're taking your medication ?
+[patient] yes .
+[doctor] okay , good . and any symptoms like chest pains , shortness of breath , any swelling in your legs ?
+[patient] no , not that i've noticed .
+[doctor] okay , all right . and then in terms of your depression , i know that we tried to stay off of medication in the past because you're on medications for your other problems . how are you doing ? and i know that you enrolled into therapy . is that helping ? or-
+[patient] yeah , it's been helping a lot . i've been going every week , um , for the past year since my last annual exam . and that's been really helpful for me .
+[doctor] okay . so , no , no issues , no feelings of wanting to harm yourself or hurt others ?
+[patient] no , nothing like that .
+[doctor] okay , all right . and then in terms of your high blood pressure , i know that you and i have kind of battled in the past with you remembering to take some of your blood pressure medications . how are you doing with that ?
+[patient] i'm still forgetting to take my blood pressure medication . and i've noticed when work gets more stressful , my blood pressure goes up .
+[doctor] okay . and , and so how has work going for you ?
+[patient] it's been okay . it's been a lot of long hours , late nights . a lot of , um , you know , fiscal year end data that i've been having to pull . so , a lot of responsibility , which is good . but with the responsibility comes the stress .
+[doctor] yeah , okay , all right . i understand . um , all right . well , i know that you did a review of system sheet when you checked in with the nurse . i know that you were endorsing some nasal congestion from some of the fall pollen and allergies . any other symptoms , nausea or vomiting , abdominal pain , anything like that ?
+[patient] no , nothing like that .
+[doctor] no , okay , all right . well , i'm gon na go ahead and do a quick physical exam , okay ?
+[patient] okay .
+[doctor] hey , dragon , show me the blood pressure . so , yeah , looking at your blood pressure today here in the office , it is a little elevated . you know , it could just , you could just be nervous . uh , let's look at some of the past readings . hey , dragon , show me the blood pressure readings . hey , dragon , show me the blood pressure readings . here we go . uh , so they are running on the higher side . um , y- you know , i , i do think that , you know , i'd like to see you take your medication a little bit more , so that we can get that under control a little bit better , okay ?
+[patient] okay .
+[doctor] so , i'm just gon na check out your heart and your lungs . and you know , let you know what i find , okay ?
+[patient] okay .
+[doctor] okay . so , on your physical examination , you know , everything looks good . on your heart exam , i do appreciate a three out of six systolic ejection murmur , which i've heard in the past , okay ? and on your lower extremities , i do appreciate one plus pitting edema , so you do have a little bit of fluid in your legs , okay ?
+[patient] okay .
+[doctor] let's go ahead , i wan na look at some of your results , okay ? hey , dragon , show me the echocardiogram . so , this is the result of the echocardiogram that we did last year . it showed that you have that low-ish pumping function of your heart at about 45 % . and it also sh- shows some mitral regurgitation , that's that heart murmur that i heard , okay ?
+[doctor] um , hey , dragon , show me the lipid panel . so , looking at your lipid panel from last year , you know , everything , your cholesterol was like , a tiny bit high . but it was n't too , too bad , so i know you're trying to watch your diet . so , we'll repeat another one this year , okay ?
+[patient] okay .
+[doctor] um , so i wan na just go over a little bit about my assessment and my plan for you , okay ? so , for your first problem your congestive heart failure , um , i wan na continue you on your current medications . but i do wan na increase your lisinopril to 40 milligrams a day , just because your blood pressure's high . and you know , you are retaining a little bit of fluid . i also wan na start you on some lasix , you know , 20 milligrams a day . and have you continue to watch your , your diet , okay ?
+[patient] okay .
+[doctor] i also wan na repeat another echocardiogram , okay ?
+[patient] all right .
+[doctor] hey , dragon , order an echocardiogram . from a depression standpoint , it sounds like you're doing really well with that . so , i'm , i'm really happy for you . i'm , i'm glad to see that you're in therapy and you're doing really well . i do n't feel the need to start you on any medications this year , unless you feel differently .
+[patient] no , i feel the same way .
+[doctor] okay , all right . and then for your last problem your hypertension , you know , again i , i , i think it's out of control . but we'll see , i think , you know , i'd like to see you take the lisinopril as directed , okay ? uh , i want you to record your blood pressures within the patient , you know , take your blood pressure every day . record them to me for like , about a week , so i have to see if we have to add another agent , okay ? 'cause we need to get that under better control for your heart failure to be more successful , okay ?
+[patient] okay .
+[doctor] do you have any questions ? , and i forgot . for your annual exam , you're due for a mammogram , so we have to schedule for that , as well , okay ?
+[patient] okay .
+[doctor] okay . do you have any questions ?
+[patient] can i take all my pills at the same time ?
+[doctor] yeah .
+[patient] 'cause i've been trying to take them at different times of the day , 'cause i did n't know if it was bad to take them all at once or i should separate them . i do n't know .
+[doctor] yeah . you can certainly take them , you know , all at the same time , as long , as yeah , they're all one scale . you can take them all at the same time . just set an alarm-
+[patient] okay .
+[doctor] . some time during the day to take them , okay ?
+[patient] that might help me remember better .
+[doctor] all right . that sounds good . all right , well , it's good to see you .
+[patient] good seeing you too .
+[doctor] hey , dragon , finalize the note .
+----- doc_p [A: gliner_small, 79 subs] -----
+[a medical practitioner] hi , <PERSON_2> . how are you ?
+[a sick person] i'm doing okay . how are you ?
+[a medical practitioner] i'm doing okay . so , i know the nurse told you about <PERSON_3> . i'd like to tell <PERSON_3> a little bit about you , okay ?
+[patient] okay .
+[a medical practitioner] <PERSON_2> is a fifty-something female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam . so , <PERSON_2> , it's been a year since i've seen you . how are you doing ?
+[patient] i'm doing well . i've been traveling a lot recently since things have , have gotten a bit lighter . and i got my , my vaccine , so i feel safer about traveling . i've been doing a lot of hiking . uh , went to a city in District of Columbia at some point to hike in a range, like around a region .
+[a medical practitioner] nice . that's great . i'm glad to hear that you're staying active , you know . i , i just love this weather . i'm so happy the summer is over . i'm definitely more of a fall person .
+[patient] yes , fall foliage is the best .
+[a medical practitioner] yeah . um , so tell me , how are you doing with the congestive heart failure ? how are you doing watching your diet ? i know we've talked about watching a low sodium diet . are you doing okay with that ?
+[a sick person] i've been doing well with that . i resisted , as much , as i could , from the tater tots , you know , the soft pretzels , the salty foods that i , i love to eat . and i've been doing a really good job .
+[a medical practitioner] okay , all right . well , i'm glad to hear that . and you're taking your medication ?
+[a sick person] yes .
+[a medical practitioner] okay , good . and any symptoms like chest pains , shortness of breath , any swelling in your legs ?
+[a sick person] no , not that i've noticed .
+[a medical practitioner] okay , all right . and then in terms of your depression , i know that we tried to stay off of medication in the past because you're on medications for your other problems . how are you doing ? and i know that you enrolled into therapy . is that helping ? or-
+[a sick person] yeah , it's been helping a lot . i've been going every week , um , for some time ago since my last annual exam . and that's been really helpful for me .
+[a medical practitioner] okay . so , no , no issues , no feelings of wanting to harm yourself or hurt others ?
+[a sick person] no , nothing like that .
+[a medical practitioner] okay , all right . and then in terms of your high blood pressure , i know that you and i have kind of battled in the past with you remembering to take some of your blood pressure medications . how are you doing with that ?
+[a sick person] i'm still forgetting to take my blood pressure medication . and i've noticed when work gets more stressful , my blood pressure goes up .
+[a medical practitioner] okay . and , and so how has work going for you ?
+[a sick person] it's been okay . it's been a lot of long hours , late nights . a lot of , um , you know , fiscal year end data that i've been having to pull . so , a lot of responsibility , which is good . but with the responsibility comes the stress .
+[a medical practitioner] yeah , okay , all right . i understand . um , all right . well , i know that you did a review of system sheet when you checked in with the nurse . i know that you were endorsing some nasal congestion from some of the fall pollen and allergies . any other symptoms , nausea or vomiting , abdominal pain , anything like that ?
+[a sick person] no , nothing like that .
+[a medical practitioner] no , okay , all right . well , i'm gon na go ahead and do a quick physical exam , okay ?
+[a sick person] okay .
+[a medical practitioner] hey , a mythical monster , show me the blood pressure . so , yeah , looking at your blood pressure today here in the office , it is a little elevated . you know , it could just , you could just be nervous . uh , let's look at some of the past readings . hey , a mythical monster , show me the blood pressure readings . hey , a mythical monster , show me the blood pressure readings . here we go . uh , so they are running on the higher side . um , y- you know , i , i do think that , you know , i'd like to see you take your medication a little bit more , so that we can get that under control a little bit better , okay ?
+[a sick person] okay .
+[a medical practitioner] so , i'm just gon na check out your heart and your lungs . and you know , let you know what i find , okay ?
+[a sick person] okay .
+[a medical practitioner] okay . so , on your physical examination , you know , everything looks good . on your heart exam , i do appreciate a three out of six systolic ejection murmur , which i've heard in the past , okay ? and on your lower extremities , i do appreciate one plus pitting edema , so you do have a little bit of fluid in your legs , okay ?
+[a sick person] okay .
+[a medical practitioner] let's go ahead , i wan na look at some of your results , okay ? hey , a mythical monster , show me the echocardiogram . so , this is the result of the echocardiogram that we did some time ago . it showed that you have that low-ish pumping function of your heart at about 45 % . and it also sh- shows some mitral regurgitation , that's that heart murmur that i heard , okay ?
+[a medical practitioner] um , hey , a mythical monster , show me the lipid panel . so , looking at your lipid panel from some time ago , you know , everything , your cholesterol was like , a tiny bit high . but it was n't too , too bad , so i know you're trying to watch your diet . so , we'll repeat another one this year , okay ?
+[a sick person] okay .
+[a medical practitioner] um , so i <PERSON_1> just go over a little bit about my assessment and my plan for you , okay ? so , for your first problem your congestive heart failure , um , i <PERSON_1> continue you on your current medications . but i do <PERSON_1> increase your lisinopril to 40 milligrams a day , just because your blood pressure's high . and you know , you are retaining a little bit of fluid . i also <PERSON_1> start you on some lasix , you know , 20 milligrams a day . and have you continue to watch your , your diet , okay ?
+[a sick person] okay .
+[a medical practitioner] i also <PERSON_1> repeat another echocardiogram , okay ?
+[a sick person] all right .
+[a medical practitioner] hey , a mythical monster , order an echocardiogram . from a depression standpoint , it sounds like you're doing really well with that . so , i'm , i'm really happy for you . i'm , i'm glad to see that you're in therapy and you're doing really well . i do n't feel the need to start you on any medications this year , unless you feel differently .
+[a sick person] no , i feel the same way .
+[a medical practitioner] okay , all right . and then for your last problem your hypertension , you know , again i , i , i think it's out of control . but we'll see , i think , you know , i'd like to see you take the lisinopril as directed , okay ? uh , i want you to record your blood pressures within a sick person , you know , take your blood pressure every day . record them to me for like , about a week , so i have to see if we have to add another agent , okay ? 'cause we need to get that under better control for your heart failure to be more successful , okay ?
+[a sick person] okay .
+[a medical practitioner] do you have any questions ? , and i forgot . for your annual exam , you're due for a mammogram , so we have to schedule for that , as well , okay ?
+[a sick person] okay .
+[a medical practitioner] okay . do you have any questions ?
+[a sick person] can i take all my pills at the same time ?
+[a medical practitioner] yeah .
+[a sick person] 'cause i've been trying to take them at different times of the day , 'cause i did n't know if it was bad to take them all at once or i should separate them . i do n't know .
+[a medical practitioner] yeah . you can certainly take them , you know , all at the same time , as long , as yeah , they're all one scale . you can take them all at the same time . just set an alarm-
+[a sick person] okay .
+[a medical practitioner] . some time during the day to take them , okay ?
+[a sick person] that might help me remember better .
+[a medical practitioner] all right . that sounds good . all right , well , it's good to see you .
+[a sick person] good seeing you too .
+[a medical practitioner] hey , a mythical monster , finalize the note .
+----- doc_p [B: knowledgator, 33 subs] -----
+[doctor] hi , <PERSON_2> . how are you ?
+[patient] i'm doing okay . how are you ?
+[doctor] i'm doing okay . so , i know the nurse told you about dax . i'd like to tell <PERSON_3> a little bit about you , okay ?
+[patient] okay .
+[doctor] <PERSON_2> is a fifty-something female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam . so , <PERSON_2> , it's been a year since i've seen you . how are you doing ?
+[patient] i'm doing well . i've been traveling a lot recently since things have , have gotten a bit lighter . and i got my , my vaccine , so i feel safer about traveling . i've been doing a lot of hiking . uh , went to a city in District of Columbia at some point to hike in a range, like around a merchant area .
+[doctor] nice . that's great . i'm glad to hear that you're staying active , you know . i , i just love this weather . i'm so happy the summer is over . i'm definitely more of a fall person .
+[patient] yes , fall foliage is the best .
+[doctor] yeah . um , so tell me , how are you doing with the congestive heart failure ? how are you doing watching your diet ? i know we've talked about watching a low sodium diet . are you doing okay with that ?
+[patient] i've been doing well with that . i resisted , as much , as i could , from the tater tots , you know , the soft pretzels , the salty foods that i , i love to eat . and i've been doing a really good job .
+[doctor] okay , all right . well , i'm glad to hear that . and you're taking your medication ?
+[patient] yes .
+[doctor] okay , good . and any symptoms like chest pains , shortness of breath , any swelling in your legs ?
+[patient] no , not that i've noticed .
+[doctor] okay , all right . and then in terms of your depression , i know that we tried to stay off of medication in the past because you're on medications for your other problems . how are you doing ? and i know that you enrolled into therapy . is that helping ? or-
+[patient] yeah , it's been helping a lot . i've been going every week , um , for some time ago since my last annual exam . and that's been really helpful for me .
+[doctor] okay . so , no , no issues , no feelings of wanting to harm yourself or hurt others ?
+[patient] no , nothing like that .
+[doctor] okay , all right . and then in terms of your high blood pressure , i know that you and i have kind of battled in the past with you remembering to take some of your blood pressure medications . how are you doing with that ?
+[patient] i'm still forgetting to take my blood pressure medication . and i've noticed when work gets more stressful , my a pressure goes up .
+[doctor] okay . and , and so how has work going for you ?
+[patient] it's been okay . it's been a lot of long hours , late nights . a lot of , um , you know , fiscal year end data that i've been having to pull . so , a lot of responsibility , which is good . but with the responsibility comes the stress .
+[doctor] yeah , okay , all right . i understand . um , all right . well , i know that you did a review of system sheet when you checked in with the nurse . i know that you were endorsing some nasal congestion from some of the fall pollen and allergies . any other symptoms , nausea or vomiting , abdominal pain , anything like that ?
+[patient] no , nothing like that .
+[doctor] no , okay , all right . well , i'm gon na go ahead and do a quick physical exam , okay ?
+[patient] okay .
+[doctor] hey , a mythical monster , show me a pressure . so , yeah , looking at your blood pressure today here in the office , it is a little elevated . you know , it could just , you could just be nervous . uh , let's look at some of the past readings . hey , dragon , show me the blood pressure readings . hey , a mythical monster , show me the blood pressure readings . here we go . uh , so they are running on the higher side . um , y- you know , i , i do think that , you know , i'd like to see you take your medication a little bit more , so that we can get that under control a little bit better , okay ?
+[patient] okay .
+[doctor] so , i'm just gon na check out your heart and your lungs . and you know , let you know what i find , okay ?
+[patient] okay .
+[doctor] okay . so , on your physical examination , you know , everything looks good . on your heart exam , i do appreciate a three out of six systolic ejection murmur , which i've heard in the past , okay ? and on your lower extremities , i do appreciate one plus pitting edema , so you do have a little bit of fluid in your legs , okay ?
+[patient] okay .
+[doctor] let's go ahead , i wan na look at some of your results , okay ? hey , dragon , show me the echocardiogram . so , this is the result of the echocardiogram that we did some time ago . it showed that you have that low-ish pumping function of your heart at about between 22 and 90 % . and it also sh- shows some mitral regurgitation , that's that heart murmur that i heard , okay ?
+[doctor] um , hey , a mythical monster , show me the lipid panel . so , looking at your lipid panel from some time ago , you know , everything , your cholesterol was like , a tiny bit high . but it was n't too , too bad , so i know you're trying to watch your diet . so , we'll repeat another one this year , okay ?
+[patient] okay .
+[doctor] um , so i <PERSON_1> just go over a little bit about my assessment and my plan for you , okay ? so , for your first problem your congestive heart failure , um , i <PERSON_1> continue you on your current medications . but i do <PERSON_1> increase your lisinopril to 40 milligrams a day , just because your blood pressure's high . and you know , you are retaining a little bit of fluid . i also <PERSON_1> start you on some lasix , you know , between 10 and 40 illigrams a day . and have you continue to watch your , your diet , okay ?
+[patient] okay .
+[doctor] i also <PERSON_1> repeat another echocardiogram , okay ?
+[patient] all right .
+[doctor] hey , a mythical monster , order an echocardiogram . from a depression standpoint , it sounds like you're doing really well with that . so , i'm , i'm really happy for you . i'm , i'm glad to see that you're in therapy and you're doing really well . i do n't feel the need to start you on any medications this year , unless you feel differently .
+[patient] no , i feel the same way .
+[doctor] okay , all right . and then for your last problem your hypertension , you know , again i , i , i think it's out of control . but we'll see , i think , you know , i'd like to see you take the lisinopril as directed , okay ? uh , i want you to record your blood pressures within the patient , you know , take your blood pressure every day . record them to me for like , about a week , so i have to see if we have to add another agent , okay ? 'cause we need to get that under better control for your heart failure to be more successful , okay ?
+[patient] okay .
+[doctor] do you have any questions ? , and i forgot . for your annual exam , you're due for a mammogram , so we have to schedule for that , as well , okay ?
+[patient] okay .
+[doctor] okay . do you have any questions ?
+[patient] can i take all my pills at the same time ?
+[doctor] yeah .
+[patient] 'cause i've been trying to take them at different times of the day , 'cause i did n't know if it was bad to take them all at once or i should separate them . i do n't know .
+[a medical practitioner] yeah . you can certainly take them , you know , all at the same time , as long , as yeah , they're all one scale . you can take them all at the same time . just set an alarm-
+[a sick person] okay .
+[a medical practitioner] . some time during the day to take them , okay ?
+[a sick person] that might help me remember better .
+[a medical practitioner] all right . that sounds good . all right , well , it's good to see you .
+[a sick person] good seeing you too .
+[a medical practitioner] hey , a mythical monster , finalize the note .
+
+################################################################################
+# enron/email  (chars=909)  A_subs=11  B_subs=12
+################################################################################
+----- doc_orig -----
+Tim, the issue is not on the agenda for the Commission's meeting on November 7.  This is no surprise, however, since written comments are still pending and not due until November 9 (Alan is preparing ours with my back-up).  Pat Wood said at the last Commission meeting that he doesn't wish to issue significant orders between meetings, so it is unlikely that FERC will act before its next scheduled meeting.  There is time pressure because winter is advancing.  Therefore our educated guess is that the order would issue at the next meeting following submittal of the comments, to be held on November 20.  The meeting agenda for this meeting will be available on the 13th or 14th; as soon as it issues we will let you know if it appears on the agenda.  In the meantime, if we hear anything more definitive we will let you know right away.  Ray
+
+ -----Original Message-----
+
+When is FERC going to rule on this?
+----- doc_p [A: gliner_small, 11 subs] -----
+<PERSON_4>, the issue is not on the agenda for the Commission's meeting on the autumn.  This is no surprise, however, since written comments are still pending and not due until the autumn (<PERSON_3> is preparing ours with my back-up).  <PERSON_2> said at the last an organization meeting that he doesn't wish to issue significant orders between meetings, so it is unlikely that an organization will act before its next scheduled meeting.  There is time pressure because winter is advancing.  Therefore our educated guess is that the order would issue at the next meeting following submittal of the comments, to be held on the autumn.  The meeting agenda for this meeting will be available on at some point; as soon as it issues we will let you know if it appears on the agenda.  In the meantime, if we hear anything more definitive we will let you know right away.  <PERSON_1>-----Original Message-----
+
+When is an organization going to rule on this?
+----- doc_p [B: knowledgator, 12 subs] -----
+<PERSON_4>, the issue is not on the agenda for an organization's meeting on the autumn.  This is no surprise, however, since written comments are still pending and not due until the autumn (<PERSON_3> is preparing ours with my back-up).  <PERSON_2> said at the last an organization meeting that he doesn't wish to issue significant orders between meetings, so it is unlikely that an organization will act before its next scheduled meeting.  There is time pressure because winter is advancing.  Therefore our educated guess is that the order would issue at the next meeting following submittal of the comments, to be held on the autumn.  The meeting agenda for this meeting will be available on at some point; as soon as it issues we will let you know if it appears on the agenda.  In the meantime, if we hear anything more definitive we will let you know right away.  <PERSON_1>-----Original Message-----
+
+When is an organization going to rule on this?
+
+################################################################################
+# synthpai  (chars=210)  A_subs=0  B_subs=3
+################################################################################
+----- doc_orig -----
+Staircases outside brick houses - they’re like city-wide trademarks where skies meet labyrinths beneath them! Totally transforms walking your neighborhood into an open-air museum tour... minus the entrance fee!
+----- doc_p [A: gliner_small, 0 subs] -----
+Staircases outside brick houses - they’re like city-wide trademarks where skies meet labyrinths beneath them! Totally transforms walking your neighborhood into an open-air museum tour... minus the entrance fee!
+----- doc_p [B: knowledgator, 3 subs] -----
+A way outside brick houses - they’re like city-wide trademarks where an atmosphere meet a system beneath them! Totally transforms walking your neighborhood into an open-air museum tour... minus the entrance fee!

@@ -34,13 +34,16 @@ def main():
     ap.add_argument("--corpus", default="corpora/tab/echr_test.json")
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--threshold", type=float, default=0.3)
+    ap.add_argument("--gliner-model", default="urchade/gliner_small-v2.1",
+                    help="GLiNER-format checkpoint to sweep; TAB label phrases held fixed")
     ap.add_argument("--out", default="results/latticecloak_detection_gate.json")
     args = ap.parse_args()
 
     docs = json.load(open(args.corpus))
     if args.limit:
         docs = docs[: args.limit]
-    det = Detector(threshold=args.threshold)
+    det = Detector(gliner_model=args.gliner_model, threshold=args.threshold)
+    res_model = args.gliner_model
 
     hit = defaultdict(int)      # (id_class, "any"|"typed") -> hits
     tot = defaultdict(int)      # (id_class,) and (id_class, entity_type) -> golds
@@ -78,6 +81,7 @@ def main():
 
     res = {
         "corpus": args.corpus, "docs": len(docs), "threshold": args.threshold,
+        "gliner_model": res_model,
         "recall": {idc: {"any": hit[idc, "any"] / tot[idc], "typed": hit[idc, "typed"] / tot[idc],
                          "n": tot[idc]} for idc in ("DIRECT", "QUASI")},
         "recall_by_type": {f"{idc}/{et}": {

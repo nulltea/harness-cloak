@@ -51,7 +51,12 @@ shift at matched realized privacy.
 
 1. **Fix what's trainable.** The policy is *not* one big LLM; it's the cascade's two learnable parts:
    - the **candidate-selection ranker** — the model that picks a lattice level per span (this
-     *replaces* the τ-walk heuristic);
+     *replaces* the τ-walk heuristic). A `keep` level (no generalization) is in its action set, so it
+     also **absorbs detector over-detection**: a recall-biased detector may surface non-PII spans
+     (e.g. knowledgator's MISC firing on generic nouns —
+     `docs/research/learned-PII-detection.md` §5.1d), and the ranker learns to keep them at zero
+     privacy cost. This is why the detector is tuned for recall, not precision — over-detection is
+     the ranker's job, and more surfaced spans mean more signal to learn from.
    - the **residual infiller** (flan-t5-class enc-dec, 250–780M) — generates replacement text for
      spans that have no lattice entry.
    Everything else is **frozen**: detector, coref, lattices, the D1 extractor, the attack head.

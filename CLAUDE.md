@@ -1,4 +1,4 @@
-# agent-cloak — privacy layer for closed-box LLM inference
+# HarnessCloak — privacy layer for closed-box LLM inference
 
 ## Goal
 A **privacy layer for closed-box (remote) LLM inference**: locally rewrite a prompt `doc_orig` →
@@ -16,6 +16,12 @@ extraction-signal at once. Write-up: report `docs/html/infer-dtp.html`, taxonomy
    per-token metric-LDP token swaps — see `docs/research/learned-substitution.md`.
 2. **An efficient, tailored model architecture** for extraction (`out_p`→`out_final`), replacing the naive
    general-LLM extractor — a denoise/edit reconstructor, local, zero DP cost by post-processing immunity.
+
+**Positioning:** the pipeline must be **tailorable to specific user needs** — user-specified sensitive
+types and their generalization lattices, not only fixed schemas. The span detector is therefore a
+composition (supervised fixed-schema core + a cheap per-user-type path: gazetteer/zero-shot/fine-tune);
+zero-shot and fine-tune extensibility are first-class requirements. See
+`docs/research/learned-PII-detection.md`.
 
 **What matters (the only comparison that counts):** privacy vs utility at **matched realized privacy** —
 privacy measured against an **LLM re-identification attacker**, utility measured on `out_final`.
@@ -93,6 +99,12 @@ put with `status: stale` + `archive_reason`. `companion:` references repo-local 
   link** — `([arXiv 1234.56789](https://arxiv.org/abs/1234.56789))` (or DOI / ACL / venue link when there
   is no arXiv), placed right after the wiki-page link, inline and in any Sources list. Pull the id from the
   page's `external_ids` frontmatter, never from memory.
+
+## Scripts — one-time spikes go in `scripts/spikes/`
+
+One-off / throwaway scripts (ad-hoc comparisons, qualitative demos, exploratory probes) live in
+`scripts/spikes/`, **not** `scripts/`. `scripts/` is for durable, re-run workflows (gate, sweeps,
+corpus builders, training). If a spike graduates into a reusable workflow, move it up to `scripts/`.
 
 ## Naming — no plan-level identifiers in code or HTML
 
