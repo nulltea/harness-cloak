@@ -1,0 +1,349 @@
+{
+  "tau": 0.02,
+  "gen_model": "Qwen3.6-35B-A3B",
+  "docs_per_corpus": 16,
+  "absent_decomposition": {
+    "clinical": {
+      "n_replacements": 141,
+      "fractions": {
+        "exact": 0.071,
+        "fuzzy90": 0.007,
+        "loose": 0.106,
+        "absorbed": 0.816
+      }
+    },
+    "enron": {
+      "n_replacements": 145,
+      "fractions": {
+        "exact": 0.028,
+        "fuzzy90": 0.0,
+        "loose": 0.034,
+        "absorbed": 0.938
+      }
+    },
+    "aeslc": {
+      "n_replacements": 81,
+      "fractions": {
+        "exact": 0.0,
+        "fuzzy90": 0.0,
+        "loose": 0.049,
+        "absorbed": 0.951
+      }
+    },
+    "loose_examples": [
+      {
+        "corpus": "clinical",
+        "replacement": "a city in District of Columbia",
+        "surface": "washington",
+        "fuzz": 80.0,
+        "sim": 0.359,
+        "best_sent": "She has been traveling and hiking recently, including a trip to the District of Columbia, noting that she feels safer du"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "a range",
+        "surface": "northern cascades",
+        "fuzz": 71.4,
+        "sim": 0.224,
+        "best_sent": "**Age/Sex:** 50s Female"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "a region",
+        "surface": "mount baker area",
+        "fuzz": 75.0,
+        "sim": 0.235,
+        "best_sent": "**Physical Examination:**"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "some time ago",
+        "surface": "the past year",
+        "fuzz": 76.9,
+        "sim": 0.246,
+        "best_sent": "**Past Medical History:**"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "a location",
+        "surface": "mount baker area",
+        "fuzz": 70.0,
+        "sim": 0.242,
+        "best_sent": "**Patient:** <PERSON_2>"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "a Apostle",
+        "surface": "andrew",
+        "fuzz": 88.9,
+        "sim": 0.201,
+        "best_sent": "*   **Vitals:** Stable."
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "The summer",
+        "surface": "July thirty first",
+        "fuzz": 70.0,
+        "sim": 0.158,
+        "best_sent": "**Setting:** Emergency Room"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "The summer",
+        "surface": "July thirty first",
+        "fuzz": 70.0,
+        "sim": 0.158,
+        "best_sent": "**Setting:** Emergency Room"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "a king",
+        "surface": "james",
+        "fuzz": 83.3,
+        "sim": 0.273,
+        "best_sent": "**Age/Sex:** Fifty-something Male"
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "an event",
+        "surface": "four-way stop",
+        "fuzz": 75.0,
+        "sim": 0.271,
+        "best_sent": "The patient was stopped at a traffic event when her vehicle was rear-ended by another driver who was reportedly texting."
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "a wife",
+        "surface": "sarah",
+        "fuzz": 83.3,
+        "sim": 0.252,
+        "best_sent": "Patient presents for annual exam."
+      },
+      {
+        "corpus": "clinical",
+        "replacement": "a professional",
+        "surface": "doctor",
+        "fuzz": 71.4,
+        "sim": 0.352,
+        "best_sent": "Patient presents for her annual exam."
+      }
+    ]
+  },
+  "inversion_false_positives": {
+    "clinical": {
+      "matched_fire_rate": 0.113,
+      "null_fire_rate": 0.014,
+      "n_matched": 71,
+      "n_null": 71
+    },
+    "enron": {
+      "matched_fire_rate": 0.038,
+      "null_fire_rate": 0.0,
+      "n_matched": 78,
+      "n_null": 78
+    },
+    "aeslc": {
+      "matched_fire_rate": 0.0,
+      "null_fire_rate": 0.0,
+      "n_matched": 41,
+      "n_null": 41
+    }
+  },
+  "reader_placeholder_bias": {
+    "clinical": {
+      "no_privacy": {
+        "u_qa": 0.3444,
+        "n": 12
+      },
+      "tau_walk": {
+        "u_qa": 0.2384,
+        "n": 12
+      },
+      "all_placeholder": {
+        "u_qa": 0.1065,
+        "n": 12
+      },
+      "placeholder_examples": [
+        {
+          "doc": "aci/D2N001",
+          "surface": "martha",
+          "answer": "<PERSON_2>",
+          "inverted": "martha",
+          "f1": 1.0
+        },
+        {
+          "doc": "mts/0",
+          "surface": "Doctor",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "aci/D2N002",
+          "surface": "62-year-old",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "mts/1",
+          "surface": "Patient",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "aci/D2N003",
+          "surface": "61-year-old",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "aci/D2N004",
+          "surface": "57-year-old",
+          "answer": "tylenol",
+          "inverted": "tylenol",
+          "f1": 0.0
+        },
+        {
+          "doc": "mts/3",
+          "surface": "Patient",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "aci/D2N005",
+          "surface": "41-year-old",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        }
+      ]
+    },
+    "enron": {
+      "no_privacy": {
+        "u_qa": 0.1834,
+        "n": 8
+      },
+      "tau_walk": {
+        "u_qa": 0.0,
+        "n": 8
+      },
+      "all_placeholder": {
+        "u_qa": 0.0,
+        "n": 8
+      },
+      "placeholder_examples": [
+        {
+          "doc": "enron/0",
+          "surface": "FERC",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "enron/3",
+          "surface": "Kathleen Moazed",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "enron/4",
+          "surface": "John",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "enron/6",
+          "surface": "Gov Rowland",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "enron/7",
+          "surface": "TechRankings",
+          "answer": "Enterprise Portal Server",
+          "inverted": "Enterprise Portal Server",
+          "f1": 0.0
+        },
+        {
+          "doc": "enron/9",
+          "surface": "Linda",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "enron/11",
+          "surface": "Sidney Taurel",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "enron/14",
+          "surface": "Enron",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        }
+      ]
+    },
+    "aeslc": {
+      "no_privacy": {
+        "u_qa": 0.3667,
+        "n": 5
+      },
+      "tau_walk": {
+        "u_qa": 0.2,
+        "n": 5
+      },
+      "all_placeholder": {
+        "u_qa": 0.1667,
+        "n": 5
+      },
+      "placeholder_examples": [
+        {
+          "doc": "aeslc/allen-p_inbox_24",
+          "surface": "Phillip",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "aeslc/allen-p_inbox_84",
+          "surface": "PSA",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "aeslc/arnold-j_inbox_41",
+          "surface": "the Enron Center",
+          "answer": "",
+          "inverted": "",
+          "f1": 0.0
+        },
+        {
+          "doc": "aeslc/arora-h_inbox_3",
+          "surface": "STEAG",
+          "answer": "ORG_1>.",
+          "inverted": "ORG_1>.",
+          "f1": 0.0
+        },
+        {
+          "doc": "aeslc/bass-e_inbox_112",
+          "surface": "ENRON CORP.",
+          "answer": "ENRON",
+          "inverted": "ENRON",
+          "f1": 0.667
+        }
+      ]
+    }
+  }
+}

@@ -89,6 +89,17 @@ the opposite of their realized advantage (smoke test M3 below).
 - **E1 headroom unknown**: `gen_absent` ≈ 95% conflates loosely-echoed (recoverable by better
   alignment) with absorbed (unrecoverable). This split (M1) gates the whole fork below.
 
+### Gap 4 — detection is nondeterministic across processes (found during Phase M)
+
+Fresh processes produce different `doc_p` for the same document (measured: 3/6 clinical doc
+hashes differ between two identical runs; stable within a process) — borderline GLiNER span
+scores flip under the ROCm fp16 kernels on long multi-chunk docs. Consequences: remote-cache
+reuse silently breaks (a re-run regenerates instead of hitting cache), and no cached-round-trip
+result is reproducible run-to-run. **Fix (implemented 2026-07-03): the constructed arms are a
+persisted artifact** — `scripts/build_arms_artifact.py` → `data/task_arms_tau0.02.json`; every
+consumer (gate, diagnostics, training environment) loads the artifact and never re-detects.
+Kernel-level determinism is deliberately not chased (ponytail: artifact beats fighting fp16).
+
 ### Other component gaps (context, not RL blockers)
 
 - **Lattice shallowness**: most spans carry 1–3 levels (dates often exactly 1) → the E0 ranker
@@ -133,17 +144,33 @@ either is built.
 
 ## Fix plan — ordered
 
-**Phase M — measurements that gate decisions (local/cached, ~a day total).**
+**Phase M — measurements that gate decisions. DONE 2026-07-03**
+(`scripts/surrogate_env_diagnostics.py` → `results/surrogate_env_diagnostics.json`, computed on
+the persisted arms artifact; 16 docs × tau_walk/all_floor × 3 corpora):
 
-- **M1. `gen_absent` decomposition** (gates the fork): for every absent fill in the cached
-  constructed-arms out_p, best fuzzy-alignment score + embedding max-similarity against out_p →
-  histogram loose-echo vs absorbed. Output: E1 headroom %, residual mode gap for ŝ.
-- **M2. Coincidence-echo false-positive rate** (ground-truth integrity): null control — invert
-  each out_p against a *mismatched* document's R; every inversion that fires is a false
-  positive. If material, fact recall needs a verification gate before it is trusted further.
-- **M3. Reader-on-placeholder bias**: u_qa on placeholder-only vs naturalistic-only arms of the
-  same docs (local). If the reader tanks on placeholders, u_qa carries an anti-placeholder bias
-  to correct (probe phrasing or reader swap) before any reward is trusted.
+- **M1. `gen_absent` decomposition — absorption dominates; the (a)/(b) fork is resolved.**
+  Unique gen replacements classed by echo in cached out_p: **absorbed 81.6% clinical / 93.8%
+  enron / 95.1% aeslc**; loosely echoed (fuzzy ≥ 70 or embedding sim ≥ 0.6) only 10.6/3.4/4.9% —
+  and inspection shows part of the loose bin is spurious (fuzzy 70–76 hits on note section
+  headers), so true E1-aligner headroom is below 10% everywhere. **Consequence: the E1 semantic
+  aligner is descoped from the critical path** (Phase 3 → optional experiment); the echo factor
+  must be won at *fill-choice time* — anchor modes and the ŝ prior — not at extraction time.
+- **M2. Coincidence-echo false positives — pass.** Null-control fire rate 1.4% clinical, 0%
+  enron/aeslc (matched rates 11.3/3.8/0%). Fact recall is clean at current inversion
+  thresholds; do not lower them chasing the loose bin (M1 says it isn't worth it, and FP would
+  grow).
+- **M3. Reader-on-placeholder bias — confirmed, mechanism identified.** u_qa arm means
+  (no_privacy / tau_walk / all_placeholder): clinical 0.344 / 0.238 / **0.107**; aeslc 0.367 /
+  0.2 / 0.167; enron 0.183 / 0 / 0. The realizedly-best-surviving mode is under-scored ~2×.
+  Mechanism: SQuAD2 **null-answer abstention** on placeholder tokens — when the reader does
+  select one ("<PERSON_2>"), inversion restores it at F1 = 1.0. **Consequence: u_qa must be
+  mode-aware — placeholder-mode spans are scored by the ŝ echo-survival prior (their fact
+  carriage is anchor-mechanical, not semantic), the reader path applies to naturalistic fills
+  only.** This folds into Phase 4's reward composition.
+
+**Revised critical path after Phase M:** Phase 1 (candidate-sensitive risk) → Phase 2
+(injectivity + hygiene) → Phase 4 (ŝ + mode-aware u_qa) → Phase 5 (re-gate) → RL.
+E1 alignment work is off the critical path; revisit only if the eval residual implicates it.
 
 **Phase 1 — candidate-sensitive risk probe (the RL unblocker, ~1–2 days).**
 Promote appositive-style guess-back into `cloak/probe.py` as the single risk function (gate +
