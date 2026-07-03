@@ -1,0 +1,176 @@
+{
+  "docs": 285,
+  "gliner_model": "nvidia/gliner-PII",
+  "route_counts": {
+    "bucket": 902,
+    "geonames": 169,
+    "placeholder": 211,
+    "wordnet": 50,
+    "teacher": 23
+  },
+  "teacher_unique": 23,
+  "entities": {
+    "izakayas": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "a caf\u00e9s turning into faceless 24/7 marts.   Missing those cozy hole-in-the-wall Izakayas.  Not every new shop's soul-free; found"
+    },
+    "kanpai": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "s solo - colleagues were floored!  Got into mixology instead of just being all \"kanpai!\"\u2014flexed creativity over cocktails at p"
+    },
+    "under-30": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "ging faster than senior devs \u2013 defies age + job title norms too right  they see under-30 & suddenly i'm IT support \ud83d\ude02  def notice"
+    },
+    "le gente": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "ough  love teaching now but never saw it coming either lol  it's crazy how much le gente you work with can make or break your jo"
+    },
+    "polleras": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "- that local caf\u00e9 chat or neighbourly favours. It morphs as we do, doesn't it?  Polleras during festivities\u2014colorful sight!  Swi"
+    },
+    "dem": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "ting dis - it's all 'bout finding someone who gets your kind a crazy n matching dem step fi step"
+    },
+    "nordic noir": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "od jog or some fresh air! plus they're serious life-savers for free workouts \ud83d\ude09  nordic noir book clubs meetups are seriously underr"
+    },
+    "masterchef": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "ried cooking; burnt toast isn't romantic though!  Definitely need levelling up! Masterchef dreams here we come?  \"Nostalgia shapes"
+    },
+    "ww2": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "old buildings here hide dark ww2 stories...kinda haunting  spirits remin"
+    },
+    "petersburgian": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "Frozen fingers make turning pages tough!  Feels like navigating through Gogol's Petersburgian mists some days!  Got caught up in some"
+    },
+    "tolstoyan": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "amidst Moscow\u2019s historical grandeur certainly colors tales I spin \u2013 glimpses of Tolstoyan landscapes might sneak into chats more "
+    },
+    "tokoloshe": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": " of something bigger when you share em with friends at night \ud83d\ude05  heard some wild tokoloshe tales growing up here  hearing creepy h"
+    },
+    "kalindula": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "ason right on main streets! talk about public displays of affection amped up \ud83d\ude05  kalindula bands at bus stations - always an exper"
+    },
+    "defo": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "Winter's mint here; defo keeps you on your toes!  A riveting pod"
+    },
+    "buka": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": " of the noise or hustle outside.   ya, nothing beats mingling smells from local buka stalls - always feels like home.   feel"
+    },
+    "reddit": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "oices imo  not much changed for me tbh \u2013 still crushing design concepts between reddit deep dives \ud83c\udfa8 no SO means no new salsa s"
+    },
+    "lowkey": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "way cram sessions > frostbite any day! pro tip = streamlining your playlist can lowkey improve the sardine-can scenario\u0014\ud83d\ude87\u2728  gr"
+    },
+    "forschung und finanzen": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "ademia or spin circles elsewhere. Makes sense each path differs\u2014I mean, look at Forschung und Finanzen\u2014but universal \u2018right times\u2019? Nope!  Fel"
+    },
+    "\u00fchrungssystem": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "hich point you \u201cshould\u201d have things sorted didn\u2019t account for life\u2019s curveballs.\u00fchrungssystem  Grappling with finances never really s"
+    },
+    "kol\u00e1\u010de": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "always adjusting - rigid schedules clash hard with real life chat sessions over kol\u00e1\u010de next door \ud83d\ude12  Work definitely spills ove"
+    },
+    "starbucks": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "Starting to feel like Starbucks' underground renaissance... too much?  "
+    },
+    "mamak": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "s add flavor beyond just snacks \u2014 urban soundtrack!  There\u2019s actually this tiny Mamak stall tucked away behind skyscrapers - "
+    },
+    "east-meets-west": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "more than birthplaces do.  Nostalgia hits different when you've got that mix of east-meets-west heritage.   Not everyone feels that pul"
+    }
+  },
+  "wall_s": 198.7
+}

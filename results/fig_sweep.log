@@ -1,0 +1,22 @@
+############### GATE(test) know_pii_base = knowledgator/gliner-pii-base-v1.0 ###############
+  "wall_s": 45.9
+}
+############### INVENTORY(300) know_pii_base = knowledgator/gliner-pii-base-v1.0 ###############
+  "wall_s": 64.0
+}
+top teacher entities: ['uni', 'reddit', 'netflix', 'ikea', 'starbucks', 'econ', 'himym', 'millennials', 'izakayas', 'konbini', 'pasquetta', 'under-30']
+############### GATE(test) multi_pii_v1 = urchade/gliner_multi_pii-v1 ###############
+  "wall_s": 74.9
+}
+############### INVENTORY(300) multi_pii_v1 = urchade/gliner_multi_pii-v1 ###############
+  "wall_s": 85.4
+}
+top teacher entities: ['uni', 'netflix', 'psych', 'starbucks', 'adulting', 'fam', 'public transport apps', 'what-ifs', 'bake-off', 'izakayas', 'stats', 'big 3-0']
+############### GATE(test) nvidia_pii = nvidia/gliner-PII ###############
+  "wall_s": 145.8
+}
+############### INVENTORY(300) nvidia_pii = nvidia/gliner-PII ###############
+  "wall_s": 198.7
+}
+top teacher entities: ['izakayas', 'kanpai', 'under-30', 'le gente', 'polleras', 'dem', 'nordic noir', 'masterchef', 'ww2', 'petersburgian', 'tolstoyan', 'tokoloshe']
+=== FIG SWEEP DONE ===

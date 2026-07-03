@@ -377,19 +377,30 @@
     path does not need gold-span fallback.</p>
 
     <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 01 — TAB recall per entity type, direct vs quasi</span><span class="r">source: results/latticecloak_detection_gate.json · N=127 docs</span></div>
+      <div class="plot-cap"><span class="l">FIG · 01 — TAB recall per entity type, direct vs quasi</span><span class="r" id="fig01-src"></span></div>
+      <div class="fig01-toggle" style="display:flex;gap:8px;margin:2px 0 12px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:#6b7280;">detector</span>
+        <button type="button" data-m="gliner_small" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">GLiNER-small (current)</button>
+        <button type="button" data-m="knowledgator" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">knowledgator pii-base</button>
+        <button type="button" data-m="multi_pii" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">gliner_multi_pii-v1</button>
+        <button type="button" data-m="nvidia" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">nvidia gliner-PII</button>
+      </div>
       <div style="display:flex;gap:14px;flex-wrap:wrap;">
         <div id="plot-gate-any" style="flex:1 1 320px;min-width:300px;height:340px;"></div>
         <div id="plot-gate-typed" style="flex:1 1 320px;min-width:300px;height:340px;"></div>
       </div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">violet = DIRECT, green = QUASI. Direct identifiers are near-ceiling everywhere; the quasi weaknesses concentrate in DEM, MISC and QUANTITY, the categories needing document-level reasoning rather than span matching.</span></div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" id="fig01-read" style="text-transform:none;letter-spacing:0;font-size:11px;"></span></div>
     </div>
     <p class="prose"><strong>Conclusion.</strong> The detection gate passes (0.998 any-overlap, 0.997
     entity-level, both observed on this test set). The measured weak categories (QUASI DEM 0.56, MISC 0.21,
     QUANTITY 0.25 any-recall) are the fuzzy "demographic attribute / other identifying event" spans; on the
     round-trip corpus their impact is priced by the attacker, not hidden by the detector. One smoke-run fix
     mattered: every initially missed DIRECT mention was an ECtHR application number, eliminated by a single
-    numeric-reference pattern rather than threshold tuning.</p>
+    numeric-reference pattern rather than threshold tuning. <strong>Detector toggle:</strong> the same
+    gate run on three off-the-shelf PII fine-tunes shows the recall/precision spread — knowledgator
+    gliner-pii-base lifts QUASI any-recall to 0.888 (QUANTITY 0.25&rarr;0.60, MISC 0.21&rarr;0.32) at
+    higher precision (0.752), the chosen Arm-B initialization; nvidia gliner-PII maximizes precision
+    (0.956) and DIRECT recall but bottoms out on QUASI (0.808), the wrong bias for the privacy ceiling.</p>
 
     <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.2 Span routing and teacher economics on SynthPAI</h4>
     <p class="prose">Routing of detected spans across lattice sources on the full 300-profile corpus
@@ -401,15 +412,25 @@
     of the corpus for routing purposes.</p>
 
     <div class="plot-frame">
-      <div class="plot-cap"><span class="l">FIG · 02 — route shares of detected spans, full corpus</span><span class="r">source: results/latticecloak_inventory.json · N=2,438 spans / 300 docs</span></div>
+      <div class="plot-cap"><span class="l">FIG · 02 — route shares of detected spans, full corpus</span><span class="r" id="fig02-src"></span></div>
+      <div class="fig02-toggle" style="display:flex;gap:8px;margin:2px 0 12px;align-items:center;flex-wrap:wrap;">
+        <span style="font-size:11px;text-transform:uppercase;letter-spacing:0.06em;color:#6b7280;">detector</span>
+        <button type="button" data-m="gliner_small" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">GLiNER-small (current)</button>
+        <button type="button" data-m="knowledgator" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">knowledgator pii-base</button>
+        <button type="button" data-m="multi_pii" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">gliner_multi_pii-v1</button>
+        <button type="button" data-m="nvidia" style="font:inherit;font-size:12px;padding:4px 12px;border:1px solid rgba(20,24,28,0.25);border-radius:4px;background:transparent;cursor:pointer;">nvidia gliner-PII</button>
+      </div>
       <div id="plot-routes" style="width:100%;height:360px;"></div>
-      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">gray bars = share of detected spans per lattice source. The generative teacher is a 2.2% residue: substitution is almost entirely dictionaries and rules.</span></div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" id="fig02-read" style="text-transform:none;letter-spacing:0;font-size:11px;"></span></div>
     </div>
     <p class="prose"><strong>Conclusion.</strong> The zero-call bootstrap thesis holds at corpus scale:
     97.8% of detected spans never touch a generative model, the full-corpus lattice cache builds in
     under two minutes on-box, and E4B handled most of the pilot's lattice writing (4/36 escalations, 1
     floor). Scaling the substitutor is not a cost concern; the metered cost lives entirely in the evaluation
-    round trips.</p>
+    round trips. <strong>Detector toggle:</strong> routing shifts materially with the detector — the
+    recall-biased knowledgator and multi_pii route more to WordNet, while the conservative nvidia
+    detector emits far fewer spans (1,355 vs 2,438) and floors two-thirds into date/amount rules; the
+    route mix is a downstream fingerprint of each detector's recall/precision bias.</p>
 
     <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.3 The &tau; knob: leakage and utility probes across operating points</h4>
     <p class="prose">LatticeCloak has no privacy budget &epsilon;; its operating-point knob is <strong>&tau;</strong>,
@@ -962,28 +983,79 @@
       {displayModeBar:false, responsive:true});
   }
 
-  // FIG 01 — TAB recall per entity type (source: results/latticecloak_detection_gate.json)
+  // FIG 01 — TAB recall per entity type, per detector (gate on echr_test, N=127)
   var types = ["CODE","DATETIME","ORG","PERSON","DEM","LOC","MISC","QUANTITY"];
-  var directAny  = [1.000, 1.000, 1.000, 0.996, null, null, null, null];
-  var quasiAny   = [0.757, 0.993, 0.924, 0.975, 0.563, 0.966, 0.214, 0.254];
-  var directTyp  = [0.966, 1.000, 0.667, 0.996, null, null, null, null];
-  var quasiTyp   = [0.680, 0.993, 0.706, 0.968, 0.316, 0.929, 0.000, 0.226];
-  barPanel("plot-gate-any", "any-overlap recall (↑)", types,
-           "DIRECT", directAny, "QUASI", quasiAny, [0, 1.05]);
-  barPanel("plot-gate-typed", "typed recall (↑)", types,
-           "DIRECT", directTyp, "QUASI", quasiTyp, [0, 1.05]);
+  var FIG01 = {
+    gliner_small: {
+      src:"source: results/latticecloak_detection_gate.json · echr_test N=127 · DIRECT any 0.998 / QUASI any 0.857 / prec 0.716",
+      read:"Violet DIRECT · green QUASI. Current detector. Direct near-ceiling; quasi weaknesses concentrate in MISC 0.21, QUANTITY 0.25, DEM 0.56 — the document-level categories.",
+      directAny:[1.000,1.000,1.000,0.996,null,null,null,null], quasiAny:[0.757,0.993,0.924,0.975,0.563,0.966,0.214,0.254],
+      directTyp:[0.966,1.000,0.667,0.996,null,null,null,null], quasiTyp:[0.680,0.993,0.706,0.968,0.316,0.929,0.000,0.226]},
+    knowledgator: {
+      src:"source: results/latticecloak_detection_gate_know_pii_base.json · echr_test N=127 · DIRECT any 0.998 / QUASI any 0.888 / prec 0.752",
+      read:"Violet DIRECT · green QUASI. Best QUASI recall (0.888) at higher precision (0.752). Largest gains on the weak types: QUANTITY 0.25→0.60, MISC 0.21→0.32, ORG 0.92→0.95. The recommended Arm-B init.",
+      directAny:[1.000,1.000,1.000,0.996,null,null,null,null], quasiAny:[0.791,0.995,0.949,0.984,0.586,0.970,0.324,0.596],
+      directTyp:[0.986,1.000,0.833,0.996,null,null,null,null], quasiTyp:[0.694,0.994,0.759,0.967,0.340,0.899,0.022,0.568]},
+    multi_pii: {
+      src:"source: results/latticecloak_detection_gate_multi_pii_v1.json · echr_test N=127 · DIRECT any 0.993 / QUASI any 0.843 / prec 0.823",
+      read:"Violet DIRECT · green QUASI. Conservative: high precision (0.823) at lower QUASI recall (0.843); PERSON 0.90 and ORG 0.84 drop below the baseline. The high-precision / low-recall PII fine-tune.",
+      directAny:[1.000,1.000,1.000,0.988,null,null,null,null], quasiAny:[0.762,0.994,0.835,0.901,0.593,0.927,0.268,0.408],
+      directTyp:[0.979,1.000,0.667,0.988,null,null,null,null], quasiTyp:[0.684,0.988,0.667,0.885,0.348,0.824,0.046,0.352]},
+    nvidia: {
+      src:"source: results/latticecloak_detection_gate_nvidia_pii.json · echr_test N=127 · DIRECT any 1.000 / QUASI any 0.808 / prec 0.956",
+      read:"Violet DIRECT · green QUASI. Highest precision (0.956) and perfect DIRECT, but the lowest QUASI recall (0.808): MISC 0.17, QUANTITY 0.18 — the precision-favoring extreme, the wrong bias for a privacy ceiling.",
+      directAny:[1.000,1.000,1.000,1.000,null,null,null,null], quasiAny:[0.752,0.994,0.704,0.949,0.546,0.927,0.173,0.178],
+      directTyp:[0.966,1.000,0.667,0.996,null,null,null,null], quasiTyp:[0.680,0.994,0.487,0.940,0.346,0.868,0.000,0.118]}
+  };
+  function drawFig01(m) {
+    var d = FIG01[m];
+    barPanel("plot-gate-any", "any-overlap recall (↑)", types, "DIRECT", d.directAny, "QUASI", d.quasiAny, [0,1.05]);
+    barPanel("plot-gate-typed", "typed recall (↑)", types, "DIRECT", d.directTyp, "QUASI", d.quasiTyp, [0,1.05]);
+    var s = document.getElementById("fig01-src"); if (s) s.textContent = d.src;
+    var r = document.getElementById("fig01-read"); if (r) r.textContent = d.read;
+    document.querySelectorAll(".fig01-toggle button").forEach(function (b) {
+      var on = b.dataset.m === m; b.style.background = on?INK:"transparent"; b.style.color = on?"#fff":INK; b.style.fontWeight = on?"600":"400";
+    });
+  }
+  document.querySelectorAll(".fig01-toggle button").forEach(function (b) {
+    b.addEventListener("click", function () { drawFig01(b.dataset.m); });
+  });
+  drawFig01("gliner_small");
 
-  // FIG 02 — route shares, full corpus (source: results/latticecloak_inventory.json)
-  var routes = ["bucket","placeholder","geonames","wordnet","teacher"];
-  var n300 = 2438.0;
-  var share300 = [928/n300, 432/n300, 622/n300, 402/n300, 54/n300];
-  Plotly.react("plot-routes", [
-    {x:routes, y:share300, type:"bar", marker:{color:BASE},
-     hovertemplate:"%{x}: %{y:.1%}<extra></extra>"}
-  ], Object.assign({height:360, margin:{t:34,r:12,b:56,l:48},
-    title:{text:"route share of detected spans (N=2,438)", font:{size:13,color:INK}, x:0, xanchor:"left"},
-    xaxis:{gridcolor:GRID}, yaxis:{range:[0,0.45], tickformat:".0%", gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
-    showlegend:false}, base), {displayModeBar:false, responsive:true});
+  // FIG 02 — route shares of detected spans, per detector (inventory, 300 SynthPAI docs)
+  var routes = ["date/amount","placeholder","geonames","wordnet","teacher"];
+  var FIG02 = {
+    gliner_small: {counts:[928,432,622,402,54], total:2438,
+      src:"source: results/latticecloak_inventory.json · 300 docs / 2,438 spans",
+      read:"Navy = share of detected spans per lattice source. Current detector: teacher residue 2.2%; substitution is almost entirely rules, GeoNames and WordNet."},
+    knowledgator: {counts:[957,249,287,524,78], total:2095,
+      src:"source: results/latticecloak_inventory_know_pii_base.json · 300 docs / 2,095 spans",
+      read:"Navy = share per source. Routes more to WordNet (25%) and less to placeholders (12%) and GeoNames (14%) — fewer bare names, more lexical spans. Teacher residue 3.7%."},
+    multi_pii: {counts:[924,229,484,1039,78], total:2754,
+      src:"source: results/latticecloak_inventory_multi_pii_v1.json · 300 docs / 2,754 spans",
+      read:"Navy = share per source. Detects the most spans (2,754), WordNet-heavy (38%) — many route to lexical generalization. Teacher residue 2.8%."},
+    nvidia: {counts:[902,211,169,50,23], total:1355,
+      src:"source: results/latticecloak_inventory_nvidia_pii.json · 300 docs / 1,355 spans",
+      read:"Navy = share per source. Detects the fewest spans (1,355); two-thirds route to date/amount rules and WordNet nearly vanishes (4%) — the conservative detector leaves little to generalize."}
+  };
+  function drawFig02(m) {
+    var d = FIG02[m], sh = d.counts.map(function (c) { return c/d.total; });
+    Plotly.react("plot-routes", [
+      {x:routes, y:sh, type:"bar", marker:{color:"#2a5092"}, hovertemplate:"%{x}: %{y:.1%}<extra></extra>"}
+    ], Object.assign({height:360, margin:{t:34,r:12,b:56,l:48},
+      title:{text:"route share of detected spans (N="+d.total.toLocaleString()+")", font:{size:13,color:INK}, x:0, xanchor:"left"},
+      xaxis:{gridcolor:GRID}, yaxis:{range:[0,0.7], tickformat:".0%", gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
+      showlegend:false}, base), {displayModeBar:false, responsive:true});
+    var s = document.getElementById("fig02-src"); if (s) s.textContent = d.src;
+    var r = document.getElementById("fig02-read"); if (r) r.textContent = d.read;
+    document.querySelectorAll(".fig02-toggle button").forEach(function (b) {
+      var on = b.dataset.m === m; b.style.background = on?INK:"transparent"; b.style.color = on?"#fff":INK; b.style.fontWeight = on?"600":"400";
+    });
+  }
+  document.querySelectorAll(".fig02-toggle button").forEach(function (b) {
+    b.addEventListener("click", function () { drawFig02(b.dataset.m); });
+  });
+  drawFig02("gliner_small");
 
   // FIG 03 — tau sweep across eval regimes (toggle: extend-prefix / clinical / email)
   var TAURAMP = ["#cfe0f0","#8fb0d6","#4f7bb0","#2a5092"]; // tau (ordered) ramp

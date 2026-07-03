@@ -34,14 +34,21 @@ def route(span) -> str:
 
 
 def main():
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--gliner-model", default="urchade/gliner_small-v2.1")
+    ap.add_argument("--n", type=int, default=60)
+    ap.add_argument("--out", default="data/latticecloak_teacher_entities.json")
+    args = ap.parse_args()
+
     import nltk
     try:
         nltk.data.find("corpora/wordnet")
     except LookupError:
         nltk.download("wordnet", quiet=True)
 
-    docs = load_docs(60)
-    det = Detector()
+    docs = load_docs(args.n)
+    det = Detector(gliner_model=args.gliner_model)
     routes = Counter()
     teacher = defaultdict(lambda: {"count": 0, "types": Counter(), "context": ""})
     t0 = time.time()
@@ -65,16 +72,17 @@ def main():
                 if not e["context"]:
                     e["context"] = doc["text"][max(0, s.start - 80):s.end + 40].replace("\n", " ")
         if (i + 1) % 20 == 0:
-            print(f"[{i+1}/60] spans so far: {sum(routes.values())} ({time.time()-t0:.0f}s)", flush=True)
+            print(f"[{i+1}/{len(docs)}] spans so far: {sum(routes.values())} "
+                  f"({time.time()-t0:.0f}s)", flush=True)
 
     out = {
-        "docs": len(docs), "route_counts": dict(routes),
+        "docs": len(docs), "gliner_model": args.gliner_model, "route_counts": dict(routes),
         "teacher_unique": len(teacher),
         "entities": {k: {"count": v["count"], "types": dict(v["types"]), "context": v["context"]}
                      for k, v in sorted(teacher.items(), key=lambda kv: -kv[1]["count"])},
         "wall_s": round(time.time() - t0, 1),
     }
-    json.dump(out, open("data/latticecloak_teacher_entities.json", "w"), indent=2)
+    json.dump(out, open(args.out, "w"), indent=2)
     print(json.dumps({k: out[k] for k in ("route_counts", "teacher_unique", "wall_s")}, indent=2))
     print("top teacher entities:",
           [k for k in list(out["entities"])[:12]])

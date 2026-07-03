@@ -1,0 +1,463 @@
+{
+  "docs": 285,
+  "gliner_model": "urchade/gliner_multi_pii-v1",
+  "route_counts": {
+    "wordnet": 1039,
+    "bucket": 924,
+    "geonames": 484,
+    "placeholder": 229,
+    "teacher": 78
+  },
+  "teacher_unique": 64,
+  "entities": {
+    "uni": {
+      "count": 6,
+      "types": {
+        "ORG": 6
+      },
+      "context": "e?  Monthly bills are definitely feeling that pinch!  Rocks seemed cool back at uni; now they pay the bills but definitely "
+    },
+    "netflix": {
+      "count": 4,
+      "types": {
+        "ORG": 4
+      },
+      "context": " things real  pivot from spreadsheets to storytelling changed everything - even Netflix tastes evolved!  definitely didn\u2019t expe"
+    },
+    "psych": {
+      "count": 3,
+      "types": {
+        "ORG": 3
+      },
+      "context": "h!  Definitely felt that traditional mold pressing in during grad school days \u2013 psych wasn't always seen as 'masculine'. Time"
+    },
+    "starbucks": {
+      "count": 3,
+      "types": {
+        "ORG": 3
+      },
+      "context": "sites always layers deep!  Change jars; we anticipate frozen time capsules, not Starbucks replacements!  Exploring local free eve"
+    },
+    "adulting": {
+      "count": 2,
+      "types": {
+        "MISC": 2
+      },
+      "context": "asing after with every candle added to the birthday cake?  Question: What's an 'adulting' milestone you're proud of, but seems t"
+    },
+    "fam": {
+      "count": 2,
+      "types": {
+        "ORG": 2
+      },
+      "context": "t certain ages carry in society's eyes. hit the 3-0 not long back, and suddenly fam's all about when's the house coming, wh"
+    },
+    "public transport apps": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "Public transport apps are gold - always have backups for when"
+    },
+    "what-ifs": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " and i'm like 'yep, this is solid' but then i got days where i'm dreaming about what-ifs. anyone out there ended up somewhere th"
+    },
+    "bake-off": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "d girls, you know? But just the other day, saw a dude effortlessly dominating a bake-off, and a lady in our neighborhood runs th"
+    },
+    "izakayas": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "a caf\u00e9s turning into faceless 24/7 marts.   Missing those cozy hole-in-the-wall Izakayas.  Not every new shop's soul-free; found"
+    },
+    "stats": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "rs-wise often higher-ups tip towards guys... makes you ponder glass ceilings \ud83e\uddd0  Stats show increasing industry gender parity "
+    },
+    "big 3-0": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": " collection - talking thousands! Who knew stationery could be an 'investment'?  Big 3-0 didn\u2019t phase me at all\u2014just another day"
+    },
+    "old juice spot": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": " saudades do old-school boteco vibes before all turned too fancy  man... saw an old botequim get swapped out for yet another phone s"
+    },
+    "authentic convos": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "hers aren't all lofty thinkers; pragmatism abounds too!  Social intent matters; authentic convos over analytical ones keep dinners livel"
+    },
+    "coding meetups": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " not so much  still plenty biases around here  definitely see less diversity at coding meetups vs other fields  word on that - always "
+    },
+    "flamengo": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "l\u00edbrio always  Sempre ou\u00e7o sobre o \"Cabe\u00e7a de Cuia\". Spooky stuff!  Banguela do Flamengo freaks out everyone here... kids avoid "
+    },
+    "life's soir\u00e9es": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "imes.  Grants covering rare book acquisitions always raise eyebrows!  \u00c0 thirty, life's soir\u00e9es just come with deeper conversations!  N"
+    },
+    "small neighborhood caf\u00e9s": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "et's just say students aren't sipping lattes 24/7 \ud83d\ude2c  Sometimes just chilling at small neighborhood caf\u00e9s gets you into impromptu jazz sessions \u2013"
+    },
+    "mus\u00e9e d'orsay": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "intage bookshops swapped for trendy cafes - charm lost.  Sometimes \"me time\" at Mus\u00e9e d'Orsay recharges me.  Not just art, even silen"
+    },
+    "zeitgeist apps": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": " we can't ignore when swiping right or left.   Dating's canvas gets textured by zeitgeist apps\u2014curates diverse heartscapes.  Felt no p"
+    },
+    "me-time": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "ike building model rockets when my social calendar cleared up lately! Who knew \"me-time\" could reignite such blasts from the pa"
+    },
+    "squeezing pockets hard\n\nnew highrises": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "e's hit or miss here too  parks = best chill zones post-exam stress  rent hikes squeezing pockets hard  new highrises make sense - getting pricey everywhere "
+    },
+    "mtv": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": " out life especially those $$$ details? blurrier than overplayed music video on mtv back when they did cool things & not ju"
+    },
+    "dia sin carro": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "y game with beer kinda lit tbh  haha so true! but get this - over here we have \"Dia sin carro\" where cars practically vanish off road"
+    },
+    "polleras": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "- that local caf\u00e9 chat or neighbourly favours. It morphs as we do, doesn't it?  Polleras during festivities\u2014colorful sight!  Swi"
+    },
+    "dem": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "ting dis - it's all 'bout finding someone who gets your kind a crazy n matching dem step fi step"
+    },
+    "local caf\u00e9": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "ess poetic more real talk.  rocks? just rocks? doesn't sound too thrilling tbh  local caf\u00e9 has sick pastel de nata  little square "
+    },
+    "married yet?": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " your stuff sorted out at 30, man. suddenly every relative's like \"own place?\" \"married yet?\" - pressure\u2019s real even if you're same "
+    },
+    "team science ftw": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " might just be key for that next big discovery. Labs aren't solo shows anymore; team science ftw!  STEM fields seeing more female leader"
+    },
+    "casa": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "memories fade bro...but that local culture vibe sticks  Always thought casa was just four walls till life threw som"
+    },
+    "flation": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "ackground noise.  Outpaced by cost of living leaps even though paycheck grows...flation never takes a break!  Degree opened doo"
+    },
+    "budget-wise": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "king calls impacting community health really drove home grown-up vibes for me!  Budget-wise sure feels grown-up but nailing down re"
+    },
+    "masterchef": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "ried cooking; burnt toast isn't romantic though!  Definitely need levelling up! Masterchef dreams here we come?  \"Nostalgia shapes"
+    },
+    "ww2": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "old buildings here hide dark ww2 stories...kinda haunting  spirits remin"
+    },
+    "malanka": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "gnore past whispers.   carpet washing festivals - kinda quirky!  ever heard of \"malanka\"? dress-up like wild animals for new ye"
+    },
+    "wave-persistence": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " had moments when creds were second-guessed over reasons beside expertise. Key? Wave-persistence - keep proving wrong assumptions don\u2019t "
+    },
+    "petersburgian": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "Frozen fingers make turning pages tough!  Feels like navigating through Gogol's Petersburgian mists some days!  Got caught up in some"
+    },
+    "soulmate": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "tment over time.  Even arranged meetings need nurturing\u2014real solidarity!  Term 'soulmate' always felt oversimplified; life taugh"
+    },
+    "big desert bbqs": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " calm vibes.  Friday brunches here are legendary - endless feasting then naps!  Big desert BBQs bring everyone together - love outweigh"
+    },
+    "ikea": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "ls & maybe wanting someone right next to me - kinda feels like putting together ikea furniture without instructions \ud83d\ude05  havin"
+    },
+    "christmas trick-or-treats": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "nto obstacle courses!  traffic messes alone are daily battles here \ud83d\ude05  seriously christmas trick-or-treats? we\u2019ve got something wilder - love shou"
+    },
+    "defo": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "Winter's mint here; defo keeps you on your toes!  A riveting pod"
+    },
+    "caf\u00e9s": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "Love how some even double as art galleries!  Caf\u00e9s = spontaneous teacher meetings & studen"
+    },
+    "rsvps": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "otta add though, keeping track of guests digitally just makes sense now \u2013 think RSVPs at your fingertips! Plus everyone\u2019s alw"
+    },
+    "where's your car? house? retirement fund?": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "except when your paycheck\u2019s playing hide-n-seek every month \ud83d\ude02 gotta love those \"where's your car? house? retirement fund?\" convos... all i hear es pura presi\u00f3n! "
+    },
+    "physical edu": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "& protein just comes naturally after spending most days in the gym environment  physical edu often gets pegged as a \"guys thing,\" bu"
+    },
+    "uni.": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "chose it - always been obsessed with nature regardless of the guy/girl ratio at uni. there\u2019s room for everyone if you ask me"
+    },
+    "stairwell meet-ups": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "kes me miss silence sometimes.  Fire alarm foodies; unpredictable cooking makes stairwell meet-ups routine... not fans!  Question: Ever lo"
+    },
+    "skillset": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "o democratizing identity expression big time!  Dev teams are diversifying too - skillset over stereotypes now.  Hard agree - rea"
+    },
+    "historians of reddit": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "Question: Historians of Reddit, what's something about your city's his"
+    },
+    "beachside bbqs": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " amazed at \"Christmas Summer\" \u2014 singing jolly winter songs while sun's blazing! Beachside BBQs instead of snowmen; talk about festive "
+    },
+    "caf\u00e9": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "en i need some quiet focus tbh  cool idea but where's everyone getting all this caf\u00e9 money? \ud83d\udcb8  financial reality reshapes dr"
+    },
+    "la leggenda della donna velata?": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "wandering those historical spots more goosebump-inducing after dark!  ever hear la leggenda della donna velata? chills every time  yeah but sometimes e"
+    },
+    "skatepark": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "iss those quirky old machines whirring away. feels like some essence got lost?  skatepark's gone had no clue they built condos no"
+    },
+    "tech start-ups": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "re's calm \ud83d\ude0c  Old-school charm's unique... hope some spots preserve it!  Noticed tech start-ups replacing family diners - community vib"
+    },
+    "old cinemas": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "ll color my holidays here.  Tough call! Can't beat that rich history feel of an old caf\u00e9, though - it's like sipping coffee stra"
+    },
+    "reddit": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "oices imo  not much changed for me tbh \u2013 still crushing design concepts between reddit deep dives \ud83c\udfa8 no SO means no new salsa s"
+    },
+    "market ups-and-downs": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "d ways mostly).  Wild card all right - thought my path was set post-degree till market ups-and-downs showed me otherwise! Job stability turn"
+    },
+    "overdevelopment": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "stivals back home always echoed community over competition.  Charm\u2019s priceless; overdevelopment can bankrupt it.   Chain store invasion"
+    },
+    "lowkey": {
+      "count": 1,
+      "types": {
+        "DEM": 1
+      },
+      "context": "way cram sessions > frostbite any day! pro tip = streamlining your playlist can lowkey improve the sardine-can scenario\u0014\ud83d\ude87\u2728  gr"
+    },
+    "munich's residenz": {
+      "count": 1,
+      "types": {
+        "ORG": 1
+      },
+      "context": "icks galore...\ud83d\ude12  Facts enrich legends\u2014adds depth over time.   Everyone talks up Munich's Residenz ghost\u2014apparently an executed monarch st"
+    },
+    "score-reading": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": " labels any day!  Value triumphs label price\u2014memories don't carry tags anyway!  Score-reading seeps into book browsing!  Annual orche"
+    },
+    "annual orchestra bow rehairings": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "ice\u2014memories don't carry tags anyway!  Score-reading seeps into book browsing!  Annual orchestra bow rehairings got auditors scratching their heads onc"
+    },
+    "backyard burn-offs": {
+      "count": 1,
+      "types": {
+        "MISC": 1
+      },
+      "context": "tudio, believe it or not. Mind you, the air's cleaner now than in the heyday of backyard burn-offs, so not all change is bad. Have you not"
+    }
+  },
+  "wall_s": 85.4
+}
