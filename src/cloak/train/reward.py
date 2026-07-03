@@ -76,7 +76,10 @@ def _nli_pipe():
 
 
 def _sentences(text: str) -> list[str]:
-    return [s.strip() for s in re.split(r"(?<=[.!?])\s+|\n+", text) if len(s.strip()) > 20]
+    # title abbreviations must not end a sentence ("followed by Dr. Kumar")
+    parts = re.split(r"(?<=[.!?])(?<!\bDr\.)(?<!\bMr\.)(?<!\bMs\.)(?<!Mrs\.)\s+|\n+", text,
+                     flags=re.IGNORECASE)
+    return [s.strip() for s in parts if s and len(s.strip()) > 20]
 
 
 def _toks(text: str) -> list[str]:
@@ -101,17 +104,29 @@ def restated_probes(R: list[dict], gold: str) -> list[dict]:
     chars — gold restates paraphrased ("50 years old" vs "50-year-old"); exact-only
     measured 0.25-1 probes/doc vs the 5-10 the reward needs (2026-07-02 gate run).
     """
-    from cloak.substitute import _is_role_phrase
+    # No role filter here: _is_role_phrase is a lowercase-PERSON heuristic (its [a-z]+
+    # tokenization turns "November 7" into the WordNet noun "november") and ate ~60% of
+    # unique surfaces (measured 2026-07-03, 0.88 probes/doc on clinical). Gold restatement
+    # is the relevance filter; the teacher validity check drops no-fact role probes.
     from rapidfuzz import fuzz
+
+    def canon(t: str) -> str:
+        # spoken-vs-written variants seen in the corpora: "doctor kumar"/"Dr. Kumar",
+        # "40 milligrams"/"40 mg". ponytail: spelled-out numbers/dates ("July thirty
+        # first") stay unmatched; add a number normalizer if probe supply still short.
+        t = re.sub(r"\bdr\.?(?=\s)", "doctor", t.lower())
+        return re.sub(r"\bmilligrams?\b", "mg", t)
+
+    sents = _sentences(gold)
     probes, seen = [], set()
     for e in R:
-        key = e["surface"].lower()
-        if key in seen or _is_role_phrase(e["surface"]):  # dedup mentions; skip role nouns
-            continue                                      # ("patient") - probe carries no fact
-        pat = re.compile(rf"\b{re.escape(e['surface'])}\b", re.IGNORECASE)
-        sent = next((s for s in _sentences(gold) if pat.search(s)), None)
+        key = canon(e["surface"])
+        if key in seen:  # dedup mentions
+            continue
+        pat = re.compile(rf"\b{re.escape(key)}\b")
+        sent = next((s for s in sents if pat.search(canon(s))), None)
         if sent is None and len(e["surface"]) >= 5:
-            scored = [(fuzz.partial_ratio(key, s.lower()), s) for s in _sentences(gold)]
+            scored = [(fuzz.partial_ratio(key, canon(s)), s) for s in sents]
             best = max(scored, default=(0, None))
             if best[0] >= 85:
                 sent = best[1]
@@ -142,6 +157,19 @@ def u_qa(doc_p: str, R: list[dict], probes: list[dict]) -> tuple[float | None, l
         details.append({"surface": p["surface"], "answer": answer,
                         "inverted": inv_ans, "f1": round(f1, 3)})
     return sum(d["f1"] for d in details) / len(details), details
+
+
+def fact_recall(out_final: str, probes: list[dict]) -> float | None:
+    """Realized utility ground truth: do the gold-restated facts survive the round trip?
+
+    Same probes as u_qa, but the reader answers from out_final (already inverted, original
+    space — no question generalization, no answer inversion). Mean token-F1 vs the original
+    surface; None when the doc has no probes.
+    """
+    if not probes:
+        return None
+    return sum(token_f1(_qa_answer(p["question"], out_final), p["surface"])
+               for p in probes) / len(probes)
 
 
 def generalize_text(text: str, R: list[dict]) -> str:

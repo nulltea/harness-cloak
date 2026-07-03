@@ -29,7 +29,7 @@ from cloak.score import score_batch
 from cloak.substitute import substitute
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.probes import probes_for_docs
-from cloak.train.reward import u_surr
+from cloak.train.reward import fact_recall, u_surr
 
 ARMS = ["no_privacy", "tau_walk", "all_floor", "suppression"]
 
@@ -113,20 +113,25 @@ def main():
         for i, ((d, arm), op) in enumerate(zip(jobs, outs)):
             doc_p, R = arms_of[d["id"]][arm]
             s = u_surr(doc_p, R, refs_of(d)[0], probes[d["id"]])
+            fr = fact_recall(finals[i], probes[d["id"]])
             rows.append({"id": d["id"], "arm": arm,
+                         "realized_factrecall": round(fr, 4) if fr is not None else None,
                          "realized_rougeL": round(sc["rougeL"][i], 4),
                          "realized_bert": round(sc["bertscore_f1"][i], 4)
                          if args.bertscore else None,
                          "u_surr": s["u_surr"], "u_qa": s["u_qa"], "u_nli": s["u_nli"]})
         print(f"[{corpus}] round trips + surrogate done {time.time()-t0:.0f}s", flush=True)
 
-        gts = ["realized_rougeL"] + (["realized_bert"] if args.bertscore else [])
+        gts = ["realized_factrecall", "realized_rougeL"] + \
+              (["realized_bert"] if args.bertscore else [])
         rhos = {(g, s): [] for g in gts for s in ("u_surr", "u_qa")}
         arm_means = {}
         for d in docs:
             dr = {r["arm"]: r for r in rows if r["id"] == d["id"]}
             for g in gts:
                 xs = [dr[a][g] for a in ARMS]
+                if any(x is None for x in xs):  # no probes for this doc
+                    continue
                 for skey in ("u_surr", "u_qa"):
                     ys = [dr[a][skey] if dr[a][skey] is not None else 0.0 for a in ARMS]
                     rho = _spearman(xs, ys)
@@ -136,7 +141,9 @@ def main():
                    for (g, s), v in rhos.items()}
         for a in ARMS:
             ar = [r for r in rows if r["arm"] == a]
+            frs = [r["realized_factrecall"] for r in ar if r["realized_factrecall"] is not None]
             arm_means[a] = {
+                "realized_factrecall": round(mean(frs), 4) if frs else None,
                 "realized": round(mean(r["realized_rougeL"] for r in ar), 4),
                 "u_surr": round(mean(r["u_surr"] for r in ar if r["u_surr"] is not None), 4),
                 "u_qa": round(mean(r["u_qa"] for r in ar if r["u_qa"] is not None), 4)
@@ -149,8 +156,9 @@ def main():
             "mean_probes_per_doc": round(mean(len(probes[d["id"]]) for d in docs), 2),
             "rows": rows,
         }
-        print(f"[{corpus}] arm means (realized|u_surr): " +
-              " ".join(f"{a}={arm_means[a]['realized']}|{arm_means[a]['u_surr']}" for a in ARMS) +
+        print(f"[{corpus}] arm means (factrecall|rougeL|u_surr): " +
+              " ".join(f"{a}={arm_means[a]['realized_factrecall']}|{arm_means[a]['realized']}"
+                       f"|{arm_means[a]['u_surr']}" for a in ARMS) +
               f"  per-doc arm-spearman={per_doc}", flush=True)
 
     out = Path("results/surrogate_validation.json")

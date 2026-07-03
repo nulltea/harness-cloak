@@ -9,7 +9,7 @@ companion: [2026-07-02-roundtrip-grpo-training.md, 2026-07-02-codesign-next-stag
 
 # Surrogate-reward GRPO training of the substitutor (D2 · Way 1 · v0)
 
-## STATUS 2026-07-03 — BLOCKED on the utility ground truth (validation-gate outcome)
+## STATUS 2026-07-03 — ground truth fixed (fact recall on `out_final`), gate re-passed; spec update to benchmarks.md pending
 
 The gate is implemented (`src/cloak/train/{reward,probes}.py`, `scripts/surrogate_validation.py`;
 results in `results/surrogate_validation.json`) and ran twice:
@@ -30,17 +30,70 @@ replies (enron) are **content-blind** — they cannot distinguish the working pi
 content destruction (`[REDACTED]`-everything). This blocks training *and* any utility Pareto on
 these corpora, independent of the surrogate.
 
+**Root cause (defined 2026-07-03, measured):** the headline utility scores whole-output sequence
+similarity, but the mechanism can only touch the detected spans, and their words cover just
+**6.4% (clinical) / 8.0% (enron) / 15% (aeslc)** of the gold's tokens — so even total destruction
+of every substitutable span moves ROUGE-L by less than the per-doc generation noise (mean per-doc
+arm spread 0.06–0.07). The instrument's sensitive fraction is an order of magnitude below its
+noise floor; everything else observed is a symptom of that one fact:
+
+- **Shuffled-gold noise-floor test** (control generations scored against a random other doc's
+  gold): enron matched 0.1245 vs shuffled 0.0893 (**1.39×** floor — the metric barely knows which
+  document it is scoring); clinical 0.2182 vs 0.0742 (2.94×); aeslc 0.4693 vs 0.0581 (**8.07×**).
+  Exactly the corpus ordering of the gate's sanity outcome.
+- **Per-doc arm ordering is a coin flip where the fraction is small:** suppression ≥ no_privacy in
+  10/16 clinical and 7/16 enron docs; on aeslc no_privacy wins 15/16.
+- **The BERTScore/ROUGE-L "gap" is two broken instruments, not a contradiction:** `score.py` calls
+  `bert_score` without `rescale_with_baseline=True`, so scores compress into the well-known
+  ~[0.83, 0.90] fluent-English band — observed range 0.833–0.849 across everything from
+  no_privacy to all-`[REDACTED]`. An uncalibrated scale next to a noise-dominated one.
+- **τ-flatness is the same cause:** τ re-levels spans inside that ~6–8% token share; the metric
+  cannot resolve it.
+- **Secondary aggravators (real, not the cause):** enron golds are the historically-sent replies,
+  not derivable from the email (reply depends on context outside the input — irreducible reference
+  entropy, cf. control ROUGE-L 0.1245); clinical generations are truncated by `max_tokens=512`
+  (~285 words vs ~570-word golds), a constant recall haircut on all arms.
+
+The surrogate gate's ρ ≈ 0.02–0.20 is therefore **uninformative about the surrogate** (correlation
+against noise is ≈ 0 by construction); on the one corpus whose ground truth has signal (aeslc) the
+surrogate's arm ordering matches exactly. The proposed fix below is the root-cause fix precisely
+because gold-fact recall on `out_final` concentrates all metric mass on the perturbable facts —
+sensitive fraction ≈ 1 by construction.
+
 Secondary findings absorbed: `u_qa` is the only content-sensitive surrogate component; `u_nli` is
 ~flat on register-shifted real text and has a systematic coarsening bias (R-generalized
 hypotheses are logically weaker → easier to entail) — demote or redesign; probe coverage even
 with fuzzy matching is 0.2–0.9/doc vs the 5–10 assumed (restatement-based probe supply is thin).
 
-**Proposed fix (pending decision):** replace/augment the headline utility with **gold-fact recall
-on `out_final`** — the probe machinery pointed at the final output instead of `doc_p`:
-content-sensitive by construction, gold-grounded, cheap. This changes the eval spec
-([`benchmarks.md`](../specs/benchmarks.md)), i.e. is bigger than this plan.
-Alternative/complement: rebalance corpora toward answer-anchored gold (aeslc-like, QA-style).
-**Training must not start until the ground truth is fixed and the gate re-passed.**
+**Fix implemented + gate re-run (2026-07-03):** realized ground truth = **gold-fact recall on
+`out_final`** (`reward.fact_recall` — the same probes, reader pointed at the final output; no
+generalization/inversion, `out_final` is original-space). Probe supply was the second blocker and
+had its own root cause: `restated_probes` misapplied `_is_role_phrase` (a lowercase-PERSON
+heuristic whose `[a-z]+` tokenization turns "November 7" into the WordNet noun "november") to
+every R entry, eating ~60% of unique surfaces; plus the sentence splitter broke on "Dr." and
+spoken-vs-written variants ("40 milligrams"/"40 mg"). Fixed → probes/doc 0.88→**3.19** clinical,
+0.69→1.0 enron; aeslc stays 0.38 (subject-line golds genuinely restate little — corpus reality).
+
+Re-run outcome (16 docs × 4 arms × 3 corpora, round trips cached, `results/surrogate_validation.json`):
+
+- **Fact recall orders the arms sanely on all three corpora** (no_privacy clearly first
+  everywhere; suppression last/tied-low) — the same run where ROUGE-L ranked no_privacy *worst*
+  on clinical. The upstream ground-truth blocker is resolved.
+- **Per-doc arm-Spearman vs the surrogate:** `factrecall~u_qa` = **0.367** clinical (n=12),
+  **0.44** aeslc (n=5), **0.775** enron (n=8) — vs 0.02–0.24 against ROUGE-L. `u_surr` (with
+  `u_nli` mixed in) is worse than `u_qa` alone on clinical (0.183 vs 0.367) — confirms the
+  demote-`u_nli` finding; the surrogate's utility term should be `u_qa`.
+- **New first-class finding (report, don't engineer around):** realized fact recall of the
+  working pipeline (tau_walk 0.012 clinical / 0.038 enron) ≈ all_floor ≈ suppression, ≪
+  no_privacy (0.129 / 0.183) — the current round trip destroys the probed facts nearly as
+  thoroughly as `[REDACTED]`-everything. Channel: `gen_absent` dominates inversion totals — the
+  remote model doesn't repeat generalized phrases verbatim, so rule inversion can't restore the
+  original surfaces into `out_final`. This is the real utility cost the old metrics were blind
+  to, and it is what training (and/or the D-extractor upgrade) must attack.
+
+Residual gate caveats: aeslc has probe-bearing docs on only 5/16 (thin gold restatement); the
+spec change (fact recall as headline utility) still needs to land in
+[`benchmarks.md`](../specs/benchmarks.md).
 
 **Scope (decision 2026-07-02).** This plan is the active v0 of Way 1: the substitutor cascade is
 trained against a **model-free local surrogate reward** — a "mini round trip" through a local QA
@@ -244,9 +297,10 @@ corpora — so the gate tests **constructed arms** with guaranteed quality sprea
 (no_privacy / τ-walk / all_floor / suppression) and scores the mean per-doc Spearman between the
 realized and surrogate orderings of the arms. **Go:** clearly positive rank agreement where the
 ground truth itself orders the arms sanely. **No-go:** disagreement → fix probes/scorers or fall
-back to the round-trip plan. **Current outcome: blocked upstream — see STATUS at top** (the
-ground-truth metrics fail the arms sanity ordering on clinical/enron; the surrogate matches the
-ordering on aeslc, the one corpus where the ground truth is sane).
+back to the round-trip plan. **Current outcome (2026-07-03 re-run, fact-recall ground truth):
+positive on all three corpora — see STATUS at top** (`factrecall~u_qa` 0.37/0.44/0.775 on
+clinical/aeslc/enron; arm ordering sane everywhere; use `u_qa` as the surrogate utility term,
+`u_nli` demoted).
 
 ## Evaluation protocol (unchanged — the true round trip)
 
