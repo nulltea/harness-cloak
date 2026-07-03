@@ -2,7 +2,7 @@
 
 Same probe instruments as the InferDPT report (overlap, pii_leak; SimCSE utility),
 so the two pages read on the same scales. Per tau: substitute -> remote out_p
-(cached) -> rung A out_final -> probes. Also records the knob mechanics: how many
+(cached) -> rule-extractor inversion -> out_final -> probes. Also records the knob mechanics: how many
 generalized spans sit at the most-specific vs most-general lattice level.
 
 Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \

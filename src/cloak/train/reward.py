@@ -5,7 +5,7 @@ The task corpora are selected so the gold output restates substituted spans
 
 - U_QA (answerability): for each restated span (R surface found in gold), a cloze question
   built from the gold sentence is answered from doc_p by an extractive reader; the answer is
-  inverted through R (rung-A `extract.invert`) and token-F1-scored against the original
+  inverted through R (rule extractor, `extract.invert`) and token-F1-scored against the original
   surface. Invertible coarsening scores 1.0 by construction; destruction (unanswerable /
   unalignable) scores 0 — so utility cannot reward under-anonymization.
 - U_NLI (premise retention): each gold sentence, R-generalized, must be entailed by the

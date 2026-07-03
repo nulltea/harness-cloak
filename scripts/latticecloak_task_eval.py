@@ -1,7 +1,7 @@
-"""Task-oriented eval: corpus doc -> substitute(tau) -> remote LLM -> rung A -> ROUGE-L/BERTScore vs gold.
+"""Task-oriented eval: corpus doc -> substitute(tau) -> remote LLM -> rule extractor -> ROUGE-L/BERTScore vs gold.
 
 Replaces the prefix/summarization smoke (LatticeCloak report §5.4) with tasks whose gold output
-restates the substituted spans, so rung-A inversion fires and utility is sensitive to tau.
+restates the substituted spans, so rule-based inversion fires and utility is sensitive to tau.
 Utility is scored on out_final and out_ctrl (no-privacy) against the corpus reference(s).
 
 Remote = Qwen3.6-35B-A3B via ts-proxy (disk-cached via $INFERDPT_LLM_CACHE); substitution local/GPU.

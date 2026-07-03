@@ -135,7 +135,7 @@
         <tr><td>lattice: residual entities</td><td>teacher cascade: gemma 4 (E4B) &rarr; Qwen3.6-35B-A3B, cached</td><td>local llama-swap</td><td class="num">offline</td></tr>
         <tr><td>truthfulness gate</td><td>DeBERTa-v3-base MNLI entailment</td><td>local GPU</td><td class="num">184M</td></tr>
         <tr><td>selection probe</td><td>roberta-base masked-token inference</td><td>local GPU</td><td class="num">125M</td></tr>
-        <tr><td>extraction (rung A)</td><td>deterministic inversion of R: exact, then fuzzy alignment</td><td>local CPU</td><td class="num">0</td></tr>
+        <tr><td>extraction (rule extractor)</td><td>deterministic inversion of R: exact, then fuzzy alignment</td><td>local CPU</td><td class="num">0</td></tr>
         <tr><td>remote task model</td><td>Qwen3.6-35B-A3B (untrusted; same model the InferDPT baseline uses)</td><td>remote proxy</td><td class="num">35B</td></tr>
       </tbody>
     </table>
@@ -199,7 +199,7 @@
         <text x="1015" y="156" text-anchor="middle" class="box-sub">Qwen3.6-35B · sees doc_p only</text>
 
         <rect x="678" y="320" width="150" height="64" class="box box-client box-strong"/>
-        <text x="753" y="340" text-anchor="middle" class="box-label">rung A inversion</text>
+        <text x="753" y="340" text-anchor="middle" class="box-label">rule extractor</text>
         <text x="753" y="354" text-anchor="middle" class="box-sub">exact match → fuzzy align</text>
         <text x="753" y="367" text-anchor="middle" class="box-sub">placeholder swap-back</text>
 
@@ -329,11 +329,12 @@
       the output back, or whether the combination of choices across spans re-identifies the person anyway. That
       myopia is the operating assumption this prototype tests and the limitation the co-design next stage is
       meant to address.</p>
-      <p><strong>Extraction.</strong> Rung A inverts R without any model: placeholders swap back exactly;
-      generalization mentions in <code>out_p</code> are located by word-boundary exact match, then by fuzzy
-      alignment snapped to word boundaries, and replaced with the original surface. A learned rung B
-      (flan-t5-base LoRA over synthesized inversions) is specified but deliberately unbuilt until the measured
-      rung A residue justifies it; the gap between the two is the prototype's central hypothesis test.</p>
+      <p><strong>Extraction.</strong> The <strong>rule extractor</strong> inverts R without any model:
+      placeholders swap back exactly; generalization mentions in <code>out_p</code> are located by
+      word-boundary exact match, then by fuzzy alignment snapped to word boundaries, and replaced with the
+      original surface. A <strong>learned extractor</strong> (flan-t5-base LoRA over synthesized inversions) is
+      specified but deliberately unbuilt until the measured rule-extractor residue justifies it; the gap
+      between the two is the prototype's central hypothesis test.</p>
     </div>
   </section>
 
@@ -488,7 +489,7 @@
 
     <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.4 Round trip and rule-only extraction</h4>
     <p class="prose">Smoke scale: 8 SynthPAI documents &times; (1 summarization + up to 3 teacher-generated QA)
-    = 32 task tuples through the remote model, then rung A inversion. Inversion statistics over the 32 answers:
+    = 32 task tuples through the remote model, then rule-based inversion. Inversion statistics over the 32 answers:
     0 placeholders to swap (first-person corpus, no named persons in the slice), 0 exact and 0 fuzzy narrowings,
     128 substituted spans never mentioned in the answers. On these task types the remote answers paraphrase
     around the substituted details, so rule extraction has little to do and the outputs are already coherent.
@@ -601,13 +602,13 @@
     from this prompt (accepted as a rule-based ceiling; deferred to the learned-substitutor comparison).</p>
     <p class="prose"><strong>Conclusion.</strong> The remote model reasons validly on the coarsened premises
     (it even correctly reports "occupation not specified" where the generalization removed it, rather than
-    hallucinating). Rung A restores every fact the answer cites via a recoverable phrase (placeholders, "a
+    hallucinating). The rule extractor restores every fact the answer cites via a recoverable phrase (placeholders, "a
     financial institution" &rarr; Goldman Sachs, "a city in Illinois" &rarr; Chicago, "a medical building"
     &rarr; Mercy Hospital). The residue against the control decomposes into three classes: precision the
     substitution deliberately suppressed (a salary range instead of $200,000), narrowing misses when the remote
     rephrases or reformats the mention ("a Massachusetts city" for "a city in Massachusetts", currency-symbol
     drift), and grammar seams after narrowing ("a 40 data scientist"). The latter two are the training target
-    for rung B; the first is the privacy price the Pareto will put a number on.</p>
+    for the learned extractor; the first is the privacy price the Pareto will put a number on.</p>
 
     <p class="prose">The same round trip, traced end to end through the components on two task-oriented
     examples: a clinical dialogue&rarr;note (ACI-Bench) and an Enron email&rarr;reply. Named arrows are the
@@ -845,8 +846,8 @@
       actually restates a substituted span: summaries and short QA compress and paraphrase, dropping exactly the
       specifics, so on those tasks <code>out_final</code>&nbsp;&asymp;&nbsp;<code>out_p</code> and inversion is
       inert. Extraction value therefore concentrates in restatement-heavy tasks (notes, replies), where the
-      rung&nbsp;A residue classes (rephrase misses, grammar seams, suppressed precision) become the binding
-      constraint and a learned rung&nbsp;B either earns its keep or does not.</p>
+      rule-extractor residue classes (rephrase misses, grammar seams, suppressed precision) become the binding
+      constraint and a learned extractor either earns its keep or does not.</p>
     </div>
   </section>
 
@@ -880,7 +881,7 @@
       (4) Utility is not a win &mdash; <code>out_final</code>&nbsp;&asymp;&nbsp;<code>out_p</code> on most tasks,
       email sits below the no-privacy control, and clinical's gain is small under a one-reference metric. (5)
       Round-trip evidence is smoke-scale (8&ndash;16 docs + four constructed prompts) and rule-only inversion is
-      brittle to paraphrase, reformatting and suppressed precision; no learned rung&nbsp;B exists. (6) The
+      brittle to paraphrase, reformatting and suppressed precision; no learned extractor exists. (6) The
       evaluation itself carries leakage risks: lenient any-overlap matching, a regex tuned after inspecting the
       test set, a precision <em>proxy</em>, and no frozen hold-out. (7) Residual substitution-quality defects
       &mdash; detection misfires (Anthrax/Bunche&rarr;PERSON), coref over-merge (Doctor Kumar), and the GeoNames
@@ -889,9 +890,9 @@
       <p><strong>Next.</strong> The Pareto stage that turns the scoped component claims into (or refutes as) an
       end-to-end result: &tau; sweep against the InferDPT &epsilon; sweep on identical documents and tasks,
       privacy scored by held-out frontier attackers on <code>doc_p</code> and <code>out_final</code>, utility
-      scored against references and gold answers; then rung&nbsp;B trained on synthesized inversions to price the
-      measured rung&nbsp;A residue. Kill criteria are pre-registered: if LatticeCloak does not beat InferDPT at
-      matched realized privacy, that is the finding; if rung&nbsp;B does not beat rules there, R plus rules
+      scored against references and gold answers; then a learned extractor trained on synthesized inversions to
+      price the measured rule-extractor residue. Kill criteria are pre-registered: if LatticeCloak does not beat
+      InferDPT at matched realized privacy, that is the finding; if the learned extractor does not beat rules there, R plus rules
       suffice.</p>
     </div>
   </section>
@@ -904,7 +905,7 @@
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/detect.py">src/cloak/detect.py</a> · detection stack</li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/lattice.py">src/cloak/lattice.py</a> · lattices + cascade</li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/substitute.py">src/cloak/substitute.py</a> · doc_p + R</li>
-        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/extract.py">src/cloak/extract.py</a> · rung A inversion</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/extract.py">src/cloak/extract.py</a> · rule extractor (inversion of R)</li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_detection_gate.py">scripts/latticecloak_detection_gate.py</a></li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_engine.py">scripts/latticecloak_engine.py</a></li>
         <li><a href="https://github.com/nulltea/harness-cloak/blob/main/scripts/latticecloak_tau_sweep.py">scripts/latticecloak_tau_sweep.py</a></li>

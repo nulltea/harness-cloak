@@ -1,4 +1,4 @@
-"""Rung A extraction: out_p -> out_final by deterministic inversion of R.
+"""Rule extractor: out_p -> out_final by deterministic (no-model) inversion of R.
 
 1. Placeholders: exact token swap-back (<PERSON_1> -> canonical surface of its chain).
 2. Generalizations: locate mentions of each replacement in out_p (exact, then
@@ -6,8 +6,9 @@
    Ambiguous replacements (same phrase for different originals) are inverted only for
    as many occurrences as R has entries, in document order.
 
-ponytail: exact+fuzzy only — MiniLM window matching for paraphrased mentions is rung A',
-add when the unmatched rate justifies it. Rung B (learned) trains on the residue.
+ponytail: exact+fuzzy only — MiniLM window matching for paraphrased mentions is the
+semantic-window extractor, add when the unmatched rate justifies it. The learned extractor
+(flan-t5 LoRA) trains on the residue.
 Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 """
 import re

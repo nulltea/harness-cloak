@@ -2,7 +2,7 @@
 
 Unlike the SynthPAI probe sweep (latticecloak_tau_sweep.py), utility here is scored against the
 corpus gold output (the note / reply / subject), so tau's effect shows up in a real task metric
-and rung-A inversion is exercised. Efficient: detect once per doc (tau-independent), out_ctrl once
+and rule-based inversion is exercised. Efficient: detect once per doc (tau-independent), out_ctrl once
 per doc; substitute + generate + score per tau. Records lattice mechanics + inversion totals.
 
 Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \

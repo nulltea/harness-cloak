@@ -16,10 +16,10 @@ Living doc. Defines the corpora + tasks LatticeCloak is evaluated on. Updated as
 The smoke eval used prefix-continuation / summarization / attribute-QA on SynthPAI. Those answers
 **paraphrase around** the substituted spans (128/128 substituted spans absent from the 32 answers), so:
 
-- **rung-A inversion never fires** — nothing to narrow back, extraction untested;
+- **rule-based inversion never fires** — nothing to narrow back, extraction untested;
 - **utility is insensitive to τ** — coarsening a span the answer never restates costs nothing measurable.
 
-Neither the extraction hypothesis (rung A vs rung B) nor the τ→utility Pareto can be priced on such tasks.
+Neither the extraction hypothesis (rule extractor vs learned extractor) nor the τ→utility Pareto can be priced on such tasks.
 
 ## Selection criterion
 
@@ -52,7 +52,7 @@ SynthPAI has (1), not (2). Generation / rewriting / note-writing / reply-draftin
 
 ## Pipeline & metrics
 
-Per item: `doc_orig → doc_p (+R) → remote LLM → out_p → rung A → out_final`.
+Per item: `doc_orig → doc_p (+R) → remote LLM → out_p → rule extractor → out_final`.
 
 - **Utility** — reference-scored on `out_final`: ROUGE-L, BERTScore; clinical adds a fact-extraction/entity-F1 metric (note reference standard). Report `out_p` (pre-inversion) and `out_ctrl` (no-privacy) alongside.
 - **Inversion stats** — placeholders swapped, generalizations narrowed exact/fuzzy, spans absent (the §5.4 table, but now non-trivially exercised).

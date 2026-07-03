@@ -7,7 +7,7 @@ uses CONSTRUCTED arms per doc with guaranteed quality spread:
   no_privacy (doc_orig, empty R)  >=  tau_walk  >=  all_floor (maximal coarsening)
   >=  suppression ([REDACTED], no anchor - the NaPaRe anti-extractor case)
 
-Per (doc, arm): realized utility = real round trip (cached) -> rung-A invert -> ROUGE-L vs
+Per (doc, arm): realized utility = real round trip (cached) -> rule-extractor invert -> ROUGE-L vs
 gold; surrogate = U_surr(doc_p, R, gold, probes). Go/no-go: per-doc Spearman between the
 two orderings of the 4 arms, averaged over docs — clearly positive = the surrogate ranks
 the kind of variation RL will explore. Plan: docs/plans/2026-07-02-surrogate-grpo-training.md.
