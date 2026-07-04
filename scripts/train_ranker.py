@@ -184,9 +184,12 @@ def rollout_reward(doc, span_rows, feats, policy, alpha, greedy=False):
 # ---------- training ----------
 
 def sample_floors(floors, rng):
-    """Per-episode log-uniform floor k_T in [1, 10*k_T] per type (train-time randomization).
-    Shared by the RL loop and the floor-randomized BC pretrain so both see the same rule."""
-    return {t: math.exp(rng.uniform(0.0, math.log(10.0 * max(k, 1.0))))
+    """Per-episode log-uniform floor per type, CENTERED on the deployment default:
+    k_T ~ exp(U(ln(max(k/10, 1)), ln(10*k))) — median = k, supported config range [k/10, 10k],
+    clamped at 1 from below. This is the supported per-type config range; floors outside
+    [k/10, 10k] are extrapolation — the mask still enforces them safely, choice quality is
+    untested. Shared by the RL loop and the floor-randomized BC pretrain so both see the same rule."""
+    return {t: math.exp(rng.uniform(math.log(max(k / 10.0, 1.0)), math.log(10.0 * max(k, 1.0))))
             for t, k in floors.items()}
 
 
