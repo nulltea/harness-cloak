@@ -123,17 +123,18 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
 def derive_spans(raw_spans, floors, corpus, device):
     """Legal set + floor-walk BC teacher + features from per-type count floors.
     legal = placeholder ∪ {levels with aset >= floor[type]} (walk_risk is offline-only now).
-    bc_action = most specific legal level (actions run specific→generic in aset), else
-    placeholder. Every span keeps a placeholder so legal is never empty."""
+    bc_action = the legal level minimizing (aset, index) — the most specific legal level, by
+    min aset not list order (actions["aset"] is not always sorted); placeholder fallback when
+    no level is legal. Every span keeps a placeholder so legal is never empty."""
     spans, feats = [], []
     for s in raw_spans:
         s = dict(s)
         k = floors.get(s["type"], 1.0)
         s["legal"] = [i for i, a in enumerate(s["actions"])
                       if a["mode"] == "placeholder" or a.get("aset", 0) >= k]
-        s["bc_action"] = next((i for i, a in enumerate(s["actions"])
-                               if a["mode"] == "level" and a.get("aset", 0) >= k),
-                              len(s["actions"]) - 1)
+        s["bc_action"] = min(((a.get("aset", 0), i) for i, a in enumerate(s["actions"])
+                              if a["mode"] == "level" and a.get("aset", 0) >= k),
+                             default=(None, len(s["actions"]) - 1))[1]
         spans.append(s)
         feats.append(action_features(s, corpus, k).to(device))
     return spans, feats
@@ -182,12 +183,31 @@ def rollout_reward(doc, span_rows, feats, policy, alpha, greedy=False):
 
 # ---------- training ----------
 
-def behavior_clone(policy, docs, epochs, lr, device):
+def sample_floors(floors, rng):
+    """Per-episode log-uniform floor k_T in [1, 10*k_T] per type (train-time randomization).
+    Shared by the RL loop and the floor-randomized BC pretrain so both see the same rule."""
+    return {t: math.exp(rng.uniform(0.0, math.log(10.0 * max(k, 1.0))))
+            for t, k in floors.items()}
+
+
+def behavior_clone(policy, docs, epochs, lr, device, floors=None, randomize=False, seed=0):
+    """Clone the floor-walk teacher's per-span decisions.
+
+    Fixed floors (randomize off): clone the precomputed spans/feats at the env floors.
+    Randomized (randomize on): resample per-type floors per (epoch, doc) with sample_floors
+    and clone the teacher derived at those floors, so the KL reference is trained along the
+    floor-feature dimension the RL loop queries it on. Seeded from `seed` for reproducibility."""
     opt = torch.optim.Adam(policy.parameters(), lr=lr)
-    for _ in range(epochs):
+    for epoch in range(epochs):
+        rng = random.Random(seed * 1000 + epoch) if randomize else None
         for doc in docs:
+            if randomize:
+                spans, feats = derive_spans(doc["raw_spans"], sample_floors(floors, rng),
+                                            doc["corpus"], device)
+            else:
+                spans, feats = doc["spans"], doc["feats"]
             loss = 0.0
-            for s, f in zip(doc["spans"], doc["feats"]):
+            for s, f in zip(spans, feats):
                 lp = policy.log_probs(f, s["legal"])
                 loss = loss - lp[s["legal"].index(s["bc_action"])]
             opt.zero_grad()
@@ -292,7 +312,8 @@ def main():
         t0 = time.time()
         torch.manual_seed(args.seed)
         policy = RankerPolicy().to(device)
-        policy = behavior_clone(policy, docs, args.bc_epochs, args.lr, device)
+        policy = behavior_clone(policy, docs, args.bc_epochs, args.lr, device,
+                                floors=floors, randomize=args.randomize_floors, seed=args.seed)
         ref = RankerPolicy().to(device)
         ref.load_state_dict(policy.state_dict())
         ref.eval()
@@ -311,9 +332,7 @@ def main():
                 doc = docs[di]
                 if args.randomize_floors:
                     # per-episode log-uniform floor per type, features rebuilt from it
-                    ep_floors = {t: math.exp(rng.uniform(0.0, math.log(10.0 * max(k, 1.0))))
-                                 for t, k in floors.items()}
-                    span_rows, feats = derive_spans(doc["raw_spans"], ep_floors,
+                    span_rows, feats = derive_spans(doc["raw_spans"], sample_floors(floors, rng),
                                                     doc["corpus"], device)
                 else:
                     span_rows, feats = doc["spans"], doc["feats"]
@@ -345,6 +364,8 @@ def main():
                   " ".join(f"{k}={v}" for k, v in row.items() if k != "epoch"), flush=True)
 
         # greedy operating point after training (deterministic policy read-out)
+        # greedy read-out at the env floors — the deployment operating point; randomization
+        # is train-time only (doc["spans"]/doc["feats"] are the fixed env-floor spans)
         greedy = {"r": 0.0, "A": 0.0, "U": 0.0, "ph": 0.0}
         with torch.no_grad():
             for doc in docs:
