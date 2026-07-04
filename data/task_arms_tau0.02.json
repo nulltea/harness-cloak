@@ -1145,7 +1145,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.1795
+       "p6": 0.1795,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "mammogram",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1154,7 +1163,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "heart failure": {
      "surface": "heart failure",
@@ -1167,13 +1176,23 @@
        "fill": "a disorder",
        "mode": "level",
        "walk_risk": 0.0166,
-       "p6": 0.2586
+       "p6": 0.2586,
+       "aset": 232.0
       },
       {
        "fill": "a physical condition",
        "mode": "level",
        "walk_risk": 0.026,
-       "p6": 0.2601
+       "p6": 0.2601,
+       "aset": 1313.0
+      },
+      {
+       "fill": "heart failure",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1195,13 +1214,23 @@
        "fill": "a cardiovascular disease",
        "mode": "level",
        "walk_risk": 0.006,
-       "p6": 0.6068
+       "p6": 0.6068,
+       "aset": 28.0
       },
       {
        "fill": "a physical condition",
        "mode": "level",
        "walk_risk": 0.0002,
-       "p6": 0.25
+       "p6": 0.25,
+       "aset": 1313.0
+      },
+      {
+       "fill": "hypertension",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1223,7 +1252,16 @@
        "fill": "a psychological state",
        "mode": "level",
        "walk_risk": 0.0012,
-       "p6": 0.515
+       "p6": 0.515,
+       "aset": 136.0
+      },
+      {
+       "fill": "depression",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1245,19 +1283,30 @@
        "fill": "a mythical monster",
        "mode": "level",
        "walk_risk": 0.0012,
-       "p6": 0.4747
+       "p6": 0.4747,
+       "aset": 35.0
       },
       {
        "fill": "a mythical being",
        "mode": "level",
        "walk_risk": 0.0006,
-       "p6": 0.3912
+       "p6": 0.3912,
+       "aset": 122.0
       },
       {
        "fill": "an imaginary being",
        "mode": "level",
        "walk_risk": 0.0001,
-       "p6": 0.1861
+       "p6": 0.1861,
+       "aset": 229.0
+      },
+      {
+       "fill": "dragon",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1279,7 +1328,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.1038,
-       "p6": 0.4249
+       "p6": 0.4249,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "20 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1288,7 +1346,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "lasix": {
      "surface": "lasix",
@@ -1301,13 +1359,23 @@
        "fill": "a diuretic drug",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.302
+       "p6": 0.302,
+       "aset": 9.0
       },
       {
        "fill": "a drug",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3583
+       "p6": 0.3583,
+       "aset": 718.0
+      },
+      {
+       "fill": "lasix",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1316,7 +1384,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "40 milligrams": {
      "surface": "40 milligrams",
@@ -1329,7 +1397,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0748,
-       "p6": 0.4284
+       "p6": 0.4284,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "40 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1338,7 +1415,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "lisinopril": {
      "surface": "lisinopril",
@@ -1351,19 +1428,30 @@
        "fill": "a ACE inhibitor",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2751
+       "p6": 0.2751,
+       "aset": 5.0
       },
       {
        "fill": "an antihypertensive",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3316
+       "p6": 0.3316,
+       "aset": 18.0
       },
       {
        "fill": "a medicine",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.4098
+       "p6": 0.4098,
+       "aset": 60.0
+      },
+      {
+       "fill": "lisinopril",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1372,7 +1460,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "last year": {
      "surface": "last year",
@@ -1385,7 +1473,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.023,
-       "p6": 0.5111
+       "p6": 0.5111,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "last year",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1394,7 +1491,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "45 %": {
      "surface": "45 %",
@@ -1407,7 +1504,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0015,
-       "p6": 0.3687
+       "p6": 0.3687,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "45 %",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1429,7 +1535,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.0719,
-       "p6": 0.5522
+       "p6": 0.5522,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the past year",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1438,7 +1553,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "congestive heart failure": {
      "surface": "congestive heart failure",
@@ -1451,7 +1566,16 @@
        "fill": "a disorder",
        "mode": "level",
        "walk_risk": 0.31,
-       "p6": 0.1914
+       "p6": 0.1914,
+       "aset": 232.0
+      },
+      {
+       "fill": "congestive heart failure",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1460,7 +1584,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "last weekend": {
      "surface": "last weekend",
@@ -1473,7 +1597,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0117,
-       "p6": 0.2336
+       "p6": 0.2336,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "last weekend",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1495,19 +1628,30 @@
        "fill": "a city in District of Columbia",
        "mode": "level",
        "walk_risk": 0.0287,
-       "p6": 0.5573
+       "p6": 0.5573,
+       "aset": 48.0
       },
       {
        "fill": "a city in United States",
        "mode": "level",
        "walk_risk": 0.0361,
-       "p6": 0.5602
+       "p6": 0.5602,
+       "aset": 13971.0
       },
       {
        "fill": "a city in North America",
        "mode": "level",
        "walk_risk": 0.027,
-       "p6": 0.502
+       "p6": 0.502,
+       "aset": 36192.0
+      },
+      {
+       "fill": "washington",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1516,7 +1660,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "female": {
      "surface": "female",
@@ -1529,13 +1673,23 @@
        "fill": "an organism",
        "mode": "level",
        "walk_risk": 0.0067,
-       "p6": 0.3272
+       "p6": 0.3272,
+       "aset": 15724.0
       },
       {
        "fill": "a living thing",
        "mode": "level",
        "walk_risk": 0.0082,
-       "p6": 0.2519
+       "p6": 0.2519,
+       "aset": 15827.0
+      },
+      {
+       "fill": "female",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1557,7 +1711,16 @@
        "fill": "fifty-something",
        "mode": "level",
        "walk_risk": 0.3854,
-       "p6": 0.6537
+       "p6": 0.6537,
+       "aset": 10.0
+      },
+      {
+       "fill": "50-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1566,7 +1729,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -1843,7 +2006,16 @@
        "fill": "an organism",
        "mode": "level",
        "walk_risk": 0.0025,
-       "p6": 0.3272
+       "p6": 0.3272,
+       "aset": 15724.0
+      },
+      {
+       "fill": "female",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1865,7 +2037,16 @@
        "fill": "a person",
        "mode": "level",
        "walk_risk": 0.0014,
-       "p6": 0.3295
+       "p6": 0.3295,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "white",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1887,7 +2068,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0147,
-       "p6": 0.0467
+       "p6": 0.0467,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "kidney stones",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1909,13 +2099,23 @@
        "fill": "a rhinitis",
        "mode": "level",
        "walk_risk": 0.5162,
-       "p6": 0.7996
+       "p6": 0.7996,
+       "aset": 1.0
       },
       {
        "fill": "a symptom",
        "mode": "level",
        "walk_risk": 0.0805,
-       "p6": 0.2864
+       "p6": 0.2864,
+       "aset": 384.0
+      },
+      {
+       "fill": "allergic rhinitis",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1924,7 +2124,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "hypothyroidism": {
      "surface": "hypothyroidism",
@@ -1937,7 +2137,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.1531,
-       "p6": 0.0267
+       "p6": 0.0267,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "hypothyroidism",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -1946,7 +2155,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -2711,7 +2920,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0631,
-       "p6": 0.2847
+       "p6": 0.2847,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the next couple weeks",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2720,7 +2938,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "kidney transplant": {
      "surface": "kidney transplant",
@@ -2733,7 +2951,16 @@
        "fill": "a body part",
        "mode": "level",
        "walk_risk": 0.0068,
-       "p6": 0.231
+       "p6": 0.231,
+       "aset": 1407.0
+      },
+      {
+       "fill": "kidney transplant",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2755,7 +2982,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0258,
-       "p6": 0.0267
+       "p6": 0.0267,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "hypothyroidism",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2764,7 +3000,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "autoimmune panel": {
      "surface": "autoimmune panel",
@@ -2777,7 +3013,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.0665
+       "p6": 0.0665,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "autoimmune panel",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2786,7 +3031,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "arthritis": {
      "surface": "arthritis",
@@ -2799,13 +3044,23 @@
        "fill": "a disease",
        "mode": "level",
        "walk_risk": 0.0091,
-       "p6": 0.4796
+       "p6": 0.4796,
+       "aset": 459.0
       },
       {
        "fill": "an illness",
        "mode": "level",
        "walk_risk": 0.0047,
-       "p6": 0.4445
+       "p6": 0.4445,
+       "aset": 524.0
+      },
+      {
+       "fill": "arthritis",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2827,7 +3082,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0009,
-       "p6": 0.1617
+       "p6": 0.1617,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "kidney function",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2849,19 +3113,30 @@
        "fill": "a number",
        "mode": "level",
        "walk_risk": 0.3473,
-       "p6": 0.1463
+       "p6": 0.1463,
+       "aset": 7.0
       },
       {
        "fill": "a definite quantity",
        "mode": "level",
        "walk_risk": 0.3341,
-       "p6": 0.0925
+       "p6": 0.0925,
+       "aset": 845.0
       },
       {
        "fill": "a measure",
        "mode": "level",
        "walk_risk": 0.356,
-       "p6": 0.1325
+       "p6": 0.1325,
+       "aset": 9.0
+      },
+      {
+       "fill": "white blood cell count",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2870,7 +3145,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "synthroid": {
      "surface": "synthroid",
@@ -2883,7 +3158,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2225
+       "p6": 0.2225,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "synthroid",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2892,7 +3176,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "polycystic kidneys": {
      "surface": "polycystic kidneys",
@@ -2905,13 +3189,23 @@
        "fill": "an internal organ",
        "mode": "level",
        "walk_risk": 0.1164,
-       "p6": 0.3346
+       "p6": 0.3346,
+       "aset": 25.0
       },
       {
        "fill": "an organ",
        "mode": "level",
        "walk_risk": 0.0999,
-       "p6": 0.3803
+       "p6": 0.3803,
+       "aset": 214.0
+      },
+      {
+       "fill": "polycystic kidneys",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2920,7 +3214,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "tylenol": {
      "surface": "tylenol",
@@ -2933,19 +3227,30 @@
        "fill": "an analgesic",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.4464
+       "p6": 0.4464,
+       "aset": 16.0
       },
       {
        "fill": "a medicine",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.4129
+       "p6": 0.4129,
+       "aset": 60.0
       },
       {
        "fill": "a drug",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.4252
+       "p6": 0.4252,
+       "aset": 718.0
+      },
+      {
+       "fill": "tylenol",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2954,7 +3259,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "andrew": {
      "surface": "andrew",
@@ -2967,7 +3272,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0026,
-       "p6": 0.2191
+       "p6": 0.2191,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "andrew",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2976,7 +3290,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "62-year-old": {
      "surface": "62-year-old",
@@ -2989,7 +3303,16 @@
        "fill": "sixty-something",
        "mode": "level",
        "walk_risk": 0.1746,
-       "p6": 0.5249
+       "p6": 0.5249,
+       "aset": 10.0
+      },
+      {
+       "fill": "62-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -2998,7 +3321,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -3230,13 +3553,23 @@
        "fill": "a health professional",
        "mode": "level",
        "walk_risk": 0.0029,
-       "p6": 0.5437
+       "p6": 0.5437,
+       "aset": 129.0
       },
       {
        "fill": "a professional",
        "mode": "level",
        "walk_risk": 0.0004,
-       "p6": 0.4662
+       "p6": 0.4662,
+       "aset": 245.0
+      },
+      {
+       "fill": "nurse",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -3258,13 +3591,23 @@
        "fill": "a mixed drink",
        "mode": "level",
        "walk_risk": 0.0008,
-       "p6": 0.4718
+       "p6": 0.4718,
+       "aset": 46.0
       },
       {
        "fill": "a drug of abuse",
        "mode": "level",
        "walk_risk": 0.0004,
-       "p6": 0.2383
+       "p6": 0.2383,
+       "aset": 248.0
+      },
+      {
+       "fill": "migraine cocktail",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -3286,7 +3629,16 @@
        "fill": "the summer",
        "mode": "level",
        "walk_risk": 0.0008,
-       "p6": 0.4064
+       "p6": 0.4064,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "July thirty first O eight",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -3308,7 +3660,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0011,
-       "p6": 0.1332
+       "p6": 0.1332,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "July thirty first",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4036,7 +4397,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0004,
-       "p6": 0.1028
+       "p6": 0.1028,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "cat scan",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4058,13 +4428,23 @@
        "fill": "a health professional",
        "mode": "level",
        "walk_risk": 0.0019,
-       "p6": 0.5437
+       "p6": 0.5437,
+       "aset": 129.0
       },
       {
        "fill": "a professional",
        "mode": "level",
        "walk_risk": 0.0011,
-       "p6": 0.4662
+       "p6": 0.4662,
+       "aset": 245.0
+      },
+      {
+       "fill": "nurse",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4086,7 +4466,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0774,
-       "p6": 0.4284
+       "p6": 0.4284,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "40 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4095,7 +4484,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "dragon": {
      "surface": "dragon",
@@ -4108,13 +4497,23 @@
        "fill": "a mythical monster",
        "mode": "level",
        "walk_risk": 0.0009,
-       "p6": 0.4747
+       "p6": 0.4747,
+       "aset": 35.0
       },
       {
        "fill": "a mythical being",
        "mode": "level",
        "walk_risk": 0.0004,
-       "p6": 0.3912
+       "p6": 0.3912,
+       "aset": 122.0
+      },
+      {
+       "fill": "dragon",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4136,7 +4535,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2551
+       "p6": 0.2551,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "imitrex",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4145,7 +4553,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "50 milligrams": {
      "surface": "50 milligrams",
@@ -4158,7 +4566,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0741,
-       "p6": 0.4691
+       "p6": 0.4691,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "50 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4167,7 +4584,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "the last 48 hours": {
      "surface": "the last 48 hours",
@@ -4180,7 +4597,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0769,
-       "p6": 0.1837
+       "p6": 0.1837,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the last 48 hours",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4189,7 +4615,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "kidney stones": {
      "surface": "kidney stones",
@@ -4202,7 +4628,16 @@
        "fill": "a rock",
        "mode": "level",
        "walk_risk": 0.0401,
-       "p6": 0.3369
+       "p6": 0.3369,
+       "aset": 27.0
+      },
+      {
+       "fill": "kidney stones",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4211,7 +4646,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "john": {
      "surface": "john",
@@ -4224,7 +4659,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0402,
-       "p6": 0.2623
+       "p6": 0.2623,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "john",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4233,7 +4677,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "reflux": {
      "surface": "reflux",
@@ -4246,7 +4690,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0,
-       "p6": 0.085
+       "p6": 0.085,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "reflux",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4255,7 +4708,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "61-year-old": {
      "surface": "61-year-old",
@@ -4268,7 +4721,16 @@
        "fill": "sixty-something",
        "mode": "level",
        "walk_risk": 0.2547,
-       "p6": 0.5556
+       "p6": 0.5556,
+       "aset": 10.0
+      },
+      {
+       "fill": "61-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4277,7 +4739,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -4431,7 +4893,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0216,
-       "p6": 0.0756
+       "p6": 0.0756,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "warts",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4440,7 +4911,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "twenty two year old": {
      "surface": "twenty two year old",
@@ -4453,7 +4924,16 @@
        "fill": "twenty-something",
        "mode": "level",
        "walk_risk": 0.1384,
-       "p6": 0.738
+       "p6": 0.738,
+       "aset": 10.0
+      },
+      {
+       "fill": "twenty two year old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -4462,7 +4942,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -5192,7 +5672,16 @@
        "fill": "a health professional",
        "mode": "level",
        "walk_risk": 0.0031,
-       "p6": 0.5437
+       "p6": 0.5437,
+       "aset": 129.0
+      },
+      {
+       "fill": "nurse",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5214,7 +5703,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.1198,
-       "p6": 0.4249
+       "p6": 0.4249,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "20 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5223,7 +5721,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "lisinopril": {
      "surface": "lisinopril",
@@ -5236,19 +5734,30 @@
        "fill": "a ACE inhibitor",
        "mode": "level",
        "walk_risk": 0.5987,
-       "p6": 0.2751
+       "p6": 0.2751,
+       "aset": 5.0
       },
       {
        "fill": "an antihypertensive",
        "mode": "level",
        "walk_risk": 0.4023,
-       "p6": 0.3316
+       "p6": 0.3316,
+       "aset": 18.0
       },
       {
        "fill": "a medicine",
        "mode": "level",
        "walk_risk": 0.3429,
-       "p6": 0.4098
+       "p6": 0.4098,
+       "aset": 60.0
+      },
+      {
+       "fill": "lisinopril",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5257,7 +5766,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "dragon": {
      "surface": "dragon",
@@ -5270,19 +5779,30 @@
        "fill": "a mythical monster",
        "mode": "level",
        "walk_risk": 0.0005,
-       "p6": 0.4747
+       "p6": 0.4747,
+       "aset": 35.0
       },
       {
        "fill": "a mythical being",
        "mode": "level",
        "walk_risk": 0.0002,
-       "p6": 0.3912
+       "p6": 0.3912,
+       "aset": 122.0
       },
       {
        "fill": "an imaginary being",
        "mode": "level",
        "walk_risk": 0.0001,
-       "p6": 0.1861
+       "p6": 0.1861,
+       "aset": 229.0
+      },
+      {
+       "fill": "dragon",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5304,7 +5824,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.4288,
-       "p6": 0.4042
+       "p6": 0.4042,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "1,000 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5313,7 +5842,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "15 milligrams": {
      "surface": "15 milligrams",
@@ -5326,7 +5855,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0802,
-       "p6": 0.4463
+       "p6": 0.4463,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "15 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5335,7 +5873,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "8": {
      "surface": "8",
@@ -5348,7 +5886,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0029,
-       "p6": 0.4397
+       "p6": 0.4397,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "8",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5370,7 +5917,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0313,
-       "p6": 0.4344
+       "p6": 0.4344,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "five pounds",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5379,7 +5935,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "about 10 years ago": {
      "surface": "about 10 years ago",
@@ -5392,7 +5948,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.1952,
-       "p6": 0.8222
+       "p6": 0.8222,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "about 10 years ago",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5401,7 +5966,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "james": {
      "surface": "james",
@@ -5414,7 +5979,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.017,
-       "p6": 0.2228
+       "p6": 0.2228,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "james",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5436,7 +6010,16 @@
        "fill": "a disease",
        "mode": "level",
        "walk_risk": 0.1845,
-       "p6": 0.3442
+       "p6": 0.3442,
+       "aset": 459.0
+      },
+      {
+       "fill": "type 2 diabetes",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5445,7 +6028,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "congestive heart failure": {
      "surface": "congestive heart failure",
@@ -5458,19 +6041,30 @@
        "fill": "a heart failure",
        "mode": "level",
        "walk_risk": 0.5238,
-       "p6": 0.7676
+       "p6": 0.7676,
+       "aset": 2.0
       },
       {
        "fill": "a failure",
        "mode": "level",
        "walk_risk": 0.2916,
-       "p6": 0.387
+       "p6": 0.387,
+       "aset": 12.0
       },
       {
        "fill": "a disorder",
        "mode": "level",
        "walk_risk": 0.397,
-       "p6": 0.1914
+       "p6": 0.1914,
+       "aset": 232.0
+      },
+      {
+       "fill": "congestive heart failure",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5479,7 +6073,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "57-year-old": {
      "surface": "57-year-old",
@@ -5492,7 +6086,16 @@
        "fill": "fifty-something",
        "mode": "level",
        "walk_risk": 0.4675,
-       "p6": 0.5332
+       "p6": 0.5332,
+       "aset": 10.0
+      },
+      {
+       "fill": "57-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -5501,7 +6104,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -6178,19 +6781,30 @@
        "fill": "a mythical monster",
        "mode": "level",
        "walk_risk": 0.0006,
-       "p6": 0.4747
+       "p6": 0.4747,
+       "aset": 35.0
       },
       {
        "fill": "a mythical being",
        "mode": "level",
        "walk_risk": 0.0003,
-       "p6": 0.3912
+       "p6": 0.3912,
+       "aset": 122.0
       },
       {
        "fill": "an imaginary being",
        "mode": "level",
        "walk_risk": 0.0001,
-       "p6": 0.1861
+       "p6": 0.1861,
+       "aset": 229.0
+      },
+      {
+       "fill": "dragon",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6212,7 +6826,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0041,
-       "p6": 0.1034
+       "p6": 0.1034,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "digoxin",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6234,7 +6857,16 @@
        "fill": "a fibrillation",
        "mode": "level",
        "walk_risk": 0.1492,
-       "p6": 0.6917
+       "p6": 0.6917,
+       "aset": 2.0
+      },
+      {
+       "fill": "atrial fibrillation",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6243,7 +6875,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "afib": {
      "surface": "afib",
@@ -6256,7 +6888,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0009,
-       "p6": 0.1893
+       "p6": 0.1893,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "afib",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6265,7 +6906,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "50 milligrams": {
      "surface": "50 milligrams",
@@ -6278,7 +6919,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.1219,
-       "p6": 0.4691
+       "p6": 0.4691,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "50 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6287,7 +6937,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "tramadol": {
      "surface": "tramadol",
@@ -6300,7 +6950,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3176
+       "p6": 0.3176,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "tramadol",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6309,7 +6968,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "distal phalanx fracture": {
      "surface": "distal phalanx fracture",
@@ -6322,13 +6981,23 @@
        "fill": "an injury",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3588
+       "p6": 0.3588,
+       "aset": 66.0
       },
       {
        "fill": "a pathological state",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.1231
+       "p6": 0.1231,
+       "aset": 873.0
+      },
+      {
+       "fill": "distal phalanx fracture",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6337,7 +7006,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "motor vehicle accident": {
      "surface": "motor vehicle accident",
@@ -6350,7 +7019,16 @@
        "fill": "a mishap",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.273
+       "p6": 0.273,
+       "aset": 1.0
+      },
+      {
+       "fill": "motor vehicle accident",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6359,7 +7037,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "middle finger": {
      "surface": "middle finger",
@@ -6372,13 +7050,23 @@
        "fill": "a digit",
        "mode": "level",
        "walk_risk": 0.0054,
-       "p6": 0.3097
+       "p6": 0.3097,
+       "aset": 18.0
       },
       {
        "fill": "an extremity",
        "mode": "level",
        "walk_risk": 0.0149,
-       "p6": 0.3768
+       "p6": 0.3768,
+       "aset": 33.0
+      },
+      {
+       "fill": "middle finger",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6400,7 +7088,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0044,
-       "p6": 0.2931
+       "p6": 0.2931,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "female",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6409,7 +7106,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "41-year-old": {
      "surface": "41-year-old",
@@ -6422,7 +7119,16 @@
        "fill": "forty-something",
        "mode": "level",
        "walk_risk": 0.5368,
-       "p6": 0.5611
+       "p6": 0.5611,
+       "aset": 10.0
+      },
+      {
+       "fill": "41-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6431,7 +7137,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "hill": {
      "surface": "hill",
@@ -6444,7 +7150,16 @@
        "fill": "a natural elevation",
        "mode": "level",
        "walk_risk": 0.0019,
-       "p6": 0.3683
+       "p6": 0.3683,
+       "aset": 85.0
+      },
+      {
+       "fill": "hill",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6466,7 +7181,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.021,
-       "p6": 0.2228
+       "p6": 0.2228,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "james",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -6475,7 +7199,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -7060,7 +7784,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.1263,
-       "p6": 0.4445
+       "p6": 0.4445,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "100 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7069,7 +7802,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "dragon": {
      "surface": "dragon",
@@ -7082,13 +7815,23 @@
        "fill": "a mythical monster",
        "mode": "level",
        "walk_risk": 0.0008,
-       "p6": 0.4747
+       "p6": 0.4747,
+       "aset": 35.0
       },
       {
        "fill": "a mythical being",
        "mode": "level",
        "walk_risk": 0.0004,
-       "p6": 0.3912
+       "p6": 0.3912,
+       "aset": 122.0
+      },
+      {
+       "fill": "dragon",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7110,7 +7853,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.1004,
-       "p6": 0.4284
+       "p6": 0.4284,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "40 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7119,7 +7871,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "omeprazole": {
      "surface": "omeprazole",
@@ -7132,7 +7884,16 @@
        "fill": "an antacid",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.269
+       "p6": 0.269,
+       "aset": 11.0
+      },
+      {
+       "fill": "omeprazole",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7141,7 +7902,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "reflux": {
      "surface": "reflux",
@@ -7154,7 +7915,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2263
+       "p6": 0.2263,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "reflux",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7163,7 +7933,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "allopurinol": {
      "surface": "allopurinol",
@@ -7176,19 +7946,30 @@
        "fill": "a medicine",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3585
+       "p6": 0.3585,
+       "aset": 60.0
       },
       {
        "fill": "a drug",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3318
+       "p6": 0.3318,
+       "aset": 718.0
       },
       {
        "fill": "an agent",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.1209
+       "p6": 0.1209,
+       "aset": 85.0
+      },
+      {
+       "fill": "allopurinol",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7197,7 +7978,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "arthritis": {
      "surface": "arthritis",
@@ -7210,13 +7991,23 @@
        "fill": "an inflammatory disease",
        "mode": "level",
        "walk_risk": 0.0072,
-       "p6": 0.5596
+       "p6": 0.5596,
+       "aset": 25.0
       },
       {
        "fill": "a disease",
        "mode": "level",
        "walk_risk": 0.0022,
-       "p6": 0.4796
+       "p6": 0.4796,
+       "aset": 459.0
+      },
+      {
+       "fill": "arthritis",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7238,7 +8029,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0062,
-       "p6": 0.2148
+       "p6": 0.2148,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "anna",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7260,7 +8060,16 @@
        "fill": "a living thing",
        "mode": "level",
        "walk_risk": 0.0026,
-       "p6": 0.2519
+       "p6": 0.2519,
+       "aset": 15827.0
+      },
+      {
+       "fill": "female",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7282,7 +8091,16 @@
        "fill": "forty-something",
        "mode": "level",
        "walk_risk": 0.3531,
-       "p6": 0.4741
+       "p6": 0.4741,
+       "aset": 10.0
+      },
+      {
+       "fill": "44-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -7291,7 +8109,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -7404,19 +8222,30 @@
        "fill": "a respiratory disease",
        "mode": "level",
        "walk_risk": 0.0175,
-       "p6": 0.6114
+       "p6": 0.6114,
+       "aset": 23.0
       },
       {
        "fill": "a disease",
        "mode": "level",
        "walk_risk": 0.0007,
-       "p6": 0.4074
+       "p6": 0.4074,
+       "aset": 459.0
       },
       {
        "fill": "an illness",
        "mode": "level",
        "walk_risk": 0.0005,
-       "p6": 0.3784
+       "p6": 0.3784,
+       "aset": 524.0
+      },
+      {
+       "fill": "asthma",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8182,7 +9011,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0254,
-       "p6": 0.4236
+       "p6": 0.4236,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "81 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8191,7 +9029,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "heart bypass": {
      "surface": "heart bypass",
@@ -8204,7 +9042,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0001,
-       "p6": 0.0035
+       "p6": 0.0035,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "heart bypass",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8226,7 +9073,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0892,
-       "p6": 0.4284
+       "p6": 0.4284,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "40 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8235,7 +9091,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "20 milligrams": {
      "surface": "20 milligrams",
@@ -8248,7 +9104,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.1523,
-       "p6": 0.4249
+       "p6": 0.4249,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "20 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8257,7 +9122,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "last year": {
      "surface": "last year",
@@ -8270,7 +9135,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.0182,
-       "p6": 0.5111
+       "p6": 0.5111,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "last year",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8292,19 +9166,30 @@
        "fill": "a swelling",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.517
+       "p6": 0.517,
+       "aset": 17.0
       },
       {
        "fill": "an enlargement",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2036
+       "p6": 0.2036,
+       "aset": 12.0
       },
       {
        "fill": "a state",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.1086
+       "p6": 0.1086,
+       "aset": 130.0
+      },
+      {
+       "fill": "edema",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8313,7 +9198,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "systolic ejection murmur": {
      "surface": "systolic ejection murmur",
@@ -8326,19 +9211,30 @@
        "fill": "a sound",
        "mode": "level",
        "walk_risk": 0.0446,
-       "p6": 0.2297
+       "p6": 0.2297,
+       "aset": 4.0
       },
       {
        "fill": "a happening",
        "mode": "level",
        "walk_risk": 0.0309,
-       "p6": 0.0784
+       "p6": 0.0784,
+       "aset": 714.0
       },
       {
        "fill": "an event",
        "mode": "level",
        "walk_risk": 0.0311,
-       "p6": 0.0921
+       "p6": 0.0921,
+       "aset": 5968.0
+      },
+      {
+       "fill": "systolic ejection murmur",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8347,7 +9243,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "27": {
      "surface": "27",
@@ -8360,7 +9256,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0001,
-       "p6": 0.1045
+       "p6": 0.1045,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "27",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8382,7 +9287,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.043
+       "p6": 0.043,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "coronary artery bypass grafting",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8391,7 +9305,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "the past year": {
      "surface": "the past year",
@@ -8404,7 +9318,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.0686,
-       "p6": 0.5522
+       "p6": 0.5522,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the past year",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8413,7 +9336,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "depression": {
      "surface": "depression",
@@ -8426,19 +9349,30 @@
        "fill": "a psychological state",
        "mode": "level",
        "walk_risk": 0.0149,
-       "p6": 0.515
+       "p6": 0.515,
+       "aset": 136.0
       },
       {
        "fill": "a condition",
        "mode": "level",
        "walk_risk": 0.0018,
-       "p6": 0.3846
+       "p6": 0.3846,
+       "aset": 1776.0
       },
       {
        "fill": "a state",
        "mode": "level",
        "walk_risk": 0.0002,
-       "p6": 0.26
+       "p6": 0.26,
+       "aset": 130.0
+      },
+      {
+       "fill": "depression",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8460,7 +9394,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0119,
-       "p6": 0.1916
+       "p6": 0.1916,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "sarah",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8469,7 +9412,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "female": {
      "surface": "female",
@@ -8482,7 +9425,16 @@
        "fill": "a living thing",
        "mode": "level",
        "walk_risk": 0.0018,
-       "p6": 0.2519
+       "p6": 0.2519,
+       "aset": 15827.0
+      },
+      {
+       "fill": "female",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8504,7 +9456,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.1012,
-       "p6": 0.1781
+       "p6": 0.1781,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "27-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8513,7 +9474,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -8899,7 +9860,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2532
+       "p6": 0.2532,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "car crash",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8908,7 +9878,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "lower back": {
      "surface": "lower back",
@@ -8921,19 +9891,30 @@
        "fill": "a body part",
        "mode": "level",
        "walk_risk": 0.0172,
-       "p6": 0.3831
+       "p6": 0.3831,
+       "aset": 1407.0
       },
       {
        "fill": "a part",
        "mode": "level",
        "walk_risk": 0.0083,
-       "p6": 0.2632
+       "p6": 0.2632,
+       "aset": 2935.0
       },
       {
        "fill": "a thing",
        "mode": "level",
        "walk_risk": 0.0053,
-       "p6": 0.1777
+       "p6": 0.1777,
+       "aset": 1.0
+      },
+      {
+       "fill": "lower back",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8955,7 +9936,16 @@
        "fill": "a disease",
        "mode": "level",
        "walk_risk": 0.0013,
-       "p6": 0.5011
+       "p6": 0.5011,
+       "aset": 459.0
+      },
+      {
+       "fill": "diabetes",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8977,19 +9967,30 @@
        "fill": "a cardiovascular disease",
        "mode": "level",
        "walk_risk": 0.5687,
-       "p6": 0.8438
+       "p6": 0.8438,
+       "aset": 28.0
       },
       {
        "fill": "a disorder",
        "mode": "level",
        "walk_risk": 0.1309,
-       "p6": 0.41
+       "p6": 0.41,
+       "aset": 232.0
       },
       {
        "fill": "a physical condition",
        "mode": "level",
        "walk_risk": 0.0947,
-       "p6": 0.2801
+       "p6": 0.2801,
+       "aset": 1313.0
+      },
+      {
+       "fill": "heart disease",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -8998,7 +9999,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "high blood pressure": {
      "surface": "high blood pressure",
@@ -9011,19 +10012,30 @@
        "fill": "a cardiovascular disease",
        "mode": "level",
        "walk_risk": 0.503,
-       "p6": 0.4754
+       "p6": 0.4754,
+       "aset": 28.0
       },
       {
        "fill": "a disorder",
        "mode": "level",
        "walk_risk": 0.2928,
-       "p6": 0.2092
+       "p6": 0.2092,
+       "aset": 232.0
       },
       {
        "fill": "a physical condition",
        "mode": "level",
        "walk_risk": 0.3096,
-       "p6": 0.1303
+       "p6": 0.1303,
+       "aset": 1313.0
+      },
+      {
+       "fill": "high blood pressure",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -9032,7 +10044,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "appendix": {
      "surface": "appendix",
@@ -9045,13 +10057,23 @@
        "fill": "an addendum",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.4654
+       "p6": 0.4654,
+       "aset": 3.0
       },
       {
        "fill": "a matter",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2033
+       "p6": 0.2033,
+       "aset": 1.0
+      },
+      {
+       "fill": "appendix",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -9060,7 +10082,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "c section": {
      "surface": "C section",
@@ -9073,7 +10095,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0006,
-       "p6": 0.1732
+       "p6": 0.1732,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "C section",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -9095,19 +10126,30 @@
        "fill": "a female offspring",
        "mode": "level",
        "walk_risk": 0.0027,
-       "p6": 0.536
+       "p6": 0.536,
+       "aset": 1.0
       },
       {
        "fill": "a female",
        "mode": "level",
        "walk_risk": 0.0002,
-       "p6": 0.4728
+       "p6": 0.4728,
+       "aset": 4.0
       },
       {
        "fill": "a person",
        "mode": "level",
        "walk_risk": 0.0002,
-       "p6": 0.3158
+       "p6": 0.3158,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "daughter",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -9129,7 +10171,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0,
-       "p6": 0.2404
+       "p6": 0.2404,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "smoke",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -9138,7 +10189,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -10219,13 +11270,23 @@
        "fill": "a mythical monster",
        "mode": "level",
        "walk_risk": 0.0005,
-       "p6": 0.4747
+       "p6": 0.4747,
+       "aset": 35.0
       },
       {
        "fill": "a mythical being",
        "mode": "level",
        "walk_risk": 0.0003,
-       "p6": 0.3912
+       "p6": 0.3912,
+       "aset": 122.0
+      },
+      {
+       "fill": "dragon",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10247,7 +11308,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0013,
-       "p6": 0.0467
+       "p6": 0.0467,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "kidney stones",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10269,7 +11339,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.1183,
-       "p6": 0.4342
+       "p6": 0.4342,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "10 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10278,7 +11357,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "some lasix 40 milligrams": {
      "surface": "some lasix 40 milligrams",
@@ -10291,7 +11370,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0048,
-       "p6": 0.0641
+       "p6": 0.0641,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "some lasix 40 milligrams",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10313,13 +11401,23 @@
        "fill": "a heart failure",
        "mode": "level",
        "walk_risk": 0.5262,
-       "p6": 0.7676
+       "p6": 0.7676,
+       "aset": 2.0
       },
       {
        "fill": "a failure",
        "mode": "level",
        "walk_risk": 0.2073,
-       "p6": 0.387
+       "p6": 0.387,
+       "aset": 12.0
+      },
+      {
+       "fill": "congestive heart failure",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10328,7 +11426,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "anemia": {
      "surface": "anemia",
@@ -10341,7 +11439,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0,
-       "p6": 0.1578
+       "p6": 0.1578,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "anemia",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10350,7 +11457,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "8.2": {
      "surface": "8.2",
@@ -10363,7 +11470,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0722,
-       "p6": 0.1675
+       "p6": 0.1675,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "8.2",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10372,7 +11488,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "hemoglobin": {
      "surface": "hemoglobin",
@@ -10385,7 +11501,16 @@
        "fill": "a protein",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3711
+       "p6": 0.3711,
+       "aset": 134.0
+      },
+      {
+       "fill": "hemoglobin",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10394,7 +11519,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "45 %": {
      "surface": "45 %",
@@ -10407,7 +11532,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0023,
-       "p6": 0.3687
+       "p6": 0.3687,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "45 %",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10429,7 +11563,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0817,
-       "p6": 0.3876
+       "p6": 0.3876,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "vermont",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10438,7 +11581,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "colonoscopy": {
      "surface": "colonoscopy",
@@ -10451,19 +11594,30 @@
        "fill": "an endoscopy",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.6664
+       "p6": 0.6664,
+       "aset": 7.0
       },
       {
        "fill": "an examination",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2772
+       "p6": 0.2772,
+       "aset": 31.0
       },
       {
        "fill": "an investigation",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.1394
+       "p6": 0.1394,
+       "aset": 1.0
+      },
+      {
+       "fill": "colonoscopy",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10472,7 +11626,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "red blood cell count": {
      "surface": "red blood cell count",
@@ -10485,7 +11639,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.186,
-       "p6": 0.0105
+       "p6": 0.0105,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "red blood cell count",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10494,7 +11657,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "the past every day": {
      "surface": "the past every day",
@@ -10507,7 +11670,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0631,
-       "p6": 0.2531
+       "p6": 0.2531,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the past every day",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10516,7 +11688,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "the past couple of months": {
      "surface": "the past couple of months",
@@ -10529,7 +11701,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.1527,
-       "p6": 0.616
+       "p6": 0.616,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the past couple of months",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10538,7 +11719,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "female": {
      "surface": "female",
@@ -10551,7 +11732,16 @@
        "fill": "a living thing",
        "mode": "level",
        "walk_risk": 0.0046,
-       "p6": 0.2519
+       "p6": 0.2519,
+       "aset": 15827.0
+      },
+      {
+       "fill": "female",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10573,7 +11763,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.1414,
-       "p6": 0.2194
+       "p6": 0.2194,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "49-year-old",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -10582,7 +11781,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -10657,19 +11856,30 @@
        "fill": "a hypersensitivity reaction",
        "mode": "level",
        "walk_risk": 0.016,
-       "p6": 0.4037
+       "p6": 0.4037,
+       "aset": 7.0
       },
       {
        "fill": "a hypersensitivity",
        "mode": "level",
        "walk_risk": 0.0128,
-       "p6": 0.4081
+       "p6": 0.4081,
+       "aset": 8.0
       },
       {
        "fill": "a sensitivity",
        "mode": "level",
        "walk_risk": 0.0008,
-       "p6": 0.1894
+       "p6": 0.1894,
+       "aset": 28.0
+      },
+      {
+       "fill": "drug allergies",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11005,7 +12215,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.1925,
-       "p6": 0.1491
+       "p6": 0.1491,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the 13th or 14th",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11014,7 +12233,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "november 20": {
      "surface": "November 20",
@@ -11027,7 +12246,16 @@
        "fill": "the autumn",
        "mode": "level",
        "walk_risk": 0.0207,
-       "p6": 0.4411
+       "p6": 0.4411,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "November 20",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11036,7 +12264,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "november 9": {
      "surface": "November 9",
@@ -11049,7 +12277,16 @@
        "fill": "the autumn",
        "mode": "level",
        "walk_risk": 0.0277,
-       "p6": 0.4179
+       "p6": 0.4179,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "November 9",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11058,7 +12295,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "november 7": {
      "surface": "November 7",
@@ -11071,7 +12308,16 @@
        "fill": "the autumn",
        "mode": "level",
        "walk_risk": 0.0133,
-       "p6": 0.4259
+       "p6": 0.4259,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "November 7",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11690,7 +12936,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0692,
-       "p6": 0.206
+       "p6": 0.206,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/18/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11699,7 +12954,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "11/16/01": {
      "surface": "11/16/01",
@@ -11712,7 +12967,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0927,
-       "p6": 0.2178
+       "p6": 0.2178,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/16/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11721,7 +12985,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "11/15/01": {
      "surface": "11/15/01",
@@ -11734,7 +12998,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.1051,
-       "p6": 0.2195
+       "p6": 0.2195,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/15/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11743,7 +13016,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "peace and love": {
      "surface": "Peace and Love",
@@ -11756,7 +13029,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3044
+       "p6": 0.3044,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Peace and Love",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11765,7 +13047,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "11/14/01": {
      "surface": "11/14/01",
@@ -11778,7 +13060,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.073,
-       "p6": 0.2128
+       "p6": 0.2128,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/14/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11787,7 +13078,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "11/11/01": {
      "surface": "11/11/01",
@@ -11800,7 +13091,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0954,
-       "p6": 0.2037
+       "p6": 0.2037,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/11/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11809,7 +13109,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "11/10/01": {
      "surface": "11/10/01",
@@ -11822,7 +13122,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0661,
-       "p6": 0.2136
+       "p6": 0.2136,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/10/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11831,7 +13140,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "11/08/01": {
      "surface": "11/08/01",
@@ -11844,7 +13153,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0801,
-       "p6": 0.2198
+       "p6": 0.2198,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/08/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11853,7 +13171,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "10 a.m. - 3": {
      "surface": "10 a.m. - 3",
@@ -11866,7 +13184,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.2296,
-       "p6": 0.1002
+       "p6": 0.1002,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "10 a.m. - 3",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11875,7 +13202,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "11/13/01": {
      "surface": "11/13/01",
@@ -11888,7 +13215,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0863,
-       "p6": 0.2091
+       "p6": 0.2091,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "11/13/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -11897,7 +13233,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -12146,7 +13482,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.394,
-       "p6": 0.5495
+       "p6": 0.5495,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "1,000",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12155,7 +13500,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "2001": {
      "surface": "2001",
@@ -12168,13 +13513,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0063,
-       "p6": 0.6938
+       "p6": 0.6938,
+       "aset": 3.335159817351598
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0078,
-       "p6": 0.7443
+       "p6": 0.7443,
+       "aset": 10.005479452054795
+      },
+      {
+       "fill": "2001",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12196,13 +13551,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.078,
-       "p6": 0.4288
+       "p6": 0.4288,
+       "aset": 1217.3333333333333
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0817,
-       "p6": 0.4151
+       "p6": 0.4151,
+       "aset": 3652.0
+      },
+      {
+       "fill": "Tuesday, October 23, 2001",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12211,7 +13576,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     }
    }
   },
@@ -12744,7 +14109,16 @@
        "fill": "the summer",
        "mode": "level",
        "walk_risk": 0.004,
-       "p6": 0.4108
+       "p6": 0.4108,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "august 21.doc",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12766,7 +14140,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.002,
-       "p6": 0.038
+       "p6": 0.038,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "CA 94122\ntel:",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12788,19 +14171,30 @@
        "fill": "a city in California",
        "mode": "level",
        "walk_risk": 0.6724,
-       "p6": 0.6939
+       "p6": 0.6939,
+       "aset": 997.0
       },
       {
        "fill": "a city in United States",
        "mode": "level",
        "walk_risk": 0.629,
-       "p6": 0.5401
+       "p6": 0.5401,
+       "aset": 13971.0
       },
       {
        "fill": "a city in North America",
        "mode": "level",
        "walk_risk": 0.5913,
-       "p6": 0.4778
+       "p6": 0.4778,
+       "aset": 36192.0
+      },
+      {
+       "fill": "San Francisco",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12809,7 +14203,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "irving street": {
      "surface": "Irving Street",
@@ -12822,13 +14216,23 @@
        "fill": "a thoroughfare",
        "mode": "level",
        "walk_risk": 0.0187,
-       "p6": 0.4129
+       "p6": 0.4129,
+       "aset": 26.0
       },
       {
        "fill": "a road",
        "mode": "level",
        "walk_risk": 0.0177,
-       "p6": 0.4584
+       "p6": 0.4584,
+       "aset": 62.0
+      },
+      {
+       "fill": "Irving Street",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12850,7 +14254,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0464,
-       "p6": 0.4056
+       "p6": 0.4056,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Capitol Hill",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -12859,7 +14272,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -13573,7 +14986,16 @@
        "fill": "a communicator",
        "mode": "level",
        "walk_risk": 0.0438,
-       "p6": 0.3318
+       "p6": 0.3318,
+       "aset": 1065.0
+      },
+      {
+       "fill": "Senior National Correspondent",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -13582,7 +15004,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "general partner": {
      "surface": "general partner",
@@ -13595,13 +15017,23 @@
        "fill": "a person",
        "mode": "level",
        "walk_risk": 0.0325,
-       "p6": 0.2599
+       "p6": 0.2599,
+       "aset": 1000000000.0
       },
       {
        "fill": "a causal agent",
        "mode": "level",
        "walk_risk": 0.0077,
-       "p6": 0.2202
+       "p6": 0.2202,
+       "aset": 9425.0
+      },
+      {
+       "fill": "general partner",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -13623,7 +15055,16 @@
        "fill": "a member",
        "mode": "level",
        "walk_risk": 0.0751,
-       "p6": 0.7252
+       "p6": 0.7252,
+       "aset": 30.0
+      },
+      {
+       "fill": "board member",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -13632,7 +15073,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "09/24/2001 05:32:19 pm": {
      "surface": "09/24/2001 05:32:19 PM",
@@ -13645,13 +15086,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.147,
-       "p6": 0.2932
+       "p6": 0.2932,
+       "aset": 3.335159817351598
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.1525,
-       "p6": 0.3405
+       "p6": 0.3405,
+       "aset": 10.005479452054795
+      },
+      {
+       "fill": "09/24/2001 05:32:19 PM",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -13660,7 +15111,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "09/24/2001 05:34 pm": {
      "surface": "09/24/2001 05:34 PM",
@@ -13673,13 +15124,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0946,
-       "p6": 0.3256
+       "p6": 0.3256,
+       "aset": 3.335159817351598
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.1,
-       "p6": 0.37
+       "p6": 0.37,
+       "aset": 10.005479452054795
+      },
+      {
+       "fill": "09/24/2001 05:34 PM",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -13688,7 +15149,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "la": {
      "surface": "LA",
@@ -13701,7 +15162,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0013,
-       "p6": 0.4566
+       "p6": 0.4566,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "LA",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -13723,13 +15193,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0804,
-       "p6": 0.3191
+       "p6": 0.3191,
+       "aset": 3.335159817351598
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0843,
-       "p6": 0.3568
+       "p6": 0.3568,
+       "aset": 10.005479452054795
+      },
+      {
+       "fill": "09/24/2001 06:21 PM",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -13738,7 +15218,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     }
    }
   },
@@ -14876,7 +16356,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0856,
-       "p6": 0.4189
+       "p6": 0.4189,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "$35",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -14885,7 +16374,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "the 21st": {
      "surface": "the 21st",
@@ -14898,7 +16387,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0348,
-       "p6": 0.1559
+       "p6": 0.1559,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the 21st",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -14907,7 +16405,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "canada": {
      "surface": "Canada",
@@ -14920,7 +16418,16 @@
        "fill": "a country in North America",
        "mode": "level",
        "walk_risk": 0.1472,
-       "p6": 0.549
+       "p6": 0.549,
+       "aset": 42.0
+      },
+      {
+       "fill": "Canada",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -14929,7 +16436,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "all next week": {
      "surface": "all next week",
@@ -14942,7 +16449,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0136,
-       "p6": 0.2422
+       "p6": 0.2422,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "all next week",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -14964,19 +16480,30 @@
        "fill": "a city in Colorado",
        "mode": "level",
        "walk_risk": 0.2539,
-       "p6": 0.5276
+       "p6": 0.5276,
+       "aset": 193.0
       },
       {
        "fill": "a city in United States",
        "mode": "level",
        "walk_risk": 0.0729,
-       "p6": 0.2611
+       "p6": 0.2611,
+       "aset": 13971.0
       },
       {
        "fill": "a city in North America",
        "mode": "level",
        "walk_risk": 0.0938,
-       "p6": 0.3451
+       "p6": 0.3451,
+       "aset": 36192.0
+      },
+      {
+       "fill": "Aspen",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -14985,7 +16512,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "early next week": {
      "surface": "early next week",
@@ -14998,7 +16525,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0505,
-       "p6": 0.3024
+       "p6": 0.3024,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "early next week",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -15007,7 +16543,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "2002": {
      "surface": "2002",
@@ -15020,13 +16556,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0043,
-       "p6": 0.6798
+       "p6": 0.6798,
+       "aset": 3.335159817351598
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0061,
-       "p6": 0.7192
+       "p6": 0.7192,
+       "aset": 10.005479452054795
+      },
+      {
+       "fill": "2002",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -15048,7 +16594,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0452,
-       "p6": 0.1758
+       "p6": 0.1758,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "5:30",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -15057,7 +16612,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "the 12th": {
      "surface": "the 12th",
@@ -15070,7 +16625,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0206,
-       "p6": 0.1247
+       "p6": 0.1247,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the 12th",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -15079,7 +16643,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -15607,7 +17171,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.3735,
-       "p6": 0.1652
+       "p6": 0.1652,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "10:00 to 11:00 AM",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -15616,7 +17189,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "1:00 to 2:00 pm": {
      "surface": "1:00 to 2:00 PM",
@@ -15629,7 +17202,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.2449,
-       "p6": 0.1833
+       "p6": 0.1833,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "1:00 to 2:00 PM",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -15638,7 +17220,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -16253,19 +17835,30 @@
        "fill": "an ocean trip",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.4958
+       "p6": 0.4958,
+       "aset": 2.0
       },
       {
        "fill": "a water travel",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2039
+       "p6": 0.2039,
+       "aset": 6.0
       },
       {
        "fill": "a travel",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3533
+       "p6": 0.3533,
+       "aset": 87.0
+      },
+      {
+       "fill": "carribean cruises",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16274,7 +17867,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "chief\narrogance officer": {
      "surface": "chief\narrogance officer",
@@ -16287,7 +17880,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0674,
-       "p6": 0.1578
+       "p6": 0.1578,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "chief\narrogance officer",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16296,7 +17898,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "02 dec 2001": {
      "surface": "02 Dec 2001",
@@ -16309,13 +17911,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0092,
-       "p6": 0.5199
+       "p6": 0.5199,
+       "aset": 3.335159817351598
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0089,
-       "p6": 0.5169
+       "p6": 0.5169,
+       "aset": 10.005479452054795
+      },
+      {
+       "fill": "02 Dec 2001",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16337,13 +17949,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0878,
-       "p6": 0.3069
+       "p6": 0.3069,
+       "aset": 3.335159817351598
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0901,
-       "p6": 0.3164
+       "p6": 0.3164,
+       "aset": 10.005479452054795
+      },
+      {
+       "fill": "02 Dec 2001 14:24:55 -0800",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16352,7 +17974,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     }
    }
   },
@@ -16508,7 +18130,16 @@
        "fill": "a number",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2668
+       "p6": 0.2668,
+       "aset": 7.0
+      },
+      {
+       "fill": "flight 11",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16517,7 +18148,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -16782,19 +18413,30 @@
        "fill": "a city in Texas",
        "mode": "level",
        "walk_risk": 0.1765,
-       "p6": 0.6597
+       "p6": 0.6597,
+       "aset": 887.0
       },
       {
        "fill": "a city in United States",
        "mode": "level",
        "walk_risk": 0.0149,
-       "p6": 0.5235
+       "p6": 0.5235,
+       "aset": 13971.0
       },
       {
        "fill": "a city in North America",
        "mode": "level",
        "walk_risk": 0.0111,
-       "p6": 0.4029
+       "p6": 0.4029,
+       "aset": 36192.0
+      },
+      {
+       "fill": "Houston",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16816,7 +18458,16 @@
        "fill": "between 2 and 8 $illion",
        "mode": "level",
        "walk_risk": 0.1346,
-       "p6": 0.4019
+       "p6": 0.4019,
+       "aset": 7.0
+      },
+      {
+       "fill": "$4 million",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16825,7 +18476,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "one houston united campaign": {
      "surface": "One Houston United Campaign",
@@ -16838,7 +18489,16 @@
        "fill": "something",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.2327
+       "p6": 0.2327,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "One Houston United Campaign",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -16847,7 +18507,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -17549,7 +19209,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.014,
-       "p6": 0.279
+       "p6": 0.279,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "AEI",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17571,7 +19240,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0055,
-       "p6": 0.2568
+       "p6": 0.2568,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "next month",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17593,7 +19271,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0002,
-       "p6": 0.1853
+       "p6": 0.1853,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "2001",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17602,7 +19289,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "2000": {
      "surface": "2000",
@@ -17615,7 +19302,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0003,
-       "p6": 0.1714
+       "p6": 0.1714,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "2000",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17624,7 +19320,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "thursday, october 25": {
      "surface": "Thursday, October 25",
@@ -17637,7 +19333,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0785,
-       "p6": 0.1374
+       "p6": 0.1374,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Thursday, October 25",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17646,7 +19351,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "monday, october 22?when": {
      "surface": "Monday, October 22?when",
@@ -17659,7 +19364,16 @@
        "fill": "the autumn",
        "mode": "level",
        "walk_risk": 0.0133,
-       "p6": 0.3061
+       "p6": 0.3061,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "Monday, October 22?when",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17681,19 +19395,30 @@
        "fill": "a city in Indiana",
        "mode": "level",
        "walk_risk": 0.2256,
-       "p6": 0.679
+       "p6": 0.679,
+       "aset": 231.0
       },
       {
        "fill": "a city in United States",
        "mode": "level",
        "walk_risk": 0.0076,
-       "p6": 0.4622
+       "p6": 0.4622,
+       "aset": 13971.0
       },
       {
        "fill": "a city in North America",
        "mode": "level",
        "walk_risk": 0.0058,
-       "p6": 0.3718
+       "p6": 0.3718,
+       "aset": 36192.0
+      },
+      {
+       "fill": "Indianapolis",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17715,7 +19440,16 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.091,
-       "p6": 0.5046
+       "p6": 0.5046,
+       "aset": 1217.3333333333333
+      },
+      {
+       "fill": "December 7, 2001",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17724,7 +19458,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "american enterprise institute": {
      "surface": "American Enterprise Institute",
@@ -17737,7 +19471,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.188,
-       "p6": 0.4947
+       "p6": 0.4947,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "American Enterprise Institute",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17746,7 +19489,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "46285": {
      "surface": "46285",
@@ -17759,7 +19502,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0003,
-       "p6": 0.1415
+       "p6": 0.1415,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "46285",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17781,7 +19533,16 @@
        "fill": "an unit of measurement",
        "mode": "level",
        "walk_risk": 0.0153,
-       "p6": 0.159
+       "p6": 0.159,
+       "aset": 627.0
+      },
+      {
+       "fill": "IN",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17803,13 +19564,23 @@
        "fill": "a corporate executive",
        "mode": "level",
        "walk_risk": 0.546,
-       "p6": 0.6308
+       "p6": 0.6308,
+       "aset": 5.0
       },
       {
        "fill": "an executive",
        "mode": "level",
        "walk_risk": 0.5508,
-       "p6": 0.5611
+       "p6": 0.5611,
+       "aset": 20.0
+      },
+      {
+       "fill": "Chairman, President, and CEO",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17818,7 +19589,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "october 19, 2001": {
      "surface": "October 19, 2001",
@@ -17831,13 +19602,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.1093,
-       "p6": 0.5011
+       "p6": 0.5011,
+       "aset": 1217.3333333333333
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0729,
-       "p6": 0.4767
+       "p6": 0.4767,
+       "aset": 3652.0
+      },
+      {
+       "fill": "October 19, 2001",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -17846,7 +19627,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     }
    }
   },
@@ -18403,7 +20184,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.05,
-       "p6": 0.148
+       "p6": 0.148,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "77002-4400",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -18412,7 +20202,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "tx": {
      "surface": "TX",
@@ -18425,13 +20215,23 @@
        "fill": "a American state",
        "mode": "level",
        "walk_risk": 0.0042,
-       "p6": 0.3815
+       "p6": 0.3815,
+       "aset": 52.0
       },
       {
        "fill": "a state",
        "mode": "level",
        "walk_risk": 0.0092,
-       "p6": 0.3917
+       "p6": 0.3917,
+       "aset": 130.0
+      },
+      {
+       "fill": "TX",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -18453,13 +20253,23 @@
        "fill": "a city in United States",
        "mode": "level",
        "walk_risk": 0.045,
-       "p6": 0.5235
+       "p6": 0.5235,
+       "aset": 13971.0
       },
       {
        "fill": "a city in North America",
        "mode": "level",
        "walk_risk": 0.0314,
-       "p6": 0.4029
+       "p6": 0.4029,
+       "aset": 36192.0
+      },
+      {
+       "fill": "Houston",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -18468,7 +20278,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "houston's": {
      "surface": "Houston's",
@@ -18481,7 +20291,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.035,
-       "p6": 0.3896
+       "p6": 0.3896,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Houston's",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -18490,7 +20309,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "marilou a. schopper": {
      "surface": "Marilou A. Schopper",
@@ -18503,7 +20322,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.4141,
-       "p6": 0.2148
+       "p6": 0.2148,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Marilou A. Schopper",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -18512,7 +20340,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -18988,7 +20816,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.065,
-       "p6": 0.1678
+       "p6": 0.1678,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "06/29/01",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -18997,7 +20834,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "eli lilly": {
      "surface": "Eli Lilly",
@@ -19010,7 +20847,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.0047,
-       "p6": 0.2746
+       "p6": 0.2746,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Eli Lilly",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19032,7 +20878,16 @@
        "fill": "a group",
        "mode": "level",
        "walk_risk": 0.0044,
-       "p6": 0.1405
+       "p6": 0.1405,
+       "aset": 7641.0
+      },
+      {
+       "fill": "Gilman Program\nUniversity",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19054,7 +20909,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.5505,
-       "p6": 0.0772
+       "p6": 0.0772,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "10 a.m. - 6 p.m.",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19063,7 +20927,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "8 a.m. to 9 p.m.": {
      "surface": "8 a.m. to 9 p.m.",
@@ -19076,7 +20940,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.5132,
-       "p6": 0.121
+       "p6": 0.121,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "8 a.m. to 9 p.m.",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19085,7 +20958,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "july 31, 2001": {
      "surface": "July 31, 2001",
@@ -19098,7 +20971,16 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0593,
-       "p6": 0.4914
+       "p6": 0.4914,
+       "aset": 1217.3333333333333
+      },
+      {
+       "fill": "July 31, 2001",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19107,7 +20989,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "studies in excellence": {
      "surface": "Studies in Excellence",
@@ -19120,13 +21002,23 @@
        "fill": "a quality",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.3559
+       "p6": 0.3559,
+       "aset": 918.0
       },
       {
        "fill": "an attribute",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.108
+       "p6": 0.108,
+       "aset": 19.0
+      },
+      {
+       "fill": "Studies in Excellence",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19135,7 +21027,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     }
    }
   },
@@ -19597,7 +21489,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.014,
-       "p6": 0.2094
+       "p6": 0.2094,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "last Sunday's",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19619,7 +21520,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.2047,
-       "p6": 0.443
+       "p6": 0.443,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "$1 billion",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19628,7 +21538,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "last week": {
      "surface": "last week",
@@ -19641,7 +21551,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.0317,
-       "p6": 0.5978
+       "p6": 0.5978,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "last week",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19650,7 +21569,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "$3 billion": {
      "surface": "$3 billion",
@@ -19663,7 +21582,16 @@
        "fill": "between 1.5 and 6 $billion",
        "mode": "level",
        "walk_risk": 0.2334,
-       "p6": 0.679
+       "p6": 0.679,
+       "aset": 5.5
+      },
+      {
+       "fill": "$3 billion",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19672,7 +21600,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "$200 million": {
      "surface": "$200 million",
@@ -19685,7 +21613,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.2342,
-       "p6": 0.4548
+       "p6": 0.4548,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "$200 million",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19694,7 +21631,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "enron": {
      "surface": "Enron",
@@ -19707,7 +21644,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.0003,
-       "p6": 0.4056
+       "p6": 0.4056,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Enron",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19729,7 +21675,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.0849,
-       "p6": 0.2731
+       "p6": 0.2731,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Transwestern Pipeline Company",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19738,7 +21693,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "northern natural gas company": {
      "surface": "Northern Natural Gas Company",
@@ -19751,7 +21706,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.0847,
-       "p6": 0.261
+       "p6": 0.261,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Northern Natural Gas Company",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19760,7 +21724,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "citigroup inc.": {
      "surface": "Citigroup Inc.",
@@ -19773,7 +21737,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.3657,
-       "p6": 0.5205
+       "p6": 0.5205,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Citigroup Inc.",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19782,7 +21755,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "salomon smith barney": {
      "surface": "Salomon Smith Barney",
@@ -19795,7 +21768,16 @@
        "fill": "an organization",
        "mode": "level",
        "walk_risk": 0.2671,
-       "p6": 0.1492
+       "p6": 0.1492,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Salomon Smith Barney",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -19804,7 +21786,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -20485,7 +22467,16 @@
        "fill": "a person",
        "mode": "level",
        "walk_risk": 0.0,
-       "p6": 0.2327
+       "p6": 0.2327,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "firefighters",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20507,7 +22498,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0066,
-       "p6": 0.495
+       "p6": 0.495,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "500",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20529,7 +22529,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0163,
-       "p6": 0.5311
+       "p6": 0.5311,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "200",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20538,7 +22547,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "20": {
      "surface": "20",
@@ -20551,7 +22560,16 @@
        "fill": "a certain amount",
        "mode": "level",
        "walk_risk": 0.0051,
-       "p6": 0.5129
+       "p6": 0.5129,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "20",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20560,7 +22578,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "indiana": {
      "surface": "Indiana",
@@ -20573,7 +22591,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0028,
-       "p6": 0.3618
+       "p6": 0.3618,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Indiana",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20595,7 +22622,16 @@
        "fill": "a state",
        "mode": "level",
        "walk_risk": 0.0437,
-       "p6": 0.5096
+       "p6": 0.5096,
+       "aset": 130.0
+      },
+      {
+       "fill": "Ohio",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20604,7 +22640,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "california": {
      "surface": "California",
@@ -20617,7 +22653,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0106,
-       "p6": 0.4171
+       "p6": 0.4171,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "California",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20626,7 +22671,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "tribeca": {
      "surface": "Tribeca",
@@ -20639,7 +22684,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0575,
-       "p6": 0.322
+       "p6": 0.322,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Tribeca",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20648,7 +22702,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "israel": {
      "surface": "Israel",
@@ -20661,7 +22715,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0007,
-       "p6": 0.4453
+       "p6": 0.4453,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Israel",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20670,7 +22733,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "jewish new year": {
      "surface": "Jewish New Year",
@@ -20683,7 +22746,16 @@
        "fill": "a religious holiday",
        "mode": "level",
        "walk_risk": 1.0,
-       "p6": 0.5504
+       "p6": 0.5504,
+       "aset": 54.0
+      },
+      {
+       "fill": "Jewish New Year",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20692,7 +22764,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "midtown": {
      "surface": "Midtown",
@@ -20705,7 +22777,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0476,
-       "p6": 0.4294
+       "p6": 0.4294,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Midtown",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20714,7 +22795,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "hamptons": {
      "surface": "Hamptons",
@@ -20727,7 +22808,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.2697,
-       "p6": 0.3205
+       "p6": 0.3205,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Hamptons",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20736,7 +22826,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   }
@@ -20923,7 +23013,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0243,
-       "p6": 0.1565
+       "p6": 0.1565,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "10/24/01 Days",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -20932,7 +23031,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "more than 4 days": {
      "surface": "more than 4 days",
@@ -20945,7 +23044,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0182,
-       "p6": 0.1661
+       "p6": 0.1661,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "more than 4 days",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21431,7 +23539,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0371,
-       "p6": 0.1552
+       "p6": 0.1552,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "3 - First Quarter",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21440,7 +23557,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "2 - first month": {
      "surface": "2 - First Month",
@@ -21453,7 +23570,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0555,
-       "p6": 0.1485
+       "p6": 0.1485,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "2 - First Month",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21462,7 +23588,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "1 - first week": {
      "surface": "1 - First Week",
@@ -21475,7 +23601,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0414,
-       "p6": 0.1862
+       "p6": 0.1862,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "1 - First Week",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21484,7 +23619,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "january 7th, 2002": {
      "surface": "January 7th, 2002",
@@ -21497,13 +23632,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0799,
-       "p6": 0.5615
+       "p6": 0.5615,
+       "aset": 1217.3333333333333
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0656,
-       "p6": 0.5335
+       "p6": 0.5335,
+       "aset": 3652.0
+      },
+      {
+       "fill": "January 7th, 2002",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21512,7 +23657,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "cash management": {
      "surface": "Cash Management",
@@ -21525,7 +23670,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0095,
-       "p6": 0.2077
+       "p6": 0.2077,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Cash Management",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21547,7 +23701,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.1356,
-       "p6": 0.2735
+       "p6": 0.2735,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the last couple of weeks",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21556,7 +23719,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -21886,7 +24049,16 @@
        "fill": "a leader",
        "mode": "level",
        "walk_risk": 0.0015,
-       "p6": 0.5568
+       "p6": 0.5568,
+       "aset": 671.0
+      },
+      {
+       "fill": "manager",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21908,7 +24080,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0731,
-       "p6": 0.2421
+       "p6": 0.2421,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the last two",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21917,7 +24098,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "60 minute": {
      "surface": "60 Minute",
@@ -21930,7 +24111,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0105,
-       "p6": 0.2638
+       "p6": 0.2638,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "60 Minute",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21952,7 +24142,16 @@
        "fill": "a gathering",
        "mode": "level",
        "walk_risk": 0.0012,
-       "p6": 0.2033
+       "p6": 0.2033,
+       "aset": 204.0
+      },
+      {
+       "fill": "California Legislature",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -21974,7 +24173,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0019,
-       "p6": 0.4171
+       "p6": 0.4171,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "California",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22152,7 +24360,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0001,
-       "p6": 0.2041
+       "p6": 0.2041,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "executive",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22174,7 +24391,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.3666,
-       "p6": 0.167
+       "p6": 0.167,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the last day of the month preceding the date",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22183,7 +24409,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -22449,7 +24675,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0736,
-       "p6": 0.1912
+       "p6": 0.1912,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "3-6pm",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22458,7 +24693,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "31st floor": {
      "surface": "31st floor",
@@ -22471,7 +24706,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0832,
-       "p6": 0.3346
+       "p6": 0.3346,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "31st floor",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22480,7 +24724,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "ecn": {
      "surface": "ECN",
@@ -22493,7 +24737,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0364,
-       "p6": 0.2542
+       "p6": 0.2542,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "ECN",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22502,7 +24755,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "enron center north": {
      "surface": "Enron Center North",
@@ -22515,19 +24768,30 @@
        "fill": "a geographical area",
        "mode": "level",
        "walk_risk": 0.1205,
-       "p6": 0.2547
+       "p6": 0.2547,
+       "aset": 1680.0
       },
       {
        "fill": "a region",
        "mode": "level",
        "walk_risk": 0.133,
-       "p6": 0.3006
+       "p6": 0.3006,
+       "aset": 246.0
       },
       {
        "fill": "a location",
        "mode": "level",
        "walk_risk": 0.1867,
-       "p6": 0.3504
+       "p6": 0.3504,
+       "aset": 3030.0
+      },
+      {
+       "fill": "Enron Center North",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22536,7 +24800,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "the 30th and 31st": {
      "surface": "the 30th and 31st",
@@ -22549,7 +24813,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.238,
-       "p6": 0.0683
+       "p6": 0.0683,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the 30th and 31st",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22558,7 +24831,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -22920,7 +25193,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0071,
-       "p6": 0.1888
+       "p6": 0.1888,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "5pm",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22942,7 +25224,16 @@
        "fill": "the autumn",
        "mode": "level",
        "walk_risk": 0.1383,
-       "p6": 0.3362
+       "p6": 0.3362,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "Thursday, November 29th",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22951,7 +25242,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "teala": {
      "surface": "Teala",
@@ -22964,7 +25255,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0044,
-       "p6": 0.2619
+       "p6": 0.2619,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Teala",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22986,7 +25286,16 @@
        "fill": "some time ago",
        "mode": "level",
        "walk_risk": 0.0652,
-       "p6": 0.4778
+       "p6": 0.4778,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "the past five years",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -22995,7 +25304,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "friday, november 30th": {
      "surface": "Friday, November 30th",
@@ -23008,7 +25317,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0442,
-       "p6": 0.1342
+       "p6": 0.1342,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Friday, November 30th",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23017,7 +25335,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "last day": {
      "surface": "last day",
@@ -23030,7 +25348,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0021,
-       "p6": 0.2184
+       "p6": 0.2184,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "last day",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23039,7 +25366,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -23556,7 +25883,16 @@
        "fill": "between 35 and 140",
        "mode": "level",
        "walk_risk": 0.0083,
-       "p6": 0.5747
+       "p6": 0.5747,
+       "aset": 11.5
+      },
+      {
+       "fill": "70",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23578,7 +25914,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0917,
-       "p6": 0.1381
+       "p6": 0.1381,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Saturday, December 1",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23587,7 +25932,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "associate": {
      "surface": "Associate",
@@ -23600,7 +25945,16 @@
        "fill": "a person",
        "mode": "level",
        "walk_risk": 0.0063,
-       "p6": 0.2145
+       "p6": 0.2145,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Associate",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23622,7 +25976,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0337,
-       "p6": 0.1516
+       "p6": 0.1516,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Friday, November 16",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23631,7 +25994,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "analyst": {
      "surface": "Analyst",
@@ -23644,13 +26007,23 @@
        "fill": "an expert",
        "mode": "level",
        "walk_risk": 0.4503,
-       "p6": 0.5562
+       "p6": 0.5562,
+       "aset": 159.0
       },
       {
        "fill": "a person",
        "mode": "level",
        "walk_risk": 0.2221,
-       "p6": 0.2697
+       "p6": 0.2697,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Analyst",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23659,7 +26032,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "saturday november 3": {
      "surface": "Saturday November 3",
@@ -23672,7 +26045,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0033,
-       "p6": 0.1616
+       "p6": 0.1616,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Saturday November 3",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23694,7 +26076,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0001,
-       "p6": 0.2263
+       "p6": 0.2263,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "managers",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23716,7 +26107,16 @@
        "fill": "a document",
        "mode": "level",
        "walk_risk": 0.0069,
-       "p6": 0.2143
+       "p6": 0.2143,
+       "aset": 305.0
+      },
+      {
+       "fill": "direct reports",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23738,7 +26138,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.098,
-       "p6": 0.2549
+       "p6": 0.2549,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "A&A",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23747,7 +26156,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "manager": {
      "surface": "Manager",
@@ -23760,7 +26169,16 @@
        "fill": "a leader",
        "mode": "level",
        "walk_risk": 0.0268,
-       "p6": 0.5568
+       "p6": 0.5568,
+       "aset": 671.0
+      },
+      {
+       "fill": "Manager",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23769,7 +26187,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -23947,19 +26365,30 @@
        "fill": "an area",
        "mode": "level",
        "walk_risk": 0.0947,
-       "p6": 0.3157
+       "p6": 0.3157,
+       "aset": 334.0
       },
       {
        "fill": "a region",
        "mode": "level",
        "walk_risk": 0.0946,
-       "p6": 0.2705
+       "p6": 0.2705,
+       "aset": 246.0
       },
       {
        "fill": "a location",
        "mode": "level",
        "walk_risk": 0.0872,
-       "p6": 0.3543
+       "p6": 0.3543,
+       "aset": 3030.0
+      },
+      {
+       "fill": "the Enron Center",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23968,7 +26397,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 3
+     "bc_action": 4
     },
     "october 25th": {
      "surface": "October 25th",
@@ -23981,7 +26410,16 @@
        "fill": "the autumn",
        "mode": "level",
        "walk_risk": 0.0967,
-       "p6": 0.4103
+       "p6": 0.4103,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "October 25th",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -23990,7 +26428,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -24123,7 +26561,16 @@
        "fill": "a personal attribute",
        "mode": "level",
        "walk_risk": 0.0,
-       "p6": 0.1885
+       "p6": 0.1885,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "traders",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -24438,13 +26885,23 @@
        "fill": "the early 2000s",
        "mode": "level",
        "walk_risk": 0.0847,
-       "p6": 0.5308
+       "p6": 0.5308,
+       "aset": 1217.3333333333333
       },
       {
        "fill": "the 2000s",
        "mode": "level",
        "walk_risk": 0.0779,
-       "p6": 0.4847
+       "p6": 0.4847,
+       "aset": 3652.0
+      },
+      {
+       "fill": "Wednesday, January 2, 2002",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -24453,7 +26910,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 2
+     "bc_action": 3
     },
     "9:30 am,": {
      "surface": "9:30 am,",
@@ -24466,7 +26923,16 @@
        "fill": "at some point",
        "mode": "level",
        "walk_risk": 0.0927,
-       "p6": 0.1481
+       "p6": 0.1481,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "9:30 am,",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -24475,7 +26941,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -24725,7 +27191,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.0904,
-       "p6": 0.4244
+       "p6": 0.4244,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "New Jersey",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -24734,7 +27209,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "lakewood": {
      "surface": "Lakewood",
@@ -24747,7 +27222,16 @@
        "fill": "a place",
        "mode": "level",
        "walk_risk": 0.057,
-       "p6": 0.4185
+       "p6": 0.4185,
+       "aset": 1000000000.0
+      },
+      {
+       "fill": "Lakewood",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -24756,7 +27240,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "pjm east": {
      "surface": "PJM East",
@@ -24769,7 +27253,16 @@
        "fill": "a direction",
        "mode": "level",
        "walk_risk": 0.0369,
-       "p6": 0.2386
+       "p6": 0.2386,
+       "aset": 6.0
+      },
+      {
+       "fill": "PJM East",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -24778,7 +27271,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   },
@@ -24978,7 +27471,16 @@
        "fill": "the winter",
        "mode": "level",
        "walk_risk": 0.0696,
-       "p6": 0.2868
+       "p6": 0.2868,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "Thursday, January 17",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -24987,7 +27489,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "wednesday, january 16": {
      "surface": "Wednesday, January 16",
@@ -25000,7 +27502,16 @@
        "fill": "the winter",
        "mode": "level",
        "walk_risk": 0.0827,
-       "p6": 0.2497
+       "p6": 0.2497,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "Wednesday, January 16",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -25009,7 +27520,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     },
     "friday, january 11": {
      "surface": "Friday, January 11",
@@ -25022,7 +27533,16 @@
        "fill": "the winter",
        "mode": "level",
        "walk_risk": 0.1367,
-       "p6": 0.3283
+       "p6": 0.3283,
+       "aset": 3.033333333333333
+      },
+      {
+       "fill": "Friday, January 11",
+       "mode": "level",
+       "keep": true,
+       "walk_risk": 1.0,
+       "p6": 1.0,
+       "aset": 1.0
       },
       {
        "fill": null,
@@ -25031,7 +27551,7 @@
        "p6": 0.0
       }
      ],
-     "bc_action": 1
+     "bc_action": 2
     }
    }
   }
