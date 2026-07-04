@@ -11,22 +11,138 @@
    "aci/D2N001": {
     "spans": [
      {
+      "surface": "mammogram",
+      "type": "MISC",
+      "start": 6868,
+      "end": 6877,
+      "sent": "for your annual exam , you're due for a mammogram , so we have to schedule for that , as well , okay ?",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.1795
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "heart failure",
+      "type": "DEM",
+      "start": 6712,
+      "end": 6725,
+      "sent": "record them to me for like , about a week , so i have to see if we have to add another agent , okay ? 'cause we need to get that under better control for your heart failure to be more successful , okay ?",
+      "actions": [
+       {
+        "fill": "a disorder",
+        "mode": "level",
+        "walk_risk": 0.0166,
+        "p6": 0.2586
+       },
+       {
+        "fill": "a physical condition",
+        "mode": "level",
+        "walk_risk": 0.026,
+        "p6": 0.2601
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       2
+      ]
+     },
+     {
+      "surface": "hypertension",
+      "type": "DEM",
+      "start": 6269,
+      "end": 6281,
+      "sent": "and then for your last problem your hypertension , you know , again i , i , i think it's out of control .",
+      "actions": [
+       {
+        "fill": "a cardiovascular disease",
+        "mode": "level",
+        "walk_risk": 0.006,
+        "p6": 0.6068
+       },
+       {
+        "fill": "a physical condition",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.25
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "depression",
+      "type": "DEM",
+      "start": 5881,
+      "end": 5891,
+      "sent": "from a depression standpoint , it sounds like you're doing really well with that .",
+      "actions": [
+       {
+        "fill": "a psychological state",
+        "mode": "level",
+        "walk_risk": 0.0012,
+        "p6": 0.515
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
       "surface": "dragon",
       "type": "DEM",
-      "start": 7680,
-      "end": 7686,
-      "sent": "[doctor] hey , dragon , finalize the note .",
+      "start": 5839,
+      "end": 5845,
+      "sent": "[doctor] hey , dragon , order an echocardiogram .",
       "actions": [
        {
         "fill": "a mythical monster",
         "mode": "level",
-        "walk_risk": 0.0013,
+        "walk_risk": 0.0012,
         "p6": 0.4747
        },
        {
         "fill": "a mythical being",
         "mode": "level",
-        "walk_risk": 0.0009,
+        "walk_risk": 0.0006,
         "p6": 0.3912
        },
        {
@@ -51,29 +167,17 @@
       ]
      },
      {
-      "surface": "doctor",
-      "type": "DEM",
-      "start": 7666,
-      "end": 7672,
-      "sent": "[doctor] hey , dragon , finalize the note .",
+      "surface": "20 milligrams",
+      "type": "QUANTITY",
+      "start": 5644,
+      "end": 5657,
+      "sent": "i also wan na start you on some lasix , you know , 20 milligrams a day .",
       "actions": [
        {
-        "fill": "a medical practitioner",
+        "fill": "a certain amount",
         "mode": "level",
-        "walk_risk": 0.0467,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.016,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.003,
-        "p6": 0.5847
+        "walk_risk": 0.1038,
+        "p6": 0.4249
        },
        {
         "fill": null,
@@ -84,29 +188,27 @@
       ],
       "bc_action": 1,
       "legal": [
-       1,
-       2,
-       3
+       1
       ]
      },
      {
-      "surface": "patient",
-      "type": "DEM",
-      "start": 7634,
-      "end": 7641,
-      "sent": "[patient] good seeing you too .",
+      "surface": "lasix",
+      "type": "MISC",
+      "start": 5625,
+      "end": 5630,
+      "sent": "i also wan na start you on some lasix , you know , 20 milligrams a day .",
       "actions": [
        {
-        "fill": "a case",
+        "fill": "a diuretic drug",
         "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4134
+        "walk_risk": 1.0,
+        "p6": 0.302
        },
        {
-        "fill": "a person",
+        "fill": "a drug",
         "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4424
+        "walk_risk": 1.0,
+        "p6": 0.3583
        },
        {
         "fill": null,
@@ -115,11 +217,71 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 0,
+      "bc_action": 2,
       "legal": [
-       0,
-       1,
        2
+      ]
+     },
+     {
+      "surface": "40 milligrams",
+      "type": "QUANTITY",
+      "start": 5472,
+      "end": 5485,
+      "sent": "but i do wan na increase your lisinopril to 40 milligrams a day , just because your blood pressure's high .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0748,
+        "p6": 0.4284
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "lisinopril",
+      "type": "MISC",
+      "start": 5458,
+      "end": 5468,
+      "sent": "but i do wan na increase your lisinopril to 40 milligrams a day , just because your blood pressure's high .",
+      "actions": [
+       {
+        "fill": "a ACE inhibitor",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2751
+       },
+       {
+        "fill": "an antihypertensive",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.3316
+       },
+       {
+        "fill": "a medicine",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.4098
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
       ]
      },
      {
@@ -144,6 +306,32 @@
       ],
       "bc_action": 1,
       "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "45 %",
+      "type": "QUANTITY",
+      "start": 4789,
+      "end": 4793,
+      "sent": "it showed that you have that low-ish pumping function of your heart at about 45 % .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0015,
+        "p6": 0.3687
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
        1
       ]
      },
@@ -173,23 +361,17 @@
       ]
      },
      {
-      "surface": "mount baker area",
-      "type": "LOC",
-      "start": 753,
-      "end": 769,
-      "sent": "uh , went to washington last weekend to hike in northern cascades, like around the mount baker area .",
+      "surface": "congestive heart failure",
+      "type": "DEM",
+      "start": 1068,
+      "end": 1092,
+      "sent": "um , so tell me , how are you doing with the congestive heart failure ? how are you doing watching your diet ? i know we've talked about watching a low sodium diet .",
       "actions": [
        {
-        "fill": "a region",
+        "fill": "a disorder",
         "mode": "level",
-        "walk_risk": 0.0248,
-        "p6": 0.2721
-       },
-       {
-        "fill": "a location",
-        "mode": "level",
-        "walk_risk": 0.0416,
-        "p6": 0.2837
+        "walk_risk": 0.31,
+        "p6": 0.1914
        },
        {
         "fill": null,
@@ -198,42 +380,9 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 2,
+      "bc_action": 1,
       "legal": [
-       2
-      ]
-     },
-     {
-      "surface": "northern cascades",
-      "type": "LOC",
-      "start": 718,
-      "end": 735,
-      "sent": "uh , went to washington last weekend to hike in northern cascades, like around the mount baker area .",
-      "actions": [
-       {
-        "fill": "a range",
-        "mode": "level",
-        "walk_risk": 0.0099,
-        "p6": 0.1518
-       },
-       {
-        "fill": "a geological formation",
-        "mode": "level",
-        "walk_risk": 0.0145,
-        "p6": 0.3363
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
+       1
       ]
      },
      {
@@ -300,6 +449,39 @@
       ]
      },
      {
+      "surface": "female",
+      "type": "DEM",
+      "start": 250,
+      "end": 256,
+      "sent": "[doctor] martha is a 50-year-old female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam .",
+      "actions": [
+       {
+        "fill": "an organism",
+        "mode": "level",
+        "walk_risk": 0.0067,
+        "p6": 0.3272
+       },
+       {
+        "fill": "a living thing",
+        "mode": "level",
+        "walk_risk": 0.0082,
+        "p6": 0.2519
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
       "surface": "50-year-old",
       "type": "DATETIME",
       "start": 238,
@@ -328,8 +510,32 @@
     "probes": {
      "train": [
       {
+       "surface": "20 milligrams",
+       "question": "What is the daily dosage of Lasix?"
+      },
+      {
+       "surface": "40 milligrams",
+       "question": "What is the new daily dosage of lisinopril?"
+      },
+      {
        "surface": "50-year-old",
        "question": "What is the age of Martha Collins?"
+      },
+      {
+       "surface": "depression",
+       "question": "What mental health condition is listed in Martha Collins' past medical history?"
+      },
+      {
+       "surface": "female",
+       "question": "What is the gender of Martha Collins?"
+      },
+      {
+       "surface": "hypertension",
+       "question": "What condition is listed in Martha Collins' past medical history alongside congestive heart failure and depression?"
+      },
+      {
+       "surface": "lasix",
+       "question": "What diuretic will be initiated at 20 mg daily?"
       },
       {
        "surface": "last year",
@@ -340,60 +546,49 @@
        "question": "Who is the 50-year-old female with a past medical history significant for congestive heart failure?"
       },
       {
+       "surface": "patient",
+       "question": "Who did the narrator last see?"
+      },
+      {
        "surface": "the past year",
        "question": "How long has she been attending therapy weekly for her depression?"
       }
      ],
      "held_out": [
       {
-       "surface": "patient",
-       "question": "Who did the narrator last see?"
+       "surface": "congestive heart failure",
+       "question": "What is the past medical history of Martha Collins that involves fluid backup in the lungs?"
+      },
+      {
+       "surface": "heart failure",
+       "question": "What condition is listed in Martha Collins' past medical history?"
+      },
+      {
+       "surface": "lisinopril",
+       "question": "What medication will be increased to 40 mg daily?"
+      },
+      {
+       "surface": "mammogram",
+       "question": "What routine screening is the patient due for?"
       }
      ]
     },
     "trainable": true
    },
    "mts/0": {
-    "spans": [],
-    "probes": {
-     "train": [
-      {
-       "surface": "Doctor",
-       "question": "Who has been following her since her last visit?"
-      },
-      {
-       "surface": "Doctor Kumar",
-       "question": "Who has been following her since her last visit?"
-      },
-      {
-       "surface": "Patient",
-       "question": "Who is the 76-year-old white female presenting to the clinic?"
-      }
-     ],
-     "held_out": []
-    },
-    "trainable": false
-   },
-   "aci/D2N002": {
     "spans": [
      {
-      "surface": "dragon",
+      "surface": "female",
       "type": "DEM",
-      "start": 6561,
-      "end": 6567,
-      "sent": "hey , dragon , finalize the note .",
+      "start": 678,
+      "end": 684,
+      "sent": "Patient: I am seventy six years old and identify as a white female.",
       "actions": [
        {
-        "fill": "a mythical monster",
+        "fill": "an organism",
         "mode": "level",
-        "walk_risk": 0.0005,
-        "p6": 0.4747
-       },
-       {
-        "fill": "a mythical being",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.3912
+        "walk_risk": 0.0025,
+        "p6": 0.3272
        },
        {
         "fill": null,
@@ -405,34 +600,104 @@
       "bc_action": 0,
       "legal": [
        0,
-       1,
+       1
+      ]
+     },
+     {
+      "surface": "white",
+      "type": "DEM",
+      "start": 672,
+      "end": 677,
+      "sent": "Patient: I am seventy six years old and identify as a white female.",
+      "actions": [
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0014,
+        "p6": 0.3295
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "kidney stones",
+      "type": "DEM",
+      "start": 286,
+      "end": 299,
+      "sent": "Doctor: It looks like Doctor Kumar followed up with you last time regarding your hypertension, osteoarthritis, osteoporosis, hypothyroidism, allergic rhinitis and kidney stones.",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0147,
+        "p6": 0.0467
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "allergic rhinitis",
+      "type": "DEM",
+      "start": 264,
+      "end": 281,
+      "sent": "Doctor: It looks like Doctor Kumar followed up with you last time regarding your hypertension, osteoarthritis, osteoporosis, hypothyroidism, allergic rhinitis and kidney stones.",
+      "actions": [
+       {
+        "fill": "a rhinitis",
+        "mode": "level",
+        "walk_risk": 0.5162,
+        "p6": 0.7996
+       },
+       {
+        "fill": "a symptom",
+        "mode": "level",
+        "walk_risk": 0.0805,
+        "p6": 0.2864
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
        2
       ]
      },
      {
-      "surface": "doctor",
+      "surface": "hypothyroidism",
       "type": "DEM",
-      "start": 6540,
-      "end": 6546,
-      "sent": "[doctor] okay .",
+      "start": 248,
+      "end": 262,
+      "sent": "Doctor: It looks like Doctor Kumar followed up with you last time regarding your hypertension, osteoarthritis, osteoporosis, hypothyroidism, allergic rhinitis and kidney stones.",
       "actions": [
        {
-        "fill": "a medical practitioner",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0367,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.0127,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0024,
-        "p6": 0.5847
+        "walk_risk": 0.1531,
+        "p6": 0.0267
        },
        {
         "fill": null,
@@ -443,44 +708,56 @@
       ],
       "bc_action": 1,
       "legal": [
-       1,
-       2,
-       3
+       1
       ]
-     },
-     {
-      "surface": "patient",
-      "type": "DEM",
-      "start": 6510,
-      "end": 6517,
-      "sent": "[patient] not at this point .",
-      "actions": [
-       {
-        "fill": "a case",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4134
-       },
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4424
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
-      ]
-     },
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "allergic rhinitis",
+       "question": "What condition is listed alongside hypertension and osteoarthritis?"
+      },
+      {
+       "surface": "Doctor",
+       "question": "Who has been following her since her last visit?"
+      },
+      {
+       "surface": "Doctor Kumar",
+       "question": "Who has been following her since her last visit?"
+      },
+      {
+       "surface": "female",
+       "question": "What is the patient's gender?"
+      },
+      {
+       "surface": "kidney stones",
+       "question": "What condition is listed alongside hypertension and osteoarthritis?"
+      },
+      {
+       "surface": "Kumar",
+       "question": "Who has been following her since her last visit?"
+      },
+      {
+       "surface": "Patient",
+       "question": "Who is the 76-year-old white female presenting to the clinic?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "hypothyroidism",
+       "question": "What condition is listed alongside hypertension and osteoarthritis?"
+      },
+      {
+       "surface": "white",
+       "question": "What color is the patient?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "aci/D2N002": {
+    "spans": [
      {
       "surface": "the next couple weeks",
       "type": "DATETIME",
@@ -507,6 +784,271 @@
       ]
      },
      {
+      "surface": "kidney transplant",
+      "type": "DEM",
+      "start": 6266,
+      "end": 6283,
+      "sent": "you know , it's gon na be a struggle for you because again , you ca n't take some of those anti-inflammatory medications because of your kidney transplant , so .",
+      "actions": [
+       {
+        "fill": "a body part",
+        "mode": "level",
+        "walk_risk": 0.0068,
+        "p6": 0.231
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "hypothyroidism",
+      "type": "DEM",
+      "start": 5828,
+      "end": 5842,
+      "sent": "[doctor] for your second problem , your hypothyroidism , i wan na go ahead and continue you on this .",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0258,
+        "p6": 0.0267
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "autoimmune panel",
+      "type": "MISC",
+      "start": 5554,
+      "end": 5570,
+      "sent": "[doctor] okay ? i also wan na go ahead and just order an autoimmune panel , okay ? hey , dragon , order an autoimmune panel .",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.0665
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "arthritis",
+      "type": "DEM",
+      "start": 5311,
+      "end": 5320,
+      "sent": "[doctor] so for your knee pain , i think that this is an acute exacerbation of your arthritis , okay ? so i wan na go ahead and if .",
+      "actions": [
+       {
+        "fill": "a disease",
+        "mode": "level",
+        "walk_risk": 0.0091,
+        "p6": 0.4796
+       },
+       {
+        "fill": "an illness",
+        "mode": "level",
+        "walk_risk": 0.0047,
+        "p6": 0.4445
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "kidney function",
+      "type": "DEM",
+      "start": 5022,
+      "end": 5037,
+      "sent": "[doctor] and it looks like your kidney function is also very good .",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0009,
+        "p6": 0.1617
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "white blood cell count",
+      "type": "DEM",
+      "start": 4837,
+      "end": 4859,
+      "sent": "and here , looking at your lab results , you know , your white blood cell count is not elevated , which is good .",
+      "actions": [
+       {
+        "fill": "a number",
+        "mode": "level",
+        "walk_risk": 0.3473,
+        "p6": 0.1463
+       },
+       {
+        "fill": "a definite quantity",
+        "mode": "level",
+        "walk_risk": 0.3341,
+        "p6": 0.0925
+       },
+       {
+        "fill": "a measure",
+        "mode": "level",
+        "walk_risk": 0.356,
+        "p6": 0.1325
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "synthroid",
+      "type": "MISC",
+      "start": 2354,
+      "end": 2363,
+      "sent": "um , and in terms of your hyperthyroidism , how are you doing with the synthroid ? are you doing okay ?",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2225
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "polycystic kidneys",
+      "type": "DEM",
+      "start": 1720,
+      "end": 1738,
+      "sent": "now , i know that you've had the kidney transplant a few years ago for some polycystic kidneys .",
+      "actions": [
+       {
+        "fill": "an internal organ",
+        "mode": "level",
+        "walk_risk": 0.1164,
+        "p6": 0.3346
+       },
+       {
+        "fill": "an organ",
+        "mode": "level",
+        "walk_risk": 0.0999,
+        "p6": 0.3803
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "tylenol",
+      "type": "MISC",
+      "start": 1036,
+      "end": 1043,
+      "sent": "[patient] a little tylenol .",
+      "actions": [
+       {
+        "fill": "an analgesic",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.4464
+       },
+       {
+        "fill": "a medicine",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.4129
+       },
+       {
+        "fill": "a drug",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.4252
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
       "surface": "andrew",
       "type": "DEM",
       "start": 419,
@@ -526,7 +1068,7 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 0,
+      "bc_action": 1,
       "legal": [
        0,
        1
@@ -569,18 +1111,54 @@
        "question": "Who is the 62-year-old male with a kidney transplant?"
       },
       {
+       "surface": "arthritis",
+       "question": "What condition is listed in Andrew Perez's past medical history?"
+      },
+      {
+       "surface": "autoimmune panel",
+       "question": "What type of testing will be ordered for further evaluation?"
+      },
+      {
        "surface": "dr. gutierrez",
        "question": "Who did he see a couple of weeks ago?"
       },
       {
+       "surface": "hypothyroidism",
+       "question": "What endocrine condition is listed in Andrew Perez's past medical history?"
+      },
+      {
        "surface": "patient",
        "question": "Who reports moving boxes up and down the basement stairs?"
+      },
+      {
+       "surface": "polycystic kidneys",
+       "question": "What condition necessitated the patient's kidney transplant?"
+      },
+      {
+       "surface": "synthroid",
+       "question": "What medication has he continued to utilize regularly?"
+      },
+      {
+       "surface": "tylenol",
+       "question": "What medication did the patient take?"
       }
      ],
      "held_out": [
       {
        "surface": "doctor",
        "question": "Who did he see a couple of weeks ago?"
+      },
+      {
+       "surface": "kidney function",
+       "question": "What is described as normal?"
+      },
+      {
+       "surface": "kidney transplant",
+       "question": "What procedure is listed in Andrew Perez's past medical history?"
+      },
+      {
+       "surface": "white blood cell count",
+       "question": "What is the status of the count of infection-fighting cells?"
       }
      ]
     },
@@ -606,6 +1184,39 @@
         "mode": "level",
         "walk_risk": 0.0004,
         "p6": 0.4662
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "migraine cocktail",
+      "type": "DEM",
+      "start": 1194,
+      "end": 1211,
+      "sent": "While we're waiting for your C T results, I'm going to order a migraine cocktail and some Morphine.",
+      "actions": [
+       {
+        "fill": "a mixed drink",
+        "mode": "level",
+        "walk_risk": 0.0008,
+        "p6": 0.4718
+       },
+       {
+        "fill": "a drug of abuse",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.2383
        },
        {
         "fill": null,
@@ -677,6 +1288,10 @@
     "probes": {
      "train": [
       {
+       "surface": "migraine cocktail",
+       "question": "What was she given?"
+      },
+      {
        "surface": "Morphine",
        "question": "What substance was given a total of 8 mg in the Emergency Department?"
       },
@@ -692,89 +1307,17 @@
    "aci/D2N003": {
     "spans": [
      {
-      "surface": "dragon",
+      "surface": "cat scan",
       "type": "DEM",
-      "start": 6068,
-      "end": 6074,
-      "sent": "hey , dragon ? finalize the note .",
+      "start": 5820,
+      "end": 5828,
+      "sent": "so the nurse will be in soon , and she'll help you get the cat scan scheduled .",
       "actions": [
        {
-        "fill": "a mythical monster",
+        "fill": "a personal attribute",
         "mode": "level",
         "walk_risk": 0.0004,
-        "p6": 0.4747
-       },
-       {
-        "fill": "a mythical being",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.3912
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
-      ]
-     },
-     {
-      "surface": "doctor",
-      "type": "DEM",
-      "start": 6046,
-      "end": 6052,
-      "sent": "[doctor] hey .",
-      "actions": [
-       {
-        "fill": "a medical practitioner",
-        "mode": "level",
-        "walk_risk": 0.0403,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.013,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0021,
-        "p6": 0.5847
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1,
-       2,
-       3
-      ]
-     },
-     {
-      "surface": "patient",
-      "type": "DEM",
-      "start": 6024,
-      "end": 6031,
-      "sent": "[patient] thank you .",
-      "actions": [
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4424
+        "p6": 0.1028
        },
        {
         "fill": null,
@@ -815,7 +1358,7 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 1,
+      "bc_action": 0,
       "legal": [
        0,
        1,
@@ -834,6 +1377,89 @@
         "mode": "level",
         "walk_risk": 0.0774,
         "p6": 0.4284
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 5696,
+      "end": 5702,
+      "sent": "hey , dragon ? order a refill of protonix 40 milligrams daily .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0009,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.3912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "imitrex",
+      "type": "MISC",
+      "start": 5484,
+      "end": 5491,
+      "sent": "[doctor] for your next problem , for your migraines , let's continue you on the imitrex .",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2551
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "50 milligrams",
+      "type": "QUANTITY",
+      "start": 5236,
+      "end": 5249,
+      "sent": "[doctor] hey , dragon ? order ultram 50 milligrams every six hours as needed for pain .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0741,
+        "p6": 0.4691
        },
        {
         "fill": null,
@@ -873,6 +1499,31 @@
       ]
      },
      {
+      "surface": "kidney stones",
+      "type": "DEM",
+      "start": 515,
+      "end": 528,
+      "sent": "[patient] uh , i'm feeling a lot of the same pain that i had when i had kidney stones about two years ago , so i'm a little concerned .",
+      "actions": [
+       {
+        "fill": "a rock",
+        "mode": "level",
+        "walk_risk": 0.0401,
+        "p6": 0.3369
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
       "surface": "john",
       "type": "DEM",
       "start": 403,
@@ -894,6 +1545,32 @@
       ],
       "bc_action": 1,
       "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "reflux",
+      "type": "DEM",
+      "start": 356,
+      "end": 362,
+      "sent": "[doctor] so john is a 61-year-old male with a past medical history significant for kidney stones , migraines and reflux , who presents with some back pain .",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0,
+        "p6": 0.085
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
        1
       ]
      },
@@ -934,8 +1611,20 @@
        "question": "What is the age of John Perry?"
       },
       {
+       "surface": "john",
+       "question": "Who is the 61-year-old male mentioned?"
+      },
+      {
+       "surface": "kidney stones",
+       "question": "What condition is listed in Mr. Perry's past medical history besides migraines and reflux?"
+      },
+      {
        "surface": "patient",
        "question": "Who reports feeling the same pain as when he had kidney stones?"
+      },
+      {
+       "surface": "reflux",
+       "question": "What condition is listed in Mr. Perry's past medical history that involves stomach acid backing up?"
       },
       {
        "surface": "the last 48 hours",
@@ -944,8 +1633,16 @@
      ],
      "held_out": [
       {
-       "surface": "john",
-       "question": "Who is the 61-year-old male mentioned?"
+       "surface": "50 milligrams",
+       "question": "What is the dosage of Ultram to be administered?"
+      },
+      {
+       "surface": "cat scan",
+       "question": "What type of scan was ordered for the abdomen and pelvis?"
+      },
+      {
+       "surface": "imitrex",
+       "question": "What medication has he been diligent about taking for his migraines?"
       }
      ]
     },
@@ -953,6 +1650,31 @@
    },
    "mts/2": {
     "spans": [
+     {
+      "surface": "warts",
+      "type": "DEM",
+      "start": 518,
+      "end": 523,
+      "sent": "Just the warts and itchiness.",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0216,
+        "p6": 0.0756
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
      {
       "surface": "twenty two year old",
       "type": "DATETIME",
@@ -988,111 +1710,6 @@
    "aci/D2N004": {
     "spans": [
      {
-      "surface": "dragon",
-      "type": "DEM",
-      "start": 7225,
-      "end": 7231,
-      "sent": "hey , dragon , finalize the note .",
-      "actions": [
-       {
-        "fill": "a mythical monster",
-        "mode": "level",
-        "walk_risk": 0.0005,
-        "p6": 0.4747
-       },
-       {
-        "fill": "a mythical being",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.3912
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
-      ]
-     },
-     {
-      "surface": "doctor",
-      "type": "DEM",
-      "start": 7204,
-      "end": 7210,
-      "sent": "[doctor] okay .",
-      "actions": [
-       {
-        "fill": "a medical practitioner",
-        "mode": "level",
-        "walk_risk": 0.0367,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.0127,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0024,
-        "p6": 0.5847
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1,
-       2,
-       3
-      ]
-     },
-     {
-      "surface": "patient",
-      "type": "DEM",
-      "start": 7174,
-      "end": 7181,
-      "sent": "[patient] not at this point .",
-      "actions": [
-       {
-        "fill": "a case",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4134
-       },
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4424
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
-      ]
-     },
-     {
       "surface": "nurse",
       "type": "DEM",
       "start": 7008,
@@ -1112,10 +1729,112 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 1,
+      "bc_action": 0,
       "legal": [
        0,
        1
+      ]
+     },
+     {
+      "surface": "20 milligrams",
+      "type": "QUANTITY",
+      "start": 6968,
+      "end": 6981,
+      "sent": "hey , dragon , order a refill of lisinopril 20 milligrams once a day .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.1198,
+        "p6": 0.4249
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "lisinopril",
+      "type": "DEM",
+      "start": 6957,
+      "end": 6967,
+      "sent": "hey , dragon , order a refill of lisinopril 20 milligrams once a day .",
+      "actions": [
+       {
+        "fill": "a ACE inhibitor",
+        "mode": "level",
+        "walk_risk": 0.5987,
+        "p6": 0.2751
+       },
+       {
+        "fill": "an antihypertensive",
+        "mode": "level",
+        "walk_risk": 0.4023,
+        "p6": 0.3316
+       },
+       {
+        "fill": "a medicine",
+        "mode": "level",
+        "walk_risk": 0.3429,
+        "p6": 0.4098
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 6571,
+      "end": 6577,
+      "sent": "[doctor] all right ? hey , dragon , order a hemoglobin a1c .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0005,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.3912
+       },
+       {
+        "fill": "an imaginary being",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.1861
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
       ]
      },
      {
@@ -1165,6 +1884,32 @@
       ],
       "bc_action": 1,
       "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "8",
+      "type": "QUANTITY",
+      "start": 5485,
+      "end": 5486,
+      "sent": "uh , it looks like your hemoglobin a1c has been a little high at 8 .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0029,
+        "p6": 0.4397
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
        1
       ]
      },
@@ -1245,6 +1990,68 @@
       ]
      },
      {
+      "surface": "type 2 diabetes",
+      "type": "DEM",
+      "start": 352,
+      "end": 367,
+      "sent": "[doctor] james is a 57-year-old male with a past medical history significant for congestive heart failure and type 2 diabetes who presents today with back pain .",
+      "actions": [
+       {
+        "fill": "a disease",
+        "mode": "level",
+        "walk_risk": 0.1845,
+        "p6": 0.3442
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "congestive heart failure",
+      "type": "DEM",
+      "start": 323,
+      "end": 347,
+      "sent": "[doctor] james is a 57-year-old male with a past medical history significant for congestive heart failure and type 2 diabetes who presents today with back pain .",
+      "actions": [
+       {
+        "fill": "a heart failure",
+        "mode": "level",
+        "walk_risk": 0.5238,
+        "p6": 0.7676
+       },
+       {
+        "fill": "a failure",
+        "mode": "level",
+        "walk_risk": 0.2916,
+        "p6": 0.387
+       },
+       {
+        "fill": "a disorder",
+        "mode": "level",
+        "walk_risk": 0.397,
+        "p6": 0.1914
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
       "surface": "57-year-old",
       "type": "DATETIME",
       "start": 262,
@@ -1277,12 +2084,16 @@
        "question": "How much meloxicam should be initiated once daily?"
       },
       {
-       "surface": "57-year-old",
-       "question": "What is the age of James Allen?"
+       "surface": "8",
+       "question": "What is the elevated level of Hemoglobin A1c?"
       },
       {
        "surface": "about 10 years ago",
        "question": "When did he have surgery in his lower back?"
+      },
+      {
+       "surface": "congestive heart failure",
+       "question": "What is the patient's past medical history significant for besides type 2 diabetes?"
       },
       {
        "surface": "james",
@@ -1291,6 +2102,18 @@
       {
        "surface": "l5",
        "question": "Where is the pain felt upon palpation of his back?"
+      },
+      {
+       "surface": "lisinopril",
+       "question": "What medication should be continued at a dosage of 20 mg once daily?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who states he was golfing and hurt his back?"
+      },
+      {
+       "surface": "type 2 diabetes",
+       "question": "What condition is listed in James Allen's past medical history besides congestive heart failure?"
       }
      ],
      "held_out": [
@@ -1299,8 +2122,12 @@
        "question": "What is the increased dosage of metformin in milligrams?"
       },
       {
-       "surface": "patient",
-       "question": "Who states he was golfing and hurt his back?"
+       "surface": "20 milligrams",
+       "question": "What is the dosage of lisinopril?"
+      },
+      {
+       "surface": "57-year-old",
+       "question": "What is the age of James Allen?"
       }
      ]
     },
@@ -1362,29 +2189,17 @@
       ]
      },
      {
-      "surface": "doctor",
+      "surface": "digoxin",
       "type": "DEM",
-      "start": 2807,
-      "end": 2813,
-      "sent": "[doctor] you're welcome .",
+      "start": 2716,
+      "end": 2723,
+      "sent": "[doctor] you take digoxin .",
       "actions": [
        {
-        "fill": "a medical practitioner",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0166,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.0074,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0013,
-        "p6": 0.5847
+        "walk_risk": 0.0041,
+        "p6": 0.1034
        },
        {
         "fill": null,
@@ -1396,35 +2211,21 @@
       "bc_action": 0,
       "legal": [
        0,
-       1,
-       2,
-       3
+       1
       ]
      },
      {
-      "surface": "patient",
+      "surface": "atrial fibrillation",
       "type": "DEM",
-      "start": 2768,
-      "end": 2775,
-      "sent": "[patient] no , that's it .",
+      "start": 2660,
+      "end": 2679,
+      "sent": "so you have atrial fibrillation .",
       "actions": [
        {
-        "fill": "a case",
+        "fill": "a fibrillation",
         "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4134
-       },
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4424
-       },
-       {
-        "fill": "a causal agent",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.2567
+        "walk_risk": 0.1492,
+        "p6": 0.6917
        },
        {
         "fill": null,
@@ -1433,12 +2234,35 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 0,
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "afib",
+      "type": "DEM",
+      "start": 2576,
+      "end": 2580,
+      "sent": "so i'm taking digoxin for afib .",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0009,
+        "p6": 0.1893
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
       "legal": [
        0,
-       1,
-       2,
-       3
+       1
       ]
      },
      {
@@ -1467,17 +2291,17 @@
       ]
      },
      {
-      "surface": "four-way stop",
-      "type": "LOC",
-      "start": 811,
-      "end": 824,
-      "sent": "so i was stopped at a four-way stop , and it was not my turn to go .",
+      "surface": "tramadol",
+      "type": "MISC",
+      "start": 2267,
+      "end": 2275,
+      "sent": "okay , so tramadol , 50 milligrams , every six hours as needed for pain .",
       "actions": [
        {
-        "fill": "an ending",
+        "fill": "something",
         "mode": "level",
-        "walk_risk": 0.522,
-        "p6": 0.3676
+        "walk_risk": 1.0,
+        "p6": 0.3176
        },
        {
         "fill": null,
@@ -1488,6 +2312,121 @@
       ],
       "bc_action": 1,
       "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "distal phalanx fracture",
+      "type": "MISC",
+      "start": 2087,
+      "end": 2110,
+      "sent": "um , so your diagnosis is distal phalanx fracture of the middle finger or the third finger .",
+      "actions": [
+       {
+        "fill": "an injury",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.3588
+       },
+       {
+        "fill": "a pathological state",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.1231
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "motor vehicle accident",
+      "type": "MISC",
+      "start": 1393,
+      "end": 1415,
+      "sent": "after a motor vehicle accident .",
+      "actions": [
+       {
+        "fill": "a mishap",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.273
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "middle finger",
+      "type": "DEM",
+      "start": 1172,
+      "end": 1185,
+      "sent": "[patient] just the middle finger .",
+      "actions": [
+       {
+        "fill": "a digit",
+        "mode": "level",
+        "walk_risk": 0.0054,
+        "p6": 0.3097
+       },
+       {
+        "fill": "an extremity",
+        "mode": "level",
+        "walk_risk": 0.0149,
+        "p6": 0.3768
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "female",
+      "type": "DEM",
+      "start": 155,
+      "end": 161,
+      "sent": "she's a 41-year-old female , and what brings you in today ?",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0044,
+        "p6": 0.2931
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
        1
       ]
      },
@@ -1515,6 +2454,57 @@
       "legal": [
        1
       ]
+     },
+     {
+      "surface": "hill",
+      "type": "DEM",
+      "start": 128,
+      "end": 132,
+      "sent": "hill .",
+      "actions": [
+       {
+        "fill": "a natural elevation",
+        "mode": "level",
+        "walk_risk": 0.0019,
+        "p6": 0.3683
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "james",
+      "type": "DEM",
+      "start": 63,
+      "end": 68,
+      "sent": "james , good to see you .",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.021,
+        "p6": 0.2228
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
      }
     ],
     "probes": {
@@ -1528,14 +2518,38 @@
        "question": "What is the dosage of Tramadol recommended?"
       },
       {
-       "surface": "ms. hill",
-       "question": "Who presents today for an evaluation of right middle finger pain?"
+       "surface": "distal phalanx fracture",
+       "question": "What type of fracture was observed in the right middle finger?"
+      },
+      {
+       "surface": "female",
+       "question": "What is the gender of Ms. Hill?"
+      },
+      {
+       "surface": "motor vehicle accident",
+       "question": "What event led to Ms. Hill's right middle finger pain?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who did the speaker discuss the diagnosis and treatment options with?"
+      },
+      {
+       "surface": "tramadol",
+       "question": "What medication is recommended for pain relief?"
       }
      ],
      "held_out": [
       {
-       "surface": "patient",
-       "question": "Who did the speaker discuss the diagnosis and treatment options with?"
+       "surface": "hill",
+       "question": "What is the surname of the patient?"
+      },
+      {
+       "surface": "middle finger",
+       "question": "What digit is experiencing pain?"
+      },
+      {
+       "surface": "ms. hill",
+       "question": "Who presents today for an evaluation of right middle finger pain?"
       }
      ]
     },
@@ -1551,118 +2565,6 @@
    },
    "aci/D2N006": {
     "spans": [
-     {
-      "surface": "dragon",
-      "type": "DEM",
-      "start": 6565,
-      "end": 6571,
-      "sent": "hey , dragon , finalize the note .",
-      "actions": [
-       {
-        "fill": "a mythical monster",
-        "mode": "level",
-        "walk_risk": 0.0005,
-        "p6": 0.4747
-       },
-       {
-        "fill": "a mythical being",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.3912
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
-      ]
-     },
-     {
-      "surface": "doctor",
-      "type": "DEM",
-      "start": 6536,
-      "end": 6542,
-      "sent": "[doctor] okay .",
-      "actions": [
-       {
-        "fill": "a medical practitioner",
-        "mode": "level",
-        "walk_risk": 0.0367,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.0127,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0024,
-        "p6": 0.5847
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1,
-       2,
-       3
-      ]
-     },
-     {
-      "surface": "patient",
-      "type": "DEM",
-      "start": 6504,
-      "end": 6511,
-      "sent": "[patient] uh , no .",
-      "actions": [
-       {
-        "fill": "a case",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4134
-       },
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4424
-       },
-       {
-        "fill": "a causal agent",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.2567
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2,
-       3
-      ]
-     },
      {
       "surface": "100 milligrams",
       "type": "QUANTITY",
@@ -1686,6 +2588,39 @@
       "bc_action": 1,
       "legal": [
        1
+      ]
+     },
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 6109,
+      "end": 6115,
+      "sent": "[doctor] hey , dragon , order allopurinol , 100 milligrams , once daily .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0008,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.3912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
       ]
      },
      {
@@ -1714,6 +2649,126 @@
       ]
      },
      {
+      "surface": "omeprazole",
+      "type": "MISC",
+      "start": 1919,
+      "end": 1929,
+      "sent": "[doctor] and then , you know , how about your reflux ? we had placed you on , um , omeprazole , you know , to help with some of those symptoms and i know that you were gon na do some dietary modifications .",
+      "actions": [
+       {
+        "fill": "an antacid",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.269
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "reflux",
+      "type": "MISC",
+      "start": 1882,
+      "end": 1888,
+      "sent": "[doctor] and then , you know , how about your reflux ? we had placed you on , um , omeprazole , you know , to help with some of those symptoms and i know that you were gon na do some dietary modifications .",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2263
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "allopurinol",
+      "type": "MISC",
+      "start": 1626,
+      "end": 1637,
+      "sent": "and are you taking the allopurinol that i prescribed ?",
+      "actions": [
+       {
+        "fill": "a medicine",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.3585
+       },
+       {
+        "fill": "a drug",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.3318
+       },
+       {
+        "fill": "an agent",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.1209
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "arthritis",
+      "type": "DEM",
+      "start": 523,
+      "end": 532,
+      "sent": "um , my arthritis is starting to get better .",
+      "actions": [
+       {
+        "fill": "an inflammatory disease",
+        "mode": "level",
+        "walk_risk": 0.0072,
+        "p6": 0.5596
+       },
+       {
+        "fill": "a disease",
+        "mode": "level",
+        "walk_risk": 0.0022,
+        "p6": 0.4796
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
       "surface": "anna",
       "type": "DEM",
       "start": 403,
@@ -1725,6 +2780,32 @@
         "mode": "level",
         "walk_risk": 0.0062,
         "p6": 0.2148
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "female",
+      "type": "DEM",
+      "start": 247,
+      "end": 253,
+      "sent": "[doctor] so , anna is a 44-year-old female with a past medical history significant for arthritis , gout , and reflux , who presents today for follow up of her chronic problems .",
+      "actions": [
+       {
+        "fill": "a living thing",
+        "mode": "level",
+        "walk_risk": 0.0026,
+        "p6": 0.2519
        },
        {
         "fill": null,
@@ -1782,51 +2863,63 @@
       {
        "surface": "anna",
        "question": "Who is the 44-year-old female with a past medical history significant for arthritis, gout, and reflux?"
+      },
+      {
+       "surface": "arthritis",
+       "question": "What chronic condition is listed in Anna Mitchell's past medical history?"
+      },
+      {
+       "surface": "female",
+       "question": "What is the gender of Anna Mitchell?"
+      },
+      {
+       "surface": "omeprazole",
+       "question": "What medication was prescribed for her acid reflux?"
       }
      ],
      "held_out": [
       {
+       "surface": "allopurinol",
+       "question": "What medication is she taking once daily?"
+      },
+      {
        "surface": "patient",
        "question": "Who was last seen six months ago?"
+      },
+      {
+       "surface": "reflux",
+       "question": "What condition is listed in Anna Mitchell's past medical history alongside arthritis and gout?"
       }
      ]
     },
     "trainable": true
    },
    "mts/5": {
-    "spans": [],
-    "probes": {
-     "train": [],
-     "held_out": []
-    },
-    "trainable": false
-   },
-   "aci/D2N007": {
     "spans": [
      {
-      "surface": "dragon",
+      "surface": "asthma",
       "type": "DEM",
-      "start": 5206,
-      "end": 5212,
-      "sent": "[doctor] hey , dragon , finalize the note .",
+      "start": 341,
+      "end": 347,
+      "sent": "Doctor: Besides asthma, do you have any other medical problems?",
       "actions": [
        {
-        "fill": "a mythical monster",
+        "fill": "a respiratory disease",
         "mode": "level",
-        "walk_risk": 0.0013,
-        "p6": 0.4747
+        "walk_risk": 0.0175,
+        "p6": 0.6114
        },
        {
-        "fill": "a mythical being",
+        "fill": "a disease",
         "mode": "level",
-        "walk_risk": 0.0009,
-        "p6": 0.3912
+        "walk_risk": 0.0007,
+        "p6": 0.4074
        },
        {
-        "fill": "an imaginary being",
+        "fill": "an illness",
         "mode": "level",
-        "walk_risk": 0.0001,
-        "p6": 0.1861
+        "walk_risk": 0.0005,
+        "p6": 0.3784
        },
        {
         "fill": null,
@@ -1842,31 +2935,28 @@
        2,
        3
       ]
-     },
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aci/D2N007": {
+    "spans": [
      {
-      "surface": "doctor",
-      "type": "DEM",
-      "start": 5192,
-      "end": 5198,
-      "sent": "[doctor] hey , dragon , finalize the note .",
+      "surface": "81 milligrams",
+      "type": "QUANTITY",
+      "start": 4989,
+      "end": 5002,
+      "sent": "hey , dragon , order aspirin 81 milligrams daily .",
       "actions": [
        {
-        "fill": "a medical practitioner",
+        "fill": "a certain amount",
         "mode": "level",
-        "walk_risk": 0.0467,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.016,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.003,
-        "p6": 0.5847
+        "walk_risk": 0.0254,
+        "p6": 0.4236
        },
        {
         "fill": null,
@@ -1877,23 +2967,21 @@
       ],
       "bc_action": 1,
       "legal": [
-       1,
-       2,
-       3
+       1
       ]
      },
      {
-      "surface": "patient",
+      "surface": "heart bypass",
       "type": "DEM",
-      "start": 5170,
-      "end": 5177,
-      "sent": "[patient] thank you .",
+      "start": 4739,
+      "end": 4751,
+      "sent": "the heart bypass that you've had .",
       "actions": [
        {
-        "fill": "a person",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4424
+        "walk_risk": 0.0001,
+        "p6": 0.0035
        },
        {
         "fill": null,
@@ -1906,39 +2994,6 @@
       "legal": [
        0,
        1
-      ]
-     },
-     {
-      "surface": "nurse",
-      "type": "DEM",
-      "start": 5025,
-      "end": 5030,
-      "sent": "okay , so the nurse will come in .",
-      "actions": [
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.0029,
-        "p6": 0.5437
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0004,
-        "p6": 0.4662
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       0,
-       1,
-       2
       ]
      },
      {
@@ -2018,6 +3073,80 @@
       ]
      },
      {
+      "surface": "edema",
+      "type": "MISC",
+      "start": 3372,
+      "end": 3377,
+      "sent": "uh , your lower extremity strength is good , and there's no edema .",
+      "actions": [
+       {
+        "fill": "a swelling",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.517
+       },
+       {
+        "fill": "an enlargement",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2036
+       },
+       {
+        "fill": "a state",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.1086
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "systolic ejection murmur",
+      "type": "DEM",
+      "start": 3091,
+      "end": 3115,
+      "sent": "uh , your heart i hear a three out of six , systolic ejection murmur , uh , that's stable .",
+      "actions": [
+       {
+        "fill": "a sound",
+        "mode": "level",
+        "walk_risk": 0.0446,
+        "p6": 0.2297
+       },
+       {
+        "fill": "a happening",
+        "mode": "level",
+        "walk_risk": 0.0309,
+        "p6": 0.0784
+       },
+       {
+        "fill": "an event",
+        "mode": "level",
+        "walk_risk": 0.0311,
+        "p6": 0.0921
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
       "surface": "27",
       "type": "DATETIME",
       "start": 2559,
@@ -2040,6 +3169,31 @@
       "bc_action": 0,
       "legal": [
        0,
+       1
+      ]
+     },
+     {
+      "surface": "coronary artery bypass grafting",
+      "type": "MISC",
+      "start": 2507,
+      "end": 2538,
+      "sent": "and i know that you've had a coronary artery bypass grafting at the young age of 27 , so how's that going ?",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.043
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
        1
       ]
      },
@@ -2069,6 +3223,46 @@
       ]
      },
      {
+      "surface": "depression",
+      "type": "DEM",
+      "start": 405,
+      "end": 415,
+      "sent": "um , i've been struggling with my depression , um , a bit more just because we've been trapped really inside and remotely over the past year , so i've been struggling , um , off and on with that .",
+      "actions": [
+       {
+        "fill": "a psychological state",
+        "mode": "level",
+        "walk_risk": 0.0149,
+        "p6": 0.515
+       },
+       {
+        "fill": "a condition",
+        "mode": "level",
+        "walk_risk": 0.0018,
+        "p6": 0.3846
+       },
+       {
+        "fill": "a state",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.26
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
       "surface": "sarah",
       "type": "DEM",
       "start": 278,
@@ -2080,6 +3274,32 @@
         "mode": "level",
         "walk_risk": 0.0119,
         "p6": 0.1916
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "female",
+      "type": "DEM",
+      "start": 238,
+      "end": 244,
+      "sent": "so sarah is a 27-year-old female here for her annual visit .",
+      "actions": [
+       {
+        "fill": "a living thing",
+        "mode": "level",
+        "walk_risk": 0.0018,
+        "p6": 0.2519
        },
        {
         "fill": null,
@@ -2127,8 +3347,20 @@
        "question": "How much Prozac is she taking?"
       },
       {
+       "surface": "27",
+       "question": "How old is the patient?"
+      },
+      {
        "surface": "27-year-old",
        "question": "What is the age of the patient?"
+      },
+      {
+       "surface": "81 milligrams",
+       "question": "How much aspirin should be continued daily?"
+      },
+      {
+       "surface": "depression",
+       "question": "What condition has she been struggling with off and on for the past year?"
       },
       {
        "surface": "last year",
@@ -2139,35 +3371,349 @@
        "question": "Who is the 27-year-old female presenting for her annual visit?"
       },
       {
+       "surface": "systolic ejection murmur",
+       "question": "What type of murmur was noted in the cardiovascular assessment?"
+      },
+      {
        "surface": "the past year",
        "question": "How long has she been struggling with her depression?"
       }
      ],
      "held_out": [
       {
-       "surface": "27",
-       "question": "How old is the patient?"
-      },
-      {
        "surface": "40 milligrams",
        "question": "What is the increased dosage of Prozac?"
+      },
+      {
+       "surface": "coronary artery bypass grafting",
+       "question": "What procedure has she undergone?"
+      },
+      {
+       "surface": "female",
+       "question": "What is the patient's gender?"
       }
      ]
     },
     "trainable": true
    },
    "mts/6": {
-    "spans": [],
+    "spans": [
+     {
+      "surface": "car crash",
+      "type": "MISC",
+      "start": 697,
+      "end": 706,
+      "sent": "Patient: It was about four or five years ago now, when I was in a car crash.",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2532
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "lower back",
+      "type": "DEM",
+      "start": 618,
+      "end": 628,
+      "sent": "Doctor: So, how long ago did you hurt your lower back?",
+      "actions": [
+       {
+        "fill": "a body part",
+        "mode": "level",
+        "walk_risk": 0.0172,
+        "p6": 0.3831
+       },
+       {
+        "fill": "a part",
+        "mode": "level",
+        "walk_risk": 0.0083,
+        "p6": 0.2632
+       },
+       {
+        "fill": "a thing",
+        "mode": "level",
+        "walk_risk": 0.0053,
+        "p6": 0.1777
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "diabetes",
+      "type": "DEM",
+      "start": 459,
+      "end": 467,
+      "sent": "Doctor: Do you have diabetes?",
+      "actions": [
+       {
+        "fill": "a disease",
+        "mode": "level",
+        "walk_risk": 0.0013,
+        "p6": 0.5011
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "heart disease",
+      "type": "DEM",
+      "start": 410,
+      "end": 423,
+      "sent": "Doctor: Do you have any other issues, like high blood pressure or heart disease?",
+      "actions": [
+       {
+        "fill": "a cardiovascular disease",
+        "mode": "level",
+        "walk_risk": 0.5687,
+        "p6": 0.8438
+       },
+       {
+        "fill": "a disorder",
+        "mode": "level",
+        "walk_risk": 0.1309,
+        "p6": 0.41
+       },
+       {
+        "fill": "a physical condition",
+        "mode": "level",
+        "walk_risk": 0.0947,
+        "p6": 0.2801
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "high blood pressure",
+      "type": "DEM",
+      "start": 387,
+      "end": 406,
+      "sent": "Doctor: Do you have any other issues, like high blood pressure or heart disease?",
+      "actions": [
+       {
+        "fill": "a cardiovascular disease",
+        "mode": "level",
+        "walk_risk": 0.503,
+        "p6": 0.4754
+       },
+       {
+        "fill": "a disorder",
+        "mode": "level",
+        "walk_risk": 0.2928,
+        "p6": 0.2092
+       },
+       {
+        "fill": "a physical condition",
+        "mode": "level",
+        "walk_risk": 0.3096,
+        "p6": 0.1303
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "appendix",
+      "type": "MISC",
+      "start": 313,
+      "end": 321,
+      "sent": "Patient: I got my appendix out a few years ago.",
+      "actions": [
+       {
+        "fill": "an addendum",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.4654
+       },
+       {
+        "fill": "a matter",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2033
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "C section",
+      "type": "DEM",
+      "start": 228,
+      "end": 237,
+      "sent": "Patient: I actually had a C section.",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0006,
+        "p6": 0.1732
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "daughter",
+      "type": "DEM",
+      "start": 59,
+      "end": 67,
+      "sent": "Patient: No, I quit before I had my daughter.",
+      "actions": [
+       {
+        "fill": "a female offspring",
+        "mode": "level",
+        "walk_risk": 0.0027,
+        "p6": 0.536
+       },
+       {
+        "fill": "a female",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4728
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.3158
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "smoke",
+      "type": "DEM",
+      "start": 15,
+      "end": 20,
+      "sent": "Doctor: Do you smoke?",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0,
+        "p6": 0.2404
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
     "probes": {
      "train": [
+      {
+       "surface": "C section",
+       "question": "What surgical procedure has the patient undergone besides an appendectomy?"
+      },
+      {
+       "surface": "diabetes",
+       "question": "What condition is listed among the patient's denied ailments besides high blood pressure and heart disease?"
+      },
+      {
+       "surface": "high blood pressure",
+       "question": "What condition does the patient deny having regarding their circulatory system?"
+      },
       {
        "surface": "Patient",
        "question": "Who denies high blood pressure, diabetes, heart disease, lung disease, thyroid, kidney, or bladder dysfunctions?"
       }
      ],
-     "held_out": []
+     "held_out": [
+      {
+       "surface": "heart disease",
+       "question": "What condition is listed among the patient's denied ailments?"
+      }
+     ]
     },
-    "trainable": false
+    "trainable": true
    },
    "aci/D2N008": {
     "spans": [
@@ -2205,62 +3751,17 @@
       ]
      },
      {
-      "surface": "doctor",
+      "surface": "kidney stones",
       "type": "DEM",
-      "start": 7132,
-      "end": 7138,
-      "sent": "[doctor] okay , great .",
+      "start": 6751,
+      "end": 6764,
+      "sent": "[doctor] and for your last problem your kidney stones , uh , i think everything seems to be fine right at this time .",
       "actions": [
        {
-        "fill": "a medical practitioner",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0439,
-        "p6": 0.7298
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.0147,
-        "p6": 0.6666
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0025,
-        "p6": 0.5847
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1,
-       2,
-       3
-      ]
-     },
-     {
-      "surface": "patient",
-      "type": "DEM",
-      "start": 7096,
-      "end": 7103,
-      "sent": "[patient] not that i can think of .",
-      "actions": [
-       {
-        "fill": "a case",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4134
-       },
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4424
+        "walk_risk": 0.0013,
+        "p6": 0.0467
        },
        {
         "fill": null,
@@ -2272,8 +3773,32 @@
       "bc_action": 0,
       "legal": [
        0,
-       1,
-       2
+       1
+      ]
+     },
+     {
+      "surface": "10 milligrams",
+      "type": "QUANTITY",
+      "start": 6447,
+      "end": 6460,
+      "sent": "and as well your , as well , as your lisinopril 10 milligrams a day .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.1183,
+        "p6": 0.4342
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
       ]
      },
      {
@@ -2303,17 +3828,74 @@
       ]
      },
      {
-      "surface": "gastroenterology",
-      "type": "ORG",
-      "start": 5909,
-      "end": 5925,
-      "sent": "i also wan na go and refer you back to the gastroenterologist for another evaluation , okay ? hey , dragon , order referral to gastroenterology .",
+      "surface": "congestive heart failure",
+      "type": "DEM",
+      "start": 6171,
+      "end": 6195,
+      "sent": "[doctor] for your next problem your congestive heart failure , um , i do think you're retaining a little bit of fluid .",
       "actions": [
        {
-        "fill": "a medical science",
+        "fill": "a heart failure",
         "mode": "level",
-        "walk_risk": 0.4116,
-        "p6": 0.5068
+        "walk_risk": 0.5262,
+        "p6": 0.7676
+       },
+       {
+        "fill": "a failure",
+        "mode": "level",
+        "walk_risk": 0.2073,
+        "p6": 0.387
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "anemia",
+      "type": "DEM",
+      "start": 5640,
+      "end": 5646,
+      "sent": "[doctor] so , let me go over a little bit about my assessment and my plan for you , okay ? so , for you first problem this new anemia , uh , i wan na go ahead and send off some more labs and anemia profile , just to see exactly what type of anemia we're dealing with .",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0,
+        "p6": 0.1578
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "8.2",
+      "type": "QUANTITY",
+      "start": 5438,
+      "end": 5441,
+      "sent": "it's low at 8.2 , okay ? so , we'll have to talk a little bit about that , all right ?",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0722,
+        "p6": 0.1675
        },
        {
         "fill": null,
@@ -2328,54 +3910,17 @@
       ]
      },
      {
-      "surface": "gastroenterologist",
-      "type": "DEM",
-      "start": 5825,
-      "end": 5843,
-      "sent": "i also wan na go and refer you back to the gastroenterologist for another evaluation , okay ? hey , dragon , order referral to gastroenterology .",
+      "surface": "hemoglobin",
+      "type": "MISC",
+      "start": 5353,
+      "end": 5363,
+      "sent": "so , that's that slight heart murmur i heard in your exam , okay ? hey , dragon , show me the hemoglobin .",
       "actions": [
        {
-        "fill": "a doctor",
+        "fill": "a protein",
         "mode": "level",
-        "walk_risk": 0.4012,
-        "p6": 0.5649
-       },
-       {
-        "fill": "a medical practitioner",
-        "mode": "level",
-        "walk_risk": 0.3676,
-        "p6": 0.5766
-       },
-       {
-        "fill": "a health professional",
-        "mode": "level",
-        "walk_risk": 0.429,
-        "p6": 0.5184
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 3,
-      "legal": [
-       3
-      ]
-     },
-     {
-      "surface": "mcdonald's",
-      "type": "LOC",
-      "start": 2854,
-      "end": 2864,
-      "sent": "and along the way i stopped at , you know , mcdonald's and got two cheeseburgers .",
-      "actions": [
-       {
-        "fill": "a place",
-        "mode": "level",
-        "walk_risk": 0.575,
-        "p6": 0.4142
+        "walk_risk": 1.0,
+        "p6": 0.3711
        },
        {
         "fill": null,
@@ -2386,6 +3931,32 @@
       ],
       "bc_action": 1,
       "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "45 %",
+      "type": "QUANTITY",
+      "start": 5160,
+      "end": 5164,
+      "sent": "that shows that you do have the low pumping function of , of your heart at about 45 % , which is not terrible .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0023,
+        "p6": 0.3687
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
        1
       ]
      },
@@ -2415,17 +3986,29 @@
       ]
      },
      {
-      "surface": "hemoglobin",
-      "type": "QUANTITY",
-      "start": 1080,
-      "end": 1090,
-      "sent": "and it did , it c- you know , your , your , your hemoglobin is your red blood cell count .",
+      "surface": "colonoscopy",
+      "type": "MISC",
+      "start": 2228,
+      "end": 2239,
+      "sent": "i know you had a colonoscopy about three years ago and that showed that you had some mild diverticuli- diverticulosis .",
       "actions": [
        {
-        "fill": "a certain amount",
+        "fill": "an endoscopy",
         "mode": "level",
-        "walk_risk": 0.0004,
-        "p6": 0.1754
+        "walk_risk": 1.0,
+        "p6": 0.6664
+       },
+       {
+        "fill": "an examination",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2772
+       },
+       {
+        "fill": "an investigation",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.1394
        },
        {
         "fill": null,
@@ -2434,30 +4017,23 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 0,
+      "bc_action": 3,
       "legal": [
-       0,
-       1
+       3
       ]
      },
      {
-      "surface": "nurse",
+      "surface": "red blood cell count",
       "type": "DEM",
-      "start": 905,
-      "end": 910,
-      "sent": "i , you know , the nurse told me that you had called with these complaints .",
+      "start": 1099,
+      "end": 1119,
+      "sent": "and it did , it c- you know , your , your , your hemoglobin is your red blood cell count .",
       "actions": [
        {
-        "fill": "a health professional",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0014,
-        "p6": 0.5437
-       },
-       {
-        "fill": "a professional",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4662
+        "walk_risk": 0.186,
+        "p6": 0.0105
        },
        {
         "fill": null,
@@ -2468,9 +4044,7 @@
       ],
       "bc_action": 1,
       "legal": [
-       0,
-       1,
-       2
+       1
       ]
      },
      {
@@ -2524,6 +4098,32 @@
       ]
      },
      {
+      "surface": "female",
+      "type": "DEM",
+      "start": 269,
+      "end": 275,
+      "sent": "[doctor] so , stephanie is a 49-year-old female with a past medical history significant for congestive heart failure , kidney stones and prior colonoscopy who presents today for an abnormal lab finding .",
+      "actions": [
+       {
+        "fill": "a living thing",
+        "mode": "level",
+        "walk_risk": 0.0046,
+        "p6": 0.2519
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
       "surface": "49-year-old",
       "type": "DATETIME",
       "start": 257,
@@ -2552,59 +4152,89 @@
     "probes": {
      "train": [
       {
+       "surface": "10 milligrams",
+       "question": "What is the daily dosage of lisinopril?"
+      },
+      {
        "surface": "49-year-old",
        "question": "What is the age of Stephanie Diaz?"
       },
       {
-       "surface": "gastroenterology",
-       "question": "What medical specialty is mentioned for repeat evaluation with possible endoscopy and colonoscopy?"
+       "surface": "8.2",
+       "question": "What was her recent hemoglobin level?"
+      },
+      {
+       "surface": "anemia",
+       "question": "What type of profile will be ordered for further evaluation?"
+      },
+      {
+       "surface": "colonoscopy",
+       "question": "What procedure did Ms. Diaz undergo previously?"
+      },
+      {
+       "surface": "female",
+       "question": "What is the gender of Ms. Stephanie Diaz?"
       },
       {
        "surface": "hemoglobin",
        "question": "What substance's level was low at 8.2?"
       },
       {
-       "surface": "patient",
-       "question": "Who reports being tired and dizzy?"
+       "surface": "kidney stones",
+       "question": "What condition is listed in Ms. Diaz's past medical history besides heart failure and colonoscopy?"
       },
       {
        "surface": "stephanie",
        "question": "Who is the 49-year-old female with a past medical history significant for congestive heart failure?"
+      },
+      {
+       "surface": "the past couple of months",
+       "question": "When has the patient been experiencing tiredness and dizziness?"
       }
      ],
      "held_out": [
       {
-       "surface": "the past couple of months",
-       "question": "When has the patient been experiencing tiredness and dizziness?"
+       "surface": "congestive heart failure",
+       "question": "What is the past medical history of Ms. Stephanie Diaz that involves heart function?"
+      },
+      {
+       "surface": "gastroenterology",
+       "question": "What medical specialty is mentioned for repeat evaluation with possible endoscopy and colonoscopy?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who reports being tired and dizzy?"
       }
      ]
     },
     "trainable": true
    },
    "mts/7": {
-    "spans": [],
-    "probes": {
-     "train": [],
-     "held_out": []
-    },
-    "trainable": false
-   }
-  },
-  "enron": {
-   "enron/0": {
     "spans": [
      {
-      "surface": "FERC",
-      "type": "ORG",
-      "start": 882,
-      "end": 886,
-      "sent": "When is FERC going to rule on this?",
+      "surface": "drug allergies",
+      "type": "DEM",
+      "start": 17,
+      "end": 31,
+      "sent": "Doctor: Any know drug allergies?",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a hypersensitivity reaction",
         "mode": "level",
-        "walk_risk": 0.0058,
-        "p6": 0.2407
+        "walk_risk": 0.016,
+        "p6": 0.4037
+       },
+       {
+        "fill": "a hypersensitivity",
+        "mode": "level",
+        "walk_risk": 0.0128,
+        "p6": 0.4081
+       },
+       {
+        "fill": "a sensitivity",
+        "mode": "level",
+        "walk_risk": 0.0008,
+        "p6": 0.1894
        },
        {
         "fill": null,
@@ -2616,9 +4246,27 @@
       "bc_action": 0,
       "legal": [
        0,
-       1
+       1,
+       2,
+       3
       ]
-     },
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "drug allergies",
+       "question": "What is stated regarding known sensitivities to medications?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   }
+  },
+  "enron": {
+   "enron/0": {
+    "spans": [
      {
       "surface": "the 13th or 14th",
       "type": "DATETIME",
@@ -2667,39 +4315,6 @@
       "bc_action": 1,
       "legal": [
        1
-      ]
-     },
-     {
-      "surface": "Commission",
-      "type": "ORG",
-      "start": 250,
-      "end": 260,
-      "sent": "Pat Wood said at the last Commission meeting that he doesn't wish to issue significant orders between meetings, so it is unlikely that FERC will act before its next scheduled meeting.",
-      "actions": [
-       {
-        "fill": "an unit",
-        "mode": "level",
-        "walk_risk": 0.0005,
-        "p6": 0.2154
-       },
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0005,
-        "p6": 0.4338
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
       ]
      },
      {
@@ -2846,6 +4461,31 @@
         "mode": "level",
         "walk_risk": 0.1051,
         "p6": 0.2195
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Peace and Love",
+      "type": "MISC",
+      "start": 580,
+      "end": 594,
+      "sent": "-Jazz Ensemble Plays Up \"Peace and Love\" \t(11/15/01)",
+      "actions": [
+       {
+        "fill": "something",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.3044
        },
        {
         "fill": null,
@@ -3019,17 +4659,17 @@
    "enron/2": {
     "spans": [
      {
-      "surface": "The Daily Motivator",
-      "type": "ORG",
-      "start": 1485,
-      "end": 1504,
-      "sent": "e-mail message from The Daily Motivator, please go to",
+      "surface": "1,000",
+      "type": "QUANTITY",
+      "start": 1346,
+      "end": 1351,
+      "sent": "of more than 1,000 daily messages, inspirational photos and more.",
       "actions": [
        {
-        "fill": "a motivation",
+        "fill": "a certain amount",
         "mode": "level",
-        "walk_risk": 0.2465,
-        "p6": 0.7316
+        "walk_risk": 0.394,
+        "p6": 0.5495
        },
        {
         "fill": null,
@@ -3206,17 +4846,23 @@
       ]
      },
      {
-      "surface": "536 Irving Street",
+      "surface": "Irving Street",
       "type": "LOC",
-      "start": 407,
+      "start": 411,
       "end": 424,
       "sent": "536 Irving Street",
       "actions": [
        {
+        "fill": "a thoroughfare",
+        "mode": "level",
+        "walk_risk": 0.0187,
+        "p6": 0.4129
+       },
+       {
         "fill": "a road",
         "mode": "level",
-        "walk_risk": 0.0054,
-        "p6": 0.2863
+        "walk_risk": 0.0177,
+        "p6": 0.4584
        },
        {
         "fill": null,
@@ -3228,21 +4874,22 @@
       "bc_action": 0,
       "legal": [
        0,
-       1
+       1,
+       2
       ]
      },
      {
-      "surface": "Center for Innovative Policies",
-      "type": "ORG",
-      "start": 376,
-      "end": 406,
-      "sent": "Center for Innovative Policies",
+      "surface": "Capitol Hill",
+      "type": "LOC",
+      "start": 118,
+      "end": 130,
+      "sent": "one-pager we are working on for a Capitol Hill audience when we finalize",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a place",
         "mode": "level",
-        "walk_risk": 0.213,
-        "p6": 0.4017
+        "walk_risk": 0.0464,
+        "p6": 0.4056
        },
        {
         "fill": null,
@@ -3260,6 +4907,10 @@
     "probes": {
      "train": [
       {
+       "surface": "Amory",
+       "question": "Who's project is summarized in the text?"
+      },
+      {
        "surface": "Center for Innovative Policies",
        "question": "What organization is mentioned alongside \"Foundation\"?"
       },
@@ -3275,17 +4926,17 @@
    "enron/4": {
     "spans": [
      {
-      "surface": "Wall Street Journal",
-      "type": "ORG",
-      "start": 1423,
-      "end": 1442,
-      "sent": "Wall Street Journal",
+      "surface": "Senior National Correspondent",
+      "type": "DEM",
+      "start": 1388,
+      "end": 1417,
+      "sent": "Senior National Correspondent",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a communicator",
         "mode": "level",
-        "walk_risk": 0.0617,
-        "p6": 0.2705
+        "walk_risk": 0.0438,
+        "p6": 0.3318
        },
        {
         "fill": null,
@@ -3300,17 +4951,23 @@
       ]
      },
      {
-      "surface": "Enron",
-      "type": "ORG",
-      "start": 933,
-      "end": 938,
-      "sent": "of Enron officials in that partnership?",
+      "surface": "general partner",
+      "type": "DEM",
+      "start": 1306,
+      "end": 1321,
+      "sent": "the general partner of the LJM2 partnership?",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a person",
         "mode": "level",
-        "walk_risk": 0.0001,
-        "p6": 0.4056
+        "walk_risk": 0.0325,
+        "p6": 0.2599
+       },
+       {
+        "fill": "a causal agent",
+        "mode": "level",
+        "walk_risk": 0.0077,
+        "p6": 0.2202
        },
        {
         "fill": null,
@@ -3319,24 +4976,24 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 0,
+      "bc_action": 1,
       "legal": [
-       0,
-       1
+       1,
+       2
       ]
      },
      {
-      "surface": "LJM2 Co-Investment",
-      "type": "ORG",
-      "start": 686,
-      "end": 704,
-      "sent": "the LJM2 Co-Investment, LP and the involvement of certain Enron officials in",
+      "surface": "board member",
+      "type": "DEM",
+      "start": 596,
+      "end": 608,
+      "sent": "Mendelsohn about in connection with his role as an Enron board member.",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a member",
         "mode": "level",
-        "walk_risk": 0.175,
-        "p6": 0.1109
+        "walk_risk": 0.0751,
+        "p6": 0.7252
        },
        {
         "fill": null,
@@ -3351,48 +5008,23 @@
       ]
      },
      {
-      "surface": "05:32:19 PM",
-      "type": "DATETIME",
-      "start": 451,
-      "end": 462,
-      "sent": "com> on 09/24/2001 05:32:19 PM",
-      "actions": [
-       {
-        "fill": "at some point",
-        "mode": "level",
-        "walk_risk": 0.0424,
-        "p6": 0.158
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "09/24/2001",
+      "surface": "09/24/2001 05:32:19 PM",
       "type": "DATETIME",
       "start": 440,
-      "end": 450,
+      "end": 462,
       "sent": "com> on 09/24/2001 05:32:19 PM",
       "actions": [
        {
         "fill": "the early 2000s",
         "mode": "level",
-        "walk_risk": 0.1098,
-        "p6": 0.5102
+        "walk_risk": 0.147,
+        "p6": 0.2932
        },
        {
         "fill": "the 2000s",
         "mode": "level",
-        "walk_risk": 0.0971,
-        "p6": 0.5384
+        "walk_risk": 0.1525,
+        "p6": 0.3405
        },
        {
         "fill": null,
@@ -3407,17 +5039,23 @@
       ]
      },
      {
-      "surface": "05:34 PM",
+      "surface": "09/24/2001 05:34 PM",
       "type": "DATETIME",
-      "start": 353,
+      "start": 342,
       "end": 361,
       "sent": "Roark/MDACC on 09/24/2001 05:34 PM",
       "actions": [
        {
-        "fill": "at some point",
+        "fill": "the early 2000s",
         "mode": "level",
-        "walk_risk": 0.026,
-        "p6": 0.1567
+        "walk_risk": 0.0946,
+        "p6": 0.3256
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.1,
+        "p6": 0.37
        },
        {
         "fill": null,
@@ -3426,9 +5064,9 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 1,
+      "bc_action": 2,
       "legal": [
-       1
+       2
       ]
      },
      {
@@ -3458,17 +5096,23 @@
       ]
      },
      {
-      "surface": "06:21 PM",
+      "surface": "09/24/2001 06:21 PM",
       "type": "DATETIME",
-      "start": 134,
+      "start": 123,
       "end": 142,
       "sent": "Hale/MDACC on 09/24/2001 06:21 PM",
       "actions": [
        {
-        "fill": "at some point",
+        "fill": "the early 2000s",
         "mode": "level",
-        "walk_risk": 0.0378,
-        "p6": 0.1287
+        "walk_risk": 0.0804,
+        "p6": 0.3191
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0843,
+        "p6": 0.3568
        },
        {
         "fill": null,
@@ -3477,9 +5121,9 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 1,
+      "bc_action": 2,
       "legal": [
-       1
+       2
       ]
      }
     ],
@@ -3487,6 +5131,10 @@
      "train": [
       {
        "surface": "John",
+       "question": "Who did the WSJ reporter send questions to?"
+      },
+      {
+       "surface": "Mendelsohn",
        "question": "Who did the WSJ reporter send questions to?"
       }
      ],
@@ -3508,31 +5156,6 @@
         "mode": "level",
         "walk_risk": 0.0856,
         "p6": 0.4189
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "Yahoo!",
-      "type": "ORG",
-      "start": 1575,
-      "end": 1581,
-      "sent": "> Get personalized email addresses from Yahoo! Mail - only $35",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0585,
-        "p6": 0.2843
        },
        {
         "fill": null,
@@ -3743,32 +5366,6 @@
       ]
      },
      {
-      "surface": "Grotto restaurant",
-      "type": "ORG",
-      "start": 527,
-      "end": 544,
-      "sent": "> planned for the 12th at the Grotto restaurant in their",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0165,
-        "p6": 0.1961
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
-     {
       "surface": "the 12th",
       "type": "DATETIME",
       "start": 511,
@@ -3805,6 +5402,10 @@
     "probes": {
      "train": [
       {
+       "surface": "Gov",
+       "question": "Who was the person you called?"
+      },
+      {
        "surface": "Gov Rowland",
        "question": "Who was your call to?"
       },
@@ -3819,57 +5420,6 @@
    },
    "enron/7": {
     "spans": [
-     {
-      "surface": "companies",
-      "type": "ORG",
-      "start": 1161,
-      "end": 1170,
-      "sent": "Forrester analyst Nate Root will discuss recent developments in this market to help companies select the best enterprise portal server.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.001,
-        "p6": 0.5593
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
-     {
-      "surface": "Forrester",
-      "type": "ORG",
-      "start": 1077,
-      "end": 1086,
-      "sent": "Forrester analyst Nate Root will discuss recent developments in this market to help companies select the best enterprise portal server.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0241,
-        "p6": 0.1771
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
      {
       "surface": "10:00 to 11:00 AM",
       "type": "DATETIME",
@@ -3919,63 +5469,6 @@
       "legal": [
        1
       ]
-     },
-     {
-      "surface": "TechRankings",
-      "type": "ORG",
-      "start": 342,
-      "end": 354,
-      "sent": "Join the TechRankings research team as they present the latest findings on enterprise portal servers, give an update about the vendors, and answer live questions.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0058,
-        "p6": 0.2746
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       0,
-       1
-      ]
-     },
-     {
-      "surface": "Forrester Research",
-      "type": "ORG",
-      "start": 151,
-      "end": 169,
-      "sent": "You are invited to participate in Forrester Research's one-hour research call on Enterprise Portal Server TechRankings - detailed vendor and market research to help you choose the best eBusiness technology products.",
-      "actions": [
-       {
-        "fill": "a work",
-        "mode": "level",
-        "walk_risk": 0.1483,
-        "p6": 0.1911
-       },
-       {
-        "fill": "an activity",
-        "mode": "level",
-        "walk_risk": 0.1555,
-        "p6": 0.1794
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 2,
-      "legal": [
-       2
-      ]
      }
     ],
     "probes": {
@@ -3996,17 +5489,29 @@
    "enron/8": {
     "spans": [
      {
-      "surface": "yahoo",
-      "type": "ORG",
-      "start": 1853,
-      "end": 1858,
-      "sent": "yahoo.",
+      "surface": "carribean cruises",
+      "type": "MISC",
+      "start": 1395,
+      "end": 1412,
+      "sent": "hope we can find some time again for carribean cruises",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "an ocean trip",
         "mode": "level",
-        "walk_risk": 0.0039,
-        "p6": 0.3205
+        "walk_risk": 1.0,
+        "p6": 0.4958
+       },
+       {
+        "fill": "a water travel",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.2039
+       },
+       {
+        "fill": "a travel",
+        "mode": "level",
+        "walk_risk": 1.0,
+        "p6": 0.3533
        },
        {
         "fill": null,
@@ -4015,24 +5520,23 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 0,
+      "bc_action": 3,
       "legal": [
-       0,
-       1
+       3
       ]
      },
      {
-      "surface": "Yahoo!",
-      "type": "ORG",
-      "start": 1820,
-      "end": 1826,
-      "sent": "Buy the perfect holiday gifts at Yahoo! Shopping.",
+      "surface": "chief\narrogance officer",
+      "type": "DEM",
+      "start": 1298,
+      "end": 1321,
+      "sent": "where the blame lies--with your ex- CAO(chief\narrogance officer).",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0206,
-        "p6": 0.2843
+        "walk_risk": 0.0674,
+        "p6": 0.1578
        },
        {
         "fill": null,
@@ -4080,17 +5584,23 @@
       ]
      },
      {
-      "surface": "web21106",
-      "type": "DEM",
-      "start": 759,
-      "end": 767,
-      "sent": "156] by web21106.",
+      "surface": "02 Dec 2001 14:24:55 -0800",
+      "type": "DATETIME",
+      "start": 298,
+      "end": 324,
+      "sent": "com with SMTP; 02 Dec 2001 14:24:55 -0800 (PST)",
       "actions": [
        {
-        "fill": "a personal attribute",
+        "fill": "the early 2000s",
         "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.1308
+        "walk_risk": 0.0878,
+        "p6": 0.3069
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0901,
+        "p6": 0.3164
        },
        {
         "fill": null,
@@ -4099,10 +5609,9 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 0,
+      "bc_action": 2,
       "legal": [
-       0,
-       1
+       2
       ]
      }
     ],
@@ -4115,17 +5624,17 @@
    "enron/9": {
     "spans": [
      {
-      "surface": "M & M Plumbing",
-      "type": "ORG",
-      "start": 222,
-      "end": 236,
-      "sent": "M & M Plumbing",
+      "surface": "flight 11",
+      "type": "MISC",
+      "start": 75,
+      "end": 84,
+      "sent": "What was the name of the gentleman who worked for y'all and was on flight 11? My friend is making memorial plaques to honor those victims.",
       "actions": [
        {
-        "fill": "an utility",
+        "fill": "a number",
         "mode": "level",
-        "walk_risk": 0.1592,
-        "p6": 0.1786
+        "walk_risk": 1.0,
+        "p6": 0.2668
        },
        {
         "fill": null,
@@ -4153,43 +5662,6 @@
    },
    "enron/10": {
     "spans": [
-     {
-      "surface": "United Way\nBoard",
-      "type": "ORG",
-      "start": 441,
-      "end": 457,
-      "sent": "They voted to have the entire United Way\nBoard as the volunteer committee too.",
-      "actions": [
-       {
-        "fill": "a committee",
-        "mode": "level",
-        "walk_risk": 0.0502,
-        "p6": 0.3407
-       },
-       {
-        "fill": "an administrative unit",
-        "mode": "level",
-        "walk_risk": 0.0521,
-        "p6": 0.2779
-       },
-       {
-        "fill": "an unit",
-        "mode": "level",
-        "walk_risk": 0.0428,
-        "p6": 0.1965
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 3,
-      "legal": [
-       3
-      ]
-     },
      {
       "surface": "Houston",
       "type": "LOC",
@@ -4230,42 +5702,17 @@
       ]
      },
      {
-      "surface": "United Way",
-      "type": "ORG",
-      "start": 327,
-      "end": 337,
-      "sent": "$4 million going to a United Way One Houston United Restricted Fund for",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0834,
-        "p6": 0.2797
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "$4",
+      "surface": "$4 million",
       "type": "QUANTITY",
       "start": 305,
-      "end": 307,
+      "end": 315,
       "sent": "$4 million going to a United Way One Houston United Restricted Fund for",
       "actions": [
        {
-        "fill": "between 2 and 8 $",
+        "fill": "between 2 and 8 $illion",
         "mode": "level",
-        "walk_risk": 0.2364,
-        "p6": 0.5505
+        "walk_risk": 0.1346,
+        "p6": 0.4019
        },
        {
         "fill": null,
@@ -4280,23 +5727,17 @@
       ]
      },
      {
-      "surface": "United Way Board",
-      "type": "ORG",
-      "start": 24,
-      "end": 40,
-      "sent": "The United Way Board meeting went great this morning.",
+      "surface": "One Houston United Campaign",
+      "type": "MISC",
+      "start": 112,
+      "end": 139,
+      "sent": "enthusiastic about the One Houston United Campaign! I think they felt the",
       "actions": [
        {
-        "fill": "an administrative unit",
+        "fill": "something",
         "mode": "level",
-        "walk_risk": 0.0323,
-        "p6": 0.2779
-       },
-       {
-        "fill": "an unit",
-        "mode": "level",
-        "walk_risk": 0.0156,
-        "p6": 0.1965
+        "walk_risk": 1.0,
+        "p6": 0.2327
        },
        {
         "fill": null,
@@ -4307,16 +5748,20 @@
       ],
       "bc_action": 1,
       "legal": [
-       1,
-       2
+       1
       ]
      }
     ],
     "probes": {
-     "train": [],
+     "train": [
+      {
+       "surface": "Kathy",
+       "question": "Who was asked to send the plan?"
+      }
+     ],
      "held_out": []
     },
-    "trainable": false
+    "trainable": true
    },
    "enron/11": {
     "spans": [
@@ -4565,6 +6010,32 @@
       ]
      },
      {
+      "surface": "46285",
+      "type": "LOC",
+      "start": 127,
+      "end": 132,
+      "sent": "Indianapolis, IN 46285",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.1415
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
       "surface": "IN",
       "type": "LOC",
       "start": 124,
@@ -4591,17 +6062,23 @@
       ]
      },
      {
-      "surface": "Eli Lilly and Company",
-      "type": "ORG",
-      "start": 65,
-      "end": 86,
-      "sent": "Eli Lilly and Company",
+      "surface": "Chairman, President, and CEO",
+      "type": "DEM",
+      "start": 36,
+      "end": 64,
+      "sent": "Chairman, President, and CEO",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a corporate executive",
         "mode": "level",
-        "walk_risk": 0.0584,
-        "p6": 0.4195
+        "walk_risk": 0.546,
+        "p6": 0.6308
+       },
+       {
+        "fill": "an executive",
+        "mode": "level",
+        "walk_risk": 0.5508,
+        "p6": 0.5611
        },
        {
         "fill": null,
@@ -4610,9 +6087,9 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 1,
+      "bc_action": 2,
       "legal": [
-       1
+       2
       ]
      },
      {
@@ -4652,6 +6129,10 @@
       {
        "surface": "AEI",
        "question": "What organization is the writer approaching regarding a board position?"
+      },
+      {
+       "surface": "Sidney",
+       "question": "Who is the person the writer is approaching about joining the AEI Board of Trustees?"
       },
       {
        "surface": "Sidney Taurel",
@@ -4754,43 +6235,17 @@
       ]
      },
      {
-      "surface": "Suite 700",
+      "surface": "Houston's",
       "type": "LOC",
-      "start": 360,
-      "end": 369,
-      "sent": "Address:  1200 Smith, Suite 700, Houston, TX 77002-4400",
+      "start": 320,
+      "end": 329,
+      "sent": "Center for Houston's Future",
       "actions": [
        {
         "fill": "a place",
         "mode": "level",
-        "walk_risk": 0.0016,
-        "p6": 0.2285
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
-     {
-      "surface": "1200 Smith",
-      "type": "LOC",
-      "start": 348,
-      "end": 358,
-      "sent": "Address:  1200 Smith, Suite 700, Houston, TX 77002-4400",
-      "actions": [
-       {
-        "fill": "a place",
-        "mode": "level",
-        "walk_risk": 0.0009,
-        "p6": 0.17
+        "walk_risk": 0.035,
+        "p6": 0.3896
        },
        {
         "fill": null,
@@ -4801,7 +6256,31 @@
       ],
       "bc_action": 1,
       "legal": [
-       0,
+       1
+      ]
+     },
+     {
+      "surface": "Marilou A. Schopper",
+      "type": "LOC",
+      "start": 267,
+      "end": 286,
+      "sent": "Marilou A. Schopper",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.4141,
+        "p6": 0.2148
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
        1
       ]
      }
@@ -4967,48 +6446,23 @@
       ]
      },
      {
-      "surface": "Howard University School of Law",
-      "type": "ORG",
-      "start": 233,
-      "end": 264,
-      "sent": "Howard University School of Law announces the following hours of",
-      "actions": [
-       {
-        "fill": "a group",
-        "mode": "level",
-        "walk_risk": 0.337,
-        "p6": 0.1189
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "Howard University",
-      "type": "ORG",
-      "start": 91,
-      "end": 108,
+      "surface": "Studies in Excellence",
+      "type": "MISC",
+      "start": 130,
+      "end": 151,
       "sent": "Howard University's two new libraries \"Studies in Excellence.",
       "actions": [
        {
-        "fill": "a body",
+        "fill": "a quality",
         "mode": "level",
-        "walk_risk": 0.0259,
-        "p6": 0.1516
+        "walk_risk": 1.0,
+        "p6": 0.3559
        },
        {
-        "fill": "a group",
+        "fill": "an attribute",
         "mode": "level",
-        "walk_risk": 0.0184,
-        "p6": 0.143
+        "walk_risk": 1.0,
+        "p6": 0.108
        },
        {
         "fill": null,
@@ -5019,7 +6473,6 @@
       ],
       "bc_action": 2,
       "legal": [
-       1,
        2
       ]
      }
@@ -5032,58 +6485,6 @@
    },
    "enron/14": {
     "spans": [
-     {
-      "surface": "Enron",
-      "type": "ORG",
-      "start": 1604,
-      "end": 1609,
-      "sent": "Don't forget to read our voice mail and e-mail transcripts covering these developments on the Enron Updates intranet site at (<http://home.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4056
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
-     {
-      "surface": "Houston Chronicle",
-      "type": "ORG",
-      "start": 1302,
-      "end": 1319,
-      "sent": "On a positive note, there was an editorial in last Sunday's Houston Chronicle that I want you to read:  <http://www.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0075,
-        "p6": 0.2505
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       0,
-       1
-      ]
-     },
      {
       "surface": "last Sunday's",
       "type": "DATETIME",
@@ -5211,6 +6612,32 @@
       ]
      },
      {
+      "surface": "Enron",
+      "type": "ORG",
+      "start": 702,
+      "end": 707,
+      "sent": "Enron is only using these assets for this new credit line.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4056
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
       "surface": "Transwestern Pipeline Company",
       "type": "ORG",
       "start": 508,
@@ -5309,56 +6736,6 @@
       "legal": [
        1
       ]
-     },
-     {
-      "surface": "JPMorgan Chase & Co.",
-      "type": "ORG",
-      "start": 299,
-      "end": 319,
-      "sent": "We have executed a commitment letter with two of our longstanding banking partners, JPMorgan (the investment banking arm of JPMorgan Chase & Co.) and Salomon Smith Barney (the investment banking arm of Citigroup Inc.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.7123,
-        "p6": 0.2254
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "JPMorgan",
-      "type": "ORG",
-      "start": 259,
-      "end": 267,
-      "sent": "We have executed a commitment letter with two of our longstanding banking partners, JPMorgan (the investment banking arm of JPMorgan Chase & Co.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.2108,
-        "p6": 0.2982
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
      }
     ],
     "probes": {
@@ -5374,6 +6751,110 @@
    },
    "enron/15": {
     "spans": [
+     {
+      "surface": "firefighters",
+      "type": "DEM",
+      "start": 2154,
+      "end": 2166,
+      "sent": "had several firefighters visit the  temple and, as you can imagine, they wa=",
+      "actions": [
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0,
+        "p6": 0.2327
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "500",
+      "type": "QUANTITY",
+      "start": 2054,
+      "end": 2057,
+      "sent": "He lost  all 200 of his staff as well as 500 who d=",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0066,
+        "p6": 0.495
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "200",
+      "type": "QUANTITY",
+      "start": 2026,
+      "end": 2029,
+      "sent": "He lost  all 200 of his staff as well as 500 who d=",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0163,
+        "p6": 0.5311
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "20",
+      "type": "QUANTITY",
+      "start": 1754,
+      "end": 1756,
+      "sent": "=20",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0051,
+        "p6": 0.5129
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
      {
       "surface": "Indiana",
       "type": "LOC",
@@ -5477,43 +6958,6 @@
       ]
      },
      {
-      "surface": "ground zero",
-      "type": "LOC",
-      "start": 822,
-      "end": 833,
-      "sent": "my cousin (visiting from Israel) and I  went downtown to ground zero.",
-      "actions": [
-       {
-        "fill": "a target",
-        "mode": "level",
-        "walk_risk": 0.1057,
-        "p6": 0.1834
-       },
-       {
-        "fill": "a topographic point",
-        "mode": "level",
-        "walk_risk": 0.1609,
-        "p6": 0.2223
-       },
-       {
-        "fill": "a point",
-        "mode": "level",
-        "walk_risk": 0.1191,
-        "p6": 0.1474
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 3,
-      "legal": [
-       3
-      ]
-     },
-     {
       "surface": "Israel",
       "type": "LOC",
       "start": 790,
@@ -5540,29 +6984,17 @@
       ]
      },
      {
-      "surface": "my cousin",
-      "type": "DEM",
-      "start": 765,
-      "end": 774,
-      "sent": "my cousin (visiting from Israel) and I  went downtown to ground zero.",
+      "surface": "Jewish New Year",
+      "type": "MISC",
+      "start": 665,
+      "end": 680,
+      "sent": "I came back because Monday  evening started the Jewish New Year and =",
       "actions": [
        {
-        "fill": "a relative",
+        "fill": "a religious holiday",
         "mode": "level",
-        "walk_risk": 0.049,
-        "p6": 0.6258
-       },
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0158,
-        "p6": 0.295
-       },
-       {
-        "fill": "a causal agent",
-        "mode": "level",
-        "walk_risk": 0.015,
-        "p6": 0.1386
+        "walk_risk": 1.0,
+        "p6": 0.5504
        },
        {
         "fill": null,
@@ -5573,109 +7005,21 @@
       ],
       "bc_action": 1,
       "legal": [
-       1,
-       2,
-       3
+       1
       ]
      },
      {
-      "surface": "my brother-in-law",
-      "type": "DEM",
-      "start": 744,
-      "end": 761,
-      "sent": "After dinner, my brother-in-law,=",
-      "actions": [
-       {
-        "fill": "an in-law",
-        "mode": "level",
-        "walk_risk": 0.8933,
-        "p6": 0.5304
-       },
-       {
-        "fill": "a relative",
-        "mode": "level",
-        "walk_risk": 0.8659,
-        "p6": 0.4686
-       },
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.8477,
-        "p6": 0.2664
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 3,
-      "legal": [
-       3
-      ]
-     },
-     {
-      "surface": "city",
-      "type": "LOC",
-      "start": 722,
-      "end": 726,
-      "sent": "I had dinner with my family in the city.",
-      "actions": [
-       {
-        "fill": "a municipality",
-        "mode": "level",
-        "walk_risk": 0.1548,
-        "p6": 0.6333
-       },
-       {
-        "fill": "an urban area",
-        "mode": "level",
-        "walk_risk": 0.0792,
-        "p6": 0.7338
-       },
-       {
-        "fill": "a geographical area",
-        "mode": "level",
-        "walk_risk": 0.0531,
-        "p6": 0.4304
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 3,
-      "legal": [
-       3
-      ]
-     },
-     {
-      "surface": "Midtown tunnel",
+      "surface": "Midtown",
       "type": "LOC",
       "start": 509,
-      "end": 523,
+      "end": 516,
       "sent": "was on was stopped and searched before  entering the Midtown tunnel, which =",
       "actions": [
        {
-        "fill": "a passageway",
+        "fill": "a place",
         "mode": "level",
-        "walk_risk": 0.1056,
-        "p6": 0.3601
-       },
-       {
-        "fill": "a passage",
-        "mode": "level",
-        "walk_risk": 0.0813,
-        "p6": 0.1387
-       },
-       {
-        "fill": "a way",
-        "mode": "level",
-        "walk_risk": 0.0581,
-        "p6": 0.1657
+        "walk_risk": 0.0476,
+        "p6": 0.4294
        },
        {
         "fill": null,
@@ -5684,9 +7028,9 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 3,
+      "bc_action": 1,
       "legal": [
-       3
+       1
       ]
      },
      {
@@ -5905,17 +7249,17 @@
       ]
      },
      {
-      "surface": "EnronOnline",
-      "type": "ORG",
-      "start": 339,
-      "end": 350,
+      "surface": "Cash Management",
+      "type": "DEM",
+      "start": 388,
+      "end": 403,
       "sent": "Several plans are in the final stages of completion including:-  +\tInfrastructure\t\tJenny Rub +\tDevelopment\t\tJay Webb +\tEnronOnline\t\tWebb / Forster +\tHR\t\t\tDavid Oxley +\tCash Management\tTom Myers +\tCredit\t\t\tDebbie Brackett  The rest will be completed shortly.",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0102,
-        "p6": 0.362
+        "walk_risk": 0.0095,
+        "p6": 0.2077
        },
        {
         "fill": null,
@@ -5925,32 +7269,6 @@
        }
       ],
       "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
-     {
-      "surface": "Netco",
-      "type": "ORG",
-      "start": 91,
-      "end": 96,
-      "sent": "We have for the last couple of weeks started to compile the Re-start/Integration Plans for Netco.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0057,
-        "p6": 0.2891
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
       "legal": [
        0,
        1
@@ -5990,6 +7308,32 @@
    },
    "aeslc/allen-p_inbox_66": {
     "spans": [
+     {
+      "surface": "manager",
+      "type": "DEM",
+      "start": 919,
+      "end": 926,
+      "sent": "title change to manager)?",
+      "actions": [
+       {
+        "fill": "a leader",
+        "mode": "level",
+        "walk_risk": 0.0015,
+        "p6": 0.5568
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
      {
       "surface": "the last two",
       "type": "DATETIME",
@@ -6042,17 +7386,17 @@
       ]
      },
      {
-      "surface": "California",
-      "type": "LOC",
+      "surface": "California Legislature",
+      "type": "ORG",
       "start": 490,
-      "end": 500,
+      "end": 512,
       "sent": "California Legislature).",
       "actions": [
        {
-        "fill": "a place",
+        "fill": "a gathering",
         "mode": "level",
-        "walk_risk": 0.0093,
-        "p6": 0.4171
+        "walk_risk": 0.0012,
+        "p6": 0.2033
        },
        {
         "fill": null,
@@ -6068,17 +7412,17 @@
       ]
      },
      {
-      "surface": "Enron",
-      "type": "ORG",
-      "start": 398,
-      "end": 403,
+      "surface": "California",
+      "type": "LOC",
+      "start": 351,
+      "end": 361,
       "sent": "In addition, I think we need to stay clear of anything that remotely seems like California or anything that really happen with Enron?",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a place",
         "mode": "level",
-        "walk_risk": 0.0003,
-        "p6": 0.4056
+        "walk_risk": 0.0019,
+        "p6": 0.4171
        },
        {
         "fill": null,
@@ -6129,65 +7473,6 @@
       ]
      },
      {
-      "surface": "PSA",
-      "type": "ORG",
-      "start": 807,
-      "end": 810,
-      "sent": "This section is applicable now as we are accelerating the distribution of PSA balances created with deferrals of restricted stock.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0,
-        "p6": 0.2262
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
-     {
-      "surface": "Committee",
-      "type": "ORG",
-      "start": 411,
-      "end": 420,
-      "sent": "2 is clear in that the account balance shall be determined as of the last day of the month preceding the date on which the Committee receives the written request of the Participant.",
-      "actions": [
-       {
-        "fill": "an unit",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.2768
-       },
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0004,
-        "p6": 0.4993
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1,
-       2
-      ]
-     },
-     {
       "surface": "the last day of the month preceding the date",
       "type": "DATETIME",
       "start": 353,
@@ -6209,32 +7494,6 @@
       ],
       "bc_action": 1,
       "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "participant",
-      "type": "DEM",
-      "start": 232,
-      "end": 243,
-      "sent": "2 means that a PSA account is distributed all at once, as distinguished from another form of payout as may have been selected by a participant in his or her deferral agreement.",
-      "actions": [
-       {
-        "fill": "a person",
-        "mode": "level",
-        "walk_risk": 0.0017,
-        "p6": 0.5942
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
        1
       ]
      }
@@ -6278,17 +7537,17 @@
       ]
      },
      {
-      "surface": "ECS",
+      "surface": "31st floor",
       "type": "LOC",
-      "start": 624,
-      "end": 627,
-      "sent": "Testing: Once you have moved to ECS, if you would like to test your BCP location, you will be able to test your seat for functionality every Thursday from 3-6pm.",
+      "start": 554,
+      "end": 564,
+      "sent": "This will hold true until the Monday after Thanksgiving, as we will have the 31st floor seats set up at that time.",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a place",
         "mode": "level",
-        "walk_risk": 0.0429,
-        "p6": 0.2862
+        "walk_risk": 0.0832,
+        "p6": 0.3346
        },
        {
         "fill": null,
@@ -6450,17 +7709,17 @@
       ]
      },
      {
-      "surface": "Teala's",
-      "type": "ORG",
+      "surface": "Teala",
+      "type": "LOC",
       "start": 174,
-      "end": 181,
+      "end": 179,
       "sent": "Please join us at Teala's (W.",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a place",
         "mode": "level",
-        "walk_risk": 0.0055,
-        "p6": 0.1693
+        "walk_risk": 0.0044,
+        "p6": 0.2619
        },
        {
         "fill": null,
@@ -6569,17 +7828,17 @@
    "aeslc/arnold-j_inbox_34": {
     "spans": [
      {
-      "surface": "ENA",
-      "type": "ORG",
-      "start": 1067,
-      "end": 1070,
+      "surface": "70",
+      "type": "QUANTITY",
+      "start": 1005,
+      "end": 1007,
       "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "between 35 and 140",
         "mode": "level",
-        "walk_risk": 0.0256,
-        "p6": 0.3149
+        "walk_risk": 0.0083,
+        "p6": 0.5747
        },
        {
         "fill": null,
@@ -6588,8 +7847,9 @@
         "p6": 0.0
        }
       ],
-      "bc_action": 1,
+      "bc_action": 0,
       "legal": [
+       0,
        1
       ]
      },
@@ -6619,6 +7879,32 @@
       ]
      },
      {
+      "surface": "Associate",
+      "type": "DEM",
+      "start": 948,
+      "end": 957,
+      "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
+      "actions": [
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0063,
+        "p6": 0.2145
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
       "surface": "Friday, November 16",
       "type": "DATETIME",
       "start": 887,
@@ -6644,17 +7930,48 @@
       ]
      },
      {
-      "surface": "November 3",
+      "surface": "Analyst",
+      "type": "DEM",
+      "start": 866,
+      "end": 873,
+      "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
+      "actions": [
+       {
+        "fill": "an expert",
+        "mode": "level",
+        "walk_risk": 0.4503,
+        "p6": 0.5562
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.2221,
+        "p6": 0.2697
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "Saturday November 3",
       "type": "DATETIME",
-      "start": 814,
+      "start": 805,
       "end": 824,
       "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
       "actions": [
        {
-        "fill": "the autumn",
+        "fill": "at some point",
         "mode": "level",
-        "walk_risk": 0.0064,
-        "p6": 0.4475
+        "walk_risk": 0.0033,
+        "p6": 0.1616
        },
        {
         "fill": null,
@@ -6666,6 +7983,108 @@
       "bc_action": 0,
       "legal": [
        0,
+       1
+      ]
+     },
+     {
+      "surface": "managers",
+      "type": "DEM",
+      "start": 684,
+      "end": 692,
+      "sent": "Therefore, please encourage your direct reports and managers to participate in the below events in order to secure candidates for your business area.",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.2263
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "direct reports",
+      "type": "DEM",
+      "start": 665,
+      "end": 679,
+      "sent": "Therefore, please encourage your direct reports and managers to participate in the below events in order to secure candidates for your business area.",
+      "actions": [
+       {
+        "fill": "a document",
+        "mode": "level",
+        "walk_risk": 0.0069,
+        "p6": 0.2143
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "A&A",
+      "type": "DEM",
+      "start": 538,
+      "end": 541,
+      "sent": "As ENA has the highest percentage of A&A rotating in its business unit, the participation of ENA at interview should reflect this.",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.098,
+        "p6": 0.2549
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Manager",
+      "type": "DEM",
+      "start": 82,
+      "end": 89,
+      "sent": "All,  The below Analyst & Associate recruiting dates require ENA participation at Manager level at above.",
+      "actions": [
+       {
+        "fill": "a leader",
+        "mode": "level",
+        "walk_risk": 0.0268,
+        "p6": 0.5568
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
        1
       ]
      }
@@ -6716,31 +8135,6 @@
       ]
      },
      {
-      "surface": "law enforcement officials",
-      "type": "ORG",
-      "start": 115,
-      "end": 140,
-      "sent": "We communicated with law enforcement officials who found the threat unsubstantiated and without merit.",
-      "actions": [
-       {
-        "fill": "a worker",
-        "mode": "level",
-        "walk_risk": 0.0568,
-        "p6": 0.2067
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
       "surface": "October 25th",
       "type": "DATETIME",
       "start": 8,
@@ -6780,17 +8174,17 @@
    "aeslc/arnold-j_inbox_68": {
     "spans": [
      {
-      "surface": "Enron",
-      "type": "ORG",
-      "start": 37,
-      "end": 42,
-      "sent": "Hi John,  The events surrounding the Enron demise are quite disturbing not only to me but to many of us over here.",
+      "surface": "traders",
+      "type": "DEM",
+      "start": 465,
+      "end": 472,
+      "sent": "You are one of the largest and most influential traders in the market, yet do not have the annoying ego so often found in traders of your stature.",
       "actions": [
        {
-        "fill": "an organization",
+        "fill": "a personal attribute",
         "mode": "level",
-        "walk_risk": 0.0013,
-        "p6": 0.4056
+        "walk_risk": 0.0,
+        "p6": 0.1885
        },
        {
         "fill": null,
@@ -6869,57 +8263,6 @@
       "legal": [
        1
       ]
-     },
-     {
-      "surface": "ECS 06716",
-      "type": "LOC",
-      "start": 144,
-      "end": 153,
-      "sent": "The meeting will be held in ECS 06716 at 9:30 am, Wednesday, January 2, 2002.",
-      "actions": [
-       {
-        "fill": "a place",
-        "mode": "level",
-        "walk_risk": 0.1215,
-        "p6": 0.1729
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "Netco",
-      "type": "ORG",
-      "start": 109,
-      "end": 114,
-      "sent": "Kevin Presto is requesting that you attend a meeting regarding Organizing an Action Plan for the Start-up of Netco.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0059,
-        "p6": 0.2891
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
      }
     ],
     "probes": {
@@ -6929,34 +8272,7 @@
     "trainable": false
    },
    "aeslc/arora-h_inbox_3": {
-    "spans": [
-     {
-      "surface": "STEAG",
-      "type": "ORG",
-      "start": 126,
-      "end": 131,
-      "sent": "He can fill you in on the potential deal with STEAG.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0004,
-        "p6": 0.1818
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     }
-    ],
+    "spans": [],
     "probes": {
      "train": [
       {
@@ -6966,36 +8282,10 @@
      ],
      "held_out": []
     },
-    "trainable": true
+    "trainable": false
    },
    "aeslc/arora-h_inbox_83": {
     "spans": [
-     {
-      "surface": "Enron",
-      "type": "ORG",
-      "start": 146,
-      "end": 151,
-      "sent": "Can't imagine they would entertain an Enron bid right now without confiscatory credit pricing.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0002,
-        "p6": 0.4056
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
      {
       "surface": "New Jersey",
       "type": "LOC",
@@ -7070,32 +8360,6 @@
       "legal": [
        1
       ]
-     },
-     {
-      "surface": "ConEd",
-      "type": "ORG",
-      "start": 34,
-      "end": 39,
-      "sent": "Harry:  Got the bid documents for ConEd's offering of peaking capacity for PJM East (Lakewood, New Jersey).",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0066,
-        "p6": 0.2057
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       0,
-       1
-      ]
      }
     ],
     "probes": {
@@ -7105,34 +8369,7 @@
     "trainable": false
    },
    "aeslc/badeer-r_inbox_2": {
-    "spans": [
-     {
-      "surface": "UBS",
-      "type": "ORG",
-      "start": 41,
-      "end": 44,
-      "sent": "Thank you for allowing me to explain the UBS relocation policy.",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0055,
-        "p6": 0.225
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     }
-    ],
+    "spans": [],
     "probes": {
      "train": [],
      "held_out": []
@@ -7141,32 +8378,6 @@
    },
    "aeslc/bass-e_inbox_112": {
     "spans": [
-     {
-      "surface": "Enron",
-      "type": "ORG",
-      "start": 998,
-      "end": 1003,
-      "sent": "Enron Benefits Department",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.0001,
-        "p6": 0.4056
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 0,
-      "legal": [
-       0,
-       1
-      ]
-     },
      {
       "surface": "Thursday, January 17",
       "type": "DATETIME",
@@ -7229,31 +8440,6 @@
         "mode": "level",
         "walk_risk": 0.1367,
         "p6": 0.3283
-       },
-       {
-        "fill": null,
-        "mode": "placeholder",
-        "walk_risk": 0.0,
-        "p6": 0.0
-       }
-      ],
-      "bc_action": 1,
-      "legal": [
-       1
-      ]
-     },
-     {
-      "surface": "ENRON CORP.",
-      "type": "ORG",
-      "start": 78,
-      "end": 89,
-      "sent": "PLEASE READ THIS IMPORTANT INFORMATION CONCERNING THE ENRON STOCK FUND IN THE ENRON CORP. SAVINGS AND ESOP PLANS  On Friday, January 11, trading of Enron stock was suspended on the New York Stock Exchange (NYSE).",
-      "actions": [
-       {
-        "fill": "an organization",
-        "mode": "level",
-        "walk_risk": 0.3477,
-        "p6": 0.4893
        },
        {
         "fill": null,

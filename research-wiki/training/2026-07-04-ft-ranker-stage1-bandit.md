@@ -1,9 +1,9 @@
 ---
 type: training-experiment
-status: planned
+status: running
 created: 2026-07-04
 model: RankerPolicy feature-MLP (64-h, ~5k params), behavior-cloned from the tau-walk
-dataset: ranker_env.json — 20 trainable docs (9 clinical / 7 enron / 4 aeslc; probe- AND span-bearing), 139 decision spans, 54 train probes
+dataset: ranker_env.json (DETECTOR v2 pii_gliner_multidomain@0.3, switched pre-run) — 23 trainable docs (12 clinical / 8 enron / 3 aeslc), 177 decision spans, 106 train probes
 result: pending
 tags: [ranker, stage1, bandit, reinforce, surrogate-reward, latticecloak]
 companion: ../../docs/specs/RL/surrogate-ranker-infiller.md
@@ -19,10 +19,13 @@ a null here, with flat features, does NOT kill selection learning (the frozen-en
 upgrade is pre-registered); a positive is a cheap existence proof.
 
 ## Training data
-data/ranker_env.json (Phase-0 artifact): action tables with stored P4 walk_risk + P6 proximity,
-tau-legal masks (tau=0.02), behavior-clone labels, persisted probe splits (seed 0). Trainable =
-probe-bearing AND span-bearing: 20 docs / 139 decision spans / 54 train probes (the runner logs
-the realized counts at startup and verifies assemble(bc) == artifact tau_walk doc_p, 20/20).
+data/ranker_env.json (Phase-0 artifact) rebuilt 2026-07-04 on the v2 detector
+(data/models/pii_gliner_multidomain/checkpoint-2479 @0.3 — deployment decision; TAB QUASI 0.979):
+action tables with stored P4 walk_risk + P6 proximity, tau-legal masks (tau=0.02),
+behavior-clone labels, persisted probe splits (seed 0). Trainable = probe-bearing AND
+span-bearing: 23 docs / 177 decision spans / 106 train probes (v2's DEM/MISC recall nearly
+doubled probe supply). BC reproduction verified 23/23. Reward gate re-passed on this
+environment: U~realized 0.354/0.511/0.760 (results/ranker_reward_gate.json).
 
 ## Training config
 scripts/train_ranker.py — REINFORCE, group advantage (G=8), KL leash to BC init (coef 0.05),

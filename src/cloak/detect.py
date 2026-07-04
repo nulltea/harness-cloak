@@ -56,7 +56,11 @@ def _chunks(text: str, max_chars: int = 1200):
 
 
 class Detector:
-    def __init__(self, gliner_model: str = "urchade/gliner_small-v2.1",
+    # Deployment default (decided 2026-07-04): the multi-domain fine-tune v2 — TAB QUASI 0.979,
+    # generality 0.872; research-wiki/training/2026-07-04-ft-detector-quasi.md. Threshold 0.3 =
+    # the record's cross-domain operating point (TAB's own op point is 0.02, corpus-specific).
+    # Stock fallback: gliner_model="urchade/gliner_small-v2.1".
+    def __init__(self, gliner_model: str = "data/models/pii_gliner_multidomain/checkpoint-2479",
                  threshold: float = 0.3, batch_size: int = 16):
         import torch
         from gliner import GLiNER
