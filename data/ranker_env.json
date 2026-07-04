@@ -6,8 +6,8 @@
   "DATETIME": 100.0,
   "DEM": 100.0,
   "QUANTITY": 100.0,
-  "MISC": 1.0,
-  "OTHER": 1.0
+  "MISC": 100.0,
+  "OTHER": 100.0
  },
  "risk_measure": "aset (anonymity-set count); walk_risk retained offline-only",
  "split_seed": 0,

@@ -32,9 +32,11 @@ GENERIC = 1e9
 # rests on thin cells — see results/lattice_count_shootout.json and the spec's thin-cell
 # caveat); DATETIME=100 excludes
 # the leaky month-level band (10-100 bucket measured 0.769). MISC/OTHER have no shootout
-# items — user-waivable, fail-closed parsing governs them.
+# items; 100.0 is the default-deny posture for open-vocabulary types (unparseable fills fail
+# closed -> placeholder; keep-original requires an explicit per-type waiver, i.e. the user
+# setting that type's floor to 1).
 K_FLOORS = {"LOC": 100.0, "ORG": 100.0, "DATETIME": 100.0,
-            "DEM": 100.0, "QUANTITY": 100.0, "MISC": 1.0, "OTHER": 1.0}
+            "DEM": 100.0, "QUANTITY": 100.0, "MISC": 100.0, "OTHER": 100.0}
 
 _geo_counts_cache = None
 

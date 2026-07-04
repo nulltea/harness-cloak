@@ -49,8 +49,10 @@ history and wall-time live in the
   TYPE_LABEL coarse fills ≡ GENERIC (1e9). Deterministic, model-free, ~µs.
 - **k_T / K_FLOORS (per-type count floors)** — the privacy contract: a level action is legal
   iff `aset ≥ k_T` for its span's type. Calibrated on the count-vs-attacker shootout
-  (`results/lattice_count_shootout.json`): LOC/ORG/DATETIME/DEM/QUANTITY = 100, MISC/OTHER = 1
-  (user-waivable). k_T ≈ 1/tau_T under a uniform attacker prior. Floors are user-facing
+  (`results/lattice_count_shootout.json`): all types default to 100 (default-deny; MISC/OTHER
+  have no shootout data, so they inherit the same conservative floor). A waiver = the user
+  setting a type's floor to 1, which is what legalizes keep-original for that type.
+  k_T ≈ 1/tau_T under a uniform attacker prior. Floors are user-facing
   config; the supported per-type range is [k_T/10, 10·k_T] (§5.4).
 - **floor-walk** — the rule baseline and behavior-clone teacher: per span, the *minimum-aset*
   legal level (ties broken by list index), else generic placeholder. Replaces the tau-walk;
