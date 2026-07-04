@@ -6,18 +6,22 @@ v0): no text encoder, features come entirely from the Phase-0 environment artifa
 path (plan option 1): frozen-encoder span-in-context embeddings appended to FEATURES.
 
 Action features: [is_placeholder, walk_risk, p6, level_index/4, n_levels/4,
-                  type one-hot (7), corpus one-hot (3)]
+                  log10_aset/9, log10_active_floor/9, type one-hot (7), corpus one-hot (3)]
 """
+import math
+
 import torch
 import torch.nn as nn
 
 TYPES = ["DEM", "DATETIME", "LOC", "QUANTITY", "ORG", "MISC", "OTHER"]
 CORPORA = ["clinical", "enron", "aeslc"]
-N_FEAT = 5 + len(TYPES) + len(CORPORA)
+N_FEAT = 7 + len(TYPES) + len(CORPORA)
 
 
-def action_features(span: dict, corpus: str) -> torch.Tensor:
-    """(n_actions, N_FEAT) feature matrix for one decision span."""
+def action_features(span: dict, corpus: str, floor: float = 1.0) -> torch.Tensor:
+    """(n_actions, N_FEAT) feature matrix for one decision span. `floor` is the active
+    per-type anonymity-set count floor (the operating knob), fed so the policy can be
+    conditioned on it under --randomize-floors."""
     t_oh = [0.0] * len(TYPES)
     t_oh[TYPES.index(span["type"]) if span["type"] in TYPES else TYPES.index("OTHER")] = 1.0
     c_oh = [0.0] * len(CORPORA)
@@ -26,7 +30,9 @@ def action_features(span: dict, corpus: str) -> torch.Tensor:
     rows = []
     for i, a in enumerate(span["actions"]):
         rows.append([1.0 if a["mode"] == "placeholder" else 0.0,
-                     a["walk_risk"], a["p6"], min(i, 4) / 4.0, min(n_lvl, 4) / 4.0]
+                     a["walk_risk"], a["p6"], min(i, 4) / 4.0, min(n_lvl, 4) / 4.0,
+                     math.log10(max(a.get("aset", 1e9), 1.0)) / 9.0,
+                     math.log10(max(floor, 1.0)) / 9.0]
                     + t_oh + c_oh)
     return torch.tensor(rows, dtype=torch.float32)
 
@@ -56,13 +62,14 @@ class RankerPolicy(nn.Module):
 if __name__ == "__main__":
     span = {"type": "LOC",
             "actions": [{"fill": "a city in Norway", "mode": "level",
-                         "walk_risk": 0.03, "p6": 0.76},
+                         "walk_risk": 0.03, "p6": 0.76, "aset": 60.0},
                         {"fill": "a city in Europe", "mode": "level",
-                         "walk_risk": 0.003, "p6": 0.52},
+                         "walk_risk": 0.003, "p6": 0.52, "aset": 4000.0},
                         {"fill": None, "mode": "placeholder", "walk_risk": 0.0, "p6": 0.0}]}
     legal = [1, 2]
-    f = action_features(span, "clinical")
+    f = action_features(span, "clinical", floor=100.0)
     assert f.shape == (3, N_FEAT)
+    assert f[0, 6] == f[1, 6] and f[0, 6] > 0.0            # active-floor feature, shared
     pi = RankerPolicy()
     lp = pi.log_probs(f, legal)
     assert lp.shape == (2,) and torch.allclose(lp.exp().sum(), torch.tensor(1.0), atol=1e-5)

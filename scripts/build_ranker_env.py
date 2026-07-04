@@ -21,6 +21,7 @@ from pathlib import Path
 
 from build_arms_artifact import load_artifact
 
+from cloak.anonymity import K_FLOORS
 from cloak.corpora import load_task_docs
 from cloak.train.probes import probes_for_docs
 
@@ -33,7 +34,10 @@ SPLIT_SEED = 0
 def main():
     t0 = time.time()
     art = load_artifact()
-    env = {"tau": TAU, "split_seed": SPLIT_SEED, "held_out_frac": HELD_OUT_FRAC,
+    env = {"tau": TAU,                    # legacy walk_risk mask — provenance only
+           "k_floors": K_FLOORS,          # per-type anonymity-set count floors (the knob)
+           "risk_measure": "aset (anonymity-set count); walk_risk retained offline-only",
+           "split_seed": SPLIT_SEED, "held_out_frac": HELD_OUT_FRAC,
            "probe_models": {"walk_risk": "EleutherAI/pythia-410m (contrastive re-id)",
                             "p6": "all-MiniLM-L6-v2 cos(fill, original)"},
            "corpora": {}}

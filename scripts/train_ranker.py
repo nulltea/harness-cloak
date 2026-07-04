@@ -24,6 +24,7 @@ Smoke (~2 min):                ... scripts/train_ranker.py --smoke
 """
 import argparse
 import json
+import math
 import random
 import re
 import time
@@ -119,6 +120,25 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
     return _cleanup(out), R
 
 
+def derive_spans(raw_spans, floors, corpus, device):
+    """Legal set + floor-walk BC teacher + features from per-type count floors.
+    legal = placeholder ∪ {levels with aset >= floor[type]} (walk_risk is offline-only now).
+    bc_action = most specific legal level (actions run specific→generic in aset), else
+    placeholder. Every span keeps a placeholder so legal is never empty."""
+    spans, feats = [], []
+    for s in raw_spans:
+        s = dict(s)
+        k = floors.get(s["type"], 1.0)
+        s["legal"] = [i for i, a in enumerate(s["actions"])
+                      if a["mode"] == "placeholder" or a.get("aset", 0) >= k]
+        s["bc_action"] = next((i for i, a in enumerate(s["actions"])
+                               if a["mode"] == "level" and a.get("aset", 0) >= k),
+                              len(s["actions"]) - 1)
+        spans.append(s)
+        feats.append(action_features(s, corpus, k).to(device))
+    return spans, feats
+
+
 def verify_bc_reproduction(docs, art) -> int:
     """Invariant: assemble(behavior-clone choices) == the artifact's tau_walk doc_p."""
     bad = 0
@@ -186,8 +206,13 @@ def kl_to_ref(policy, ref, feats, legal):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--alphas", default="0.3,0.5,0.7")
-    ap.add_argument("--tau", type=float, default=None,
-                    help="re-derive legal sets at a different tau (risks are stored raw)")
+    ap.add_argument("--floors", default=None,
+                    help="override per-type count floors, e.g. "
+                         "'LOC=50,ORG=50,DATETIME=30,DEM=1,QUANTITY=1,MISC=1,OTHER=1' "
+                         "(default: env k_floors)")
+    ap.add_argument("--randomize-floors", action="store_true",
+                    help="per-episode log-uniform floor k_T in [1, 10*k_T] per type; the "
+                         "sampled floor is fed to the policy features (floor-conditioned)")
     ap.add_argument("--G", type=int, default=8)
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--bc-epochs", type=int, default=30)
@@ -202,44 +227,66 @@ def main():
 
     env = json.loads(ENV_PATH.read_text())
     art = load_artifact()
-    tau = args.tau if args.tau is not None else env["tau"]
+    floors = dict(env["k_floors"])
+    if args.floors:
+        floors.update((t, float(k)) for t, k in
+                      (kv.split("=") for kv in args.floors.split(",")))
 
+    # floor-walk teacher legitimately diverges from the artifact's stored tau-walk bc_action
+    # (that mask is retired); track whether it happens to coincide so we can still run the
+    # exact doc_p reproduction check when it does.
+    floor_eq_stored = True
     docs = []
     for corpus, per_doc in env["corpora"].items():
         texts = {d["id"]: d["text"] for d in load_task_docs(corpus, 16)}
         for doc_id, d in per_doc.items():
             if not d["trainable"] or not d["spans"]:
                 continue
-            spans = []
-            for s in d["spans"]:
-                s = dict(s)
-                s["legal"] = [i for i, a in enumerate(s["actions"])
-                              if a["mode"] == "placeholder" or a["walk_risk"] < tau]
-                if tau != env["tau"]:
-                    # the artifact's bc_action is the walk at env-tau; re-derive the
-                    # tau-walk teacher under the requested tau from the stored risks
-                    s["bc_action"] = next(
-                        (i for i, a in enumerate(s["actions"])
-                         if a["mode"] == "level" and a["walk_risk"] < tau),
-                        len(s["actions"]) - 1)
-                assert s["bc_action"] in s["legal"], (doc_id, s["surface"])
-                spans.append(s)
+            stored_bc = [s["bc_action"] for s in d["spans"]]
+            spans, feats = derive_spans(d["spans"], floors, corpus, device)
+            floor_eq_stored &= all(s["bc_action"] == b for s, b in zip(spans, stored_bc))
             docs.append({"id": doc_id, "corpus": corpus, "text": texts[doc_id],
                          "R_walk": art[corpus][doc_id]["tau_walk"][1],
-                         "spans": spans,
-                         "feats": [action_features(s, corpus).to(device) for s in spans],
+                         "raw_spans": d["spans"], "spans": spans, "feats": feats,
                          "probes_train": d["probes"]["train"]})
     if args.smoke:
         docs, args.epochs, args.G = docs[:2], 2, 4
-    n_spans = sum(len(d["spans"]) for d in docs)
+    all_spans = [s for d in docs for s in d["spans"]]
+    n_spans = len(all_spans)
+    n_ge2 = sum(len(s["legal"]) >= 2 for s in all_spans)
+    n_keep = sum(any(a.get("keep") and i in s["legal"] for i, a in enumerate(s["actions"]))
+                 for s in all_spans)
     n_probes = sum(len(d["probes_train"]) for d in docs)
     print(f"train set: docs={len(docs)} spans={n_spans} train-probes={n_probes} "
-          f"tau={tau} device={device}", flush=True)
-    if tau == env["tau"]:
+          f"floors={floors} randomize={args.randomize_floors} device={device}", flush=True)
+    print(f"legal-set: spans={n_spans} >=2-legal={n_ge2} keep-original-legal={n_keep}",
+          flush=True)
+    if floor_eq_stored:
         bad = verify_bc_reproduction(docs, art)
         assert bad == 0, f"{bad} docs fail BC reproduction — assemble != substitute"
         print("BC reproduction verified: assemble(bc) == artifact tau_walk doc_p "
               f"on all {len(docs)} docs", flush=True)
+    else:
+        # floor-walk teacher differs from the tau-walk reference doc_p; verify the weaker
+        # invariants the reproduction check can't cover here. The static per-span floor-walk
+        # is NOT injective (unlike the dynamically-masked tau_walk): at high floors several
+        # spans collapse onto one generic fill, so assemble() legitimately collides on some
+        # docs — the accepted static-teacher / dynamic-mask mismatch (see module docstring).
+        # RL rollouts mask collisions dynamically; BC is per-span CE — neither is affected.
+        collide = 0
+        for doc in docs:
+            for s in doc["spans"]:
+                assert s["bc_action"] in s["legal"], (doc["id"], s["surface"])
+            choice = {s["surface"].lower(): s["actions"][s["bc_action"]] for s in doc["spans"]}
+            try:
+                assemble(doc["text"], doc["R_walk"], doc["spans"], choice)
+            except AssertionError as e:
+                if "injectivity" not in str(e):
+                    raise
+                collide += 1
+        print(f"floor-walk teacher diverges from stored tau-walk; verified every bc_action "
+              f"legal on all {len(docs)} docs; {collide}/{len(docs)} have a non-injective "
+              "static teacher trajectory (accepted mismatch, masked in rollouts)", flush=True)
 
     for alpha in [float(a) for a in args.alphas.split(",")]:
         t0 = time.time()
@@ -250,7 +297,8 @@ def main():
         ref.load_state_dict(policy.state_dict())
         ref.eval()
         opt = torch.optim.Adam(policy.parameters(), lr=args.lr)
-        log = {"alpha": alpha, "tau": tau, "G": args.G, "epochs": args.epochs,
+        log = {"alpha": alpha, "floors": floors, "randomize_floors": args.randomize_floors,
+               "G": args.G, "epochs": args.epochs,
                "kl_coef": args.kl_coef, "seed": args.seed, "n_docs": len(docs),
                "policy": "feature-MLP (plan ablation floor)", "rounds": []}
 
@@ -261,10 +309,17 @@ def main():
             ep = {"r": [], "A": [], "U": [], "ph": [], "kl": []}
             for di in order:
                 doc = docs[di]
+                if args.randomize_floors:
+                    # per-episode log-uniform floor per type, features rebuilt from it
+                    ep_floors = {t: math.exp(rng.uniform(0.0, math.log(10.0 * max(k, 1.0))))
+                                 for t, k in floors.items()}
+                    span_rows, feats = derive_spans(doc["raw_spans"], ep_floors,
+                                                    doc["corpus"], device)
+                else:
+                    span_rows, feats = doc["spans"], doc["feats"]
                 rewards, parts_l, logps_l = [], [], []
                 for _ in range(args.G):
-                    r, parts, logps = rollout_reward(doc, doc["spans"], doc["feats"],
-                                                     policy, alpha)
+                    r, parts, logps = rollout_reward(doc, span_rows, feats, policy, alpha)
                     rewards.append(r)
                     parts_l.append(parts)
                     logps_l.append(logps)
@@ -272,7 +327,7 @@ def main():
                 adv = (rt - rt.mean()) / (rt.std() + 1e-6)
                 pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / args.G
                 kl = sum(kl_to_ref(policy, ref, f, s["legal"])
-                         for s, f in zip(doc["spans"], doc["feats"])) / len(doc["spans"])
+                         for s, f in zip(span_rows, feats)) / len(span_rows)
                 loss = pg + args.kl_coef * kl
                 opt.zero_grad()
                 loss.backward()
