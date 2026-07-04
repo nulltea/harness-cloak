@@ -1,0 +1,7288 @@
+{
+ "tau": 0.02,
+ "split_seed": 0,
+ "held_out_frac": 0.3,
+ "probe_models": {
+  "walk_risk": "EleutherAI/pythia-410m (contrastive re-id)",
+  "p6": "all-MiniLM-L6-v2 cos(fill, original)"
+ },
+ "corpora": {
+  "clinical": {
+   "aci/D2N001": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 7680,
+      "end": 7686,
+      "sent": "[doctor] hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0013,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0009,
+        "p6": 0.3912
+       },
+       {
+        "fill": "an imaginary being",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.1861
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 7666,
+      "end": 7672,
+      "sent": "[doctor] hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0467,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.016,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.003,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 7634,
+      "end": 7641,
+      "sent": "[patient] good seeing you too .",
+      "actions": [
+       {
+        "fill": "a case",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4134
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4424
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "last year",
+      "type": "DATETIME",
+      "start": 4986,
+      "end": 4995,
+      "sent": "so , looking at your lipid panel from last year , you know , everything , your cholesterol was like , a tiny bit high .",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.023,
+        "p6": 0.5111
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "the past year",
+      "type": "DATETIME",
+      "start": 2041,
+      "end": 2054,
+      "sent": "i've been going every week , um , for the past year since my last annual exam .",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.0719,
+        "p6": 0.5522
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "mount baker area",
+      "type": "LOC",
+      "start": 753,
+      "end": 769,
+      "sent": "uh , went to washington last weekend to hike in northern cascades, like around the mount baker area .",
+      "actions": [
+       {
+        "fill": "a region",
+        "mode": "level",
+        "walk_risk": 0.0248,
+        "p6": 0.2721
+       },
+       {
+        "fill": "a location",
+        "mode": "level",
+        "walk_risk": 0.0416,
+        "p6": 0.2837
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "northern cascades",
+      "type": "LOC",
+      "start": 718,
+      "end": 735,
+      "sent": "uh , went to washington last weekend to hike in northern cascades, like around the mount baker area .",
+      "actions": [
+       {
+        "fill": "a range",
+        "mode": "level",
+        "walk_risk": 0.0099,
+        "p6": 0.1518
+       },
+       {
+        "fill": "a geological formation",
+        "mode": "level",
+        "walk_risk": 0.0145,
+        "p6": 0.3363
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "last weekend",
+      "type": "DATETIME",
+      "start": 694,
+      "end": 706,
+      "sent": "uh , went to washington last weekend to hike in northern cascades, like around the mount baker area .",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0117,
+        "p6": 0.2336
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "washington",
+      "type": "LOC",
+      "start": 683,
+      "end": 693,
+      "sent": "uh , went to washington last weekend to hike in northern cascades, like around the mount baker area .",
+      "actions": [
+       {
+        "fill": "a city in District of Columbia",
+        "mode": "level",
+        "walk_risk": 0.0287,
+        "p6": 0.5573
+       },
+       {
+        "fill": "a city in United States",
+        "mode": "level",
+        "walk_risk": 0.0361,
+        "p6": 0.5602
+       },
+       {
+        "fill": "a city in North America",
+        "mode": "level",
+        "walk_risk": 0.027,
+        "p6": 0.502
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "50-year-old",
+      "type": "DATETIME",
+      "start": 238,
+      "end": 249,
+      "sent": "[doctor] martha is a 50-year-old female with a past medical history significant for congestive heart failure , depression and hypertension who presents for her annual exam .",
+      "actions": [
+       {
+        "fill": "fifty-something",
+        "mode": "level",
+        "walk_risk": 0.3854,
+        "p6": 0.6537
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "50-year-old",
+       "question": "What is the age of Martha Collins?"
+      },
+      {
+       "surface": "last year",
+       "question": "When were her cholesterol levels slightly elevated on her lipid panel?"
+      },
+      {
+       "surface": "martha",
+       "question": "Who is the 50-year-old female with a past medical history significant for congestive heart failure?"
+      },
+      {
+       "surface": "the past year",
+       "question": "How long has she been attending therapy weekly for her depression?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "patient",
+       "question": "Who did the narrator last see?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/0": {
+    "spans": [],
+    "probes": {
+     "train": [
+      {
+       "surface": "Doctor",
+       "question": "Who has been following her since her last visit?"
+      },
+      {
+       "surface": "Doctor Kumar",
+       "question": "Who has been following her since her last visit?"
+      },
+      {
+       "surface": "Patient",
+       "question": "Who is the 76-year-old white female presenting to the clinic?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aci/D2N002": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 6561,
+      "end": 6567,
+      "sent": "hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0005,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.3912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 6540,
+      "end": 6546,
+      "sent": "[doctor] okay .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0367,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0127,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0024,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 6510,
+      "end": 6517,
+      "sent": "[patient] not at this point .",
+      "actions": [
+       {
+        "fill": "a case",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4134
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4424
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "the next couple weeks",
+      "type": "DATETIME",
+      "start": 6357,
+      "end": 6378,
+      "sent": "[doctor] you know , let's see how we do over the next couple weeks , and again , we'll refer you to physical therapy if we need to , okay ?",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0631,
+        "p6": 0.2847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "andrew",
+      "type": "DEM",
+      "start": 419,
+      "end": 425,
+      "sent": "andrew , what's going on with your joint ? what happened ?",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0026,
+        "p6": 0.2191
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "62-year-old",
+      "type": "DATETIME",
+      "start": 252,
+      "end": 263,
+      "sent": "[doctor] okay ? so , andrew is a 62-year-old male with a past medical history significant for a kidney transplant , hypothyroidism , and arthritis , who presents today with complaints of joint pain .",
+      "actions": [
+       {
+        "fill": "sixty-something",
+        "mode": "level",
+        "walk_risk": 0.1746,
+        "p6": 0.5249
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "62-year-old",
+       "question": "What is the age of Andrew Perez?"
+      },
+      {
+       "surface": "andrew",
+       "question": "Who is the 62-year-old male with a kidney transplant?"
+      },
+      {
+       "surface": "dr. gutierrez",
+       "question": "Who did he see a couple of weeks ago?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who reports moving boxes up and down the basement stairs?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "doctor",
+       "question": "Who did he see a couple of weeks ago?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/1": {
+    "spans": [
+     {
+      "surface": "nurse",
+      "type": "DEM",
+      "start": 1257,
+      "end": 1262,
+      "sent": "Will the nurse be in soon?",
+      "actions": [
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0029,
+        "p6": 0.5437
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.4662
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "July thirty first O eight",
+      "type": "DATETIME",
+      "start": 362,
+      "end": 387,
+      "sent": "Doctor: July thirty first O eight.",
+      "actions": [
+       {
+        "fill": "the summer",
+        "mode": "level",
+        "walk_risk": 0.0008,
+        "p6": 0.4064
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "July thirty first",
+      "type": "DATETIME",
+      "start": 334,
+      "end": 351,
+      "sent": "July thirty first.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0011,
+        "p6": 0.1332
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "Morphine",
+       "question": "What substance was given a total of 8 mg in the Emergency Department?"
+      },
+      {
+       "surface": "Patient",
+       "question": "Who presented to the emergency department?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aci/D2N003": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 6068,
+      "end": 6074,
+      "sent": "hey , dragon ? finalize the note .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.3912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 6046,
+      "end": 6052,
+      "sent": "[doctor] hey .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0403,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.013,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0021,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 6024,
+      "end": 6031,
+      "sent": "[patient] thank you .",
+      "actions": [
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4424
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "nurse",
+      "type": "DEM",
+      "start": 5768,
+      "end": 5773,
+      "sent": "so the nurse will be in soon , and she'll help you get the cat scan scheduled .",
+      "actions": [
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0019,
+        "p6": 0.5437
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0011,
+        "p6": 0.4662
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "40 milligrams",
+      "type": "QUANTITY",
+      "start": 5732,
+      "end": 5745,
+      "sent": "hey , dragon ? order a refill of protonix 40 milligrams daily .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0774,
+        "p6": 0.4284
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "the last 48 hours",
+      "type": "DATETIME",
+      "start": 1011,
+      "end": 1028,
+      "sent": "[patient] um , at first it was coming and going , and then for about the last 48 hours , it's been a constant , and it's .",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0769,
+        "p6": 0.1837
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "john",
+      "type": "DEM",
+      "start": 403,
+      "end": 407,
+      "sent": "so john , what's going on with your back ?",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0402,
+        "p6": 0.2623
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "61-year-old",
+      "type": "DATETIME",
+      "start": 265,
+      "end": 276,
+      "sent": "[doctor] so john is a 61-year-old male with a past medical history significant for kidney stones , migraines and reflux , who presents with some back pain .",
+      "actions": [
+       {
+        "fill": "sixty-something",
+        "mode": "level",
+        "walk_risk": 0.2547,
+        "p6": 0.5556
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "40 milligrams",
+       "question": "What is the daily dosage of Protonix he is taking?"
+      },
+      {
+       "surface": "61-year-old",
+       "question": "What is the age of John Perry?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who reports feeling the same pain as when he had kidney stones?"
+      },
+      {
+       "surface": "the last 48 hours",
+       "question": "When did the pain become constant?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "john",
+       "question": "Who is the 61-year-old male mentioned?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/2": {
+    "spans": [
+     {
+      "surface": "twenty two year old",
+      "type": "DATETIME",
+      "start": 366,
+      "end": 385,
+      "sent": "Is this normal for a twenty two year old?",
+      "actions": [
+       {
+        "fill": "twenty-something",
+        "mode": "level",
+        "walk_risk": 0.1384,
+        "p6": 0.738
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aci/D2N004": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 7225,
+      "end": 7231,
+      "sent": "hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0005,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.3912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 7204,
+      "end": 7210,
+      "sent": "[doctor] okay .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0367,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0127,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0024,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 7174,
+      "end": 7181,
+      "sent": "[patient] not at this point .",
+      "actions": [
+       {
+        "fill": "a case",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4134
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4424
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "nurse",
+      "type": "DEM",
+      "start": 7008,
+      "end": 7013,
+      "sent": "and so , the nurse will come in .",
+      "actions": [
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0031,
+        "p6": 0.5437
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "1,000 milligrams",
+      "type": "QUANTITY",
+      "start": 6357,
+      "end": 6373,
+      "sent": "for your next problem , your type 2 diabetes , i would like to increase your metformin to 1,000 milligrams twice daily-",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.4288,
+        "p6": 0.4042
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "15 milligrams",
+      "type": "QUANTITY",
+      "start": 6240,
+      "end": 6253,
+      "sent": "[doctor] hey , dragon , order meloxicam 15 milligrams once a day .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0802,
+        "p6": 0.4463
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "five pounds",
+      "type": "QUANTITY",
+      "start": 2613,
+      "end": 2624,
+      "sent": "[patient] a little bit of weight gain over the summer but nothing , nothing too radical , nothing more than five pounds .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0313,
+        "p6": 0.4344
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "about 10 years ago",
+      "type": "DATETIME",
+      "start": 1971,
+      "end": 1989,
+      "sent": "[patient] i actually had surgery about 10 years ago on my lower back .",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.1952,
+        "p6": 0.8222
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "james",
+      "type": "DEM",
+      "start": 437,
+      "end": 442,
+      "sent": "[doctor] so , james , what happened to your back ?",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.017,
+        "p6": 0.2228
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "57-year-old",
+      "type": "DATETIME",
+      "start": 262,
+      "end": 273,
+      "sent": "[doctor] james is a 57-year-old male with a past medical history significant for congestive heart failure and type 2 diabetes who presents today with back pain .",
+      "actions": [
+       {
+        "fill": "fifty-something",
+        "mode": "level",
+        "walk_risk": 0.4675,
+        "p6": 0.5332
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "15 milligrams",
+       "question": "How much meloxicam should be initiated once daily?"
+      },
+      {
+       "surface": "57-year-old",
+       "question": "What is the age of James Allen?"
+      },
+      {
+       "surface": "about 10 years ago",
+       "question": "When did he have surgery in his lower back?"
+      },
+      {
+       "surface": "james",
+       "question": "Who is the 57-year-old male with a past medical history significant for congestive heart failure and type 2 diabetes?"
+      },
+      {
+       "surface": "l5",
+       "question": "Where is the pain felt upon palpation of his back?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "1,000 milligrams",
+       "question": "What is the increased dosage of metformin in milligrams?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who states he was golfing and hurt his back?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/3": {
+    "spans": [],
+    "probes": {
+     "train": [
+      {
+       "surface": "Patient",
+       "question": "Who was taking no over the counter or alternative medicines?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aci/D2N005": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 2838,
+      "end": 2844,
+      "sent": "hey , dragon , go ahead and finalize the recording , and , uh , come with me .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0006,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.3912
+       },
+       {
+        "fill": "an imaginary being",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.1861
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 2807,
+      "end": 2813,
+      "sent": "[doctor] you're welcome .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0166,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0074,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0013,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 2768,
+      "end": 2775,
+      "sent": "[patient] no , that's it .",
+      "actions": [
+       {
+        "fill": "a case",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4134
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4424
+       },
+       {
+        "fill": "a causal agent",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.2567
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "50 milligrams",
+      "type": "QUANTITY",
+      "start": 2278,
+      "end": 2291,
+      "sent": "okay , so tramadol , 50 milligrams , every six hours as needed for pain .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.1219,
+        "p6": 0.4691
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "four-way stop",
+      "type": "LOC",
+      "start": 811,
+      "end": 824,
+      "sent": "so i was stopped at a four-way stop , and it was not my turn to go .",
+      "actions": [
+       {
+        "fill": "an ending",
+        "mode": "level",
+        "walk_risk": 0.522,
+        "p6": 0.3676
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "41-year-old",
+      "type": "DATETIME",
+      "start": 143,
+      "end": 154,
+      "sent": "she's a 41-year-old female , and what brings you in today ?",
+      "actions": [
+       {
+        "fill": "forty-something",
+        "mode": "level",
+        "walk_risk": 0.5368,
+        "p6": 0.5611
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "41-year-old",
+       "question": "What is the age of Hill?"
+      },
+      {
+       "surface": "50 milligrams",
+       "question": "What is the dosage of Tramadol recommended?"
+      },
+      {
+       "surface": "ms. hill",
+       "question": "Who presents today for an evaluation of right middle finger pain?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "patient",
+       "question": "Who did the speaker discuss the diagnosis and treatment options with?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/4": {
+    "spans": [],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aci/D2N006": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 6565,
+      "end": 6571,
+      "sent": "hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0005,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.3912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 6536,
+      "end": 6542,
+      "sent": "[doctor] okay .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0367,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0127,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0024,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 6504,
+      "end": 6511,
+      "sent": "[patient] uh , no .",
+      "actions": [
+       {
+        "fill": "a case",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4134
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4424
+       },
+       {
+        "fill": "a causal agent",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.2567
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "100 milligrams",
+      "type": "QUANTITY",
+      "start": 6138,
+      "end": 6152,
+      "sent": "[doctor] hey , dragon , order allopurinol , 100 milligrams , once daily .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.1263,
+        "p6": 0.4445
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "40 milligrams",
+      "type": "QUANTITY",
+      "start": 5773,
+      "end": 5786,
+      "sent": "[doctor] i want you to continue on the omeprazole , 40 milligrams , once a day and continue with those dietary modifications .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.1004,
+        "p6": 0.4284
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "anna",
+      "type": "DEM",
+      "start": 403,
+      "end": 407,
+      "sent": "[doctor] so , anna , it's been probably about six months since i've seen you .",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0062,
+        "p6": 0.2148
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "44-year-old",
+      "type": "DATETIME",
+      "start": 235,
+      "end": 246,
+      "sent": "[doctor] so , anna is a 44-year-old female with a past medical history significant for arthritis , gout , and reflux , who presents today for follow up of her chronic problems .",
+      "actions": [
+       {
+        "fill": "forty-something",
+        "mode": "level",
+        "walk_risk": 0.3531,
+        "p6": 0.4741
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "100 milligrams",
+       "question": "What is the dosage of allopurinol she is taking?"
+      },
+      {
+       "surface": "40 milligrams",
+       "question": "What is the dosage of omeprazole she was prescribed?"
+      },
+      {
+       "surface": "44-year-old",
+       "question": "What is the age of Anna Mitchell?"
+      },
+      {
+       "surface": "anna",
+       "question": "Who is the 44-year-old female with a past medical history significant for arthritis, gout, and reflux?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "patient",
+       "question": "Who was last seen six months ago?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/5": {
+    "spans": [],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aci/D2N007": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 5206,
+      "end": 5212,
+      "sent": "[doctor] hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0013,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0009,
+        "p6": 0.3912
+       },
+       {
+        "fill": "an imaginary being",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.1861
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 5192,
+      "end": 5198,
+      "sent": "[doctor] hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0467,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.016,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.003,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 5170,
+      "end": 5177,
+      "sent": "[patient] thank you .",
+      "actions": [
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4424
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "nurse",
+      "type": "DEM",
+      "start": 5025,
+      "end": 5030,
+      "sent": "okay , so the nurse will come in .",
+      "actions": [
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0029,
+        "p6": 0.5437
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.4662
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "40 milligrams",
+      "type": "QUANTITY",
+      "start": 4676,
+      "end": 4689,
+      "sent": "[doctor] hey , dragon , order prozac , 40 milligrams , once a day .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0892,
+        "p6": 0.4284
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "20 milligrams",
+      "type": "QUANTITY",
+      "start": 4447,
+      "end": 4460,
+      "sent": "and then in terms of your depression , we talked about increasing your prozac , so we'll increase it from 20 milligrams to 40 milligrams .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.1523,
+        "p6": 0.4249
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "last year",
+      "type": "DATETIME",
+      "start": 3688,
+      "end": 3697,
+      "sent": "that's also stable from last year .",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.0182,
+        "p6": 0.5111
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "27",
+      "type": "DATETIME",
+      "start": 2559,
+      "end": 2561,
+      "sent": "and i know that you've had a coronary artery bypass grafting at the young age of 27 , so how's that going ?",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.1045
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "the past year",
+      "type": "DATETIME",
+      "start": 498,
+      "end": 511,
+      "sent": "um , i've been struggling with my depression , um , a bit more just because we've been trapped really inside and remotely over the past year , so i've been struggling , um , off and on with that .",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.0686,
+        "p6": 0.5522
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "sarah",
+      "type": "DEM",
+      "start": 278,
+      "end": 283,
+      "sent": "so , sarah , how have you been since the last time i saw you ?",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0119,
+        "p6": 0.1916
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "27-year-old",
+      "type": "DATETIME",
+      "start": 226,
+      "end": 237,
+      "sent": "so sarah is a 27-year-old female here for her annual visit .",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.1012,
+        "p6": 0.1781
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "20 milligrams",
+       "question": "How much Prozac is she taking?"
+      },
+      {
+       "surface": "27-year-old",
+       "question": "What is the age of the patient?"
+      },
+      {
+       "surface": "last year",
+       "question": "When did the echocardiogram appear unchanged in comparison?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who is the 27-year-old female presenting for her annual visit?"
+      },
+      {
+       "surface": "the past year",
+       "question": "How long has she been struggling with her depression?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "27",
+       "question": "How old is the patient?"
+      },
+      {
+       "surface": "40 milligrams",
+       "question": "What is the increased dosage of Prozac?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/6": {
+    "spans": [],
+    "probes": {
+     "train": [
+      {
+       "surface": "Patient",
+       "question": "Who denies high blood pressure, diabetes, heart disease, lung disease, thyroid, kidney, or bladder dysfunctions?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aci/D2N008": {
+    "spans": [
+     {
+      "surface": "dragon",
+      "type": "DEM",
+      "start": 7161,
+      "end": 7167,
+      "sent": "hey , dragon , finalize the note .",
+      "actions": [
+       {
+        "fill": "a mythical monster",
+        "mode": "level",
+        "walk_risk": 0.0005,
+        "p6": 0.4747
+       },
+       {
+        "fill": "a mythical being",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.3912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "doctor",
+      "type": "DEM",
+      "start": 7132,
+      "end": 7138,
+      "sent": "[doctor] okay , great .",
+      "actions": [
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.0439,
+        "p6": 0.7298
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0147,
+        "p6": 0.6666
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0025,
+        "p6": 0.5847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "patient",
+      "type": "DEM",
+      "start": 7096,
+      "end": 7103,
+      "sent": "[patient] not that i can think of .",
+      "actions": [
+       {
+        "fill": "a case",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4134
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4424
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "some lasix 40 milligrams",
+      "type": "DATETIME",
+      "start": 6297,
+      "end": 6321,
+      "sent": "so , i'm gon na go ahead and start you on some lasix 40 milligrams once a day .",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0048,
+        "p6": 0.0641
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "gastroenterology",
+      "type": "ORG",
+      "start": 5909,
+      "end": 5925,
+      "sent": "i also wan na go and refer you back to the gastroenterologist for another evaluation , okay ? hey , dragon , order referral to gastroenterology .",
+      "actions": [
+       {
+        "fill": "a medical science",
+        "mode": "level",
+        "walk_risk": 0.4116,
+        "p6": 0.5068
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "gastroenterologist",
+      "type": "DEM",
+      "start": 5825,
+      "end": 5843,
+      "sent": "i also wan na go and refer you back to the gastroenterologist for another evaluation , okay ? hey , dragon , order referral to gastroenterology .",
+      "actions": [
+       {
+        "fill": "a doctor",
+        "mode": "level",
+        "walk_risk": 0.4012,
+        "p6": 0.5649
+       },
+       {
+        "fill": "a medical practitioner",
+        "mode": "level",
+        "walk_risk": 0.3676,
+        "p6": 0.5766
+       },
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.429,
+        "p6": 0.5184
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "mcdonald's",
+      "type": "LOC",
+      "start": 2854,
+      "end": 2864,
+      "sent": "and along the way i stopped at , you know , mcdonald's and got two cheeseburgers .",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.575,
+        "p6": 0.4142
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "vermont",
+      "type": "LOC",
+      "start": 2758,
+      "end": 2765,
+      "sent": "i went up to vermont , um , to go , um , explore the mountains .",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0817,
+        "p6": 0.3876
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "hemoglobin",
+      "type": "QUANTITY",
+      "start": 1080,
+      "end": 1090,
+      "sent": "and it did , it c- you know , your , your , your hemoglobin is your red blood cell count .",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.1754
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "nurse",
+      "type": "DEM",
+      "start": 905,
+      "end": 910,
+      "sent": "i , you know , the nurse told me that you had called with these complaints .",
+      "actions": [
+       {
+        "fill": "a health professional",
+        "mode": "level",
+        "walk_risk": 0.0014,
+        "p6": 0.5437
+       },
+       {
+        "fill": "a professional",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4662
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "the past every day",
+      "type": "DATETIME",
+      "start": 745,
+      "end": 763,
+      "sent": "lately , i've been really just worn out , even just , you know , walking a mile or going to work , doing things that i've done in the past every day that have been relatively okay , and i have n't gotten tired .",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0631,
+        "p6": 0.2531
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "the past couple of months",
+      "type": "DATETIME",
+      "start": 552,
+      "end": 577,
+      "sent": "[patient] over the past couple of months , i've been really tired and dizzy .",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.1527,
+        "p6": 0.616
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "49-year-old",
+      "type": "DATETIME",
+      "start": 257,
+      "end": 268,
+      "sent": "[doctor] so , stephanie is a 49-year-old female with a past medical history significant for congestive heart failure , kidney stones and prior colonoscopy who presents today for an abnormal lab finding .",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.1414,
+        "p6": 0.2194
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "49-year-old",
+       "question": "What is the age of Stephanie Diaz?"
+      },
+      {
+       "surface": "gastroenterology",
+       "question": "What medical specialty is mentioned for repeat evaluation with possible endoscopy and colonoscopy?"
+      },
+      {
+       "surface": "hemoglobin",
+       "question": "What substance's level was low at 8.2?"
+      },
+      {
+       "surface": "patient",
+       "question": "Who reports being tired and dizzy?"
+      },
+      {
+       "surface": "stephanie",
+       "question": "Who is the 49-year-old female with a past medical history significant for congestive heart failure?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "the past couple of months",
+       "question": "When has the patient been experiencing tiredness and dizziness?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "mts/7": {
+    "spans": [],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   }
+  },
+  "enron": {
+   "enron/0": {
+    "spans": [
+     {
+      "surface": "FERC",
+      "type": "ORG",
+      "start": 882,
+      "end": 886,
+      "sent": "When is FERC going to rule on this?",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0058,
+        "p6": 0.2407
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "the 13th or 14th",
+      "type": "DATETIME",
+      "start": 663,
+      "end": 679,
+      "sent": "The meeting agenda for this meeting will be available on the 13th or 14th; as soon as it issues we will let you know if it appears on the agenda.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.1925,
+        "p6": 0.1491
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "November 20",
+      "type": "DATETIME",
+      "start": 592,
+      "end": 603,
+      "sent": "Therefore our educated guess is that the order would issue at the next meeting following submittal of the comments, to be held on November 20.",
+      "actions": [
+       {
+        "fill": "the autumn",
+        "mode": "level",
+        "walk_risk": 0.0207,
+        "p6": 0.4411
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Commission",
+      "type": "ORG",
+      "start": 250,
+      "end": 260,
+      "sent": "Pat Wood said at the last Commission meeting that he doesn't wish to issue significant orders between meetings, so it is unlikely that FERC will act before its next scheduled meeting.",
+      "actions": [
+       {
+        "fill": "an unit",
+        "mode": "level",
+        "walk_risk": 0.0005,
+        "p6": 0.2154
+       },
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0005,
+        "p6": 0.4338
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "November 9",
+      "type": "DATETIME",
+      "start": 170,
+      "end": 180,
+      "sent": "This is no surprise, however, since written comments are still pending and not due until November 9 (Alan is preparing ours with my back-up).",
+      "actions": [
+       {
+        "fill": "the autumn",
+        "mode": "level",
+        "walk_risk": 0.0277,
+        "p6": 0.4179
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "November 7",
+      "type": "DATETIME",
+      "start": 68,
+      "end": 78,
+      "sent": "Tim, the issue is not on the agenda for the Commission's meeting on November 7.",
+      "actions": [
+       {
+        "fill": "the autumn",
+        "mode": "level",
+        "walk_risk": 0.0133,
+        "p6": 0.4259
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "Commission",
+       "question": "What body meets on November 7th?"
+      },
+      {
+       "surface": "FERC",
+       "question": "What regulatory body is mentioned in relation to written comments due on November 9th?"
+      },
+      {
+       "surface": "November 20",
+       "question": "When is FERC likely to issue an order on NW caps?"
+      },
+      {
+       "surface": "November 7",
+       "question": "When does the commission meet?"
+      }
+     ],
+     "held_out": [
+      {
+       "surface": "November 9",
+       "question": "When are written comments due to FERC?"
+      }
+     ]
+    },
+    "trainable": true
+   },
+   "enron/1": {
+    "spans": [
+     {
+      "surface": "11/18/01",
+      "type": "DATETIME",
+      "start": 711,
+      "end": 719,
+      "sent": "-Alumni Artist Shares Passions, Perspectives \t(11/18/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0692,
+        "p6": 0.206
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "11/16/01",
+      "type": "DATETIME",
+      "start": 654,
+      "end": 662,
+      "sent": "-Student Service Results in Free Screenings \t(11/16/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0927,
+        "p6": 0.2178
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "11/15/01",
+      "type": "DATETIME",
+      "start": 598,
+      "end": 606,
+      "sent": "-Jazz Ensemble Plays Up \"Peace and Love\" \t(11/15/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.1051,
+        "p6": 0.2195
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "11/14/01",
+      "type": "DATETIME",
+      "start": 545,
+      "end": 553,
+      "sent": "-Carnegie President to Deliver Keynote Address \t(11/14/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.073,
+        "p6": 0.2128
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "11/11/01",
+      "type": "DATETIME",
+      "start": 434,
+      "end": 442,
+      "sent": "-New American Fellowships Offered \t\t(11/11/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0954,
+        "p6": 0.2037
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "11/10/01",
+      "type": "DATETIME",
+      "start": 387,
+      "end": 395,
+      "sent": "-Town Meeting Offers Genome Answers \t\t(11/10/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0661,
+        "p6": 0.2136
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "11/08/01",
+      "type": "DATETIME",
+      "start": 338,
+      "end": 346,
+      "sent": "-Forum on (Workplace) Health Issues Set\t\t(11/08/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0801,
+        "p6": 0.2198
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "10 a.m. - 3",
+      "type": "DATETIME",
+      "start": 234,
+      "end": 245,
+      "sent": "-Free Flu Shots, HIV Testing for Students \t(TODAY, 10 a.m. - 3",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.2296,
+        "p6": 0.1002
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "11/13/01",
+      "type": "DATETIME",
+      "start": 132,
+      "end": 140,
+      "sent": "Free Dinner Theater Features Documentary on Bunche (11/13/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0863,
+        "p6": 0.2091
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "enron/2": {
+    "spans": [
+     {
+      "surface": "The Daily Motivator",
+      "type": "ORG",
+      "start": 1485,
+      "end": 1504,
+      "sent": "e-mail message from The Daily Motivator, please go to",
+      "actions": [
+       {
+        "fill": "a motivation",
+        "mode": "level",
+        "walk_risk": 0.2465,
+        "p6": 0.7316
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "2001",
+      "type": "DATETIME",
+      "start": 1212,
+      "end": 1216,
+      "sent": "Copyright (C) 2001 Ralph S.",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.0063,
+        "p6": 0.6938
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0078,
+        "p6": 0.7443
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "Tuesday, October 23, 2001",
+      "type": "DATETIME",
+      "start": 48,
+      "end": 73,
+      "sent": "Tuesday, October 23, 2001",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.078,
+        "p6": 0.4288
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0817,
+        "p6": 0.4151
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "enron/3": {
+    "spans": [
+     {
+      "surface": "august 21.doc",
+      "type": "DATETIME",
+      "start": 518,
+      "end": 531,
+      "sent": "- NEPI august 21.doc",
+      "actions": [
+       {
+        "fill": "the summer",
+        "mode": "level",
+        "walk_risk": 0.004,
+        "p6": 0.4108
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "CA 94122\ntel:",
+      "type": "DATETIME",
+      "start": 440,
+      "end": 453,
+      "sent": "San Francisco, CA 94122\ntel:   415.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.002,
+        "p6": 0.038
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "San Francisco",
+      "type": "LOC",
+      "start": 425,
+      "end": 438,
+      "sent": "San Francisco, CA 94122",
+      "actions": [
+       {
+        "fill": "a city in California",
+        "mode": "level",
+        "walk_risk": 0.6724,
+        "p6": 0.6939
+       },
+       {
+        "fill": "a city in United States",
+        "mode": "level",
+        "walk_risk": 0.629,
+        "p6": 0.5401
+       },
+       {
+        "fill": "a city in North America",
+        "mode": "level",
+        "walk_risk": 0.5913,
+        "p6": 0.4778
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "536 Irving Street",
+      "type": "LOC",
+      "start": 407,
+      "end": 424,
+      "sent": "536 Irving Street",
+      "actions": [
+       {
+        "fill": "a road",
+        "mode": "level",
+        "walk_risk": 0.0054,
+        "p6": 0.2863
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Center for Innovative Policies",
+      "type": "ORG",
+      "start": 376,
+      "end": 406,
+      "sent": "Center for Innovative Policies",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.213,
+        "p6": 0.4017
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "Center for Innovative Policies",
+       "question": "What organization is mentioned alongside \"Foundation\"?"
+      },
+      {
+       "surface": "Kathleen Moazed",
+       "question": "Who is free to talk with Amory at the Kirsch?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "enron/4": {
+    "spans": [
+     {
+      "surface": "Wall Street Journal",
+      "type": "ORG",
+      "start": 1423,
+      "end": 1442,
+      "sent": "Wall Street Journal",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0617,
+        "p6": 0.2705
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Enron",
+      "type": "ORG",
+      "start": 933,
+      "end": 938,
+      "sent": "of Enron officials in that partnership?",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.4056
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "LJM2 Co-Investment",
+      "type": "ORG",
+      "start": 686,
+      "end": 704,
+      "sent": "the LJM2 Co-Investment, LP and the involvement of certain Enron officials in",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.175,
+        "p6": 0.1109
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "05:32:19 PM",
+      "type": "DATETIME",
+      "start": 451,
+      "end": 462,
+      "sent": "com> on 09/24/2001 05:32:19 PM",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0424,
+        "p6": 0.158
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "09/24/2001",
+      "type": "DATETIME",
+      "start": 440,
+      "end": 450,
+      "sent": "com> on 09/24/2001 05:32:19 PM",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.1098,
+        "p6": 0.5102
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0971,
+        "p6": 0.5384
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "05:34 PM",
+      "type": "DATETIME",
+      "start": 353,
+      "end": 361,
+      "sent": "Roark/MDACC on 09/24/2001 05:34 PM",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.026,
+        "p6": 0.1567
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "LA",
+      "type": "LOC",
+      "start": 235,
+      "end": 237,
+      "sent": "(He's based in LA so he will still",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0013,
+        "p6": 0.4566
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "06:21 PM",
+      "type": "DATETIME",
+      "start": 134,
+      "end": 142,
+      "sent": "Hale/MDACC on 09/24/2001 06:21 PM",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0378,
+        "p6": 0.1287
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "John",
+       "question": "Who did the WSJ reporter send questions to?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "enron/5": {
+    "spans": [
+     {
+      "surface": "$35",
+      "type": "QUANTITY",
+      "start": 1594,
+      "end": 1597,
+      "sent": "> Get personalized email addresses from Yahoo! Mail - only $35",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.0856,
+        "p6": 0.4189
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Yahoo!",
+      "type": "ORG",
+      "start": 1575,
+      "end": 1581,
+      "sent": "> Get personalized email addresses from Yahoo! Mail - only $35",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0585,
+        "p6": 0.2843
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "the 21st",
+      "type": "DATETIME",
+      "start": 1359,
+      "end": 1367,
+      "sent": "> in Canada until the 21st.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0348,
+        "p6": 0.1559
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Canada",
+      "type": "LOC",
+      "start": 1346,
+      "end": 1352,
+      "sent": "> in Canada until the 21st.",
+      "actions": [
+       {
+        "fill": "a country in North America",
+        "mode": "level",
+        "walk_risk": 0.1472,
+        "p6": 0.549
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "all next week",
+      "type": "DATETIME",
+      "start": 1322,
+      "end": 1335,
+      "sent": "> Please note that I will be in Aspen all next week, and",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0136,
+        "p6": 0.2422
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Aspen",
+      "type": "LOC",
+      "start": 1316,
+      "end": 1321,
+      "sent": "> Please note that I will be in Aspen all next week, and",
+      "actions": [
+       {
+        "fill": "a city in Colorado",
+        "mode": "level",
+        "walk_risk": 0.2539,
+        "p6": 0.5276
+       },
+       {
+        "fill": "a city in United States",
+        "mode": "level",
+        "walk_risk": 0.0729,
+        "p6": 0.2611
+       },
+       {
+        "fill": "a city in North America",
+        "mode": "level",
+        "walk_risk": 0.0938,
+        "p6": 0.3451
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "early next week",
+      "type": "DATETIME",
+      "start": 1265,
+      "end": 1280,
+      "sent": "> to see it early next week.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0505,
+        "p6": 0.3024
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "2002",
+      "type": "DATETIME",
+      "start": 1191,
+      "end": 1195,
+      "sent": "> I have completed the holiday house schedule for 2002",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.0043,
+        "p6": 0.6798
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0061,
+        "p6": 0.7192
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "5:30",
+      "type": "DATETIME",
+      "start": 572,
+      "end": 576,
+      "sent": "> private room at 5:30.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0452,
+        "p6": 0.1758
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Grotto restaurant",
+      "type": "ORG",
+      "start": 527,
+      "end": 544,
+      "sent": "> planned for the 12th at the Grotto restaurant in their",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0165,
+        "p6": 0.1961
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "the 12th",
+      "type": "DATETIME",
+      "start": 511,
+      "end": 519,
+      "sent": "> planned for the 12th at the Grotto restaurant in their",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0206,
+        "p6": 0.1247
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "enron/6": {
+    "spans": [],
+    "probes": {
+     "train": [
+      {
+       "surface": "Gov Rowland",
+       "question": "Who was your call to?"
+      },
+      {
+       "surface": "Rowland",
+       "question": "Who was called?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "enron/7": {
+    "spans": [
+     {
+      "surface": "companies",
+      "type": "ORG",
+      "start": 1161,
+      "end": 1170,
+      "sent": "Forrester analyst Nate Root will discuss recent developments in this market to help companies select the best enterprise portal server.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.001,
+        "p6": 0.5593
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Forrester",
+      "type": "ORG",
+      "start": 1077,
+      "end": 1086,
+      "sent": "Forrester analyst Nate Root will discuss recent developments in this market to help companies select the best enterprise portal server.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0241,
+        "p6": 0.1771
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "10:00 to 11:00 AM",
+      "type": "DATETIME",
+      "start": 624,
+      "end": 641,
+      "sent": "Time:\t\t1:00 to 2:00 PM (Eastern Time), 10:00 to 11:00 AM (PT)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.3735,
+        "p6": 0.1652
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "1:00 to 2:00 PM",
+      "type": "DATETIME",
+      "start": 592,
+      "end": 607,
+      "sent": "Time:\t\t1:00 to 2:00 PM (Eastern Time), 10:00 to 11:00 AM (PT)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.2449,
+        "p6": 0.1833
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "TechRankings",
+      "type": "ORG",
+      "start": 342,
+      "end": 354,
+      "sent": "Join the TechRankings research team as they present the latest findings on enterprise portal servers, give an update about the vendors, and answer live questions.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0058,
+        "p6": 0.2746
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Forrester Research",
+      "type": "ORG",
+      "start": 151,
+      "end": 169,
+      "sent": "You are invited to participate in Forrester Research's one-hour research call on Enterprise Portal Server TechRankings - detailed vendor and market research to help you choose the best eBusiness technology products.",
+      "actions": [
+       {
+        "fill": "a work",
+        "mode": "level",
+        "walk_risk": 0.1483,
+        "p6": 0.1911
+       },
+       {
+        "fill": "an activity",
+        "mode": "level",
+        "walk_risk": 0.1555,
+        "p6": 0.1794
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "Forrester",
+       "question": "Who is the account manager mentioned?"
+      },
+      {
+       "surface": "TechRankings",
+       "question": "What is the name of the conference call mentioned?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "enron/8": {
+    "spans": [
+     {
+      "surface": "yahoo",
+      "type": "ORG",
+      "start": 1853,
+      "end": 1858,
+      "sent": "yahoo.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0039,
+        "p6": 0.3205
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Yahoo!",
+      "type": "ORG",
+      "start": 1820,
+      "end": 1826,
+      "sent": "Buy the perfect holiday gifts at Yahoo! Shopping.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0206,
+        "p6": 0.2843
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "02 Dec 2001",
+      "type": "DATETIME",
+      "start": 798,
+      "end": 809,
+      "sent": "com via HTTP; Sun, 02 Dec 2001 14:24:54 PST",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.0092,
+        "p6": 0.5199
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0089,
+        "p6": 0.5169
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "web21106",
+      "type": "DEM",
+      "start": 759,
+      "end": 767,
+      "sent": "156] by web21106.",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.1308
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "enron/9": {
+    "spans": [
+     {
+      "surface": "M & M Plumbing",
+      "type": "ORG",
+      "start": 222,
+      "end": 236,
+      "sent": "M & M Plumbing",
+      "actions": [
+       {
+        "fill": "an utility",
+        "mode": "level",
+        "walk_risk": 0.1592,
+        "p6": 0.1786
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "Linda",
+       "question": "Who is associated with EB4683?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "enron/10": {
+    "spans": [
+     {
+      "surface": "United Way\nBoard",
+      "type": "ORG",
+      "start": 441,
+      "end": 457,
+      "sent": "They voted to have the entire United Way\nBoard as the volunteer committee too.",
+      "actions": [
+       {
+        "fill": "a committee",
+        "mode": "level",
+        "walk_risk": 0.0502,
+        "p6": 0.3407
+       },
+       {
+        "fill": "an administrative unit",
+        "mode": "level",
+        "walk_risk": 0.0521,
+        "p6": 0.2779
+       },
+       {
+        "fill": "an unit",
+        "mode": "level",
+        "walk_risk": 0.0428,
+        "p6": 0.1965
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "Houston",
+      "type": "LOC",
+      "start": 342,
+      "end": 349,
+      "sent": "$4 million going to a United Way One Houston United Restricted Fund for",
+      "actions": [
+       {
+        "fill": "a city in Texas",
+        "mode": "level",
+        "walk_risk": 0.1765,
+        "p6": 0.6597
+       },
+       {
+        "fill": "a city in United States",
+        "mode": "level",
+        "walk_risk": 0.0149,
+        "p6": 0.5235
+       },
+       {
+        "fill": "a city in North America",
+        "mode": "level",
+        "walk_risk": 0.0111,
+        "p6": 0.4029
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "United Way",
+      "type": "ORG",
+      "start": 327,
+      "end": 337,
+      "sent": "$4 million going to a United Way One Houston United Restricted Fund for",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0834,
+        "p6": 0.2797
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "$4",
+      "type": "QUANTITY",
+      "start": 305,
+      "end": 307,
+      "sent": "$4 million going to a United Way One Houston United Restricted Fund for",
+      "actions": [
+       {
+        "fill": "between 2 and 8 $",
+        "mode": "level",
+        "walk_risk": 0.2364,
+        "p6": 0.5505
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "United Way Board",
+      "type": "ORG",
+      "start": 24,
+      "end": 40,
+      "sent": "The United Way Board meeting went great this morning.",
+      "actions": [
+       {
+        "fill": "an administrative unit",
+        "mode": "level",
+        "walk_risk": 0.0323,
+        "p6": 0.2779
+       },
+       {
+        "fill": "an unit",
+        "mode": "level",
+        "walk_risk": 0.0156,
+        "p6": 0.1965
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "enron/11": {
+    "spans": [
+     {
+      "surface": "AEI",
+      "type": "ORG",
+      "start": 1582,
+      "end": 1585,
+      "sent": "Those are the reasons I am approaching you, and why I think you would find AEI a worthwhile engagement.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.014,
+        "p6": 0.279
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "next month",
+      "type": "DATETIME",
+      "start": 1073,
+      "end": 1083,
+      "sent": "Enclosed are a list of our current trustees, a list of upcoming Board dates, an outline of our current research agenda, our 2000 annual report (the 2001 report comes out next month), and a few other things.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0055,
+        "p6": 0.2568
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "2001",
+      "type": "DATETIME",
+      "start": 1051,
+      "end": 1055,
+      "sent": "Enclosed are a list of our current trustees, a list of upcoming Board dates, an outline of our current research agenda, our 2000 annual report (the 2001 report comes out next month), and a few other things.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.1853
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "2000",
+      "type": "DATETIME",
+      "start": 1027,
+      "end": 1031,
+      "sent": "Enclosed are a list of our current trustees, a list of upcoming Board dates, an outline of our current research agenda, our 2000 annual report (the 2001 report comes out next month), and a few other things.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.1714
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Thursday, October 25",
+      "type": "DATETIME",
+      "start": 773,
+      "end": 793,
+      "sent": "I understand you will be back in Indianapolis on Monday, October 22?when I will be out of the country, to return on Thursday, October 25.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0785,
+        "p6": 0.1374
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Monday, October 22?when",
+      "type": "DATETIME",
+      "start": 706,
+      "end": 729,
+      "sent": "I understand you will be back in Indianapolis on Monday, October 22?when I will be out of the country, to return on Thursday, October 25.",
+      "actions": [
+       {
+        "fill": "the autumn",
+        "mode": "level",
+        "walk_risk": 0.0133,
+        "p6": 0.3061
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Indianapolis",
+      "type": "LOC",
+      "start": 690,
+      "end": 702,
+      "sent": "I understand you will be back in Indianapolis on Monday, October 22?when I will be out of the country, to return on Thursday, October 25.",
+      "actions": [
+       {
+        "fill": "a city in Indiana",
+        "mode": "level",
+        "walk_risk": 0.2256,
+        "p6": 0.679
+       },
+       {
+        "fill": "a city in United States",
+        "mode": "level",
+        "walk_risk": 0.0076,
+        "p6": 0.4622
+       },
+       {
+        "fill": "a city in North America",
+        "mode": "level",
+        "walk_risk": 0.0058,
+        "p6": 0.3718
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "December 7, 2001",
+      "type": "DATETIME",
+      "start": 638,
+      "end": 654,
+      "sent": "We have an outstanding Board, and will elect several additional trustees in advance of our annual meeting on December 7, 2001.",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.091,
+        "p6": 0.5046
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "American Enterprise Institute",
+      "type": "ORG",
+      "start": 240,
+      "end": 269,
+      "sent": "My call the other day was to ask if you would consider joining the Board of Trustees of the American Enterprise Institute.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.188,
+        "p6": 0.4947
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "IN",
+      "type": "LOC",
+      "start": 124,
+      "end": 126,
+      "sent": "Indianapolis, IN 46285",
+      "actions": [
+       {
+        "fill": "an unit of measurement",
+        "mode": "level",
+        "walk_risk": 0.0153,
+        "p6": 0.159
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Eli Lilly and Company",
+      "type": "ORG",
+      "start": 65,
+      "end": 86,
+      "sent": "Eli Lilly and Company",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0584,
+        "p6": 0.4195
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "October 19, 2001",
+      "type": "DATETIME",
+      "start": 0,
+      "end": 16,
+      "sent": "October 19, 2001",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.1093,
+        "p6": 0.5011
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0729,
+        "p6": 0.4767
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "AEI",
+       "question": "What organization is the writer approaching regarding a board position?"
+      },
+      {
+       "surface": "Sidney Taurel",
+       "question": "Who is the person the writer is approaching about joining the AEI Board of Trustees?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "enron/12": {
+    "spans": [
+     {
+      "surface": "77002-4400",
+      "type": "LOC",
+      "start": 383,
+      "end": 393,
+      "sent": "Address:  1200 Smith, Suite 700, Houston, TX 77002-4400",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.05,
+        "p6": 0.148
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "TX",
+      "type": "LOC",
+      "start": 380,
+      "end": 382,
+      "sent": "Address:  1200 Smith, Suite 700, Houston, TX 77002-4400",
+      "actions": [
+       {
+        "fill": "a American state",
+        "mode": "level",
+        "walk_risk": 0.0042,
+        "p6": 0.3815
+       },
+       {
+        "fill": "a state",
+        "mode": "level",
+        "walk_risk": 0.0092,
+        "p6": 0.3917
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "Houston",
+      "type": "LOC",
+      "start": 371,
+      "end": 378,
+      "sent": "Address:  1200 Smith, Suite 700, Houston, TX 77002-4400",
+      "actions": [
+       {
+        "fill": "a city in United States",
+        "mode": "level",
+        "walk_risk": 0.045,
+        "p6": 0.5235
+       },
+       {
+        "fill": "a city in North America",
+        "mode": "level",
+        "walk_risk": 0.0314,
+        "p6": 0.4029
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "Suite 700",
+      "type": "LOC",
+      "start": 360,
+      "end": 369,
+      "sent": "Address:  1200 Smith, Suite 700, Houston, TX 77002-4400",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0016,
+        "p6": 0.2285
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "1200 Smith",
+      "type": "LOC",
+      "start": 348,
+      "end": 358,
+      "sent": "Address:  1200 Smith, Suite 700, Houston, TX 77002-4400",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0009,
+        "p6": 0.17
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "enron/13": {
+    "spans": [
+     {
+      "surface": "06/29/01",
+      "type": "DATETIME",
+      "start": 722,
+      "end": 730,
+      "sent": "University, Eli Lilly Announce RFP    (DEADLINE: 06/29/01)",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.065,
+        "p6": 0.1678
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Eli Lilly",
+      "type": "ORG",
+      "start": 685,
+      "end": 694,
+      "sent": "University, Eli Lilly Announce RFP    (DEADLINE: 06/29/01)",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0047,
+        "p6": 0.2746
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Gilman Program\nUniversity",
+      "type": "ORG",
+      "start": 658,
+      "end": 683,
+      "sent": "Bunche Center Announces Gilman Program\nUniversity, Eli Lilly Announce RFP    (DEADLINE: 06/29/01)",
+      "actions": [
+       {
+        "fill": "a group",
+        "mode": "level",
+        "walk_risk": 0.0044,
+        "p6": 0.1405
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "10 a.m. - 6 p.m.",
+      "type": "DATETIME",
+      "start": 412,
+      "end": 428,
+      "sent": "Saturday (10 a.m. - 6 p.m.).",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.5505,
+        "p6": 0.0772
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "8 a.m. to 9 p.m.",
+      "type": "DATETIME",
+      "start": 377,
+      "end": 393,
+      "sent": "Monday through Friday (8 a.m. to 9 p.m. daily);",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.5132,
+        "p6": 0.121
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "July 31, 2001",
+      "type": "DATETIME",
+      "start": 339,
+      "end": 352,
+      "sent": "operation, effective immediately through July 31, 2001.",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.0593,
+        "p6": 0.4914
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Howard University School of Law",
+      "type": "ORG",
+      "start": 233,
+      "end": 264,
+      "sent": "Howard University School of Law announces the following hours of",
+      "actions": [
+       {
+        "fill": "a group",
+        "mode": "level",
+        "walk_risk": 0.337,
+        "p6": 0.1189
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Howard University",
+      "type": "ORG",
+      "start": 91,
+      "end": 108,
+      "sent": "Howard University's two new libraries \"Studies in Excellence.",
+      "actions": [
+       {
+        "fill": "a body",
+        "mode": "level",
+        "walk_risk": 0.0259,
+        "p6": 0.1516
+       },
+       {
+        "fill": "a group",
+        "mode": "level",
+        "walk_risk": 0.0184,
+        "p6": 0.143
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       1,
+       2
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "enron/14": {
+    "spans": [
+     {
+      "surface": "Enron",
+      "type": "ORG",
+      "start": 1604,
+      "end": 1609,
+      "sent": "Don't forget to read our voice mail and e-mail transcripts covering these developments on the Enron Updates intranet site at (<http://home.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4056
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Houston Chronicle",
+      "type": "ORG",
+      "start": 1302,
+      "end": 1319,
+      "sent": "On a positive note, there was an editorial in last Sunday's Houston Chronicle that I want you to read:  <http://www.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0075,
+        "p6": 0.2505
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "last Sunday's",
+      "type": "DATETIME",
+      "start": 1288,
+      "end": 1301,
+      "sent": "On a positive note, there was an editorial in last Sunday's Houston Chronicle that I want you to read:  <http://www.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.014,
+        "p6": 0.2094
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "$1 billion",
+      "type": "QUANTITY",
+      "start": 1139,
+      "end": 1149,
+      "sent": "This money is in addition to the $3 billion in our credit lines we accessed last week to pay off short-term commercial debt and keep more than $1 billion in cash.",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.2047,
+        "p6": 0.443
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "last week",
+      "type": "DATETIME",
+      "start": 1072,
+      "end": 1081,
+      "sent": "This money is in addition to the $3 billion in our credit lines we accessed last week to pay off short-term commercial debt and keep more than $1 billion in cash.",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.0317,
+        "p6": 0.5978
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "$3 billion",
+      "type": "QUANTITY",
+      "start": 1029,
+      "end": 1039,
+      "sent": "This money is in addition to the $3 billion in our credit lines we accessed last week to pay off short-term commercial debt and keep more than $1 billion in cash.",
+      "actions": [
+       {
+        "fill": "between 1.5 and 6 $billion",
+        "mode": "level",
+        "walk_risk": 0.2334,
+        "p6": 0.679
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "$200 million",
+      "type": "QUANTITY",
+      "start": 934,
+      "end": 946,
+      "sent": "We also have the capacity to increase this facility by an additional $200 million if we bring in additional banks to participate.",
+      "actions": [
+       {
+        "fill": "a certain amount",
+        "mode": "level",
+        "walk_risk": 0.2342,
+        "p6": 0.4548
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Transwestern Pipeline Company",
+      "type": "ORG",
+      "start": 508,
+      "end": 537,
+      "sent": "Our Northern Natural Gas Company and Transwestern Pipeline Company will support these assets.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0849,
+        "p6": 0.2731
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Northern Natural Gas Company",
+      "type": "ORG",
+      "start": 475,
+      "end": 503,
+      "sent": "Our Northern Natural Gas Company and Transwestern Pipeline Company will support these assets.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0847,
+        "p6": 0.261
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Citigroup Inc.",
+      "type": "ORG",
+      "start": 377,
+      "end": 391,
+      "sent": ") and Salomon Smith Barney (the investment banking arm of Citigroup Inc.), that will provide us with additional secured credit lines worth $1 billion.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.3657,
+        "p6": 0.5205
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Salomon Smith Barney",
+      "type": "ORG",
+      "start": 325,
+      "end": 345,
+      "sent": ") and Salomon Smith Barney (the investment banking arm of Citigroup Inc.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.2671,
+        "p6": 0.1492
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "JPMorgan Chase & Co.",
+      "type": "ORG",
+      "start": 299,
+      "end": 319,
+      "sent": "We have executed a commitment letter with two of our longstanding banking partners, JPMorgan (the investment banking arm of JPMorgan Chase & Co.) and Salomon Smith Barney (the investment banking arm of Citigroup Inc.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.7123,
+        "p6": 0.2254
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "JPMorgan",
+      "type": "ORG",
+      "start": 259,
+      "end": 267,
+      "sent": "We have executed a commitment letter with two of our longstanding banking partners, JPMorgan (the investment banking arm of JPMorgan Chase & Co.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.2108,
+        "p6": 0.2982
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "Enron",
+       "question": "What company's name is included in the phone number?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "enron/15": {
+    "spans": [
+     {
+      "surface": "Indiana",
+      "type": "LOC",
+      "start": 1715,
+      "end": 1722,
+      "sent": "ews from California, Ohio, Indiana and  more.",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0028,
+        "p6": 0.3618
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Ohio",
+      "type": "LOC",
+      "start": 1709,
+      "end": 1713,
+      "sent": "ews from California, Ohio, Indiana and  more.",
+      "actions": [
+       {
+        "fill": "a state",
+        "mode": "level",
+        "walk_risk": 0.0437,
+        "p6": 0.5096
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "California",
+      "type": "LOC",
+      "start": 1697,
+      "end": 1707,
+      "sent": "ews from California, Ohio, Indiana and  more.",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0106,
+        "p6": 0.4171
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Tribeca",
+      "type": "LOC",
+      "start": 1039,
+      "end": 1046,
+      "sent": "use my friend who has a restaurant down in  Tribeca set up a hot meal zone =",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0575,
+        "p6": 0.322
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "ground zero",
+      "type": "LOC",
+      "start": 822,
+      "end": 833,
+      "sent": "my cousin (visiting from Israel) and I  went downtown to ground zero.",
+      "actions": [
+       {
+        "fill": "a target",
+        "mode": "level",
+        "walk_risk": 0.1057,
+        "p6": 0.1834
+       },
+       {
+        "fill": "a topographic point",
+        "mode": "level",
+        "walk_risk": 0.1609,
+        "p6": 0.2223
+       },
+       {
+        "fill": "a point",
+        "mode": "level",
+        "walk_risk": 0.1191,
+        "p6": 0.1474
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "Israel",
+      "type": "LOC",
+      "start": 790,
+      "end": 796,
+      "sent": "my cousin (visiting from Israel) and I  went downtown to ground zero.",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0007,
+        "p6": 0.4453
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "my cousin",
+      "type": "DEM",
+      "start": 765,
+      "end": 774,
+      "sent": "my cousin (visiting from Israel) and I  went downtown to ground zero.",
+      "actions": [
+       {
+        "fill": "a relative",
+        "mode": "level",
+        "walk_risk": 0.049,
+        "p6": 0.6258
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0158,
+        "p6": 0.295
+       },
+       {
+        "fill": "a causal agent",
+        "mode": "level",
+        "walk_risk": 0.015,
+        "p6": 0.1386
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1,
+       2,
+       3
+      ]
+     },
+     {
+      "surface": "my brother-in-law",
+      "type": "DEM",
+      "start": 744,
+      "end": 761,
+      "sent": "After dinner, my brother-in-law,=",
+      "actions": [
+       {
+        "fill": "an in-law",
+        "mode": "level",
+        "walk_risk": 0.8933,
+        "p6": 0.5304
+       },
+       {
+        "fill": "a relative",
+        "mode": "level",
+        "walk_risk": 0.8659,
+        "p6": 0.4686
+       },
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.8477,
+        "p6": 0.2664
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "city",
+      "type": "LOC",
+      "start": 722,
+      "end": 726,
+      "sent": "I had dinner with my family in the city.",
+      "actions": [
+       {
+        "fill": "a municipality",
+        "mode": "level",
+        "walk_risk": 0.1548,
+        "p6": 0.6333
+       },
+       {
+        "fill": "an urban area",
+        "mode": "level",
+        "walk_risk": 0.0792,
+        "p6": 0.7338
+       },
+       {
+        "fill": "a geographical area",
+        "mode": "level",
+        "walk_risk": 0.0531,
+        "p6": 0.4304
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "Midtown tunnel",
+      "type": "LOC",
+      "start": 509,
+      "end": 523,
+      "sent": "was on was stopped and searched before  entering the Midtown tunnel, which =",
+      "actions": [
+       {
+        "fill": "a passageway",
+        "mode": "level",
+        "walk_risk": 0.1056,
+        "p6": 0.3601
+       },
+       {
+        "fill": "a passage",
+        "mode": "level",
+        "walk_risk": 0.0813,
+        "p6": 0.1387
+       },
+       {
+        "fill": "a way",
+        "mode": "level",
+        "walk_risk": 0.0581,
+        "p6": 0.1657
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "Hamptons",
+      "type": "LOC",
+      "start": 172,
+      "end": 180,
+      "sent": "Many people out in the Hamptons are  contributing to the cause in several =",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.2697,
+        "p6": 0.3205
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   }
+  },
+  "aeslc": {
+   "aeslc/allen-p_inbox_24": {
+    "spans": [],
+    "probes": {
+     "train": [
+      {
+       "surface": "Phillip",
+       "question": "Who was asked to do a favor?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aeslc/allen-p_inbox_45": {
+    "spans": [
+     {
+      "surface": "10/24/01 Days",
+      "type": "DATETIME",
+      "start": 144,
+      "end": 157,
+      "sent": "Owner: James W Reitmeyer Report Name: JReitmeyer 10/24/01 Days In Mgr.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0243,
+        "p6": 0.1565
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "more than 4 days",
+      "type": "DATETIME",
+      "start": 62,
+      "end": 78,
+      "sent": "The following reports have been waiting for your approval for more than 4 days.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0182,
+        "p6": 0.1661
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/allen-p_inbox_6": {
+    "spans": [
+     {
+      "surface": "3 - First Quarter",
+      "type": "DATETIME",
+      "start": 1121,
+      "end": 1138,
+      "sent": "Customer Side\t +\tCustomers\t\tPhase  1 - First Week (eg top 10) \t\t\t\tPhase  2 - First Month (eg top 50) \t\t\t\tPhase  3 - First Quarter (eg top 100) +\tAction Plan\t\tPhase  1 Customers \t\t\t\tPhase  2 Customers \t\t\t\tPhase  3 Customers +\tContracts by customers (pre-prepared with credit terms etc) +\tCustomer visit schedule  Product Side +\tList of Products\tPhase 1 - First Week \t\t\t\tPhase 2 - First Month \t\t\t\tPhase 3 - First Quarter  Target Number of Transactions +\tPhase 1 +\tPhase 2 +\tPhase 3  IT transfer   Louise",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0371,
+        "p6": 0.1552
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "2 - First Month",
+      "type": "DATETIME",
+      "start": 1082,
+      "end": 1097,
+      "sent": "Customer Side\t +\tCustomers\t\tPhase  1 - First Week (eg top 10) \t\t\t\tPhase  2 - First Month (eg top 50) \t\t\t\tPhase  3 - First Quarter (eg top 100) +\tAction Plan\t\tPhase  1 Customers \t\t\t\tPhase  2 Customers \t\t\t\tPhase  3 Customers +\tContracts by customers (pre-prepared with credit terms etc) +\tCustomer visit schedule  Product Side +\tList of Products\tPhase 1 - First Week \t\t\t\tPhase 2 - First Month \t\t\t\tPhase 3 - First Quarter  Target Number of Transactions +\tPhase 1 +\tPhase 2 +\tPhase 3  IT transfer   Louise",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0555,
+        "p6": 0.1485
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "1 - First Week",
+      "type": "DATETIME",
+      "start": 1044,
+      "end": 1058,
+      "sent": "Customer Side\t +\tCustomers\t\tPhase  1 - First Week (eg top 10) \t\t\t\tPhase  2 - First Month (eg top 50) \t\t\t\tPhase  3 - First Quarter (eg top 100) +\tAction Plan\t\tPhase  1 Customers \t\t\t\tPhase  2 Customers \t\t\t\tPhase  3 Customers +\tContracts by customers (pre-prepared with credit terms etc) +\tCustomer visit schedule  Product Side +\tList of Products\tPhase 1 - First Week \t\t\t\tPhase 2 - First Month \t\t\t\tPhase 3 - First Quarter  Target Number of Transactions +\tPhase 1 +\tPhase 2 +\tPhase 3  IT transfer   Louise",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0414,
+        "p6": 0.1862
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "January 7th, 2002",
+      "type": "DATETIME",
+      "start": 638,
+      "end": 655,
+      "sent": "John and I would like to receive the plans \"Re-start/Integration\"  plans by January 7th, 2002 in order to go through them individually with each of you or in groups.",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.0799,
+        "p6": 0.5615
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0656,
+        "p6": 0.5335
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "EnronOnline",
+      "type": "ORG",
+      "start": 339,
+      "end": 350,
+      "sent": "Several plans are in the final stages of completion including:-  +\tInfrastructure\t\tJenny Rub +\tDevelopment\t\tJay Webb +\tEnronOnline\t\tWebb / Forster +\tHR\t\t\tDavid Oxley +\tCash Management\tTom Myers +\tCredit\t\t\tDebbie Brackett  The rest will be completed shortly.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0102,
+        "p6": 0.362
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Netco",
+      "type": "ORG",
+      "start": 91,
+      "end": 96,
+      "sent": "We have for the last couple of weeks started to compile the Re-start/Integration Plans for Netco.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0057,
+        "p6": 0.2891
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "the last couple of weeks",
+      "type": "DATETIME",
+      "start": 12,
+      "end": 36,
+      "sent": "We have for the last couple of weeks started to compile the Re-start/Integration Plans for Netco.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.1356,
+        "p6": 0.2735
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/allen-p_inbox_66": {
+    "spans": [
+     {
+      "surface": "the last two",
+      "type": "DATETIME",
+      "start": 791,
+      "end": 803,
+      "sent": "In the last two scenarios can we include a promotion out of the associate program for the stellar performers (i.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0731,
+        "p6": 0.2421
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "60 Minute",
+      "type": "DATETIME",
+      "start": 715,
+      "end": 724,
+      "sent": "Thus I do believe we need to maybe use a \"Dateline\" type theme for one, and a \"60 Minute\" type theme for another scenario vice just the CNN type theme.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0105,
+        "p6": 0.2638
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "California",
+      "type": "LOC",
+      "start": 490,
+      "end": 500,
+      "sent": "California Legislature).",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0093,
+        "p6": 0.4171
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Enron",
+      "type": "ORG",
+      "start": 398,
+      "end": 403,
+      "sent": "In addition, I think we need to stay clear of anything that remotely seems like California or anything that really happen with Enron?",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0003,
+        "p6": 0.4056
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/allen-p_inbox_84": {
+    "spans": [
+     {
+      "surface": "executive",
+      "type": "DEM",
+      "start": 1059,
+      "end": 1068,
+      "sent": "The Plan indicates that upon death, disability, retirement or termination, the share units are converted to shares which are issued to the executive according to the payment election made by the executive at the time of the deferral election.",
+      "actions": [
+       {
+        "fill": "a personal attribute",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.2041
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "PSA",
+      "type": "ORG",
+      "start": 807,
+      "end": 810,
+      "sent": "This section is applicable now as we are accelerating the distribution of PSA balances created with deferrals of restricted stock.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0,
+        "p6": 0.2262
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Committee",
+      "type": "ORG",
+      "start": 411,
+      "end": 420,
+      "sent": "2 is clear in that the account balance shall be determined as of the last day of the month preceding the date on which the Committee receives the written request of the Participant.",
+      "actions": [
+       {
+        "fill": "an unit",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.2768
+       },
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.4993
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1,
+       2
+      ]
+     },
+     {
+      "surface": "the last day of the month preceding the date",
+      "type": "DATETIME",
+      "start": 353,
+      "end": 397,
+      "sent": "2 is clear in that the account balance shall be determined as of the last day of the month preceding the date on which the Committee receives the written request of the Participant.",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.3666,
+        "p6": 0.167
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "participant",
+      "type": "DEM",
+      "start": 232,
+      "end": 243,
+      "sent": "2 means that a PSA account is distributed all at once, as distinguished from another form of payout as may have been selected by a participant in his or her deferral agreement.",
+      "actions": [
+       {
+        "fill": "a person",
+        "mode": "level",
+        "walk_risk": 0.0017,
+        "p6": 0.5942
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "PSA",
+       "question": "What does the acronym stand for in the title?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aeslc/arnold-j_inbox_141": {
+    "spans": [
+     {
+      "surface": "3-6pm",
+      "type": "DATETIME",
+      "start": 747,
+      "end": 752,
+      "sent": "Testing: Once you have moved to ECS, if you would like to test your BCP location, you will be able to test your seat for functionality every Thursday from 3-6pm.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0736,
+        "p6": 0.1912
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "ECS",
+      "type": "LOC",
+      "start": 624,
+      "end": 627,
+      "sent": "Testing: Once you have moved to ECS, if you would like to test your BCP location, you will be able to test your seat for functionality every Thursday from 3-6pm.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0429,
+        "p6": 0.2862
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "ECN",
+      "type": "LOC",
+      "start": 187,
+      "end": 190,
+      "sent": "These seats are located on the 30th and 31st Floors of Enron Center North (ECN).",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0364,
+        "p6": 0.2542
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Enron Center North",
+      "type": "LOC",
+      "start": 167,
+      "end": 185,
+      "sent": "These seats are located on the 30th and 31st Floors of Enron Center North (ECN).",
+      "actions": [
+       {
+        "fill": "a geographical area",
+        "mode": "level",
+        "walk_risk": 0.1205,
+        "p6": 0.2547
+       },
+       {
+        "fill": "a region",
+        "mode": "level",
+        "walk_risk": 0.133,
+        "p6": 0.3006
+       },
+       {
+        "fill": "a location",
+        "mode": "level",
+        "walk_risk": 0.1867,
+        "p6": 0.3504
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "the 30th and 31st",
+      "type": "DATETIME",
+      "start": 139,
+      "end": 156,
+      "sent": "These seats are located on the 30th and 31st Floors of Enron Center North (ECN).",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.238,
+        "p6": 0.0683
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/arnold-j_inbox_153": {
+    "spans": [
+     {
+      "surface": "5pm",
+      "type": "DATETIME",
+      "start": 235,
+      "end": 238,
+      "sent": "Dallas) on Thursday, November 29th, beginning at 5pm.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0071,
+        "p6": 0.1888
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Thursday, November 29th",
+      "type": "DATETIME",
+      "start": 197,
+      "end": 220,
+      "sent": "Dallas) on Thursday, November 29th, beginning at 5pm.",
+      "actions": [
+       {
+        "fill": "the autumn",
+        "mode": "level",
+        "walk_risk": 0.1383,
+        "p6": 0.3362
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Teala's",
+      "type": "ORG",
+      "start": 174,
+      "end": 181,
+      "sent": "Please join us at Teala's (W.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0055,
+        "p6": 0.1693
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "the past five years",
+      "type": "DATETIME",
+      "start": 135,
+      "end": 154,
+      "sent": "As our last day is Friday, November 30th, we would love to toast the good times and special memories that we have shared with you over the past five years.",
+      "actions": [
+       {
+        "fill": "some time ago",
+        "mode": "level",
+        "walk_risk": 0.0652,
+        "p6": 0.4778
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Friday, November 30th",
+      "type": "DATETIME",
+      "start": 19,
+      "end": 40,
+      "sent": "As our last day is Friday, November 30th, we would love to toast the good times and special memories that we have shared with you over the past five years.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0442,
+        "p6": 0.1342
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "last day",
+      "type": "DATETIME",
+      "start": 7,
+      "end": 15,
+      "sent": "As our last day is Friday, November 30th, we would love to toast the good times and special memories that we have shared with you over the past five years.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0021,
+        "p6": 0.2184
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/arnold-j_inbox_27": {
+    "spans": [],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/arnold-j_inbox_34": {
+    "spans": [
+     {
+      "surface": "ENA",
+      "type": "ORG",
+      "start": 1067,
+      "end": 1070,
+      "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0256,
+        "p6": 0.3149
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Saturday, December 1",
+      "type": "DATETIME",
+      "start": 971,
+      "end": 991,
+      "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0917,
+        "p6": 0.1381
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Friday, November 16",
+      "type": "DATETIME",
+      "start": 887,
+      "end": 906,
+      "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0337,
+        "p6": 0.1516
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "November 3",
+      "type": "DATETIME",
+      "start": 814,
+      "end": 824,
+      "sent": "Associate Recruiting:\t\tSaturday November 3\t\t\t\t\t\tTotal - 70 Candidates for Interview Analyst Recruiting:\t\tFriday, November 16\t\t\t\t\t\tTotal - 70 Candidates for Interivew Associate Recruiting:\t\tSaturday, December 1\t\t\t\t\t\tTotal - 70 Candidates for Interview  The above spreadsheet represents ENA's particpation today which I believe highlights the need for much additional support in these efforts.",
+      "actions": [
+       {
+        "fill": "the autumn",
+        "mode": "level",
+        "walk_risk": 0.0064,
+        "p6": 0.4475
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/arnold-j_inbox_41": {
+    "spans": [
+     {
+      "surface": "the Enron Center",
+      "type": "LOC",
+      "start": 283,
+      "end": 299,
+      "sent": "Nonetheless we take all threats seriously and have increased the security presence at the Enron Center still further.",
+      "actions": [
+       {
+        "fill": "an area",
+        "mode": "level",
+        "walk_risk": 0.0947,
+        "p6": 0.3157
+       },
+       {
+        "fill": "a region",
+        "mode": "level",
+        "walk_risk": 0.0946,
+        "p6": 0.2705
+       },
+       {
+        "fill": "a location",
+        "mode": "level",
+        "walk_risk": 0.0872,
+        "p6": 0.3543
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 3,
+      "legal": [
+       3
+      ]
+     },
+     {
+      "surface": "law enforcement officials",
+      "type": "ORG",
+      "start": 115,
+      "end": 140,
+      "sent": "We communicated with law enforcement officials who found the threat unsubstantiated and without merit.",
+      "actions": [
+       {
+        "fill": "a worker",
+        "mode": "level",
+        "walk_risk": 0.0568,
+        "p6": 0.2067
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "October 25th",
+      "type": "DATETIME",
+      "start": 8,
+      "end": 20,
+      "sent": "Late on October 25th, we received information about a nonspecific threat to the Enron Center.",
+      "actions": [
+       {
+        "fill": "the autumn",
+        "mode": "level",
+        "walk_risk": 0.0967,
+        "p6": 0.4103
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "the Enron Center",
+       "question": "What is the name of the building mentioned?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aeslc/arnold-j_inbox_68": {
+    "spans": [
+     {
+      "surface": "Enron",
+      "type": "ORG",
+      "start": 37,
+      "end": 42,
+      "sent": "Hi John,  The events surrounding the Enron demise are quite disturbing not only to me but to many of us over here.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0013,
+        "p6": 0.4056
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/arora-h_inbox_17": {
+    "spans": [
+     {
+      "surface": "Wednesday, January 2, 2002",
+      "type": "DATETIME",
+      "start": 166,
+      "end": 192,
+      "sent": "The meeting will be held in ECS 06716 at 9:30 am, Wednesday, January 2, 2002.",
+      "actions": [
+       {
+        "fill": "the early 2000s",
+        "mode": "level",
+        "walk_risk": 0.0847,
+        "p6": 0.5308
+       },
+       {
+        "fill": "the 2000s",
+        "mode": "level",
+        "walk_risk": 0.0779,
+        "p6": 0.4847
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 2,
+      "legal": [
+       2
+      ]
+     },
+     {
+      "surface": "9:30 am,",
+      "type": "DATETIME",
+      "start": 157,
+      "end": 165,
+      "sent": "The meeting will be held in ECS 06716 at 9:30 am, Wednesday, January 2, 2002.",
+      "actions": [
+       {
+        "fill": "at some point",
+        "mode": "level",
+        "walk_risk": 0.0927,
+        "p6": 0.1481
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "ECS 06716",
+      "type": "LOC",
+      "start": 144,
+      "end": 153,
+      "sent": "The meeting will be held in ECS 06716 at 9:30 am, Wednesday, January 2, 2002.",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.1215,
+        "p6": 0.1729
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Netco",
+      "type": "ORG",
+      "start": 109,
+      "end": 114,
+      "sent": "Kevin Presto is requesting that you attend a meeting regarding Organizing an Action Plan for the Start-up of Netco.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0059,
+        "p6": 0.2891
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/arora-h_inbox_3": {
+    "spans": [
+     {
+      "surface": "STEAG",
+      "type": "ORG",
+      "start": 126,
+      "end": 131,
+      "sent": "He can fill you in on the potential deal with STEAG.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0004,
+        "p6": 0.1818
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "STEAG",
+       "question": "What is the name of the potential deal mentioned?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   },
+   "aeslc/arora-h_inbox_83": {
+    "spans": [
+     {
+      "surface": "Enron",
+      "type": "ORG",
+      "start": 146,
+      "end": 151,
+      "sent": "Can't imagine they would entertain an Enron bid right now without confiscatory credit pricing.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0002,
+        "p6": 0.4056
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "New Jersey",
+      "type": "LOC",
+      "start": 95,
+      "end": 105,
+      "sent": "Harry:  Got the bid documents for ConEd's offering of peaking capacity for PJM East (Lakewood, New Jersey).",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.0904,
+        "p6": 0.4244
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Lakewood",
+      "type": "LOC",
+      "start": 85,
+      "end": 93,
+      "sent": "Harry:  Got the bid documents for ConEd's offering of peaking capacity for PJM East (Lakewood, New Jersey).",
+      "actions": [
+       {
+        "fill": "a place",
+        "mode": "level",
+        "walk_risk": 0.057,
+        "p6": 0.4185
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "PJM East",
+      "type": "LOC",
+      "start": 75,
+      "end": 83,
+      "sent": "Harry:  Got the bid documents for ConEd's offering of peaking capacity for PJM East (Lakewood, New Jersey).",
+      "actions": [
+       {
+        "fill": "a direction",
+        "mode": "level",
+        "walk_risk": 0.0369,
+        "p6": 0.2386
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "ConEd",
+      "type": "ORG",
+      "start": 34,
+      "end": 39,
+      "sent": "Harry:  Got the bid documents for ConEd's offering of peaking capacity for PJM East (Lakewood, New Jersey).",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0066,
+        "p6": 0.2057
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/badeer-r_inbox_2": {
+    "spans": [
+     {
+      "surface": "UBS",
+      "type": "ORG",
+      "start": 41,
+      "end": 44,
+      "sent": "Thank you for allowing me to explain the UBS relocation policy.",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0055,
+        "p6": 0.225
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [],
+     "held_out": []
+    },
+    "trainable": false
+   },
+   "aeslc/bass-e_inbox_112": {
+    "spans": [
+     {
+      "surface": "Enron",
+      "type": "ORG",
+      "start": 998,
+      "end": 1003,
+      "sent": "Enron Benefits Department",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.0001,
+        "p6": 0.4056
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 0,
+      "legal": [
+       0,
+       1
+      ]
+     },
+     {
+      "surface": "Thursday, January 17",
+      "type": "DATETIME",
+      "start": 616,
+      "end": 636,
+      "sent": "On Thursday, January 17, Enron initiated a process to facilitate OTC trades of Enron stock inside the 401(k) and ESOP and all pending transactions were processed using Thursday's closing price.",
+      "actions": [
+       {
+        "fill": "the winter",
+        "mode": "level",
+        "walk_risk": 0.0696,
+        "p6": 0.2868
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Wednesday, January 16",
+      "type": "DATETIME",
+      "start": 416,
+      "end": 437,
+      "sent": "As announced by Enron's Office of the Chair on Wednesday, January 16, Enron stock would now be traded Over The Counter (OTC).",
+      "actions": [
+       {
+        "fill": "the winter",
+        "mode": "level",
+        "walk_risk": 0.0827,
+        "p6": 0.2497
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "Friday, January 11",
+      "type": "DATETIME",
+      "start": 117,
+      "end": 135,
+      "sent": "SAVINGS AND ESOP PLANS  On Friday, January 11, trading of Enron stock was suspended on the New York Stock Exchange (NYSE).",
+      "actions": [
+       {
+        "fill": "the winter",
+        "mode": "level",
+        "walk_risk": 0.1367,
+        "p6": 0.3283
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     },
+     {
+      "surface": "ENRON CORP.",
+      "type": "ORG",
+      "start": 78,
+      "end": 89,
+      "sent": "PLEASE READ THIS IMPORTANT INFORMATION CONCERNING THE ENRON STOCK FUND IN THE ENRON CORP. SAVINGS AND ESOP PLANS  On Friday, January 11, trading of Enron stock was suspended on the New York Stock Exchange (NYSE).",
+      "actions": [
+       {
+        "fill": "an organization",
+        "mode": "level",
+        "walk_risk": 0.3477,
+        "p6": 0.4893
+       },
+       {
+        "fill": null,
+        "mode": "placeholder",
+        "walk_risk": 0.0,
+        "p6": 0.0
+       }
+      ],
+      "bc_action": 1,
+      "legal": [
+       1
+      ]
+     }
+    ],
+    "probes": {
+     "train": [
+      {
+       "surface": "Enron",
+       "question": "What corporation is mentioned in relation to the stock fund?"
+      },
+      {
+       "surface": "ENRON CORP.",
+       "question": "What company is mentioned in relation to the stock fund?"
+      }
+     ],
+     "held_out": []
+    },
+    "trainable": true
+   }
+  }
+ }
+}
