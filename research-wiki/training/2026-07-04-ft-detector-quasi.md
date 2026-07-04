@@ -1,10 +1,10 @@
 ---
 type: training-experiment
-status: planned
+status: done
 created: 2026-07-04
 model: knowledgator/gliner-pii-base-v1.0
 dataset: TAB + Wikipedia-bio + Nemotron-PII (mapped) + Pile-NER slice — 8-type schema
-result: pending
+result: "PASS — TAB QUASI held 0.971→0.979; open-label generality recovered 0.835→0.872; bio-test 0.989"
 tags: [detector, gliner, fine-tune, multi-domain, quasi, generality-retention]
 companion: docs/research/learned-PII-detection.md
 ---
@@ -29,7 +29,8 @@ Target by windows, TAB-anchored (ratio **5 : 2.5 : 1.5 : 1**, ≈22k windows, ~2
 
 \*Fetched from `github.com/anthipapa/textanonymization` (Papadopoulou et al.), vendored + split (seed 42)
 to `corpora/wikipedia_bio/{train.json (453 docs), test.json (100, held out for cross-domain eval)}`;
-train yields ~1,142 windows → ~2,300 at ≤×2 oversample. It is the **only auxiliary source carrying MISC
+train yields ~571 unique windows → ~1,142 at the ≤×2 anti-memorization cap (≈6% of the mix, below the
+15% target — bio is availability-capped; see Results). It is the **only auxiliary source carrying MISC
 (identifying events)** — so cross-domain MISC now has real supervision, not just TAB.
 **MISC comes only from TAB + bio** — no other source annotates identifying events (stated limit).
 **MultiNERD is reserved for the held-out generality eval — do NOT train on it** (contamination).
@@ -58,8 +59,78 @@ recall (§5.4). Record **per-corpus** thresholds (TAB ~0.02; bio/clinical/social
 - **Pass = TAB QUASI ≥ 0.95 held AND (bio-test QUASI ↑ vs v1 OR generality > 0.90).** If mixing costs TAB
   QUASI, that is the reported finding.
 
-## Results
-_Pending — not yet run._
+## Results (measured 2026-07-04)
+
+**Realized mix** (windows; my spec's per-source estimates were off — recorded honestly): TAB 10,997
+(55%) · Nemotron 5,495 (28%; 1,157 bad-offset spans dropped by validation) · Pile-NER 2,197 (11%) ·
+**Wikipedia-bio 1,142 (6% — 571 unique bios ×2**; the ≤×2 anti-memorization cap limits it, since only
+453 short bios exist, so bio can't reach the 15% target). Total 19,831. Epoch-1 (`checkpoint-2479`)
+selected on TAB dev; operating threshold **0.02** (dev Pareto, precision ≥ 0.716; = v1's op point).
+
+**TAB test (thr 0.02) — dilution did NOT cost TAB; it slightly helped:**
+
+| | DIRECT | QUASI | prec | MISC | DEM | QUANT |
+|---|---|---|---|---|---|---|
+| v1 (TAB-only) | 1.000 | 0.971 | 0.861 | 0.856 | 0.951 | 0.972 |
+| **v2 (multi-domain)** | 1.000 | **0.979** | 0.814 | **0.895** | **0.973** | 0.972 |
+
+TAB QUASI held/improved (0.971→0.979); MISC 0.856→0.895, DEM 0.951→0.973. Precision slipped 0.861→0.814
+(more aux ⇒ more TAB over-detection) but stays above the 0.716 floor.
+
+**Open-label generality (MultiNERD-en held-out, thr 0.3) — partially recovered:**
+stock 0.941 → v1 0.835 → **v2 0.872** (DIS fully back to 0.94; ANIM 0.87, FOOD 0.84, MEDIA 0.85). The
+diverse Pile-NER slice + multi-domain mix recovered ~⅓ of the lost generality — real, but short of the
+> 0.90 target.
+
+**Wikipedia-bio test (cross-domain, 100 held-out, thr 0.02):**
+
+| | QUASI | MISC | DEM | prec |
+|---|---|---|---|---|
+| v1 | 0.983 | 0.949 | 0.979 | 0.919 |
+| **v2** | **0.989** | 0.949 | **1.000** | 0.904 |
+
+v2 marginally better, **but v1 already transfers to bio strongly (0.983)** — so bio-test is *not*
+discriminating (TAB→bio is easy: same DIRECT/QUASI schema, clean well-formed text). It confirms no
+regression, not a large v2 gain.
+
+**Verdict: PASS.** TAB QUASI ≥ 0.95 held (0.979) AND bio-test QUASI ↑ vs v1 (0.989 > 0.983). Multi-domain
+mixing held/slightly-improved TAB, recovered generality 0.835→0.872, and marginally improved bio.
+**Honest limits:** bio-test undiscriminating (v1 already strong); generality recovered but < 0.90; TAB
+precision slipped 0.05; the *real* cross-domain question (clinical/social) stays unmeasured (no gold).
+
+Artifacts: `data/models/pii_gliner_multidomain/checkpoint-2479` @0.02 ·
+`results/latticecloak_detection_gate_arm_b_v2.json` · `results/arm_b_v2_bio_test.json` (+ `arm_b_v1_bio_test.json`)
+· `results/pii_zeroshot_generality_arm_b_v2.json` · `results/arm_b_v2_dev_thr_*.json`.
+
+## Observations
+
+- **Multi-domain mixing is safe — the dilution worry is disproven.** 45% cross-domain aux did not
+  lower TAB QUASI; it slightly *raised* it (0.971→0.979), with MISC 0.856→0.895 and DEM 0.951→0.973.
+  Why: TAB stays the dominant single source (55%) and the aux *reinforces* the quasi-prone types rather
+  than competing — Nemotron/bio contribute demographic and age spans that sharpen DEM. The only cost is
+  a precision dip (0.861→0.814): broader label exposure (Pile-NER's diverse phrases + synthetic
+  Nemotron) makes the model fire a little more on TAB — recoverable via threshold, or absorbed by the
+  downstream ranker (`learned-PII-detection.md` §5.1d).
+
+- **The generality-recovery lever works, partially.** Open-label generality rose 0.835→0.872. The
+  diverse-label Pile-NER slice (kept as its own labels, so in-batch negatives span many phrases) stopped
+  the label encoder from narrowing as hard as v1's single-schema fine-tune. It did **not** fully recover
+  (0.872 < stock 0.941, < 0.90 target) because the slice is only 10% and 3 epochs still specialize toward
+  TAB-8 — more diverse-label weight or a lower label-side LR would recover more, at some TAB cost.
+
+- **Bio-test was the wrong instrument.** v1 (0.983) and v2 (0.989) both ace Wikipedia-bio because TAB→bio
+  transfers trivially (shared DIRECT/QUASI schema, clean well-formed prose). So the bio result shows *no
+  regression*, not a cross-domain *gain*. The real cross-domain question — noisy, out-of-schema clinical
+  dialogue and social text — needs gold there; MISC/identifying-event transfer beyond legal+bio is still
+  unproven.
+
+- **MISC now has two real domains (legal + bio), not one** — bio adds 571 real bios with identifying-event
+  MISC. But no clinical/social MISC source exists, so that gap persists (stated limit).
+
+- **Net:** v2 is the better deployment detector (TAB held/up, generality up, no regression) — a modest,
+  honest improvement that validates (a) multi-domain mixing is net-positive and safe, and (b) the
+  generality-recovery mechanism is real. The decisive open question — cross-domain QUASI on noisy real
+  text — remains unmeasured for lack of gold, and is the natural next experiment.
 
 ## Ablations (isolate each lever)
 v1 TAB-only (control) → +bio → +bio+Nemotron → +Pile-NER slice. The +slice arm measures the

@@ -239,16 +239,25 @@ def _tokenizer(name="microsoft/deberta-v3-base"):
     return AutoTokenizer.from_pretrained(name)
 
 
-def _stats(tag, recs, conflicts, dropped, tok):
-    types = Counter(p.split(",")[0][:14] for r in recs for _, _, p in r["ner"])
-    sub = sorted(len(tok(" ".join(w["tokenized_text"]), add_special_tokens=False)["input_ids"]) for w in recs)
-    over = sum(1 for s in sub if s > MAX_SUBWORD)
-    p99 = sub[int(0.99 * (len(sub) - 1))] if sub else 0
-    print(f"  [{tag}] {len(recs)} windows, {sum(len(r['ner']) for r in recs)} spans | "
-          f"subword p99 {p99}, max {max(sub or [0])}, over {MAX_SUBWORD}: {over} | "
+def _finalize(tag, recs, conflicts, dropped, tok):
+    """Drop windows exceeding the subword budget (rare — long single tokens in structured docs),
+    print stats, return the kept windows. Guarantees the output has 0 over-budget windows."""
+    kept, lens, over = [], [], 0
+    for w in recs:
+        n = len(tok(" ".join(w["tokenized_text"]), add_special_tokens=False)["input_ids"])
+        if n > MAX_SUBWORD:
+            over += 1
+        else:
+            kept.append(w)
+            lens.append(n)
+    lens.sort()
+    p99 = lens[int(0.99 * (len(lens) - 1))] if lens else 0
+    types = Counter(p.split(",")[0][:14] for r in kept for _, _, p in r["ner"])
+    print(f"  [{tag}] {len(kept)} windows, {sum(len(r['ner']) for r in kept)} spans | "
+          f"subword p99 {p99}, max {max(lens or [0])} | over-budget dropped: {over} | "
           f"conflicts {conflicts}, dropped_long {dropped}")
     print(f"       labels: {dict(types.most_common(8))}")
-    assert over == 0, f"[{tag}] {over} windows exceed {MAX_SUBWORD} subwords"
+    return kept
 
 
 def build(args):
@@ -257,8 +266,8 @@ def build(args):
 
     print(f"== source: tab ({args.train}) ==")
     tab, c, d = source_windows(tab_source(args.train))
-    _stats("tab", tab, c, d, tok)
-    train_recs = list(tab)
+    train_recs = _finalize("tab", tab, c, d, tok)
+    tab = train_recs
 
     if args.mix:
         n_tab = len(tab)
@@ -280,8 +289,7 @@ def build(args):
             elif name == "wikibio" and 0 < len(recs) < cap:   # oversample with replacement, ≤×2 unique
                 recs = [rng.choice(recs) for _ in range(min(cap, 2 * len(recs)))]
             if recs:
-                _stats(name, recs, c, d, tok)
-                train_recs += recs
+                train_recs += _finalize(name, recs, c, d, tok)
 
     rng.shuffle(train_recs)
     os.makedirs(args.out_dir, exist_ok=True)
