@@ -249,11 +249,13 @@ unrecoverable. Enforced at assembly/decoding time:
    verifier, not a semantics oracle (word-sense errors may pass as lexical hypernymy) — the
    residual and the proposed truthfulness-reward extension are tracked in
    [rule-lattice-nli-gate-bypass](../../issues/rule-lattice-nli-gate-bypass.md).
-4. **Extractor scope** — the reward's `invert()` only ever runs the trivial exact path (reader
-   answers are doc_p substrings, where replacements are verbatim by construction), so extractor
-   implementation changes affect gate/eval outcomes, never the training reward. The deployed
-   extractor version is therefore an *evaluation* parameter: fix it before the gate run and
-   hold it constant through the α sweep.
+4. **Extractor scope** — the reward calls the *deployed* `invert()` (u_qa inverts the reader's
+   answer through R with the same implementation used at eval). Because reader answers are
+   doc_p substrings where replacements appear verbatim, the exact-match path dominates — but
+   the fuzzy branch *can* fire on clipped/partial answer spans, so extractor changes have a
+   small, nonzero effect on the training reward, not only on eval. Consequence: **the extractor
+   version is pinned for the whole (gate → training → eval) cycle** — any extractor change
+   re-gates and invalidates trained policies, same rule as a reward change.
 5. **Determinism via artifacts** — detection is nondeterministic across processes (measured:
    3/6 clinical doc_p hashes differ between identical runs); all consumers load the persisted
    arms artifact (`scripts/build_arms_artifact.py` → `data/task_arms_tau0.02.json`), never
@@ -369,8 +371,10 @@ The τ-walk must be non-degenerate **before** RL because it is: the control grou
 `frontier_claim` (a broken baseline inflates the learned method — forbidden), the
 behavior-clone teacher of `pi_0`, and the source of the τ-mask and constructed arms. Its two
 measured degeneracies (candidate-invariant probe → binary walk; floor fallback → τ violations)
-were fixed by gaps-plan Phases 1–2 (shipped 2026-07-04: max shipped risk 0.0170 < τ = 0.02 on
-16 docs, injectivity verified, 21 intermediate-level selections vs 0 under the old probe).
+were fixed by gaps-plan Phases 1–2 (shipped 2026-07-04: max shipped generalization risk 0.0182
+< τ = 0.02 over all 618 gen entries of the 48-doc arms artifact; injectivity verified;
+intermediate-level selections now occur — 21/63 multi-level spans on the acceptance sample vs
+0 under the old probe).
 
 **Gate (before any training run):** constructed arms (no_privacy / tau_walk / all_floor /
 suppression) per doc → per-doc Spearman between the reward's ordering and realized **fact recall
