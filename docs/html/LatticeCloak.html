@@ -402,6 +402,24 @@
     higher precision (0.752), the chosen Arm-B initialization; nvidia gliner-PII maximizes precision
     (0.956) and DIRECT recall but bottoms out on QUASI (0.808), the wrong bias for the privacy ceiling.</p>
 
+    <p class="prose"><strong>Zero-shot extensibility (P7).</strong> A separate axis from TAB recall:
+    can the detector find a <em>user-defined</em> type from its label phrase alone, with no training
+    example? This is the tailorability property — measured as zero-shot recall on held-out entity
+    types <em>outside</em> the TAB schema (MultiNERD-en: animal, disease, plant, food, media, …), a
+    labelled proxy for user-specified types. It is the pre-fine-tuning baseline of the retention
+    experiment (how much TAB fine-tuning erodes this is the delta measured after Arm&nbsp;B trains).</p>
+
+    <div class="plot-frame">
+      <div class="plot-cap"><span class="l">FIG · 01B — zero-shot recall on held-out types outside TAB (user-type proxy)</span><span class="r">source: results/pii_zeroshot_generality_*.json · MultiNERD-en · N=4,406 gold / 2,896 sentences</span></div>
+      <div id="plot-p7" style="width:100%;height:360px;"></div>
+      <div class="plot-cap" style="margin:8px 0 0;"><span class="l">Read</span><span class="r" style="text-transform:none;letter-spacing:0;font-size:11px;">Zero-shot any-overlap recall per held-out type. knowledgator gliner-pii-base (navy) leads on every type — overall 0.94 vs 0.85 — its PII fine-tuning improved open-label generality rather than eroding it. gliner_multi_pii-v1 (0.83) tracks the general-NER baseline, so the gain is specific to knowledgator, not a property of PII fine-tuning.</span></div>
+    </div>
+    <p class="prose"><strong>Conclusion.</strong> The open-label head already finds nameable
+    out-of-schema types zero-shot at 0.83–0.94 before any TAB tuning, so user-defined types are
+    carried by the interface today; knowledgator is the strongest start (two-for-two with its QUASI
+    lead in FIG&nbsp;01). The decisive question — how much TAB fine-tuning narrows this — is the
+    retention delta, pending Arm&nbsp;B training.</p>
+
     <h4 style="font-family:'Fraunces',serif;font-size:20px;margin:24px 0 8px;">§5.2 Span routing and teacher economics on SynthPAI</h4>
     <p class="prose">Routing of detected spans across lattice sources on the full 300-profile corpus
     (2,438 spans, post noise-cleanup: pure-symbol spans, bare pronouns and anchor-free temporals excluded).
@@ -1021,6 +1039,22 @@
     b.addEventListener("click", function () { drawFig01(b.dataset.m); });
   });
   drawFig01("gliner_small");
+
+  // FIG 01B — zero-shot generality on held-out types outside TAB (P7), per detector
+  var p7cats = ["overall any","overall typed","ANIM","DIS","PLANT","FOOD","MEDIA"];
+  var P7 = {
+    "GLiNER-small (general NER)": {y:[0.845,0.732,0.92,0.86,0.86,0.77,0.61], color:BASE},
+    "knowledgator pii-base":      {y:[0.941,0.821,0.95,0.94,0.94,0.92,0.92], color:"#2a5092"},
+    "gliner_multi_pii-v1":        {y:[0.830,0.723,0.90,0.83,0.85,0.78,0.61], color:ENT1}
+  };
+  Plotly.react("plot-p7", Object.keys(P7).map(function (k) {
+    return {x:p7cats, y:P7[k].y, name:k, type:"bar", marker:{color:P7[k].color},
+      hovertemplate:k+"<br>%{x}: %{y:.3f}<extra></extra>"};
+  }), Object.assign({height:360, margin:{t:34,r:12,b:70,l:48}, barmode:"group",
+    title:{text:"zero-shot any-overlap recall on held-out types (↑)", font:{size:13,color:INK}, x:0, xanchor:"left"},
+    xaxis:{gridcolor:GRID}, yaxis:{range:[0,1.05], gridcolor:GRID, zeroline:true, zerolinecolor:GRID},
+    legend:{orientation:"h", y:-0.24, x:0.5, xanchor:"center", font:{size:9}}}, base),
+    {displayModeBar:false, responsive:true});
 
   // FIG 02 — route shares of detected spans, per detector (inventory, 300 SynthPAI docs)
   var routes = ["date/amount","placeholder","geonames","wordnet","teacher"];

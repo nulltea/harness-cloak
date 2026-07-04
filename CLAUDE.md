@@ -100,16 +100,35 @@ put with `status: stale` + `archive_reason`. `companion:` references repo-local 
   is no arXiv), placed right after the wiki-page link, inline and in any Sources list. Pull the id from the
   page's `external_ids` frontmatter, never from memory.
 
+## Training experiments — spec-then-results in `research-wiki/training/`
+
+Every fine-tuning / training run gets a record at `research-wiki/training/YYYY-MM-DD-ft-<slug>.md`
+(date = run date; name by method/feature, no plan identifiers). **Write the spec _before_ the run,
+fill the results _after_** — the same doc carries both.
+- Frontmatter: `type: training-experiment`, `status` (planned·running·done), `created`, `model` (init
+  checkpoint), `dataset` (train-mix summary), `result` (one-line headline or `pending`), `tags`,
+  `companion` (the `docs/research/` report).
+- Sections: **Objective & hypothesis · Training data (sources + explicit ratios + type-mapping) ·
+  Training config · Selection & operating point · Evaluation & success criteria · Results (measured or
+  `pending`) · Ablations · Cost · Risks & caveats · Artifacts (paths) · Sources**.
+- On completion: set `status: done`, fill **Results** with measured numbers (report the win *and* any
+  regression — empirical-honesty rule), and cross-link predecessor/successor runs.
+- These live under `research-wiki/` but are **not** in the paper index (`research_wiki.py rebuild_index`
+  covers papers/ideas/experiments/claims only). Link the companion `docs/research/` report both ways.
+
 ## Scripts — one-time spikes go in `scripts/spikes/`
 
 One-off / throwaway scripts (ad-hoc comparisons, qualitative demos, exploratory probes) live in
 `scripts/spikes/`, **not** `scripts/`. `scripts/` is for durable, re-run workflows (gate, sweeps,
 corpus builders, training). If a spike graduates into a reusable workflow, move it up to `scripts/`.
 
-## Naming — no plan-level identifiers in code or HTML
+## Naming — no plan-level or doc-internal identifiers outside their defining doc
 
-Plan/phase identifiers (`D1`, `P0`, `RD4`, …) live only in `docs/plans/` and `docs/research/`.
-**Never** use them in code (file names, module/function names, data/result paths) or in HTML pages —
-name artifacts after the method or feature (`latticecloak_tau_sweep.py`,
-`results/latticecloak_detection_gate.json`). Citing a plan *document path* in a docstring is fine;
-baking the plan's numbering into an identifier is not (plans get renumbered; methods keep their names).
+Numbered/lettered doc-internal identifiers — **plan/phase (`D1`, `P0`, `RD4`), requirement/property
+(`P1`–`P9`), experiment arms (`Arm A`/`Arm B`), and the like** — live **only in the `docs/plans/` or
+`docs/research/` file that defines them**, where the numbering is spelled out. **Never** use them in
+code (file names, module/function names, data/result paths), HTML pages, `research-wiki/` records, or
+cross-doc references — name after the **method / feature / property it denotes** (`latticecloak_tau_sweep.py`,
+`results/latticecloak_detection_gate.json`; "open-label generality", not "P7"; "the knowledgator+TAB
+fine-tune", not "Arm B"). Citing a plan/research *document path* in a docstring is fine; baking its
+numbering into an identifier is not — the numbers get renumbered, the self-descriptive name does not.

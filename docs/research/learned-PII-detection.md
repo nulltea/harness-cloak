@@ -322,7 +322,7 @@ What the data says (some of it against the pre-registration above):
   concentrated in the guideline-defined types (MISC above all), not across the board — a more precise
   statement of §4 than "real text ⇒ collapse."
 
-**Consequence for the arms (pending confirmation).** `knowledgator/gliner-pii-base-v1.0` dominates
+**Consequence for the arms (confirmed; Arm B trained — §5.3).** `knowledgator/gliner-pii-base-v1.0` dominates
 the planned Arm-B init (`gliner_small-v2.1`) on QUASI recall at comparable precision, keeps the
 open-label interface (P6/P7), and its base size fits P5 — so it is the recommended Arm-B init, with
 `gliner_small-v2.1` demoted to the clean-span-pretraining control if a strict ablation is wanted.
@@ -442,6 +442,72 @@ beats a GLiNER head.
 - If a stronger GLiNER init is wanted, **GLiNER2-base** (2048-token context, newer data) is the
   follow-up arm — only if Arm B beats Arm A, to avoid a three-arm first experiment.
 
+### 5.3 Arm B — measured (2026-07-03)
+
+Trained `knowledgator/gliner-pii-base-v1.0` on TAB train (11,022 windows, 3 epochs, ~14.5 min on the
+gfx1151 iGPU; `scripts/train_pii_gliner.py`). Epoch-2 (`checkpoint-2756`) selected on the dev gate;
+operating threshold **0.02** fixed on the dev Pareto (max QUASI any-recall at precision ≥ 0.716,
+`results/arm_b_dev_thr_*.json`). Single test-set run (`results/latticecloak_detection_gate_arm_b.json`):
+
+| | DIRECT any | QUASI any | prec | MISC | DEM | QUANT | CODE |
+|---|---|---|---|---|---|---|---|
+| baseline `gliner_small` zero-shot | 0.998 | 0.857 | 0.716 | 0.214 | 0.563 | 0.254 | 0.757 |
+| **Arm B `knowledgator`+TAB** | **1.000** | **0.971** | **0.861** | **0.856** | **0.951** | **0.972** | **0.985** |
+
+**All success criteria met on test:** DIRECT any ≥ 0.99 (1.000), QUASI any ≥ 0.95 goal (**0.971**),
+precision ≥ 0.716 (0.861). The gap types are transformed — MISC 0.21→0.86, DEM 0.56→0.95, QUANT
+0.25→0.97 — and dev→test transfer is clean (dev QUASI 0.958 → test 0.971, no overfit). This is the
+result the whole plan targeted: supervision on TAB closes the QUASI gap no off-the-shelf checkpoint could.
+
+**P7 retention delta — the tailorability cost (measured).** Zero-shot recall on out-of-schema held-out
+types (the §5.1c MultiNERD-en probe, `results/pii_zeroshot_generality_arm_b.json`) dropped from
+**0.941 (pre-FT) to 0.835 (post-FT)** — back to the general-NER baseline level (`gliner_small` 0.845).
+So TAB-8 fine-tuning **erodes** knowledgator's pre-FT open-label generality edge: the open interface
+survives and user-defined nameable types are still found zero-shot at *general-NER* quality, but the
+pre-FT advantage that made knowledgator two-for-two (§5.1c) is spent. **Tailorability is preserved, not
+enhanced** — the P6/P7 case for the GLiNER head over a plain BIO head is weakened by this result
+(fine-tuned, it is no longer better-than-general at zero-shot). Fine-tune extensibility (P8) remains the
+reliable path for new user types. This is the honest trade: a decisive QUASI win bought at the pre-FT
+generality edge. Arm A (DeBERTa-BIO) has not been run, so the head-vs-head comparison is still open.
+
+### 5.4 Choosing the detection threshold — tradeoffs and guidelines
+
+The GLiNER span-confidence threshold is the detector's operating-point knob. It is *not* a privacy
+budget and it is *not* a per-method fudge (honesty rule) — it is chosen once, per **(model, corpus)**
+pair, on a dev/held-out slice, then fixed. The tradeoff is monotone (measured on the Arm-B dev
+Pareto, §5.3): lower threshold → more spans.
+
+| Lower threshold (≈0.01–0.05) | Higher threshold (≈0.3+) |
+|---|---|
+| ↑ **recall** — fewer missed QUASI, i.e. fewer *hard privacy leaks* | ↓ recall — more leaks |
+| ↓ **precision** — over-detection | ↑ precision — cleaner spans |
+| more candidate spans for the RL ranker to learn `keep`/generalize on | less for the ranker, but less over-redaction under the current τ-walk |
+| **floods** on uncalibrated / out-of-domain text | robust across domains |
+
+Evidence: Arm-B on TAB dev — thr 0.01→0.3 moved QUASI any 0.969→0.867 and precision 0.826→0.947
+(MISC 0.87→0.40). Out-of-domain (§5.3 non-TAB probe) — TAB's 0.02 floods clinical/social text, while
+0.3 is clean *and still transfers* the QUASI wins; so the flooding is a threshold artifact, not lost
+knowledge.
+
+**Choose the threshold based on:**
+1. **Model calibration.** A TAB-fine-tuned model is *sharp and confident* → needs a **low** threshold
+   to reach recall (Arm B: 0.02 for QUASI 0.958). A zero-shot GLiNER is diffuse → operates ~**0.3**.
+   Never reuse a fine-tuned model's threshold on a zero-shot model or vice versa.
+2. **Domain match.** In-domain (trained distribution) tolerates the model's low threshold; **out-of-domain
+   needs a higher one** (a per-corpus operating point — TAB 0.02 ≠ clinical/social, use ~0.3 there).
+3. **Downstream absorber.** With the RL ranker (which learns `keep`, §5.1d), bias **lower** — over-detection
+   is recovered at zero privacy cost, so maximize recall. With only the τ-walk (no ranker yet),
+   respect a **precision floor** — over-detection costs utility today (the synthpai over-redaction).
+4. **Privacy vs utility priority.** Privacy-ceiling framing (a miss is a hard leak) → lean **lower**;
+   utility-sensitive / over-redaction-averse → lean **higher**.
+
+**Selection rule (predeclared):** on dev, pick the **lowest** threshold whose precision ≥ the 0.716
+baseline floor — this maximizes QUASI any-recall subject to the floor. Fix it; reuse only within the
+same (model, corpus). Threshold sweeps are diagnostic — never tuned per method-comparison.
+
+**Measured defaults:** Arm-B (`knowledgator`+TAB) on TAB → **0.02** (QUASI 0.971 test); zero-shot
+GLiNER (stock, or any non-TAB corpus) → **0.3**.
+
 ## 6. Training data
 
 | Dataset | Size / domain | Labels | Access | Role |
@@ -466,9 +532,12 @@ goal, precision ≥ 0.716 baseline), and test-set discipline (iterate on dev, te
 config) are in the companion plan (`docs/plans/2026-07-03-pii-span-detector-model.md`). The Phase-0
 off-the-shelf dev sweep **has run** (§5.1b, measured), as has the **P7 zero-shot generality baseline**
 (§5.1c); together they confirmed the P1 gap and put `knowledgator/gliner-pii-base-v1.0` ahead on both
-QUASI recall and out-of-schema generality — the recommended Arm-B init (pending confirmation). No
-*training* has run yet; all claims about the fine-tuned arms — including the P7 retention delta — are
-expectations, not results.
+QUASI recall and out-of-schema generality — the chosen Arm-B init. **Arm B has now trained and been
+evaluated (§5.3, measured):** test QUASI any **0.971** (≥0.95 goal met), DIRECT any 1.000, precision
+0.861, at threshold 0.02 fixed on the dev Pareto — the QUASI gap is closed. The P7 retention delta is
+also measured: zero-shot generality fell 0.941→0.835 (fine-tuning spent knowledgator's pre-FT edge;
+tailorability preserved at general-NER quality, not enhanced). Arm A (DeBERTa-BIO) has not been run —
+the head-vs-head comparison remains open.
 
 _Off-the-shelf model/architecture/benchmark specifics (OpenAI Privacy Filter, the GLiNER family,
 NVIDIA GLiNER-PII, Piiranha, and the SPY / Tonic.ai numbers) were verified against model cards and
