@@ -2,313 +2,356 @@
 type: reference
 status: current
 created: 2026-07-03
-updated: 2026-07-03
-tags: [rl, grpo, surrogate-reward, ranker, infiller, environment, probes, reward, injectivity,
-       relational-fills, fact-recall, spec]
-companion: [docs/plans/2026-07-02-surrogate-grpo-training.md, docs/specs/benchmarks.md,
-            docs/specs/attacks.md]
+updated: 2026-07-04
+tags: [rl, grpo, surrogate-reward, ranker, infiller, environment, probes, reward, tau-mask,
+       contrastive-reid, embedding-proximity, fact-recall, injectivity, spec]
+companion: [docs/plans/2026-07-03-surrogate-rl-gaps-fixes.md,
+            docs/plans/2026-07-02-surrogate-grpo-training.md, docs/specs/benchmarks.md,
+            docs/specs/attacks.md, docs/issues/remote-llm-echo-absorption.md]
 ---
 
 # RL specification — surrogate-reward training of the substitutor (ranker + infiller)
 
-Living spec. Defines the **environment → probes → reward** stack for training the substitutor
-cascade with a local surrogate reward, structured for review and iteration. Decision history and
-wall-time live in the plan
-([2026-07-02-surrogate-grpo-training.md](../../plans/2026-07-02-surrogate-grpo-training.md));
-this doc is the normative statement of *what the RL system is*.
+Normative statement of the RL system: **pipeline → environment → probes → reward → baseline →
+gate**. Decision history and wall-time live in the
+[training plan](../../plans/2026-07-02-surrogate-grpo-training.md); open defects and fix order in
+the [gaps plan](../../plans/2026-07-03-surrogate-rl-gaps-fixes.md). Design pinned 2026-07-04:
+**contrastive re-identification probe (P4) for the walk/action mask; embedding-proximity score
+(P6) for the reward's privacy term** — the probe-per-job split measured in the
+[shootout](../attacks.md) (§ Probes).
 
 ## Definitions
 
 - **doc_orig / doc_p / out_p / out_final** — original document; anonymized rewrite sent to the
   remote LLM; the remote output; the locally re-identified output returned to the user.
-- **R (substitution record)** — client-side list of `{surface, replacement, type, action}`
-  entries; the only bridge from doc_p-space back to original-space.
-- **Ranker** — policy choosing, per detected quasi-identifier span, an abstraction level (or
-  placeholder). Stage-1 trainable component.
-- **Infiller** — generative model rendering the chosen level as a concrete replacement string in
-  context (planned flan-t5-base + LoRA; not yet implemented). Stage-2 trainable component.
-- **Extractor** — the local component mapping out_p → out_final by restoring R surfaces.
-- **Injectivity (of R)** — per document, no two distinct surfaces share a replacement string
-  (canonical form). Violation = information destroyed before the remote call, unrecoverable by
-  any extractor.
-- **Relational fill** — a replacement whose meaning is relative to another fill ("two days
-  later", "at the following meeting"). Preserves cross-fact structure; creates joint leakage.
-- **Restated-span probe** — a (surface, natural question) pair for an R span whose original
-  surface the gold output restates; the unit of both the utility reward and the realized
-  ground truth.
-- **u_qa** — surrogate utility: extractive-reader answerability of probes from doc_p, scored
-  after inversion through R (the "mini round trip").
-- **Fact recall** — realized utility ground truth: the same probes answered from **out_final**
-  (original space; no inversion), token-F1 vs the original surface.
-- **A(doc_p)** — attack head: document-level privacy score in [0,1] (higher = more re-identifiable).
-- **MTI guess-back** — masked-token-inference probe: can a masked LM recover the original surface
-  given the replacement in context; the v0 per-span attack signal and the τ-walk's risk gate.
-- **τ / α** — τ: inference-time per-span risk ceiling of the rule walk (baseline knob);
-  α: training-time privacy weight in the scalar reward (this method's knob; one α = one
-  operating point).
-- **GRPO / group advantage** — G rollouts per document; advantage = per-group standardized
-  reward; REINFORCE/PPO-clip update.
-- **E0/E1/E2** — environment versions (below). A trained policy is valid only for the
-  environment version it was trained in.
+- **R (substitution record)** — client-side `{surface, replacement, type, action}` list; the
+  only bridge from doc_p-space back to original-space. **Injective per document** (no two
+  surfaces share a replacement) by environment constraint.
+- **Ranker** — the stage-1 policy. Sole function: **per detected quasi-identifier span, pick one
+  action from that span's lattice levels ∪ {placeholder}** (how coarse the substitution is).
+- **Infiller** — stage-2 generative component rendering the chosen level as surface text
+  (planned flan-t5-base + LoRA; not yet implemented).
+- **Lattice** — ordered replacement phrases for a span, most-specific → most-general; the
+  ranker's action space.
+- **τ-walk** — the rule baseline: accept the first (most specific) lattice level whose probe
+  risk < τ. In RL it survives as three artifacts: behavior-clone init, evaluation control group,
+  and the τ action mask.
+- **walk_risk / P4 (contrastive re-identification probe)** — P(attacker picks the original out
+  of a same-type anonymity set | context + visible fill), via length-normalized causal-LM
+  log-probabilities (pythia-410m) softmaxed over {original} ∪ ≤15 same-type corpus distractors.
+  Candidate-sensitive; ~50 ms/item; precomputable per (span, level).
+- **A / P6 (embedding-proximity score)** — the reward's privacy term:
+  `cos_MiniLM(fill, original)` per span, mean-aggregated. Candidate-sensitive, context-blind.
+- **ŝ (echo-survival table)** — offline-measured
+  `P(fill recoverable in out_p by the deployed extractor | fill mode, span type, task)`; a
+  pre-registered environment constant.
+- **Restated-span probe / u_qa / fact recall** — QA probes on gold-restated surfaces; u_qa reads
+  doc_p (training utility), fact recall reads out_final (realized ground truth).
+- **frontier_claim** — the experiment's verdict: does the trained policy's Pareto dominate the
+  τ-walk's at matched *realized* privacy (frontier-LLM attacker) on held-out docs. Never a
+  training signal.
+- **τ / α** — τ: hard per-span risk ceiling (action-mask boundary, structural guarantee);
+  α: the method's operating-point knob (training-time privacy weight; one α = one policy).
+- **E0/E1/E2** — environment versions (§3.4). A policy is valid only for its training version.
 
-## 1. Objective
+## 1. Objective and verdict
 
-Train the substitutor (ranker, then ranker+infiller) to maximize round-trip task utility at a
-target privacy level, using **no remote calls during training**:
-
-```
-r(doc_p, R) = α · (1 − A(doc_p)) + (1 − α) · U(doc_p, R)
-```
-
-Evaluation is always the **real round trip** (remote model on held-out docs), scored by **fact
-recall on out_final** (headline utility) and the frontier-LLM re-identification attacker on
-doc_p and out_final (privacy). The surrogate-vs-realized gap is a first-class result, not noise.
-
-**Measured motivation (2026-07-03 gate re-run, `results/surrogate_validation.json`):** the
-surrogate's utility term ranks constructed quality arms in agreement with realized fact recall —
-per-doc Spearman 0.37 (clinical, n=12), 0.44 (aeslc, n=5), 0.775 (enron, n=8) — on the same run
-where reference-overlap metrics (ROUGE-L/BERTScore) were noise (ρ ≈ 0, insane arm orderings).
-The realized numbers also expose the true baseline: the current rule pipeline delivers almost no
-probed facts to out_final (tau-walk fact recall 0.012–0.038 vs no-privacy 0.13–0.18), because
-the remote model paraphrases naturalistic fills (`gen_absent` ≈ 95%) while placeholders survive
-and invert (9/9, zero residue). Closing that gap is what the policy is being trained to do.
-
-## 2. Environment
-
-### 2.1 Episode structure
-
-One episode = one document (contextual bandit; no multi-step dynamics in v0).
+Train the substitutor to maximize round-trip task utility at a target privacy level, with **zero
+remote calls during training**:
 
 ```
-state      s = (doc_orig, detected spans with types/coref chains, task family)
-action     a = per-span choice:  level ℓ ∈ lattice(span)  ∪  {PLACEHOLDER}
-render     doc_p, R = assemble(doc_orig, a)        # infiller renders fills in E1+
-reward     r(doc_p, R)                             # §4, fully local
+r(doc_p, R) = α · (1 − A(doc_p, R)) + (1 − α) · U(doc_p, R)
 ```
 
-- **Stage 1 (ranker bandit):** G level-assignments sampled from π_θ(ℓ | span, doc, task);
-  fills rendered by the frozen infiller (E0: the lattice's literal level string). REINFORCE on
-  group advantage, KL leash to the SFT/behavior-cloned init.
-- **Stage 2 (joint GRPO):** additionally sample fill strings y ~ p_φ(· | doc, span, ℓ); shared
-  scalar advantage on ranker log-probs + infiller token log-probs (PPO-clipped), LoRA update
-  of φ.
-
-### 2.2 Action space (per detected span)
-
-- Quasi-identifier types: the span's abstraction levels (most-specific-first) **plus an explicit
-  PLACEHOLDER action**. Placeholder is a legitimate policy choice, not only a fallback: it is
-  the substitution mode with measured round-trip survival, and pricing it lets the policy trade
-  naturalness vs survival vs risk per span (e.g. dates in a timeline may be worth relational
-  fills; a one-off case number is not).
-- **Placeholder has two modes with different privacy contracts:**
-  - *Generic typed* (`<DATETIME_1>`; label from the detector's fixed type vocabulary): the label
-    depends only on the detected type, never on the secret — **risk 0 by construction**, exempt
-    from the τ gate. The only mode usable as the invariant fallback (§2.3).
-  - *Descriptive / minted* (`<MEETING_DATE_1>`; E1, infiller-chosen label): the label is
-    conditioned on the secret and context — a generalization in placeholder syntax. It carries
-    role semantics to the remote model (most of a fill's task value) while keeping the
-    echo-anchor property of the `<…>` syntax, but it **loses the τ-exemption**: minted labels
-    pass the guess-back gate like any fill, and the used-set/indexing constraint applies to the
-    label namespace. Echo survival of descriptive labels is assumed from the generic-placeholder
-    measurement (9/9, n=9 — thin); smoke-measure before E1 relies on it.
-  - The resulting action spectrum, by anchor-ness: generic placeholder (risk 0, echo ~certain,
-    no semantics) → descriptive placeholder (τ-gated, role semantics survive) → relational fill
-    (τ-gated + joint leakage) → naturalistic fill (τ-gated, echo ~5% measured in E0).
-- Direct identifiers (PERSON, CODE): forced placeholder (not part of the action space).
-- **No KEEP action.** Every detected span is substituted. Rationale: the v0 privacy term prices
-  only substituted spans, so a KEEP action would be a reward-hacking channel (under-anonymize
-  for free utility). Revisit only when A upgrades to a document-level head that prices raw
-  surfaces (§4.1).
-- The detector is frozen and outside the policy (its recall is the reported privacy ceiling;
-  gradients would teach under-detection — decided in the plan).
-
-### 2.3 Environment invariants (constraints, not learned behaviors)
-
-These are enforced by the environment at assembly time. The policy cannot violate them, and the
-reward is never asked to teach them — sparse probe reward (§3.4) cannot guarantee structural
-invariants, and one violation is silently unrecoverable.
-
-1. **Injectivity of R** — decode-time constraint. E0: a lattice level already claimed by a
-   different surface is masked out of the action space; if a span's lattice is exhausted, the
-   action collapses to PLACEHOLDER. E1: the infiller resamples (next beam) under a per-doc
-   used-set; the *generic typed* placeholder is the terminal fallback. Repeat mentions / coref
-   chains legitimately reuse their own replacement.
-2. **τ as a hard ceiling** — a fill whose guess-back risk ≥ τ is rejected; exhaustion →
-   *generic typed* placeholder (the only mode that is risk 0 by construction, §2.2). *This fixes a measured defect: the current floor fallback ships the coarsest level regardless of risk ("Commission" shipped at risk 0.147 against τ = 0.02).* In RL training, τ screening applies to the candidate set the ranker chooses from; α, not τ, is the operating-point knob.
-3. **Reward–deployment extractor identity** — the `invert()` used inside the reward is the same
-   implementation deployed at inference for that environment version (§2.4). Training against a
-   better extractor than deployed (or vice versa) silently invalidates the learned policy.
-4. **Determinism** — detection, lattice lookup, and E0 rendering are deterministic; all remote
-   calls (none in training; gate/eval only) are content-cached.
-
-### 2.4 Environment versions
-
-The extractor and infiller define the physics of the environment: what survives the round trip
-and what the reward can credit. Version them explicitly; **a policy is retrained when the
-version changes** (an E0-trained policy is stale in E1).
-
-|        | fills                                                                                     | extractor (`invert`)                                                                              | attack head A                                          | status                        |
-| ------ | ----------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------- |
-| **E0** | static lattice strings ∪ placeholder                                                      | rule: exact/fuzzy-85 match of replacements in out_p                                               | per-span MTI guess-back, aggregated                    | runnable now                  |
-| **E1** | infiller (SFT flan-t5 + LoRA), injectivity-constrained decoding; relational fills allowed | rule + **paraphrase-tolerant alignment** (embedding/fuzzy match of out_p spans to R replacements) | same as E0                                             | infiller + alignment to build |
-| **E2** | E1                                                                                        | **learned reconstructor** (denoise/edit model; the project's extraction direction)                | **document-level re-id head** (SynthPAI-style encoder) | future                        |
-
-**The E0→E1 extractor upgrade is load-bearing for relational fills.** A relational fill the
-remote model echoes loosely ("a couple of days after") is invisible to exact-match inversion, so
-in E0 the reward would (correctly, for E0 physics) steer the policy away from relational fills
-toward placeholder-like anchors. If the deployed product is meant to use a stronger extractor,
-train in the environment that has it — otherwise the policy optimizes for the wrong physics.
-This is the concrete form of "rule-based extraction is the current bottleneck".
-
-## 3. Probes (Phase 0 — once per document, cached)
-
-### 3.1 Construction
-
-1. **Candidate surfaces** = unique R surfaces (dedup by canonical form; no other filtering —
-   the previous role-noun filter was a measured bug that ate ~60% of surfaces).
-2. **Gold restatement match**: surface must appear in the gold output — exact word-boundary
-   match on canonicalized text (lowercase; "dr." → "doctor"; "milligrams" → "mg"), then
-   rapidfuzz partial-ratio ≥ 85 for surfaces ≥ 5 chars. The matched gold sentence is kept as
-   question context.
-3. **Teacher question**: one natural question per surface whose exact answer is that surface
-   (local llama-swap teacher, one-time, cached in `data/surrogate_probes.json`). Cloze phrasing
-   is out-of-distribution for SQuAD2 readers (measured: readers abstain) — natural questions
-   only. Validity: ends with "?", < 200 chars, does not contain the answer.
-4. **Probe split (anti-Goodhart)**: per document, a held-out probe subset is never used in the
-   training reward and is scored only at evaluation.
-
-### 3.2 The same probes serve two roles
-
-- **Training reward** (u_qa): answered from **doc_p**, question generalized through R, answer
-  inverted through R, F1 vs original surface. Local, model-free per candidate (reader only).
-- **Realized ground truth** (fact recall): answered from **out_final**, no generalization, no
-  inversion. Used by the validation gate and the evaluation protocol — never by training.
-
-### 3.3 Why this is the right utility axis (and reference overlap is not)
-
-Measured 2026-07-03: detected-span words cover 6.4% (clinical) / 8.0% (enron) of gold tokens, so
-whole-output similarity metrics cannot see substitution damage above generation noise
-(shuffled-gold ROUGE-L floor within 1.4–2.9× of matched on clinical/enron). Probes concentrate
-all metric mass on the perturbable facts — sensitive fraction ≈ 1 by construction.
-
-### 3.4 Supply facts and their consequences
-
-Current supply (16-doc slices): **3.19/doc clinical, 1.0/doc enron, 0.38/doc aeslc**; docs with
-zero probes: 4/16 clinical, 8/16 enron, 11/16 aeslc.
-
-- **Docs without probes are excluded from training** (no utility signal; training on them would
-  optimize privacy alone). They remain in evaluation.
-- u_qa is quantized to multiples of 1/n_probes — with ~3 probes the per-candidate reward takes
-  ≤ 4 utility values. The group-relative advantage tolerates this (ranking within a group), but
-  reward variance per doc is high; corpus mix and G compensate.
-- Known unmatched classes (accepted ceilings, revisit if supply blocks training): spoken-vs-
-  written numerals ("July thirty first" vs "07/31"), facts the gold restates but detection
-  missed. aeslc's thin supply is corpus reality (subject lines restate little), not a bug.
-
-## 4. Reward
+The trained ranker is an **amortized, distilled probe + trade-off function** — it can only learn
+the privacy notion the reward shows it (probe quality is the ceiling on policy quality; the
+promotion rule for probes is measured correlation with a real attacker, § 4.2). Evaluation is
+always the real round trip; the output of the whole experiment is `frontier_claim`:
 
 ```
-r  =  α · (1 − A(doc_p))  +  (1 − α) · u_qa(doc_p, R, train-split probes)
+if policies dominate walk at matched realized privacy:  METHOD WORKS → report; ceiling study next
+elif policies ≈ walk:                                    disambiguate by error analysis:
+    remote-phrasing residual dominates → upgrade to round-trip reward (documented trigger)
+    else                               → selection learning isn't the lever; report the null
+if realized privacy clusters across α:                   α is a bad knob → lexicographic fallback
+if attacker succeeds via fills A scored safe:            A is the gap → doc-level head (E2), retrain
 ```
 
-### 4.1 Privacy term A
+`frontier_claim` feeds gradients to nothing — routing the eval attacker into training would
+Goodhart the evaluation.
 
-- **v0 (E0/E1):** aggregate of per-span MTI guess-back risks over substituted spans (mean; max
-  as a reported diagnostic). Scores each replacement *in its doc_p context*, so neighboring
-  fills partially condition the probe — but it is structurally per-span.
-- **Known blind spot — joint leakage:** relational fills correlate facts ("two days later"
-  resolves exactly once any anchor is pinned); a per-span head cannot price a *set* of fills
-  whose combination identifies. The policy therefore faces the true relational-fill trade-off
-  only partially during training in E0/E1. Consequences:
-  - The frontier-LLM re-identification attacker on doc_p at **evaluation** is the real privacy
-    measure (project law) and will catch joint leakage the reward missed — reported as an
-    outcome, never patched with a per-model knob.
-  - **Escalation trigger** (pre-registered): if eval shows re-identification driven by fill
-    combinations that per-span MTI scored as safe, upgrade A to the document-level encoder head
-    (E2) and retrain. Until then, "the model learns to balance joint information" is only as
-    true as A's ability to see it — this is the sharpest known gap between the training reward
-    and the deployed threat model.
+## 2. Pipeline (normative pseudocode)
 
-### 4.2 Utility term u_qa (the mini round trip)
+### Phase 0 — offline, once per corpus (environment + reward machinery)
 
-Per candidate (doc_p, R), per train-split probe: generalize the question through R (teacher
-questions quote other spans' original surfaces) → extractive reader (SQuAD2 DeBERTa-class,
-local) answers from doc_p → invert the answer through R with the **environment's extractor** →
-token-F1 vs the original surface. Mean over probes.
+```python
+# --- 0a. environment (per document) ---
+for doc in corpus:
+    spans[doc] = detect(doc)                               # frozen detector (§3.2)
+    for s in spans[doc]:
+        levels[s] = lattice(s)                             # NLI-truthfulness-gated (gaps plan Phase 2)
+        for l in levels[s] + [PLACEHOLDER(s.type)]:
+            walk_risk[s, l] = P4(sent(s), s.orig, l)       # precomputed table, ~50 ms × ~20/doc
+        legal[s] = [l for l in levels[s] if walk_risk[s, l] < tau] or [PLACEHOLDER(s.type)]
+        # τ-mask: structural floor — an over-τ level is unsampleable, not merely penalized
 
-- **R-inversion invariance:** legitimate invertible coarsening costs nothing ("Oslo" → "a
-  Norwegian city" scores 1.0 after inversion); keeping the original earns no extra utility —
-  under-anonymization is not rewarded. Utility falls exactly for destruction: unanswerable,
-  unalignable, or non-invertible (collision) substitutions.
-- **u_nli is dropped** from the reward (was ½(u_qa+u_nli)). Measured: mixing it degrades
-  agreement with realized fact recall (clinical ρ 0.367 → 0.183); it is ~flat on register-
-  shifted text and has a coarsening bias (weaker hypotheses entail more easily). It may return
-  as a diagnostic, never as reward, unless redesigned and re-gated.
+# --- 0b. reward machinery ---
+for doc in train_split:
+    qa_probes[doc] = teacher_questions(R_surfaces ∩ gold(doc))   # cached; train/held-out split
+s_hat = measure_echo_survival(mode, type, task)            # ~200 cached remote calls, one-time,
+                                                           # pre-registered; re-measure ⇒ re-gate
+pi_0 = behavior_clone(tau_walk decisions)                  # never RL from random
+train_docs = [d for d in corpus if qa_probes[d]]           # probe-less docs: eval only
 
-### 4.3 What the reward deliberately does not price (and where that surfaces)
+# --- 0c. validation gate (go/no-go BEFORE any training run) ---
+assert constructed_arms_gate(reward, fact_recall_on_out_final) is positive   # §6
+```
 
-| blind spot | surfaces at | pre-registered response |
-|---|---|---|
-| remote paraphrase of fills (`gen_absent`) | eval fact recall on out_final | E1 alignment / E2 reconstructor; also the round-trip-reward upgrade trigger |
-| joint leakage of relational fills | eval attacker on doc_p | A upgrade to doc-level head (E2) |
-| generation fluency damage from placeholder-heavy doc_p | eval fact recall + task metrics on out_final | report; policy re-balances only if the reward's utility term can see it (it can: unanswerable probes) — *the "placeholders read worse but score better" hypothesis is tested at eval, not assumed either way* |
-| unprobed content damage | held-out probe split + eval attacker | probe diversity; report |
+### Phase 1 — stage-1 ranker training (per α; minutes; no remote calls)
 
-### 4.4 Anti-Goodhart / overoptimization controls
+```python
+for epoch, doc in training:
+    for g in 1..G:
+        a_g = sample(pi, legal)                            # one action per span, inside the mask
+        doc_p_g, R_g = assemble(doc, a_g)                  # injectivity enforced here (§3.3)
 
-KL leash to init; low optimization pressure (small G, few epochs before re-gating); held-out
-probe split; held-out corpora at eval; the Gao overoptimization playbook per
-[adverserial-RL.md](../../research/adverserial-RL.md). If reward climbs while gate-style
-realized checks fall, stop and report — that divergence is a finding.
+        # privacy term — P6:
+        A_g = mean( cos_MiniLM(fill(a_g[s]), s.orig)
+                    for s in spans[doc] if mode(a_g[s]) != generic_placeholder )
+        # generic placeholders: label carries no original-signal → excluded (constant)
 
-## 5. Validation gate (before any training run)
+        # utility term — mode-aware, ŝ-discounted (§5.2):
+        U_g = mean( s_hat[mode(a_g[j]), type(j), task] * carry_j
+                    for j in qa_probes[doc].train_split )
+        # carry_j = 1                                    placeholder-syntax fills
+        #         = F1(invert(reader(q̃_j, doc_p_g)), a_j)  prose fills
 
-Constructed arms per doc (no_privacy / tau_walk / all_floor / suppression) → per-doc Spearman
-between u_qa's arm ordering and realized fact recall's. **Go:** clearly positive agreement where
-the ground truth orders arms sanely. Re-run the gate whenever the environment version, probe
-construction, or reward composition changes — the gate validates a (reward, environment) pair,
-not the surrogate in the abstract. Current status: **passed 2026-07-03 for E0**
-(0.37/0.44/0.775; `results/surrogate_validation.json`).
+        r_g = α * (1 - A_g) + (1 - α) * U_g
+    adv = (r - mean(r)) / std(r)                           # group-relative advantage
+    pi.update(REINFORCE(adv) + KL(pi ‖ pi_0))
+# α sweep (~3 values) → 3 policies = 3 operating points
+```
 
-## 6. Key tensions (open, for review)
+### Phase 2 — stage-2 joint GRPO (infiller unfrozen; E1+ only)
 
-1. **Train-in-E0 vs build-E1-first.** E0 is runnable today, but its physics (exact-match
-   inversion) reward placeholder-like anchors and punish relational fills regardless of their
-   true value under a better extractor. If the product's extractor will be learned (project
-   direction), heavy RL investment in E0 optimizes for the wrong physics; E0 stage-1 is still
-   worth running as the cheap mechanism test (does selection learning move anything at all).
-   The fork: how much E0 training is informative before the E1 extractor exists?
-2. **Relational fills: utility vs joint leakage.** The environment permits them (E1); the
-   reward prices their utility (probes) but only partially their risk (per-span A). Until the
-   doc-level head exists, the eval attacker is the only honest scorekeeper — meaning the policy
-   may learn relational fills that eval then reveals as leaky. That is the correct failure mode
-   under this project's rules (measure outcomes, report), but it costs a retrain per A upgrade.
-3. **Placeholder-heavy optima.** Given measured survival asymmetry (placeholders 9/9 vs
-   naturalistic ~5%), the E0/E1 policy may converge on "placeholder almost everywhere" — a
-   legitimate optimum of the stated reward, and possibly the honest answer for the rule
-   extractor. If that offends the product goal (natural doc_p), the goal must enter the reward
-   (a naturalness term) — a deliberate spec change, not a tuning knob.
-4. **Probe sparsity vs corpus breadth.** Training signal concentrates on clinical (3.2/doc);
-   enron trains on 8/16 docs, aeslc barely participates. Options if this binds: expand probe
-   supply (number normalization, teacher-extracted fact tuples from gold), or accept
-   clinical-heavy training and report per-corpus transfer.
-5. **α as a retrain-expensive knob.** One α = one trained operating point; the Pareto curve
-   costs ~3 retrains. Pre-registered fallback: if realized privacy clusters across α, α is a bad
-   placement knob → lexicographic reward (plan, imported decision 4).
+As Phase 1, plus fills `y ~ p_φ(· | doc, span, ℓ)` sampled under the **injectivity-constrained
+decoder** (resample/next-beam on used-set collision; generic placeholder terminal); shared scalar
+advantage on ranker log-probs + infiller token log-probs (PPO-clipped), LoRA update of φ.
+P6 and P4 are then computed on the *generated* fill (no precompute; ~50 ms/span-fill, batched).
+
+### Phase 3 — evaluation (once per α sweep; the only remote-heavy stage)
+
+```python
+for policy in trained_policies + [tau_walk]:               # the walk = control group
+    for doc in HELD_OUT docs:
+        doc_p, R  = policy(doc)
+        out_p     = RemoteLLM(task_prompt(doc_p))          # real round trip, cached
+        out_final = extract(out_p, R)                      # deployed extractor (§3.4)
+        utility  += fact_recall(out_final, held_out_probes)         # headline utility
+        privacy  += 1 - frontier_attacker_success(doc_p)            # REAL attacker — never P4/P6
+        leakthrough += attacker_success(out_final)                  # mandatory second axis
+frontier_claim = pareto(policies) vs pareto(tau_walk)      # at matched REALIZED privacy → §1 verdict
+```
+
+**Honesty boundaries:** P6/P4 never appear in Phase 3 (training's teacher must not grade its own
+student); held-out docs, held-out probe split, held-out attacker; second-remote-model arm per the
+training plan.
+
+## 3. Environment
+
+### 3.1 Episode and action space
+
+One episode = one document (contextual bandit; no multi-step dynamics in v0). Per detected
+quasi-identifier span, the action set is `legal[s]` — τ-legal lattice levels ∪ generic typed
+placeholder. Placeholder is a first-class action, not only a fallback: it is the substitution
+mode with measured round-trip survival (`ph_swapped` 9/9, zero residue), and pricing it lets the
+policy trade naturalness vs survival vs risk per span.
+
+**Placeholder modes** (different privacy contracts):
+- *Generic typed* (`<DATETIME_1>`): label depends only on the detected type — **risk 0 by
+  construction**, exempt from τ, the only legal invariant-fallback.
+- *Descriptive/minted* (`<MEETING_DATE_1>`; E1, infiller-chosen): a generalization in
+  placeholder syntax — carries role semantics, keeps the echo-anchor property, **loses the
+  τ-exemption** (P4-scored like any fill; used-set/indexing applies to the label namespace).
+  Echo survival of descriptive labels is extrapolated from n=9 — smoke-measure before E1 relies
+  on it.
+- Action spectrum by anchor-ness: generic placeholder (risk 0, echo ~certain, no semantics) →
+  descriptive placeholder → relational fill (joint leakage, §5.1) → naturalistic fill
+  (echo ~5% measured in E0).
+
+Direct identifiers (PERSON, CODE): forced generic placeholder, outside the action space.
+**No KEEP action** — the per-span privacy term cannot price kept spans, so KEEP would be a
+reward-hacking channel; revisit only under a document-level A (E2).
+
+### 3.2 Frozen components
+
+The **detector** stays outside the policy: a missed span costs the reward nothing, so gradients
+would teach under-detection; detection recall is the reported privacy ceiling. Measured reminder
+of what this costs: the dominant attacker-recovery channel in the shootout examples is *retained
+context* — undetected sibling mentions ("gastroenterologist" cleartext beside a substituted
+"gastroenterology") — recorded in
+[detection-sibling-mention-leak](../../issues/detection-sibling-mention-leak.md); a leak channel
+no amount of level-selection training can close.
+
+### 3.3 Environment invariants (constraints, never learned behaviors)
+
+Sparse probe reward cannot guarantee structural properties; one violation is silently
+unrecoverable. Enforced at assembly/decoding time:
+
+1. **Injectivity of R** — E0: a level claimed by a different surface is masked out; lattice
+   exhausted → generic placeholder. E1: infiller resamples under a per-doc used-set; generic
+   placeholder terminal. Repeat mentions/coref chains reuse their own replacement.
+2. **τ as a hard ceiling** — `walk_risk[s, l] ≥ τ` ⇒ `l ∉ legal[s]`; exhaustion → generic
+   placeholder (risk 0). *Fixes the measured floor violation* ("Commission" shipped at risk
+   0.147 against τ = 0.02). α, not τ, is the operating-point knob.
+3. **Lattice truthfulness** — all lattice sources pass the NLI gate; rule-sourced lattices
+   (WordNet/GeoNames/buckets) currently bypass it — measured context-wrong fills ("dragon" →
+   "a mythical monster", "vermont" → "a city in Australia"); recorded in
+   [rule-lattice-nli-gate-bypass](../../issues/rule-lattice-nli-gate-bypass.md), fix scheduled
+   with the gaps plan's Phase 2 batch.
+4. **Reward–deployment extractor consistency** — the reward's view of the extractor is the ŝ
+   table, measured under the extractor actually deployed at gate/eval. (The reward's own
+   `invert()` only ever runs the trivial exact path — reader answers are doc_p substrings — so
+   extractor upgrades change gate/eval, never u_qa; the consistency requirement lives entirely
+   in ŝ.)
+5. **Determinism via artifacts** — detection is nondeterministic across processes (measured:
+   3/6 clinical doc_p hashes differ between identical runs); all consumers load the persisted
+   arms artifact (`scripts/build_arms_artifact.py` → `data/task_arms_tau0.02.json`), never
+   re-detect.
+
+### 3.4 Environment versions
+
+| | fills | extractor (`invert`) | status |
+|---|---|---|---|
+| **E0** | static lattice strings ∪ generic placeholder | rule exact/fuzzy-90 | runnable after gaps-plan Phases 1–2 |
+| **E1** | infiller (SFT flan-t5 + LoRA), injectivity-constrained decoding; descriptive/relational fills | E0 + light fuzzy-verify | infiller to build |
+| **E2** | E1 | learned reconstructor; **doc-level attack head** (frozen encoder + heads on SynthPAI attributes) | escalation |
+
+The E1 *semantic aligner* was descoped from the critical path: absorption dominates `gen_absent`
+(82–95% of prose fills leave no trace in out_p; loose-echo headroom < 10% and partly spurious) —
+the echo factor is won at fill-choice time (anchor modes + ŝ), not extraction time. See
+[remote-llm-echo-absorption](../../issues/remote-llm-echo-absorption.md).
+
+## 4. Probes
+
+### 4.1 QA probes (utility axis)
+
+Construction per document, once, cached: unique R surfaces (dedup only — no role filter; the old
+one was a measured bug) → gold-restatement match (canonicalized exact, then fuzzy ≥ 85) → one
+teacher-written natural question per surface (cloze is reader-OOD, measured). Anti-Goodhart:
+per-doc held-out probe subset scored only at evaluation. Supply (16-doc slices): 3.19/doc
+clinical, 1.0 enron, 0.38 aeslc; probe-less docs excluded from training. Why probes and not
+reference overlap: detected spans cover 6–8% of gold tokens — whole-output similarity is noise
+(shuffled-gold floor 1.4–2.9×); probes make the sensitive fraction ≈ 1.
+
+### 4.2 Privacy probes (candidate-sensitive; promotion by attacker correlation)
+
+A probe is promoted only by measured correlation with a real LLM attacker
+([attacks.md § shootout](../attacks.md)); it is a training signal, **never reported privacy**.
+Shootout verdict (150 (span, level) items, two referees — local Qwen3.6 and frontier
+gemini-3.1-pro; ranking stable under both):
+
+| | mechanism | AUC (Qwen / gemini-parsed) | level-ordering | role |
+|---|---|---|---|---|
+| mask-away MTI (legacy) | candidate-invariant | — | — | **disqualified**: identical score for every level (degenerate walk, zero RL gradient) |
+| appositive MLM (P2) | slot masked, fill visible | .57 / .57 | .50 / .33 | **failed** — chance-level |
+| multi-mask PLL (P3) | k masks + visible fill | .68 / .68 | .79 / .57 | reserve |
+| **contrastive re-id (P4)** | anonymity-set softmax, pythia-410m | .64 / .63 | **.86 / .71** | **walk_risk + τ-mask** — the walk's decision is within-span level ordering, P4's measured win; risk semantics match the τ threshold (probability of re-identification) |
+| **embedding proximity (P6)** | cos_MiniLM(fill, original) | **.83 / .77** | .79 / .64 | **reward A** — doc-level discrimination, P6's measured win; ~free |
+
+Blending loses on both metrics under both referees (combo AUC ≤ P6, level-ordering ≤ both) —
+probe-per-job, never mixed scores. Referee severity note: gemini hit@5 ≈ 0.49 on parsed items —
+at τ-walk operating points a frontier attacker recovers ~half the probed fills it engages.
+
+**Known gaps of the chosen pair** (priced at eval, pre-registered responses):
+P6 is context-blind (a context that pins the value raises real risk but not P6) and
+embedding-gameable by a trainable infiller — stage-2 requires either a P4 term joining A or the
+E2 doc-level head; P4's distractor pools are corpus-empirical (thin for DEM/QUANTITY);
+both are per-span — **joint leakage of relational fills is invisible until E2's document head**.
+
+## 5. Reward
+
+### 5.1 Privacy term A (P6)
+
+`A = mean over substituted spans of cos_MiniLM(fill, original)`; generic-placeholder spans
+excluded (constant, no gradient). Max reported as diagnostic. Blind spots and escalation
+triggers: §4.2. The real privacy measure remains the frontier attacker (Phase 3) — if it
+succeeds through fills A scored safe, A escalates (E2) and the policy retrains.
+
+### 5.2 Utility term (mode-aware, ŝ-discounted)
+
+```
+u_j     = ŝ(mode_j, type_j, task) · carry_j
+carry_j = 1                                     placeholder-syntax fills
+        = F1(invert(reader(q̃_j, doc_p)), a_j)   prose fills
+U       = mean_j u_j
+```
+
+- **Prose fills** take the reader path (question generalized through R → SQuAD2 reader on doc_p
+  → answer inverted → token-F1): semantic readability + R-invertibility. Coarsening invariance
+  holds: invertible coarsening scores 1.0; keeping the original earns nothing —
+  under-anonymization is not rewarded.
+- **Placeholder-syntax fills skip the reader** — measured SQuAD2 null-abstention on placeholder
+  tokens under-scores the realizedly best-surviving mode ~2× (all-placeholder u_qa 0.107 vs
+  tau_walk 0.238 on clinical) while inversion restores F1 = 1.0 whenever the reader does answer.
+  Their carriage is mechanical (echo + swap-back) ⇒ `carry ≡ 1`, weight = ŝ.
+- **ŝ multiplies both paths** — the reward's only view of the echo factor (absorption dominates
+  realized loss and u_qa is structurally blind to it). Pre-registered; re-measured only on
+  environment change (prompt, extractor, remote model); every re-measurement re-gates.
+- **u_nli is dropped** (measured: mixing it degrades gate agreement 0.367 → 0.183); may return
+  as a diagnostic only.
+
+### 5.3 Anti-Goodhart controls
+
+KL leash to the behavior-clone init; low optimization pressure (small G, few epochs between
+re-gates); held-out probe split; held-out corpora/attacker at eval; Gao overoptimization playbook
+([adverserial-RL.md](../../research/adverserial-RL.md)). Reward climbing while realized checks
+fall = stop and report.
+
+## 6. Baseline and validation gate
+
+The τ-walk must be non-degenerate **before** RL because it is: the control group of
+`frontier_claim` (a broken baseline inflates the learned method — forbidden), the
+behavior-clone teacher of `pi_0`, and the source of the τ-mask and constructed arms. Its two
+measured degeneracies (candidate-invariant probe → binary walk; floor fallback → τ violations)
+are fixed by gaps-plan Phases 1–2.
+
+**Gate (before any training run):** constructed arms (no_privacy / tau_walk / all_floor /
+suppression) per doc → per-doc Spearman between the reward's ordering and realized **fact recall
+on out_final**. Go: clearly positive agreement where the ground truth orders arms sanely, **and**
+the reward separates placeholder-mode from naturalistic-mode arms in the realized direction.
+Re-run on every change to reward composition, probe choice, ŝ, prompt, or extractor — the gate
+validates a (reward, environment) pair. Status: ground truth validated 2026-07-03
+(factrecall~u_qa 0.37/0.44/0.78); the P6+ŝ reward composition is **not yet gated** — that re-run
+is a Phase-4 exit criterion in the gaps plan.
+
+## 7. Open tensions
+
+1. **Stage-2 gameability of P6** — an unfrozen infiller can craft embedding-far,
+   information-close fills. Pre-registered guard: P4 joins A (or E2 head lands) before stage 2
+   unfreezes the infiller.
+2. **Placeholder-heavy optima** — given measured survival asymmetry, the policy may converge on
+   placeholder-almost-everywhere; a legitimate optimum of the stated reward. If product goals
+   demand natural doc_p, naturalness enters the reward as an explicit term — a spec change,
+   never a quiet knob.
+3. **Probe sparsity** — 3.2/1.0/0.4 probes per doc concentrates training on clinical; expansion
+   options (number normalization, teacher fact tuples) queued if it binds.
+4. **α as a retrain-expensive knob** — one α = one operating point; clustering of realized
+   privacy across α triggers the lexicographic fallback (imported decision).
+5. **Upstream leak channel** — detection/coref recall (sibling mentions) is the dominant
+   measured recovery path and is out of this spec's scope; tracked as the detector workstream.
 
 ## Sources
 
-Plan and decision history:
-[2026-07-02-surrogate-grpo-training.md](../../plans/2026-07-02-surrogate-grpo-training.md)
-(gate results, root-cause analysis, component initialization, wall-time);
-[2026-07-02-roundtrip-grpo-training.md](../../plans/2026-07-02-roundtrip-grpo-training.md)
-(GRPO mechanism, round-trip reward kept as upgrade). Eval corpora and metrics:
-[benchmarks.md](../benchmarks.md); attack instruments: [attacks.md](../attacks.md).
-Background: [adverserial-RL.md](../../research/adverserial-RL.md) with
-[Gao et al. 2022](../../../research-wiki/papers/gao2022_reward_overoptimization.md)
-([arXiv 2210.10760](https://arxiv.org/abs/2210.10760)); anti-extractor deletion lesson:
+Gaps and fix order: [2026-07-03-surrogate-rl-gaps-fixes.md](../../plans/2026-07-03-surrogate-rl-gaps-fixes.md).
+Training-plan decisions, wall-time, kill criteria:
+[2026-07-02-surrogate-grpo-training.md](../../plans/2026-07-02-surrogate-grpo-training.md);
+round-trip upgrade path: [2026-07-02-roundtrip-grpo-training.md](../../plans/2026-07-02-roundtrip-grpo-training.md).
+Probe shootout protocol + results: [attacks.md](../attacks.md);
+echo absorption: [remote-llm-echo-absorption.md](../../issues/remote-llm-echo-absorption.md).
+Background: [Gao et al. 2022](../../../research-wiki/papers/gao2022_reward_overoptimization.md)
+([arXiv 2210.10760](https://arxiv.org/abs/2210.10760));
 [NaPaRe](../../../research-wiki/papers/huang2025_tree_search_rewriting.md)
-([arXiv 2509.20838](https://arxiv.org/abs/2509.20838)); surface-similarity pathology excluded
-by R-inversion invariance:
+([arXiv 2509.20838](https://arxiv.org/abs/2509.20838));
 [AgentStealth](../../../research-wiki/papers/shao2025_agentstealth.md)
 ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)).

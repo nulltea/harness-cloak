@@ -172,20 +172,38 @@ the persisted arms artifact; 16 docs × tau_walk/all_floor × 3 corpora):
 (injectivity + hygiene) → Phase 4 (ŝ + mode-aware u_qa) → Phase 5 (re-gate) → RL.
 E1 alignment work is off the critical path; revisit only if the eval residual implicates it.
 
-**Phase 1 — candidate-sensitive risk probe (the RL unblocker, ~1–2 days).**
-Promote appositive-style guess-back into `cloak/probe.py` as the single risk function (gate +
-reward A): attacker sees the replacement, slot masked alongside it. Fix multi-token target
-scoring (score against all content tokens incl. numerics; aggregate per-span, not
-single-token-or-nothing), fix hyphenated-form targets. Aggregation: report mean and max; reward
-uses mean, max is the diagnostic. Acceptance: per-span risk varies across lattice levels of the
-same span (kills the 0.1466-everywhere degeneracy); τ-walk selects intermediate levels on a
-measurable fraction of spans; re-run the τ sweep to observe (for the first time) a real τ axis.
+**Phase 1 — candidate-sensitive risk probes (the RL unblocker, ~1–2 days).**
+*Revised 2026-07-04 after the probe shootout* ([attacks.md](../specs/attacks.md)): the appositive
+MLM originally planned here **failed attacker correlation under both referees** (AUC ≈ chance,
+level-ordering ≤ coin flip) — spiked before building on it. Decided design (probe-per-job, both
+measured winners):
+- **`cloak/probe.py` walk_risk = contrastive re-identification (P4)**: softmax over {original}
+  ∪ ≤15 same-type corpus distractors of length-normalized causal-LM logP (pythia-410m), fill
+  visible via disclosure suffix. Precomputed per (span, level) — ~50 ms × ~20 pairs/doc; serves
+  the τ-walk and the RL action mask.
+- **Reward privacy term A = embedding proximity (P6)**: mean cos_MiniLM(fill, original) over
+  substituted spans; max as diagnostic. Stage-2 guard pre-registered: P4 joins A (or the E2
+  doc-level head lands) before the infiller unfreezes — P6 is embedding-gameable by a trainable
+  generator.
+Acceptance: per-span risk varies across levels (kills the 0.1466 degeneracy); τ-walk selects
+intermediate levels on a measurable fraction of spans; walk-level distribution reported before
+vs after. The held appositive `probe.py` working-tree diff is superseded and gets replaced by
+the P4 implementation.
 
-**Phase 2 — injectivity + placeholder fallback + extractor hygiene (~half a day, one diff).**
+**Phase 2 — injectivity + placeholder fallback + hygiene batch (~1 day, one diff).**
 Used-set constraint in the walk; generic typed placeholder on exhaustion (also closes the
 measured τ-floor violation); extend `ph_residue`/inversion to all `<TYPE_n>`; drop the
-order-matching ambiguity branch (dead after injectivity). Acceptance: self-check asserts
-injective R; no over-τ replacement shipped; typed placeholders invert.
+order-matching ambiguity branch (dead after injectivity). *Added 2026-07-04:* **route
+rule-sourced lattices (WordNet/GeoNames/buckets) through the NLI truthfulness gate** — they
+currently bypass it, shipping context-wrong fills ("dragon"→"a mythical monster",
+"vermont"→"a city in Australia"); see
+[rule-lattice-nli-gate-bypass](../issues/rule-lattice-nli-gate-bypass.md). The second upstream
+defect from the same examples — retained sibling mentions, the measured dominant
+attacker-recovery channel — is recorded in
+[detection-sibling-mention-leak](../issues/detection-sibling-mention-leak.md) and stays on the
+detector workstream, off this critical path. Acceptance: self-check asserts injective R; no
+over-τ replacement shipped; typed placeholders invert; the three measured wrong-sense examples
+produce a truthful level or a placeholder.
 
 **Phase 3 — E1 extractor, scoped by M1 (~2–4 days).**
 Semantic-window aligner with verification gate; FP rate re-measured (M2 harness) after. If M1
