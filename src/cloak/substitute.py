@@ -9,7 +9,7 @@ import re
 
 from cloak.detect import Detector, Span, coref_chains
 from cloak.lattice import TYPE_LABEL, lattice_for
-from cloak.probe import guess_back_risk
+from cloak.probe import walk_risk
 
 DIRECT_TYPES = {"PERSON", "CODE"}
 
@@ -80,7 +80,7 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             chosen, risk = lattice[-1], None
             for cand in lattice:
                 cand_sent = sent.replace(s.text, cand) if s.text in sent else cand
-                risk = guess_back_risk(cand_sent, s.text, cand)
+                risk = walk_risk(cand_sent, s.text, cand, s.type)
                 if risk < tau:
                     chosen = cand
                     break
