@@ -27,9 +27,10 @@ LOCAL_URL = "http://localhost:8060/v1"
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--attacker", required=True)
-    ap.add_argument("--local", action="store_true", default=True,
-                    help="use llama-swap (free); paid proxy models need explicit permission")
-    ap.add_argument("--max-tokens", type=int, default=400)
+    ap.add_argument("--remote", action="store_true",
+                    help="PAID proxy model — only with explicit permission; throttled 25/min")
+    ap.add_argument("--max-tokens", type=int, default=400,
+                    help="thinking models bill hidden reasoning: gemini needs ~2000")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -38,13 +39,28 @@ def main():
     items = report["items"]
 
     from rapidfuzz import fuzz
-    kw = dict(temperature=0.0, max_tokens=args.max_tokens,
-              extra_body={"chat_template_kwargs": {"enable_thinking": False}})
-    if args.local:
-        kw.update(base_url=LOCAL_URL, api_key="x")
-    llm = LLMClient(args.attacker, **kw)
-    replies = pmap(lambda it: llm.generate(ATTACK_PROMPT.format(
-        fill=it["fill"], typ=it["type"], sent=it["sent_p"])), items, workers=6)
+    if args.remote:
+        llm = LLMClient(args.attacker, temperature=0.0, max_tokens=args.max_tokens)
+
+        def ask(it):  # 25 req/min upstream quota
+            import openai
+            for _ in range(6):
+                try:
+                    r = llm.generate(ATTACK_PROMPT.format(
+                        fill=it["fill"], typ=it["type"], sent=it["sent_p"]))
+                    time.sleep(2.6)
+                    return r
+                except (openai.RateLimitError, openai.InternalServerError,
+                        openai.APIConnectionError):  # 429 quota + transient 5xx
+                    time.sleep(65)
+            return ""
+        replies = pmap(ask, items, workers=1)
+    else:
+        llm = LLMClient(args.attacker, temperature=0.0, max_tokens=args.max_tokens,
+                        base_url=LOCAL_URL, api_key="x",
+                        extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+        replies = pmap(lambda it: llm.generate(ATTACK_PROMPT.format(
+            fill=it["fill"], typ=it["type"], sent=it["sent_p"])), items, workers=6)
     truncated = 0
     for it, r in zip(items, replies):
         m = re.search(r"\[.*?\]", r or "", re.DOTALL)

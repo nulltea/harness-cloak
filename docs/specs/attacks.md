@@ -88,8 +88,19 @@ referee-independent and re-scorable via `scripts/spikes/probe_shootout_rescore.p
 0.823 — no gain over P6 alone (0.827); level-ordering of the blend 0.714 — *worse than either*.
 Naive blending averages away each probe's strength; if both jobs matter, assign probes to jobs
 (P4-style for per-level walk ordering, P6-style for doc-level discrimination) rather than mixing
-scores. Level-ordering differences (0.857 vs 0.786) rest on few label-discordant span pairs —
-treat as suggestive until the second referee lands.
+scores.
+
+**Second referee (frontier): gemini-3.1-pro-preview, 2026-07-03** — hit@1 0.200 / hit@5 0.313
+overall; **hit@5 0.490 among the 96 parsed replies** (54/150 empty after 429/503 retry
+exhaustion; scored as misses — parsed-only AUCs shift ≤ 0.03, ranking unchanged). AUC@5
+all/parsed-only: P2 0.571/0.569, P3 0.663/0.675, P4 0.601/0.631, P6 **0.760/0.768**;
+level-ordering: P2 0.333, P3 0.571, P4 **0.714**, P6 0.643; combo AUC 0.727/0.747 (again below
+P6 alone). **Cross-referee verdict (stable under both):** P2 disqualified; P6 best
+discrimination; P4 best within-span level-ordering; blending never wins. Attacker-severity
+note: hit@5 ≈ 0.5 on engaged fills at τ-walk operating points — the dominant recovery channel
+in the examples is *retained context* (undetected sibling mentions, e.g. "gastroenterologist"
+left cleartext next to a substituted "gastroenterology"), i.e. detection/coref recall, upstream
+of level selection.
 
 ## 4. LLM reconstruction (deferred, documented)
 
