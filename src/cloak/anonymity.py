@@ -27,10 +27,12 @@ from cloak.lattice import CONTINENTS, TYPE_LABEL, _MONTHS, _load_geo
 
 GENERIC = 1e9
 
-# provisional floors — Task 2 replaces these with values calibrated on the measured
-# count-vs-attacker table (empirical-honesty rule: never ship invented numbers)
-K_FLOORS = {"LOC": 50.0, "ORG": 50.0, "DATETIME": 30.0,
-            "DEM": 1.0, "QUANTITY": 1.0, "MISC": 1.0, "OTHER": 1.0}
+# floors calibrated on the count-vs-attacker shootout (results/lattice_count_shootout.json,
+# gemini referee): every measured type at/below ~0.3 attacker hit@5; DATETIME=100 excludes
+# the leaky month-level band (10-100 bucket measured 0.769). MISC/OTHER have no shootout
+# items — user-waivable, fail-closed parsing governs them.
+K_FLOORS = {"LOC": 100.0, "ORG": 100.0, "DATETIME": 100.0,
+            "DEM": 100.0, "QUANTITY": 100.0, "MISC": 1.0, "OTHER": 1.0}
 
 _geo_counts_cache = None
 
