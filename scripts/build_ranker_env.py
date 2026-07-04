@@ -59,7 +59,8 @@ def main():
                 "spans": spans,
                 "probes": {"train": [p for i, p in enumerate(ps) if i not in held_idx],
                            "held_out": [p for i, p in enumerate(ps) if i in held_idx]},
-                "trainable": bool(len(ps) - len(held_idx)),  # probe-less docs: eval only
+                # trainable needs BOTH a utility signal and a decision to make
+                "trainable": bool(len(ps) - len(held_idx)) and bool(spans),
             }
         n_spans = sum(len(v["spans"]) for v in env["corpora"][corpus].values())
         n_train = sum(v["trainable"] for v in env["corpora"][corpus].values())

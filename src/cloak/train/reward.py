@@ -207,8 +207,21 @@ def u_nli(doc_p: str, R: list[dict], gold: str) -> tuple[float | None, list[dict
     return frac, details
 
 
+def stage1_reward(A: float, U: float | None, alpha: float) -> float:
+    """The normative stage-1 reward (spec §5): r = α(1−A) + (1−α)·u_qa.
+
+    A = mean P6 fill-proximity over level-mode fills (cloak.probe.reward_privacy, or the
+    environment artifact's cached p6 values — identical numbers, fill_proximity is
+    deterministic). U = u_qa over the doc's TRAIN-split probes; None (no probes) is a
+    caller error for training docs — train only on probe-bearing docs.
+    """
+    return alpha * (1.0 - A) + (1.0 - alpha) * (U if U is not None else 0.0)
+
+
 def u_surr(doc_p: str, R: list[dict], gold: str, probes: list[dict] | None = None) -> dict:
-    """Surrogate utility = mean of available components (each may be None = no signal)."""
+    """LEGACY diagnostic (gate history): mean of u_qa and u_nli. NOT the training reward —
+    u_nli is off the normative path (measured: it degrades gate agreement 0.367→0.183);
+    stage-1 uses stage1_reward above."""
     qa, qa_det = u_qa(doc_p, R, probes or [])
     nli, nli_det = u_nli(doc_p, R, gold)
     parts = [x for x in (qa, nli) if x is not None]

@@ -372,7 +372,7 @@
      ],
      "held_out": []
     },
-    "trainable": true
+    "trainable": false
    },
    "aci/D2N002": {
     "spans": [
@@ -1317,7 +1317,7 @@
      ],
      "held_out": []
     },
-    "trainable": true
+    "trainable": false
    },
    "aci/D2N005": {
     "spans": [
@@ -2167,7 +2167,7 @@
      ],
      "held_out": []
     },
-    "trainable": true
+    "trainable": false
    },
    "aci/D2N008": {
     "spans": [
@@ -3815,7 +3815,7 @@
      ],
      "held_out": []
     },
-    "trainable": true
+    "trainable": false
    },
    "enron/7": {
     "spans": [
@@ -5734,7 +5734,7 @@
      ],
      "held_out": []
     },
-    "trainable": true
+    "trainable": false
    },
    "aeslc/allen-p_inbox_45": {
     "spans": [
