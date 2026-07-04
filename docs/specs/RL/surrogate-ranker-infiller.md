@@ -93,7 +93,12 @@ for doc in corpus:
         for l in levels[s] + [PLACEHOLDER(s.type)]:
             walk_risk[s, l] = P4(sent(s), s.orig, l)       # precomputed table, ~50 ms × ~20/doc
         legal[s] = [l for l in levels[s] if walk_risk[s, l] < tau] or [PLACEHOLDER(s.type)]
-        # τ-mask: structural floor — an over-τ level is unsampleable, not merely penalized
+        #                                                          ^^^^^^^^^^^^^^^^^^^^^^^
+        # τ-mask: structural floor — an over-τ level is unsampleable, not merely penalized.
+        # The `or [PLACEHOLDER]` branch is NOT an eval-only detail: it is what keeps the
+        # action space non-empty in TRAINING, the safety floor at DEPLOYED INFERENCE (the
+        # trained ranker samples from this same mask), the thing that keeps pi_0's clone
+        # teacher τ-clean, and the eval baseline's exhaustion rule. See §3.3-2.
 
 # --- 0b. reward machinery ---
 for doc in train_split:
@@ -198,17 +203,48 @@ no amount of level-selection training can close.
 Sparse probe reward cannot guarantee structural properties; one violation is silently
 unrecoverable. Enforced at assembly/decoding time:
 
-1. **Injectivity of R** — E0: a level claimed by a different surface is masked out; lattice
-   exhausted → generic placeholder. E1: infiller resamples under a per-doc used-set; generic
-   placeholder terminal. Repeat mentions/coref chains reuse their own replacement.
+1. **Injectivity of R** — the infiller *resolves* collisions (context-aware fill choice); the
+   environment *guarantees* injectivity; RL never learns the invariant and the reward never
+   prices collisions (they cannot occur). Per environment version:
+   - **E0 (now, stage-1):** used-set in the walk — a level claimed by a different surface is
+     masked out; exhaustion → generic placeholder. Required *before* stage-1 RL even though the
+     infiller will later own resolution: E0 fills are static lattice strings (nothing resolves
+     yet), and both the training environment and the τ-walk control group must be injective.
+   - **E1 (infiller):** constrained-decoding wrapper (non-RL infrastructure, ships with the
+     infiller build): sample fill → canonical form claimed by another surface → resample /
+     next beam → generic placeholder terminal. RL optimizes *which legal fill*; the wrapper
+     guarantees legality. Pre-registered smoke measurement: resample-convergence / fallback
+     rate — a high fallback rate indicates an infiller diversity (SFT-data) problem, not an
+     RL problem.
+   - Repeat mentions/coref chains reuse their own replacement (still injective).
 2. **τ as a hard ceiling** — `walk_risk[s, l] ≥ τ` ⇒ `l ∉ legal[s]`; exhaustion → generic
    placeholder (risk 0). *Fixes the measured floor violation* ("Commission" shipped at risk
-   0.147 against τ = 0.02). α, not τ, is the operating-point knob.
-3. **Lattice truthfulness** — all lattice sources pass the NLI gate; rule-sourced lattices
-   (WordNet/GeoNames/buckets) currently bypass it — measured context-wrong fills ("dragon" →
-   "a mythical monster", "vermont" → "a city in Australia"); recorded in
-   [rule-lattice-nli-gate-bypass](../../issues/rule-lattice-nli-gate-bypass.md), fix scheduled
-   with the gaps plan's Phase 2 batch.
+   0.147 against τ = 0.02). α, not τ, is the operating-point knob. **The exhaustion fallback is
+   load-bearing in four places, only one of which is evaluation**: (a) the *training
+   environment* — `legal[s]` must be non-empty when no level passes τ, and the generic
+   placeholder is that guaranteed-legal action (otherwise: empty action space, or re-admitting
+   over-τ levels); (b) *deployed inference* — the trained ranker also samples only from
+   `legal[s]`, so when `legal[s] = {placeholder}` the fallback operates through the mask (the
+   ranker replaced the walk's *choice*, never the legality boundary); (c) the *behavior-clone
+   init* — a walk that ships τ-violations teaches violations to `pi_0`; (d) the *eval control
+   group*. τ-scale note: under the contrastive probe, risk is re-identification probability in
+   a ~16-candidate set (chance ≈ 0.0625), so meaningful τ sweeps live in roughly
+   [0.0625, 0.3] — a legitimate knob re-sweep, not a calibration.
+3. **Truthfulness as a constraint (generate-then-verify)** — **the reward cannot price
+   truthfulness**: u_qa is invariant to fill semantics (inversion restores originals
+   regardless) and A prices only proximity-leak, so a false-but-safe-and-extractable fill is
+   reward-optimal while feeding the remote model false premises. Truthfulness therefore lives
+   in the environment as a verifier: the NLI entailment gate (premise = original sentence,
+   hypothesis = sentence with the fill; keep iff entailed). E0: all lattice sources pass the
+   gate — rule-sourced lattices (WordNet/GeoNames/buckets) currently bypass it, shipping
+   measured context-wrong fills ("dragon" → "a mythical monster", "vermont" → "a city in
+   Australia"); fix scheduled in the gaps plan's Phase-2 batch. E1: the same gate joins the
+   infiller's decode loop — sample fill → injectivity check → τ check → NLI check →
+   accept / resample / placeholder. The infiller *proposes* (context-aware), the gate
+   *verifies*; RL optimizes within the verified-legal set. Known limit: NLI is a cheap
+   verifier, not a semantics oracle (word-sense errors may pass as lexical hypernymy) — the
+   residual and the proposed truthfulness-reward extension are tracked in
+   [rule-lattice-nli-gate-bypass](../../issues/rule-lattice-nli-gate-bypass.md).
 4. **Reward–deployment extractor consistency** — the reward's view of the extractor is the ŝ
    table, measured under the extractor actually deployed at gate/eval. (The reward's own
    `invert()` only ever runs the trivial exact path — reader answers are doc_p substrings — so
