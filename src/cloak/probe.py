@@ -4,12 +4,17 @@ Two probes, two jobs (docs/specs/attacks.md §3; docs/specs/RL/surrogate-ranker-
 
 - walk_risk (contrastive re-identification): P(attacker picks the original out of a same-type
   anonymity set | context + visible fill). Length-normalized causal-LM log-probs (pythia-410m)
-  softmaxed over {original} ∪ sampled same-type corpus distractors. Serves the τ-walk and the
-  RL action mask — best within-span level-ordering under both shootout referees (.86/.71).
+  softmaxed over {original} ∪ sampled same-type corpus distractors. **OFFLINE-ONLY** as of the
+  2026-07-04 structural-lattice-risk migration: shootout calibration/validation and build-time
+  diagnostics (a feature/diagnostic column on the arms artifact), NEVER on a deployment or
+  training legality path. The legality mask is now `cloak.anonymity.aset_count` compared against
+  per-type count floors (see docs/research/inference-risk-enforcement.md); walk_risk kept its
+  best-within-span level-ordering (.86/.71) but lost the mask to the structural measure.
 - fill_proximity / reward_privacy (embedding proximity): cos_MiniLM(fill, original), the RL
-  reward's privacy term A — best attacker-discrimination AUC (.83/.77). Context-blind and
-  embedding-gameable by a trainable generator: stage-2 requires walk_risk joining A or the
-  document-level head (pre-registered guard).
+  reward's privacy term A — best attacker-discrimination AUC (.83/.77) — UNCHANGED, still the
+  training reward's per-span privacy term. Context-blind and embedding-gameable by a trainable
+  generator: stage-2 requires walk_risk (offline-computed) joining A or the document-level head
+  (pre-registered guard).
 
 Both replace the legacy mask-away MTI probe, which was candidate-INVARIANT (identical score for
 every lattice level of a span — degenerate τ-walk, zero RL privacy gradient; measured
