@@ -296,7 +296,14 @@ TYPE_LABEL = {"ORG": "an organization", "LOC": "a place", "MISC": "something",
 
 
 def lattice_for(span_text: str, span_type: str, context: str = "") -> list[str]:
-    """Zero-cost sources only; teacher entities must be pre-cached via teacher_lattices."""
+    """Zero-cost sources only; teacher entities must be pre-cached via teacher_lattices.
+
+    Every source passes the NLI truthfulness gate against the span's context — rule sources
+    used to bypass it, shipping context-wrong senses ("dragon" -> "a mythical monster",
+    "vermont" -> "a city in Australia"); docs/issues/rule-lattice-nli-gate-bypass.md.
+    Gate-empty lattices fall to the generic type label (near-vacuous, safe floor); the
+    substitutor's tau/injectivity exhaustion then decides level vs placeholder.
+    """
     if span_type == "DATETIME":
         got = bucket_date(span_text)
     elif span_type == "QUANTITY":
@@ -307,6 +314,8 @@ def lattice_for(span_text: str, span_type: str, context: str = "") -> list[str]:
         got = wordnet_chain(span_text)
         if not got and CACHE.exists():
             got = json.loads(CACHE.read_text()).get(span_text.lower(), {}).get("lattice")
+    if got and context:
+        got = nli_gate(span_text, context, got)
     return got or [TYPE_LABEL.get(span_type, "something")]
 
 

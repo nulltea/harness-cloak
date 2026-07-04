@@ -55,18 +55,27 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
     spans = coref_chains(text, spans)
     counters: dict[str, int] = {}
     chain_ph: dict[int, str] = {}
+    used: dict[str, str] = {}          # replacement canon -> surface canon (injectivity of R)
+    by_surface: dict[str, dict] = {}   # surface canon -> {replacement, risk, ...} (repeat reuse)
     record = []
     out = text
+
+    def _typed_placeholder(s) -> str:
+        counters[s.type] = counters.get(s.type, 0) + 1
+        return f"<{s.type}_{counters[s.type]}>"
+
     for s in sorted(spans, key=lambda s: -s.start):  # right-to-left keeps offsets valid
         entry = {"start": s.start, "end": s.end, "surface": s.text, "type": s.type,
                  "chain": s.chain, "score": s.score}
+        skey = s.text.lower()
         if s.type in DIRECT_TYPES:
             ph = chain_ph.get(s.chain)
             if ph is None:
-                counters[s.type] = counters.get(s.type, 0) + 1
-                ph = f"<{s.type}_{counters[s.type]}>"
+                ph = _typed_placeholder(s)
                 chain_ph[s.chain] = ph
             entry.update(action="placeholder", replacement=ph, risk=0.0)
+        elif skey in by_surface:  # repeat mention: reuse its own replacement (still injective)
+            entry.update(by_surface[skey])
         else:
             sent = _sentence_around(text, s.start, s.end)
             lattice = lattice_for(s.text, s.type, sent)
@@ -77,18 +86,31 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
                        if not distinctive & (set(re.findall(r"\d[\d,.]*\d|\d", c)) |
                                              set(re.findall(r"\w{3,}", c.lower())))] \
                 or [TYPE_LABEL.get(s.type, "something")]
-            chosen, risk = lattice[-1], None
+            chosen, risk = None, None
             for cand in lattice:
+                if used.get(cand.lower(), skey) != skey:
+                    continue  # claimed by a different surface (injectivity)
                 cand_sent = sent.replace(s.text, cand) if s.text in sent else cand
-                risk = walk_risk(cand_sent, s.text, cand, s.type)
-                if risk < tau:
-                    chosen = cand
+                r = walk_risk(cand_sent, s.text, cand, s.type)
+                if r < tau:
+                    chosen, risk = cand, r
                     break
-            prev = text[:s.start].rstrip()
-            sent_start = not prev or prev[-1] in ".!?\n"
-            chosen = (chosen[0].upper() if sent_start else chosen[0].lower()) + chosen[1:]
-            entry.update(action="generalize", replacement=chosen, lattice=lattice,
-                         risk=round(risk, 4) if risk is not None else None)
+            if chosen is None:
+                # exhausted (every level over tau or claimed): generic typed placeholder —
+                # risk 0 by construction; tau becomes a hard guarantee, never the old
+                # over-budget floor. Spec §3.3-2.
+                entry.update(action="placeholder", replacement=_typed_placeholder(s),
+                             risk=0.0, lattice=lattice, exhausted=True)
+            else:
+                prev = text[:s.start].rstrip()
+                sent_start = not prev or prev[-1] in ".!?\n"
+                chosen = (chosen[0].upper() if sent_start else chosen[0].lower()) + chosen[1:]
+                used[chosen.lower()] = skey
+                entry.update(action="generalize", replacement=chosen, lattice=lattice,
+                             risk=round(risk, 4))
+            by_surface[skey] = {k: entry[k] for k in
+                                ("action", "replacement", "risk", "lattice")
+                                if k in entry}
         out = out[:s.start] + entry["replacement"] + out[s.end:]
         record.append(entry)
     out = re.sub(r"\b([Aa]n?|[Tt]he) (?=(?:an?|the)\b)", "", out)  # "a a person", "the a structure"
@@ -116,12 +138,25 @@ if __name__ == "__main__":
     print(doc_p)
     for r in R:
         print(f"  {r['action']:11s} {r['surface']!r:22s} -> {r['replacement']!r} "
-              f"(risk={r.get('risk')})")
+              f"(risk={r.get('risk')}{', EXHAUSTED' if r.get('exhausted') else ''})")
     assert "Sarah" not in doc_p and "36110/97" not in doc_p
     assert "Oslo" not in doc_p and "Bergen" not in doc_p
     assert "120,000" not in doc_p, doc_p  # income is a SynthPAI gold attribute
     ph = [r["replacement"] for r in R if r["surface"].startswith("Sarah")]
     assert len(set(ph)) == 1, ph  # same chain -> same placeholder
+
+    # injectivity of R: a replacement maps back to one entity — one surface for
+    # generalizations, one coref chain for placeholders (same chain shares its token)
+    rep_owner = {}
+    for r in R:
+        owner = r["surface"].lower() if r["action"] == "generalize" else f"chain:{r['chain']}"
+        prev = rep_owner.setdefault(r["replacement"].lower(), owner)
+        assert prev == owner, (r["replacement"], prev, owner)
+    # tau is a hard guarantee: every shipped generalization is under budget
+    assert all(r["risk"] < sub.tau for r in R if r["action"] == "generalize"), R
+    # exhausted spans ship as typed placeholders, never over-tau floors
+    assert all(re.fullmatch(r"<[A-Z]+_\d+>", r["replacement"])
+               for r in R if r.get("exhausted")), R
 
     # lowercase-name routing: names stay PERSON, role nouns generalize
     assert not _is_role_phrase("martha") and not _is_role_phrase("dmitri")

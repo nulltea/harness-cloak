@@ -36,6 +36,12 @@ measured examples produce either a truthful level or a placeholder.
 
 ## Status after the Phase-2 fix: PARTIALLY resolved — the verifier has a known ceiling
 
+**Measured on the three motivating examples (2026-07-04, gate live in `lattice_for`):**
+"vermont" → gate rejects the Australia chain → generic floor "a place" (**fixed**);
+"dragon" → "a mythical monster" and "washington" → "a city in District of Columbia" **pass the
+gate** — the word-sense ceiling below, exactly as predicted. 1/3 fixed; the other two are the
+residual class this issue stays open for.
+
 The NLI gate measures **sentence-level entailment**: keep the candidate iff the fill-substituted
 sentence is a logically weaker claim the original sentence supports (P(entailment) ≥ 0.6). That
 reliably catches *unsupported specifics* ("vermont" → "a city in **Australia**": the premise
