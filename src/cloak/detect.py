@@ -55,6 +55,45 @@ def _chunks(text: str, max_chars: int = 1200):
         pos = end
 
 
+def _guarded_map_entities_to_original(self, outputs, valid_to_orig_idx,
+                                      all_start_token_idx_to_text_idx,
+                                      all_end_token_idx_to_text_idx, valid_texts, num_original_texts):
+    """Drop-in for gliner BaseEncoderGLiNER._map_entities_to_original with a bounds guard.
+
+    Some fine-tuned span models (observed on the deberta-v3-large PII fine-tune at threshold < ~0.1)
+    emit low-confidence spans whose token indices land in the PADDING region, past the real sequence
+    (e.g. start=225 into a 203-token map). Upstream indexes the token->char map unguarded and raises
+    IndexError. Those spans map to no real text, so we drop them — this only fires on phantom padding
+    predictions (a no-op for models that don't produce them, e.g. the base fine-tune). NOT a threshold
+    change: the operating point is untouched; only out-of-range predictions are discarded.
+    """
+    all_entities = [[] for _ in range(num_original_texts)]
+    for valid_i, output in enumerate(outputs):
+        smap = all_start_token_idx_to_text_idx[valid_i]
+        emap = all_end_token_idx_to_text_idx[valid_i]
+        entities = []
+        for span in output:
+            if span.start >= len(smap) or span.end >= len(emap):
+                continue                                   # phantom span in the padding region
+            s, e = smap[span.start], emap[span.end]
+            ent = {"start": s, "end": e, "text": valid_texts[valid_i][s:e],
+                   "label": span.entity_type, "score": span.score}
+            if span.class_probs is not None:
+                ent["class_probs"] = span.class_probs
+            entities.append(ent)
+        all_entities[valid_to_orig_idx[valid_i]] = entities
+    return all_entities
+
+
+def _install_gliner_bounds_guard():
+    """Idempotently patch the gliner span->text mapping with the bounds-guarded version above."""
+    from gliner.model import BaseEncoderGLiNER
+    if getattr(BaseEncoderGLiNER._map_entities_to_original, "_bounds_guarded", False):
+        return
+    _guarded_map_entities_to_original._bounds_guarded = True
+    BaseEncoderGLiNER._map_entities_to_original = _guarded_map_entities_to_original
+
+
 class Detector:
     # Deployment default (decided 2026-07-04): the multi-domain fine-tune v2 — TAB QUASI 0.979,
     # generality 0.872; research-wiki/training/2026-07-04-ft-detector-quasi.md. Threshold 0.3 =
@@ -65,6 +104,7 @@ class Detector:
         import torch
         from gliner import GLiNER
         from presidio_analyzer import AnalyzerEngine
+        _install_gliner_bounds_guard()   # guard against padding-region phantom spans (see function docstring)
         self.threshold = threshold
         self.batch_size = batch_size
         self.gliner = GLiNER.from_pretrained(gliner_model)

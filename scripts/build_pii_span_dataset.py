@@ -5,6 +5,19 @@ With --mix: multi-domain mix (fine-tune v2) — TAB (anchor) + auxiliary sources
 types, plus an optional diverse-label slice (Pile-NER, own labels) for open-label generality. TAB stays
 dominant by a token/window cap. See research-wiki/training/2026-07-04-ft-detector-quasi.md.
 
+NOTE on the `--mix nemotron=N,pilener=N` numbers: N is only the HF **stream depth** (`.take(N)`), NOT the
+kept-window count. Kept windows for a mapped aux source are capped by MIX_RATIO relative to TAB
+(cap = MIX_RATIO[src]/MIX_RATIO["tab"] * n_tab); raising N above what fills that cap adds nothing. Set N
+generously — large enough to fill the cap after empties/offset-drops.
+
+With --balance-rare (fine-tune v3, generality-first): (1) after the mapped schema pool (TAB + Nemotron +
+wikibio) is assembled, upsample-with-replacement every window containing a scarce gap type
+(MISC/DEM/QUANTITY), bounded to a global <=x2 duplication ceiling (a bounded nudge, not full balance —
+DATETIME:MISC is ~10:1, which <=x2 can't equalize without memorizing scarce MISC); (2) size the Pile-NER
+slice to PILE_FRAC of the FINAL total, POST-balance, so per-type upsampling (TAB-8 windows only) never
+dilutes the diverse-label generality signal. Under --balance-rare, `pilener=N` sets only the stream depth;
+set it high enough to fill PILE_FRAC. See research-wiki/training/2026-07-04-ft-detector-large-balanced.md.
+
 Every source yields (text, [(char_start, char_end, label_phrase)]); windows are 150-word passages that
 never cut inside a span (char-based chunkers split abbreviated names), words via gliner's WordsSplitter
 so tokenization matches inference, subword length preflighted against the model budget.
@@ -35,6 +48,12 @@ SEED = 42
 
 # v2 mix target shares (by windows), TAB-anchored — see the training-experiment spec.
 MIX_RATIO = {"tab": 0.50, "nemotron": 0.25, "wikibio": 0.15, "pilener": 0.10}
+
+# v3 (--balance-rare): Pile-NER slice as a fraction of the FINAL (post-balance) total. 0.25 = generality-first
+# (v2's proven generality lever, raised from ~10%). Only used under --balance-rare; else pilener uses MIX_RATIO.
+PILE_FRAC = 0.25
+# scarce TAB-8 gap types upsampled by --balance-rare (v2's lowest-recall QUASI types).
+RARE_TYPES = {"MISC", "DEM", "QUANTITY"}
 
 # Nemotron-PII label -> TAB entity_type. Unmapped labels are DROPPED (drop-not-invent). No MISC
 # (identifying events) and no QUANTITY come from Nemotron — those stay TAB(+bio) only.
@@ -260,6 +279,31 @@ def _finalize(tag, recs, conflicts, dropped, tok):
     return kept
 
 
+def _balance_rare(recs, rng):
+    """Upsample-with-replacement schema-pool windows containing a scarce gap type (RARE_TYPES), one extra
+    copy each, under a GLOBAL <=x2 duplication ceiling: a window already present twice (e.g. from the
+    wikibio oversample) gets no further copy, so nothing ever reaches x3. A bounded nudge (not full
+    balance) — stays inside the memorization-safe gap the v2 memorize probe established (MISC train 0.926
+    vs test 0.895 at <=x2)."""
+    rare_phrases = {p for p, t in GLINER_LABELS.items() if t in RARE_TYPES}
+    key = lambda r: json.dumps(r, sort_keys=True)
+    counts = Counter(key(r) for r in recs)          # pre-balance multiplicity (wikibio dups already here)
+    out, seen, added = list(recs), set(), 0
+    for r in recs:
+        if not any(sp[2] in rare_phrases for sp in r["ner"]):
+            continue
+        k = key(r)
+        if counts[k] >= 2 or k in seen:             # already at the <=x2 ceiling (or copied this pass)
+            continue
+        out.append(r)
+        seen.add(k)
+        added += 1
+    rng.shuffle(out)
+    print(f"  [balance-rare] +{added} copies of MISC/DEM/QUANTITY windows (global <=x2); "
+          f"pool {len(recs)} -> {len(out)}")
+    return out
+
+
 def build(args):
     rng = random.Random(SEED)
     tok = _tokenizer()
@@ -267,11 +311,14 @@ def build(args):
     print(f"== source: tab ({args.train}) ==")
     tab, c, d = source_windows(tab_source(args.train))
     train_recs = _finalize("tab", tab, c, d, tok)
-    tab = train_recs
+    n_tab = len(train_recs)
 
     if args.mix:
-        n_tab = len(tab)
+        pile_spec = None
         for name, spec in args.mix.items():
+            if name == "pilener" and args.balance_rare:
+                pile_spec = spec                      # sized AFTER balancing (post-balance fraction)
+                continue
             if name == "nemotron":
                 pairs = nemotron_source(spec)
             elif name == "pilener":
@@ -290,6 +337,21 @@ def build(args):
                 recs = [rng.choice(recs) for _ in range(min(cap, 2 * len(recs)))]
             if recs:
                 train_recs += _finalize(name, recs, c, d, tok)
+
+        # v3: per-type balancing on the schema pool (TAB-8 windows only), BEFORE the diverse Pile slice
+        if args.balance_rare:
+            train_recs = _balance_rare(train_recs, rng)
+
+        # v3: Pile-NER sized to PILE_FRAC of the FINAL total, POST-balance (own labels; generality lever)
+        if pile_spec is not None:
+            n_pile = int(round(PILE_FRAC / (1 - PILE_FRAC) * len(train_recs)))
+            print(f"== source: pilener (post-balance target ~{n_pile} ~= {PILE_FRAC:.0%} of final) ==")
+            recs, c, d = source_windows(pilener_source(pile_spec), cap=n_pile * 3)
+            recs = [r for r in recs if r["ner"]]
+            if len(recs) > n_pile:
+                recs = rng.sample(recs, n_pile)
+            if recs:
+                train_recs += _finalize("pilener", recs, c, d, tok)
 
     rng.shuffle(train_recs)
     os.makedirs(args.out_dir, exist_ok=True)
@@ -328,6 +390,26 @@ def _selfcheck():
     print(f"selfcheck: {checked} spans, {mism} recon mismatches, {lost} lost "
           f"({'OK' if mism == 0 and lost == 0 else 'FAIL'})")
     assert mism == 0 and lost == 0
+    _balance_selfcheck()
+
+
+def _balance_selfcheck():
+    """--balance-rare invariants: rare-type windows get one copy (->x2), common-only untouched, and the
+    global <=x2 ceiling holds for windows already doubled (wikibio-style)."""
+    rng = random.Random(0)
+    misc, dem, person = TYPE2PHRASE["MISC"], TYPE2PHRASE["DEM"], TYPE2PHRASE["PERSON"]
+    common = {"tokenized_text": ["a"], "ner": [[0, 0, person]]}   # common only -> not upsampled
+    rare1 = {"tokenized_text": ["b"], "ner": [[0, 0, misc]]}      # rare, single -> +1 copy
+    rare2 = {"tokenized_text": ["c"], "ner": [[0, 0, dem]]}       # rare, single -> +1 copy
+    dup = {"tokenized_text": ["d"], "ner": [[0, 0, misc]]}        # rare but already x2 -> NOT copied again
+    out = _balance_rare([common, rare1, rare2, dup, dict(dup)], rng)
+    cnt = Counter(json.dumps(r, sort_keys=True) for r in out)
+    k = lambda r: json.dumps(r, sort_keys=True)
+    assert max(cnt.values()) <= 2, f"global <=x2 violated: {cnt}"
+    assert cnt[k(rare1)] == 2 and cnt[k(rare2)] == 2, "rare single not doubled"
+    assert cnt[k(common)] == 1, "common-only window was upsampled"
+    assert cnt[k(dup)] == 2, "already-x2 window pushed past x2"
+    print("balance selfcheck: OK (rare doubled, common untouched, global <=x2)")
 
 
 def _parse_mix(s):
@@ -346,6 +428,9 @@ def main():
     ap.add_argument("--out-dir", default="data/pii_span_dataset")
     ap.add_argument("--mix", type=_parse_mix, default=None,
                     help="e.g. nemotron=6000,pilener=3000,wikibio=corpora/wikipedia_bio")
+    ap.add_argument("--balance-rare", action="store_true",
+                    help="v3: upsample MISC/DEM/QUANTITY windows (<=x2) + size Pile-NER to PILE_FRAC "
+                         "post-balance (generality-first). Off = v2 behaviour.")
     args = ap.parse_args()
     build(args)
 
