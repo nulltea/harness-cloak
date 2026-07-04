@@ -1,10 +1,10 @@
 ---
 type: training-experiment
-status: running
+status: done
 created: 2026-07-04
 model: RankerPolicy feature-MLP (64-h, ~5k params), behavior-cloned from the tau-walk
 dataset: ranker_env.json (DETECTOR v2 pii_gliner_multidomain@0.3, switched pre-run) — 23 trainable docs (12 clinical / 8 enron / 3 aeslc), 177 decision spans, 106 train probes
-result: pending
+result: "NULL at these settings — policy never left the BC init at any alpha (identical greedy read-outs); diagnosis: weak per-span credit, rare probe flips, not entropy collapse"
 tags: [ranker, stage1, bandit, reinforce, surrogate-reward, latticecloak]
 companion: ../../docs/specs/RL/surrogate-ranker-infiller.md
 ---
@@ -43,8 +43,24 @@ kill = flat at init (then: frozen-encoder features next, per plan ladder). Reali
 (fact recall on out_final + frontier attacker vs tau-walk Pareto) is Phase-3 of the spec and a
 separate run — no realized claims from this record.
 
-## Results
-pending
+## Results (measured 2026-07-04, results/ranker_train_a{0.3,0.5,0.7}.json)
+
+**Training-side NULL: the RL phase produced no movement off the behavior-clone init at any
+alpha.** All three greedy read-outs are identical (A 0.2813, U 0.0909, ph_rate 0.6394 — the BC
+policy's own decisions); per-epoch means flat (e.g. a=0.3: r 0.2808 -> 0.2805 over 5 epochs);
+KL(pi||pi_0) <= 0.002 everywhere — the leash never engaged, the policy simply did not move.
+No alpha Pareto spread exists (all alphas converge to one operating point).
+
+**Diagnosis (measured on the trained a=0.5 policy):** NOT entropy collapse — mean policy entropy
+0.52 nats on multi-action spans (uniform-2 = 0.69), and per-doc reward std over G=8 is nonzero
+on 8/8 docs (mean 0.024, max 0.043). The gradient exists but is weak: (a) doc-level REINFORCE
+dilutes the advantage over ~8 spans/doc; (b) rollout variations rarely flip a QA probe (a flip
+would move r by ~0.1 at alpha=0.5; observed std 0.024 means most rollouts share identical U), so
+the utility term contributes almost no rollout-level gradient; (c) 115 updates x lr 3e-4 is a
+tiny optimization budget against that signal. This is an optimization-regime null, not yet a
+feature-ceiling null — the pre-registered frozen-encoder upgrade is NOT triggered until the
+cheap optimization levers are exhausted (per-span/leave-one-out credit assignment, more epochs
+with a batched reader, entropy bonus / higher lr).
 
 ## Ablations
 alpha sweep is built in; feature-only vs frozen-encoder features is the pre-registered follow-up.
