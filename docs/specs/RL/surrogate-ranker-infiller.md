@@ -75,6 +75,8 @@ history and wall-time live in the
   aggregated. Candidate-sensitive, context-blind.
 - **Restated-span probe / u_qa / fact recall** — QA probes on gold-restated surfaces; u_qa
   reads doc_p (training utility), fact recall reads out_final (realized ground truth).
+- **extract / invert** — the same deployed re-identification path (`cloak.extract.invert`);
+  "extract" is the pipeline-stage name, `invert()` the implementation.
 - **Echo / absorption** — whether the remote model reproduces a fill in out_p (echo) or uses
   its information with no surface trace (absorption). Dominated by task relevance, not fill
   form — **unpriced by the training reward** (§5.2).
@@ -148,11 +150,16 @@ for epoch, doc in training:
                    for s if mode(a_g[s]) != generic_placeholder)
         U_g = mean(F1(invert(reader(q̃_j, doc_p_g), R_g), a_j) for j in train_probes)  # §5.2
         r_g = α*(1 - A_g) + (1 - α)*U_g
-    adv = (r - mean(r)) / std(r)                            # group advantage, within one floor sample
-    pi.update(REINFORCE(adv) + KL(pi ‖ pi_0))               # pi_0 BC'd under the SAME floor regime:
+    adv = (r - mean(r)) / (std(r) + eps)                    # group advantage, within one floor sample
+    loss = -sum(adv_g * logp(a_g)) / G + kl_coef * KL(pi ‖ pi_0)   # MINIMIZED; the KL term is a
+    pi.minimize(loss)                                       # penalty (leash), kl_coef 0.05 default;
+                                                            # pi_0 BC'd under the SAME floor regime:
                                                             # randomized runs use floor-randomized BC
+# canonical training defaults (G = 8, epochs, lr 3e-4, kl_coef, seeds) are the argparse
+# defaults of scripts/train_ranker.py; each run's actual values live in its training record.
 # features: [is_placeholder, walk_risk, p6, level_index/4, n_levels/4,
-#            log10_aset/9, log10_active_floor/9, type-onehot(7), corpus-onehot(3)]  (N_FEAT 17)
+#            log10_aset/9, log10_active_floor/9, type-onehot(7), corpus-onehot(3)]  (N_FEAT 17;
+#            level_index and n_levels clipped at 4; placeholder rows feature aset as 1e9)
 # greedy read-out: at FIXED floors on a declared grid — one operating point per (α, floor
 # config); randomization is train-time only and results are NEVER averaged across floors.
 ```
@@ -346,7 +353,8 @@ support on the floor environment is part of the §6 gate** for the next training
 ### 5.1 Privacy term A
 
 `A = mean over level-mode fills of cos_MiniLM(fill, original)` — keep-original included at
-1.0, generic placeholders excluded (constant, no gradient). Context-blind by construction;
+1.0, generic placeholders excluded from both numerator and denominator (constant, no
+gradient); an assembly with no level-mode fills (all-placeholder) has A = 0 by definition. Context-blind by construction;
 the frontier attacker at eval prices what it misses. Known mis-pricing: A rates keep-heavy
 configurations maximally unsafe regardless of the type's identifying power — measured against
 realized outcomes in the identity-only arm (§7-2); if the eval attacker confirms A's ordering
@@ -427,9 +435,10 @@ tau-walk remains only as the BC-reproduction reference for the legacy fixed conf
 suppression / identity_only) per doc → per-doc Spearman between the utility term's ordering
 (U = u_qa) and realized fact recall on out_final. The gate validates the utility axis; the
 risk measure is validated separately by the matched attacker-correlation shootout (§4.1).
-r~realized is context, never the criterion. The gate validates a **(reward, environment)
-pair** — re-run on every change to reward composition, probes, prompt, extractor, or
-environment. **Status: REQUIRED-NOT-RUN for the floor environment** (the 2026-07-04 keep +
+r~realized is context, never the criterion. Operational bar: mean per-doc Spearman positive
+on **every** corpus (the historical passes met this; a negative corpus is a no-go regardless
+of the pooled mean). The gate validates a **(reward, environment) pair** — re-run on every
+change to reward composition, probes, prompt, extractor, or environment. **Status: REQUIRED-NOT-RUN for the floor environment** (the 2026-07-04 keep +
 floors migration changed the environment; the last PASSED gate — U~realized 0.354/0.511/0.760
 — was the tau-mask environment). The next training run is blocked on: fresh gate run + the
 probe-flip support re-measurement (§4.2).

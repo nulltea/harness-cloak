@@ -1,4 +1,4 @@
-"""Stage-1 ranker policy: MLP over per-action features, masked softmax over the tau-legal set.
+"""Stage-1 ranker policy: MLP over per-action features, masked softmax over the floor-legal set.
 
 This is the training plan's feature-only policy (its pre-registered ablation floor, promoted to
 v0): no text encoder, features come entirely from the Phase-0 environment artifact

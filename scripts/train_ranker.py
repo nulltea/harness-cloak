@@ -3,15 +3,19 @@
 Implements spec §2 Phase 1 (docs/specs/RL/surrogate-ranker-infiller.md) on the Phase-0
 environment (data/ranker_env.json + the arms artifact):
 
-  per doc, per step: sample G level-assignments inside the tau-legal mask ->
+  per doc, per step: sample G level-assignments inside the per-type count-floor mask
+  (aset >= k_floors[type]; walk_risk is offline-only) ->
   assemble doc_p/R (injectivity via a DYNAMIC sampling mask: claimed fills unsampleable) ->
-  r = alpha*(1 - A_P6) + (1-alpha)*u_qa(train-split probes) ->
-  group-relative advantage -> REINFORCE update of the feature policy + KL(pi || pi_0).
+  r = alpha*(1 - A) + (1-alpha)*u_qa(train-split probes)
+  (A = mean fill_proximity over level-mode fills; the action table's cached "p6" IS
+  fill_proximity = cos_MiniLM(fill, original) — identical numbers, deterministic) ->
+  group-relative advantage -> REINFORCE update of the feature policy + kl_coef*KL(pi || pi_0).
 
-pi_0 = behavior clone of the tau-walk's own decisions (never RL from random). Known
-limitation (accepted for the stage-1 ablation): BC and the KL reference are computed over the
-STATIC tau-legal sets while rollouts sample under the dynamic injectivity mask — a small
-policy/reference mismatch on the ~10 spans whose fills collide under the BC trajectory. Policy =
+pi_0 = behavior clone of the floor-walk (min-aset legal level) — never RL from random; under
+--randomize-floors both BC and RL sample per-episode floors (spec §5.4). Known limitation
+(accepted for the stage-1 ablation): BC and the KL reference are computed over the STATIC
+floor-legal sets while rollouts sample under the dynamic injectivity mask — a small
+policy/reference mismatch on the spans whose fills collide under the BC trajectory. Policy =
 cloak.train.ranker.RankerPolicy (feature-only; the plan's ablation floor promoted to v0).
 Placeholder tokens are assigned per rollout at assemble time; direct identifiers keep the
 artifact's chain tokens. The echo channel is deliberately unpriced (spec §5.2).
@@ -129,12 +133,14 @@ def derive_spans(raw_spans, floors, corpus, device):
     spans, feats = [], []
     for s in raw_spans:
         s = dict(s)
-        k = floors.get(s["type"], 1.0)
+        # unknown span types inherit the OTHER floor (default-deny) — never a silent waiver
+        k = floors.get(s["type"], floors.get("OTHER", 100.0))
         s["legal"] = [i for i, a in enumerate(s["actions"])
                       if a["mode"] == "placeholder" or a.get("aset", 0) >= k]
+        ph_idx = next(i for i, a in enumerate(s["actions"]) if a["mode"] == "placeholder")
         s["bc_action"] = min(((a.get("aset", 0), i) for i, a in enumerate(s["actions"])
                               if a["mode"] == "level" and a.get("aset", 0) >= k),
-                             default=(None, len(s["actions"]) - 1))[1]
+                             default=(None, ph_idx))[1]
         spans.append(s)
         feats.append(action_features(s, corpus, k).to(device))
     return spans, feats
@@ -188,8 +194,11 @@ def sample_floors(floors, rng):
     k_T ~ exp(U(ln(max(k/10, 1)), ln(10*k))) — median = k, supported config range [k/10, 10k],
     clamped at 1 from below. This is the supported per-type config range; floors outside
     [k/10, 10k] are extrapolation — the mask still enforces them safely, choice quality is
-    untested. Shared by the RL loop and the floor-randomized BC pretrain so both see the same rule."""
-    return {t: math.exp(rng.uniform(math.log(max(k / 10.0, 1.0)), math.log(10.0 * max(k, 1.0))))
+    untested. Waived types (k <= 1) are NOT randomized: a waiver is a discrete user contract,
+    and sampling k > 1 would make keep-original illegal in most episodes exactly where the
+    user legalized it. Shared by the RL loop and the floor-randomized BC pretrain."""
+    return {t: (1.0 if k <= 1.0 else
+                math.exp(rng.uniform(math.log(max(k / 10.0, 1.0)), math.log(10.0 * k))))
             for t, k in floors.items()}
 
 
@@ -230,9 +239,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--alphas", default="0.3,0.5,0.7")
     ap.add_argument("--floors", default=None,
-                    help="override per-type count floors, e.g. "
-                         "'LOC=50,ORG=50,DATETIME=30,DEM=1,QUANTITY=1,MISC=1,OTHER=1' "
-                         "(default: env k_floors)")
+                    help="override per-type count floors, e.g. 'MISC=1,LOC=200' "
+                         "(floor 1 = waiver, legalizes keep-original for that type; "
+                         "default: env k_floors, all types 100)")
     ap.add_argument("--randomize-floors", action="store_true",
                     help="per-episode log-uniform floor k_T in [k_T/10, 10*k_T], "
                          "log-uniform centered on the default, per type; the "
@@ -245,6 +254,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true", help="2 docs, 2 epochs, G=4")
     args = ap.parse_args()
+    assert args.G >= 2, "group-relative advantage needs G >= 2 (std of one reward is NaN)"
     torch.manual_seed(args.seed)
     random.Random(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
