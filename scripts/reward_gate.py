@@ -4,7 +4,9 @@ Spec §6 / §2 Phase 0c (docs/specs/RL/surrogate-ranker-infiller.md): per doc, f
 (no_privacy / tau_walk / all_floor / suppression) + the all-placeholder diagnostic arm; per
 (doc, arm): reward components (A = P6 mean, U = u_qa on TRAIN-split probes, r at --alpha) and
 realized fact recall on out_final (same probes). Go: clearly positive per-doc Spearman between
-the reward ordering and realized fact recall where the ground truth orders arms sanely. The
+the UTILITY term's ordering (U~realized) — realized fact recall measures no privacy, so the
+mixed reward r is reported as context only (spec §6); the privacy term is validated by the
+attacker-correlation shootout. The
 all-placeholder arm's (reward vs realized) gap is the standing echo-cost diagnostic, not go/no-go.
 
 Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \

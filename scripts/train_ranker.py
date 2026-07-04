@@ -8,7 +8,10 @@ environment (data/ranker_env.json + the arms artifact):
   r = alpha*(1 - A_P6) + (1-alpha)*u_qa(train-split probes) ->
   group-relative advantage -> REINFORCE update of the feature policy + KL(pi || pi_0).
 
-pi_0 = behavior clone of the tau-walk's own decisions (never RL from random). Policy =
+pi_0 = behavior clone of the tau-walk's own decisions (never RL from random). Known
+limitation (accepted for the stage-1 ablation): BC and the KL reference are computed over the
+STATIC tau-legal sets while rollouts sample under the dynamic injectivity mask — a small
+policy/reference mismatch on the ~10 spans whose fills collide under the BC trajectory. Policy =
 cloak.train.ranker.RankerPolicy (feature-only; the plan's ablation floor promoted to v0).
 Placeholder tokens are assigned per rollout at assemble time; direct identifiers keep the
 artifact's chain tokens. The echo channel is deliberately unpriced (spec §5.2).
@@ -95,7 +98,7 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
                            "action": "placeholder"}
 
     out, R = text, []
-    seen_surface = set()
+    seen = set()
     for e in sorted(R_walk, key=lambda e: -e["start"]):
         skey = e["surface"].lower()
         # apply the decision only to occurrences the walk treated as quasi (they carry a
@@ -106,8 +109,11 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
         else:
             rep, act = e["replacement"], e["action"]
         out = out[:e["start"]] + rep + out[e["end"]:]
-        if skey not in seen_surface:
-            seen_surface.add(skey)
+        # R must cover every APPLIED replacement: mixed-typing surfaces legally map one
+        # surface to two replacements (e.g. 'participant'→'a person' AND '<PERSON_1>'),
+        # and dropping either breaks inversion of out_p
+        if (skey, rep.lower()) not in seen:
+            seen.add((skey, rep.lower()))
             R.append({"surface": e["surface"], "type": e["type"],
                       "action": act, "replacement": rep})
     return _cleanup(out), R

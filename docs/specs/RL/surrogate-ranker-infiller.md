@@ -377,16 +377,28 @@ intermediate-level selections now occur — 21/63 multi-level spans on the accep
 0 under the old probe).
 
 **Gate (before any training run):** constructed arms (no_privacy / tau_walk / all_floor /
-suppression) per doc → per-doc Spearman between the reward's ordering and realized **fact recall
-on out_final**. Go: clearly positive agreement where the ground truth orders arms sanely.
+suppression) per doc → per-doc Spearman between the **utility term's** ordering (U = u_qa) and
+realized **fact recall on out_final**. The gate validates the utility axis only: realized fact
+recall measures no privacy, so correlating the *mixed* reward r against it is not meaningful
+(the α-weighted privacy term legitimately reorders arms); the privacy term is validated
+separately by the attacker-correlation shootout ([attacks.md](../attacks.md)). r~realized is
+reported as context, never as the criterion. Go: clearly positive U~realized agreement where
+the ground truth orders arms sanely.
 Reported diagnostic (not go/no-go): the reward's placement of an all-placeholder arm vs realized
 — expected to under-credit it (the fail-closed bias of §5.2); the size of that gap is the
 standing estimate of what the echo channel costs the surrogate. Re-run on every change to
 reward composition, probe choice, prompt, or extractor — the gate validates a (reward,
-environment) pair. Status: ground truth validated 2026-07-03 (factrecall~u_qa 0.37/0.44/0.78)
-in the pre-Phase-1/2 environment; the current reward (P6 + uniform u_qa) in the current
-environment (candidate-sensitive walk, injectivity, NLI-gated lattices) is **not yet gated** —
-that re-run is the remaining exit criterion before stage-1 RL.
+environment) pair. **Status: PASSED 2026-07-04** on the current pair
+(`scripts/reward_gate.py` → `results/ranker_reward_gate.json`): U~realized per-doc Spearman
+**0.600 clinical (n=12) / 0.725 enron (n=8) / 0.520 aeslc (n=5)** — positive on all corpora,
+up from 0.37/0.78/0.44 in the pre-Phase-1/2 environment. Echo diagnostic (all-placeholder arm):
+realized fact recall 0.189/0.161/0.308 — **the best protected arm on every corpus, above
+no_privacy on 2 of 3** — while the reward's U under-credits it (fail-closed bias, quantified:
+U 0.178/0.029/0.208). This is evidence that fill form does matter for *probed* (task-relevant)
+facts, contra the raw-absorption reading; the ŝ decision stands (reward stays local), but the
+diagnostic is the standing measure of what that costs, and the privacy term's placeholder
+preference means the α equilibrium can still reach placeholder-heavy optima the utility term
+alone would miss.
 
 ## 7. Open tensions
 
