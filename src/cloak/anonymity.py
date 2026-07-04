@@ -8,7 +8,7 @@ aset 1 -> legal only for user-waived types). Units need only be consistent WITHI
 floors are per-type, so city-counts and day-windows never compare.
 
 Fail-closed: a specific-looking but unparseable fill counts 1 (illegal under any floor > 1,
-same conservative direction as the probe's unpooled-type rule). The six TYPE_LABEL coarse
+same conservative direction as the probe's unpooled-type rule). The TYPE_LABEL coarse
 fills are known-generic -> GENERIC, checked first.
 
 Two modes. strict=True (CERTIFYING — legality, artifact annotation, decode-time checks):
@@ -28,7 +28,9 @@ from cloak.lattice import CONTINENTS, TYPE_LABEL, _MONTHS, _load_geo
 GENERIC = 1e9
 
 # floors calibrated on the count-vs-attacker shootout (results/lattice_count_shootout.json,
-# gemini referee): every measured type at/below ~0.3 attacker hit@5; DATETIME=100 excludes
+# gemini referee): measured types at/below ~0.3 attacker hit@5 (DEM 0.333; QUANTITY floor
+# rests on thin cells — see results/lattice_count_shootout.json and the spec's thin-cell
+# caveat); DATETIME=100 excludes
 # the leaky month-level band (10-100 bucket measured 0.769). MISC/OTHER have no shootout
 # items — user-waivable, fail-closed parsing governs them.
 K_FLOORS = {"LOC": 100.0, "ORG": 100.0, "DATETIME": 100.0,

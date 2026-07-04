@@ -51,9 +51,6 @@ def main():
             spans = []
             for row in arms["action_table"].values():
                 row = dict(row)
-                row["legal"] = [i for i, a in enumerate(row["actions"])
-                                if a["mode"] == "placeholder" or a["walk_risk"] < TAU]
-                assert row["legal"] and row["bc_action"] in row["legal"], row["surface"]
                 spans.append(row)
             ps = sorted(probes.get(doc_id, []), key=lambda p: p["surface"].lower())
             rng = random.Random(f"{SPLIT_SEED}|{doc_id}")

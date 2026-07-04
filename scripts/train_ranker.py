@@ -234,7 +234,8 @@ def main():
                          "'LOC=50,ORG=50,DATETIME=30,DEM=1,QUANTITY=1,MISC=1,OTHER=1' "
                          "(default: env k_floors)")
     ap.add_argument("--randomize-floors", action="store_true",
-                    help="per-episode log-uniform floor k_T in [1, 10*k_T] per type; the "
+                    help="per-episode log-uniform floor k_T in [k_T/10, 10*k_T], "
+                         "log-uniform centered on the default, per type; the "
                          "sampled floor is fed to the policy features (floor-conditioned)")
     ap.add_argument("--G", type=int, default=8)
     ap.add_argument("--epochs", type=int, default=5)
