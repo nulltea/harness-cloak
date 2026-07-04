@@ -163,13 +163,13 @@ the persisted arms artifact; 16 docs × tau_walk/all_floor × 3 corpora):
   (no_privacy / tau_walk / all_placeholder): clinical 0.344 / 0.238 / **0.107**; aeslc 0.367 /
   0.2 / 0.167; enron 0.183 / 0 / 0. The realizedly-best-surviving mode is under-scored ~2×.
   Mechanism: SQuAD2 **null-answer abstention** on placeholder tokens — when the reader does
-  select one ("<PERSON_2>"), inversion restores it at F1 = 1.0. **Consequence: u_qa must be
-  mode-aware — placeholder-mode spans are scored by the ŝ echo-survival prior (their fact
-  carriage is anchor-mechanical, not semantic), the reader path applies to naturalistic fills
-  only.** This folds into Phase 4's reward composition.
+  select one ("<PERSON_2>"), inversion restores it at F1 = 1.0. *Disposition revised 2026-07-04
+  with the ŝ cancellation:* the bias is **accepted as fail-closed** (placeholder carriage is
+  locally unverifiable, so the reward credits only what the reader verifies); documented in spec
+  §5.2, size tracked as a gate diagnostic.
 
 **Revised critical path after Phase M:** Phase 1 (candidate-sensitive risk) → Phase 2
-(injectivity + hygiene) → Phase 4 (ŝ + mode-aware u_qa) → Phase 5 (re-gate) → RL.
+(injectivity + hygiene) → ~~Phase 4 (ŝ)~~ cancelled 2026-07-04 → Phase 5 (re-gate) → RL.
 E1 alignment work is off the critical path; revisit only if the eval residual implicates it.
 
 **Phase 1 — candidate-sensitive risk probes (the RL unblocker, ~1–2 days).**
@@ -210,9 +210,15 @@ Semantic-window aligner with verification gate; FP rate re-measured (M2 harness)
 shows absorption dominates (>~70% of gen_absent), descope to E1-fuzzy+verify and shift weight to
 Phase 4.
 
-**Phase 4 — echo-survival table ŝ + reward composition (~1 day, cached remote calls).**
-Measure ŝ under the Phase-3 extractor across fill modes × types × tasks (few hundred docs,
-cached); pre-register the table; reward = ŝ-discounted u_qa.
+**Phase 4 — CANCELLED (decision 2026-07-04): ŝ dropped from the stage-1 reward.**
+Grounds: (a) ŝ re-binds the detached surrogate to remote-model behavior; (b) the corrected
+evidence (cached round trips; the "9/9" stat measured inversion-given-echo, not echo) shows echo
+is dominated by *task relevance*, outside the policy's control — see
+[remote-llm-echo-absorption](../issues/remote-llm-echo-absorption.md) and spec §5.2. The reward
+stays fully local: `r = α(1−A_P6) + (1−α)·u_qa` with the uniform reader path; the M3 reader
+abstention is documented as an accepted fail-closed bias (placeholder carriage is locally
+unverifiable), not patched. Echo is measured only at eval; a policy-controllable echo residual
+triggers the round-trip upgrade.
 
 **Phase 5 — re-gate, then RL.**
 Re-run the constructed-arms gate on the new (reward, environment) pair — Phases 1–4 change both

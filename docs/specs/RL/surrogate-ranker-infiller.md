@@ -42,11 +42,12 @@ the [gaps plan](../../plans/2026-07-03-surrogate-rl-gaps-fixes.md). Design pinne
   Candidate-sensitive; ~50 ms/item; precomputable per (span, level).
 - **A / P6 (embedding-proximity score)** — the reward's privacy term:
   `cos_MiniLM(fill, original)` per span, mean-aggregated. Candidate-sensitive, context-blind.
-- **ŝ (echo-survival table)** — offline-measured
-  `P(fill recoverable in out_p by the deployed extractor | fill mode, span type, task)`; a
-  pre-registered environment constant.
 - **Restated-span probe / u_qa / fact recall** — QA probes on gold-restated surfaces; u_qa reads
   doc_p (training utility), fact recall reads out_final (realized ground truth).
+- **Echo / absorption** — whether the remote model reproduces a fill in out_p (echo) or uses its
+  information with no surface trace (absorption). Measured to be dominated by *task relevance*
+  (does the output need the fact), not fill form — hence **unpriced by the training reward**
+  (decision 2026-07-04, §5.2); the surrogate-vs-realized gap measures it at evaluation.
 - **frontier_claim** — the experiment's verdict: does the trained policy's Pareto dominate the
   τ-walk's at matched *realized* privacy (frontier-LLM attacker) on held-out docs. Never a
   training signal.
@@ -100,11 +101,9 @@ for doc in corpus:
         # trained ranker samples from this same mask), the thing that keeps pi_0's clone
         # teacher τ-clean, and the eval baseline's exhaustion rule. See §3.3-2.
 
-# --- 0b. reward machinery ---
+# --- 0b. reward machinery (fully local; no remote calls anywhere in Phase 0b/1) ---
 for doc in train_split:
     qa_probes[doc] = teacher_questions(R_surfaces ∩ gold(doc))   # cached; train/held-out split
-s_hat = measure_echo_survival(mode, type, task)            # ~200 cached remote calls, one-time,
-                                                           # pre-registered; re-measure ⇒ re-gate
 pi_0 = behavior_clone(tau_walk decisions)                  # never RL from random
 train_docs = [d for d in corpus if qa_probes[d]]           # probe-less docs: eval only
 
@@ -125,11 +124,13 @@ for epoch, doc in training:
                     for s in spans[doc] if mode(a_g[s]) != generic_placeholder )
         # generic placeholders: label carries no original-signal → excluded (constant)
 
-        # utility term — mode-aware, ŝ-discounted (§5.2):
-        U_g = mean( s_hat[mode(a_g[j]), type(j), task] * carry_j
+        # utility term — u_qa, uniform over ALL train-split probes (§5.2; no echo prior,
+        # no mode routing — decision 2026-07-04):
+        U_g = mean( F1(invert(reader(q̃_j, doc_p_g), R_g), a_j)
                     for j in qa_probes[doc].train_split )
-        # carry_j = 1                                    placeholder-syntax fills
-        #         = F1(invert(reader(q̃_j, doc_p_g)), a_j)  prose fills
+        # placeholder-covered probes score through the same reader path: usually 0
+        # (reader abstains on <TYPE_n>), sometimes 1 (token extracted → inversion
+        # restores the surface) — a measured conservative bias, accepted (§5.2)
 
         r_g = α * (1 - A_g) + (1 - α) * U_g
     adv = (r - mean(r)) / std(r)                           # group-relative advantage
@@ -168,21 +169,24 @@ training plan.
 
 One episode = one document (contextual bandit; no multi-step dynamics in v0). Per detected
 quasi-identifier span, the action set is `legal[s]` — τ-legal lattice levels ∪ generic typed
-placeholder. Placeholder is a first-class action, not only a fallback: it is the substitution
-mode with measured round-trip survival (`ph_swapped` 9/9, zero residue), and pricing it lets the
-policy trade naturalness vs survival vs risk per span.
+placeholder. Placeholder is a first-class action, not only a fallback: pricing it lets the
+policy trade risk against locally-verifiable utility per span. Measured properties, stated
+precisely: **inversion given echo is perfect** for placeholders (`ph_swapped` 9/9, zero residue
+— every token that appeared in out_p swapped back cleanly), but **echo itself is
+task-relevance-dependent, not form-guaranteed** (sampled docs: 1/3 and 0/4 placeholder tokens
+appeared in out_p; a prose fill the task needed, "the autumn", echoed while person placeholders
+a reply had no reason to restate did not).
 
 **Placeholder modes** (different privacy contracts):
 - *Generic typed* (`<DATETIME_1>`): label depends only on the detected type — **risk 0 by
   construction**, exempt from τ, the only legal invariant-fallback.
 - *Descriptive/minted* (`<MEETING_DATE_1>`; E1, infiller-chosen): a generalization in
-  placeholder syntax — carries role semantics, keeps the echo-anchor property, **loses the
-  τ-exemption** (P4-scored like any fill; used-set/indexing applies to the label namespace).
-  Echo survival of descriptive labels is extrapolated from n=9 — smoke-measure before E1 relies
-  on it.
-- Action spectrum by anchor-ness: generic placeholder (risk 0, echo ~certain, no semantics) →
-  descriptive placeholder → relational fill (joint leakage, §5.1) → naturalistic fill
-  (echo ~5% measured in E0).
+  placeholder syntax — carries role semantics and inherits the clean inversion-given-echo
+  property of the `<…>` syntax, but **loses the τ-exemption** (P4-scored like any fill;
+  used-set/indexing applies to the label namespace).
+- Action spectrum by disclosed semantics: generic placeholder (risk 0, no semantics) →
+  descriptive placeholder (role semantics, τ-gated) → relational fill (cross-fact structure,
+  joint leakage — §4.2) → naturalistic fill (full prose semantics, τ-gated).
 
 Direct identifiers (PERSON, CODE): forced generic placeholder, outside the action space.
 **No KEEP action** — the per-span privacy term cannot price kept spans, so KEEP would be a
@@ -236,20 +240,20 @@ unrecoverable. Enforced at assembly/decoding time:
    reward-optimal while feeding the remote model false premises. Truthfulness therefore lives
    in the environment as a verifier: the NLI entailment gate (premise = original sentence,
    hypothesis = sentence with the fill; keep iff entailed). E0: all lattice sources pass the
-   gate — rule-sourced lattices (WordNet/GeoNames/buckets) currently bypass it, shipping
-   measured context-wrong fills ("dragon" → "a mythical monster", "vermont" → "a city in
-   Australia"); fix scheduled in the gaps plan's Phase-2 batch. E1: the same gate joins the
+   gate (**shipped 2026-07-04** — previously rule-sourced lattices bypassed it; measured on the
+   motivating examples: "vermont" → "a city in Australia" now rejected; "dragon" → "a mythical
+   monster" and "washington" → "a city in DC" pass — the word-sense ceiling). E1: the same gate joins the
    infiller's decode loop — sample fill → injectivity check → τ check → NLI check →
    accept / resample / placeholder. The infiller *proposes* (context-aware), the gate
    *verifies*; RL optimizes within the verified-legal set. Known limit: NLI is a cheap
    verifier, not a semantics oracle (word-sense errors may pass as lexical hypernymy) — the
    residual and the proposed truthfulness-reward extension are tracked in
    [rule-lattice-nli-gate-bypass](../../issues/rule-lattice-nli-gate-bypass.md).
-4. **Reward–deployment extractor consistency** — the reward's view of the extractor is the ŝ
-   table, measured under the extractor actually deployed at gate/eval. (The reward's own
-   `invert()` only ever runs the trivial exact path — reader answers are doc_p substrings — so
-   extractor upgrades change gate/eval, never u_qa; the consistency requirement lives entirely
-   in ŝ.)
+4. **Extractor scope** — the reward's `invert()` only ever runs the trivial exact path (reader
+   answers are doc_p substrings, where replacements are verbatim by construction), so extractor
+   implementation changes affect gate/eval outcomes, never the training reward. The deployed
+   extractor version is therefore an *evaluation* parameter: fix it before the gate run and
+   hold it constant through the α sweep.
 5. **Determinism via artifacts** — detection is nondeterministic across processes (measured:
    3/6 clinical doc_p hashes differ between identical runs); all consumers load the persisted
    arms artifact (`scripts/build_arms_artifact.py` → `data/task_arms_tau0.02.json`), never
@@ -259,13 +263,13 @@ unrecoverable. Enforced at assembly/decoding time:
 
 | | fills | extractor (`invert`) | status |
 |---|---|---|---|
-| **E0** | static lattice strings ∪ generic placeholder | rule exact/fuzzy-90 | runnable after gaps-plan Phases 1–2 |
+| **E0** | static lattice strings ∪ generic placeholder | rule exact/fuzzy-90 | **live** (gaps-plan Phases 1–2 shipped 2026-07-04) |
 | **E1** | infiller (SFT flan-t5 + LoRA), injectivity-constrained decoding; descriptive/relational fills | E0 + light fuzzy-verify | infiller to build |
 | **E2** | E1 | learned reconstructor; **doc-level attack head** (frozen encoder + heads on SynthPAI attributes) | escalation |
 
 The E1 *semantic aligner* was descoped from the critical path: absorption dominates `gen_absent`
 (82–95% of prose fills leave no trace in out_p; loose-echo headroom < 10% and partly spurious) —
-the echo factor is won at fill-choice time (anchor modes + ŝ), not extraction time. See
+what the remote model absorbs cannot be won back at extraction time. See
 [remote-llm-echo-absorption](../../issues/remote-llm-echo-absorption.md).
 
 ## 4. Probes
@@ -314,26 +318,41 @@ excluded (constant, no gradient). Max reported as diagnostic. Blind spots and es
 triggers: §4.2. The real privacy measure remains the frontier attacker (Phase 3) — if it
 succeeds through fills A scored safe, A escalates (E2) and the policy retrains.
 
-### 5.2 Utility term (mode-aware, ŝ-discounted)
+### 5.2 Utility term — u_qa, uniform reader path, no echo prior
 
 ```
-u_j     = ŝ(mode_j, type_j, task) · carry_j
-carry_j = 1                                     placeholder-syntax fills
-        = F1(invert(reader(q̃_j, doc_p)), a_j)   prose fills
-U       = mean_j u_j
+u_j = F1( invert( reader(q̃_j, doc_p), R ),  a_j )     for EVERY train-split probe j
+U   = mean_j u_j
 ```
 
-- **Prose fills** take the reader path (question generalized through R → SQuAD2 reader on doc_p
-  → answer inverted → token-F1): semantic readability + R-invertibility. Coarsening invariance
-  holds: invertible coarsening scores 1.0; keeping the original earns nothing —
-  under-anonymization is not rewarded.
-- **Placeholder-syntax fills skip the reader** — measured SQuAD2 null-abstention on placeholder
-  tokens under-scores the realizedly best-surviving mode ~2× (all-placeholder u_qa 0.107 vs
-  tau_walk 0.238 on clinical) while inversion restores F1 = 1.0 whenever the reader does answer.
-  Their carriage is mechanical (echo + swap-back) ⇒ `carry ≡ 1`, weight = ŝ.
-- **ŝ multiplies both paths** — the reward's only view of the echo factor (absorption dominates
-  realized loss and u_qa is structurally blind to it). Pre-registered; re-measured only on
-  environment change (prompt, extractor, remote model); every re-measurement re-gates.
+One path for all fill modes: question generalized through R → SQuAD2 reader on doc_p → answer
+inverted through R → token-F1 vs the original surface. Properties:
+
+- **Coarsening invariance**: invertible coarsening scores 1.0 ("Oslo" → "a Norwegian city" →
+  inverted → F1 1.0); keeping the original earns nothing — under-anonymization is not rewarded.
+  Utility falls exactly for destruction: unanswerable, unalignable, or context-wrecking fills.
+- **Placeholder-covered probes score through the same reader**: usually 0 (SQuAD2 null-answer
+  abstains on `<TYPE_n>` tokens), occasionally 1 (the reader selects the token and inversion
+  restores the surface). Net effect is a **measured conservative bias**: the all-placeholder arm
+  scores u_qa 0.107 vs tau_walk 0.238 on clinical — placeholder carriage is under-credited
+  because it is *locally unverifiable* (it depends on the remote model echoing the token).
+  Accepted as fail-closed: the reward credits only locally-verifiable carriage; whatever
+  placeholders deliver beyond that shows up in the surrogate-vs-realized gap at evaluation.
+
+**Decision 2026-07-04 — the echo factor is deliberately NOT priced (ŝ dropped).** An earlier
+design multiplied u by an offline-measured echo-survival table ŝ(mode, type, task). Dropped on
+two grounds: (1) *re-binding* — ŝ is remote-model behavior conditioned on our prompts/tasks,
+importing into the detached surrogate exactly the dependence it exists to avoid; (2) *the
+evidence for action-dependence collapsed on inspection* — cached round trips show echo is
+dominated by **task relevance**, not fill form (a reply restates the timeline, so prose "the
+autumn" echoes; it has no reason to restate names, so `<PERSON_4>` does not; the earlier
+"placeholders echo 9/9" statistic measured inversion-given-echo, not echo). An effect outside
+the policy's control does not belong in its reward. Consequences: the reward is fully local and
+remote-free with zero measured environment constants from the remote model; the echo channel is
+measured only at evaluation (fact recall on out_final), and if the surrogate-vs-realized gap is
+dominated by echo effects the policy *could* have influenced, that is the documented trigger
+for the round-trip reward upgrade — not for reintroducing ŝ.
+
 - **u_nli is dropped** (measured: mixing it degrades gate agreement 0.367 → 0.183); may return
   as a diagnostic only.
 
@@ -350,31 +369,43 @@ The τ-walk must be non-degenerate **before** RL because it is: the control grou
 `frontier_claim` (a broken baseline inflates the learned method — forbidden), the
 behavior-clone teacher of `pi_0`, and the source of the τ-mask and constructed arms. Its two
 measured degeneracies (candidate-invariant probe → binary walk; floor fallback → τ violations)
-are fixed by gaps-plan Phases 1–2.
+were fixed by gaps-plan Phases 1–2 (shipped 2026-07-04: max shipped risk 0.0170 < τ = 0.02 on
+16 docs, injectivity verified, 21 intermediate-level selections vs 0 under the old probe).
 
 **Gate (before any training run):** constructed arms (no_privacy / tau_walk / all_floor /
 suppression) per doc → per-doc Spearman between the reward's ordering and realized **fact recall
-on out_final**. Go: clearly positive agreement where the ground truth orders arms sanely, **and**
-the reward separates placeholder-mode from naturalistic-mode arms in the realized direction.
-Re-run on every change to reward composition, probe choice, ŝ, prompt, or extractor — the gate
-validates a (reward, environment) pair. Status: ground truth validated 2026-07-03
-(factrecall~u_qa 0.37/0.44/0.78); the P6+ŝ reward composition is **not yet gated** — that re-run
-is a Phase-4 exit criterion in the gaps plan.
+on out_final**. Go: clearly positive agreement where the ground truth orders arms sanely.
+Reported diagnostic (not go/no-go): the reward's placement of an all-placeholder arm vs realized
+— expected to under-credit it (the fail-closed bias of §5.2); the size of that gap is the
+standing estimate of what the echo channel costs the surrogate. Re-run on every change to
+reward composition, probe choice, prompt, or extractor — the gate validates a (reward,
+environment) pair. Status: ground truth validated 2026-07-03 (factrecall~u_qa 0.37/0.44/0.78)
+in the pre-Phase-1/2 environment; the current reward (P6 + uniform u_qa) in the current
+environment (candidate-sensitive walk, injectivity, NLI-gated lattices) is **not yet gated** —
+that re-run is the remaining exit criterion before stage-1 RL.
 
 ## 7. Open tensions
 
 1. **Stage-2 gameability of P6** — an unfrozen infiller can craft embedding-far,
    information-close fills. Pre-registered guard: P4 joins A (or E2 head lands) before stage 2
    unfreezes the infiller.
-2. **Placeholder-heavy optima** — given measured survival asymmetry, the policy may converge on
-   placeholder-almost-everywhere; a legitimate optimum of the stated reward. If product goals
-   demand natural doc_p, naturalness enters the reward as an explicit term — a spec change,
-   never a quiet knob.
-3. **Probe sparsity** — 3.2/1.0/0.4 probes per doc concentrates training on clinical; expansion
+2. **Opposing placeholder biases in the reward** — the privacy term favors placeholders
+   (excluded from A → zero risk contribution) while the utility term under-credits them
+   (fail-closed reader path, §5.2). The policy's placeholder rate is therefore an α-governed
+   equilibrium between two known biases rather than a calibrated estimate; where it lands, and
+   whether realized fact recall agrees, is a first-class evaluation question. If product goals
+   additionally demand natural doc_p, naturalness enters the reward as an explicit term — a
+   spec change, never a quiet knob.
+3. **The echo channel is entirely unpriced** (deliberate, §5.2) — a policy cannot learn to
+   prefer fills the remote model will restate, because the reward cannot see restatement.
+   Measured evidence says most of that channel is task-relevance (outside policy control); the
+   part that is form-dependent, if any, surfaces as surrogate-vs-realized gap at eval and
+   triggers the round-trip upgrade, not an ŝ revival.
+4. **Probe sparsity** — 3.2/1.0/0.4 probes per doc concentrates training on clinical; expansion
    options (number normalization, teacher fact tuples) queued if it binds.
-4. **α as a retrain-expensive knob** — one α = one operating point; clustering of realized
+5. **α as a retrain-expensive knob** — one α = one operating point; clustering of realized
    privacy across α triggers the lexicographic fallback (imported decision).
-5. **Upstream leak channel** — detection/coref recall (sibling mentions) is the dominant
+6. **Upstream leak channel** — detection/coref recall (sibling mentions) is the dominant
    measured recovery path and is out of this spec's scope; tracked as the detector workstream.
 
 ## Sources

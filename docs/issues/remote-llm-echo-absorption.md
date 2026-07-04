@@ -19,9 +19,11 @@ the remote model (`Qwen3.6-35B-A3B`) reproduces verbatim only 0–7%; **82% (cli
 embedding sim < 0.6), so no extractor, rule-based or learned, can restore the original surface
 into `out_final`. The loosely-echoed remainder (<10% everywhere, and partly spurious fuzzy hits
 on note section headers) is why the E1 semantic-aligner was descoped
-([gaps plan, Phase M](../plans/2026-07-03-surrogate-rl-gaps-fixes.md)). Placeholders are the
-exception: `<TYPE_n>` tokens were echoed and swapped back 9/9 with zero residue (thin n, but
-consistent — template-variable syntax appears to induce verbatim copying).
+([gaps plan, Phase M](../plans/2026-07-03-surrogate-rl-gaps-fixes.md)). Placeholder caveat
+(corrected 2026-07-04): `ph_swapped 9/9, zero residue` measures *inversion given echo* — every
+placeholder token that appeared in out_p swapped back cleanly. It does **not** mean placeholders
+reliably appear: sampled docs show 1/3 and 0/4 placeholder tokens echoed, vs prose fills the
+task needed ("the autumn") echoing fine. **Echo is dominated by task relevance, not fill form.**
 
 ## Definitions
 
@@ -80,11 +82,17 @@ compute it when probe supply grows.
 
 ## RL-side implications
 
-- **The surrogate reward cannot see any of this.** u_qa reads `doc_p`, never `out_p`; echo
-  failure is in its null space ([gaps plan, Gap 2](../plans/2026-07-03-surrogate-rl-gaps-fixes.md)).
-  The ŝ prior (Phase 4) is the surrogate-compatible patch: mode-level echo survival enters the
-  reward as a measured constant; combined with the M3 fix it also *replaces* the reader for
-  placeholder-mode spans.
+- **DECISION 2026-07-04: the ŝ prior is dropped; the reward deliberately does not price echo.**
+  Two grounds: (a) ŝ re-binds the detached surrogate to one remote model's behavior; (b) the
+  corrected evidence above says echo is dominated by task relevance — outside the ranker's and
+  infiller's control — and an uncontrollable effect does not belong in the policy's reward. The
+  echo channel is measured only at evaluation (fact recall on `out_final`); a
+  surrogate-vs-realized gap dominated by policy-controllable echo effects triggers the
+  round-trip reward upgrade, not an ŝ revival. Spec §5.2 carries the normative statement.
+- **The surrogate reward cannot see any of this — accepted.** u_qa reads `doc_p`, never
+  `out_p`; echo failure is in its null space
+  ([gaps plan, Gap 2](../plans/2026-07-03-surrogate-rl-gaps-fixes.md)), fail-closed for
+  placeholder carriage.
 - **This is the strongest argument yet for the round-trip reward**
   ([2026-07-02-roundtrip-grpo-training.md](../plans/2026-07-02-roundtrip-grpo-training.md)):
   a round-trip reward observes the real `out_p` per candidate and therefore prices echo and
