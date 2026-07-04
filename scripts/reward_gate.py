@@ -29,8 +29,21 @@ from cloak.train.reward import fact_recall, stage1_reward, u_qa
 from inferdpt.llm import LLMClient
 from inferdpt.pipeline import pmap
 
-ARMS = ["no_privacy", "tau_walk", "all_floor", "suppression", "all_placeholder"]
+ARMS = ["no_privacy", "tau_walk", "all_floor", "suppression", "all_placeholder",
+        "identity_only"]
 GEN_MODEL = "Qwen3.6-35B-A3B"
+# identity-bearing quasi types (placeholdered in the identity_only arm); DEM/QUANTITY/MISC
+# (conditions, meds, doses) are kept verbatim — the arm tests whether anonymizing identity
+# alone preserves utility, and its attack side lives in scripts/spikes/identity_attack.py
+IDENTITY_TYPES = {"LOC", "ORG", "DATETIME"}
+
+
+def identity_only_choice(spans: list[dict]) -> dict[str, dict]:
+    """Placeholder identity-type quasi spans, keep every other quasi span verbatim.
+    Direct identifiers keep their chain tokens via assemble(), as in every arm."""
+    return {s["surface"].lower(): (s["actions"][-1] if s["type"] in IDENTITY_TYPES
+                                   else {"mode": "level", "fill": s["surface"]})
+            for s in spans}
 
 
 def _rank(v):
@@ -81,6 +94,9 @@ def main():
                 ph_choice = {s["surface"].lower(): s["actions"][-1] for s in d["spans"]}
                 arms["all_placeholder"] = assemble(texts[doc_id], a["tau_walk"][1],
                                                    d["spans"], ph_choice)[:2]
+                arms["identity_only"] = assemble(texts[doc_id], a["tau_walk"][1],
+                                                 d["spans"],
+                                                 identity_only_choice(d["spans"]))[:2]
             for arm, (doc_p, R) in arms.items():
                 jobs.append({"doc_id": doc_id, "arm": arm, "doc_p": doc_p, "R": R,
                              "probes": probes})

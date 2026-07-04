@@ -1,0 +1,6055 @@
+{
+ "attacker": "Qwen3.6-35B-A3B",
+ "arms": {
+  "tau_walk": {
+   "n": 126,
+   "hit5": 0.317,
+   "hit5_direct_ids": 0.082,
+   "hit5_quasi_identity": 0.538
+  },
+  "identity_only": {
+   "n": 126,
+   "hit5": 0.278,
+   "hit5_direct_ids": 0.115,
+   "hit5_quasi_identity": 0.431
+  },
+  "all_placeholder": {
+   "n": 126,
+   "hit5": 0.254,
+   "hit5_direct_ids": 0.082,
+   "hit5_quasi_identity": 0.415
+  }
+ },
+ "rows": [
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "martha",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Ms. Smith",
+    "Mrs. Johnson",
+    "Jane Doe",
+    "Sarah Miller",
+    "Emily Davis"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "would like to",
+    "want to",
+    "would like",
+    "plan to",
+    "intend to"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "last year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "one year ago",
+    "12 months ago",
+    "a year ago",
+    "2022"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "the past year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "six months",
+    "6 months",
+    "half a year",
+    "180 days",
+    "0.5 years"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "last weekend",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "last month",
+    "recently",
+    "a few weeks ago",
+    "last fall",
+    "in October"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "washington",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Washington",
+    "Seattle",
+    "the Pacific Northwest",
+    "Oregon",
+    "the US"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "50-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "a 45-year-old",
+    "a 50-year-old",
+    "a 40-year-old",
+    "a 55-year-old",
+    "a 60-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "martha",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "Mary",
+    "Jane",
+    "Sarah",
+    "Emily",
+    "Jennifer"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "we",
+    "let me",
+    "I'd like to",
+    "I want to"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "last year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "last month",
+    "last week",
+    "last year",
+    "last year"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "the past year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "six months",
+    "three months",
+    "one year",
+    "two months",
+    "four months"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "last weekend",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last summer",
+    "last week",
+    "last month",
+    "last year",
+    "last weekend"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "washington",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Washington",
+    "Oregon",
+    "Idaho",
+    "Montana",
+    "British Columbia"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "50-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "65-year-old",
+    "55-year-old",
+    "45-year-old",
+    "70-year-old",
+    "50-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "martha",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "Mary",
+    "John",
+    "Sarah",
+    "James",
+    "Emily"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "we",
+    "I",
+    "we",
+    "I"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "last year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "last month",
+    "last week",
+    "last year",
+    "last month"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "the past year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "last month",
+    "last week",
+    "last year",
+    "last month"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "last weekend",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last week",
+    "last month",
+    "last year",
+    "last week",
+    "last month"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "washington",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Washington",
+    "Oregon",
+    "California",
+    "Montana",
+    "Idaho"
+   ]
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "50-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "65-year-old",
+    "70-year-old",
+    "60-year-old",
+    "68-year-old",
+    "72-year-old"
+   ]
+  },
+  {
+   "doc": "mts/0",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "Doctor",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Dr. Smith",
+    "Dr. Jones",
+    "Dr. Williams",
+    "Dr. Brown",
+    "Dr. Davis"
+   ]
+  },
+  {
+   "doc": "mts/0",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "Kumar",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Dr. Smith",
+    "Dr. Jones",
+    "Dr. Williams",
+    "Dr. Brown",
+    "Dr. Davis"
+   ]
+  },
+  {
+   "doc": "mts/0",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "Doctor",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Dr. Smith",
+    "Dr. Jones",
+    "Dr. Johnson",
+    "Dr. Williams",
+    "Dr. Brown"
+   ]
+  },
+  {
+   "doc": "mts/0",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "Kumar",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "your primary care physician",
+    "your previous doctor",
+    "your specialist",
+    "your referring doctor",
+    "your healthcare provider"
+   ]
+  },
+  {
+   "doc": "mts/0",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "Doctor",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Dr. Smith",
+    "Dr. Jones",
+    "Dr. Johnson",
+    "Dr. Williams",
+    "Dr. Brown"
+   ]
+  },
+  {
+   "doc": "mts/0",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "Kumar",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Sarah",
+    "Emily",
+    "Jessica",
+    "Amanda",
+    "Jennifer"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "will",
+    "can",
+    "would",
+    "should",
+    "might"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "the next couple weeks",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "next week",
+    "next visit",
+    "next month",
+    "in a few weeks",
+    "in two weeks"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "62-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "35-year-old",
+    "45-year-old",
+    "50-year-old",
+    "60-year-old",
+    "40-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "will",
+    "can",
+    "am going to",
+    "would like to",
+    "need to"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "the next couple weeks",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "a few weeks",
+    "the next few weeks",
+    "a couple of weeks",
+    "the next visit",
+    "a month"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "62-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "middle-aged",
+    "elderly",
+    "older",
+    "young",
+    "adult"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "will",
+    "can",
+    "am going to",
+    "would like to",
+    "need to"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "the next couple weeks",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "next week",
+    "the next few weeks",
+    "a few weeks",
+    "next month",
+    "in two weeks"
+   ]
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "62-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "45-year-old",
+    "50-year-old",
+    "60-year-old",
+    "35-year-old",
+    "55-year-old"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "Morphine",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "a nurse",
+    "a doctor",
+    "a physician",
+    "a specialist",
+    "a technician"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "July thirty first O eight",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "last summer",
+    "this summer",
+    "the summer of '23",
+    "the summer before",
+    "the summer last year"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "July thirty first",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "around noon",
+    "around 11 AM",
+    "in the morning",
+    "mid-morning",
+    "shortly after 11"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "Morphine",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "morphine",
+    "oxycodone",
+    "hydromorphone",
+    "fentanyl",
+    "codeine"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "July thirty first O eight",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Yesterday morning",
+    "Yesterday at 11 AM",
+    "Yesterday around 11",
+    "Yesterday morning around 11",
+    "Yesterday at 11:00"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "July thirty first",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Yesterday morning",
+    "Yesterday at 11 AM",
+    "Yesterday around 11",
+    "Yesterday morning around 11",
+    "Yesterday at 11:00"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "Morphine",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "nurses",
+    "a nurse",
+    "the nurse",
+    "staff",
+    "medical staff"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "July thirty first O eight",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Yesterday",
+    "Yesterday morning",
+    "Yesterday afternoon",
+    "Last night",
+    "The day before"
+   ]
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "July thirty first",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "yesterday",
+    "yesterday morning",
+    "yesterday afternoon",
+    "last night",
+    "the day before"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "I always",
+    "I try to",
+    "I make sure",
+    "I really"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "the last 48 hours",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "a week",
+    "a few days",
+    "several days",
+    "the past week",
+    "the last week"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "61-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "35-year-old",
+    "45-year-old",
+    "50-year-old",
+    "40-year-old",
+    "30-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "I always",
+    "I try to",
+    "I really",
+    "I usually"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "the last 48 hours",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "a week",
+    "a few days",
+    "three days",
+    "two days",
+    "a day"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "61-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "45-year-old",
+    "50-year-old",
+    "35-year-old",
+    "40-year-old",
+    "60-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "I really",
+    "I try to",
+    "I always",
+    "I make sure"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "the last 48 hours",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "a week",
+    "a few days",
+    "several days",
+    "the past week",
+    "the last week"
+   ]
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "61-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "35-year-old",
+    "45-year-old",
+    "50-year-old",
+    "60-year-old",
+    "40-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "] james",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Michael Johnson",
+    "Robert Williams",
+    "David Brown"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "l5",
+   "type": "CODE",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "L4-L5",
+    "L5-S1",
+    "L3-L4",
+    "L2-L3",
+    "L1-L2"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "will",
+    "plan to",
+    "intend to",
+    "am going to",
+    "want to"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "about 10 years ago",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "two years ago",
+    "five years ago",
+    "ten years ago",
+    "three years ago"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "57-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "45-year-old",
+    "50-year-old",
+    "60-year-old",
+    "55-year-old",
+    "40-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "] james",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "James",
+    "James Smith",
+    "Mr. Smith",
+    "James [Last Name]",
+    "the patient"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "l5",
+   "type": "CODE",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "L5",
+    "L4-L5",
+    "L5-S1",
+    "L4",
+    "L3-L4"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "recommend",
+    "suggest",
+    "advise",
+    "plan to",
+    "want to"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "about 10 years ago",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "two years ago",
+    "five years ago",
+    "three years ago",
+    "ten years ago"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "57-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "65-year-old",
+    "60-year-old",
+    "55-year-old",
+    "70-year-old",
+    "50-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "] james",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Michael Johnson",
+    "Robert Williams",
+    "David Brown"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "l5",
+   "type": "CODE",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "L5-S1",
+    "L4-L5",
+    "L3-L4",
+    "L5",
+    "S1"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "recommend",
+    "suggest",
+    "advise",
+    "plan to",
+    "want to"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "about 10 years ago",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "two years ago",
+    "five years ago",
+    "ten years ago",
+    "three years ago"
+   ]
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "57-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "45-year-old",
+    "50-year-old",
+    "60-year-old",
+    "35-year-old",
+    "55-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N005",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "41-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "35-year-old",
+    "42-year-old",
+    "28-year-old",
+    "50-year-old",
+    "30-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N005",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "41-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "35-year-old",
+    "45-year-old",
+    "50-year-old",
+    "28-year-old",
+    "60-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N005",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "41-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "35-year-old",
+    "42-year-old",
+    "28-year-old",
+    "50-year-old",
+    "30-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N006",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "44-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "30-year-old",
+    "25-year-old",
+    "40-year-old",
+    "35-year-old",
+    "45-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N006",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "44-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "35-year-old",
+    "40-year-old",
+    "45-year-old",
+    "30-year-old",
+    "50-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N006",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "44-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "65-year-old",
+    "55-year-old",
+    "45-year-old",
+    "35-year-old",
+    "70-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "would like",
+    "would prefer",
+    "should",
+    "might",
+    "could"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "last year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "a few months ago",
+    "six months ago",
+    "last visit",
+    "a while ago"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "27",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "last year",
+    "a few years ago",
+    "several years ago",
+    "two years ago",
+    "recently"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "the past year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the past year",
+    "the last few months",
+    "the pandemic",
+    "the last six months",
+    "this year"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "27-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "today",
+    "today's date",
+    "this morning",
+    "right now",
+    "currently"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "would",
+    "should",
+    "could",
+    "might",
+    "need to"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "last year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "previous visit",
+    "last month",
+    "last year",
+    "prior visit"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "27",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "25",
+    "26",
+    "27",
+    "28",
+    "29"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "the past year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the pandemic",
+    "lockdown",
+    "the pandemic",
+    "lockdown",
+    "the pandemic"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "27-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "35",
+    "36",
+    "37",
+    "38",
+    "39"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "would",
+    "might",
+    "should",
+    "could",
+    "will"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "last year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last year",
+    "previous year",
+    "last visit",
+    "last month",
+    "last year"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "27",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "infancy",
+    "birth",
+    "childhood",
+    "early childhood",
+    "infancy"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "the past year",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the pandemic",
+    "lockdown",
+    "the last year",
+    "the pandemic"
+   ]
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "27-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "today",
+    "today",
+    "today",
+    "today",
+    "today"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "stephanie",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Mary Johnson",
+    "Robert Brown",
+    "Sarah Williams"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "I'd",
+    "I'm",
+    "I will",
+    "I want to"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "wan na send",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "I'd",
+    "I'm",
+    "I will",
+    "I want to"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "some lasix 40 milligrams",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "tomorrow",
+    "next week",
+    "in a few days",
+    "soon",
+    "later"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "vermont",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Colorado",
+    "Montana",
+    "Wyoming",
+    "Utah",
+    "Idaho"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "the past every day",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the past",
+    "the past few years",
+    "years ago",
+    "before",
+    "recently"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "the past couple of months",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the past few weeks",
+    "the last month",
+    "the past couple of weeks",
+    "recently",
+    "over the last few weeks"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "tau_walk",
+   "surface": "49-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "a 45-year-old male",
+    "a 50-year-old female",
+    "a 60-year-old male",
+    "a 35-year-old female",
+    "a 55-year-old male"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "stephanie",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jane Doe",
+    "Mary Smith",
+    "Sarah Johnson",
+    "Emily Davis",
+    "Lisa Anderson"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I'd like to",
+    "I want to",
+    "I'd love to",
+    "I need to",
+    "I plan to"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "wan na send",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I'd like to",
+    "I want to",
+    "I'd love to",
+    "I need to",
+    "I plan to"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "some lasix 40 milligrams",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "furosemide",
+    "lasix",
+    "torsemide",
+    "bumetanide",
+    "hydrochlorothiazide"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "vermont",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Colorado",
+    "Montana",
+    "Wyoming",
+    "Utah",
+    "Idaho"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "the past every day",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the past",
+    "the past few years",
+    "years ago",
+    "the past decade",
+    "my entire life"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "the past couple of months",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the past few weeks",
+    "the past month",
+    "the past couple of weeks",
+    "the past few days",
+    "the past week"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "identity_only",
+   "surface": "49-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "45-year-old",
+    "50-year-old",
+    "60-year-old",
+    "55-year-old",
+    "40-year-old"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "stephanie",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Mary Johnson",
+    "Robert Brown",
+    "Sarah Williams"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "wan na",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "we",
+    "you",
+    "they",
+    "it"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "wan na send",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "I",
+    "we",
+    "you",
+    "they",
+    "it"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "some lasix 40 milligrams",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "tomorrow",
+    "next week",
+    "in the morning",
+    "this afternoon",
+    "later today"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "vermont",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Colorado",
+    "Montana",
+    "Wyoming",
+    "Utah",
+    "Idaho"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "the past every day",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the past",
+    "the past few years",
+    "years ago",
+    "previously",
+    "before"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "the past couple of months",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the past few weeks",
+    "the last month",
+    "the past week",
+    "recently",
+    "lately"
+   ]
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "arm": "all_placeholder",
+   "surface": "49-year-old",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "a 45-year-old",
+    "a 50-year-old",
+    "a 60-year-old",
+    "a 35-year-old",
+    "a 55-year-old"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Tim",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John",
+    "Jane",
+    "Mike",
+    "Sarah",
+    "David"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Alan",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "my colleague",
+    "my assistant",
+    "the team",
+    "our legal counsel",
+    "my partner"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Pat",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Commissioner",
+    "The Chair",
+    "The Chairman",
+    "The Commissioner",
+    "The Member"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Wood",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Smith",
+    "Jones",
+    "Brown",
+    "Davis",
+    "Wilson"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Ray\n\n ",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Best regards",
+    "Sincerely",
+    "Thanks",
+    "Regards",
+    "Cheers"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "the 13th or 14th",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the Commission's website",
+    "the FERC website",
+    "the agency's portal",
+    "the public docket",
+    "the official site"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "November 20",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "November 15",
+    "December 1",
+    "January 10",
+    "February 5",
+    "March 1"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "November 9",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "October 30",
+    "November 15",
+    "December 1",
+    "January 15",
+    "February 1"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "November 7",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "October",
+    "November",
+    "December",
+    "late fall",
+    "the fall"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Tim",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Hi John",
+    "Hello Mark",
+    "Dear Sarah",
+    "Hi Team",
+    "Good morning"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Alan",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "my colleague",
+    "my assistant",
+    "our legal team",
+    "the staff",
+    "my partner"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Pat",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Commissioner",
+    "Chairman",
+    "The Chair",
+    "Member",
+    "The Commissioner"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Wood",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Smith",
+    "Johnson",
+    "Williams",
+    "Brown",
+    "Jones"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Ray\n\n ",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Best regards",
+    "Sincerely",
+    "Thanks",
+    "Regards",
+    "Cheers"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "the 13th or 14th",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the Commission's website",
+    "the FERC website",
+    "the docket",
+    "the portal",
+    "the homepage"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "November 20",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "next month",
+    "in two weeks",
+    "early next year",
+    "later this quarter",
+    "in January"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "November 9",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the end of the month",
+    "next Friday",
+    "the 15th",
+    "the 30th",
+    "next week"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "November 7",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "next Tuesday",
+    "next Monday",
+    "the 12th",
+    "the 20th",
+    "next Wednesday"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Tim",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Hi John",
+    "Hello Mark",
+    "Dear Sarah",
+    "Hi Team",
+    "Good morning"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Alan",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "my colleague",
+    "my assistant",
+    "our legal team",
+    "the staff",
+    "my partner"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Pat",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Commissioner",
+    "Chairman",
+    "The Chair",
+    "Member",
+    "The Commissioner"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Wood",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Smith",
+    "Johnson",
+    "Williams",
+    "Brown",
+    "Jones"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Ray\n\n ",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Best regards",
+    "Sincerely",
+    "Thanks",
+    "Regards",
+    "Cheers"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "the 13th or 14th",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the Commission's website",
+    "the FERC website",
+    "the docket",
+    "the portal",
+    "the homepage"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "November 20",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "next month",
+    "in two weeks",
+    "early next year",
+    "later this quarter",
+    "in January"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "November 9",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the end of the month",
+    "next Friday",
+    "the 15th",
+    "the 30th",
+    "next week"
+   ]
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "November 7",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "next Tuesday",
+    "next Monday",
+    "the 12th",
+    "the 20th",
+    "next Wednesday"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Seidl",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Amory",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Steve",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "650.279.1008",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0101",
+    "555-0102",
+    "555-0103",
+    "555-0104",
+    "555-0105"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "408.571.6317",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0111",
+    "555-0112",
+    "555-0113",
+    "555-0114",
+    "555-0115"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "650.941.0248",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0121",
+    "555-0122",
+    "555-0123",
+    "555-0124",
+    "555-0125"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Kathleen Moazed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Kathleen Bertelsen Moazed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "415.682-9192",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "10001",
+    "10002",
+    "10003",
+    "10004",
+    "10005"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "415.516.7886",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0101",
+    "555-0102",
+    "555-0103",
+    "555-0104",
+    "555-0105"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "415.682.9193",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0198",
+    "555-0197",
+    "555-0196",
+    "555-0195"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "august 21.doc",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "June 2023",
+    "July 2023",
+    "August 2023",
+    "Summer 2023",
+    "Last summer"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "CA 94122\ntel:",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "tomorrow",
+    "next week",
+    "later today",
+    "soon",
+    "in a few days"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "San Francisco",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Washington",
+    "New York",
+    "Boston",
+    "Chicago",
+    "San Francisco"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Irving Street",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Street",
+    "Avenue",
+    "Boulevard",
+    "Drive",
+    "Lane"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Capitol Hill",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "government",
+    "corporate",
+    "academic",
+    "international",
+    "local"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Seidl",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Amory",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Steve",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "650.279.1008",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0198",
+    "555-0142",
+    "555-0173",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "408.571.6317",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0142",
+    "555-0198",
+    "555-0173",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "650.941.0248",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0173",
+    "555-0198",
+    "555-0142",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Kathleen Moazed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Kathleen Bertelsen Moazed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "415.682-9192",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "10001",
+    "10002",
+    "10003",
+    "10004",
+    "10005"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "415.516.7886",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0198",
+    "555-0142",
+    "555-0173",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "415.682.9193",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0143",
+    "555-0174",
+    "555-0157",
+    "555-0190"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "august 21.doc",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "January 1, 2023",
+    "February 15, 2023",
+    "March 10, 2023",
+    "April 5, 2023",
+    "May 20, 2023"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "CA 94122\ntel:",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "January 1, 2023",
+    "February 15, 2023",
+    "March 10, 2023",
+    "April 5, 2023",
+    "May 20, 2023"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "San Francisco",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "New York",
+    "Washington",
+    "Boston",
+    "Chicago",
+    "San Francisco"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Irving Street",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "5th Avenue",
+    "Main Street",
+    "Broadway",
+    "Park Avenue",
+    "Wall Street"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Capitol Hill",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "New York",
+    "Washington",
+    "Boston",
+    "Chicago",
+    "San Francisco"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Seidl",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Amory",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Steve",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "650.279.1008",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0198",
+    "555-0142",
+    "555-0173",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "408.571.6317",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0142",
+    "555-0198",
+    "555-0173",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "650.941.0248",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0173",
+    "555-0198",
+    "555-0142",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Kathleen Moazed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Kathleen Bertelsen Moazed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Doe",
+    "Jane Smith",
+    "Bob Johnson",
+    "Alice Williams",
+    "Michael Brown"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "415.682-9192",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "10001",
+    "10002",
+    "10003",
+    "10004",
+    "10005"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "415.516.7886",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0198",
+    "555-0142",
+    "555-0173",
+    "555-0156",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "415.682.9193",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0143",
+    "555-0174",
+    "555-0157",
+    "555-0190"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "august 21.doc",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "January 1, 2023",
+    "February 15, 2023",
+    "March 10, 2023",
+    "April 5, 2023",
+    "May 20, 2023"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "CA 94122\ntel:",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "January 1, 2023",
+    "February 15, 2023",
+    "March 10, 2023",
+    "April 5, 2023",
+    "May 20, 2023"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "San Francisco",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "New York",
+    "Washington",
+    "Boston",
+    "Chicago",
+    "San Francisco"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Irving Street",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "5th Avenue",
+    "Main Street",
+    "Broadway",
+    "Park Avenue",
+    "Wall Street"
+   ]
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Capitol Hill",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "New York",
+    "Washington",
+    "Boston",
+    "Chicago",
+    "San Francisco"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "JoAnne H. Hale/MDACC",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Ken Lay",
+    "Jeffrey Skilling",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "John Emshwiller",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Tim Belden",
+    "Richard Causey",
+    "Andrew Fastow",
+    "Jeffrey Skilling",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Dottie",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Tim Belden",
+    "Richard Causey",
+    "Andrew Fastow",
+    "Jeffrey Skilling",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Dottie W. Roark/MDACC",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Tim Belden",
+    "Richard Causey",
+    "Andrew Fastow",
+    "Jeffrey Skilling",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Emshwiller",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Tim Belden",
+    "Richard Causey",
+    "Andrew Fastow",
+    "Jeffrey Skilling",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "John",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Tim Belden",
+    "Richard Causey",
+    "Andrew Fastow",
+    "Jeffrey Skilling",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "John.Emshwiller@wsj.com",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "t-belden@enron.com",
+    "rcausey@enron.com",
+    "afastow@enron.com",
+    "jskilling@enron.com",
+    "klays@enron.com"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Mendelsohn",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Richard Causey",
+    "Andrew Fastow",
+    "Tim Belden",
+    "Jeffrey Skilling",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "LJM2",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "LJM",
+    "LJM2",
+    "Raptor",
+    "Chewco",
+    "JEDI"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "John Emshwiller\n     ",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Tim Belden",
+    "Richard Causey",
+    "Andrew Fastow",
+    "Jeffrey Skilling",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "323-658-3822",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "713-853-0000",
+    "713-853-7000",
+    "713-853-3000",
+    "713-853-4000",
+    "713-853-5000"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "09/24/2001 05:32:19 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001",
+    "October 20, 2001"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "09/24/2001 05:34 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001",
+    "October 20, 2001"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "LA",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Houston",
+    "Dallas",
+    "San Antonio",
+    "Austin",
+    "Fort Worth"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "09/24/2001 06:21 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001",
+    "October 20, 2001"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "JoAnne H. Hale/MDACC",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "John Emshwiller",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Dottie",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Dottie W. Roark/MDACC",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Emshwiller",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "John",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "John.Emshwiller@wsj.com",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "dvise@wsj.com",
+    "david.vise@wsj.com",
+    "David Vise",
+    "dvise@enron.com",
+    "david.vise@enron.com"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Mendelsohn",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Ken Lay",
+    "Kenneth Lay",
+    "Ken Lay",
+    "Kenneth Lay",
+    "Ken Lay"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "LJM2",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "LJM",
+    "LJM2",
+    "LJM2 Co-Investment",
+    "LJM Partnership",
+    "LJM LP"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "John Emshwiller\n     ",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise",
+    "David Vise"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "323-658-3822",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "214-855-7000",
+    "212-416-5000",
+    "214-855-7000",
+    "212-416-5000",
+    "214-855-7000"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "09/24/2001 05:32:19 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 10, 2002",
+    "October 11, 2002",
+    "October 12, 2002",
+    "October 9, 2002",
+    "October 13, 2002"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "09/24/2001 05:34 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 11, 2002",
+    "October 12, 2002",
+    "October 10, 2002",
+    "October 13, 2002",
+    "October 14, 2002"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "LA",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Houston",
+    "New York",
+    "Washington",
+    "London",
+    "Dallas"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "09/24/2001 06:21 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 12, 2002",
+    "October 13, 2002",
+    "October 11, 2002",
+    "October 14, 2002",
+    "October 10, 2002"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "JoAnne H. Hale/MDACC",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jeffrey Skilling",
+    "Ken Lay",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "John Emshwiller",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jeffrey Skilling",
+    "Ken Lay",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Dottie",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jeffrey Skilling",
+    "Ken Lay",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Dottie W. Roark/MDACC",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jeffrey Skilling",
+    "Ken Lay",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Emshwiller",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jeffrey Skilling",
+    "Ken Lay",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "John",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jeffrey Skilling",
+    "Ken Lay",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "John.Emshwiller@wsj.com",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "jskilling@enron.com",
+    "ken.lay@enron.com",
+    "andrew.fastow@enron.com",
+    "rcausey@enron.com",
+    "tmbelden@enron.com"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Mendelsohn",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Kenneth Lay",
+    "Jeffrey Skilling",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "LJM2",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Kenneth Lay",
+    "Jeffrey Skilling",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "John Emshwiller\n     ",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jeffrey Skilling",
+    "Ken Lay",
+    "Andrew Fastow",
+    "Richard Causey",
+    "Tim Belden"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "323-658-3822",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "jskilling@enron.com",
+    "ken.lay@enron.com",
+    "andrew.fastow@enron.com",
+    "rcausey@enron.com",
+    "tmbelden@enron.com"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "09/24/2001 05:32:19 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 15, 2001",
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "09/24/2001 05:34 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 15, 2001",
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "LA",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Houston",
+    "Dallas",
+    "San Antonio",
+    "Austin",
+    "Fort Worth"
+   ]
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "09/24/2001 06:21 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 15, 2001",
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Jessie Toland",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Michael Johnson",
+    "Sarah Williams",
+    "Robert Brown"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "(617) 613-5967",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0123",
+    "555-0145",
+    "555-0167",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "jtoland@forrester.com",
+   "type": "CODE",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "john.smith@forrester.com",
+    "jane.doe@forrester.com",
+    "mjohnson@forrester.com",
+    "swilliams@forrester.com",
+    "rbrown@forrester.com"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Frank Gillett",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "George Colony",
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Nate Root\nTime:",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith",
+    "George Colony"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Nate Root",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith",
+    "George Colony"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "10:00 to 11:00 AM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "10:00 AM",
+    "11:00 AM",
+    "9:00 AM",
+    "2:00 PM",
+    "3:00 PM"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "1:00 to 2:00 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "1:00 PM",
+    "2:00 PM",
+    "12:00 PM",
+    "5:00 PM",
+    "6:00 PM"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Jessie Toland",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Michael Johnson",
+    "Sarah Williams",
+    "Robert Brown"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "(617) 613-5967",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0123",
+    "555-0145",
+    "555-0167",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "jtoland@forrester.com",
+   "type": "CODE",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "john.smith@forrester.com",
+    "jane.doe@forrester.com",
+    "mjohnson@forrester.com",
+    "swilliams@forrester.com",
+    "rbrown@forrester.com"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Frank Gillett",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "George Colony",
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Nate Root\nTime:",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith",
+    "George Colony"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Nate Root",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith",
+    "George Colony"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "10:00 to 11:00 AM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "10:00 AM",
+    "11:00 AM",
+    "9:00 AM",
+    "2:00 PM",
+    "3:00 PM"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "1:00 to 2:00 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "1:00 PM",
+    "2:00 PM",
+    "12:00 PM",
+    "5:00 PM",
+    "6:00 PM"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Jessie Toland",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Michael Johnson",
+    "Sarah Williams",
+    "Robert Brown"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "(617) 613-5967",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0123",
+    "555-0145",
+    "555-0167",
+    "555-0189"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "jtoland@forrester.com",
+   "type": "CODE",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "john.smith@forrester.com",
+    "jane.doe@forrester.com",
+    "mjohnson@forrester.com",
+    "swilliams@forrester.com",
+    "rbrown@forrester.com"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Frank Gillett",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "George Colony",
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Nate Root\nTime:",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith",
+    "George Colony"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Nate Root",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Brian Solis",
+    "Forrest Norvell",
+    "David Linthicum",
+    "Mark Smith",
+    "George Colony"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "10:00 to 11:00 AM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "10:00 AM",
+    "11:00 AM",
+    "9:00 AM",
+    "2:00 PM",
+    "3:00 PM"
+   ]
+  },
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "1:00 to 2:00 PM",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "1:00 PM",
+    "2:00 PM",
+    "12:00 PM",
+    "5:00 PM",
+    "6:00 PM"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Linda",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Robert Johnson",
+    "Michael Brown",
+    "David Wilson"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Patricia Freeman",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Robert Johnson",
+    "Michael Brown",
+    "David Wilson"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Patricia.vcf",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "<HTML>",
+    "<SCRIPT>",
+    "<IMG>",
+    "<DIV>",
+    "<TABLE>"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Linda",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John",
+    "Jane",
+    "Mary",
+    "Robert",
+    "Michael"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Patricia Freeman",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Robert Johnson",
+    "Michael Brown",
+    "David Wilson"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Patricia.vcf",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "<script>alert('XSS')</script>",
+    "<img src=x onerror=alert(1)>",
+    "<iframe src=\"evil.com\">",
+    "<object data=\"malware.exe\">",
+    "<embed src=\"virus.swf\">"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Linda",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Robert Johnson",
+    "Michael Brown",
+    "David Wilson"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Patricia Freeman",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Robert Johnson",
+    "Michael Brown",
+    "David Wilson"
+   ]
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Patricia.vcf",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "<HTML>",
+    "<SCRIPT>",
+    "<IMG>",
+    "<DIV>",
+    "<TABLE>"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Cindy",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "John Smith",
+    "Jane Doe",
+    "Michael Johnson",
+    "Sarah Williams",
+    "David Brown"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Kathy",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Mary Jones",
+    "Robert Taylor",
+    "Jennifer Anderson",
+    "William Thomas",
+    "Lisa Martinez"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Allison",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Sarah Connor",
+    "John Connor",
+    "Bruce Wayne",
+    "Clark Kent",
+    "Peter Parker"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Anne",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Best regards",
+    "Sincerely",
+    "Kind regards",
+    "Thanks again",
+    "Cheers"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Houston",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Chicago",
+    "New York",
+    "Los Angeles",
+    "Houston",
+    "Phoenix"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Cindy",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Ken Lay",
+    "Jeffrey Skilling",
+    "Andrew Fastow",
+    "David Duncan",
+    "Richard Causey"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Kathy",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Lee Raymond",
+    "John Hofmeister",
+    "David O'Reilly",
+    "Charles Watson",
+    "Tom Shadid"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Allison",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Enron",
+    "WorldCom",
+    "Tyco",
+    "Adelphia",
+    "Parmalat"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Anne",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Ken Lay",
+    "Jeffrey Skilling",
+    "Andrew Fastow",
+    "Richard Causey",
+    "David Duncan"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Houston",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Houston",
+    "Texas",
+    "United States",
+    "North America",
+    "Gulf Coast"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Cindy",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Dear John",
+    "Hi Sarah",
+    "Dear Team",
+    "Hello Mike",
+    "Dear Board"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Kathy",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Jane",
+    "Bob",
+    "Emily",
+    "David",
+    "Lisa"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Allison",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "the pandemic",
+    "the hurricane",
+    "the flood",
+    "the earthquake",
+    "the fire"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Anne",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Best regards",
+    "Sincerely",
+    "Thanks again",
+    "Warmly",
+    "Cheers"
+   ]
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Houston",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Community",
+    "Area",
+    "Region",
+    "District",
+    "County"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Sidney Taurel",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Eli Lilly",
+    "Mr. Lilly",
+    "Mr. Lilly Sr.",
+    "Mr. Lilly Jr.",
+    "Mr. Eli Lilly"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Sidney",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Mr. Lilly",
+    "Mr. Eli Lilly",
+    "Mr. Lilly Sr.",
+    "Mr. Lilly Jr.",
+    "Dear Mr. Lilly"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Enclosed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "Enclosed",
+    "Attached",
+    "Please find",
+    "I have included",
+    "Here are"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Chris DeMuth\n\nEnclosures",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "AEI",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "AEI",
+    "the American Enterprise Institute",
+    "the Institute",
+    "the organization",
+    "the center"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "next month",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "in the spring",
+    "in the winter",
+    "in the summer",
+    "in the fall",
+    "in the next quarter"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "2022",
+    "2021",
+    "2020",
+    "2019",
+    "2023"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "2000",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "2022",
+    "2021",
+    "2020",
+    "2019",
+    "2023"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Thursday, October 25",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "October 15",
+    "November 1",
+    "December 1",
+    "September 30",
+    "October 1"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Monday, October 22?when",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "October",
+    "November",
+    "September",
+    "December",
+    "August"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Indianapolis",
+   "type": "LOC",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Indianapolis",
+    "Washington",
+    "New York",
+    "Chicago",
+    "Boston"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "December 7, 2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "October 15",
+    "November 1",
+    "December 1",
+    "September 30",
+    "October 1"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "American Enterprise Institute",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "American Enterprise Institute",
+    "AEI",
+    "the American Enterprise Institute for Public Policy Research",
+    "AEI",
+    "the Institute"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "46285",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Indiana",
+    "Ohio",
+    "Kentucky",
+    "Michigan",
+    "Illinois"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "IN",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "miles",
+    "kilometers",
+    "feet",
+    "meters",
+    "yards"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "October 19, 2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": []
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Sidney Taurel",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Eli Lilly",
+    "Mr. Lilly",
+    "Mr. Lilly Jr.",
+    "Mr. David A. Lilly",
+    "Mr. David"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Sidney",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Eli Lilly",
+    "Mr. Lilly",
+    "Mr. Lilly Jr.",
+    "Mr. David A. Lilly",
+    "Mr. David"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Enclosed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "Enclosed",
+    "Attached",
+    "Please find",
+    "I have attached",
+    "Here is"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Chris DeMuth\n\nEnclosures",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "AEI",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "AEI",
+    "the American Enterprise Institute",
+    "the Institute",
+    "our organization",
+    "the Center"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "next month",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "in the spring",
+    "in the fall",
+    "next month",
+    "in June",
+    "in December"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "annual",
+    "yearly",
+    "fiscal",
+    "previous",
+    "last year's"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "2000",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "previous",
+    "last year's",
+    "annual",
+    "fiscal",
+    "most recent"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Thursday, October 25",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "in October",
+    "in November",
+    "in December",
+    "next week",
+    "next month"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Monday, October 22?when",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Washington",
+    "Washington, D.C.",
+    "the capital",
+    "D.C.",
+    "the city"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Indianapolis",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Washington",
+    "Washington, D.C.",
+    "the capital",
+    "D.C.",
+    "the city"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "December 7, 2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "in October",
+    "in November",
+    "in December",
+    "next month",
+    "next year"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "American Enterprise Institute",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "American Enterprise Institute",
+    "AEI",
+    "the American Enterprise Institute for Public Policy Research",
+    "the Institute",
+    "AEI Institute"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "46285",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "D.C.",
+    "District of Columbia",
+    "Washington",
+    "the District",
+    "DC"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "IN",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "20054",
+    "20036",
+    "20006",
+    "20005",
+    "20037"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "October 19, 2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": []
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Sidney Taurel",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Eli Lilly",
+    "Eli",
+    "Mr. Lilly",
+    "Mr. Eli Lilly",
+    "Mr. Eli L."
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Sidney",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Eli Lilly",
+    "Eli",
+    "Mr. Lilly",
+    "Mr. Eli Lilly",
+    "Mr. Eli L."
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Enclosed",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "Enclosed",
+    "Attached",
+    "Please find",
+    "I have included",
+    "Here is"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Chris DeMuth\n\nEnclosures",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>",
+    "<PERSON_1>"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "AEI",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "AEI",
+    "the American Enterprise Institute",
+    "the Institute",
+    "AEI's",
+    "the organization's"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "next month",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "in the spring",
+    "in the fall",
+    "in the summer",
+    "in the winter",
+    "next month"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "annual",
+    "yearly",
+    "fiscal",
+    "previous",
+    "last year's"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "2000",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "most recent",
+    "latest",
+    "current",
+    "previous",
+    "last"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Thursday, October 25",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "October",
+    "November",
+    "December",
+    "January",
+    "February"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Monday, October 22?when",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Washington",
+    "Washington, D.C.",
+    "the capital",
+    "D.C.",
+    "here"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Indianapolis",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Washington",
+    "Washington, D.C.",
+    "the capital",
+    "D.C.",
+    "here"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "December 7, 2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "in October",
+    "in November",
+    "in December",
+    "in January",
+    "in February"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "American Enterprise Institute",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "American Enterprise Institute",
+    "AEI",
+    "the Institute",
+    "the American Enterprise",
+    "AEI Institute"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "46285",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "D.C.",
+    "DC",
+    "District of Columbia",
+    "Washington",
+    "the District"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "IN",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "20505",
+    "20036",
+    "20006",
+    "20005",
+    "20037"
+   ]
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "October 19, 2001",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "October 15, 2004",
+    "November 1, 2004",
+    "December 10, 2004",
+    "January 5, 2005",
+    "February 14, 2005"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "1107504",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "20011010",
+    "20011011",
+    "20011012",
+    "20011013",
+    "20011014"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "last Sunday's",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "last week",
+    "yesterday",
+    "earlier this week",
+    "last month",
+    "recently"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "last week",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last week",
+    "yesterday",
+    "earlier this week",
+    "last month",
+    "recently"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Enron",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Enron",
+    "The company",
+    "We",
+    "Our firm",
+    "The entity"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Transwestern Pipeline Company",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Enron Corp.",
+    "Enron North America",
+    "Enron Capital & Trade Resources",
+    "Enron Creditors Committee",
+    "Enron Corp."
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Northern Natural Gas Company",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Enron Corp.",
+    "Enron North America",
+    "Enron Capital & Trade Resources",
+    "Enron Creditors Committee",
+    "Enron Corp."
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Citigroup Inc.",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "JPMorgan Chase & Co.",
+    "Citigroup",
+    "Bank of America",
+    "Wells Fargo",
+    "Goldman Sachs"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "tau_walk",
+   "surface": "Salomon Smith Barney",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Citigroup",
+    "Bank of America",
+    "Wells Fargo",
+    "Goldman Sachs",
+    "Morgan Stanley"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "1107504",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "20011109",
+    "20011108",
+    "20011107",
+    "20011106",
+    "20011105"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "last Sunday's",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "last week",
+    "yesterday",
+    "today",
+    "this morning",
+    "recently"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "last week",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "last week",
+    "yesterday",
+    "today",
+    "this morning",
+    "recently"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Enron",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Enron",
+    "the company",
+    "Enron Corp",
+    "Enron North America",
+    "Enron Corp."
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Transwestern Pipeline Company",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Enron Corp",
+    "Enron",
+    "Enron Corp.",
+    "Enron North America",
+    "Enron Corp"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Northern Natural Gas Company",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Enron Corp",
+    "Enron",
+    "Enron Corp.",
+    "Enron North America",
+    "Enron Corp"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Citigroup Inc.",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "JPMorgan Chase & Co.",
+    "JPMorgan Chase",
+    "JPMorgan",
+    "Chase Manhattan",
+    "JP Morgan"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "identity_only",
+   "surface": "Salomon Smith Barney",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Citigroup",
+    "Citibank",
+    "Bank of America",
+    "Merrill Lynch",
+    "Goldman Sachs"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "1107504",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "20011016",
+    "20011017",
+    "20011018",
+    "20011019",
+    "20011020"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "last Sunday's",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001",
+    "October 20, 2001"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "last week",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 16, 2001",
+    "October 17, 2001",
+    "October 18, 2001",
+    "October 19, 2001",
+    "October 20, 2001"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Enron",
+   "type": "ORG",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "Enron",
+    "Enron Corp",
+    "Enron North America",
+    "Enron Corp."
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Transwestern Pipeline Company",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Enron Corp",
+    "Enron North America",
+    "Enron Corp."
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Northern Natural Gas Company",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Enron North America",
+    "Enron Corp",
+    "Enron Corp."
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Citigroup Inc.",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "JPMorgan Chase",
+    "JPMorgan Chase & Co.",
+    "Chase Manhattan",
+    "J.P. Morgan",
+    "Chase"
+   ]
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "arm": "all_placeholder",
+   "surface": "Salomon Smith Barney",
+   "type": "ORG",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Citigroup",
+    "Citibank",
+    "Bank of America",
+    "Merrill Lynch",
+    "Goldman Sachs"
+   ]
+  },
+  {
+   "doc": "aeslc/allen-p_inbox_84",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "Participant",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "participant",
+    "employee",
+    "beneficiary",
+    "plan participant",
+    "individual"
+   ]
+  },
+  {
+   "doc": "aeslc/allen-p_inbox_84",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "the last day of the month preceding the date",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the date",
+    "the effective date",
+    "the request date",
+    "the date of receipt",
+    "the termination date"
+   ]
+  },
+  {
+   "doc": "aeslc/allen-p_inbox_84",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "Participant",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "Plan Administrator",
+    "Committee Chair",
+    "Plan Sponsor",
+    "HR Director",
+    "Benefits Manager"
+   ]
+  },
+  {
+   "doc": "aeslc/allen-p_inbox_84",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "the last day of the month preceding the date",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the date",
+    "the effective date",
+    "the request date",
+    "the termination date",
+    "the distribution date"
+   ]
+  },
+  {
+   "doc": "aeslc/allen-p_inbox_84",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "Participant",
+   "type": "PERSON",
+   "direct": true,
+   "hit5": true,
+   "guesses": [
+    "participant",
+    "employee",
+    "deferral agreement",
+    "plan participant",
+    "individual"
+   ]
+  },
+  {
+   "doc": "aeslc/allen-p_inbox_84",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "the last day of the month preceding the date",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": true,
+   "guesses": [
+    "the date",
+    "the date of receipt",
+    "the date of the request",
+    "the date received",
+    "the date of the written request"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "3-6200",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0100",
+    "555-0123",
+    "555-0144",
+    "555-0155"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "the Enron Center",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the campus",
+    "the building",
+    "the office",
+    "the facility",
+    "the premises"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "October 25th",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Monday"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "3-6200",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0100",
+    "555-0123",
+    "555-0144",
+    "555-0155"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "the Enron Center",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the campus",
+    "the building",
+    "the office",
+    "the facility",
+    "the premises"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "October 25th",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Monday"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "3-6200",
+   "type": "CODE",
+   "direct": true,
+   "hit5": false,
+   "guesses": [
+    "555-0199",
+    "555-0100",
+    "555-0123",
+    "555-0144",
+    "555-0155"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "the Enron Center",
+   "type": "LOC",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "the campus",
+    "the building",
+    "the office",
+    "the facility",
+    "the premises"
+   ]
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "October 25th",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Monday"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "Thursday, January 17",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 24, 2001",
+    "October 25, 2001",
+    "October 26, 2001",
+    "October 23, 2001",
+    "October 27, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "Wednesday, January 16",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 23, 2001",
+    "October 22, 2001",
+    "October 24, 2001",
+    "October 21, 2001",
+    "October 25, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "tau_walk",
+   "surface": "Friday, January 11",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 22, 2001",
+    "October 23, 2001",
+    "October 21, 2001",
+    "October 24, 2001",
+    "October 20, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "Thursday, January 17",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 24, 2001",
+    "October 25, 2001",
+    "October 26, 2001",
+    "October 23, 2001",
+    "October 27, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "Wednesday, January 16",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 23, 2001",
+    "October 22, 2001",
+    "October 24, 2001",
+    "October 21, 2001",
+    "October 25, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "identity_only",
+   "surface": "Friday, January 11",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 22, 2001",
+    "October 23, 2001",
+    "October 21, 2001",
+    "October 24, 2001",
+    "October 20, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "Thursday, January 17",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 24, 2001",
+    "October 25, 2001",
+    "October 26, 2001",
+    "October 23, 2001",
+    "October 27, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "Wednesday, January 16",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 23, 2001",
+    "October 22, 2001",
+    "October 24, 2001",
+    "October 21, 2001",
+    "October 25, 2001"
+   ]
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "arm": "all_placeholder",
+   "surface": "Friday, January 11",
+   "type": "DATETIME",
+   "direct": false,
+   "hit5": false,
+   "guesses": [
+    "October 22, 2001",
+    "October 23, 2001",
+    "October 21, 2001",
+    "October 24, 2001",
+    "October 20, 2001"
+   ]
+  }
+ ]
+}

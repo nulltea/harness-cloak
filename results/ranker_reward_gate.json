@@ -6,7 +6,8 @@
   "tau_walk",
   "all_floor",
   "suppression",
-  "all_placeholder"
+  "all_placeholder",
+  "identity_only"
  ],
  "corpora": {
   "clinical": {
@@ -50,6 +51,12 @@
      "U": 0.0748,
      "r": 0.5374,
      "realized": 0.2254
+    },
+    "identity_only": {
+     "A": 1.0,
+     "U": 0.3019,
+     "r": 0.1509,
+     "realized": 0.2998
     }
    },
    "rows": [
@@ -94,6 +101,14 @@
      "realized": 0.0909
     },
     {
+     "id": "aci/D2N001",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.5455,
+     "r": 0.2727,
+     "realized": 0.2727
+    },
+    {
      "id": "mts/0",
      "arm": "no_privacy",
      "A": 0.0,
@@ -131,6 +146,14 @@
      "A": 0.0,
      "U": 0.0953,
      "r": 0.5476,
+     "realized": 0.1429
+    },
+    {
+     "id": "mts/0",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": -0.0,
      "realized": 0.1429
     },
     {
@@ -174,6 +197,14 @@
      "realized": 0.4833
     },
     {
+     "id": "aci/D2N002",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.3833,
+     "r": 0.1916,
+     "realized": 0.26
+    },
+    {
      "id": "mts/1",
      "arm": "no_privacy",
      "A": 0.0,
@@ -211,6 +242,14 @@
      "A": 0.0,
      "U": 0.0,
      "r": 0.5,
+     "realized": 0.0
+    },
+    {
+     "id": "mts/1",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": 0.0,
      "realized": 0.0
     },
     {
@@ -254,6 +293,14 @@
      "realized": 0.381
     },
     {
+     "id": "aci/D2N003",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0714,
+     "r": 0.0357,
+     "realized": 0.3095
+    },
+    {
      "id": "aci/D2N004",
      "arm": "no_privacy",
      "A": 0.0,
@@ -292,6 +339,14 @@
      "U": 0.1852,
      "r": 0.5926,
      "realized": 0.3333
+    },
+    {
+     "id": "aci/D2N004",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.3852,
+     "r": 0.1926,
+     "realized": 0.2222
     },
     {
      "id": "mts/3",
@@ -366,6 +421,14 @@
      "realized": 0.4714
     },
     {
+     "id": "aci/D2N005",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.7143,
+     "r": 0.3571,
+     "realized": 0.6667
+    },
+    {
      "id": "aci/D2N006",
      "arm": "no_privacy",
      "A": 0.0,
@@ -403,6 +466,14 @@
      "A": 0.0,
      "U": 0.1429,
      "r": 0.5714,
+     "realized": 0.2857
+    },
+    {
+     "id": "aci/D2N006",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.5714,
+     "r": 0.2857,
      "realized": 0.2857
     },
     {
@@ -446,6 +517,14 @@
      "realized": 0.2389
     },
     {
+     "id": "aci/D2N007",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.3519,
+     "r": 0.1759,
+     "realized": 0.2944
+    },
+    {
      "id": "mts/6",
      "arm": "no_privacy",
      "A": 0.0,
@@ -483,6 +562,14 @@
      "A": 0.0,
      "U": 0.0,
      "r": 0.5,
+     "realized": 0.0
+    },
+    {
+     "id": "mts/6",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": -0.0,
      "realized": 0.0
     },
     {
@@ -526,6 +613,14 @@
      "realized": 0.2769
     },
     {
+     "id": "aci/D2N008",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.6,
+     "r": 0.3,
+     "realized": 0.4769
+    },
+    {
      "id": "mts/7",
      "arm": "no_privacy",
      "A": 0.0,
@@ -564,6 +659,14 @@
      "U": 0.0,
      "r": 0.5,
      "realized": 0.0
+    },
+    {
+     "id": "mts/7",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": 0.0,
+     "realized": 0.6667
     }
    ]
   },
@@ -608,6 +711,12 @@
      "U": 0.0096,
      "r": 0.5048,
      "realized": 0.1458
+    },
+    "identity_only": {
+     "A": 0.625,
+     "U": 0.0096,
+     "r": 0.1923,
+     "realized": 0.0625
     }
    },
    "rows": [
@@ -646,6 +755,14 @@
     {
      "id": "enron/0",
      "arm": "all_placeholder",
+     "A": 0.0,
+     "U": 0.0,
+     "r": 0.5,
+     "realized": 0.5
+    },
+    {
+     "id": "enron/0",
+     "arm": "identity_only",
      "A": 0.0,
      "U": 0.0,
      "r": 0.5,
@@ -692,6 +809,14 @@
      "realized": 0.0
     },
     {
+     "id": "enron/3",
+     "arm": "identity_only",
+     "A": 0.0,
+     "U": 0.0,
+     "r": 0.5,
+     "realized": 0.0
+    },
+    {
      "id": "enron/4",
      "arm": "no_privacy",
      "A": 0.0,
@@ -730,6 +855,14 @@
      "U": 0.0,
      "r": 0.5,
      "realized": 0.3333
+    },
+    {
+     "id": "enron/4",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": 0.0,
+     "realized": 0.0
     },
     {
      "id": "enron/6",
@@ -804,6 +937,14 @@
      "realized": 0.0
     },
     {
+     "id": "enron/7",
+     "arm": "identity_only",
+     "A": 0.0,
+     "U": 0.077,
+     "r": 0.5385,
+     "realized": 0.0
+    },
+    {
      "id": "enron/9",
      "arm": "no_privacy",
      "A": 0.0,
@@ -841,6 +982,14 @@
      "A": 0.0,
      "U": 0.0,
      "r": 0.5,
+     "realized": 0.0
+    },
+    {
+     "id": "enron/9",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": 0.0,
      "realized": 0.0
     },
     {
@@ -884,6 +1033,14 @@
      "realized": 0.0
     },
     {
+     "id": "enron/10",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": -0.0,
+     "realized": 0.0
+    },
+    {
      "id": "enron/11",
      "arm": "no_privacy",
      "A": 0.0,
@@ -924,6 +1081,14 @@
      "realized": 0.3333
     },
     {
+     "id": "enron/11",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": 0.0,
+     "realized": 0.0
+    },
+    {
      "id": "enron/14",
      "arm": "no_privacy",
      "A": 0.0,
@@ -961,6 +1126,14 @@
      "A": 0.0,
      "U": 0.0,
      "r": 0.5,
+     "realized": 0.0
+    },
+    {
+     "id": "enron/14",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": 0.0,
      "realized": 0.0
     }
    ]
@@ -1005,6 +1178,12 @@
      "A": 0.0,
      "U": 0.2778,
      "r": 0.6389,
+     "realized": 0.2778
+    },
+    "identity_only": {
+     "A": 0.3333,
+     "U": 0.2778,
+     "r": 0.4722,
      "realized": 0.2778
     }
    },
@@ -1082,6 +1261,14 @@
      "realized": 0.0
     },
     {
+     "id": "aeslc/allen-p_inbox_84",
+     "arm": "identity_only",
+     "A": 1.0,
+     "U": 0.0,
+     "r": -0.0,
+     "realized": 0.0
+    },
+    {
      "id": "aeslc/arnold-j_inbox_41",
      "arm": "no_privacy",
      "A": 0.0,
@@ -1116,6 +1303,14 @@
     {
      "id": "aeslc/arnold-j_inbox_41",
      "arm": "all_placeholder",
+     "A": 0.0,
+     "U": 0.0,
+     "r": 0.5,
+     "realized": 0.0
+    },
+    {
+     "id": "aeslc/arnold-j_inbox_41",
+     "arm": "identity_only",
      "A": 0.0,
      "U": 0.0,
      "r": 0.5,
@@ -1188,6 +1383,14 @@
     {
      "id": "aeslc/bass-e_inbox_112",
      "arm": "all_placeholder",
+     "A": 0.0,
+     "U": 0.8335,
+     "r": 0.9167,
+     "realized": 0.8333
+    },
+    {
+     "id": "aeslc/bass-e_inbox_112",
+     "arm": "identity_only",
      "A": 0.0,
      "U": 0.8335,
      "r": 0.9167,
