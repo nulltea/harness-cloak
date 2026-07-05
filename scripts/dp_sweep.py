@@ -161,7 +161,7 @@ if __name__ == "__main__":
     ap.add_argument("--eps", default="2,6,10")
     ap.add_argument("--corpus", default="corpora/cnndm.jsonl")
     ap.add_argument("--limit", type=int, default=60, help="use first N corpus docs (0 = all)")
-    ap.add_argument("--gen-model", default="Qwen3.6-35B-A3B")
+    ap.add_argument("--gen-model", default="gemma 4 (E4B)")  # = roundtrip.RT_MODEL pin (2026-07-05)
     ap.add_argument("--ext-model", default="gemma 4 (E4B)")
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--cr-target", type=float, default=0.01, help="|C_r|/|V| target for per-φ Z calibration")

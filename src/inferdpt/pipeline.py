@@ -75,12 +75,12 @@ class InferDPT:
 def default(
     vocab_cache: str | Path = "data/vocab",
     *,
-    gen_model: str = "Qwen3.6-35B-A3B",
+    gen_model: str = "gemma 4 (E4B)",  # = cloak.train.roundtrip.RT_MODEL (the reward pin, 2026-07-05),
     ext_model: str = "gemma 4 (E4B)",
     epsilon: float = 3.0,
 ) -> InferDPT:
     """Build an InferDPT with the remote generator Y and local extractor X on *different*
-    models (gen=Qwen3.6-35B-A3B, ext=gemma-4-E4B) — distinct models reduce the shared-model
+    models (gen = the pinned reward model, ext distinct) — distinct models reduce the shared-model
     bias in the Gen_p ablation probe."""
     perturber = Perturber(VocabEmbeddings.load(vocab_cache))
     # These are thinking models; disable reasoning so they emit content directly.

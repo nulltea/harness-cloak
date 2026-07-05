@@ -56,7 +56,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=8)
     ap.add_argument("--taus", default="0.005,0.02,0.1,0.5")
-    ap.add_argument("--gen-model", default="Qwen3.6-35B-A3B")
+    ap.add_argument("--gen-model", default="gemma 4 (E4B)")  # = roundtrip.RT_MODEL pin (2026-07-05)
     ap.add_argument("--out", default="results/latticecloak_tau_sweep.json")
     args = ap.parse_args()
     taus = [float(t) for t in args.taus.split(",")]

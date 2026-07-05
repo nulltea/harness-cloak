@@ -24,7 +24,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=8)
     ap.add_argument("--tau", type=float, default=0.02)
-    ap.add_argument("--gen-model", default="Qwen3.6-35B-A3B")
+    ap.add_argument("--gen-model", default="gemma 4 (E4B)")  # = roundtrip.RT_MODEL pin (2026-07-05)
     ap.add_argument("--workers", type=int, default=8)
     args = ap.parse_args()
 

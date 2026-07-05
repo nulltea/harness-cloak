@@ -32,7 +32,7 @@ from surrogate_validation import build_arms  # noqa: E402
 
 GEN_PARAMS = {"temperature": 0.0, "max_tokens": 512,
               "extra_body": {"chat_template_kwargs": {"enable_thinking": False}}}
-GEN_MODEL = "Qwen3.6-35B-A3B"
+GEN_MODEL = "gemma 4 (E4B)"  # = roundtrip.RT_MODEL pin (2026-07-05)
 TAU = 0.02
 _emb = None
 
