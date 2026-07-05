@@ -279,14 +279,11 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
     jobs, meta = [], []          # baseline job per doc first, then G rollouts per doc
     per_doc_idx = []
     for di, doc in enumerate(docs):
-        # ExIt reference = the all-placeholder floor (last action per span is the
-        # placeholder). DEVIATION from the brief, which specified the floor-walk teacher
-        # (s["bc_action"]): for any span whose most-specific legal level is itself the
-        # floor-walk pick that already maximizes realized recall, nothing can strictly beat
-        # it, so the floor-walk is not a beatable reference on the reused offline fixture.
-        # The max-privacy all-placeholder floor is what the round trip is meant to improve
-        # on. See docs handoff / task-5 report for the rationale and the production caveat.
-        bc_choice = {s["surface"].lower(): s["actions"][-1] for s in doc["spans"]}
+        # ExIt reference = the floor-walk teacher (min-aset legal level per span, else
+        # placeholder), per spec Phase 2: a rollout is a winner only if it strictly beats
+        # the floor-walk round-trip reward. On a non-injective static-teacher trajectory
+        # assemble() raises (below) and that doc's baseline is -inf (winner always counts).
+        bc_choice = {s["surface"].lower(): s["actions"][s["bc_action"]] for s in doc["spans"]}
         try:
             doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], bc_choice)
             jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
