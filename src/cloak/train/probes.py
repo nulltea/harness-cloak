@@ -19,7 +19,13 @@ from pathlib import Path
 from cloak.train.reward import restated_probes
 
 CACHE = Path("data/surrogate_probes.json")
-TEACHER_MODEL = "LFM2.5-8B-A1B"
+# Escalated LFM2.5 -> Qwen3.6 (2026-07-05, the spec's pre-registered trigger): probe-health
+# measured LFM question quality as the binder — ambiguous multi-answer questions ("What
+# condition is listed...?" over a 5-item list), mistargeted answers, reader abstention;
+# ceiling pass ~23-30%, every doc under the 3-probe floor. Teacher-tagged cache retires the
+# LFM entries automatically. Family separation holds (teacher != gemma reward model); the
+# second-remote eval arm moves to LFM2.5 (spec components table).
+TEACHER_MODEL = "Qwen3.6-35B-A3B"
 
 PROMPT = """Write one short factual question about the text below whose exact answer is "{answer}".
 The question must be answerable from the text alone and must not contain "{answer}" itself.
@@ -62,11 +68,11 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
         print(f"probes: ignored {n_legacy} legacy/other-teacher cache entries "
               f"(teacher != {TEACHER_MODEL})", flush=True)
     if todo:
-        # LFM2.5 thinks unconditionally (results/thinking_mode_probe.json): budget must
-        # cover ~700 reasoning tokens (separated server-side into reasoning_content), and
-        # enable_thinking:False must NOT be passed — that flag leaks <think> into content.
+        # Qwen3.6 honors enable_thinking:False (unlike LFM2.5, whose unconditional thinking
+        # was one reason its questions underperformed) — pass it so content is the question.
         teacher = LLMClient(TEACHER_MODEL, base_url="http://localhost:8060/v1", api_key="x",
-                            temperature=0.0, max_tokens=1024)
+                            temperature=0.0, max_tokens=256,
+                            extra_body={"chat_template_kwargs": {"enable_thinking": False}})
         replies = pmap(lambda t: teacher.generate(
             PROMPT.format(answer=t["surface"], sent=t["sent"])), todo, workers=workers)
         n_lost = 0
