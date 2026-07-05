@@ -49,9 +49,16 @@ document could also answer the question, make the question more specific until t
 
 Reply with the three questions only, one per line."""
 
-TYPE_HINT = {"PERSON": "a person's name", "LOC": "a location", "ORG": "an organization",
-             "DATETIME": "a date or time", "QUANTITY": "a quantity or dose",
-             "DEM": "a personal attribute"}
+# One hint per detector schema type (the 8-type schema of FT-detector v2+, mirroring
+# detect.GLINER_LABELS phrasing); fallback "a specific detail" covers OTHER/unknown.
+TYPE_HINT = {"PERSON": "a person's name",
+             "ORG": "an organization, company, court or institution",
+             "LOC": "a location, address, city or country",
+             "DATETIME": "a date, time or duration",
+             "CODE": "a reference number or identification code",
+             "QUANTITY": "a quantity, amount of money or percentage",
+             "DEM": "a demographic attribute (nationality, ethnicity, religion, profession or age)",
+             "MISC": "an identifying attribute or event"}
 
 PROMPT_VERSION = 3  # cached entries carry "pv"; a surface is covered only at the current pv
 
