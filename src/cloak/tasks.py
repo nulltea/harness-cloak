@@ -26,8 +26,11 @@ EMAIL_SUBJECT = ("Write a concise subject line (a few words) for the following e
                  "Reply with only the subject line.\n\nEmail:\n{doc}")
 EMAIL_REPLY = ("Write a brief reply to the following email. Reply with only the message "
                "body.\n\nEmail:\n{doc}")
+CASE_SUMMARY = ("Condense the following case summary into one short paragraph covering the "
+                "parties, claims, court, and outcome. Base it only on the text.\n\n"
+                "Case summary:\n{doc}")
 TASK_TEMPLATE = {"aci": CLINICAL_NOTE, "mts": CLINICAL_NOTE, "clinical": CLINICAL_NOTE,
-                 "aeslc": EMAIL_SUBJECT, "enron": EMAIL_REPLY}
+                 "aeslc": EMAIL_SUBJECT, "enron": EMAIL_REPLY, "lexsum": CASE_SUMMARY}
 
 
 def _teacher():

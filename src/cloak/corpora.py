@@ -15,6 +15,7 @@ FILES = {
     "clinical": ["clinical/aci.jsonl", "clinical/mts.jsonl"],
     "aeslc": ["aeslc/test.jsonl"],
     "enron": ["enron/replies.jsonl"],
+    "lexsum": ["lexsum/val.jsonl"],
 }
 
 
