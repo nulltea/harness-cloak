@@ -38,7 +38,8 @@ import torch
 
 from build_arms_artifact import load_artifact
 from cloak.corpora import load_task_docs
-from cloak.train.ranker import RankerPolicy, action_features
+from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
+                                span_context)
 from cloak.train.reward import stage1_reward, u_qa
 
 try:  # surrogate-only environments run without the round-trip module
@@ -47,6 +48,13 @@ except ImportError:
     roundtrip_batch = None
 
 ENV_PATH = Path("data/ranker_env.json")
+
+
+def _ctx_of(doc, i):
+    """Span i's precomputed context embedding, or None (MLP mode has no doc['ctx']).
+    set_context(None) is a no-op on RankerPolicy; in encoder mode doc['ctx'] is always set."""
+    ctx = doc.get("ctx")
+    return None if ctx is None else ctx[i]
 
 
 # ---------- assembly (rollout -> doc_p, R) ----------
@@ -171,7 +179,8 @@ def sample_rollout(doc, span_rows, feats, policy, greedy=False):
     Returns (choice, logps, ph_rate, doc_p, R) — no reward computed here."""
     used: set[str] = set()
     choice, logps, n_level = {}, [], 0
-    for s, f in zip(span_rows, feats):
+    for i, (s, f) in enumerate(zip(span_rows, feats)):
+        policy.set_context(_ctx_of(doc, i))
         legal_dyn = [i for i in s["legal"]
                      if s["actions"][i]["mode"] == "placeholder"
                      or s["actions"][i]["fill"].lower() not in used]
@@ -269,13 +278,19 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
                 continue
             adv = rloo_advantage(rt)
             pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
-            ent = sum(policy_entropy(policy, f, s["legal"])
-                      for s, f in zip(doc["spans"], doc["feats"])) / len(doc["spans"])
+            ent = 0.0
+            for i, (s, f) in enumerate(zip(doc["spans"], doc["feats"])):
+                policy.set_context(_ctx_of(doc, i))
+                ent = ent + policy_entropy(policy, f, s["legal"])
+            ent = ent / len(doc["spans"])
             loss = pg - entropy_coef * ent
             if kl_coef > 0 and ref is not None:
-                loss = loss + kl_coef * sum(
-                    kl_to_ref(policy, ref, f, s["legal"])
-                    for s, f in zip(doc["spans"], doc["feats"])) / len(doc["spans"])
+                kl = 0.0
+                for i, (s, f) in enumerate(zip(doc["spans"], doc["feats"])):
+                    policy.set_context(_ctx_of(doc, i))
+                    ref.set_context(_ctx_of(doc, i))
+                    kl = kl + kl_to_ref(policy, ref, f, s["legal"])
+                loss = loss + kl_coef * kl / len(doc["spans"])
             opt.zero_grad()
             loss.backward()
             opt.step()
@@ -373,12 +388,17 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
 
 
 def clone_choices(policy, items, epochs, lr):
-    """SFT on winner action indices — behavior_clone generalized to arbitrary teachers."""
+    """SFT on winner action indices — behavior_clone generalized to arbitrary teachers.
+    items = (spans, feats, choice_idx) or (spans, feats, choice_idx, ctx) — ctx (encoder
+    mode) is the per-span context-embedding list, None/absent for the MLP policy."""
     opt = torch.optim.Adam(policy.parameters(), lr=lr)
     for _ in range(epochs):
-        for spans, feats, choice_idx in items:
+        for item in items:
+            spans, feats, choice_idx = item[0], item[1], item[2]
+            ctx = item[3] if len(item) > 3 else None
             loss = 0.0
-            for s, f in zip(spans, feats):
+            for i, (s, f) in enumerate(zip(spans, feats)):
+                policy.set_context(None if ctx is None else ctx[i])
                 a_idx = choice_idx[s["surface"].lower()]
                 if a_idx not in s["legal"]:
                     continue
@@ -423,7 +443,8 @@ def behavior_clone(policy, docs, epochs, lr, device, floors=None, randomize=Fals
             else:
                 spans, feats = doc["spans"], doc["feats"]
             loss = 0.0
-            for s, f in zip(spans, feats):
+            for i, (s, f) in enumerate(zip(spans, feats)):
+                policy.set_context(_ctx_of(doc, i))
                 lp = policy.log_probs(f, s["legal"])
                 loss = loss - lp[s["legal"].index(s["bc_action"])]
             opt.zero_grad()
@@ -456,6 +477,12 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--kl-coef", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--policy", choices=["mlp", "encoder"], default="mlp",
+                    help="mlp = feature-only RankerPolicy (default); encoder = doc-conditioned "
+                         "EncoderPolicy (frozen HF encoder + trainable head)")
+    ap.add_argument("--encoder-model", default="answerdotai/ModernBERT-base",
+                    help="HF encoder for --policy encoder (frozen; embeds span context once "
+                         "per doc at load)")
     ap.add_argument("--smoke", action="store_true", help="2 docs, 2 epochs, G=4")
     ap.add_argument("--reward", choices=["surrogate", "roundtrip"], default="surrogate",
                     help="surrogate = local A/u_qa reward; roundtrip = realized fact recall "
@@ -537,6 +564,24 @@ def main():
         docs = kept
     if args.smoke:
         docs, args.epochs, args.G = docs[:2], 2, 4
+
+    encoder_mode = args.policy == "encoder"
+
+    def new_policy():
+        return (EncoderPolicy(encoder_name=args.encoder_model).to(device)
+                if encoder_mode else RankerPolicy().to(device))
+
+    emb_pol = new_policy() if encoder_mode else None
+    if encoder_mode:
+        # frozen-encoder span-in-context embeddings, computed ONCE per doc at load and
+        # attached as doc["ctx"] (one tensor per span, walk order). Every sample/log_probs
+        # call site sets the span's context before scoring (see _ctx_of).
+        for doc in docs:
+            doc["ctx"] = emb_pol.embed_contexts(
+                [span_context(doc["text"], s["start"]) for s in doc["spans"]])
+        print(f"encoder policy: {args.encoder_model} embedded contexts for {len(docs)} docs "
+              f"(frozen encoder, {sum(len(d['ctx']) for d in docs)} spans)", flush=True)
+
     all_spans = [s for d in docs for s in d["spans"]]
     n_spans = len(all_spans)
     n_ge2 = sum(len(s["legal"]) >= 2 for s in all_spans)
@@ -578,18 +623,23 @@ def main():
         from cloak.train.roundtrip import RT_MODEL
         t0 = time.time()
         torch.manual_seed(args.seed)
-        policy = RankerPolicy().to(device)
+        policy = emb_pol if encoder_mode else RankerPolicy().to(device)
         policy = behavior_clone(policy, docs, args.bc_epochs, args.lr, device,
                                 floors=floors, randomize=args.randomize_floors, seed=args.seed)
-        ref = RankerPolicy().to(device)
-        ref.load_state_dict(policy.state_dict())
+        if encoder_mode:
+            ref = policy.clone_for_ref()             # shares frozen encoder, deep-copied head
+        else:
+            ref = RankerPolicy().to(device)
+            ref.load_state_dict(policy.state_dict())
         ref.eval()
         log = {"reward": "roundtrip", "rt_model": RT_MODEL, "adv": adv, "floors": floors,
                "randomize_floors": args.randomize_floors, "G": args.G, "epochs": args.epochs,
                "n_exit_rounds": args.exit_rounds, "exit_epochs": args.exit_epochs,
                "cf_frac": args.cf_frac,
                "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,
-               "n_docs": len(docs), "policy": "feature-MLP (plan ablation floor)",
+               "n_docs": len(docs),
+               "policy": (f"encoder:{args.encoder_model}" if encoder_mode
+                          else "feature-MLP (plan ablation floor)"),
                "exit_rounds": [], "rounds": []}
         # expert-iteration outer loop (after BC, before the RLOO refiner): each round samples
         # G rollouts/doc through the cached round trip and SFTs on the winners strictly beating
@@ -597,8 +647,8 @@ def main():
         for rnd in range(args.exit_rounds):
             winners, stats = exit_round(docs, policy, G=args.G, rt_workers=args.rt_workers,
                                         seed=args.seed + rnd)
-            clone_choices(policy, [(docs[di]["spans"], docs[di]["feats"], idx)
-                                   for di, idx in winners],
+            clone_choices(policy, [(docs[di]["spans"], docs[di]["feats"], idx,
+                                    docs[di].get("ctx")) for di, idx in winners],
                           epochs=args.exit_epochs, lr=args.lr)
             log["exit_rounds"].append({"round": rnd, **stats})
             print(f"[exit] round {rnd}: " +
@@ -621,7 +671,7 @@ def main():
         log["greedy_final"] = {"r": round(sum(rs) / len(rs), 4) if rs else 0.0,
                                "ph": round(sum(phs) / len(phs), 4) if phs else 0.0}
         log["wall_s"] = round(time.time() - t0, 1)
-        tag = "rt" + ("_smoke" if args.smoke else "")
+        tag = "rt" + ("_enc" if encoder_mode else "") + ("_smoke" if args.smoke else "")
         torch.save(policy.state_dict(), f"data/ranker_policy_{tag}.pt")
         Path(f"results/ranker_train_{tag}.json").write_text(json.dumps(log, indent=1))
         print(f"[rt] greedy_final={log['greedy_final']} wall={log['wall_s']}s "
@@ -631,17 +681,23 @@ def main():
     for alpha in [float(a) for a in args.alphas.split(",")]:
         t0 = time.time()
         torch.manual_seed(args.seed)
-        policy = RankerPolicy().to(device)
+        # ponytail: encoder mode reloads the frozen encoder per alpha (from HF cache); the
+        # head must be fresh each alpha and doc["ctx"] embeddings are reused across alphas.
+        policy = new_policy()
         policy = behavior_clone(policy, docs, args.bc_epochs, args.lr, device,
                                 floors=floors, randomize=args.randomize_floors, seed=args.seed)
-        ref = RankerPolicy().to(device)
-        ref.load_state_dict(policy.state_dict())
+        if encoder_mode:
+            ref = policy.clone_for_ref()             # shares frozen encoder, deep-copied head
+        else:
+            ref = RankerPolicy().to(device)
+            ref.load_state_dict(policy.state_dict())
         ref.eval()
         opt = torch.optim.Adam(policy.parameters(), lr=args.lr)
         log = {"alpha": alpha, "floors": floors, "randomize_floors": args.randomize_floors,
                "G": args.G, "epochs": args.epochs,
                "kl_coef": args.kl_coef, "seed": args.seed, "n_docs": len(docs),
-               "policy": "feature-MLP (plan ablation floor)", "rounds": []}
+               "policy": (f"encoder:{args.encoder_model}" if encoder_mode
+                          else "feature-MLP (plan ablation floor)"), "rounds": []}
 
         for epoch in range(args.epochs):
             rng = random.Random(args.seed * 1000 + epoch)
@@ -665,8 +721,12 @@ def main():
                 rt = torch.tensor(rewards)
                 adv = (rt - rt.mean()) / (rt.std() + 1e-6)
                 pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / args.G
-                kl = sum(kl_to_ref(policy, ref, f, s["legal"])
-                         for s, f in zip(span_rows, feats)) / len(span_rows)
+                kl = 0.0
+                for i, (s, f) in enumerate(zip(span_rows, feats)):
+                    policy.set_context(_ctx_of(doc, i))
+                    ref.set_context(_ctx_of(doc, i))
+                    kl = kl + kl_to_ref(policy, ref, f, s["legal"])
+                kl = kl / len(span_rows)
                 loss = pg + args.kl_coef * kl
                 opt.zero_grad()
                 loss.backward()
@@ -698,7 +758,7 @@ def main():
         log["greedy_final"] = {k: round(v, 4) for k, v in greedy.items()}
         log["wall_s"] = round(time.time() - t0, 1)
 
-        tag = f"a{alpha}" + ("_smoke" if args.smoke else "")
+        tag = f"a{alpha}" + ("_enc" if encoder_mode else "") + ("_smoke" if args.smoke else "")
         torch.save(policy.state_dict(), f"data/ranker_policy_{tag}.pt")
         Path(f"results/ranker_train_{tag}.json").write_text(json.dumps(log, indent=1))
         print(f"[a={alpha}] greedy_final={log['greedy_final']} wall={log['wall_s']}s "

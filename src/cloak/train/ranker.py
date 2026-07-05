@@ -58,6 +58,79 @@ class RankerPolicy(nn.Module):
         j = int(lp.argmax()) if greedy else int(torch.multinomial(lp.exp(), 1))
         return legal[j], lp[j]
 
+    def set_context(self, ctx_emb=None):
+        """No-op: the feature-only policy is not doc-conditioned. Lets trainer call sites
+        set span context unconditionally (EncoderPolicy overrides this)."""
+        pass
+
+
+def span_context(text: str, start: int, window: int = 256) -> str:
+    """±window chars around the span start, whitespace-normalized — the encoder's view."""
+    lo, hi = max(0, start - window), min(len(text), start + window)
+    return " ".join(text[lo:hi].split())
+
+
+class EncoderPolicy(nn.Module):
+    """Doc-conditioned ranker policy: score(action) = MLP([ctx_emb ; action_feats]).
+    The encoder is FROZEN (feature extractor; embeddings precomputed per span at load) —
+    only the head trains, so optimization cost matches the MLP policy. Same sample/log_probs
+    contract as RankerPolicy, plus set_context/embed_contexts.
+    ponytail: no fine-tuning path; unfreeze via a separate task if capacity still binds."""
+
+    def __init__(self, encoder_name: str = "answerdotai/ModernBERT-base",
+                 feat_dim: int = N_FEAT, hid: int = 128):
+        super().__init__()
+        from transformers import AutoModel, AutoTokenizer
+        self.tok = AutoTokenizer.from_pretrained(encoder_name)
+        self.encoder = AutoModel.from_pretrained(encoder_name)
+        for p in self.encoder.parameters():
+            p.requires_grad_(False)
+        self.encoder.eval()
+        enc_dim = self.encoder.config.hidden_size
+        self.head = nn.Sequential(
+            nn.Linear(enc_dim + feat_dim, hid), nn.ReLU(),
+            nn.Linear(hid, hid), nn.ReLU(),
+            nn.Linear(hid, 1))
+        self._ctx = None
+
+    @torch.no_grad()
+    def embed_contexts(self, texts: list[str]) -> torch.Tensor:
+        """(len(texts), enc_dim) CLS embeddings; frozen encoder, batched, no grad."""
+        enc = self.tok(texts, return_tensors="pt", padding=True, truncation=True,
+                       max_length=512)
+        enc = {k: v.to(next(self.head.parameters()).device) for k, v in enc.items()}
+        return self.encoder(**enc).last_hidden_state[:, 0]      # CLS per text
+
+    def set_context(self, ctx_emb: torch.Tensor):
+        """Set the current span's precomputed context embedding (shape [enc_dim])."""
+        self._ctx = ctx_emb
+
+    def clone_for_ref(self):
+        """KL reference: shares the SAME frozen encoder object, deep-copies the trainable
+        head (so the reference head is decoupled from the policy head)."""
+        import copy
+        ref = EncoderPolicy.__new__(EncoderPolicy)
+        nn.Module.__init__(ref)
+        ref.tok = self.tok
+        ref.encoder = self.encoder                 # same frozen object, no reload
+        ref.head = copy.deepcopy(self.head)
+        ref._ctx = None
+        return ref
+
+    def log_probs(self, feats: torch.Tensor, legal: list[int]) -> torch.Tensor:
+        """(n_legal,) log-probabilities over the legal actions of one span."""
+        assert self._ctx is not None, "call set_context(ctx_emb) before scoring"
+        ctx = self._ctx.unsqueeze(0).expand(len(legal), -1)
+        x = torch.cat([ctx, feats[legal]], dim=-1)
+        return torch.log_softmax(self.head(x).squeeze(-1), dim=0)
+
+    def sample(self, feats: torch.Tensor, legal: list[int],
+               greedy: bool = False) -> tuple[int, torch.Tensor]:
+        """Returns (action index into span['actions'], log-prob of that action)."""
+        lp = self.log_probs(feats, legal)
+        j = int(lp.argmax()) if greedy else int(torch.multinomial(lp.exp(), 1))
+        return legal[j], lp[j]
+
 
 if __name__ == "__main__":
     span = {"type": "LOC",
