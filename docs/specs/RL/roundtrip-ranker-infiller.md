@@ -57,6 +57,12 @@ literature basis: [round-trip RL strategy plan](../../plans/2026-07-05-roundtrip
 - **frontier_claim** — the Phase-5 verdict: trained Pareto vs floor-walk Pareto at matched
   *realized* privacy on held-out everything. Feeds gradients to nothing.
 
+## TLDR
+
+1. Behavior cloning is the base of everything — every run starts by cloning the floor-walk teacher (behavior_clone), never RL from random. That's the init, not an RL algorithm.
+2. ExIt (ReST^EM-style expert iteration) is the primary optimizer per the spec's Phase 2: exit_round samples G rollouts per doc through the real round trip, keeps only rollouts that strictly beat the floor-walk baseline's realized recall, and clone_choices does SFT on the winners; repeat for --exit-rounds. It was chosen as the workhorse because it has no advantage estimation, no leash arithmetic, and is robust to the quantized reward that killed the two previous runs.
+3. RLOO policy gradient is the refiner layered after ExIt: train_roundtrip does classic critic-free REINFORCE with a leave-one-out baseline (no std division), the DAPO tie-filter, an entropy bonus, KL off by default, and optionally exact per-span counterfactual credit (--cf-frac).
+
 ## Pinned components (one table = the re-gate surface)
 
 Every row is frozen for a whole gate → train → eval cycle; changing any row invalidates the
