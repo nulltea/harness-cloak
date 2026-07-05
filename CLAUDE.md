@@ -102,9 +102,18 @@ put with `status: stale` + `archive_reason`. `companion:` references repo-local 
 
 ## Training experiments — spec-then-results in `research-wiki/training/`
 
-Every fine-tuning / training run gets a record at `research-wiki/training/YYYY-MM-DD-ft-<slug>.md`
-(date = run date; name by method/feature, no plan identifiers). **Write the spec _before_ the run,
-fill the results _after_** — the same doc carries both.
+Every fine-tuning / training run gets a record at
+`research-wiki/training/YYYY-MM-DD-<TASK>-<component>-v<N>-<slug>.md`, where:
+- **date** = run date;
+- **`<TASK>`** = training method, UPPERCASE — `FT` (supervised fine-tune), `RL` (reinforcement learning), … ;
+- **`<component>`** = the model being trained — `detector`, `ranker`, … ;
+- **`v<N>`** = the run's version, **monotonic per `<TASK>-<component>` track**, independent of date
+  (FT-detector: v1→v2→v3→v4; RL-ranker: v1→v2). A new run in a track takes the next number; a completed
+  run's number never changes;
+- **`<slug>`** = the distinguishing method/feature.
+
+Example: `2026-07-05-FT-detector-v4-base-genfirst-mix.md`. Refer to runs by track+version ("FT-detector v3",
+"the v4 base+mix run"). **Write the spec _before_ the run, fill the results _after_** — the same doc carries both.
 - Frontmatter: `type: training-experiment`, `status` (planned·running·done), `created`, `model` (init
   checkpoint), `dataset` (train-mix summary), `result` (one-line headline or `pending`), `tags`,
   `companion` (the `docs/research/` report).
@@ -132,3 +141,10 @@ cross-doc references — name after the **method / feature / property it denotes
 `results/latticecloak_detection_gate.json`; "open-label generality", not "P7"; "the knowledgator+TAB
 fine-tune", not "Arm B"). Citing a plan/research *document path* in a docstring is fine; baking its
 numbering into an identifier is not — the numbers get renumbered, the self-descriptive name does not.
+
+**Exception — training-record versions.** The `v<N>` in a `research-wiki/training/` filename (per the
+Training-experiments schema above) IS an allowed, canonical identifier. It denotes the run's monotonic
+position in its `<TASK>-<component>` lineage — defined by the training-record series itself, not by a plan —
+and is **stable** (a completed run's version never renumbers, unlike plan/phase numbers). So `FT-detector v3`
+in a filename, cross-reference, or discussion is correct. This exception is narrow: it does **not** license
+plan/phase/requirement/arm identifiers (`P7`, `D1`, `Arm B`) anywhere.

@@ -45,7 +45,7 @@ Reuse `train_pii_gliner.py` unchanged: `--init knowledgator/gliner-pii-base-v1.0
 --data-dir data/pii_span_dataset_multidomain --epochs 3 --lr 1e-5 --others-lr 5e-5 --seed 42
 --out data/models/pii_gliner_multidomain`. The diverse-label slice in-batch is the
 generality-preservation lever (a uni-encoder can't cleanly freeze its label side); keep 3 epochs /
-modest LR (v1 overfit past epoch 2).
+modest LR (v1 dev QUASI peaked at epoch 2 at fixed thr 0.3 — overfit vs recalibration not isolated).
 
 ## Selection & operating point
 Select on **TAB dev** (don't regress the anchor): lowest threshold with precision ≥ 0.716 → max QUASI
@@ -132,6 +132,34 @@ Artifacts: `data/models/pii_gliner_multidomain/checkpoint-2479` @0.02 ·
   generality-recovery mechanism is real. The decisive open question — cross-domain QUASI on noisy real
   text — remains unmeasured for lack of gold, and is the natural next experiment.
 
+## Claim audit (/result-to-claim, Codex, 2026-07-04)
+
+- **C1 — multi-domain didn't dilute TAB:** *supported for recall* (QUASI 0.971→0.979, MISC/DEM up),
+  *medium for net quality* (precision 0.861→0.814). Revised wording: "did not dilute TAB recall;
+  precision decreased." Missing: PR curves / recall-at-matched-precision, bootstrap CI.
+- **C2 — generality recovered:** *partial* — 0.835→0.872 but still well below stock 0.941, and measured
+  only at thr 0.3 (not v2's op point 0.02). Wording already hedged.
+- **C3 — cross-domain bio improved:** *partial / weak* — v1 already near-ceiling (0.983) on a 100-doc,
+  near-saturated test; precision fell 0.919→0.904. Wording already flags "undiscriminating."
+- **C4 — "overfits after ~1 epoch": NOT supported (overclaimed) — corrected.** The per-epoch comparison
+  is at a **fixed thr 0.3**, where precision *rises* across epochs (0.941→0.946→0.945) while recall
+  falls — later checkpoints are more *conservative/differently-calibrated*, not demonstrably overfit
+  (epoch-3 QUASI = epoch-1 = 0.871 at 0.3, so even "epochs 2–3 worse" is false). Thresholds were not
+  re-swept per epoch. **Disentangling experiment:** re-evaluate ckpt-2479/4958/7437 with full dev
+  threshold sweeps → AUPRC + recall-at-matched-precision (0.94/0.90/0.85); if epoch-1 still dominates
+  the PR curve while train loss falls, overfit is real; if 2–3 recover at their own op point, it was
+  operating-point drift, not overfitting.
+  - **RESOLVED (disentangler run, `results/v2_disent_*.json`): NOT overfit — operating-point drift.**
+    At *matched precision*, the three epochs' dev PR curves overlap (recall ~0.92 @prec 0.90 and
+    ~0.875 @prec 0.94 for all three; epoch-3 marginally ahead at high precision). The "epoch-1 best"
+    ranking was purely the fixed-thr-0.3 artifact (precision rises 0.941→0.946→0.945 across epochs →
+    recall-at-0.3 falls). **Memorize probe** (`results/v2_train_gate.json`): epoch-1 TAB-train recall
+    0.994 vs held-out test 0.979 (MISC 0.926 vs 0.895) — a ~1.5-pt gap ⇒ **generalizing, not
+    memorizing** (even scarce MISC transfers). Conclusion: within-schema fine-tuning at this scale
+    generalizes and does not overfit; the only cost is out-of-schema narrowing (the generality-retention
+    axis). **Methodology fix:** select checkpoints by PR/AUPRC or recall-at-matched-precision, not
+    recall at a fixed threshold (which picks the least-calibrated epoch).
+
 ## Ablations (isolate each lever)
 v1 TAB-only (control) → +bio → +bio+Nemotron → +Pile-NER slice. The +slice arm measures the
 generality-recovery value.
@@ -152,6 +180,6 @@ oversampling ≤×2 to avoid memorizing 453 docs.
 gate + generality-probe + per-corpus-threshold result JSONs.
 
 ## Sources
-Predecessor + measured baseline: [`2026-07-03-ft-detector-tab-quasi.md`](2026-07-03-ft-detector-tab-quasi.md).
+Predecessor + measured baseline: [`2026-07-03-FT-detector-v1-tab-quasi.md`](2026-07-03-FT-detector-v1-tab-quasi.md).
 Report: [`learned-PII-detection.md`](../../docs/research/learned-PII-detection.md) §5.3/§5.4.
 Datasets + QUASI-usability analysis: [`datasets.md`](../../docs/research/datasets.md).

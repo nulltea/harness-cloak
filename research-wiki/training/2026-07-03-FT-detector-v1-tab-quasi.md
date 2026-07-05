@@ -33,7 +33,10 @@ Gold = union of annotators' DIRECT+QUASI mentions over the 8 types (NO_MASK excl
 gfx1151 iGPU; **~14.5 min**, loss 49→30.
 
 ## Selection & operating point
-Epoch-2 (`checkpoint-2756`) selected on TAB dev (epoch-3 overfit — QUASI/MISC dropped). Operating
+Epoch-2 (`checkpoint-2756`) selected on TAB dev (at fixed thr 0.3, epoch-3 QUASI/MISC recall was
+lower — but this is **not established overfitting**: precision rises across epochs while recall falls,
+so later checkpoints may just be more conservative; thresholds were not re-swept per epoch — see the
+v2 claim audit). Operating
 threshold **0.02** fixed on the dev Pareto: lowest threshold with precision ≥ 0.716 → max QUASI recall
 (dev QUASI 0.958 at 0.02; see `results/arm_b_dev_thr_*.json`).
 
@@ -122,4 +125,4 @@ Model `data/models/pii_gliner/checkpoint-2756` @0.02 · `results/latticecloak_de
 ## Sources
 Report: [`learned-PII-detection.md`](../../docs/research/learned-PII-detection.md) §5.3, §5.4.
 Datasets: [`datasets.md`](../../docs/research/datasets.md). Scripts: `scripts/build_pii_span_dataset.py`,
-`scripts/train_pii_gliner.py`. Successor: [`2026-07-04-ft-detector-quasi.md`](2026-07-04-ft-detector-quasi.md).
+`scripts/train_pii_gliner.py`. Successor: [`2026-07-04-FT-detector-v2-quasi.md`](2026-07-04-FT-detector-v2-quasi.md).

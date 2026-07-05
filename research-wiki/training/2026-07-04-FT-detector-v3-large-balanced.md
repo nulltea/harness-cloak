@@ -148,17 +148,28 @@ advantage did not show up as higher overall MISC recall (long-MISC split below i
 **Open-label generality (MultiNERD-en held-out, @0.3, `results/large_balanced_generality.json`) — the v3
 target, decisively met:**
 
-| | overall any | typed |
-|---|---|---|
-| stock knowledgator **base** | 0.941 | – |
-| v1 (base, TAB-only) | 0.835 | – |
-| v2 (base, multi-domain) | 0.872 | – |
-| **v3 (large, generality-first)** | **0.988** | 0.897 |
+|                                  | overall any | typed |
+| -------------------------------- | ----------- | ----- |
+| stock knowledgator **base**      | 0.941       | –     |
+| v1 (base, TAB-only)              | 0.835       | –     |
+| v2 (base, multi-domain)          | 0.872       | –     |
+| **v3 (large, generality-first)** | **0.988**   | 0.897 |
 
-**stock 0.941 → v1 0.835 → v2 0.872 → v3 0.988.** v3 nearly saturates open-label any-recall and **exceeds even
-the stock base model** — the target was > 0.90. Two levers stacked (accepted confound): the large backbone's
-extra capacity to retain open-label matching + the generality-first mix (Pile-NER 10% → 25%). We cannot split
-the credit between them (the backbone-isolation ablation, left open, would).
+**stock 0.941 → v1 0.835 → v2 0.872 → v3 0.988** (any-recall). v3 nearly saturates open-label any-recall and
+**exceeds even the stock base model** — the target was > 0.90.
+
+**The gain is real, not over-firing (precision checked, matched re-runs @0.3):** v3 recall 0.988 at
+**precision 0.444** and **typed 0.897**, vs v2 recall 0.843 / prec 0.431 / typed 0.707 — v3 lifts recall +0.145
+*at comparable precision* (+0.013) with only ~14% more predictions (948 vs 832), and typed recall +0.19.
+Over-firing would raise recall while dropping precision; instead precision held and typed recall jumped, so
+this is a genuine open-label-quality gain. (Full generality precision table: stock-base 0.925/0.421,
+stock-large 0.894/0.528, v2 0.843/0.431, v3 0.988/0.444 — recall/precision.)
+
+**Attribution (RESOLVED by the base+mix run, `2026-07-05-FT-detector-v4-base-genfirst-mix.md`):** **both levers
+contribute, ~equally.** Decomposing the +0.145 generality-recall gain: mix effect (v2 base → base+mix,
+single-variable) = 0.843 → 0.918 (+0.075); backbone effect (base+mix → v3, same mix) = 0.918 → 0.988 (+0.070).
+The earlier guess "it's the mix, not the backbone" (from stock-large 0.894 < stock-base 0.925) was **wrong** —
+the large backbone earns a real generality increment beyond the mix; neither alone reaches 0.988.
 
 **Wikipedia-bio test (@0.02, `results/large_balanced_bio_test.json`):** QUASI 0.992 (v2 0.989), MISC 0.966
 (v2 0.949), DEM 0.990 (v2 1.000), prec 0.900. Marginally above v2 but still near-ceiling / undiscriminating
@@ -213,19 +224,20 @@ non-text padding spans are dropped.
 - **Stock-large vs v3 fine-tuned** (measured — `results/stock_large_{test,generality}.json`; stock @0.3
   its natural op point, v3 ft @0.02, per the v1-doc methodology):
 
-  | | TAB QUASI | MISC | DEM | QUANT | prec | generality (any) |
-  |---|---|---|---|---|---|---|
-  | stock-large @0.3 | 0.840 | 0.207 | 0.561 | 0.390 | 0.747 | 0.894 |
-  | **v3 ft @0.02** | **0.973** | **0.861** | **0.966** | **0.997** | **0.850** | **0.988** |
-  | Δ | +0.133 | **+0.654** | +0.405 | +0.607 | +0.103 | +0.094 |
+  |                  | TAB QUASI | MISC | DEM | QUANT | prec | generality (any) |
+  |------------------|-----------|------|-----|-------|------|------------------|
+  | stock-large @0.3 | 0.840     | 0.207 | 0.561 | 0.390 | 0.747 | 0.894 |
+  | **v3 ft @0.02**  | **0.973** | **0.861** | **0.966** | **0.997** | **0.850** | **0.988** |
+  | Δ                | +0.133    | **+0.654** | +0.405 | +0.607 | +0.103 | +0.094 |
 
   Two findings: (a) **fine-tuning transforms the large model on TAB** — the guideline gap types MISC/DEM/QUANT
   are unreachable zero-shot (MISC 0.207) and only supervision fixes them (0.861), same story as base (v1-doc:
   stock-base MISC 0.324 → 0.856). Stock-large is even a *worse* zero-shot TAB detector than stock-base. (b)
   **fine-tuning RAISED generality (0.894 → 0.988) instead of eroding it** — the opposite of base fine-tunes
   (v1: 0.941 → 0.835). The large backbone + 25% diverse-label Pile-NER resisted the label-narrowing that hit
-  base. _Caveat: generality = any-**recall** only; part of v3's lift is the large model firing more broadly
-  (cf. the padding-span finding), but the metric is identical across all versions so the direction holds._
+  base. _Checked for over-firing: v3 generality recall 0.988 at precision 0.444 (vs stock-large 0.894/0.528) —
+  fine-tuning raised recall and typed-recall (0.824→0.897) with only a mild precision dip, so it's a real
+  open-label gain, not flooding._
 - **Open (deliberately not run in v3):** backbone-isolation — large on the *exact* v2 mix + builder, to
   attribute the generality gain to capacity vs the mix/balancing changes. This is now the priority follow-up
   (v3 cleared > 0.90, so "why" — capacity or Pile-NER weight — is the open question).
@@ -276,8 +288,8 @@ generality + bio + attribution ≈ 40 min GPU. Perf-gate probes (batch 8/16/32 s
 
 ## Sources
 Predecessor (measured baseline + claim audit + disentangler resolution):
-[`2026-07-04-ft-detector-quasi.md`](2026-07-04-ft-detector-quasi.md). v1:
-[`2026-07-03-ft-detector-tab-quasi.md`](2026-07-03-ft-detector-tab-quasi.md).
+[`2026-07-04-FT-detector-v2-quasi.md`](2026-07-04-FT-detector-v2-quasi.md). v1:
+[`2026-07-03-FT-detector-v1-tab-quasi.md`](2026-07-03-FT-detector-v1-tab-quasi.md).
 Report: [`learned-PII-detection.md`](../../docs/research/learned-PII-detection.md) §5.1–§5.4.
 Datasets: [`datasets.md`](../../docs/research/datasets.md).
 Backbone configs compared: knowledgator/gliner-pii-{base,large}-v1.0 `gliner_config.json` (base =
