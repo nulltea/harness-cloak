@@ -6,7 +6,7 @@ pinned model, temperature 0, content-addressed disk cache (INFERDPT_LLM_CACHE) â
 determinism is load-bearing (cache = reward memoization = ExIt pool; spec "one subtlety").
 
 THE reward pin (changing any re-gates): RT_MODEL = "gemma 4 (E4B)" served at
-RT_BASE_URL = "http://localhost:8060/v1", temperature 0, max_tokens 512, non-thinking.
+RT_BASE_URL = "http://localhost:8060/v1", temperature 0, max_tokens 1024, non-thinking.
 """
 import os
 
@@ -20,7 +20,10 @@ RT_BASE_URL = "http://localhost:8060/v1"   # THE endpoint pin; part of the rewar
 # enable_thinking:false (clean non-thinking output, all probe facts restated in ~150 tok);
 # LFM2.5-8B-A1B cannot disable thinking (the flag leaks <think> in-band, truncating at
 # this budget) and moved to the probe-teacher role instead.
-MAX_TOKENS = 512
+MAX_TOKENS = 1024   # raised from 512 (2026-07-05, pre-gate calibration): full ACI notes hit
+                    # the 512 cap mid-sentence (measured: out_len ~532 tok, tail truncated),
+                    # killing ceiling-anchor validation on facts from later note sections.
+                    # gemma finishes real notes in ~400-700 tok; 1024 is headroom, not a target.
 
 _client = None
 
