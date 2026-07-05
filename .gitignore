@@ -13,8 +13,4 @@ review-stage/
 .claude
 .aris
 .zed
-corpora/tab/
-corpora/synthpai/
-corpora/clinical/
-corpora/aeslc/
-corpora/enron/
+corpora

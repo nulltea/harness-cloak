@@ -1,0 +1,66 @@
+{
+  "gliner_model": "data/models/pii_gliner_multidomain/checkpoint-2479",
+  "dataset": "multinerd/en/test",
+  "threshold": 0.3,
+  "n_sentences": 286,
+  "n_gold": 426,
+  "overall": {
+    "any": 0.8427230046948356,
+    "typed": 0.7065727699530516
+  },
+  "precision_proxy": 0.43149038461538464,
+  "n_pred": 832,
+  "per_type": {
+    "ANIM": {
+      "any": 0.7956204379562044,
+      "typed": 0.6423357664233577,
+      "n": 137
+    },
+    "BIO": {
+      "any": 1.0,
+      "typed": 0.0,
+      "n": 2
+    },
+    "CEL": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 2
+    },
+    "DIS": {
+      "any": 0.9294117647058824,
+      "typed": 0.9176470588235294,
+      "n": 85
+    },
+    "FOOD": {
+      "any": 0.8135593220338984,
+      "typed": 0.576271186440678,
+      "n": 59
+    },
+    "INST": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 1
+    },
+    "MEDIA": {
+      "any": 0.9433962264150944,
+      "typed": 0.7924528301886793,
+      "n": 53
+    },
+    "MYTH": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 6
+    },
+    "PLANT": {
+      "any": 0.759493670886076,
+      "typed": 0.6329113924050633,
+      "n": 79
+    },
+    "VEHI": {
+      "any": 1.0,
+      "typed": 0.0,
+      "n": 2
+    }
+  },
+  "wall_s": 6.9
+}
