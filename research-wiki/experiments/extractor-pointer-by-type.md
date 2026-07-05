@@ -7,8 +7,8 @@ verdict: partial
 confidence: medium
 date: 2026-07-05
 hardware: "host .venv ROCm GPU; Qwen3.6-35B alignment judge + GLiNER detector + MiniLM"
-duration: "~few min judge (Qwen -np 1, cached out_p) + deterministic recovery pass"
-provenance: "scripts/spikes/survival_by_type.py; results/survival_by_type.json; scripts/spikes/extractor_pointer_by_type.py; results/extractor_pointer_by_type.json; scripts/spikes/extractor_miss_audit.py; results/extractor_miss_audit.json"
+duration: "151-doc pilot run (clinical+lexsum): judge Qwen -np 1 + deterministic recovery pass"
+provenance: "scripts/spikes/survival_by_type.py; results/survival_by_type.json; results/survival_recovery_pilot.json; scripts/spikes/extractor_pointer_by_type.py; scripts/spikes/extractor_miss_audit.py; results/extractor_miss_audit.json"
 tags: ["extractor", "survived-span", "detector-pointer", "semantic-window", "llm-judge", "denominator", "tab-types"]
 ---
 
@@ -46,8 +46,10 @@ concern, or a utility-preserving choice). This measures survival and recovery on
 
 ## Method (corrected)
 
-- Inputs: `data/ranker_env.json`, `data/task_arms_tau0.02.json`; corpus `clinical`;
-  16 docs requested, 14 with spans; 75 generalization entries in `R`.
+- Inputs: `data/ranker_env_pilot.json`, `data/task_arms_pilot.json`; corpora
+  `clinical,lexsum`; 80/80 docs requested, **151 with spans**; **1059 generalization
+  entries** in `R`. (A first pass used the 16-doc frozen clinical env; the pilot run below
+  supersedes it and is the reported result.)
 - `out_p = Remote(task_prompt(doc_p))` with the pinned reward env (gemma 4 E4B, temp 0,
   non-thinking), cached.
 - **Survival judge** (`survival_by_type.py`): `Qwen3.6-35B-A3B`, temp 0, non-thinking — a
@@ -62,81 +64,88 @@ concern, or a utility-preserving choice). This measures survival and recovery on
 - **Recovery decomposition** (deterministic): each survived span classified by what `out_p`
   actually contains, which fixes the recovering mechanism exactly.
 
-## Results — survival by type (corrected)
+## Results — survival by type (151 docs, clinical+lexsum)
 
 Denominator = generalizations whose substituted content reached `out_p`.
 
 | Type | Substituted | Judge-survived | Leaked-only (excl.) | **Subst. survived** | Rate |
 |---|---:|---:|---:|---:|---:|
-| PERSON | 0 | 0 | 0 | 0 | — |
-| ORG | 0 | 0 | 0 | 0 | — |
-| LOC | 2 | 0 | 0 | 0 | 0.0 |
-| DATETIME | 10 | 2 | 0 | 2 | 0.20 |
-| CODE | 0 | 0 | 0 | 0 | — |
-| QUANTITY | 7 | 5 | 0 | 5 | 0.71 |
-| DEM | 43 | 21 | 7 | 14 | 0.33 |
-| MISC | 13 | 9 | 5 | 4 | 0.31 |
-| **TOTAL** | **75** | **37** | **12** | **25** | **0.33** |
+| ORG | 144 | 68 | 12 | 56 | 0.39 |
+| LOC | 172 | 68 | 6 | 62 | 0.36 |
+| DATETIME | 265 | 41 | 0 | 41 | 0.16 |
+| QUANTITY | 89 | 15 | 1 | 14 | 0.16 |
+| DEM | 272 | 122 | 29 | 93 | 0.34 |
+| MISC | 117 | 53 | 26 | 27 | 0.23 |
+| **TOTAL** | **1059** | **367** | **74** | **293** | **0.28** |
 
-The real survived denominator is **25**, not the judge's 37 and not the first version's 60.
-PERSON/ORG/CODE had no surviving generalizations in this slice, so it says nothing about
-those types.
+**~28% of generalizations survive** into `out_p` as recoverable content; 74 more are
+leaked-only (privacy leak, excluded). PERSON and CODE never appear — those types are
+placeholdered (`<PERSON_1>`/`<CODE_1>`), not generalized, so they are outside this measure
+(placeholder-token echo is a separate, trivially-invertible channel). DATETIME/QUANTITY
+survive least (0.16) — exact dates/amounts generalize to lossy forms (decade, range) that
+rarely echo; ORG/LOC/DEM survive most.
 
-## Results — population decomposition (37 judge-survived)
+## Results — population decomposition (367 judge-survived)
 
 | Population | n | `out_p` contains | substituted-content? |
 |---|---:|---|---|
-| A. Leaked, fill also echoed | 2 | fill **and** leaked original | yes |
-| A. Leaked-only | 12 | ONLY the original (fill absent; 11/12 un-replaced in `doc_p`) | **no — leak** |
-| B. Fill verbatim | 14 | the fill exactly | yes |
-| C. Fill fuzzy | 7 | the fill at ≥90 fuzzy | yes |
-| D. Reworded | 2 | neither fill nor exact original | yes (reworded fill) |
+| A. Leaked + fill echoed | 21 | fill **and** leaked original | yes |
+| A. Leaked-only | 74 | ONLY the original (fill absent) | **no — leak** |
+| B. Fill verbatim | 181 | the fill exactly | yes |
+| C. Fill fuzzy | 37 | the fill at ≥90 fuzzy | yes |
+| D. Reworded | 54 | neither fill nor exact original | yes (reworded/lossy) |
 
-Substituted-content survived = B(14) + C(7) + D(2) + A-both(2) = **25**. Leaked-only 12 are
-the privacy leak.
+Substituted-content survived = A-both(21) + B(181) + C(37) + D(54) = **293**.
 
-## Results — recovery of the 25
+## Results — recovery of the 293
 
-The current rule cascade (`invert()`: placeholder + exact + fuzzy-90 + semantic-window)
-recovers **23/25** by construction: it inverts every fill that is present exactly or at
-fuzzy≥90 (B + C + A-both = 23). The residue is the 2 D-cases:
+Current rule cascade (`invert()`: placeholder + exact + fuzzy-90 + semantic-window) recovers
+**~239/293 ≈ 82%** (surface-in-`out_final` proxy; A-both 21, B ~174/181, C ~34/37 — the few
+B/C misses are proxy artifacts from multi-word surfaces and walk-order placeholder
+collisions, not real misses). The gap is the **54 D-reworded** spans, and inspecting them
+shows D is four distinct phenomena — only two are recoverable:
 
-| Original surface | Fill | `out_p` mention | Verdict |
-|---|---|---|---|
-| coronary artery bypass grafting | something | "CABG surgery" | **recoverable** — abbreviation of the original; needs acronym/alias match |
-| the next couple weeks | at some point | "a couple of weeks ago" | **abstain** — semantic drift (future→past); substituting the original asserts a false fact |
+| D sub-class | example | recoverable? |
+|---|---|---|
+| 1. Fill reworded below fuzzy-90 | `an organization`→"the organization"; `a person of color`→"color employees" | **yes** — semantic / lower-threshold fill match; original known from R |
+| 2. Acronym / alias of original | `coronary artery bypass grafting`→"CABG surgery"; `O'Reilly Auto Parts`→"O'Reilly Automotive"; `Second Circuit Court of Appeals`→"Second Circuit" | **yes** — original-surface alias/acronym match |
+| 3. Lossy generalization, original removed | `january 13th 1982`→"Early 1980s"; `Minneapolis`→"in Minnesota"; `the United States`→"a state" | **no — by design**; the specific was removed for privacy, cannot be invented back |
+| 4. Model re-derived a *different* specific | `the last four years`→"three years ago"; `the District of Kansas`→"Wichita U.S. District Court" | **no — abstain**; substituting the original asserts a false fact |
 
-So the safe recovery ceiling is **~24/25** (23 + CABG), with the drift case correctly left
-untouched. Detector-pointer and the MiniLM semantic-window fallback add nothing here: the
-one recoverable miss needs abbreviation matching against the *original surface*, not fill
-similarity, and the other needs an abstain, not a match. Their first-version "one extra
-recovery each" landed inside the fuzzy-noise band and does not survive the corrected
-denominator.
+So the honest recoverable ceiling is **~82% + D-classes 1–2**, NOT 100%. D-classes 3–4 are a
+material share of D and are unrecoverable *by design*: the substitutor removed the specifics
+for privacy, and "recovering" them would mean fabricating information the privacy layer
+deliberately deleted. The correct `out_final` for those keeps the coherent generalized form.
 
 ## Calibration & honesty caveats
 
-- Judge vs exact-match ground truth: **11/15 = 0.73 agreement** — the judge misses ~27% of
-  certain fill echoes, so judge-survival is a **lower bound**; true survival is likely
-  slightly above 25. Grounding downgrades were clean (1/43 = 2%), so it does not over-claim.
+- Judge vs exact-match ground truth: **150/195 = 0.77 agreement** — the judge misses ~23% of
+  certain fill echoes, so judge-survival is a **lower bound**; true survival is somewhat
+  above 293. Grounding downgrades clean (3/384 = 0.8%), so it does not over-claim.
 - The leaked-only exclusion is deterministic (fill-present vs surface-present), not judge-
-  dependent, so the 25 vs 37 split is robust even where the judge is noisy.
-- Single clinical slice, 14 docs; lexsum, placeholders, and a larger sample are unrun and
-  will surface the first PERSON/ORG/CODE survivals and more D-cases.
+  dependent, so the 293-vs-367 split is robust even where the judge is noisy.
+- The 82% recovery is a `surface ∈ out_final` proxy; mention-anchored recovery (design doc)
+  is needed to pin B/C exactly and to score D-classes 1–2 precisely.
+- Two corpora (clinical + lexsum). D-class ratios differ by corpus (lexsum contributes the
+  legal-entity aliases and lossy court/location cases); a per-corpus D breakdown is unrun.
 
 ## Interpretation
 
-The extractor was never "far from best" on survivable content: on the corrected denominator
-it already recovers ~23/25, and the honest ceiling is ~24/25 once a semantic-drift case is
-abstained. The apparent large gap in the first version was denominator pollution (fuzzy
-noise + miscredited leaks). The remaining design work is narrow: an **original-surface +
-acronym/alias proposer** plus an **NLI abstain gate** (see the design doc), not the DEM/MISC
-"miss" chase the detector-pointer v2 premise assumed. The larger issue this surfaced —
-undetected duplicate mentions leaking originals into `doc_p` (12/75 here) — is a
+The extractor already recovers ~82% of survivable content; the remaining ~18% is the
+D-reworded residue, which splits into a recoverable part (fill-reword + original-alias/
+acronym, D-classes 1–2 — the design's semantic-fill and original-surface proposers target
+exactly these) and an **unrecoverable-by-design part** (lossy generalization + model drift,
+D-classes 3–4). The earlier "push to ~100%/37-of-37" framing does not hold at scale: a real
+fraction of survived spans survive only as lossy generalizations, so the achievable ceiling
+is bounded well below 100% and chasing it would fabricate deleted specifics. The larger
+issue this surfaced — undetected duplicate mentions leaking originals into `doc_p` (74/1059
+= 7% here) — is a
 detector/substitutor coverage matter, out of the extractor's scope but worth its own record.
 
 ## Artifacts
 
-- `scripts/spikes/survival_by_type.py`, `results/survival_by_type.json` (corrected survival)
+- `scripts/spikes/survival_by_type.py`, `results/survival_by_type.json` (151-doc survival)
+- `results/survival_recovery_pilot.json` (A/B/C/D populations + D-case listing)
 - `results/extractor_miss_audit.json` (band echo classes, cos)
 - `results/extractor_pointer_by_type.json` (first-version comparison, polluted denominator)
 

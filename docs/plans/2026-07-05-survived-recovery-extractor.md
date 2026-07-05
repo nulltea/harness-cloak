@@ -11,50 +11,57 @@ companion: [2026-07-05-detector-pointer-extractor-v2.md, ../../research-wiki/exp
 
 ## Target, measured honestly
 
-The denominator must be spans whose **substituted (generalized) content** reached out_p —
-i.e. the fill, or a rewording of it, is present. The first LLM-judge pass reported 37
-"survived", but that conflated two phenomena (caught on review): a leaked-original mention
-is present in out_p not because the substituted span survived, but because an **undetected
-duplicate of the original leaked through doc_p** (see the survival investigation). Splitting
-the 14-doc clinical slice by *what actually appears in out_p*:
+The denominator is spans whose **substituted (generalized) content** reached out_p — the
+fill, or a rewording of it, is present. Measured on **151 docs (clinical + lexsum), 1059
+generalizations** (`results/survival_by_type.json`, `results/survival_recovery_pilot.json`):
 
-| Population | n | out_p contains | is it substituted-content? | recover by |
-|---|--:|---|---|---|
-| B. Fill verbatim | 14 | the fill exactly | yes | exact swap (have) |
-| C. Fill fuzzy | 7 | the fill at ≥90 fuzzy | yes | fuzzy swap (have) |
-| D. Reworded | 2 | neither surface nor fill | yes (reworded fill) | see below |
-| A. Leaked + fill echoed | 2 | fill AND leaked original | yes | exact swap (have) |
-| **Substituted content survived** | **25** | | | |
-| A. Leaked-only | 12 | ONLY the original (fill absent) | **no — leak, not survival** | out of scope |
+| Population | n | out_p contains | substituted-content? |
+|---|--:|---|---|
+| A. Leaked + fill echoed | 21 | fill AND leaked original | yes |
+| B. Fill verbatim | 181 | the fill exactly | yes |
+| C. Fill fuzzy | 37 | the fill at ≥90 fuzzy | yes |
+| D. Reworded | 54 | neither exact fill nor exact original | yes |
+| **Substituted content survived** | **293** | | |
+| A. Leaked-only | 74 | ONLY the original (fill absent) | **no — leak, out of scope** |
 
-**The real denominator is 25, not 37.** The 12 leaked-only spans (11/12 have the original
-un-replaced elsewhere in doc_p) are the privacy leak, not a substituted span surviving — the
-fill never reached out_p. They are out of extraction scope: out_final already carries the
-original at that mention, so the extractor's only duty is do-no-harm (don't overwrite it).
+The 74 leaked-only spans are the privacy leak (undetected duplicate of the original leaked
+through doc_p), not a substituted span surviving — out of extraction scope; out_final already
+carries the original there, so the extractor's only duty is do-no-harm (don't overwrite it).
 
-Of the 25 substituted-content-survived spans, the current cascade recovers **B+C+A-both =
-23/25** via fill matching. The residue is 2 D-cases:
-- `coronary artery bypass grafting` → "CABG surgery" — abbreviation of the ORIGINAL,
-  reconstructed by the model. **Recoverable** with acronym/alias matching.
-- `the next couple weeks` → "a couple of weeks ago" — semantic drift (future→past).
-  Substituting the original asserts a wrong fact. **Abstain, do not recover.**
+The current cascade recovers **~239/293 ≈ 82%** (A-both + B + C, via fill matching). The
+residue is the **54 D-reworded** spans, which are FOUR phenomena — only two recoverable:
 
-So the honest ceiling is ~24/25 *safe* recovery: current 23 + the recoverable CABG case,
-with the drift case abstained. The design closes the recoverable D-case and hardens do-no-
-harm, rather than chasing the DEM/MISC "misses" v2 targeted — those turned out to be leaked
-originals (A leaked-only, out of scope) and fuzzy noise, not recoverable fills (this
-supersedes v2's premise).
+| D sub-class | example | recover? |
+|---|---|---|
+| 1. Fill reworded below fuzzy-90 | `an organization`→"the organization" | **yes** — semantic/low-threshold fill match |
+| 2. Acronym / alias of original | `coronary artery bypass grafting`→"CABG surgery" | **yes** — original-surface alias match |
+| 3. Lossy generalization, original removed | `january 13th 1982`→"Early 1980s"; `Minneapolis`→"in Minnesota" | **no — by design** |
+| 4. Model re-derived a different specific | `the last four years`→"three years ago" | **no — abstain** |
+
+**The honest ceiling is ~82% + D-classes 1–2, NOT 100%.** D-classes 3–4 are a material share
+of D and unrecoverable *by design*: the substitutor removed the specifics for privacy, and
+recovering them would fabricate deleted information. The correct out_final for those keeps the
+coherent generalized form. The earlier "push to 37/37 / ~100%" ambition does not survive at
+scale. The design targets D-classes 1–2 (fill-reword + original-alias), hardens do-no-harm on
+A-leaked, and abstains on 3–4 — it does not chase the DEM/MISC "misses" v2 assumed (those were
+leaked originals + fuzzy noise; this supersedes v2's premise).
 
 ## Root mechanism gap
 
-`invert()` searches out_p for the **fill** only. That is sufficient for the fill-echo bulk
-(B+C+A-both = 23/25). The one recoverable miss is where the model reconstructs an
-**abbreviation of the original** (D-CABG: "coronary artery bypass grafting" → "CABG
-surgery") — neither fill nor exact original is present, but the original's initialism is.
-The original surface is known from R, so **add a proposer that searches for the original
-surface and its variants** to catch this class. (This proposer also cheaply confirms
-leaked-only originals as a do-no-harm guard, but those are already correct and not counted
-as recovery.)
+`invert()` searches out_p for the **fill** only. That covers the fill-echo bulk (A-both + B
++ C ≈ 239/293) but misses the two recoverable D sub-classes:
+- **D-1 (fill reworded below fuzzy-90)** — the fill echoed with a determiner/morphology
+  change ("an organization"→"the organization"). Needs semantic or lower-threshold matching
+  on the *fill*.
+- **D-2 (acronym/alias of the original)** — the model reconstructs a recognizable variant of
+  the ORIGINAL ("coronary artery bypass grafting"→"CABG surgery", "O'Reilly Auto Parts"→
+  "O'Reilly Automotive"). Neither exact fill nor exact original is present, but the original's
+  initialism/alias is. The original surface is known from R.
+
+So two additions: a **relaxed/semantic fill matcher** (D-1) and a **proposer that searches
+for the original surface and its variants** (D-2). The latter also cheaply confirms
+leaked-only originals as a do-no-harm guard (not counted as recovery). D-classes 3–4 get no
+proposer — they are unrecoverable/abstain.
 
 ## Design
 

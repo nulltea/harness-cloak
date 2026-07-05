@@ -36,6 +36,7 @@ from build_arms_artifact import load_artifact
 from train_ranker import assemble, derive_spans, floor_walk_choice
 
 from cloak.corpora import load_task_docs
+from cloak.train.ranker import CORPORA
 from cloak.train.roundtrip import roundtrip_batch
 
 OUT = Path("results/survival_by_type.json")
@@ -121,7 +122,12 @@ def build_jobs(args):
         for doc_id, d in env["corpora"].get(corpus, {}).items():
             if not d.get("spans") or doc_id not in texts:
                 continue
-            spans, _ = derive_spans(d["spans"], dict(env["k_floors"]), corpus, "cpu")
+            # feats are discarded here, so the corpus one-hot is irrelevant; pass an
+            # in-list corpus to satisfy action_features for corpora added after CORPORA
+            # was frozen (e.g. lexsum). The real corpus drives load_task_docs + the task
+            # template above/below.
+            fc = corpus if corpus in CORPORA else CORPORA[0]
+            spans, _ = derive_spans(d["spans"], dict(env["k_floors"]), fc, "cpu")
             choice = floor_walk_choice(spans)
             doc_p, R = assemble(texts[doc_id], art[corpus][doc_id]["tau_walk"][1],
                                 d["spans"], choice)
