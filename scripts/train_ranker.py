@@ -477,6 +477,8 @@ def main():
     ap.add_argument("--lr", type=float, default=3e-4)
     ap.add_argument("--kl-coef", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--n-docs", type=int, default=16,
+                    help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
     ap.add_argument("--policy", choices=["mlp", "encoder"], default="mlp",
                     help="mlp = feature-only RankerPolicy (default); encoder = doc-conditioned "
                          "EncoderPolicy (frozen HF encoder + trainable head)")
@@ -539,7 +541,7 @@ def main():
     floor_eq_stored = True
     docs = []
     for corpus, per_doc in env["corpora"].items():
-        texts = {d["id"]: d["text"] for d in load_task_docs(corpus, 16)}
+        texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}
         for doc_id, d in per_doc.items():
             if not d["trainable"] or not d["spans"]:
                 continue

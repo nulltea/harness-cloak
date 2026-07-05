@@ -44,6 +44,8 @@ def main():
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--probes", default="data/probes_validated.json")
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--n-docs", type=int, default=16,
+                    help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
     args = ap.parse_args()
 
     art = load_artifact()
@@ -56,7 +58,7 @@ def main():
     # fill, later colliding spans fall back to placeholder — the trainer's walk-order rule)
     docs, base_jobs = [], []
     for corpus, per_doc in env["corpora"].items():
-        texts = {d["id"]: d["text"] for d in load_task_docs(corpus, 16)}
+        texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}
         for doc_id, d in per_doc.items():
             probes = probes_all.get(doc_id, {}).get("train", [])
             if not d.get("trainable") or not d["spans"] or len(probes) < 3:

@@ -69,6 +69,8 @@ def main():
     ap.add_argument("--alpha", type=float, default=0.5)
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--max-tokens", type=int, default=512)
+    ap.add_argument("--n-docs", type=int, default=16,
+                    help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
     args = ap.parse_args()
 
     t0 = time.time()
@@ -79,7 +81,7 @@ def main():
     report = {"alpha": args.alpha, "gen_model": GEN_MODEL, "arms": ARMS, "corpora": {}}
 
     for corpus, per_doc in env["corpora"].items():
-        texts = {d["id"]: d["text"] for d in load_task_docs(corpus, 16)}
+        texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}
         jobs = []
         for doc_id, d in per_doc.items():
             probes = d["probes"]["train"]
