@@ -9,6 +9,14 @@ companion: ../specs/RL/surrogate-ranker-infiller.md
 
 # Handoff: pivot to round-trip RL (task-execution reward)
 
+> **The round-trip support scan is the GATE for RL training** (user-mandated,
+> 2026-07-05): in the round-trip environment the old constructed-arms gate is replaced by
+> this much cheaper check (~30 min, mostly cacheable proxy calls) — no RL training run
+> starts until it shows the realized reward can respond to the action space. It gates
+> *training only*: spec/plan/lattice work proceeds freely around it. Rationale: both
+> stage-1 NULLs came from training against a reward without support; this is the
+> pre-flight that prevents a third.
+
 **Decision being handed off (made 2026-07-05, user-approved): abandon local surrogate
 utility rewards; train against the realized round-trip signal.** Three local surrogates
 failed construct-validity in a row — u_qa (flat above bare findability; inversion
@@ -122,12 +130,14 @@ Ordered:
    scan; add: provider-coupling caveat + the second-remote-model eval arm as the guard,
    temp-0 + pinned proxy model + cache policy, wall-time budget ~2 h/run with pmap
    concurrency). Keep floors/grid/honesty sections untouched.
-2. **Round-trip support scan** (new spike, pattern of `probe_flip_scan.py`): from the
-   floor-walk baseline, ~100 single-action counterfactuals → generate out_p via proxy
-   (workers=8, cached) → invert → per-probe realized fact recall deltas. Report: flippable
-   probes, actual flips BOTH directions, per-swap delta magnitudes vs quantization.
-   ~30 min. **This decides whether round-trip RL proceeds at all** — a support desert here
-   is a real finding about the environment (walk near-optimal in realized terms).
+2. **Round-trip support scan — THE training gate** (new spike, pattern of
+   `probe_flip_scan.py`): from the floor-walk baseline, ~100 single-action
+   counterfactuals → generate out_p via proxy (workers=8, cached) → invert → per-probe
+   realized fact recall deltas. Report: flippable probes, actual flips BOTH directions,
+   per-swap delta magnitudes vs quantization. ~30 min — the cheap replacement for the old
+   constructed-arms gate; **no RL run starts until it passes**. A support desert here is a
+   real finding about the environment (walk near-optimal in realized terms), reported as
+   such, not worked around.
 3. If support exists: **RL-ranker v3 record** (spec-then-results, v-schema name e.g.
    `2026-07-0X-RL-ranker-v3-roundtrip-reward.md`) + trainer switch (rollout_reward calls
    the round trip; batch rollouts across docs through pmap; cache identical doc_p) + the
