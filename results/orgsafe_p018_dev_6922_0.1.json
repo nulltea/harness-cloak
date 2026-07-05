@@ -1,0 +1,90 @@
+{
+  "corpus": "corpora/tab/echr_dev.json",
+  "docs": 127,
+  "threshold": 0.1,
+  "gliner_model": "data/models/pii_gliner_orgsafe_p018/checkpoint-6922",
+  "recall": {
+    "DIRECT": {
+      "any": 1.0,
+      "typed": 0.9908675799086758,
+      "n": 438
+    },
+    "QUASI": {
+      "any": 0.9037159620881601,
+      "typed": 0.8406800060177524,
+      "n": 6647
+    }
+  },
+  "recall_by_type": {
+    "DIRECT/CODE": {
+      "any": 1.0,
+      "typed": 0.9936305732484076,
+      "n": 157
+    },
+    "DIRECT/DATETIME": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 9
+    },
+    "DIRECT/MISC": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 3
+    },
+    "DIRECT/ORG": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 1
+    },
+    "DIRECT/PERSON": {
+      "any": 1.0,
+      "typed": 0.9888059701492538,
+      "n": 268
+    },
+    "QUASI/CODE": {
+      "any": 0.9701986754966887,
+      "typed": 0.9139072847682119,
+      "n": 302
+    },
+    "QUASI/DATETIME": {
+      "any": 0.9996264475158759,
+      "typed": 0.9985057900635039,
+      "n": 2677
+    },
+    "QUASI/DEM": {
+      "any": 0.7404021937842779,
+      "typed": 0.6051188299817185,
+      "n": 547
+    },
+    "QUASI/LOC": {
+      "any": 0.9932279909706546,
+      "typed": 0.9142212189616253,
+      "n": 443
+    },
+    "QUASI/MISC": {
+      "any": 0.5809018567639257,
+      "typed": 0.3183023872679045,
+      "n": 377
+    },
+    "QUASI/ORG": {
+      "any": 0.7217305801376598,
+      "typed": 0.5683382497541789,
+      "n": 1017
+    },
+    "QUASI/PERSON": {
+      "any": 0.9843423799582464,
+      "typed": 0.9561586638830898,
+      "n": 958
+    },
+    "QUASI/QUANTITY": {
+      "any": 0.911042944785276,
+      "typed": 0.8865030674846626,
+      "n": 326
+    }
+  },
+  "entity_level_direct_recall": 1.0,
+  "precision_proxy": 0.920388091440723,
+  "n_pred": 7524,
+  "wall_s": 46.3,
+  "gate_pass": true
+}

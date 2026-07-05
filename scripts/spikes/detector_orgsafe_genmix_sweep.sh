@@ -20,9 +20,11 @@ PY="PYTHONPATH=src .venv/bin/python -u"
 FRACS=("${@:-0.18}")                      # default single point 0.18
 MIX="nemotron=30000,pilener=40000,wikibio=corpora/wikipedia_bio/train.json"
 BASE="knowledgator/gliner-pii-base-v1.0"
-MW=60                                     # C5: base default is 12 (drops long MISC); hold 60 across all runs
-# v2 recipe (single-variable-from-v2): 3 epochs, lr 1e-5 / others 5e-5, batch 8, seed 42.
-COMMON="--epochs 3 --batch-size 8 --lr 1e-5 --others-lr 5e-5 --seed 42 --max-width $MW"
+# NOTE: max_width stays NATIVE (12). Widening to 60 is infeasible on the pretrained span head
+# (Linear(hidden, hidden*max_width) is baked at the trained width — see docs/specs/detector-model.md C5),
+# so there is no --max-width and no width-control run. v5 = single-variable-from-v2 (mix only).
+# v2 recipe: 3 epochs, lr 1e-5 / others 5e-5, batch 8, seed 42.
+COMMON="--epochs 3 --batch-size 8 --lr 1e-5 --others-lr 5e-5 --seed 42"
 
 for pf in "${FRACS[@]}"; do
   tag="p$(echo "$pf" | tr -d '.')"        # 0.18 -> p018
@@ -36,20 +38,9 @@ for pf in "${FRACS[@]}"; do
     2>&1 | tee "results/train_orgsafe_$tag.log"
 done
 
-# Width-control: v2's exact mix (Pile 10%, no balance-rare) at max_width=60 — isolates the 12->60 change
-# from the mix change. Reuses the already-built v2 dataset; no rebuild.
-V2DATA="data/pii_span_dataset_multidomain"
-if [ -d "$V2DATA" ]; then
-  echo "===== TRAIN width-control (v2 mix @max_width=$MW) ====="
-  eval $PY scripts/train_pii_gliner.py --init "$BASE" --data-dir "$V2DATA" $COMMON \
-    --out data/models/pii_gliner_widthctrl_mw60 2>&1 | tee results/train_widthctrl_mw60.log
-else
-  echo "WARN: $V2DATA not found — rebuild the v2 dataset for the width-control run (see FT-detector v2 doc)."
-fi
-
 cat <<'NEXT'
 == NEXT (eval — not run here; separate GPU steps) ==
-For each data/models/pii_gliner_orgsafe_*/checkpoint-* AND the width-control:
+For each data/models/pii_gliner_orgsafe_*/checkpoint-*:
   dev sweep:   scripts/latticecloak_detection_gate.py --corpus corpora/tab/echr_dev.json --threshold T --gliner-model <ckpt>
                (sweep T in 0.02 0.05 0.1 0.2 0.3; select by recall-at-matched-precision; reject dev QUASI/ORG < 0.90)
   TAB test:    scripts/latticecloak_detection_gate.py --corpus corpora/tab/echr_test.json --threshold 0.02 --gliner-model <sel>

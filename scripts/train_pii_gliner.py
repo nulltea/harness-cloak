@@ -64,10 +64,14 @@ def main():
 
     model = GLiNER.from_pretrained(args.init)
     if args.max_width > 0 and model.config.max_width != args.max_width:
-        # widen the candidate-span ceiling BEFORE the collator reads config (spans up to max_width words).
-        # NOTE: train AND inference must use the same max_width, else candidate enumeration differs silently.
-        print(f"max_width {model.config.max_width} -> {args.max_width} (candidate-span ceiling)", flush=True)
-        model.config.max_width = args.max_width
+        # NOT SUPPORTED: the span head is Linear(hidden, hidden*max_width) (gliner span_rep.py) — the
+        # pretrained projection is dimensioned for the checkpoint's trained width. Setting config.max_width
+        # alone only re-shapes the collator's data and crashes the forward a few steps in (view mismatch).
+        # Widening requires reinitializing + retraining that head — an open task, not a config knob.
+        raise SystemExit(
+            f"--max-width {args.max_width} != pretrained head width {model.config.max_width}: unsupported. "
+            f"GLiNER's span projection weight is dimensioned for the trained width; changing it needs a "
+            f"span-head reinit (see docs/specs/detector-model.md C5). Drop --max-width to train at native width.")
     if torch.cuda.is_available():
         model = model.to("cuda")
     collator = SpanDataCollator(model.config, data_processor=model.data_processor,

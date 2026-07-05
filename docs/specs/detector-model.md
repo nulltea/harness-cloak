@@ -81,9 +81,16 @@ identifying-event gold).
 
 ### C5 — Long-span emission
 Emit spans as long as the annotation guideline allows (identifying events run > 12 words; the data caps at
-60). The candidate-span width ceiling (`max_width`) must be **≥ 60**. base's `max_width = 12` is a
-structural ceiling that silently drops long MISC; large's 100 covers it (but costs VRAM for spans > 60 that
-never occur — cap ≈ 60).
+60). The candidate-span width ceiling (`max_width`) must be **≥ 60**. **Important (measured, v5): `max_width`
+is NOT a config edit on a pretrained GLiNER** — the span head is `Linear(hidden, hidden·max_width)`
+(`span_rep.py:79`), so the pretrained projection is dimensioned for the checkpoint's trained width; changing
+`config.max_width` only re-shapes the collator's data and crashes the forward. Consequences:
+- **base (`max_width=12`): effectively capped at 12** without reinitializing + retraining the span head —
+  long MISC (>12 words) is un-emittable. This competence is **unmet on base** as-is.
+- **large (`max_width=100`): meets it natively** (trained at 100) — the one axis where large is structurally
+  ahead, though at ~5–8× the span-enumeration cost for widths the data never uses (a ≈60 retrain would trim).
+- To give base this competence: reinit `mlp`/`out_project` to the wider output dim and retrain the span head
+  (rest fine-tuned) — an open task, not a free knob.
 
 ### C6 — Composition / per-user-type extension
 Accept new sensitive types via the cheapest sufficient path — gazetteer, zero-shot label phrase, or
@@ -168,7 +175,7 @@ result JSONs are committed. Selection is documented (which checkpoint, which thr
 | ORG any | ≥ 0.90 | 0.948 (v2) | v4 regressed to 0.848 (PR5) |
 | precision(proxy) | ≥ 0.716 | 0.786–0.850 | diagnostic (v4 test 0.786) |
 | generality any | > 0.90 (w/ precision) | 0.988 @0.444 (v3 large) | 0.918 @0.435 (v4 base) |
-| span width | max_width ≥ 60 | large 100 / base 12 | base ceiling drops long MISC |
+| span width | max_width ≥ 60 | large 100 (native) | base 12, not a config edit — needs span-head reinit |
 
 ## Measured tensions (the Pareto reality — no single config wins all)
 - **Generality ↔ TAB specialization.** A model that keeps firing on arbitrary open labels (generality ↑) is
