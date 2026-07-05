@@ -1,0 +1,473 @@
+{
+ "scorer_model": "Qwen/Qwen2.5-1.5B-Instruct",
+ "clear_majority_bar": 0.6667,
+ "per_doc": [
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "n_facts": 12,
+   "fw_raw": -3.2927,
+   "all_ph_raw": -3.0935,
+   "U_hi": -0.1914,
+   "win": false
+  },
+  {
+   "doc": "mts/0",
+   "corpus": "clinical",
+   "n_facts": 6,
+   "fw_raw": -7.1008,
+   "all_ph_raw": -5.3148,
+   "U_hi": -0.0244,
+   "win": false
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "n_facts": 11,
+   "fw_raw": -4.0557,
+   "all_ph_raw": -3.9475,
+   "U_hi": -0.2661,
+   "win": false
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "n_facts": 2,
+   "fw_raw": -5.0934,
+   "all_ph_raw": -5.6354,
+   "U_hi": -0.869,
+   "win": true
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "n_facts": 7,
+   "fw_raw": -3.0221,
+   "all_ph_raw": -2.7239,
+   "U_hi": -0.2776,
+   "win": false
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "n_facts": 8,
+   "fw_raw": -2.9479,
+   "all_ph_raw": -2.7874,
+   "U_hi": -0.341,
+   "win": false
+  },
+  {
+   "doc": "aci/D2N005",
+   "corpus": "clinical",
+   "n_facts": 7,
+   "fw_raw": -2.9757,
+   "all_ph_raw": -3.0644,
+   "U_hi": -0.3623,
+   "win": true
+  },
+  {
+   "doc": "aci/D2N006",
+   "corpus": "clinical",
+   "n_facts": 7,
+   "fw_raw": -4.1845,
+   "all_ph_raw": -4.3133,
+   "U_hi": -0.3758,
+   "win": true
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "n_facts": 8,
+   "fw_raw": -2.3235,
+   "all_ph_raw": -2.0427,
+   "U_hi": -0.0437,
+   "win": false
+  },
+  {
+   "doc": "mts/6",
+   "corpus": "clinical",
+   "n_facts": 4,
+   "fw_raw": -5.2852,
+   "all_ph_raw": -4.4836,
+   "U_hi": -2.4621,
+   "win": false
+  },
+  {
+   "doc": "aci/D2N008",
+   "corpus": "clinical",
+   "n_facts": 10,
+   "fw_raw": -2.9829,
+   "all_ph_raw": -2.9144,
+   "U_hi": -0.1469,
+   "win": false
+  },
+  {
+   "doc": "mts/7",
+   "corpus": "clinical",
+   "n_facts": 1,
+   "fw_raw": -2.6723,
+   "all_ph_raw": -2.6723,
+   "U_hi": -0.0078,
+   "win": true
+  },
+  {
+   "doc": "enron/0",
+   "corpus": "enron",
+   "n_facts": 3,
+   "fw_raw": -1.664,
+   "all_ph_raw": -1.6305,
+   "U_hi": -0.5849,
+   "win": false
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "n_facts": 2,
+   "fw_raw": -9.7263,
+   "all_ph_raw": -9.7267,
+   "U_hi": -1.8329,
+   "win": true
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "n_facts": 2,
+   "fw_raw": -8.1951,
+   "all_ph_raw": -8.1282,
+   "U_hi": -1.946,
+   "win": false
+  },
+  {
+   "doc": "enron/9",
+   "corpus": "enron",
+   "n_facts": 1,
+   "fw_raw": -3.171,
+   "all_ph_raw": -3.171,
+   "U_hi": -0.9517,
+   "win": true
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "n_facts": 1,
+   "fw_raw": -7.566,
+   "all_ph_raw": -7.2747,
+   "U_hi": -5.7148,
+   "win": false
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "n_facts": 3,
+   "fw_raw": -7.4484,
+   "all_ph_raw": -7.2705,
+   "U_hi": -2.314,
+   "win": false
+  },
+  {
+   "doc": "enron/14",
+   "corpus": "enron",
+   "n_facts": 1,
+   "fw_raw": -0.2387,
+   "all_ph_raw": -0.3111,
+   "U_hi": -0.1786,
+   "win": true
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "n_facts": 1,
+   "fw_raw": -9.8383,
+   "all_ph_raw": -9.2229,
+   "U_hi": -2.0187,
+   "win": false
+  }
+ ],
+ "swaps": [
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "surface": "dragon",
+   "base_fill": "a mythical being",
+   "coarse_fill": "an imaginary being",
+   "base_aset": 122.0,
+   "swap_aset": 229.0,
+   "base_raw": -3.2927,
+   "swap_raw": -3.2678,
+   "consistent": false
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "surface": "washington",
+   "base_fill": "a city in United States",
+   "coarse_fill": "a city in North America",
+   "base_aset": 13971.0,
+   "swap_aset": 36192.0,
+   "base_raw": -3.2927,
+   "swap_raw": -3.2911,
+   "consistent": false
+  },
+  {
+   "doc": "aci/D2N001",
+   "corpus": "clinical",
+   "surface": "female",
+   "base_fill": "an organism",
+   "coarse_fill": "a living thing",
+   "base_aset": 15724.0,
+   "swap_aset": 15827.0,
+   "base_raw": -3.2927,
+   "swap_raw": -3.4683,
+   "consistent": true
+  },
+  {
+   "doc": "aci/D2N002",
+   "corpus": "clinical",
+   "surface": "arthritis",
+   "base_fill": "a disease",
+   "coarse_fill": "an illness",
+   "base_aset": 459.0,
+   "swap_aset": 524.0,
+   "base_raw": -4.0557,
+   "swap_raw": -4.2019,
+   "consistent": true
+  },
+  {
+   "doc": "mts/1",
+   "corpus": "clinical",
+   "surface": "nurse",
+   "base_fill": "a health professional",
+   "coarse_fill": "a professional",
+   "base_aset": 129.0,
+   "swap_aset": 245.0,
+   "base_raw": -5.0934,
+   "swap_raw": -5.0149,
+   "consistent": false
+  },
+  {
+   "doc": "aci/D2N003",
+   "corpus": "clinical",
+   "surface": "nurse",
+   "base_fill": "a health professional",
+   "coarse_fill": "a professional",
+   "base_aset": 129.0,
+   "swap_aset": 245.0,
+   "base_raw": -3.0221,
+   "swap_raw": -3.0277,
+   "consistent": true
+  },
+  {
+   "doc": "aci/D2N004",
+   "corpus": "clinical",
+   "surface": "dragon",
+   "base_fill": "a mythical being",
+   "coarse_fill": "an imaginary being",
+   "base_aset": 122.0,
+   "swap_aset": 229.0,
+   "base_raw": -2.9479,
+   "swap_raw": -2.9463,
+   "consistent": false
+  },
+  {
+   "doc": "aci/D2N005",
+   "corpus": "clinical",
+   "surface": "dragon",
+   "base_fill": "a mythical being",
+   "coarse_fill": "an imaginary being",
+   "base_aset": 122.0,
+   "swap_aset": 229.0,
+   "base_raw": -2.9757,
+   "swap_raw": -2.9647,
+   "consistent": false
+  },
+  {
+   "doc": "aci/D2N007",
+   "corpus": "clinical",
+   "surface": "systolic ejection murmur",
+   "base_fill": "a happening",
+   "coarse_fill": "an event",
+   "base_aset": 714.0,
+   "swap_aset": 5968.0,
+   "base_raw": -2.3235,
+   "swap_raw": -2.3171,
+   "consistent": false
+  },
+  {
+   "doc": "mts/6",
+   "corpus": "clinical",
+   "surface": "lower back",
+   "base_fill": "a body part",
+   "coarse_fill": "a part",
+   "base_aset": 1407.0,
+   "swap_aset": 2935.0,
+   "base_raw": -5.2852,
+   "swap_raw": -5.3189,
+   "consistent": true
+  },
+  {
+   "doc": "mts/6",
+   "corpus": "clinical",
+   "surface": "heart disease",
+   "base_fill": "a disorder",
+   "coarse_fill": "a physical condition",
+   "base_aset": 232.0,
+   "swap_aset": 1313.0,
+   "base_raw": -5.2852,
+   "swap_raw": -5.4159,
+   "consistent": true
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "surface": "San Francisco",
+   "base_fill": "a city in California",
+   "coarse_fill": "a city in United States",
+   "base_aset": 997.0,
+   "swap_aset": 13971.0,
+   "base_raw": -9.7263,
+   "swap_raw": -9.7478,
+   "consistent": true
+  },
+  {
+   "doc": "enron/3",
+   "corpus": "enron",
+   "surface": "San Francisco",
+   "base_fill": "a city in California",
+   "coarse_fill": "a city in North America",
+   "base_aset": 997.0,
+   "swap_aset": 36192.0,
+   "base_raw": -9.7263,
+   "swap_raw": -9.8111,
+   "consistent": true
+  },
+  {
+   "doc": "enron/4",
+   "corpus": "enron",
+   "surface": "general partner",
+   "base_fill": "a causal agent",
+   "coarse_fill": "a person",
+   "base_aset": 9425.0,
+   "swap_aset": 1000000000.0,
+   "base_raw": -8.1951,
+   "swap_raw": -8.197,
+   "consistent": true
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "surface": "Houston",
+   "base_fill": "a city in Texas",
+   "coarse_fill": "a city in United States",
+   "base_aset": 887.0,
+   "swap_aset": 13971.0,
+   "base_raw": -7.566,
+   "swap_raw": -7.7437,
+   "consistent": true
+  },
+  {
+   "doc": "enron/10",
+   "corpus": "enron",
+   "surface": "Houston",
+   "base_fill": "a city in Texas",
+   "coarse_fill": "a city in North America",
+   "base_aset": 887.0,
+   "swap_aset": 36192.0,
+   "base_raw": -7.566,
+   "swap_raw": -7.679,
+   "consistent": true
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "surface": "Indianapolis",
+   "base_fill": "a city in Indiana",
+   "coarse_fill": "a city in United States",
+   "base_aset": 231.0,
+   "swap_aset": 13971.0,
+   "base_raw": -7.4484,
+   "swap_raw": -7.4607,
+   "consistent": true
+  },
+  {
+   "doc": "enron/11",
+   "corpus": "enron",
+   "surface": "Indianapolis",
+   "base_fill": "a city in Indiana",
+   "coarse_fill": "a city in North America",
+   "base_aset": 231.0,
+   "swap_aset": 36192.0,
+   "base_raw": -7.4484,
+   "swap_raw": -7.4659,
+   "consistent": true
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "surface": "the Enron Center",
+   "base_fill": "a region",
+   "coarse_fill": "an area",
+   "base_aset": 246.0,
+   "swap_aset": 334.0,
+   "base_raw": -9.8383,
+   "swap_raw": -9.5195,
+   "consistent": false
+  },
+  {
+   "doc": "aeslc/arnold-j_inbox_41",
+   "corpus": "aeslc",
+   "surface": "the Enron Center",
+   "base_fill": "a region",
+   "coarse_fill": "a location",
+   "base_aset": 246.0,
+   "swap_aset": 3030.0,
+   "base_raw": -9.8383,
+   "swap_raw": -9.2747,
+   "consistent": false
+  }
+ ],
+ "excluded": [
+  {
+   "doc": "enron/7",
+   "corpus": "enron",
+   "reason": "empty_facts"
+  },
+  {
+   "doc": "aeslc/allen-p_inbox_84",
+   "corpus": "aeslc",
+   "reason": "empty_facts"
+  },
+  {
+   "doc": "aeslc/bass-e_inbox_112",
+   "corpus": "aeslc",
+   "reason": "empty_facts"
+  }
+ ],
+ "collisions_skipped": 1,
+ "summary": {
+  "n_docs_scored": 20,
+  "docs_floor_walk_ge_all_placeholder": 7,
+  "win_rate": 0.35,
+  "n_swaps": 20,
+  "specificity_consistent": 12,
+  "spec_consistent_frac": 0.6,
+  "excluded_count": 3,
+  "excluded": [
+   {
+    "doc": "enron/7",
+    "corpus": "enron",
+    "reason": "empty_facts"
+   },
+   {
+    "doc": "aeslc/allen-p_inbox_84",
+    "corpus": "aeslc",
+    "reason": "empty_facts"
+   },
+   {
+    "doc": "aeslc/bass-e_inbox_112",
+    "corpus": "aeslc",
+    "reason": "empty_facts"
+   }
+  ],
+  "verdict": "FAIL"
+ }
+}
