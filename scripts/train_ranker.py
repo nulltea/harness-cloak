@@ -210,16 +210,45 @@ def policy_entropy(policy, feats, legal) -> torch.Tensor:
     return -(lp.exp() * lp).sum()
 
 
+def counterfactual_terms(doc, policy, choice, logps, base_r, *, frac, rng, rt_workers):
+    """Exact per-span credit (spec Phase 2; COMA made exact by reward determinism):
+    for a sampled fraction of non-placeholder spans, re-run the round trip with ONLY that
+    span flipped to its placeholder; adv_s = base_r - r_cf weights that span's logp.
+    Counterfactual doc_p's are cache-friendly (identical across epochs at fixed choices)."""
+    cand = [i for i, s in enumerate(doc["spans"])
+            if choice[s["surface"].lower()]["mode"] == "level"]
+    take = [i for i in cand if rng.random() < frac]
+    if not take:
+        return 0.0, 0
+    jobs = []
+    for i in take:
+        s = doc["spans"][i]
+        cf = dict(choice)
+        ph_idx = next(k for k, a in enumerate(s["actions"]) if a["mode"] == "placeholder")
+        cf[s["surface"].lower()] = s["actions"][ph_idx]
+        doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], cf)
+        jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+                     "probes": doc["probes_train"]})
+    res = roundtrip_batch(jobs, workers=rt_workers)
+    term = 0.0
+    for i, r in zip(take, res):
+        adv_s = base_r - (r["recall"] or 0.0)
+        term = term - adv_s * logps[i]
+    return term, len(take)
+
+
 def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
-                    rt_workers, seed, log_rows=None):
-    """RLOO + tie-filter epoch loop against roundtrip_batch. Returns per-epoch stat rows."""
+                    rt_workers, seed, cf_frac=0.0, log_rows=None):
+    """RLOO + tie-filter epoch loop against roundtrip_batch. Returns per-epoch stat rows.
+    cf_frac > 0 adds an exact per-span counterfactual PG term (counterfactual_terms) on a
+    fresh greedy rollout after each doc's group update."""
     opt = torch.optim.Adam(policy.parameters(), lr=lr)
     rows = []
     for epoch in range(epochs):
         rng = random.Random(seed * 1000 + epoch)
         order = list(range(len(docs)))
         rng.shuffle(order)
-        ep = {"r": [], "ph": [], "ent": [], "ties_skipped": 0}
+        ep = {"r": [], "ph": [], "ent": [], "ties_skipped": 0, "cf_used": 0}
         for di in order:
             doc = docs[di]
             logps_l, ph_l = [], []
@@ -251,11 +280,24 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             loss.backward()
             opt.step()
             ep["ent"].append(ent.item())
+            if cf_frac > 0:                             # exact per-span counterfactual credit
+                g_choice, g_logps, _, g_doc_p, g_R = sample_rollout(
+                    doc, doc["spans"], doc["feats"], policy, greedy=True)
+                base_r = roundtrip_batch(
+                    [{"corpus": doc["corpus"], "doc_p": g_doc_p, "R": g_R,
+                      "probes": doc["probes_train"]}], workers=rt_workers)[0]["recall"] or 0.0
+                term, n_cf = counterfactual_terms(doc, policy, g_choice, g_logps, base_r,
+                                                  frac=cf_frac, rng=rng, rt_workers=rt_workers)
+                if n_cf > 0 and isinstance(term, torch.Tensor):
+                    opt.zero_grad()
+                    term.backward()
+                    opt.step()
+                    ep["cf_used"] += n_cf
         n = max(len(ep["r"]), 1)
         row = {"epoch": epoch, "r": round(sum(ep["r"]) / n, 4),
                "ph": round(sum(ep["ph"]) / n, 4),
                "ent": round(sum(ep["ent"]) / max(len(ep["ent"]), 1), 4),
-               "ties_skipped": ep["ties_skipped"]}
+               "ties_skipped": ep["ties_skipped"], "cf_used": ep["cf_used"]}
         rows.append(row)
         if log_rows is not None:
             log_rows.append(row)
@@ -431,11 +473,19 @@ def main():
                          "sample G rollouts/doc, SFT on those strictly beating the floor")
     ap.add_argument("--exit-epochs", type=int, default=10,
                     help="clone_choices SFT epochs per ExIt round")
+    ap.add_argument("--cf-frac", type=float, default=0.0,
+                    help="exact per-span counterfactual credit (roundtrip only): fraction of "
+                         "level-mode spans of a greedy rollout to flip to placeholder and "
+                         "re-score for exact per-span advantage (0 = off)")
     args = ap.parse_args()
     assert args.G >= 2, "group-relative advantage needs G >= 2 (std of one reward is NaN)"
+    assert 0.0 <= args.cf_frac <= 1.0, "--cf-frac must be in [0, 1]"
     if args.exit_rounds > 0:
         assert args.reward == "roundtrip", \
             "expert-iteration (--exit-rounds) requires --reward roundtrip"
+    if args.cf_frac > 0:
+        assert args.reward == "roundtrip", \
+            "counterfactual credit (--cf-frac) requires --reward roundtrip"
     roundtrip = args.reward == "roundtrip"
     if roundtrip and roundtrip_batch is None:
         raise SystemExit("roundtrip reward requires cloak.train.roundtrip (import failed)")
@@ -537,6 +587,7 @@ def main():
         log = {"reward": "roundtrip", "rt_model": RT_MODEL, "adv": adv, "floors": floors,
                "randomize_floors": args.randomize_floors, "G": args.G, "epochs": args.epochs,
                "n_exit_rounds": args.exit_rounds, "exit_epochs": args.exit_epochs,
+               "cf_frac": args.cf_frac,
                "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,
                "n_docs": len(docs), "policy": "feature-MLP (plan ablation floor)",
                "exit_rounds": [], "rounds": []}
@@ -555,7 +606,7 @@ def main():
         train_roundtrip(docs, policy, G=args.G, epochs=args.epochs, lr=args.lr,
                         entropy_coef=entropy_coef, kl_coef=kl_coef,
                         ref=(ref if kl_coef > 0 else None), rt_workers=args.rt_workers,
-                        seed=args.seed, log_rows=log["rounds"])
+                        seed=args.seed, cf_frac=args.cf_frac, log_rows=log["rounds"])
         # greedy read-out at the env floors, scored via one round-trip batch (fixed floor only)
         jobs, phs = [], []
         with torch.no_grad():
