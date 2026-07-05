@@ -231,6 +231,13 @@ def u_qa(doc_p: str, R: list[dict], probes: list[dict]) -> tuple[float | None, l
     return sum(d["f1"] for d in details) / len(details), details
 
 
+def fact_f1s(out_final: str, probes: list[dict]) -> list[float]:
+    """Per-probe realized token-F1 on out_final (original space — no generalization,
+    no inversion). The per-probe form of fact_recall; shared by the round-trip reward,
+    probe validation, and the support scan."""
+    return [token_f1(_qa_answer(p["question"], out_final), p["surface"]) for p in probes]
+
+
 def fact_recall(out_final: str, probes: list[dict]) -> float | None:
     """Realized utility ground truth: do the gold-restated facts survive the round trip?
 
@@ -238,10 +245,8 @@ def fact_recall(out_final: str, probes: list[dict]) -> float | None:
     space — no question generalization, no answer inversion). Mean token-F1 vs the original
     surface; None when the doc has no probes.
     """
-    if not probes:
-        return None
-    return sum(token_f1(_qa_answer(p["question"], out_final), p["surface"])
-               for p in probes) / len(probes)
+    f1s = fact_f1s(out_final, probes)
+    return (sum(f1s) / len(f1s)) if f1s else None
 
 
 def generalize_text(text: str, R: list[dict]) -> str:
