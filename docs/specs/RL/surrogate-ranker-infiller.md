@@ -2,10 +2,10 @@
 type: reference
 status: current
 created: 2026-07-03
-updated: 2026-07-04
+updated: 2026-07-05
 tags: [rl, surrogate-reward, ranker, infiller, environment, probes, reward, anonymity-set,
-       count-floors, keep-original, floor-randomized, grammar-constrained, fact-recall,
-       injectivity, spec]
+       count-floors, keep-original, floor-randomized, grammar-constrained, gold-conditional,
+       utility-only, fact-recall, injectivity, spec]
 companion: [docs/research/inference-risk-enforcement.md,
             docs/plans/2026-07-04-structural-lattice-risk.md,
             docs/plans/2026-07-02-surrogate-grpo-training.md, docs/specs/benchmarks.md,
@@ -21,8 +21,18 @@ risk** — per-action anonymity-set counts with per-type floors — replaces the
 probe as the legality mask everywhere on the inference and training paths; the probe LM
 retires to offline calibration/validation. Rationale and the option analysis:
 [inference-risk-enforcement](../../research/inference-risk-enforcement.md); migration:
-[structural-lattice-risk plan](../../plans/2026-07-04-structural-lattice-risk.md). Decision
-history and wall-time live in the
+[structural-lattice-risk plan](../../plans/2026-07-04-structural-lattice-risk.md).
+
+**Third revision (2026-07-05): reward redesign** — the utility term becomes the graded
+**gold-conditional fact likelihood (u_gold, §5.1)**; the fill-proximity privacy term is
+**retired from the reward** (privacy is floors-only) and **alpha is retired as an operating
+knob** (the Pareto curve comes from the floor grid). Motivation: the measured
+reward-landscape account of the two stage-1 NULLs — the old utility term was flat above bare
+findability, the old privacy term's optimum was the degenerate all-placeholder point
+(+0.062…0.177 over the init), and the KL leash had to overprice the only climb by ~10× to
+contain it ([2026-07-05 training
+record](../../../research-wiki/training/2026-07-05-RL-ranker-stage1-floor-env.md), landscape
+addendum). Decision history and wall-time live in the
 [training plan](../../plans/2026-07-02-surrogate-grpo-training.md).
 
 ## Definitions
@@ -58,9 +68,9 @@ history and wall-time live in the
   legal level (ties broken by list index), else generic placeholder. Replaces the tau-walk;
   the tau-walk survives only as the frozen artifact reference for BC-reproduction checks.
 - **keep-original** — a first-class level action `{fill = surface, aset = 1.0, p6 = 1.0}`,
-  legal exactly when `k_T ≤ 1` (a user-waived type). Supersedes the previous revision's "No
-  KEEP action" rule: legality now comes from the user's waiver contract, not from the reward's
-  ability to price it, and the reward *does* price it (maximal proximity, p6 = 1.0). Measured
+  legal exactly when `k_T ≤ 1` (a user-waived type). Supersedes the first revision's "No
+  KEEP action" rule: legality comes from the user's waiver contract, and under the
+  utility-only reward keep is simply the maximally-informative legal action. Measured
   motivation: the identity-only constructed arm (conditions kept, identities hidden) is the
   best realized clinical operating point (fact recall 0.300 vs tau-walk 0.133,
   `results/ranker_reward_gate.json`) at attack ≈ all-placeholder
@@ -70,11 +80,21 @@ history and wall-time live in the
   **Offline-only**: shootout calibration/validation and build-time diagnostics; never on a
   deployment or training legality path. Survives in action tables as a feature/diagnostic
   column.
-- **A / fill_proximity (legacy P6)** — the reward's privacy term: `cos_MiniLM(fill, original)`
-  per level-mode fill (keep-original included at 1.0; generic placeholders excluded), mean-
-  aggregated. Candidate-sensitive, context-blind.
-- **Restated-span probe / u_qa / fact recall** — QA probes on gold-restated surfaces; u_qa
-  reads doc_p (training utility), fact recall reads out_final (realized ground truth).
+- **fill_proximity (legacy P6)** — `cos_MiniLM(fill, original)` per fill. **Retired from the
+  reward (2026-07-05)**: survives only as an action-table feature/diagnostic column, like
+  walk_risk. The reward has no privacy term — privacy is floors-only (§5.2).
+- **u_gold (gold-conditional fact likelihood)** — the reward's utility term (§5.1): the
+  teacher-forced mean log-probability, under a **pinned frozen local causal LM**, of the gold
+  output's *fact tokens* (gold tokens that restate substituted surfaces) conditioned on the
+  task prompt built from doc_p; anchored per doc between the all-placeholder floor and the
+  doc_orig ceiling. Dense, monotone in retained task-relevant information, one batched
+  forward per rollout.
+- **Restated-span probe / u_qa / fact recall** — QA probes on gold-restated surfaces. u_qa
+  (reader → invert → F1) is **demoted to a diagnostic (2026-07-05)** — measured flat above
+  bare findability (0/96 upward moves around a min-aset init) — and no longer trains or
+  gates. The probe *machinery* (gold-restatement matching, teacher questions, train/held-out
+  split) is retained: it defines u_gold's fact masks and fact recall's questions. fact
+  recall on out_final remains the realized ground truth.
 - **extract / invert** — the same deployed re-identification path (`cloak.extract.invert`);
   "extract" is the pipeline-stage name, `invert()` the implementation.
 - **Echo / absorption** — whether the remote model reproduces a fill in out_p (echo) or uses
@@ -85,14 +105,20 @@ history and wall-time live in the
   training signal.
 - **E0/E1/E2** — environment versions (§3.4). A policy is valid only for its training version.
 
-### The three knobs (division of labor)
+### The two knobs (division of labor; alpha retired 2026-07-05)
 
 - **k_T** — hard per-span, per-type ceiling on structural risk (the contract; defines what is
-  legal at all). The only legitimate way to move a policy's privacy operating point.
-- **α** — the training-time mixing weight, `r = α·(1 − A) + (1 − α)·u_qa`; soft preference
-  over how the policy trades the remaining slack. One (α, floor-config) = one operating point;
-  the α sweep {0.3, 0.5, 0.7} samples the training-time Pareto. Never "tuned to a best value".
-- **the ranker** — the learned per-span allocation under both.
+  legal at all). The only privacy knob, and now also the **operating-point knob**: one floor
+  config = one operating point; the declared floor grid samples the Pareto curve.
+- **the ranker** — the learned utility-maximizing allocation inside the legal set. Its
+  legitimate target is the **non-monotone residual** the floor-walk rule cannot express:
+  injectivity trades (coarsen one span to free a fill for another), cross-span coherence,
+  and spots where a fluent coarser fill outscores an awkward specific one under u_gold.
+- *(retired)* **α** — the old privacy↔utility mixing weight. The landscape probe showed its
+  privacy side rewarded only the degenerate all-placeholder direction, forcing the KL leash
+  to pin the policy. With privacy enforced by floors and utility monotone in retained
+  information, a mixing weight has no legitimate job. Historical records keep their α
+  labels.
 
 ## 1. Objective and verdict
 
@@ -124,44 +150,51 @@ for doc in corpus:
 # count-vs-attacker shootout on cached labels: promote/retain the structural measure only by
 # measured attacker correlation (matched items + labels). 2026-07-04, gemini referee, n=150:
 #   inv_aset level-ordering 0.786 / AUC 0.726/0.759  vs  walk_risk 0.714 / 0.660/0.601
-# K_FLOORS = smallest count bucket per type with attacker hit@5 at/below the reference rate.
+# K_FLOORS calibration rule (reproducible): count buckets [<10, 10-100, 100-10k, >=10k];
+# reference rate = the tau-walk arm's measured doc-level attack hit@5 (0.317); per type,
+# floor = lower edge of the smallest bucket whose hit@5 <= reference AND n >= 5; types with
+# no qualifying cell (thin cells, or no shootout items at all: MISC/OTHER) DEFAULT-DENY to
+# 100. Re-derive on any change to lattice sources, count universes, or the referee label set.
 
 # --- 0c. reward machinery + validation gate (go/no-go BEFORE any training run) ---
 qa_probes[doc] = teacher_questions(R_surfaces ∩ gold(doc))  # cached; train/held-out split
 pi_0 = behavior_clone(floor-walk decisions)                 # never RL from random
-assert constructed_arms_gate(reward, fact_recall_on_out_final) is positive   # §6 — re-run
-# required whenever reward, probes, prompt, extractor, OR THE ENVIRONMENT changes (the
-# keep-original + floor environment of 2026-07-04 requires a fresh gate run before training).
+assert constructed_arms_gate(u_gold, fact_recall_on_out_final) is positive   # §6 — re-run
+# required whenever reward, scorer LM, probes, prompt, extractor, OR THE ENVIRONMENT changes.
+# STATUS: the u_gold reward has never been gated — training is blocked on that run (§6).
 ```
 
-### Phase 1 — stage-1 ranker training (per α; local; no remote calls)
+### Phase 1 — stage-1 ranker training (per floor config; local; no remote calls)
 
 ```python
-for epoch, doc in training:
-    if randomize_floors:                                    # §5.4 — tau-portability training
-        k = {T: exp(U(ln(max(k_T/10, 1)), ln(10*k_T))) for T, k_T in K_FLOORS.items()}
-        legal, teacher, feats = derive_spans(doc, k)        # menus, floor-walk, features re-derived
+for floor_config in FLOOR_GRID:                             # operating points; alpha is retired
+  for epoch, doc in training:
+    if randomize_floors:                                    # §5.4 — floor-portability training
+        k = sample_floors(floor_config)                     # waived types stay 1; others centered
     else:
-        k = K_FLOORS
+        k = floor_config
+    legal, teacher, feats = derive_spans(doc, k)            # menus, floor-walk, features
     for g in 1..G:
         a_g = sample(pi, legal | dynamic_injectivity_mask)  # §3.3-1: claimed fills unsampleable
         doc_p_g, R_g = assemble(doc, a_g)
-        A_g = mean(fill_proximity(fill(a_g[s]), s.orig)     # keep-original counts at 1.0;
-                   for s if mode(a_g[s]) != generic_placeholder)
-        U_g = mean(F1(invert(reader(q̃_j, doc_p_g), R_g), a_j) for j in train_probes)  # §5.2
-        r_g = α*(1 - A_g) + (1 - α)*U_g
+        r_g = u_gold(doc_p_g)                               # §5.1 — utility-only; privacy is
+                                                            # already enforced by the mask
     adv = (r - mean(r)) / (std(r) + eps)                    # group advantage, within one floor sample
-    loss = -sum(adv_g * logp(a_g)) / G + kl_coef * KL(pi ‖ pi_0)   # MINIMIZED; the KL term is a
-    pi.minimize(loss)                                       # penalty (leash), kl_coef 0.05 default;
-                                                            # pi_0 BC'd under the SAME floor regime:
-                                                            # randomized runs use floor-randomized BC
+    loss = -sum(adv_g * logp(a_g)) / G + kl_coef * KL(pi ‖ pi_0)   # MINIMIZED; leash, kl_coef
+    pi.minimize(loss)                                       # 0.01 default (§5.3): the reward no
+                                                            # longer has a degenerate direction to
+                                                            # contain. pi_0 BC'd under the SAME
+                                                            # floor regime as the run.
+# FIRST-SMOKE MILESTONE (mandatory before any full run): the smoke must show movement off
+# the BC init (KL > 0.01 or greedy != BC on some span) — the optimizer canary inherited from
+# the NULL diagnosis. A motionless smoke halts the run and triggers the coarse-init bug hunt.
 # canonical training defaults (G = 8, epochs, lr 3e-4, kl_coef, seeds) are the argparse
 # defaults of scripts/train_ranker.py; each run's actual values live in its training record.
 # features: [is_placeholder, walk_risk, p6, level_index/4, n_levels/4,
 #            log10_aset/9, log10_active_floor/9, type-onehot(7), corpus-onehot(3)]  (N_FEAT 17;
 #            level_index and n_levels clipped at 4; placeholder rows feature aset as 1e9)
-# greedy read-out: at FIXED floors on a declared grid — one operating point per (α, floor
-# config); randomization is train-time only and results are NEVER averaged across floors.
+# greedy read-out: at FIXED floors on the declared grid — one operating point per floor
+# config; randomization is train-time only and results are NEVER averaged across floors.
 ```
 
 ### Phase 2 — stage-2 joint training (infiller unfrozen; E1+ only)
@@ -188,7 +221,7 @@ for span s with ranker-chosen node l:
 
 ```python
 for policy in trained_policies + [floor_walk]:              # the floor-walk = control group
-    for (α, floor_config) operating point, doc in HELD_OUT docs:
+    for floor_config operating point, doc in HELD_OUT docs:
         doc_p, R  = policy(doc | floor_config)
         out_p     = RemoteLLM(task_prompt(doc_p))           # real round trip, cached
         out_final = extract(out_p, R)                       # deployed extractor (§3.3-4)
@@ -198,10 +231,19 @@ for policy in trained_policies + [floor_walk]:              # the floor-walk = c
 frontier_claim = pareto(policies) vs pareto(floor_walk)     # at matched REALIZED privacy → §1
 ```
 
+**Pre-registered dominance test (the operational form of `frontier_claim`):** operating
+points are compared within privacy bins of realized attacker success (bin width chosen so
+each bin holds ≥ 2 operating points; no cross-bin interpolation claims); within a bin,
+utility difference is judged by a **document-level bootstrap** (resample held-out docs,
+1000 draws) — dominance requires the 95% CI of the utility difference to exclude 0;
+otherwise the result is *equivalence at that privacy level*, reported as such. A policy
+Pareto-dominates only if it wins ≥ 1 bin and loses none. Seeds and doc lists are fixed and
+recorded before the eval run.
+
 **Honesty boundaries:** aset, walk_risk, and fill_proximity never appear in Phase 3 as privacy
 measures (training's teacher must not grade its own student); held-out docs, held-out probe
 split, held-out attacker; second-remote-model arm per the training plan; results reported per
-(α, floor-config) operating point, never averaged across floors.
+floor-config operating point, never averaged across floors.
 
 ## 3. Environment
 
@@ -223,14 +265,13 @@ task-relevance-dependent, not form-guaranteed**.
   placeholder syntax — inherits clean inversion-given-echo, but **loses the floor exemption**
   (aset-scored like any fill; used-set/indexing applies to the label namespace).
 
-**Keep-original** (supersedes the previous "No KEEP action" rule): legal exactly when the
-user's floor for the type is ≤ 1 (a waiver). Three facts changed the ruling: (1) the reward
-now prices keeps — they are level-mode actions with fill_proximity 1.0, the maximal privacy
-penalty; (2) legality is a *contract* question, and a waived type is the user declaring the
-attribute non-sensitive — the mask, not the reward, carries that; (3) measured: the
-identity-only arm (keeps on attribute types, placeholders on identity types) is the best
-realized clinical operating point at attack parity with all-placeholder. Known residual — A
-mis-prices keep-heavy configurations relative to realized utility/privacy (§7-2).
+**Keep-original** (supersedes the first revision's "No KEEP action" rule): legal exactly
+when the user's floor for the type is ≤ 1 (a waiver). Two facts changed the ruling:
+(1) legality is a *contract* question — a waived type is the user declaring the attribute
+non-sensitive, and the mask, not the reward, carries that; under the utility-only reward
+keep is simply the maximally-informative legal action. (2) Measured: the identity-only arm
+(keeps on attribute types, placeholders on identity types) is the best realized clinical
+operating point at attack parity with all-placeholder.
 
 Direct identifiers (PERSON, CODE): forced generic placeholder, outside the action space.
 
@@ -257,15 +298,17 @@ unrecoverable. Enforced at assembly/decoding time:
    share one coarse level); BC is per-span cross-entropy and rollouts are dynamically masked,
    so no runtime guarantee is affected — collision counts are reported, not asserted away.
 2. **Per-type count floors as the hard ceiling** — `aset[s, l] < k_T` ⇒ `l ∉ legal[s]`;
-   exhaustion → generic placeholder (risk 0). α, not k_T, is the preference knob. The
+   exhaustion → generic placeholder (risk 0). k_T is both the contract and the operating
+   point (alpha retired, §Definitions). The
    exhaustion fallback is load-bearing in four places: (a) the training environment (legal
    never empty); (b) deployed inference (the trained ranker samples only from the mask — it
    replaces the walk's *choice*, never the legality boundary; an unfamiliar user floor
    degrades choice quality, never privacy); (c) the behavior-clone init (a teacher that ships
    floor violations teaches them); (d) the eval control group. Floors are enforced by integer
    comparison against artifact-stored counts — **zero risk models at inference**.
-3. **Truthfulness as a constraint (generate-then-verify)** — the reward cannot price
-   truthfulness (u_qa is inversion-invariant to fill semantics; A prices only proximity), so
+3. **Truthfulness as a constraint (generate-then-verify)** — the reward must not price
+   truthfulness (u_gold rewards informativeness whether or not the fill is true — a false
+   but pinpointing fill scores high), so
    truthfulness lives in the environment as the NLI entailment gate (premise = original
    sentence, hypothesis = sentence with the fill; keep iff entailed). E0: all lattice sources
    pass the gate (shipped 2026-07-04). E1: the gate joins the decode loop (§2 Phase 2). Known
@@ -294,12 +337,21 @@ unrecoverable. Enforced at assembly/decoding time:
 | | fills | risk mask | extractor | status |
 |---|---|---|---|---|
 | **E0** | static lattice strings ∪ keep-original ∪ generic placeholder | per-type count floors (artifact-stored aset) | rule exact/fuzzy-90 | **live** (2026-07-04) |
-| **E1** | infiller under grammar-constrained decoding; descriptive/relational fills | floors, online strict `aset_count` per instantiation | E0 + light fuzzy-verify | infiller to build |
+| **E1** | infiller under grammar-constrained decoding; descriptive/relational fills | floors, online strict `aset_count` per instantiation | E0 + light fuzzy-verify | **design-not-build-ready** (see below) |
 | **E2** | E1 | E1 + document-level attack head (frozen encoder + heads on SynthPAI attributes) | learned reconstructor | escalation |
 
 The E1 semantic aligner remains descoped: absorption dominates `gen_absent`; what the remote
 model absorbs cannot be won back at extraction time
 ([remote-llm-echo-absorption](../../issues/remote-llm-echo-absorption.md)).
+
+**E1 build contract (what "design-not-build-ready" requires before implementation):** a
+grammar artifact per (type, node class) — schema: canonical templates + closed slot
+vocabularies, each shipped with a **parser round-trip test** (every producible string must
+parse under `aset_count(strict=True)` back to a count for its node); decode-loop constants:
+max resamples/beams before the generic-placeholder terminal, and deterministic behavior on
+NLI-gate failure (resample budget shared with injectivity, never silent acceptance). These
+are build deliverables, not open design questions — the design itself (§2 Phase 2, §3.3-6)
+is settled.
 
 ## 4. Risk measure and probes
 
@@ -315,7 +367,7 @@ new calls — `scripts/spikes/lattice_count_shootout.py` →
 |---|---|---|---|
 | **inv_aset (1/count, strict)** | **0.786** | 0.726 / 0.759 | **legality mask + floor calibration** |
 | walk_risk (contrastive LM; legacy P4) | 0.714 | 0.660 / 0.601 | retired to offline calibration/diagnostics |
-| fill_proximity (legacy P6) | 0.643 | 0.761 / 0.760 | reward privacy term A (unchanged) |
+| fill_proximity (legacy P6) | 0.643 | 0.761 / 0.760 | feature/diagnostic only (retired from the reward, §5.2) |
 
 The pre-registered adoption rule was "structural if within 0.05 of walk_risk"; it won
 outright. (The previous revision's .86 figure for walk_risk was the Qwen-referee column of the
@@ -340,79 +392,138 @@ question per surface (cloze is reader-OOD, measured). Anti-Goodhart: per-doc hel
 subset scored only at evaluation. Probe supply concentrates on clinical; expansion options
 queued if it binds.
 
-**Reward-support requirement (measured 2026-07-04, the stage-1 NULL diagnosis):** the reward
-can only teach what some legal action can change. At the retired tau=0.02 mask, only 3/106
-train probes could flip under any single-action counterfactual
-(`scripts/spikes/probe_flip_scan.py`) — an optimization-proof reward desert. The floor
-environment roughly doubles decision freedom (146/177 spans with ≥2 legal actions vs 72/177)
-and legalizes keep/level trades on probe-bearing attribute spans; **re-measuring probe-flip
-support on the floor environment is part of the §6 gate** for the next training run.
+**Reward-support history (the two NULL diagnoses):** the reward can only teach what some
+legal action can change. At the retired tau=0.02 mask, 3/106 train probes could flip under
+any single-action counterfactual; on the floor environment 60/106 became flippable but all
+7 actual flips pointed downward — u_qa was flat above bare findability
+(`scripts/spikes/probe_flip_scan.py`, `scripts/spikes/reward_landscape_probe.py`). u_gold
+(§5.1) removes the cliff (every legal action moves the score), so the binding constraint
+shifts from flip support to **fact-mask coverage**: the §6 gate reports fact tokens per doc
+per corpus, and corpus imbalance there is the queued expansion trigger (§7-6).
 
-## 5. Reward
+## 5. Reward (utility-only — third revision, 2026-07-05)
 
-### 5.1 Privacy term A
+### 5.1 Utility term — u_gold (gold-conditional fact likelihood)
 
-`A = mean over level-mode fills of cos_MiniLM(fill, original)` — keep-original included at
-1.0, generic placeholders excluded from both numerator and denominator (constant, no
-gradient); an assembly with no level-mode fills (all-placeholder) has A = 0 by definition. Context-blind by construction;
-the frontier attacker at eval prices what it misses. Known mis-pricing: A rates keep-heavy
-configurations maximally unsafe regardless of the type's identifying power — measured against
-realized outcomes in the identity-only arm (§7-2); if the eval attacker confirms A's ordering
-is wrong where it matters, A escalates (walk_risk term or E2 document head), the policy
-retrains.
+```python
+# Phase 0, per doc, once (cached):
+prompt(x)  = TASK_TEMPLATE[corpus].format(doc=x)        # the SAME prompt the round trip uses
+gold_ids   = tokenize(gold(doc))
+fact_mask  = positions in gold that restate substituted surfaces   # probes' matcher, reused
+U_hi       = score(doc_orig)                            # ceiling: nothing hidden
+U_lo       = score(all_placeholder(doc))                # floor: everything hidden
 
-### 5.2 Utility term — u_qa, uniform reader path, no echo prior
-
+# per rollout — ONE teacher-forced forward, no generation, no reader, no inversion:
+def score(doc_p):
+    lp = log_softmax(LM(concat(prompt(doc_p), gold_ids)))      # pinned frozen local causal LM
+    return mean(lp[t] for t in fact_mask)
+u_gold(doc_p) = clip((score(doc_p) - U_lo) / (U_hi - U_lo), 0, 1)
 ```
-u_j = F1( invert( reader(q̃_j, doc_p), R ),  a_j )     for EVERY train-split probe j
-U   = mean_j u_j
-```
 
-One path for all fill modes: question generalized through R → SQuAD2 reader on doc_p → answer
-inverted through R → token-F1 vs the original surface. Properties:
+Why this term: it is **dense and monotone in retained task-relevant information** — a fill
+consistent with ~k candidates leaves the fact tokens at ≈ log(1/k), so the utility scale and
+the anonymity-set scale are the same object seen from opposite sides. It prices the
+specificity axis that u_qa was measured blind to (0/96 upward moves around a min-aset init),
+has no abstention cliff (every action moves the number → REINFORCE always has a slope), and
+costs one batched forward per rollout — cheaper than the retired per-probe reader loop.
 
-- **Coarsening invariance**: invertible coarsening scores 1.0; keeping the original earns no
-  *bonus* over an invertible coarse fill — but note keep-original IS findable by the reader
-  where coarse fills sometimes are not, so u_qa retains a measured pull toward specificity
-  (no_privacy arm U 0.366 vs anonymized arms 0.05–0.075). The floors, not the reward, are
-  what make under-anonymization unreachable.
-- **Placeholder-covered probes score through the same reader**: usually 0 (SQuAD2 abstains on
-  `<TYPE_n>`), occasionally 1. Measured conservative bias, accepted as fail-closed; whatever
-  placeholders deliver beyond local verifiability shows up in the surrogate-vs-realized gap.
-- **The echo factor is deliberately NOT priced** (decision 2026-07-04, upheld): echo is
-  dominated by task relevance, outside the policy's control; the reward stays fully local
-  with zero remote-measured constants. If the surrogate-vs-realized gap at eval is dominated
-  by echo effects the policy could have influenced, the documented trigger is the round-trip
-  reward upgrade — never an echo-survival table.
-- **u_nli is dropped** (measured: mixing degrades gate agreement 0.367 → 0.183); diagnostic
-  only.
+Normative rules:
+- **Anti-leak scoring (per-fact, cleaned prefix)** — the naive form above leaks: the gold
+  prefix can restate the same fact (repeat mentions) or cue it, letting the scorer recover
+  fact tokens without doc_p's help. Normative protocol: score **each fact span
+  independently**; in its gold prefix, all *other* fact surfaces are R-generalized (the same
+  rule u_qa used for question generalization) and *earlier mentions of the fact itself* are
+  replaced by their doc_p replacement. One forward per (rollout, fact span), still
+  teacher-forced and batched; U = mean over fact spans. The gate (§6) validates exactly this
+  scorer, not the naive single-pass form.
+- **The scorer LM is pinned and frozen for the whole (gate → training → eval) cycle** — any
+  scorer change re-gates and invalidates trained policies (the extractor-pinning rule). It
+  shares no parameters, gradients, or selection pressure with anything trained (§3.3-6
+  proposer/verifier separation applies to reward models too).
+- Fact masks come from the existing probe machinery (gold-restatement matching, train/
+  held-out split): training scores only train-split fact tokens; held-out tokens are
+  evaluation-only. Identity-typed spans are always chain-tokenized by the mask, so their
+  fact tokens contribute a per-doc constant that group advantage cancels.
+- Anchors U_hi/U_lo are per-doc constants (cached); the clip keeps u_gold in [0, 1] without
+  any cross-doc normalization knob. **Edge-case rule (normative)**: a doc with an empty fact
+  mask, or with `|U_hi − U_lo| < 0.05` nats (anchor separation too small for a stable
+  denominator), is **excluded from the RL reward and listed in the gate report** — never
+  silently clipped after division. Exclusion counts per corpus are part of the §6 gate
+  output.
+- **Intended, not proven, monotonicity**: "dense and monotone in retained information" is
+  the design intent, not an established fact — a causal LM can prefer a fluent coarse fill
+  over an awkward specific one, and per-fact scoring may be locally non-monotone.
+  **Pre-registered sanity check (runs with the gate, before any training)**: the u_gold
+  landscape probe — single-swap directionality on the cached constructed arms (does u_gold
+  rise with specificity on ≥ a clear majority of level→level swaps, and does
+  floor-walk ≥ all-placeholder per doc). A failed sanity check blocks training the same as
+  a failed gate.
+
+### 5.2 What was retired, and where privacy lives now
+
+- **The privacy term (fill_proximity A) is retired from the reward.** Measured basis
+  (landscape probe, 2026-07-05): A's optimum region was the degenerate all-placeholder point
+  (+0.062/+0.119/+0.177 over the BC init at α 0.3/0.5/0.7; 43–46 of 96 single swaps locally
+  positive toward collapse), so the term's only gradient advice was the behavior the KL
+  leash existed to forbid. **Privacy is enforced exclusively by the per-type count floors**
+  (§3.3-2); the reward is free to prefer specificity because illegal specificity is
+  unreachable, not undesirable. fill_proximity and walk_risk survive as features and
+  offline diagnostics.
+- **alpha is retired**; operating points and the Pareto curve come from the **floor grid**
+  (a declared set of per-type floor configs, each yielding one trained read-out; §5.4).
+- **u_qa is demoted to a diagnostic** (its inversion-invariance made it a penalty-only term
+  around any max-findability init); its probe machinery is retained for fact masks and for
+  realized fact recall.
+- **The echo factor remains deliberately NOT priced** (decision 2026-07-04, carried): echo
+  is dominated by task relevance, outside the policy's control; the reward stays fully
+  local. If the surrogate-vs-realized gap at eval is dominated by echo effects the policy
+  could have influenced, the documented trigger is the round-trip-anchored reward upgrade
+  (a local utility model fitted to cached realized fact recall), never an echo-survival
+  table.
+- **u_nli stays dropped** (measured: mixing degraded gate agreement 0.367 → 0.183).
 
 ### 5.3 Anti-Goodhart controls
 
-KL leash to the behavior-clone init (reference trained under the same floor regime as the run,
-§5.4); low optimization pressure (small G, few epochs between re-gates); held-out probe split;
-held-out corpora/attacker at eval; Gao overoptimization playbook
-([adverserial-RL.md](../../research/adverserial-RL.md)). Reward climbing while realized checks
-fall = stop and report.
+- **KL leash retained at kl_coef 0.01 default** (was 0.05): the reward no longer contains a
+  degenerate direction the leash must overpower — its job shrinks to damping noise-chasing.
+  Landscape-probe basis: the old coefficient priced the (then-only) improving direction at
+  ~10× its worth; a leash that must do that is compensating for a reward defect.
+- **The u_gold duality, stated plainly**: u_gold is mathematically a friendly inference
+  attack on the facts — p(original fact | doc_p). That is by design (utility of disclosure
+  IS information disclosed) and is safe only because the floors, not the reward, decide
+  what may be narrowed. Any proposal to soften floors "because utility wants it" is a
+  contract change, never a training-time adjustment.
+- Low optimization pressure (small G, few epochs between re-gates); held-out probe/fact
+  split; held-out corpora and attacker at eval; Gao overoptimization playbook
+  ([adverserial-RL.md](../../research/adverserial-RL.md)). Reward climbing while realized
+  checks fall = stop and report.
+- **Pre-registered null outcome**: with a monotone utility and floors-only privacy, the
+  floor-walk rule is near-optimal by construction wherever the residual (§Definitions, the
+  two knobs) is small. A trained policy ≈ floor-walk under a *healthy* reward (first-smoke
+  milestone passed, gate passed) is a legitimate finding — "stage-1 selection learning adds
+  little; learned value lives in the infiller" — to be reported as such, not engineered
+  around.
 
-### 5.4 Floor-randomized, floor-conditioned training (tau-portability)
+### 5.4 Floor-randomized, floor-conditioned training (floor-portability)
 
 One trained policy must serve any user floor configuration in the supported range without
 retraining. Mechanism (shipped 2026-07-04, `--randomize-floors`):
 
 - Per (epoch, doc): sample `k_T ~ log-uniform[k_T/10, 10·k_T]` (median = the deployment
-  default; clamped ≥ 1) independently per type; re-derive menus, floor-walk teacher, and
-  features from the sample. **[k_T/10, 10·k_T] is the declared supported config range** —
-  outside it the mask still enforces safely, choice quality is untested.
+  default; clamped ≥ 1) independently per type; **waived types (k_T ≤ 1) are not randomized**
+  — a waiver is a discrete contract, and sampling above 1 would delegalize keep-original
+  exactly where the user legalized it. Re-derive menus, floor-walk teacher, and features from
+  the sample. **[k_T/10, 10·k_T] is the declared supported config range** — outside it the
+  mask still enforces safely, choice quality is untested.
 - The policy is conditioned pointwise: each span sees `log10(aset)` per action and
   `log10(active k_T of its own type)` — cross-type floor interactions reach it only through
   the doc-level advantage.
 - Group advantage compares rollouts within one floor sample only; **BC pretrain randomizes
   floors identically** so the KL reference is trained on the floor-feature dimension it is
   queried on.
-- **Read-outs are greedy at fixed floors on a declared grid** — one operating point per
-  (α, floor config). Averaging results across floors blends operating points and is
-  forbidden (the matched-privacy rule).
+- **Read-outs are greedy at fixed floors on the declared grid** — one operating point per
+  floor config; the grid IS the Pareto sample (alpha retired). Averaging results across
+  floors blends operating points and is forbidden (the matched-privacy rule).
 
 **Pre-registered protocols for the first randomized run** (failure-mode register,
 2026-07-04):
@@ -433,41 +544,53 @@ tau-walk remains only as the BC-reproduction reference for the legacy fixed conf
 
 **Gate (before any training run):** constructed arms (no_privacy / floor_walk / all_floor /
 suppression / identity_only) per doc → per-doc Spearman between the utility term's ordering
-(U = u_qa) and realized fact recall on out_final. The gate validates the utility axis; the
-risk measure is validated separately by the matched attacker-correlation shootout (§4.1).
-r~realized is context, never the criterion. Operational bar: mean per-doc Spearman positive
-on **every** corpus (the historical passes met this; a negative corpus is a no-go regardless
-of the pooled mean). The gate validates a **(reward, environment) pair** — re-run on every
-change to reward composition, probes, prompt, extractor, or environment. **Status: REQUIRED-NOT-RUN for the floor environment** (the 2026-07-04 keep +
-floors migration changed the environment; the last PASSED gate — U~realized 0.354/0.511/0.760
-— was the tau-mask environment). The next training run is blocked on: fresh gate run + the
-probe-flip support re-measurement (§4.2).
+(**U = u_gold**, §5.1) and realized fact recall on out_final. The gate validates the utility
+axis; the risk measure is validated separately by the matched attacker-correlation shootout
+(§4.1). Operational bar: mean per-doc Spearman positive on **every** corpus (a negative
+corpus is a no-go regardless of the pooled mean). The gate validates a **(reward,
+environment) pair** — re-run on every change to reward composition, the scorer LM, probes,
+prompt, extractor, or environment. **Status: REQUIRED-NOT-RUN for the u_gold reward** (never
+gated; the last PASSED gate — u_qa~realized 0.354/0.511/0.760 on the floor environment,
+2026-07-05 — certified the now-retired u_qa term). The next training run is blocked on: the
+u_gold implementation + scorer-LM pinning, its gate run, the u_gold landscape sanity check
+(§5.1), and the fact-mask coverage report (§4.2).
+
+**Pre-registered gate report format (u_gold gate):** per corpus — (1) per-doc Spearman
+u_gold~realized (mean, n); (2) fact-token coverage: fact tokens per doc (mean/min), docs
+with empty fact masks; (3) anchor health: docs excluded by the `|U_hi − U_lo| < 0.05` rule
+(§5.1); (4) usable-doc count after exclusions; (5) the landscape sanity-check verdict.
+Pass = Spearman positive on every corpus AND usable docs ≥ 80% per corpus AND sanity check
+passed. Any failure names the failing clause; no partial credit.
 
 ## 7. Open tensions
 
-1. **Stage-2 gameability of A** — an unfrozen infiller can craft embedding-far,
-   information-close fills. Pre-registered guard: a walk_risk term joins A offline-computed,
-   or the E2 head lands, before stage 2 unfreezes the infiller. The grammar constraint
-   (§3.3-6) independently bounds the fill space.
-2. **A mis-prices keep-original** — maximal proximity penalty regardless of identifying
-   power, while realized measurements (identity-only arm) show keep-heavy attribute configs
-   can dominate. The α equilibrium therefore under-uses waivers relative to realized optimum;
-   quantifying that gap is a first-class evaluation question, and the pre-registered remedy
-   is a type-aware A (never a per-model calibration).
-3. **Opposing placeholder biases in the reward** — the privacy term favors placeholders
-   (excluded from A) while the utility term under-credits them (fail-closed reader path).
-   The policy's placeholder rate is an α-governed equilibrium between two known biases.
-4. **The echo channel is entirely unpriced** (deliberate, §5.2).
-5. **Correlated-error mining of the verifier stack (E1+)** — the decode loop's resample
+1. **Ranker headroom under a monotone utility** — with floors-only privacy and u_gold
+   monotone in retained information, the floor-walk is near-optimal wherever the
+   non-monotone residual (injectivity trades, cross-span coherence, fluency-vs-specificity)
+   is small. Whether stage-1 selection learning adds measurable value over the walk is now
+   the experiment's first question; the null outcome is pre-registered as legitimate
+   (§5.3).
+2. **Scorer-LM fidelity** — u_gold is only as aligned as the pinned local LM's conditional
+   distributions; local-vs-remote mismatch is the standing surrogate gap, measured at eval
+   (surrogate-vs-realized per checkpoint) and escalated to the round-trip-anchored reward
+   (§5.2) if it dominates.
+3. **The echo channel is entirely unpriced** (deliberate, §5.2, carried).
+4. **Correlated-error mining of the verifier stack (E1+)** — the decode loop's resample
    operator optimizes against the frozen NLI gate and the grammar; a generator can converge
-   on their blind spots. The eval attacker audits accepted fills; escalations are
-   pre-registered per verifier (§4.1 gaps, §3.3-3 NLI residual).
-6. **Famous-context priors** — the structural count cannot see world-knowledge pinning
+   on their blind spots. At stage 2 the u_gold scorer joins the frozen stack and inherits
+   the same audit: the eval attacker reviews accepted fills; escalations pre-registered per
+   verifier (§4.1 gaps, §3.3-3 NLI residual).
+5. **Famous-context priors** — the structural count cannot see world-knowledge pinning
    (measured: "LJM2"); population-weighted counts, then per-surface overrides, are the
    escalation ladder; the eval attacker adjudicates when it binds.
-7. **Probe sparsity and reward support** — training concentrates on clinical; the reward
-   teaches only what legal actions can flip (§4.2). Probe expansion and the floor-environment
-   support re-measurement are queued ahead of the next run.
+6. **Fact-mask sparsity** — training signal concentrates where gold restates substituted
+   spans (clinical-heavy). u_gold softens the old flip-support cliff (every action moves the
+   score) but cross-doc coverage still binds; probe/fact expansion queued if the gate shows
+   corpus imbalance.
+7. **Waiver-region training coverage** — waived types stay fixed at floor 1 during
+   randomization (a discrete contract), so keep-vs-level trades are trained only in grid
+   points that include waivers; the declared floor grid must include at least one
+   waiver-bearing config or the policy is untested exactly where users waive.
 
 ## Artifacts
 
@@ -476,6 +599,9 @@ probe-flip support re-measurement (§4.2).
 (k_floors) · `scripts/train_ranker.py` (floor legal sets, floor-walk BC, `--floors`,
 `--randomize-floors`) · `src/cloak/train/ranker.py` (N_FEAT 17) ·
 `scripts/spikes/lattice_count_shootout.py` → `results/lattice_count_shootout.json` ·
-`scripts/spikes/probe_flip_scan.py` · `scripts/spikes/identity_attack.py` →
+`scripts/spikes/probe_flip_scan.py` · `scripts/spikes/reward_landscape_probe.py` (the
+landscape numbers behind the third revision) · `scripts/spikes/identity_attack.py` →
 `results/identity_attack.json` · gate: `scripts/reward_gate.py` →
-`results/ranker_reward_gate.json`.
+`results/ranker_reward_gate.json` · u_gold implementation lands in
+`src/cloak/train/reward.py` (scorer LM pinned there and recorded in the gate artifact +
+training records).

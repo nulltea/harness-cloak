@@ -1,11 +1,14 @@
-"""Diagnostic for the stage-1 ranker NULL: how many train probes CAN flip under any
+"""Diagnostic for stage-1 reward support: how many train probes CAN flip under any
 single-action counterfactual, and how many DO.
 
-For each trainable doc: baseline per-probe u_qa F1 at the BC point; then for every probe
-whose surface is a multi-legal decision span, swap that one span's action to each legal
-alternative (holding the rest at BC) and re-score that probe. A "flip" = |f1_cf - f1_bc|
->= 0.5. Answers whether the utility term is structurally silent (few flippable probes)
-vs reader-insensitive (flippable but never flips).
+For each trainable doc: baseline per-probe u_qa F1 at the BC point (floor-walk teacher);
+then for every probe whose surface is a multi-legal decision span, swap that one span's
+action to each legal alternative (holding the rest at BC) and re-score that probe. A
+"flip" = |f1_cf - f1_bc| >= 0.5. Answers whether the utility term is structurally silent
+(few flippable probes) vs reader-insensitive (flippable but never flips).
+
+History: at the retired tau=0.02 mask this measured 3/106 — the stage-1 NULL's diagnosis.
+Now measures the per-type count-floor environment (legal = aset >= k_floors[type]).
 
 Run: PYTHONPATH=src:scripts .venv/bin/python -u scripts/spikes/probe_flip_scan.py
 """
@@ -15,11 +18,11 @@ from build_arms_artifact import load_artifact
 from cloak.corpora import load_task_docs
 from cloak.train.reward import u_qa
 
-from train_ranker import assemble
+from train_ranker import assemble, derive_spans
 
 env = json.loads(open("data/ranker_env.json").read())
 art = load_artifact()
-tau = env["tau"]
+floors = dict(env["k_floors"])
 
 n_probes = n_flippable = n_flips = 0
 f1_hist = {"0": 0, "mid": 0, "1": 0}
@@ -30,13 +33,18 @@ for corpus, per_doc in env["corpora"].items():
     for doc_id, d in per_doc.items():
         if not d["trainable"] or not d["spans"]:
             continue
-        spans = []
-        for s in d["spans"]:
-            s = dict(s)
-            s["legal"] = [i for i, a in enumerate(s["actions"])
-                          if a["mode"] == "placeholder" or a["walk_risk"] < tau]
-            spans.append(s)
-        bc = {s["surface"].lower(): s["actions"][s["bc_action"]] for s in spans}
+        # floor-legal sets + min-aset floor-walk teacher, same derivation as the trainer;
+        # the static teacher can collide at high floors — apply the trainer's dynamic
+        # injectivity rule (walk order, colliding level -> placeholder) to the baseline
+        spans, _ = derive_spans(d["spans"], floors, corpus, "cpu")
+        bc, used_fills = {}, set()
+        for s in spans:
+            a = s["actions"][s["bc_action"]]
+            if a["mode"] == "level" and a["fill"].lower() in used_fills:
+                a = next(x for x in s["actions"] if x["mode"] == "placeholder")
+            if a["mode"] == "level":
+                used_fills.add(a["fill"].lower())
+            bc[s["surface"].lower()] = a
         doc_p, R = assemble(texts[doc_id], d["R_walk"] if "R_walk" in d
                             else art[corpus][doc_id]["tau_walk"][1], spans, bc)
         R_walk = art[corpus][doc_id]["tau_walk"][1]

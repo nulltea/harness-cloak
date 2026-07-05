@@ -1,0 +1,15 @@
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 22907.74it/s]
+/home/timo/repos/agent-cloak/.venv/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Mem Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:377.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+/home/timo/repos/agent-cloak/.venv/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Flash Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:320.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+probes=106  baseline f1 hist: {'0': 88, 'mid': 7, '1': 11}
+probes on multi-legal spans (flippable in principle)=60
+probes that ACTUALLY flip under some single-action counterfactual=7
+  FLIP: {'doc': 'aci/D2N001', 'surface': 'hypertension', 'bc_f1': 1.0, 'cf_f1': 0.0, 'cf_action': 'PLACEHOLDER'}
+  FLIP: {'doc': 'aci/D2N002', 'surface': 'polycystic kidneys', 'bc_f1': 1.0, 'cf_f1': 0.0, 'cf_action': 'PLACEHOLDER'}
+  FLIP: {'doc': 'aci/D2N002', 'surface': 'tylenol', 'bc_f1': 0.5, 'cf_f1': 0.0, 'cf_action': 'PLACEHOLDER'}
+  FLIP: {'doc': 'aci/D2N003', 'surface': 'the last 48 hours', 'bc_f1': 0.889, 'cf_f1': 0.0, 'cf_action': 'PLACEHOLDER'}
+  FLIP: {'doc': 'aci/D2N004', 'surface': 'about 10 years ago', 'bc_f1': 1.0, 'cf_f1': 0.0, 'cf_action': 'PLACEHOLDER'}
+  FLIP: {'doc': 'aci/D2N007', 'surface': '81 milligrams', 'bc_f1': 1.0, 'cf_f1': 0.0, 'cf_action': 'PLACEHOLDER'}
+  FLIP: {'doc': 'aci/D2N008', 'surface': 'the past couple of months', 'bc_f1': 0.909, 'cf_f1': 0.0, 'cf_action': 'PLACEHOLDER'}

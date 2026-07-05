@@ -1,0 +1,26 @@
+train set: docs=23 spans=177 train-probes=106 floors={'LOC': 100.0, 'ORG': 100.0, 'DATETIME': 100.0, 'DEM': 100.0, 'QUANTITY': 100.0, 'MISC': 100.0, 'OTHER': 100.0} randomize=False device=cuda
+legal-set: spans=177 >=2-legal=140 keep-original-legal=0
+floor-walk teacher diverges from stored tau-walk; verified every bc_action legal on all 23 docs; 13/23 have a non-injective static teacher trajectory (accepted mismatch, masked in rollouts)
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 16634.44it/s]
+/home/timo/repos/agent-cloak/.venv/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Flash Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:320.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+/home/timo/repos/agent-cloak/.venv/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Mem Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:377.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+[a=0.3] epoch 0: r=0.2923 A=0.263 U=0.1017 ph=0.4888 kl=0.0001
+[a=0.3] epoch 1: r=0.293 A=0.2606 U=0.1017 ph=0.4854 kl=0.0003
+[a=0.3] epoch 2: r=0.2908 A=0.2633 U=0.0997 ph=0.4867 kl=0.0008
+[a=0.3] epoch 3: r=0.2914 A=0.263 U=0.1003 ph=0.4872 kl=0.0021
+[a=0.3] epoch 4: r=0.2923 A=0.2608 U=0.1007 ph=0.4854 kl=0.0043
+[a=0.3] greedy_final={'r': 0.2924, 'A': 0.2662, 'U': 0.1032, 'ph': 0.4854} wall=1289.5s -> results/ranker_train_a0.3.json
+[a=0.5] epoch 0: r=0.4194 A=0.263 U=0.1017 ph=0.4888 kl=0.0
+[a=0.5] epoch 1: r=0.4206 A=0.2606 U=0.1017 ph=0.4854 kl=0.0003
+[a=0.5] epoch 2: r=0.4182 A=0.2633 U=0.0997 ph=0.4867 kl=0.0008
+[a=0.5] epoch 3: r=0.4187 A=0.263 U=0.1003 ph=0.4872 kl=0.0021
+[a=0.5] epoch 4: r=0.4199 A=0.261 U=0.1007 ph=0.4854 kl=0.0042
+[a=0.5] greedy_final={'r': 0.4185, 'A': 0.2662, 'U': 0.1032, 'ph': 0.4854} wall=1286.3s -> results/ranker_train_a0.5.json
+[a=0.7] epoch 0: r=0.5464 A=0.263 U=0.1017 ph=0.4888 kl=0.0
+[a=0.7] epoch 1: r=0.5482 A=0.2604 U=0.1017 ph=0.4854 kl=0.0003
+[a=0.7] epoch 2: r=0.5456 A=0.2633 U=0.0997 ph=0.4867 kl=0.001
+[a=0.7] epoch 3: r=0.546 A=0.263 U=0.1003 ph=0.4872 kl=0.0026
+[a=0.7] epoch 4: r=0.5474 A=0.2612 U=0.1007 ph=0.4867 kl=0.0053
+[a=0.7] greedy_final={'r': 0.5446, 'A': 0.2662, 'U': 0.1032, 'ph': 0.4854} wall=1279.3s -> results/ranker_train_a0.7.json

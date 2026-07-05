@@ -1,0 +1,28 @@
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 4576.22it/s]
+/home/timo/repos/agent-cloak/.venv/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Mem Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:377.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+Loading weights:   0%|          | 0/103 [00:00<?, ?it/s]Loading weights: 100%|██████████| 103/103 [00:00<00:00, 8525.68it/s]
+/home/timo/repos/agent-cloak/.venv/lib/python3.12/site-packages/transformers/integrations/sdpa_attention.py:92: UserWarning: Flash Efficient attention on Current AMD GPU is still experimental. Enable it with TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1. (Triggered internally at /pytorch/aten/src/ATen/native/transformers/hip/sdp_utils.cpp:320.)
+  attn_output = torch.nn.functional.scaled_dot_product_attention(
+[clinical] spearman={'r~realized': {'mean': 0.369, 'n': 13}, 'U~realized': {'mean': 0.354, 'n': 13}} 244s
+    no_privacy       {'A': 0.0, 'U': 0.366, 'r': 0.683, 'realized': 0.2285}
+    tau_walk         {'A': 0.3202, 'U': 0.0715, 'r': 0.3757, 'realized': 0.1329}
+    all_floor        {'A': 0.0, 'U': 0.0719, 'r': 0.5359, 'realized': 0.1791}
+    suppression      {'A': 0.1096, 'U': 0.0483, 'r': 0.4693, 'realized': 0.0378}
+    all_placeholder  {'A': 0.0, 'U': 0.0748, 'r': 0.5374, 'realized': 0.2254}
+    identity_only    {'A': 1.0, 'U': 0.3019, 'r': 0.1509, 'realized': 0.2998}
+[enron] spearman={'r~realized': {'mean': -0.089, 'n': 9}, 'U~realized': {'mean': 0.511, 'n': 9}} 256s
+    no_privacy       {'A': 0.0, 'U': 0.1519, 'r': 0.5759, 'realized': 0.1204}
+    tau_walk         {'A': 0.2418, 'U': 0.0363, 'r': 0.3973, 'realized': 0.0926}
+    all_floor        {'A': 0.0, 'U': 0.0086, 'r': 0.5043, 'realized': 0.0926}
+    suppression      {'A': 0.1259, 'U': 0.0086, 'r': 0.4413, 'realized': 0.0}
+    all_placeholder  {'A': 0.0, 'U': 0.0096, 'r': 0.5048, 'realized': 0.1458}
+    identity_only    {'A': 0.625, 'U': 0.0096, 'r': 0.1923, 'realized': 0.0625}
+[aeslc] spearman={'r~realized': {'mean': -0.24, 'n': 5}, 'U~realized': {'mean': 0.76, 'n': 5}} 259s
+    no_privacy       {'A': 0.0, 'U': 0.3667, 'r': 0.6833, 'realized': 0.2667}
+    tau_walk         {'A': 0.0408, 'U': 0.3667, 'r': 0.6629, 'realized': 0.1667}
+    all_floor        {'A': 0.0, 'U': 0.3667, 'r': 0.6833, 'realized': 0.1667}
+    suppression      {'A': 0.1194, 'U': 0.3667, 'r': 0.6237, 'realized': 0.1667}
+    all_placeholder  {'A': 0.0, 'U': 0.2778, 'r': 0.6389, 'realized': 0.2778}
+    identity_only    {'A': 0.3333, 'U': 0.2778, 'r': 0.4722, 'realized': 0.2778}
+wall 259s -> results/ranker_reward_gate.json
