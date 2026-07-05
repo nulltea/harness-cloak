@@ -32,13 +32,16 @@ packages, llama-swap proxy at the default base URL.
 
 Copied verbatim from the spec / project rules — every task's requirements include these:
 
-- **Pinned reward model:** `RT_MODEL = "LFM2.5-8B-A1B"`, temperature 0.0, max_tokens 512, cache
-  key = content hash of (model, messages, params) via `INFERDPT_LLM_CACHE`. Changing any of these
-  re-gates.
+- **Pinned reward model:** `RT_MODEL = "gemma 4 (E4B)"` served at
+  `RT_BASE_URL = "http://localhost:8060/v1"`, non-thinking (`enable_thinking: false`),
+  temperature 0.0, max_tokens 512, cache key = content hash of (model, base_url, messages,
+  params) via `INFERDPT_LLM_CACHE`. Changing any of these re-gates.
+  *(re-pinned 2026-07-05 after the thinking-mode probe; supersedes the original pins in this plan.)*
 - **Reward = graded mean token-F1** (the deployed `fact_recall` definition). The validation
   threshold `TH = 0.5` binarizes only probe keep/drop, never the reward.
-- **Probe teacher = "gemma 4 (E4B)"** (existing `cloak.train.probes` machinery) — must never be
-  the reward model.
+- **Probe teacher = "LFM2.5-8B-A1B"** (existing `cloak.train.probes` machinery) — thinking is
+  unconditional (max_tokens 1024, `enable_thinking` kwarg must NOT be passed), and it must
+  never be the reward model.
 - **Docs with < 3 surviving train probes are excluded from the RL reward** and listed in the
   probe-health report — never silently kept.
 - **Privacy is floors-only** — no reward term may read `p6`/`walk_risk`/aset as a reward signal

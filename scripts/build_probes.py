@@ -73,7 +73,10 @@ def main():
         jobs, meta = [], []
         for d in rows:
             spans = per_doc[d["id"]]["spans"]
-            ph_choice = {s["surface"].lower(): s["actions"][-1] for s in spans}
+            ph_choice = {s["surface"].lower():
+                         s["actions"][next(i for i, a in enumerate(s["actions"])
+                                           if a["mode"] == "placeholder")]
+                         for s in spans}
             lo_doc, lo_R = assemble(d["text"], art[corpus][d["id"]]["tau_walk"][1],
                                     spans, ph_choice)
             for kind, doc_p, R in (("hi", d["text"], []), ("lo", lo_doc, lo_R)):

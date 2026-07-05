@@ -351,18 +351,12 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
 
 # ---------- expert iteration (ExIt) outer loop ----------
 
-def _bc_choice_indices(doc) -> dict[str, int]:
-    return {s["surface"].lower(): s["bc_action"] for s in doc["spans"]}
-
-
 def exit_round(docs, policy, *, G, rt_workers, seed):
     """One expert-iteration round (spec Phase 2 workhorse): per doc sample G rollouts,
     keep the best strictly beating the floor-walk baseline. Baselines and rollouts all go
     through the cached round trip. Returns (winners, stats)."""
-    rng = random.Random(seed)
     torch.manual_seed(seed)
     jobs, meta = [], []          # baseline job per doc first, then G rollouts per doc
-    per_doc_idx = []
     for di, doc in enumerate(docs):
         # ExIt reference = THE floor-walk baseline via floor_walk_choice (walk-order collision
         # rule resolves colliding fills to placeholder), per spec Phase 2: a rollout is a
@@ -373,7 +367,6 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
         jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
                      "probes": doc["probes_train"]})
         meta.append(("bc", di, None))
-        idxs = []
         for _ in range(G):
             choice, _, _, doc_p, R, _ = sample_rollout(doc, doc["spans"], doc["feats"], policy)
             idx = {s["surface"].lower(): next(
@@ -383,9 +376,7 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
             jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
                          "probes": doc["probes_train"]})
             meta.append(("roll", di, idx))
-            idxs.append(idx)
-        per_doc_idx.append(idxs)
-    res = roundtrip_batch([j for j in jobs], workers=rt_workers)
+    res = roundtrip_batch(jobs, workers=rt_workers)
     it = iter(res)
     bc_r, rolls = {}, {di: [] for di in range(len(docs))}
     for kind, di, idx in meta:
