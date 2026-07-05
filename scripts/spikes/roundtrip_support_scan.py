@@ -20,14 +20,18 @@ FLIP = 0.5     # per-probe |delta f1| counting as a flip
 
 
 def scan_verdict(rows, mean_probes: float) -> dict:
-    """PASS iff swaps moved realized recall in both directions AND the largest move
-    exceeds the quantization step (1/mean probes per doc)."""
+    """PASS iff swaps moved realized recall BOTH directions with a quantization-exceeding
+    magnitude in EACH direction: at least one up-move >= step AND one down-move <= -step
+    (step = 1/mean probes per doc). A one-sided desert or sub-step wiggle FAILs."""
     step = 1.0 / max(mean_probes, 1.0)
     n_up = sum(1 for r in rows if r["delta"] > 0)
     n_down = sum(1 for r in rows if r["delta"] < 0)
+    n_up_sig = sum(1 for r in rows if r["delta"] >= step)
+    n_down_sig = sum(1 for r in rows if r["delta"] <= -step)
     max_abs = max((abs(r["delta"]) for r in rows), default=0.0)
-    ok = n_up >= 1 and n_down >= 1 and max_abs >= step
+    ok = n_up_sig >= 1 and n_down_sig >= 1
     return {"n_swaps": len(rows), "n_up": n_up, "n_down": n_down,
+            "n_up_sig": n_up_sig, "n_down_sig": n_down_sig,
             "max_abs_delta": round(max_abs, 4), "quant_step": round(step, 4),
             "verdict": "PASS" if ok else "FAIL"}
 

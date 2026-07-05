@@ -24,3 +24,10 @@ def test_fail_one_direction_only():
 def test_fail_below_quantization():
     rows = [_row(0.01, up=0), _row(-0.01, down=0)]   # |delta| < 1/mean_probes = 0.1
     assert scan_verdict(rows, mean_probes=10.0)["verdict"] == "FAIL"
+
+
+def test_fail_upward_below_step():
+    # +0.05 is below step 0.1 -> no significant up-move; -0.2 is a significant down-move.
+    rows = [_row(0.05, up=0), _row(-0.2, down=1)]
+    v = scan_verdict(rows, mean_probes=10.0)
+    assert v["verdict"] == "FAIL" and v["n_up_sig"] == 0 and v["n_down_sig"] == 1
