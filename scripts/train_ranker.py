@@ -473,21 +473,40 @@ def kl_to_ref(policy, ref, feats, legal):
     return (lp.exp() * (lp - lq)).sum()
 
 
-def enforce_support_gate(force_ungated: bool):
+def enforce_support_gate(force_ungated: bool, probes_path: str):
     """Round-trip RL training is gated on the support scan
-    (results/roundtrip_support_scan.json): verdict must be PASS. A missing file counts as
-    not-passed. --force-ungated bypasses with a loud warning."""
+    (results/roundtrip_support_scan.json): verdict must be PASS AND its provenance meta must
+    match the live run (rt_model, rt_base_url, probes_path) — a scan against a different
+    endpoint/model/probe set does not certify this environment. A missing file or missing/
+    stale meta counts as not-passed. --force-ungated bypasses with a loud warning."""
+    from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
     gate = Path("results/roundtrip_support_scan.json")
-    verdict = json.loads(gate.read_text()).get("verdict") if gate.exists() else "MISSING"
-    if verdict == "PASS":
+    reason = None
+    if not gate.exists():
+        reason = "verdict=MISSING (no scan artifact)"
+    else:
+        art = json.loads(gate.read_text())
+        meta = art.get("meta")
+        if art.get("verdict") != "PASS":
+            reason = f"verdict={art.get('verdict')}"
+        elif not meta:
+            reason = "scan artifact has no provenance meta (stale scan; re-run the support scan)"
+        else:
+            for field, live in (("rt_model", RT_MODEL), ("rt_base_url", RT_BASE_URL),
+                                ("probes_path", probes_path)):
+                if meta.get(field) != live:
+                    reason = (f"stale scan meta[{field!r}]={meta.get(field)!r} != live {live!r}"
+                              "; re-run the support scan for this configuration")
+                    break
+    if reason is None:
         return
     if force_ungated:
         print(f"WARNING: --force-ungated set — bypassing the round-trip support gate "
-              f"(verdict={verdict}, {gate}). Training on an UNCERTIFIED environment; results "
+              f"({reason}, {gate}). Training on an UNCERTIFIED environment; results "
               "are not gate-backed.", flush=True)
         return
     raise SystemExit(
-        f"round-trip support gate not passed (verdict={verdict}, {gate}); re-run "
+        f"round-trip support gate not passed ({reason}, {gate}); re-run "
         "scripts/spikes/roundtrip_support_scan.py until it PASSes (or --force-ungated)")
 
 
@@ -601,7 +620,7 @@ def main():
     if roundtrip:
         # reward uses the validated train-split probes; docs with < 3 are excluded from the
         # RL reward (global constraint), never silently kept.
-        from cloak.train.roundtrip import RT_MODEL
+        from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
         probes_art = json.loads(Path(args.probes).read_text())
         meta = probes_art.get("meta", {})
         if meta.get("rt_model") != RT_MODEL:
@@ -610,6 +629,17 @@ def main():
                 f"{meta.get('rt_model')!r} but the reward model is {RT_MODEL!r}; changing the "
                 "reward model re-gates — rebuild probes (scripts/build_probes.py) and re-run "
                 "the support scan before training")
+        if "rt_base_url" not in meta or "th" not in meta:
+            raise SystemExit(
+                f"probe artifact {args.probes} is missing provenance meta "
+                f"(rt_base_url/th); rebuild probes (scripts/build_probes.py)")
+        if meta.get("rt_base_url") != RT_BASE_URL:
+            raise SystemExit(
+                f"probe artifact {args.probes} was built against rt_base_url="
+                f"{meta.get('rt_base_url')!r} but the reward endpoint is {RT_BASE_URL!r}; the "
+                "endpoint is part of the reward pin — rebuild probes and re-run the support scan")
+        print(f"probe artifact {args.probes}: teacher={meta.get('teacher')!r} "
+              f"th={meta.get('th')} rt_model={meta.get('rt_model')!r}", flush=True)
         probes_all = probes_art["docs"]
         kept = []
         for doc in docs:
@@ -678,7 +708,7 @@ def main():
               "static teacher trajectory (accepted mismatch, masked in rollouts)", flush=True)
 
     if roundtrip:
-        enforce_support_gate(args.force_ungated)
+        enforce_support_gate(args.force_ungated, args.probes)
         from cloak.train.roundtrip import RT_MODEL
         t0 = time.time()
         torch.manual_seed(args.seed)

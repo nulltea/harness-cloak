@@ -1464,7 +1464,9 @@ Ordered; each step gates the next. All long runs: `-u`, logged to `results/`, GP
 3. `roundtrip_support_scan.py --max-swaps 150` (~30 min) → **verdict PASS required before
    any training run** (handoff-mandated gate).
 4. First-smoke: `train_ranker.py --reward roundtrip --smoke` (2 docs) — movement canary.
-5. Pilot training run (fixed floors first, then `--randomize-floors`; ExIt then refiner) —
+5. Pilot training run (fixed floors; ExIt then refiner) — the fixed-floor arm is the pilot.
+   `--randomize-floors` is **future work — it hard-errors in roundtrip mode today** (the trainer
+   raises `SystemExit`; randomized floors are BC-only), so there is no randomized arm to run yet —
    spec-then-results training record `research-wiki/training/2026-07-0X-RL-ranker-v3-roundtrip-pilot.md`
    written BEFORE the run (v-schema).
 6. Scale `--n-docs` only after 1–5 hold on the 16-doc environment (a bigger env needs a NEW

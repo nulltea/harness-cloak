@@ -26,7 +26,7 @@ from cloak.extract import invert
 from cloak.probe import reward_privacy
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.reward import fact_recall, stage1_reward, u_qa
-from cloak.train.roundtrip import RT_MODEL
+from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
 from inferdpt.llm import LLMClient
 from inferdpt.pipeline import pmap
 
@@ -79,9 +79,11 @@ def main():
     t0 = time.time()
     art = load_artifact()
     env = json.loads(Path("data/ranker_env.json").read_text())
-    remote = LLMClient(GEN_MODEL, temperature=0.0, max_tokens=args.max_tokens,
+    remote = LLMClient(GEN_MODEL, base_url=RT_BASE_URL, temperature=0.0,
+                       max_tokens=args.max_tokens,
                        extra_body={"chat_template_kwargs": {"enable_thinking": False}})
-    report = {"alpha": args.alpha, "gen_model": GEN_MODEL, "arms": ARMS, "corpora": {}}
+    report = {"alpha": args.alpha, "gen_model": GEN_MODEL, "gen_base_url": RT_BASE_URL,
+              "arms": ARMS, "corpora": {}}
 
     for corpus, per_doc in env["corpora"].items():
         texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}

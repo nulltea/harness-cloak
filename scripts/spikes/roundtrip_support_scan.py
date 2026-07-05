@@ -41,7 +41,7 @@ def main():
     from train_ranker import assemble, derive_spans, floor_walk_choice
 
     from cloak.corpora import load_task_docs
-    from cloak.train.roundtrip import roundtrip_batch
+    from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL, roundtrip_batch
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--max-swaps", type=int, default=150)
@@ -54,7 +54,8 @@ def main():
 
     art = load_artifact()
     env = json.loads(Path("data/ranker_env.json").read_text())
-    probes_all = json.loads(Path(args.probes).read_text())["docs"]
+    probes_art = json.loads(Path(args.probes).read_text())
+    probes_all = probes_art["docs"]
     floors = dict(env["k_floors"])
     rng = random.Random(args.seed)
 
@@ -113,15 +114,24 @@ def main():
             continue
         o = next(outs)
         deltas = [a - b for a, b in zip(o["f1s"], base_f1s[d["id"]])]
+        # collision-RESOLVED baseline action index: the index of the action the floor-walk
+        # actually took for this surface (floor_walk_choice downgrades colliders to
+        # placeholder), which differs from s["bc_action"] on collision docs.
+        cur = d["choice"][s["surface"].lower()]
+        from_idx = next(k for k, a in enumerate(s["actions"]) if a is cur)
         rows.append({"doc_id": d["id"], "surface": s["surface"],
-                     "from": s["bc_action"], "to": i,
+                     "from": from_idx, "to": i,
                      "delta": round((o["recall"] or 0) - (base_recall[d["id"]] or 0), 4),
                      "probe_flips_up": sum(x >= FLIP for x in deltas),
                      "probe_flips_down": sum(x <= -FLIP for x in deltas)})
 
     mean_probes = sum(len(d["probes"]) for d in docs) / max(len(docs), 1)
     v = scan_verdict(rows, mean_probes)
-    v.update(mean_probes_per_doc=round(mean_probes, 2), rows=rows)
+    v.update(mean_probes_per_doc=round(mean_probes, 2),
+             meta={"rt_model": RT_MODEL, "rt_base_url": RT_BASE_URL,
+                   "probes_path": args.probes, "probes_meta": probes_art.get("meta"),
+                   "floors": floors, "n_docs": args.n_docs},
+             rows=rows)
     OUT.parent.mkdir(exist_ok=True)
     OUT.write_text(json.dumps(v, indent=1))
     print({k: v[k] for k in ("n_swaps", "n_up", "n_down", "max_abs_delta", "verdict")})
