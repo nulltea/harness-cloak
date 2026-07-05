@@ -4,7 +4,7 @@ status: current
 created: 2026-07-05
 updated: 2026-07-05
 tags: [extractor, invert, reconstructor, semantic-window, edit-tagger, seq2seq, detector-aligned, post-processing]
-companion: [../handoffs/2026-07-05-rl-pilot-runbook.md, ../research/learned-substitution.md, ../research/learned-PII-detection.md]
+companion: [../handoffs/2026-07-05-rl-pilot-runbook.md, ../research/learned-substitution.md, ../research/learned-PII-detection.md, 2026-07-05-detector-pointer-extractor.md]
 ---
 
 # Extraction (`invert()`) designs: out_p → out_final
