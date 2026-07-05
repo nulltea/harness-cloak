@@ -6,7 +6,10 @@ reward loop stays model-free (only the extractive reader runs at reward time). N
 questions are required: cloze phrasings are OOD for SQuAD2 readers and abstain (measured
 2026-07-02, reward.py self-check history).
 
-Teacher = gemma 4 (E4B) on the local llama-swap, same pattern as lattice.teacher_lattices.
+Teacher = LFM2.5-8B-A1B on the local llama-swap (user re-pin 2026-07-05: gemma 4 (E4B)
+became the round-trip reward model, and the teacher must be a different family —
+teacher != reward model). Legacy gemma-authored questions live in the pre-re-pin cache;
+set that file aside (do not mix teachers in one cache) before rebuilding.
 Cache: data/surrogate_probes.json, keyed by doc id.
 """
 import json
@@ -16,6 +19,7 @@ from pathlib import Path
 from cloak.train.reward import restated_probes
 
 CACHE = Path("data/surrogate_probes.json")
+TEACHER_MODEL = "LFM2.5-8B-A1B"
 
 PROMPT = """Write one short factual question about the text below whose exact answer is "{answer}".
 The question must be answerable from the text alone and must not contain "{answer}" itself.
@@ -46,10 +50,12 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
                 todo.append({"doc_id": d["id"], "surface": p["entry"]["surface"],
                              "sent": p["gold_sent"]})
     if todo:
-        e4b = LLMClient("gemma 4 (E4B)", base_url="http://localhost:8060/v1", api_key="x",
-                        temperature=0.0, max_tokens=100,
-                        extra_body={"chat_template_kwargs": {"enable_thinking": False}})
-        replies = pmap(lambda t: e4b.generate(
+        # LFM2.5 thinks unconditionally (results/thinking_mode_probe.json): budget must
+        # cover ~700 reasoning tokens (separated server-side into reasoning_content), and
+        # enable_thinking:False must NOT be passed — that flag leaks <think> into content.
+        teacher = LLMClient(TEACHER_MODEL, base_url="http://localhost:8060/v1", api_key="x",
+                            temperature=0.0, max_tokens=1024)
+        replies = pmap(lambda t: teacher.generate(
             PROMPT.format(answer=t["surface"], sent=t["sent"])), todo, workers=workers)
         for t, r in zip(todo, replies):
             q = re.sub(r"^[\"']|[\"']$", "", (r or "").strip().splitlines()[0].strip()) \

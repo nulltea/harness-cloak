@@ -11,7 +11,11 @@ from cloak.extract import invert
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.reward import fact_f1s
 
-RT_MODEL = "LFM2.5-8B-A1B"   # THE pin (spec components table); changing it re-gates
+RT_MODEL = "gemma 4 (E4B)"   # THE pin (spec components table); changing it re-gates.
+# User decision 2026-07-05 (results/thinking_mode_probe.json): gemma honors
+# enable_thinking:false (clean non-thinking output, all probe facts restated in ~150 tok);
+# LFM2.5-8B-A1B cannot disable thinking (the flag leaks <think> in-band, truncating at
+# this budget) and moved to the probe-teacher role instead.
 MAX_TOKENS = 512
 
 _client = None

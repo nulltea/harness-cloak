@@ -73,17 +73,25 @@ proxy at :8060; family separation across grader/teacher/environment roles):
 | π_rank | per-span choice from `legal[s|k]` | ModernBERT-base (~150M) doc encoder + per-span action head, autoregressive over spans; trains on the iGPU in `.venv`; 17-feature MLP retained as capacity-ablation arm |
 | π_fill (E1) | grammar-constrained rendering | **TBD — decided at Stage-2 kickoff** (user decision 2026-07-05). Constraints that survive the deferral: torch-side in `.venv` (HF logits-processor grammar masks + LoRA cannot live behind llama-swap), ~1–3B trainable on the iGPU, mature HF/PEFT/TRL support. Candidate at time of writing: Qwen3-1.7B-Instruct |
 | BC teacher | π_rank init | floor-walk |
-| remote task model | executes the task on doc_p; the reward's LLM | **LFM2.5-8B-A1B** (llama-swap, 32k ctx, 6 slots, ~123 tok/s), **temp 0**, cache key `hash(model, template, doc_p)`. Go/no-go: Phase-0 ceiling-anchor pass rate per corpus — if it cannot restate facts from doc_orig, fall back to Qwen3.6-35B-A3B as the reward environment (re-pin ⇒ re-gate; ~2–3× wall time) |
+| remote task model | executes the task on doc_p; the reward's LLM | **gemma 4 (E4B)**, non-thinking (`enable_thinking: false` — honored, measured: clean ~150-token notes, all probe facts restated; `results/thinking_mode_probe.json`), max_tokens 512, **temp 0**, cache key `hash(model, template, doc_p)`. User re-pin 2026-07-05: LFM2.5-8B-A1B was rejected for this role — it cannot disable thinking (every off-switch fails; the flag leaks `<think>` in-band) and pays ~700 reasoning tokens/call. Go/no-go: Phase-0 ceiling-anchor pass rate per corpus — fallback Qwen3.6-35B-A3B (re-pin ⇒ re-gate) |
 | task prompt | the SAME per-corpus template everywhere | `TASK_TEMPLATE[corpus]`, `src/cloak/tasks.py` |
 | extractor | `invert(out_p, R)` | rule exact/fuzzy-90, deployed path |
 | QA reader | answers probes against out_final | existing frozen u_qa reader (local, batched, deterministic); shares no gradients with anything |
-| probe teacher + atomic decomposition | writes probe questions | **gemma 4 (E4B)** — the existing `cloak.train.probes` teacher, already cached; different family than the reward model (anti-circularity now structural). Escalate to Qwen3.6-35B-A3B only if probe-health shows question quality binding |
+| probe teacher + atomic decomposition | writes probe questions | **LFM2.5-8B-A1B** (user re-pin 2026-07-05; different family than the reward model). Thinking is unconditional for this model — run WITHOUT the `enable_thinking` kwarg (passing `false` leaks `<think>` into content), max_tokens 1024; reasoning is separated server-side, content = the question. One-time, cached. The legacy gemma-authored question cache must be set aside before rebuild (gemma is now the reward model — teacher ≠ reward-model rule) |
 | distilled RM | candidate screening ONLY, never gradients | `qwen3-embedding-0.6b` (already served) doc_p embeddings + ridge/GBM regressor on cached (doc_p → realized recall) pairs |
 | eval-only | second remote model; frontier attacker | second remote = **Qwen3.6-35B-A3B** (third family, uninvolved in training or probes); frontier attacker = paid frontier model, **requires explicit user approval per standing rule** (local Qwen3.6 attacker for dev-side checks only) |
 
 Operational note (llama-swap): model switches evict and reload — **phase-order the pipeline**
-(all gemma teacher work first, then swap to LFM2.5 for anchors + all training; Qwen3.6 only at
+(all LFM2.5 teacher work first, then swap to gemma for anchors + all training; Qwen3.6 only at
 eval) so training never alternates served models.
+
+Thinking-mode ruling (measured 2026-07-05, `results/thinking_mode_probe.json`): the reward
+model and probe teacher run **without thinking wherever the model allows it** — the tasks are
+transduction, reasoning buys nothing measurable and costs 3–5× decode. gemma honors the off
+flag; LFM2.5 cannot not-think (acceptable in the cached one-time teacher role only). The
+thinking mode of the reward model is part of the pin: flipping it re-gates. The Phase-5
+attacker is the explicit exception — it runs at full reasoning strength (a weak attacker
+overstates privacy).
 
 ## Datasets
 
