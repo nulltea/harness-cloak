@@ -38,7 +38,7 @@ def scan_verdict(rows, mean_probes: float) -> dict:
 
 def main():
     from build_arms_artifact import load_artifact
-    from train_ranker import assemble, derive_spans
+    from train_ranker import assemble, derive_spans, floor_walk_choice
 
     from cloak.corpora import load_task_docs
     from cloak.train.roundtrip import roundtrip_batch
@@ -68,15 +68,7 @@ def main():
             if not d.get("trainable") or not d["spans"] or len(probes) < 3:
                 continue
             spans, _ = derive_spans(d["spans"], floors, corpus, "cpu")
-            used, choice = set(), {}
-            for s in spans:
-                a = s["actions"][s["bc_action"]]
-                if a["mode"] == "level" and a["fill"].lower() in used:
-                    a = s["actions"][next(i for i, x in enumerate(s["actions"])
-                                          if x["mode"] == "placeholder")]
-                if a["mode"] == "level":
-                    used.add(a["fill"].lower())
-                choice[s["surface"].lower()] = a
+            choice = floor_walk_choice(spans)
             doc_p, R = assemble(texts[doc_id], art[corpus][doc_id]["tau_walk"][1],
                                 d["spans"], choice)
             docs.append({"id": doc_id, "corpus": corpus, "text": texts[doc_id],

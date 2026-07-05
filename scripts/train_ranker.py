@@ -159,6 +159,22 @@ def derive_spans(raw_spans, floors, corpus, device):
     return spans, feats
 
 
+def floor_walk_choice(spans):
+    """THE floor-walk baseline choice with the walk-order collision rule (first-come keeps
+    the fill, later colliders fall back to placeholder) — shared by ExIt, the support scan,
+    and any baseline consumer, so the gate certifies the same baseline training uses."""
+    used, choice = set(), {}
+    for s in spans:
+        a = s["actions"][s["bc_action"]]
+        if a["mode"] == "level" and a["fill"].lower() in used:
+            a = s["actions"][next(i for i, x in enumerate(s["actions"])
+                                  if x["mode"] == "placeholder")]
+        if a["mode"] == "level":
+            used.add(a["fill"].lower())
+        choice[s["surface"].lower()] = a
+    return choice
+
+
 def verify_bc_reproduction(docs, art) -> int:
     """Invariant: assemble(behavior-clone choices) == the artifact's tau_walk doc_p."""
     bad = 0
@@ -336,18 +352,15 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
     jobs, meta = [], []          # baseline job per doc first, then G rollouts per doc
     per_doc_idx = []
     for di, doc in enumerate(docs):
-        # ExIt reference = the floor-walk teacher (min-aset legal level per span, else
-        # placeholder), per spec Phase 2: a rollout is a winner only if it strictly beats
-        # the floor-walk round-trip reward. On a non-injective static-teacher trajectory
-        # assemble() raises (below) and that doc's baseline is -inf (winner always counts).
-        bc_choice = {s["surface"].lower(): s["actions"][s["bc_action"]] for s in doc["spans"]}
-        try:
-            doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], bc_choice)
-            jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-                         "probes": doc["probes_train"]})
-            meta.append(("bc", di, None))
-        except AssertionError:   # non-injective static teacher: baseline = -inf
-            meta.append(("bc_skip", di, None))
+        # ExIt reference = THE floor-walk baseline via floor_walk_choice (walk-order collision
+        # rule resolves colliding fills to placeholder), per spec Phase 2: a rollout is a
+        # winner only if it strictly beats the floor-walk round-trip reward. Injective by
+        # construction, so assemble() can no longer collide.
+        bc_choice = floor_walk_choice(doc["spans"])
+        doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], bc_choice)
+        jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+                     "probes": doc["probes_train"]})
+        meta.append(("bc", di, None))
         idxs = []
         for _ in range(G):
             choice, _, _, doc_p, R = sample_rollout(doc, doc["spans"], doc["feats"], policy)
@@ -364,9 +377,6 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
     it = iter(res)
     bc_r, rolls = {}, {di: [] for di in range(len(docs))}
     for kind, di, idx in meta:
-        if kind == "bc_skip":
-            bc_r[di] = float("-inf")
-            continue
         r = next(it)["recall"] or 0.0
         if kind == "bc":
             bc_r[di] = r
@@ -380,9 +390,9 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
         best_rs.append(best_r)
         if best_r > bc_r[di]:
             winners.append((di, best_idx))
+    bc_vals = list(bc_r.values())
     stats = {"mean_best_r": round(sum(best_rs) / max(len(best_rs), 1), 4),
-             "mean_bc_r": round(sum(v for v in bc_r.values() if v != float("-inf"))
-                                / max(sum(v != float("-inf") for v in bc_r.values()), 1), 4),
+             "mean_bc_r": round(sum(bc_vals) / len(bc_vals), 4) if bc_vals else None,
              "n_winners": len(winners)}
     return winners, stats
 
