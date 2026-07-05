@@ -1453,9 +1453,11 @@ Ordered; each step gates the next. All long runs: `-u`, logged to `results/`, GP
 (`/auto-review-loop` vs `scripts/harness/perf_gate.md`) before launch.
 
 1. `lfm_saturation_probe` (~10 min, no cache) → real RT/h; recompute wall-time plan.
-2. `build_probes.py --n-docs 16` on the EXISTING env/artifact (teacher phase first — gemma;
-   then LFM anchors) → `results/probe_health.json`; check ceiling pass rate (the LFM
-   go/no-go from the spec table) and excluded-doc counts.
+2. `build_probes.py --n-docs 16` on the EXISTING env/artifact. Re-pin order (2026-07-05):
+   FIRST set aside the legacy gemma-authored question cache
+   (`mv data/surrogate_probes.json data/surrogate_probes.gemma-e4b.json`), then the LFM2.5
+   teacher phase, then gemma anchors → `results/probe_health.json`; check ceiling pass rate
+   (the reward-model go/no-go from the spec table) and excluded-doc counts.
 3. `roundtrip_support_scan.py --max-swaps 150` (~30 min) → **verdict PASS required before
    any training run** (handoff-mandated gate).
 4. First-smoke: `train_ranker.py --reward roundtrip --smoke` (2 docs) — movement canary.
