@@ -33,10 +33,11 @@ def fake_roundtrip(jobs, workers=1):
 def test_sample_rollout_shapes():
     doc = _doc()
     policy = tr.RankerPolicy()
-    choice, logps, ph_rate, doc_p, R = tr.sample_rollout(doc, doc["spans"], doc["feats"],
-                                                         policy)
+    choice, logps, ph_rate, doc_p, R, legals = tr.sample_rollout(doc, doc["spans"],
+                                                                 doc["feats"], policy)
     assert set(choice) == {"metformin"} and len(logps) == 1
     assert isinstance(doc_p, str) and isinstance(R, list)
+    assert len(legals) == 1 and legals[0] == doc["spans"][0]["legal"]
 
 
 def test_rloo_advantage_no_std():

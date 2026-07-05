@@ -15,8 +15,8 @@ def test_counterfactual_credits_the_flipped_span(monkeypatch):
     doc = _doc()
     policy = tr.RankerPolicy()
     # a rollout that KEPT the level fill (reward 1.0); counterfactual placeholder -> 0.0
-    choice, logps, _, doc_p, _ = tr.sample_rollout(doc, doc["spans"], doc["feats"], policy,
-                                                   greedy=True)
+    choice, logps, _, doc_p, _, _ = tr.sample_rollout(doc, doc["spans"], doc["feats"], policy,
+                                                      greedy=True)
     if choice["metformin"]["mode"] != "level":   # force the level action for determinism
         choice = {"metformin": doc["spans"][0]["actions"][0]}
         lp = policy.log_probs(doc["feats"][0], doc["spans"][0]["legal"])

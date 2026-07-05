@@ -40,7 +40,7 @@ from build_arms_artifact import load_artifact
 from cloak.corpora import load_task_docs
 from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
-from cloak.train.reward import stage1_reward, u_qa
+from cloak.train.reward import fact_f1s, stage1_reward, u_qa
 
 try:  # surrogate-only environments run without the round-trip module
     from cloak.train.roundtrip import roundtrip_batch
@@ -192,14 +192,16 @@ def verify_bc_reproduction(docs, art) -> int:
 
 def sample_rollout(doc, span_rows, feats, policy, greedy=False):
     """Sampling half of a rollout under the DYNAMIC injectivity mask (spec §3.3-1).
-    Returns (choice, logps, ph_rate, doc_p, R) — no reward computed here."""
+    Returns (choice, logps, ph_rate, doc_p, R, legals) — no reward computed here. `legals`
+    is the per-span DYNAMIC legal set actually sampled from (walk order), so entropy/KL can
+    be scored over the masks the policy really used, not the static floor-legal sets."""
     used: set[str] = set()
-    choice, logps, n_level = {}, [], 0
+    choice, logps, legals, n_level = {}, [], [], 0
     for i, (s, f) in enumerate(zip(span_rows, feats)):
         policy.set_context(_ctx_of(doc, i))
-        legal_dyn = [i for i in s["legal"]
-                     if s["actions"][i]["mode"] == "placeholder"
-                     or s["actions"][i]["fill"].lower() not in used]
+        legal_dyn = [j for j in s["legal"]
+                     if s["actions"][j]["mode"] == "placeholder"
+                     or s["actions"][j]["fill"].lower() not in used]
         a_idx, lp = policy.sample(f, legal_dyn, greedy=greedy)
         a = s["actions"][a_idx]
         if a["mode"] == "level":
@@ -207,8 +209,9 @@ def sample_rollout(doc, span_rows, feats, policy, greedy=False):
             n_level += 1
         choice[s["surface"].lower()] = a
         logps.append(lp)
+        legals.append(legal_dyn)
     doc_p, R = assemble(doc["text"], doc["R_walk"], span_rows, choice)
-    return choice, logps, 1.0 - n_level / len(span_rows), doc_p, R
+    return choice, logps, 1.0 - n_level / len(span_rows), doc_p, R, legals
 
 
 def rollout_reward(doc, span_rows, feats, policy, alpha, greedy=False):
@@ -216,7 +219,7 @@ def rollout_reward(doc, span_rows, feats, policy, alpha, greedy=False):
     unsampleable, not downgraded post-hoc): spans are decided sequentially in walk order;
     a level whose fill is already claimed by a different surface is masked out before
     sampling, so log-probs, A, and ph_rate all describe the action actually executed."""
-    choice, logps, ph_rate, doc_p, R = sample_rollout(doc, span_rows, feats, policy, greedy)
+    choice, logps, ph_rate, doc_p, R, _ = sample_rollout(doc, span_rows, feats, policy, greedy)
     p6s = [c["p6"] for c in choice.values() if c["mode"] == "level"]
     A = sum(p6s) / len(p6s) if p6s else 0.0
     U, _ = u_qa(doc_p, R, doc["probes_train"])
@@ -276,15 +279,16 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
         ep = {"r": [], "ph": [], "ent": [], "ties_skipped": 0, "cf_used": 0}
         for di in order:
             doc = docs[di]
-            logps_l, ph_l = [], []
+            logps_l, ph_l, legals_l = [], [], []
             jobs = []
             for _ in range(G):
-                choice, logps, ph, doc_p, R = sample_rollout(doc, doc["spans"],
-                                                             doc["feats"], policy)
+                choice, logps, ph, doc_p, R, legals = sample_rollout(
+                    doc, doc["spans"], doc["feats"], policy)
                 jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
                              "probes": doc["probes_train"]})
                 logps_l.append(logps)
                 ph_l.append(ph)
+                legals_l.append(legals)
             res = roundtrip_batch(jobs, workers=rt_workers)
             rt = torch.tensor([r["recall"] or 0.0 for r in res])
             ep["r"].append(rt.mean().item())
@@ -294,25 +298,33 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
                 continue
             adv = rloo_advantage(rt)
             pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
-            ent = 0.0
-            for i, (s, f) in enumerate(zip(doc["spans"], doc["feats"])):
-                policy.set_context(_ctx_of(doc, i))
-                ent = ent + policy_entropy(policy, f, s["legal"])
-            ent = ent / len(doc["spans"])
-            loss = pg - entropy_coef * ent
-            if kl_coef > 0 and ref is not None:
-                kl = 0.0
+            # entropy over the DYNAMIC masks each rollout actually sampled from (not the
+            # static floor-legal sets), mean over spans and rollouts
+            ent, n_ent = 0.0, 0
+            for legals in legals_l:
                 for i, (s, f) in enumerate(zip(doc["spans"], doc["feats"])):
                     policy.set_context(_ctx_of(doc, i))
-                    ref.set_context(_ctx_of(doc, i))
-                    kl = kl + kl_to_ref(policy, ref, f, s["legal"])
-                loss = loss + kl_coef * kl / len(doc["spans"])
+                    ent = ent + policy_entropy(policy, f, legals[i])
+                    n_ent += 1
+            ent = ent / max(n_ent, 1)
+            loss = pg - entropy_coef * ent
+            if kl_coef > 0 and ref is not None:
+                # KL over each rollout's recorded dynamic legal set, aligned per rollout,
+                # mean over spans and rollouts
+                kl, n_kl = 0.0, 0
+                for legals in legals_l:
+                    for i, (s, f) in enumerate(zip(doc["spans"], doc["feats"])):
+                        policy.set_context(_ctx_of(doc, i))
+                        ref.set_context(_ctx_of(doc, i))
+                        kl = kl + kl_to_ref(policy, ref, f, legals[i])
+                        n_kl += 1
+                loss = loss + kl_coef * kl / max(n_kl, 1)
             opt.zero_grad()
             loss.backward()
             opt.step()
             ep["ent"].append(ent.item())
             if cf_frac > 0:                             # exact per-span counterfactual credit
-                g_choice, g_logps, _, g_doc_p, g_R = sample_rollout(
+                g_choice, g_logps, _, g_doc_p, g_R, _ = sample_rollout(
                     doc, doc["spans"], doc["feats"], policy, greedy=True)
                 base_r = roundtrip_batch(
                     [{"corpus": doc["corpus"], "doc_p": g_doc_p, "R": g_R,
@@ -363,7 +375,7 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
         meta.append(("bc", di, None))
         idxs = []
         for _ in range(G):
-            choice, _, _, doc_p, R = sample_rollout(doc, doc["spans"], doc["feats"], policy)
+            choice, _, _, doc_p, R, _ = sample_rollout(doc, doc["spans"], doc["feats"], policy)
             idx = {s["surface"].lower(): next(
                        i for i, a in enumerate(s["actions"])
                        if a is choice[s["surface"].lower()])
@@ -470,6 +482,24 @@ def kl_to_ref(policy, ref, feats, legal):
     return (lp.exp() * (lp - lq)).sum()
 
 
+def enforce_support_gate(force_ungated: bool):
+    """Round-trip RL training is gated on the support scan
+    (results/roundtrip_support_scan.json): verdict must be PASS. A missing file counts as
+    not-passed. --force-ungated bypasses with a loud warning."""
+    gate = Path("results/roundtrip_support_scan.json")
+    verdict = json.loads(gate.read_text()).get("verdict") if gate.exists() else "MISSING"
+    if verdict == "PASS":
+        return
+    if force_ungated:
+        print(f"WARNING: --force-ungated set — bypassing the round-trip support gate "
+              f"(verdict={verdict}, {gate}). Training on an UNCERTIFIED environment; results "
+              "are not gate-backed.", flush=True)
+        return
+    raise SystemExit(
+        f"round-trip support gate not passed (verdict={verdict}, {gate}); re-run "
+        "scripts/spikes/roundtrip_support_scan.py until it PASSes (or --force-ungated)")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--alphas", default="0.3,0.5,0.7")
@@ -485,7 +515,9 @@ def main():
     ap.add_argument("--epochs", type=int, default=5)
     ap.add_argument("--bc-epochs", type=int, default=30)
     ap.add_argument("--lr", type=float, default=3e-4)
-    ap.add_argument("--kl-coef", type=float, default=0.05)
+    ap.add_argument("--kl-coef", type=float, default=None,
+                    help="KL leash coefficient (default: 0.05 surrogate, 0.0 roundtrip; "
+                         "an explicit value is always honored)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--n-docs", type=int, default=16,
                     help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
@@ -516,6 +548,9 @@ def main():
                     help="exact per-span counterfactual credit (roundtrip only): fraction of "
                          "level-mode spans of a greedy rollout to flip to placeholder and "
                          "re-score for exact per-span advantage (0 = off)")
+    ap.add_argument("--force-ungated", action="store_true",
+                    help="bypass the round-trip support-scan gate with a loud warning "
+                         "(roundtrip mode only)")
     args = ap.parse_args()
     assert args.G >= 2, "group-relative advantage needs G >= 2 (std of one reward is NaN)"
     assert 0.0 <= args.cf_frac <= 1.0, "--cf-frac must be in [0, 1]"
@@ -528,12 +563,22 @@ def main():
     roundtrip = args.reward == "roundtrip"
     if roundtrip and roundtrip_batch is None:
         raise SystemExit("roundtrip reward requires cloak.train.roundtrip (import failed)")
-    # mode defaults: explicit flags win, else surrogate/roundtrip presets
+    # mode defaults: explicit flags always win, else surrogate/roundtrip presets (None
+    # sentinel -> preset; a passed value is honored verbatim, never overridden)
     adv = args.adv or ("rloo" if roundtrip else "group")
+    if roundtrip and adv != "rloo":
+        raise SystemExit("--adv group is not implemented for the round-trip loop "
+                         "(round-trip uses RLOO); pass --adv rloo or omit it")
+    if not roundtrip and adv != "group":
+        raise SystemExit("--adv rloo is not implemented for the surrogate loop "
+                         "(surrogate uses group-relative advantage); pass --adv group or omit it")
     entropy_coef = (args.entropy_coef if args.entropy_coef is not None
                     else (0.01 if roundtrip else 0.0))
-    kl_coef = (0.0 if roundtrip and args.kl_coef == ap.get_default("kl_coef")
-               else args.kl_coef)
+    kl_coef = (args.kl_coef if args.kl_coef is not None
+               else (0.0 if roundtrip else 0.05))
+    if roundtrip and args.randomize_floors:
+        raise SystemExit("--randomize-floors is not implemented for the round-trip loop "
+                         "(BC only); run fixed floors")
     torch.manual_seed(args.seed)
     random.Random(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -569,6 +614,7 @@ def main():
         kept = []
         for doc in docs:
             doc["probes_train"] = probes_all.get(doc["id"], {}).get("train", [])
+            doc["probes_heldout"] = probes_all.get(doc["id"], {}).get("heldout", [])
             if len(doc["probes_train"]) >= 3:
                 kept.append(doc)
         print(f"roundtrip probes ({args.probes}): kept {len(kept)}/{len(docs)} docs, "
@@ -632,6 +678,7 @@ def main():
               "static teacher trajectory (accepted mismatch, masked in rollouts)", flush=True)
 
     if roundtrip:
+        enforce_support_gate(args.force_ungated)
         from cloak.train.roundtrip import RT_MODEL
         t0 = time.time()
         torch.manual_seed(args.seed)
@@ -645,7 +692,7 @@ def main():
             ref.load_state_dict(policy.state_dict())
         ref.eval()
         log = {"reward": "roundtrip", "rt_model": RT_MODEL, "adv": adv, "floors": floors,
-               "randomize_floors": args.randomize_floors, "G": args.G, "epochs": args.epochs,
+               "randomize_floors": False, "G": args.G, "epochs": args.epochs,
                "n_exit_rounds": args.exit_rounds, "exit_epochs": args.exit_epochs,
                "cf_frac": args.cf_frac,
                "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,
@@ -673,15 +720,26 @@ def main():
         jobs, phs = [], []
         with torch.no_grad():
             for doc in docs:
-                _, _, ph, doc_p, R = sample_rollout(doc, doc["spans"], doc["feats"], policy,
-                                                    greedy=True)
+                _, _, ph, doc_p, R, _ = sample_rollout(doc, doc["spans"], doc["feats"],
+                                                       policy, greedy=True)
                 jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
                              "probes": doc["probes_train"]})
                 phs.append(ph)
         res = roundtrip_batch(jobs, workers=args.rt_workers)
         rs = [r["recall"] or 0.0 for r in res]
-        log["greedy_final"] = {"r": round(sum(rs) / len(rs), 4) if rs else 0.0,
-                               "ph": round(sum(phs) / len(phs), 4) if phs else 0.0}
+        # heldout read-out: SAME greedy rollouts (out_final unchanged), scored on each doc's
+        # heldout probes from the validated artifact; docs with empty heldout are skipped.
+        # Reward stays train-only — heldout is a generalization spot-check, never optimized.
+        held = []
+        for doc, r in zip(docs, res):
+            hp = doc.get("probes_heldout", [])
+            if hp:
+                f1s = fact_f1s(r["out_final"], hp)
+                held.append(sum(f1s) / len(f1s))
+        log["greedy_final"] = {
+            "r_train": round(sum(rs) / len(rs), 4) if rs else 0.0,
+            "r_heldout": round(sum(held) / len(held), 4) if held else None,
+            "ph": round(sum(phs) / len(phs), 4) if phs else 0.0}
         log["wall_s"] = round(time.time() - t0, 1)
         tag = "rt" + ("_enc" if encoder_mode else "") + ("_smoke" if args.smoke else "")
         torch.save(policy.state_dict(), f"data/ranker_policy_{tag}.pt")
@@ -707,7 +765,7 @@ def main():
         opt = torch.optim.Adam(policy.parameters(), lr=args.lr)
         log = {"alpha": alpha, "floors": floors, "randomize_floors": args.randomize_floors,
                "G": args.G, "epochs": args.epochs,
-               "kl_coef": args.kl_coef, "seed": args.seed, "n_docs": len(docs),
+               "kl_coef": kl_coef, "seed": args.seed, "n_docs": len(docs),
                "policy": (f"encoder:{args.encoder_model}" if encoder_mode
                           else "feature-MLP (plan ablation floor)"), "rounds": []}
 
@@ -739,7 +797,7 @@ def main():
                     ref.set_context(_ctx_of(doc, i))
                     kl = kl + kl_to_ref(policy, ref, f, s["legal"])
                 kl = kl / len(span_rows)
-                loss = pg + args.kl_coef * kl
+                loss = pg + kl_coef * kl
                 opt.zero_grad()
                 loss.backward()
                 opt.step()
