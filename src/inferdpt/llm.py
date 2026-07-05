@@ -20,15 +20,18 @@ DEFAULT_BASE_URL = "https://ai.tail59ea6b.ts.net/v1"
 Message = dict[str, str]  # {"role": "system"|"user"|"assistant", "content": str}
 
 
-def _cache_path(model: str, messages: list[Message], params: dict) -> str | None:
+def _cache_path(model: str, messages: list[Message], params: dict,
+                base_url: str | None = None) -> str | None:
     """Content-addressed cache file under $INFERDPT_LLM_CACHE, or None when disabled.
-    Caching a fixed (model, messages, params) freezes one sample → reproducible sweeps and
-    no recapture of identical prompts across runs."""
+    Caching a fixed (model, base_url, messages, params) freezes one sample → reproducible
+    sweeps and no recapture of identical prompts across runs. base_url is part of the key so
+    the same model served at two endpoints never shares a cache namespace."""
     cache_dir = os.getenv("INFERDPT_LLM_CACHE")
     if not cache_dir:
         return None
     os.makedirs(cache_dir, exist_ok=True)
-    blob = json.dumps({"model": model, "messages": messages, "params": params},
+    blob = json.dumps({"model": model, "base_url": base_url,
+                       "messages": messages, "params": params},
                       sort_keys=True, default=str)
     return os.path.join(cache_dir, hashlib.sha256(blob.encode()).hexdigest() + ".json")
 
@@ -50,9 +53,11 @@ class LLMClient:
     ) -> None:
         self.model = model
         self._defaults = defaults
+        # resolved once; part of the cache key so endpoint changes don't reuse stale samples
+        self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or DEFAULT_BASE_URL
         # The proxy needs no key for local models; SDK still requires a non-empty one.
         self._client = OpenAI(
-            base_url=base_url or os.getenv("OPENAI_BASE_URL") or DEFAULT_BASE_URL,
+            base_url=self.base_url,
             api_key=api_key or os.getenv("OPENAI_API_KEY") or "not-needed",
         )
 
@@ -60,7 +65,7 @@ class LLMClient:
         """Return the assistant's reply text for a list of chat messages (disk-cached if
         $INFERDPT_LLM_CACHE is set)."""
         params = {**self._defaults, **overrides}
-        path = _cache_path(self.model, messages, params)
+        path = _cache_path(self.model, messages, params, self.base_url)
         if path and os.path.exists(path):
             return json.loads(open(path).read())["content"]
         resp = self._client.chat.completions.create(model=self.model, messages=messages, **params)

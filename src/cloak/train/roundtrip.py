@@ -4,6 +4,9 @@ R_rt = realized fact recall (graded mean token-F1) on out_final over a doc's tra
 probes, where out_final = invert(Remote(task_prompt(doc_p)), R). Deterministic given doc_p:
 pinned model, temperature 0, content-addressed disk cache (INFERDPT_LLM_CACHE) — the
 determinism is load-bearing (cache = reward memoization = ExIt pool; spec "one subtlety").
+
+THE reward pin (changing any re-gates): RT_MODEL = "gemma 4 (E4B)" served at
+RT_BASE_URL = "http://localhost:8060/v1", temperature 0, max_tokens 512, non-thinking.
 """
 import os
 
@@ -12,6 +15,7 @@ from cloak.tasks import TASK_TEMPLATE
 from cloak.train.reward import fact_f1s
 
 RT_MODEL = "gemma 4 (E4B)"   # THE pin (spec components table); changing it re-gates.
+RT_BASE_URL = "http://localhost:8060/v1"   # THE endpoint pin; part of the reward pin.
 # User decision 2026-07-05 (results/thinking_mode_probe.json): gemma honors
 # enable_thinking:false (clean non-thinking output, all probe facts restated in ~150 tok);
 # LFM2.5-8B-A1B cannot disable thinking (the flag leaks <think> in-band, truncating at
@@ -27,7 +31,8 @@ def _remote():
         from inferdpt.llm import LLMClient
         assert os.getenv("INFERDPT_LLM_CACHE"), \
             "round-trip reward requires INFERDPT_LLM_CACHE (determinism + cost)"
-        _client = LLMClient(RT_MODEL, temperature=0.0, max_tokens=MAX_TOKENS,
+        _client = LLMClient(RT_MODEL, base_url=RT_BASE_URL, temperature=0.0,
+                            max_tokens=MAX_TOKENS,
                             extra_body={"chat_template_kwargs": {"enable_thinking": False}})
     return _client
 

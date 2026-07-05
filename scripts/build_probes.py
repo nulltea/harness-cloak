@@ -15,6 +15,7 @@ Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        [--n-docs 16] [--workers 8] [--th 0.5] [--seed 0]
 """
 import argparse
+import datetime
 import json
 import random
 from pathlib import Path
@@ -43,9 +44,9 @@ def main():
     from train_ranker import assemble
 
     from cloak.corpora import load_task_docs, refs_of
-    from cloak.train.probes import probes_for_docs
+    from cloak.train.probes import TEACHER_MODEL, probes_for_docs
     from cloak.train.reward import fact_f1s
-    from cloak.train.roundtrip import roundtrip_batch
+    from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL, roundtrip_batch
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--corpora", default="clinical,enron,aeslc")
@@ -57,7 +58,8 @@ def main():
 
     art = load_artifact()
     env = json.loads(Path("data/ranker_env.json").read_text())
-    out = json.loads(OUT.read_text()) if OUT.exists() else {}
+    prev = json.loads(OUT.read_text()) if OUT.exists() else {}
+    out = prev.get("docs", {}) if isinstance(prev, dict) else {}
     report = {"th": args.th, "corpora": {}}
 
     for corpus in args.corpora.split(","):
@@ -83,14 +85,18 @@ def main():
             anchor.setdefault(doc_id, {})[kind] = r["out_final"]
         # 3. validate + split
         stats = {"docs": 0, "kept": [], "rej_c": 0, "rej_f": 0, "cand": 0,
-                 "excluded_docs": []}
+                 "excluded_docs": [], "hi_kept": []}
         for d in rows:
             ps = cands.get(d["id"], [])
             if not ps or d["id"] not in anchor:
+                # span-bearing doc with no candidate probes (or no anchor) is excluded, not
+                # silently dropped — it contributes no RL reward signal
+                stats["excluded_docs"].append(d["id"])
                 continue
             hi = fact_f1s(anchor[d["id"]]["hi"], ps)
             lo = fact_f1s(anchor[d["id"]]["lo"], ps)
             kept, rc, rf = validate_probes(ps, hi, lo, args.th)
+            hi_kept = [h for _p, h, l in zip(ps, hi, lo) if h >= args.th and l < args.th]
             rng = random.Random(args.seed)
             rng.shuffle(kept)
             n_hold = max(1, len(kept) // 4) if len(kept) >= 2 else 0
@@ -99,6 +105,7 @@ def main():
             stats["docs"] += 1
             stats["cand"] += len(ps)
             stats["kept"].append(len(kept))
+            stats["hi_kept"].extend(hi_kept)
             stats["rej_c"] += len(rc)
             stats["rej_f"] += len(rf)
             if len(out[d["id"]]["train"]) < 3:
@@ -110,10 +117,16 @@ def main():
             "kept_min": min(stats["kept"], default=0),
             "ceiling_reject_rate": round(stats["rej_c"] / max(stats["cand"], 1), 3),
             "floor_reject_rate": round(stats["rej_f"] / max(stats["cand"], 1), 3),
+            "reader_hi_f1_kept_mean": (round(sum(stats["hi_kept"]) / len(stats["hi_kept"]), 3)
+                                       if stats["hi_kept"] else None),
             "excluded_docs": stats["excluded_docs"]}
         print(f"[{corpus}] {report['corpora'][corpus]}", flush=True)
 
-    OUT.write_text(json.dumps(out, indent=1))
+    artifact = {"meta": {"rt_model": RT_MODEL, "rt_base_url": RT_BASE_URL,
+                         "teacher": TEACHER_MODEL, "th": args.th,
+                         "built_at": datetime.datetime.now().isoformat(timespec="seconds")},
+                "docs": out}
+    OUT.write_text(json.dumps(artifact, indent=1))
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(json.dumps(report, indent=1))
     print(f"-> {OUT} + {REPORT}")

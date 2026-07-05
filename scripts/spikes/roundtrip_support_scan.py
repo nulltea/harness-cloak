@@ -54,7 +54,7 @@ def main():
 
     art = load_artifact()
     env = json.loads(Path("data/ranker_env.json").read_text())
-    probes_all = json.loads(Path(args.probes).read_text())
+    probes_all = json.loads(Path(args.probes).read_text())["docs"]
     floors = dict(env["k_floors"])
     rng = random.Random(args.seed)
 

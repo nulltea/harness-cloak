@@ -610,7 +610,16 @@ def main():
     if roundtrip:
         # reward uses the validated train-split probes; docs with < 3 are excluded from the
         # RL reward (global constraint), never silently kept.
-        probes_all = json.loads(Path(args.probes).read_text())
+        from cloak.train.roundtrip import RT_MODEL
+        probes_art = json.loads(Path(args.probes).read_text())
+        meta = probes_art.get("meta", {})
+        if meta.get("rt_model") != RT_MODEL:
+            raise SystemExit(
+                f"probe artifact {args.probes} was built for rt_model="
+                f"{meta.get('rt_model')!r} but the reward model is {RT_MODEL!r}; changing the "
+                "reward model re-gates — rebuild probes (scripts/build_probes.py) and re-run "
+                "the support scan before training")
+        probes_all = probes_art["docs"]
         kept = []
         for doc in docs:
             doc["probes_train"] = probes_all.get(doc["id"], {}).get("train", [])

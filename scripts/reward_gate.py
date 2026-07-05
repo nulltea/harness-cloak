@@ -26,12 +26,15 @@ from cloak.extract import invert
 from cloak.probe import reward_privacy
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.reward import fact_recall, stage1_reward, u_qa
+from cloak.train.roundtrip import RT_MODEL
 from inferdpt.llm import LLMClient
 from inferdpt.pipeline import pmap
 
 ARMS = ["no_privacy", "tau_walk", "all_floor", "suppression", "all_placeholder",
         "identity_only"]
-GEN_MODEL = "Qwen3.6-35B-A3B"
+# the gate must generate with the deployed reward model (matched settings) — the arm
+# rankings it certifies must be the ones the round-trip reward will actually see
+GEN_MODEL = RT_MODEL
 # identity-bearing quasi types (placeholdered in the identity_only arm); DEM/QUANTITY/MISC
 # (conditions, meds, doses) are kept verbatim — the arm tests whether anonymizing identity
 # alone preserves utility, and its attack side lives in scripts/spikes/identity_attack.py

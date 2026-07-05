@@ -42,13 +42,25 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
     from inferdpt.pipeline import pmap
 
     cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
+    n_legacy = 0
     todo = []
     for d in docs:
-        have = {p["surface"] for p in cache.get(d["id"], [])}
+        # only current-teacher entries are reusable; legacy / other-teacher entries (incl.
+        # ones with no "teacher" field) are ignored and their surfaces go back into todo, so
+        # teachers can never mix in one cache without a manual mv
+        have = set()
+        for p in cache.get(d["id"], []):
+            if p.get("teacher") == TEACHER_MODEL:
+                have.add(p["surface"])
+            else:
+                n_legacy += 1
         for p in restated_probes(R_of[d["id"]], refs_of(d)[0]):
             if p["entry"]["surface"] not in have:
                 todo.append({"doc_id": d["id"], "surface": p["entry"]["surface"],
                              "sent": p["gold_sent"]})
+    if n_legacy:
+        print(f"probes: ignored {n_legacy} legacy/other-teacher cache entries "
+              f"(teacher != {TEACHER_MODEL})", flush=True)
     if todo:
         # LFM2.5 thinks unconditionally (results/thinking_mode_probe.json): budget must
         # cover ~700 reasoning tokens (separated server-side into reasoning_content), and
@@ -57,15 +69,25 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
                             temperature=0.0, max_tokens=1024)
         replies = pmap(lambda t: teacher.generate(
             PROMPT.format(answer=t["surface"], sent=t["sent"])), todo, workers=workers)
+        n_lost = 0
         for t, r in zip(todo, replies):
-            q = re.sub(r"^[\"']|[\"']$", "", (r or "").strip().splitlines()[0].strip()) \
-                if (r or "").strip() else ""
+            reply = (r or "").strip()
+            # <think> leak (thinking teacher) or empty reply -> unusable, before extraction
+            if not reply or "<think>" in reply:
+                n_lost += 1
+                continue
+            q = re.sub(r"^[\"']|[\"']$", "", reply.splitlines()[0].strip())
             if _valid(q, t["surface"]):
                 cache.setdefault(t["doc_id"], []).append(
-                    {"surface": t["surface"], "question": q})
+                    {"surface": t["surface"], "question": q, "teacher": TEACHER_MODEL})
+            else:
+                n_lost += 1
+        print(f"probes: {n_lost}/{len(todo)} teacher replies invalid/empty (no probe kept)",
+              flush=True)
         CACHE.parent.mkdir(exist_ok=True)
         CACHE.write_text(json.dumps(cache, indent=2))
-    return {d["id"]: cache.get(d["id"], []) for d in docs}
+    return {d["id"]: [p for p in cache.get(d["id"], []) if p.get("teacher") == TEACHER_MODEL]
+            for d in docs}
 
 
 if __name__ == "__main__":
