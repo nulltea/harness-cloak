@@ -31,7 +31,7 @@ reward-landscape account of the two stage-1 NULLs — the old utility term was f
 findability, the old privacy term's optimum was the degenerate all-placeholder point
 (+0.062…0.177 over the init), and the KL leash had to overprice the only climb by ~10× to
 contain it ([2026-07-05 training
-record](../../../research-wiki/training/2026-07-05-RL-ranker-stage1-floor-env.md), landscape
+record](../../../research-wiki/training/2026-07-05-RL-ranker-v2-stage1-floor-env.md), landscape
 addendum). Decision history and wall-time live in the
 [training plan](../../plans/2026-07-02-surrogate-grpo-training.md).
 

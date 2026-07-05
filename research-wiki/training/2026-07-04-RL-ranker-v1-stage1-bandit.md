@@ -138,7 +138,7 @@ data/ranker_policy_a{alpha}.pt, results/ranker_train_a{alpha}.json, env: data/ra
 arms artifact data/task_arms_tau0.02.json.
 
 ## Successor
-[2026-07-05 floor-env rerun](2026-07-05-RL-ranker-stage1-floor-env.md) — NULL persisted at
+[2026-07-05 floor-env rerun](2026-07-05-RL-ranker-v2-stage1-floor-env.md) — NULL persisted at
 doubled reward support; diagnosis refined to a reward-structure finding (u_qa is
 penalty-only around a min-aset init).
 

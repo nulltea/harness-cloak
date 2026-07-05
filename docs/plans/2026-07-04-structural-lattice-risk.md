@@ -611,7 +611,7 @@ git commit -m "feat: per-type count-floor legal sets, floor-walk BC, floor-condi
   a predicted-count head, if ever added, is a training-time calibration aid only. The
   offline LM count-estimator is scoped to build time: authoring slot vocabularies /
   populating counts for out-of-universe lattice nodes, shootout-calibrated)
-- Modify: `research-wiki/training/2026-07-04-RL-ranker-stage1-bandit.md` (Observations:
+- Modify: `research-wiki/training/2026-07-04-RL-ranker-v1-stage1-bandit.md` (Observations:
   correct "optimization-regime null" to reward-support null — cite
   `scripts/spikes/probe_flip_scan.py` (3/106 flippable probes) and the reordered lever
   ladder; link this plan as successor)
@@ -629,7 +629,7 @@ git commit -m "feat: per-type count-floor legal sets, floor-walk BC, floor-condi
 
 ```bash
 git add src/cloak/probe.py docs/specs/RL/surrogate-ranker-infiller.md \
-        research-wiki/training/2026-07-04-RL-ranker-stage1-bandit.md \
+        research-wiki/training/2026-07-04-RL-ranker-v1-stage1-bandit.md \
         docs/research/inference-risk-enforcement.md
 git commit -m "docs: adopt structural lattice risk — spec amendment, probe retired offline"
 ```

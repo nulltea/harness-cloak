@@ -14,7 +14,7 @@ companion: ../../docs/specs/RL/surrogate-ranker-infiller.md
 ## Objective & hypothesis
 Does learned per-span level selection move the surrogate reward off the floor-walk
 behavior-clone init, now that the environment's reward support is restored? Predecessor
-([2026-07-04 bandit](2026-07-04-RL-ranker-stage1-bandit.md)) was a NULL whose corrected
+([2026-07-04 bandit](2026-07-04-RL-ranker-v1-stage1-bandit.md)) was a NULL whose corrected
 diagnosis is reward-support starvation at the retired tau=0.02 mask (3/106 probes flippable;
 `scripts/spikes/probe_flip_scan.py`). The count-floor environment roughly doubles decision
 freedom (140/177 spans ≥2-legal at the all-100 floors vs 72/177). H: with more live probes,
@@ -157,5 +157,5 @@ results/ranker_reward_gate.json (refreshed).
 
 ## Sources
 Spec: [surrogate-ranker-infiller](../../docs/specs/RL/surrogate-ranker-infiller.md) (§2
-Phase 1, §5.4, §6). Predecessor: [2026-07-04 bandit](2026-07-04-RL-ranker-stage1-bandit.md).
+Phase 1, §5.4, §6). Predecessor: [2026-07-04 bandit](2026-07-04-RL-ranker-v1-stage1-bandit.md).
 Migration plan: [structural-lattice-risk](../../docs/plans/2026-07-04-structural-lattice-risk.md).

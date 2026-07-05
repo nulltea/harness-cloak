@@ -271,5 +271,5 @@ around it — [structural-lattice-risk plan](../plans/2026-07-04-structural-latt
 - `results/ranker_reward_gate.json`, `results/identity_attack.json`,
   `scripts/spikes/identity_attack.py` (2026-07-04) — identity-only arm measurements cited in
   §1 and §4.
-- `research-wiki/training/2026-07-04-RL-ranker-stage1-bandit.md` — the stage-1 NULL whose
+- `research-wiki/training/2026-07-04-RL-ranker-v1-stage1-bandit.md` — the stage-1 NULL whose
   diagnosis motivated this analysis.
