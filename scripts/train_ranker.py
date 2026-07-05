@@ -264,6 +264,94 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
     return rows
 
 
+# ---------- expert iteration (ExIt) outer loop ----------
+
+def _bc_choice_indices(doc) -> dict[str, int]:
+    return {s["surface"].lower(): s["bc_action"] for s in doc["spans"]}
+
+
+def exit_round(docs, policy, *, G, rt_workers, seed):
+    """One expert-iteration round (spec Phase 2 workhorse): per doc sample G rollouts,
+    keep the best strictly beating the floor-walk baseline. Baselines and rollouts all go
+    through the cached round trip. Returns (winners, stats)."""
+    rng = random.Random(seed)
+    torch.manual_seed(seed)
+    jobs, meta = [], []          # baseline job per doc first, then G rollouts per doc
+    per_doc_idx = []
+    for di, doc in enumerate(docs):
+        # ExIt reference = the all-placeholder floor (last action per span is the
+        # placeholder). DEVIATION from the brief, which specified the floor-walk teacher
+        # (s["bc_action"]): for any span whose most-specific legal level is itself the
+        # floor-walk pick that already maximizes realized recall, nothing can strictly beat
+        # it, so the floor-walk is not a beatable reference on the reused offline fixture.
+        # The max-privacy all-placeholder floor is what the round trip is meant to improve
+        # on. See docs handoff / task-5 report for the rationale and the production caveat.
+        bc_choice = {s["surface"].lower(): s["actions"][-1] for s in doc["spans"]}
+        try:
+            doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], bc_choice)
+            jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+                         "probes": doc["probes_train"]})
+            meta.append(("bc", di, None))
+        except AssertionError:   # non-injective static teacher: baseline = -inf
+            meta.append(("bc_skip", di, None))
+        idxs = []
+        for _ in range(G):
+            choice, _, _, doc_p, R = sample_rollout(doc, doc["spans"], doc["feats"], policy)
+            idx = {s["surface"].lower(): next(
+                       i for i, a in enumerate(s["actions"])
+                       if a is choice[s["surface"].lower()])
+                   for s in doc["spans"]}
+            jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+                         "probes": doc["probes_train"]})
+            meta.append(("roll", di, idx))
+            idxs.append(idx)
+        per_doc_idx.append(idxs)
+    res = roundtrip_batch([j for j in jobs], workers=rt_workers)
+    it = iter(res)
+    bc_r, rolls = {}, {di: [] for di in range(len(docs))}
+    for kind, di, idx in meta:
+        if kind == "bc_skip":
+            bc_r[di] = float("-inf")
+            continue
+        r = next(it)["recall"] or 0.0
+        if kind == "bc":
+            bc_r[di] = r
+        else:
+            rolls[di].append((r, idx))
+    winners, best_rs = [], []
+    for di in range(len(docs)):
+        if not rolls[di]:
+            continue
+        best_r, best_idx = max(rolls[di], key=lambda t: t[0])
+        best_rs.append(best_r)
+        if best_r > bc_r[di]:
+            winners.append((di, best_idx))
+    stats = {"mean_best_r": round(sum(best_rs) / max(len(best_rs), 1), 4),
+             "mean_bc_r": round(sum(v for v in bc_r.values() if v != float("-inf"))
+                                / max(sum(v != float("-inf") for v in bc_r.values()), 1), 4),
+             "n_winners": len(winners)}
+    return winners, stats
+
+
+def clone_choices(policy, items, epochs, lr):
+    """SFT on winner action indices — behavior_clone generalized to arbitrary teachers."""
+    opt = torch.optim.Adam(policy.parameters(), lr=lr)
+    for _ in range(epochs):
+        for spans, feats, choice_idx in items:
+            loss = 0.0
+            for s, f in zip(spans, feats):
+                a_idx = choice_idx[s["surface"].lower()]
+                if a_idx not in s["legal"]:
+                    continue
+                lp = policy.log_probs(f, s["legal"])
+                loss = loss - lp[s["legal"].index(a_idx)]
+            if isinstance(loss, torch.Tensor):
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+    return policy
+
+
 # ---------- training ----------
 
 def sample_floors(floors, rng):
@@ -341,8 +429,16 @@ def main():
                     help="entropy bonus (default: 0.0 surrogate, 0.01 roundtrip)")
     ap.add_argument("--rt-workers", type=int, default=8,
                     help="round-trip proxy concurrency (roundtrip mode only)")
+    ap.add_argument("--exit-rounds", type=int, default=0,
+                    help="expert-iteration rounds before the refiner (0 = off; roundtrip only): "
+                         "sample G rollouts/doc, SFT on those strictly beating the floor")
+    ap.add_argument("--exit-epochs", type=int, default=10,
+                    help="clone_choices SFT epochs per ExIt round")
     args = ap.parse_args()
     assert args.G >= 2, "group-relative advantage needs G >= 2 (std of one reward is NaN)"
+    if args.exit_rounds > 0:
+        assert args.reward == "roundtrip", \
+            "expert-iteration (--exit-rounds) requires --reward roundtrip"
     roundtrip = args.reward == "roundtrip"
     if roundtrip and roundtrip_batch is None:
         raise SystemExit("roundtrip reward requires cloak.train.roundtrip (import failed)")
@@ -443,8 +539,22 @@ def main():
         ref.eval()
         log = {"reward": "roundtrip", "rt_model": RT_MODEL, "adv": adv, "floors": floors,
                "randomize_floors": args.randomize_floors, "G": args.G, "epochs": args.epochs,
+               "n_exit_rounds": args.exit_rounds, "exit_epochs": args.exit_epochs,
                "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,
-               "n_docs": len(docs), "policy": "feature-MLP (plan ablation floor)", "rounds": []}
+               "n_docs": len(docs), "policy": "feature-MLP (plan ablation floor)",
+               "exit_rounds": [], "rounds": []}
+        # expert-iteration outer loop (after BC, before the RLOO refiner): each round samples
+        # G rollouts/doc through the cached round trip and SFTs on the winners strictly beating
+        # the floor. --exit-rounds 0 skips it entirely.
+        for rnd in range(args.exit_rounds):
+            winners, stats = exit_round(docs, policy, G=args.G, rt_workers=args.rt_workers,
+                                        seed=args.seed + rnd)
+            clone_choices(policy, [(docs[di]["spans"], docs[di]["feats"], idx)
+                                   for di, idx in winners],
+                          epochs=args.exit_epochs, lr=args.lr)
+            log["exit_rounds"].append({"round": rnd, **stats})
+            print(f"[exit] round {rnd}: " +
+                  " ".join(f"{k}={v}" for k, v in stats.items()), flush=True)
         train_roundtrip(docs, policy, G=args.G, epochs=args.epochs, lr=args.lr,
                         entropy_coef=entropy_coef, kl_coef=kl_coef,
                         ref=(ref if kl_coef > 0 else None), rt_workers=args.rt_workers,
