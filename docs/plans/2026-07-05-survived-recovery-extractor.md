@@ -11,36 +11,50 @@ companion: [2026-07-05-detector-pointer-extractor-v2.md, ../../research-wiki/exp
 
 ## Target, measured honestly
 
-The denominator is **survived spans** (content present in out_p; see
-`results/survival_by_type.json`, LLM-alignment judge). On the 14-doc clinical slice, 37
-generalizations survived, decomposing by what the remote model actually emitted:
+The denominator must be spans whose **substituted (generalized) content** reached out_p —
+i.e. the fill, or a rewording of it, is present. The first LLM-judge pass reported 37
+"survived", but that conflated two phenomena (caught on review): a leaked-original mention
+is present in out_p not because the substituted span survived, but because an **undetected
+duplicate of the original leaked through doc_p** (see the survival investigation). Splitting
+the 14-doc clinical slice by *what actually appears in out_p*:
 
-| Population | n | out_p contains | recover by |
-|---|--:|---|---|
-| A. Leaked original | 14 | the ORIGINAL surface (undetected duplicate leaked) | confirm & leave |
-| B. Fill verbatim | 14 | the fill exactly | exact swap (have) |
-| C. Fill fuzzy | 7 | the fill at ≥90 fuzzy | fuzzy swap (have) |
-| D. Reworded | 2 | neither surface nor fill | see below |
+| Population | n | out_p contains | is it substituted-content? | recover by |
+|---|--:|---|---|---|
+| B. Fill verbatim | 14 | the fill exactly | yes | exact swap (have) |
+| C. Fill fuzzy | 7 | the fill at ≥90 fuzzy | yes | fuzzy swap (have) |
+| D. Reworded | 2 | neither surface nor fill | yes (reworded fill) | see below |
+| A. Leaked + fill echoed | 2 | fill AND leaked original | yes | exact swap (have) |
+| **Substituted content survived** | **25** | | | |
+| A. Leaked-only | 12 | ONLY the original (fill absent) | **no — leak, not survival** | out of scope |
 
-The current cascade (`invert()`: placeholder + exact + fuzzy + semantic) already recovers
-**A+B+C = 35/37**. The residue is 2 D-cases:
+**The real denominator is 25, not 37.** The 12 leaked-only spans (11/12 have the original
+un-replaced elsewhere in doc_p) are the privacy leak, not a substituted span surviving — the
+fill never reached out_p. They are out of extraction scope: out_final already carries the
+original at that mention, so the extractor's only duty is do-no-harm (don't overwrite it).
+
+Of the 25 substituted-content-survived spans, the current cascade recovers **B+C+A-both =
+23/25** via fill matching. The residue is 2 D-cases:
 - `coronary artery bypass grafting` → "CABG surgery" — abbreviation of the ORIGINAL,
   reconstructed by the model. **Recoverable** with acronym/alias matching.
 - `the next couple weeks` → "a couple of weeks ago" — semantic drift (future→past).
   Substituting the original asserts a wrong fact. **Abstain, do not recover.**
 
-So the honest ceiling is ~36/37 *safe* recovery, not a blind 37/37. The design closes the
-recoverable D-case and hardens the do-no-harm behavior, rather than chasing the DEM/MISC
-"misses" v2 targeted — those turned out to be leaked originals (A) and fuzzy noise, not
-recoverable fills (this supersedes v2's premise).
+So the honest ceiling is ~24/25 *safe* recovery: current 23 + the recoverable CABG case,
+with the drift case abstained. The design closes the recoverable D-case and hardens do-no-
+harm, rather than chasing the DEM/MISC "misses" v2 targeted — those turned out to be leaked
+originals (A leaked-only, out of scope) and fuzzy noise, not recoverable fills (this
+supersedes v2's premise).
 
 ## Root mechanism gap
 
-`invert()` searches out_p for the **fill** only. But the model frequently produces
-something closer to the **original**: it leaks the original verbatim (A, 38% of survived),
-or reconstructs an abbreviation of it (D-CABG). The original surface is known from R and is
-a stronger anchor than the fill for exactly these cases. **Add a proposer that searches for
-the original surface and its variants.**
+`invert()` searches out_p for the **fill** only. That is sufficient for the fill-echo bulk
+(B+C+A-both = 23/25). The one recoverable miss is where the model reconstructs an
+**abbreviation of the original** (D-CABG: "coronary artery bypass grafting" → "CABG
+surgery") — neither fill nor exact original is present, but the original's initialism is.
+The original surface is known from R, so **add a proposer that searches for the original
+surface and its variants** to catch this class. (This proposer also cheaply confirms
+leaked-only originals as a do-no-harm guard, but those are already correct and not counted
+as recovery.)
 
 ## Design
 
@@ -51,8 +65,9 @@ their behavior.
 
 For each residue entry (surface `s`, fill `f`, type `t`), search out_p for a mention of `s`
 using, in order:
-1. **Exact `s`** (word-boundary) — actively confirms A_leaked instead of relying on the
-   fill being absent. Idempotent: if `s` is already there, recovery is a no-op (correct).
+1. **Exact `s`** (word-boundary) — do-no-harm confirm of leaked-only originals (already
+   correct in out_final; a no-op, not counted as recovery), and locks those mentions so no
+   later step overwrites them.
 2. **Acronym / initialism** of `s` — generate the initialism ("coronary artery bypass
    grafting"→"CABG") and common medical/legal alias forms; match against out_p. Deterministic,
    no model.

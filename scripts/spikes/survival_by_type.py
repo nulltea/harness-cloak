@@ -83,6 +83,15 @@ def exact_present(fill: str, out_p: str) -> bool:
     return bool(re.search(rf"\b{re.escape(fill)}\b", out_p, re.IGNORECASE))
 
 
+def fill_present(fill: str, out_p: str) -> bool:
+    """Fill reached out_p verbatim or as a >=90 fuzzy mention (the substituted form)."""
+    if exact_present(fill, out_p):
+        return True
+    from rapidfuzz import fuzz
+    al = fuzz.partial_ratio_alignment(fill.lower(), out_p.lower())
+    return bool(al and al.score >= 90.0)
+
+
 def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip().lower()
 
@@ -122,7 +131,8 @@ def build_jobs(args):
 
 
 def new_row():
-    return {"substituted": 0, "SURVIVED": 0, "REWORDED": 0, "TEMPLATED": 0, "ABSENT": 0}
+    return {"substituted": 0, "SURVIVED": 0, "REWORDED": 0, "TEMPLATED": 0, "ABSENT": 0,
+            "leaked_only": 0}
 
 
 def main():
@@ -181,26 +191,38 @@ def main():
                 label = "ABSENT"
             rows[typ][label] += 1
 
+            # LEAKED-ONLY guard: the judge may credit 'survived' to a span whose surviving
+            # text is the ORIGINAL surface (an undetected duplicate leaked through doc_p),
+            # while the substituted fill never reached out_p. That is a privacy leak, NOT the
+            # substituted span surviving — flag it so the substituted-content count excludes it.
+            if label in ("SURVIVED", "REWORDED") and not fill_present(e["replacement"], out_p) \
+                    and exact_present(e["surface"], out_p):
+                rows[typ]["leaked_only"] += 1
+
             if not is_exact and label in ("SURVIVED", "REWORDED") and len(examples) < 25:
                 examples.append({"doc": m["doc_id"], "type": typ, "surface": e["surface"],
                                  "fill": e["replacement"], "label": label, "quote": quote})
 
-    def survived(r):
+    def survived(r):  # judge-credited survival (SURVIVED+REWORDED)
         return r["SURVIVED"] + r["REWORDED"]
+
+    def subst_survived(r):  # substituted content actually reached out_p (leak excluded)
+        return survived(r) - r["leaked_only"]
 
     out_rows = []
     for t in TYPES:
         r = rows[t]
         n = r["substituted"]
         out_rows.append({"type": t, **r, "survived": survived(r),
-                         "survival_rate": round(survived(r) / n, 3) if n else None})
+                         "subst_survived": subst_survived(r),
+                         "subst_survival_rate": round(subst_survived(r) / n, 3) if n else None})
     tot = new_row()
     for r in rows.values():
         for k in tot:
             tot[k] += r[k]
     n = tot["substituted"]
-    totals = {**tot, "survived": survived(tot),
-              "survival_rate": round(survived(tot) / n, 3) if n else None}
+    totals = {**tot, "survived": survived(tot), "subst_survived": subst_survived(tot),
+              "subst_survival_rate": round(subst_survived(tot) / n, 3) if n else None}
 
     report = {
         "settings": {**vars(args), "judge_model": JUDGE_MODEL, "prompt_version": PROMPT_VERSION},
