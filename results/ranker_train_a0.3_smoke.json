@@ -1,0 +1,44 @@
+{
+ "alpha": 0.3,
+ "floors": {
+  "LOC": 100.0,
+  "ORG": 100.0,
+  "DATETIME": 100.0,
+  "DEM": 100.0,
+  "QUANTITY": 100.0,
+  "MISC": 100.0,
+  "OTHER": 100.0
+ },
+ "randomize_floors": false,
+ "G": 4,
+ "epochs": 2,
+ "kl_coef": 0.05,
+ "seed": 0,
+ "n_docs": 2,
+ "policy": "feature-MLP (plan ablation floor)",
+ "rounds": [
+  {
+   "r": 0.2609,
+   "A": 0.2908,
+   "U": 0.0687,
+   "ph": 0.5794,
+   "kl": 0.0,
+   "epoch": 0
+  },
+  {
+   "r": 0.2685,
+   "A": 0.2653,
+   "U": 0.0687,
+   "ph": 0.5544,
+   "kl": 0.0,
+   "epoch": 1
+  }
+ ],
+ "greedy_final": {
+  "r": 0.2718,
+  "A": 0.306,
+  "U": 0.0909,
+  "ph": 0.2765
+ },
+ "wall_s": 92.4
+}
