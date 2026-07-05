@@ -618,8 +618,9 @@ def main():
                          "raw_spans": d["spans"], "spans": spans, "feats": feats,
                          "probes_train": d["probes"]["train"]})
     if roundtrip:
-        # reward uses the validated train-split probes; docs with < 3 are excluded from the
-        # RL reward (global constraint), never silently kept.
+        # reward uses the validated train-split probes; docs with < 3 distinct facts are
+        # excluded from the RL reward (global constraint), never silently kept.
+        from cloak.train.reward import canon
         from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
         probes_art = json.loads(Path(args.probes).read_text())
         meta = probes_art.get("meta", {})
@@ -645,10 +646,10 @@ def main():
         for doc in docs:
             doc["probes_train"] = probes_all.get(doc["id"], {}).get("train", [])
             doc["probes_heldout"] = probes_all.get(doc["id"], {}).get("heldout", [])
-            if len(doc["probes_train"]) >= 3:
+            if len({canon(p["surface"]) for p in doc["probes_train"]}) >= 3:
                 kept.append(doc)
         print(f"roundtrip probes ({args.probes}): kept {len(kept)}/{len(docs)} docs, "
-              f"dropped {len(docs) - len(kept)} with < 3 validated train probes", flush=True)
+              f"dropped {len(docs) - len(kept)} with < 3 distinct train facts", flush=True)
         docs = kept
     if args.smoke:
         docs, args.epochs, args.G = docs[:2], 2, 4

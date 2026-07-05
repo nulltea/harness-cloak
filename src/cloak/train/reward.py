@@ -238,15 +238,29 @@ def fact_f1s(out_final: str, probes: list[dict]) -> list[float]:
     return [token_f1(_qa_answer(p["question"], out_final), p["surface"]) for p in probes]
 
 
+def _max_by_fact(probes: list[dict], f1s: list[float]) -> dict[str, float]:
+    """Group order-aligned per-question F1s by canon(surface); fact score = max over its
+    questions. Redundant questions on one fact are error-correction, never double counting.
+    Shared by fact_recall and the round-trip reward so the grouping lives in one place."""
+    by_fact: dict[str, float] = {}
+    for p, f1 in zip(probes, f1s):
+        k = canon(p["surface"])
+        by_fact[k] = max(by_fact.get(k, 0.0), f1)
+    return by_fact
+
+
 def fact_recall(out_final: str, probes: list[dict]) -> float | None:
     """Realized utility ground truth: do the gold-restated facts survive the round trip?
 
     Same probes as u_qa, but the reader answers from out_final (already inverted, original
-    space — no question generalization, no answer inversion). Mean token-F1 vs the original
-    surface; None when the doc has no probes.
+    space — no question generalization, no answer inversion). Per-fact max, mean over facts
+    (probes grouped by canon(surface)) — the deployed realized-recall definition as of
+    2026-07-05 (pre-gate change, user-approved). None when the doc has no probes.
     """
-    f1s = fact_f1s(out_final, probes)
-    return (sum(f1s) / len(f1s)) if f1s else None
+    if not probes:
+        return None
+    by_fact = _max_by_fact(probes, fact_f1s(out_final, probes))
+    return sum(by_fact.values()) / len(by_fact)
 
 
 def generalize_text(text: str, R: list[dict]) -> str:

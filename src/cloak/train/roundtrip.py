@@ -12,7 +12,7 @@ import os
 
 from cloak.extract import invert
 from cloak.tasks import TASK_TEMPLATE
-from cloak.train.reward import fact_f1s
+from cloak.train.reward import _max_by_fact, fact_f1s
 
 RT_MODEL = "gemma 4 (E4B)"   # THE pin (spec components table); changing it re-gates.
 RT_BASE_URL = "http://localhost:8060/v1"   # THE endpoint pin; part of the reward pin.
@@ -42,7 +42,8 @@ def _remote():
 
 def roundtrip_batch(jobs: list[dict], workers: int = 8) -> list[dict]:
     """jobs: [{corpus, doc_p, R, probes}] -> [{out_p, out_final, f1s, recall}].
-    recall = graded mean token-F1 (the deployed fact_recall), None when a job has no probes."""
+    recall = deployed fact_recall (per-fact max, mean over facts), None when no probes.
+    f1s stays the raw per-question list (the support scan counts per-question flip deltas)."""
     from inferdpt.pipeline import pmap
     remote = _remote()
     outs = pmap(lambda j: remote.generate(
@@ -51,8 +52,9 @@ def roundtrip_batch(jobs: list[dict], workers: int = 8) -> list[dict]:
     for j, op in zip(jobs, outs):
         out_final, _ = invert(op, j["R"])
         f1s = fact_f1s(out_final, j["probes"])
+        by_fact = _max_by_fact(j["probes"], f1s)
         res.append({"out_p": op, "out_final": out_final, "f1s": f1s,
-                    "recall": (sum(f1s) / len(f1s)) if f1s else None})
+                    "recall": (sum(by_fact.values()) / len(by_fact)) if by_fact else None})
     return res
 
 

@@ -1,10 +1,11 @@
 """Probe-question generation for the surrogate reward (Phase 0, once per document).
 
-For each restated span (R surface found in the gold output) the local teacher writes one
-natural question whose answer is that span. Questions are cached, so the per-candidate
-reward loop stays model-free (only the extractive reader runs at reward time). Natural
-questions are required: cloze phrasings are OOD for SQuAD2 readers and abstain (measured
-2026-07-02, reward.py self-check history).
+For each restated span (R surface found in the gold output) the local teacher writes three
+differently-angled natural questions whose answer is that span — three independent survival
+chances per fact (per-fact-max at reward time = error correction, never double counting).
+Questions are cached, so the per-candidate reward loop stays model-free (only the extractive
+reader runs at reward time). Natural questions are required: cloze phrasings are OOD for
+SQuAD2 readers and abstain (measured 2026-07-02, reward.py self-check history).
 
 Teacher = LFM2.5-8B-A1B on the local llama-swap (user re-pin 2026-07-05: gemma 4 (E4B)
 became the round-trip reward model, and the teacher must be a different family —
@@ -27,17 +28,33 @@ CACHE = Path("data/surrogate_probes.json")
 # second-remote eval arm moves to LFM2.5 (spec components table).
 TEACHER_MODEL = "Qwen3.6-35B-A3B"
 
-PROMPT = """Write one short factual question about the text below whose exact answer is "{answer}".
-The question must be answerable from the text alone and must not contain "{answer}" itself.
+PROMPT = """Write exactly THREE different short factual questions about the text below, one per line, each whose exact answer is "{answer}".
+Each question must be answerable from the text alone and must not contain "{answer}" itself.
 
 Text: {sent}
 
-Reply with the question only."""
+Reply with the three questions only, one per line."""
+
+PROMPT_VERSION = 2  # cached entries carry "pv"; a surface is covered only at the current pv
 
 
 def _valid(q: str, answer: str) -> bool:
     q = q.strip()
     return bool(q) and q.endswith("?") and len(q) < 200 and answer.lower() not in q.lower()
+
+
+def _parse_questions(reply: str, answer: str, limit: int = 3) -> list[str]:
+    """Up to `limit` valid questions from a multi-line teacher reply: strip per-line
+    numbering ("1.", "-", "*") and surrounding quotes, keep lines that pass _valid."""
+    qs = []
+    for line in reply.splitlines():
+        line = re.sub(r"^\s*(?:\d+[.)]|[-*])\s*", "", line.strip())
+        line = re.sub(r"^[\"']|[\"']$", "", line).strip()
+        if _valid(line, answer):
+            qs.append(line)
+        if len(qs) >= limit:
+            break
+    return qs
 
 
 def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int = 6) -> dict:
@@ -56,7 +73,9 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
         # teachers can never mix in one cache without a manual mv
         have = set()
         for p in cache.get(d["id"], []):
-            if p.get("teacher") == TEACHER_MODEL:
+            # covered only by current-teacher AND current-prompt-version entries; the old
+            # single-question Qwen entries (no "pv") are legacy-ignored and regenerated
+            if p.get("teacher") == TEACHER_MODEL and p.get("pv") == PROMPT_VERSION:
                 have.add(p["surface"])
             else:
                 n_legacy += 1
@@ -82,17 +101,20 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
             if not reply or "<think>" in reply:
                 n_lost += 1
                 continue
-            q = re.sub(r"^[\"']|[\"']$", "", reply.splitlines()[0].strip())
-            if _valid(q, t["surface"]):
-                cache.setdefault(t["doc_id"], []).append(
-                    {"surface": t["surface"], "question": q, "teacher": TEACHER_MODEL})
-            else:
+            qs = _parse_questions(reply, t["surface"])
+            if not qs:
                 n_lost += 1
-        print(f"probes: {n_lost}/{len(todo)} teacher replies invalid/empty (no probe kept)",
+                continue
+            for q in qs:
+                cache.setdefault(t["doc_id"], []).append(
+                    {"surface": t["surface"], "question": q, "teacher": TEACHER_MODEL,
+                     "pv": PROMPT_VERSION})
+        print(f"probes: {n_lost}/{len(todo)} teacher replies yielded no valid question",
               flush=True)
         CACHE.parent.mkdir(exist_ok=True)
         CACHE.write_text(json.dumps(cache, indent=2))
-    return {d["id"]: [p for p in cache.get(d["id"], []) if p.get("teacher") == TEACHER_MODEL]
+    return {d["id"]: [p for p in cache.get(d["id"], [])
+                      if p.get("teacher") == TEACHER_MODEL and p.get("pv") == PROMPT_VERSION]
             for d in docs}
 
 

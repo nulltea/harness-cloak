@@ -39,13 +39,30 @@ def validate_probes(cands, hi_f1s, lo_f1s, th=TH):
     return kept, rej_c, rej_f
 
 
+def split_by_fact(kept, seed=0):
+    """Train/heldout split at FACT granularity. Kept questions are grouped by canon(surface);
+    ALL questions of a fact travel together (fact leakage across splits would corrupt the
+    heldout read-out). Facts are shuffled (seeded); hold out max(1, n_facts // 4) facts when
+    n_facts >= 2. Returns (train_questions, heldout_questions, n_train_facts)."""
+    from cloak.train.reward import canon
+    facts = {}
+    for p in kept:
+        facts.setdefault(canon(p["surface"]), []).append(p)
+    keys = list(facts)
+    random.Random(seed).shuffle(keys)
+    n_hold = max(1, len(keys) // 4) if len(keys) >= 2 else 0
+    train = [p for k in keys[n_hold:] for p in facts[k]]
+    heldout = [p for k in keys[:n_hold] for p in facts[k]]
+    return train, heldout, len(keys) - n_hold
+
+
 def main():
     from build_arms_artifact import load_artifact
     from train_ranker import assemble
 
     from cloak.corpora import load_task_docs, refs_of
-    from cloak.train.probes import TEACHER_MODEL, probes_for_docs
-    from cloak.train.reward import fact_f1s
+    from cloak.train.probes import PROMPT_VERSION, TEACHER_MODEL, probes_for_docs
+    from cloak.train.reward import canon, fact_f1s
     from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL, roundtrip_batch
 
     ap = argparse.ArgumentParser()
@@ -86,9 +103,9 @@ def main():
         anchor = {}
         for (doc_id, kind), r in zip(meta, outs):
             anchor.setdefault(doc_id, {})[kind] = r["out_final"]
-        # 3. validate + split
-        stats = {"docs": 0, "kept": [], "rej_c": 0, "rej_f": 0, "cand": 0,
-                 "excluded_docs": [], "hi_kept": []}
+        # 3. validate (per QUESTION) + split/floor (per FACT)
+        stats = {"docs": 0, "kept_facts": [], "kept_questions": [], "rej_c": 0, "rej_f": 0,
+                 "cand": 0, "excluded_docs": [], "hi_kept": []}
         for d in rows:
             ps = cands.get(d["id"], [])
             if not ps or d["id"] not in anchor:
@@ -100,24 +117,25 @@ def main():
             lo = fact_f1s(anchor[d["id"]]["lo"], ps)
             kept, rc, rf = validate_probes(ps, hi, lo, args.th)
             hi_kept = [h for _p, h, l in zip(ps, hi, lo) if h >= args.th and l < args.th]
-            rng = random.Random(args.seed)
-            rng.shuffle(kept)
-            n_hold = max(1, len(kept) // 4) if len(kept) >= 2 else 0
-            out[d["id"]] = {"train": kept[n_hold:], "heldout": kept[:n_hold],
+            train_q, heldout_q, n_train_facts = split_by_fact(kept, args.seed)
+            out[d["id"]] = {"train": train_q, "heldout": heldout_q,
                             "rejected": {"ceiling": rc, "floor": rf}}
             stats["docs"] += 1
             stats["cand"] += len(ps)
-            stats["kept"].append(len(kept))
+            stats["kept_questions"].append(len(kept))
+            stats["kept_facts"].append(len({canon(p["surface"]) for p in kept}))
             stats["hi_kept"].extend(hi_kept)
             stats["rej_c"] += len(rc)
             stats["rej_f"] += len(rf)
-            if len(out[d["id"]]["train"]) < 3:
+            # exclusion floor: < 3 DISTINCT FACTS in the train split (not questions)
+            if n_train_facts < 3:
                 stats["excluded_docs"].append(d["id"])
         n = max(stats["docs"], 1)
         report["corpora"][corpus] = {
             "docs": stats["docs"],
-            "kept_mean": round(sum(stats["kept"]) / n, 2),
-            "kept_min": min(stats["kept"], default=0),
+            "kept_facts_mean": round(sum(stats["kept_facts"]) / n, 2),
+            "kept_questions_mean": round(sum(stats["kept_questions"]) / n, 2),
+            "kept_min": min(stats["kept_facts"], default=0),
             "ceiling_reject_rate": round(stats["rej_c"] / max(stats["cand"], 1), 3),
             "floor_reject_rate": round(stats["rej_f"] / max(stats["cand"], 1), 3),
             "reader_hi_f1_kept_mean": (round(sum(stats["hi_kept"]) / len(stats["hi_kept"]), 3)
@@ -126,7 +144,7 @@ def main():
         print(f"[{corpus}] {report['corpora'][corpus]}", flush=True)
 
     artifact = {"meta": {"rt_model": RT_MODEL, "rt_base_url": RT_BASE_URL,
-                         "teacher": TEACHER_MODEL, "th": args.th,
+                         "teacher": TEACHER_MODEL, "th": args.th, "pv": PROMPT_VERSION,
                          "built_at": datetime.datetime.now().isoformat(timespec="seconds")},
                 "docs": out}
     OUT.write_text(json.dumps(artifact, indent=1))

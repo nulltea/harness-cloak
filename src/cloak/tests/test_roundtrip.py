@@ -37,11 +37,18 @@ def test_roundtrip_batch_no_probes_gives_none(monkeypatch):
     assert res[0]["recall"] is None and res[0]["f1s"] == []
 
 
-def test_fact_f1s_matches_fact_recall(monkeypatch):
+def test_fact_recall_is_per_fact_max_mean_over_facts(monkeypatch):
     import cloak.train.reward as rw
-    monkeypatch.setattr(rw, "_qa_answer", lambda q, c: "42 mg")
-    probes = [{"surface": "42 mg", "question": "What dose?"},
-              {"surface": "Oslo", "question": "Where?"}]
-    f1s = rw.fact_f1s("text", probes)
-    assert f1s[0] == 1.0 and f1s[1] == 0.0
-    assert rw.fact_recall("text", probes) == sum(f1s) / 2
+    # three questions -> two are the SAME fact after canon ("42 mg"/"42 milligrams"),
+    # the third a distinct fact. fact score = max over its questions, mean over facts.
+    monkeypatch.setattr(rw, "fact_f1s", lambda out, ps: [0.4, 0.9, 0.2])
+    probes = [{"surface": "42 mg", "question": "q1"},
+              {"surface": "42 milligrams", "question": "q2"},   # same fact as q1
+              {"surface": "Oslo", "question": "q3"}]            # distinct fact
+    # fact "42 mg": max(0.4, 0.9) = 0.9 ; fact "oslo": 0.2 ; mean = 0.55 (not the 0.5 mean)
+    assert rw.fact_recall("text", probes) == (0.9 + 0.2) / 2
+
+
+def test_fact_recall_none_without_probes():
+    import cloak.train.reward as rw
+    assert rw.fact_recall("text", []) is None
