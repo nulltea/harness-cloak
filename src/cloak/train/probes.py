@@ -28,14 +28,32 @@ CACHE = Path("data/surrogate_probes.json")
 # second-remote eval arm moves to LFM2.5 (spec components table).
 TEACHER_MODEL = "Qwen3.6-35B-A3B"
 
-PROMPT = """Write exactly THREE different short factual questions about the text below, one per line, each whose exact answer is "{answer}".
-Each question must be answerable from the text alone and must not contain "{answer}" itself.
+# v3 (2026-07-05, measured +18% kept facts vs v2 — results/teacher_ab_p3-nothink.json):
+# full-gold context (kills cross-document ambiguity), whole-document uniqueness clause,
+# extractive-grader awareness, span-type hint. v2 saw only the single restating sentence.
+PROMPT = """You are writing quiz questions used to check whether a specific fact survives in \
+summaries of a document. The questions will be answered by a literal-minded extractive QA \
+system that returns a short exact text span and abstains when a question is vague.
 
-Text: {sent}
+Document:
+{gold}
+
+Target fact: "{answer}" ({type_hint})
+
+Write exactly THREE different short factual questions, one per line, such that:
+- the ONLY correct answer anywhere in the document is "{answer}" — if other facts in the \
+document could also answer the question, make the question more specific until they cannot;
+- each question is answerable from the document alone;
+- no question contains "{answer}" itself;
+- each question expects a short exact answer, not a list or an explanation.
 
 Reply with the three questions only, one per line."""
 
-PROMPT_VERSION = 2  # cached entries carry "pv"; a surface is covered only at the current pv
+TYPE_HINT = {"PERSON": "a person's name", "LOC": "a location", "ORG": "an organization",
+             "DATETIME": "a date or time", "QUANTITY": "a quantity or dose",
+             "DEM": "a personal attribute"}
+
+PROMPT_VERSION = 3  # cached entries carry "pv"; a surface is covered only at the current pv
 
 
 def _valid(q: str, answer: str) -> bool:
@@ -79,10 +97,13 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
                 have.add(p["surface"])
             else:
                 n_legacy += 1
-        for p in restated_probes(R_of[d["id"]], refs_of(d)[0]):
+        gold = refs_of(d)[0]
+        for p in restated_probes(R_of[d["id"]], gold):
             if p["entry"]["surface"] not in have:
                 todo.append({"doc_id": d["id"], "surface": p["entry"]["surface"],
-                             "sent": p["gold_sent"]})
+                             "gold": gold,
+                             "type_hint": TYPE_HINT.get(p["entry"].get("type"),
+                                                        "a specific detail")})
     if n_legacy:
         print(f"probes: ignored {n_legacy} legacy/other-teacher cache entries "
               f"(teacher != {TEACHER_MODEL})", flush=True)
@@ -93,7 +114,8 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
                             temperature=0.0, max_tokens=256,
                             extra_body={"chat_template_kwargs": {"enable_thinking": False}})
         replies = pmap(lambda t: teacher.generate(
-            PROMPT.format(answer=t["surface"], sent=t["sent"])), todo, workers=workers)
+            PROMPT.format(gold=t["gold"], answer=t["surface"], type_hint=t["type_hint"])),
+            todo, workers=workers)
         n_lost = 0
         for t, r in zip(todo, replies):
             reply = (r or "").strip()
