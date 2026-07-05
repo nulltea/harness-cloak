@@ -304,9 +304,51 @@ def _balance_rare(recs, rng):
     return out
 
 
+def _log_shares(recs, out_dir):
+    """Realized per-type shares (the ORG-dilution diagnostic, spec v5). A window is 'TAB-schema' if it
+    carries any of the 8 TAB label phrases; Pile windows carry diverse labels (not in GLINER_LABELS).
+    Reports, per TAB-8 type: window_count (windows containing ≥1 span of that type), mention_count,
+    token_count (summed span word-length); plus TAB-schema window share and per-type window share of the
+    FINAL total. Writes build_shares.json + prints — this is what ties any ORG change to the share it
+    was meant to control (Codex R1/R2)."""
+    tab_phrases = set(GLINER_LABELS)                       # the 8 TAB label-phrase strings
+    total = len(recs)
+    win, men, tok_ct = Counter(), Counter(), Counter()
+    tab_windows = 0
+    for r in recs:
+        types = set()
+        for s, e, ph in r["ner"]:
+            t = GLINER_LABELS.get(ph)                      # None for Pile's diverse (non-TAB) labels
+            if t is None:
+                continue
+            men[t] += 1
+            tok_ct[t] += e - s + 1
+            types.add(t)
+        for t in types:
+            win[t] += 1
+        if types:
+            tab_windows += 1
+    shares = {
+        "total_windows": total,
+        "tab_schema_windows": tab_windows,
+        "tab_schema_window_share": round(tab_windows / max(total, 1), 4),
+        "per_type": {t: {"windows": win[t], "window_share": round(win[t] / max(total, 1), 4),
+                         "mentions": men[t], "tokens": tok_ct[t]}
+                     for t in sorted(win)},
+    }
+    json.dump(shares, open(os.path.join(out_dir, "build_shares.json"), "w"), indent=2)
+    org = shares["per_type"].get("ORG", {})
+    print(f"  [shares] total={total} tab-schema-window-share={shares['tab_schema_window_share']:.3f} "
+          f"| ORG windows={org.get('windows')} share={org.get('window_share')}")
+    print(f"       per-type window_share: "
+          f"{ {t: shares['per_type'][t]['window_share'] for t in shares['per_type']} }")
+    return shares
+
+
 def build(args):
     rng = random.Random(SEED)
     tok = _tokenizer()
+    pile_frac = args.pile_frac if args.pile_frac is not None else PILE_FRAC
 
     print(f"== source: tab ({args.train}) ==")
     tab, c, d = source_windows(tab_source(args.train))
@@ -342,10 +384,10 @@ def build(args):
         if args.balance_rare:
             train_recs = _balance_rare(train_recs, rng)
 
-        # v3: Pile-NER sized to PILE_FRAC of the FINAL total, POST-balance (own labels; generality lever)
+        # v3/v5: Pile-NER sized to pile_frac of the FINAL total, POST-balance (own labels; generality lever)
         if pile_spec is not None:
-            n_pile = int(round(PILE_FRAC / (1 - PILE_FRAC) * len(train_recs)))
-            print(f"== source: pilener (post-balance target ~{n_pile} ~= {PILE_FRAC:.0%} of final) ==")
+            n_pile = int(round(pile_frac / (1 - pile_frac) * len(train_recs)))
+            print(f"== source: pilener (post-balance target ~{n_pile} ~= {pile_frac:.0%} of final) ==")
             recs, c, d = source_windows(pilener_source(pile_spec), cap=n_pile * 3)
             recs = [r for r in recs if r["ner"]]
             if len(recs) > n_pile:
@@ -355,6 +397,12 @@ def build(args):
 
     rng.shuffle(train_recs)
     os.makedirs(args.out_dir, exist_ok=True)
+    shares = _log_shares(train_recs, args.out_dir)        # v5: realized per-type shares (ORG-dilution diagnostic)
+    if args.min_tab_share > 0 and shares["tab_schema_window_share"] < args.min_tab_share:
+        # ponytail: fail-fast, operator lowers --pile-frac (the sweep varies it) — no auto-rebalance machinery.
+        raise SystemExit(f"TAB-schema window share {shares['tab_schema_window_share']:.3f} < "
+                         f"--min-tab-share {args.min_tab_share}: lower --pile-frac (Pile dilutes TAB/ORG "
+                         f"share — the ORG-regression lever, spec v5). Shares in {args.out_dir}/build_shares.json")
     with open(os.path.join(args.out_dir, "train.jsonl"), "w") as f:
         for r in train_recs:
             f.write(json.dumps(r) + "\n")
@@ -391,6 +439,27 @@ def _selfcheck():
           f"({'OK' if mism == 0 and lost == 0 else 'FAIL'})")
     assert mism == 0 and lost == 0
     _balance_selfcheck()
+    _shares_selfcheck()
+
+
+def _shares_selfcheck():
+    """_log_shares: TAB-schema windows counted, Pile (diverse-label) windows excluded from TAB share,
+    per-type ORG share correct."""
+    import tempfile
+    org, misc, person = TYPE2PHRASE["ORG"], TYPE2PHRASE["MISC"], TYPE2PHRASE["PERSON"]
+    recs = [
+        {"tokenized_text": ["a"], "ner": [[0, 0, org], [1, 2, person]]},   # TAB window w/ ORG (2-word person)
+        {"tokenized_text": ["b"], "ner": [[0, 0, misc]]},                  # TAB window, no ORG
+        {"tokenized_text": ["c"], "ner": [[0, 0, "animal"]]},              # Pile diverse label -> not TAB
+    ]
+    d = tempfile.mkdtemp()
+    s = _log_shares(recs, d)
+    assert s["total_windows"] == 3
+    assert s["tab_schema_windows"] == 2 and abs(s["tab_schema_window_share"] - 2/3) < 1e-3   # share rounded to 4dp
+    assert s["per_type"]["ORG"]["windows"] == 1 and abs(s["per_type"]["ORG"]["window_share"] - 1/3) < 1e-3
+    assert s["per_type"]["PERSON"]["tokens"] == 2          # span [1,2] -> 2 words
+    assert "animal" not in s["per_type"]                   # diverse labels are not TAB-8 types
+    print("shares selfcheck: OK (TAB windows counted, Pile excluded, ORG share + token-len correct)")
 
 
 def _balance_selfcheck():
@@ -429,8 +498,14 @@ def main():
     ap.add_argument("--mix", type=_parse_mix, default=None,
                     help="e.g. nemotron=6000,pilener=3000,wikibio=corpora/wikipedia_bio")
     ap.add_argument("--balance-rare", action="store_true",
-                    help="v3: upsample MISC/DEM/QUANTITY windows (<=x2) + size Pile-NER to PILE_FRAC "
+                    help="v3: upsample MISC/DEM/QUANTITY windows (<=x2) + size Pile-NER to --pile-frac "
                          "post-balance (generality-first). Off = v2 behaviour.")
+    ap.add_argument("--pile-frac", type=float, default=None,
+                    help=f"v5: Pile-NER fraction of the final set under --balance-rare (default {PILE_FRAC}). "
+                         "Sweep this: 0.10 (~v2), 0.15/0.18/0.22, 0.25 (~v4).")
+    ap.add_argument("--min-tab-share", type=float, default=0.0,
+                    help="v5: if >0, abort the build when the realized TAB-schema window share falls below "
+                         "this (the ORG-dilution guard). Off (0) = log shares only, don't enforce.")
     args = ap.parse_args()
     build(args)
 

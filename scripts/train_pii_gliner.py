@@ -33,6 +33,8 @@ def main():
     ap.add_argument("--grad-accum", type=int, default=1)       # effective batch = batch-size * this
     ap.add_argument("--lr", type=float, default=1e-5)          # transformer backbone
     ap.add_argument("--others-lr", type=float, default=5e-5)   # span/projection layers
+    ap.add_argument("--max-width", type=int, default=0)        # >0 overrides model.config.max_width (v5: 60
+                                                               # lets base emit long MISC spans; base default 12)
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--resume", action="store_true")           # resume from latest checkpoint in --out
     ap.add_argument("--resume-from-checkpoint", default=None)   # or resume from an explicit path
@@ -61,6 +63,11 @@ def main():
           flush=True)
 
     model = GLiNER.from_pretrained(args.init)
+    if args.max_width > 0 and model.config.max_width != args.max_width:
+        # widen the candidate-span ceiling BEFORE the collator reads config (spans up to max_width words).
+        # NOTE: train AND inference must use the same max_width, else candidate enumeration differs silently.
+        print(f"max_width {model.config.max_width} -> {args.max_width} (candidate-span ceiling)", flush=True)
+        model.config.max_width = args.max_width
     if torch.cuda.is_available():
         model = model.to("cuda")
     collator = SpanDataCollator(model.config, data_processor=model.data_processor,
@@ -101,7 +108,7 @@ def main():
         import gliner, transformers
         json.dump({"init": args.init, "seed": args.seed, "epochs": args.epochs,
                    "batch_size": args.batch_size, "grad_accum": args.grad_accum,
-                   "lr": args.lr, "others_lr": args.others_lr,
+                   "lr": args.lr, "others_lr": args.others_lr, "max_width": model.config.max_width,
                    "n_train": len(train), "n_dev": len(dev),
                    "bf16": use_bf16, "fp16": use_fp16,
                    "gliner": gliner.__version__, "transformers": transformers.__version__,
