@@ -8,6 +8,7 @@ diagnostics, training env) load the artifact instead of re-detecting.
 
 Run: PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_arms_artifact.py
 """
+import argparse
 import json
 import sys
 import time
@@ -26,11 +27,12 @@ CORPORA = ("clinical", "enron", "aeslc")
 LIMIT = 16
 
 
-def load_artifact() -> dict:
+def load_artifact(path: str | Path = ARTIFACT) -> dict:
     """{corpus: {doc_id: {arm: [doc_p, R], action_table: {...}}}} — consumers use this,
     never re-detect and never recompute risks (both are build-time-only: detection is
-    process-nondeterministic, and walk_risk depends on the distractor-pools snapshot)."""
-    return json.loads(ARTIFACT.read_text())
+    process-nondeterministic, and walk_risk depends on the distractor-pools snapshot).
+    Default is the frozen historical artifact; pass a path for the pilot artifact."""
+    return json.loads(Path(path).read_text())
 
 
 def _sent_around(text: str, start: int, end: int) -> str:
@@ -69,11 +71,22 @@ def action_table(text: str, R: list[dict]) -> dict:
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--n-docs", type=int, default=LIMIT,
+                    help="docs detected per corpus (pilot scale > 16 needs more docs)")
+    ap.add_argument("--corpora", default=",".join(CORPORA),
+                    help="comma-separated registered corpus names")
+    ap.add_argument("--out", default=str(ARTIFACT),
+                    help="output artifact path (default: the frozen historical artifact — "
+                         "override for a pilot artifact; NEVER overwrite the frozen one)")
+    args = ap.parse_args()
+    out = Path(args.out)
+
     t0 = time.time()
     det = Detector()
     art = {}
-    for corpus in CORPORA:
-        docs = load_task_docs(corpus, LIMIT)
+    for corpus in args.corpora.split(","):
+        docs = load_task_docs(corpus, args.n_docs)
         art[corpus] = {}
         for d in docs:
             arms = build_arms(d["text"], det.detect(d["text"]), TAU)
@@ -81,8 +94,8 @@ def main():
             entry["action_table"] = action_table(d["text"], arms["tau_walk"][1])
             art[corpus][d["id"]] = entry
         print(f"[{corpus}] {len(docs)} docs {time.time()-t0:.0f}s", flush=True)
-    ARTIFACT.write_text(json.dumps(art, indent=1))
-    print(f"wall {time.time()-t0:.0f}s -> {ARTIFACT}")
+    out.write_text(json.dumps(art, indent=1))
+    print(f"wall {time.time()-t0:.0f}s -> {out}")
 
 
 if __name__ == "__main__":

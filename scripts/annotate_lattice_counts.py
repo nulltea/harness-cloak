@@ -7,6 +7,7 @@ it pointed at the placeholder). Placeholder actions carry no aset — they are a
 
 Run: PYTHONPATH=src .venv/bin/python scripts/annotate_lattice_counts.py
 """
+import argparse
 import json
 from pathlib import Path
 
@@ -14,7 +15,13 @@ from cloak.anonymity import aset_count
 
 PATH = Path("data/task_arms_tau0.02.json")
 
-art = json.loads(PATH.read_text())
+ap = argparse.ArgumentParser()
+ap.add_argument("--artifact", default=str(PATH),
+                help="arms artifact to annotate in place (default: the historical artifact; "
+                     "point at the pilot artifact to annotate it)")
+path = Path(ap.parse_args().artifact)
+
+art = json.loads(path.read_text())
 n_spans = n_keep = 0
 for corpus, per_doc in art.items():
     for doc_id, entry in per_doc.items():
@@ -37,5 +44,5 @@ for corpus, per_doc in art.items():
             bc = acts[span["bc_action"]]
             assert bc["mode"] == "placeholder" or not bc.get("keep"), (doc_id, key)
 
-PATH.write_text(json.dumps(art, indent=1))  # match build_arms_artifact.py format
-print(f"annotated {n_spans} spans, inserted {n_keep} keep actions -> {PATH}")
+path.write_text(json.dumps(art, indent=1))  # match build_arms_artifact.py format
+print(f"annotated {n_spans} spans, inserted {n_keep} keep actions -> {path}")

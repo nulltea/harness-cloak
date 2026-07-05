@@ -71,10 +71,14 @@ def main():
     ap.add_argument("--workers", type=int, default=8)
     ap.add_argument("--th", type=float, default=TH)
     ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--env", default="data/ranker_env.json",
+                    help="ranker environment artifact (default: frozen env; pilot env to retarget)")
+    ap.add_argument("--arms", default="data/task_arms_tau0.02.json",
+                    help="arms artifact (default: frozen historical; must match --env)")
     args = ap.parse_args()
 
-    art = load_artifact()
-    env = json.loads(Path("data/ranker_env.json").read_text())
+    art = load_artifact(args.arms)
+    env = json.loads(Path(args.env).read_text())
     prev = json.loads(OUT.read_text()) if OUT.exists() else {}
     out = prev.get("docs", {}) if isinstance(prev, dict) else {}
     report = {"th": args.th, "corpora": {}}
@@ -145,6 +149,7 @@ def main():
 
     artifact = {"meta": {"rt_model": RT_MODEL, "rt_base_url": RT_BASE_URL,
                          "teacher": TEACHER_MODEL, "th": args.th, "pv": PROMPT_VERSION,
+                         "env_path": args.env,
                          "built_at": datetime.datetime.now().isoformat(timespec="seconds")},
                 "docs": out}
     OUT.write_text(json.dumps(artifact, indent=1))

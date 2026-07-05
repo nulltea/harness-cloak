@@ -74,11 +74,15 @@ def main():
     ap.add_argument("--max-tokens", type=int, default=512)
     ap.add_argument("--n-docs", type=int, default=16,
                     help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
+    ap.add_argument("--env", default="data/ranker_env.json",
+                    help="ranker environment artifact (default: frozen env; pilot env to retarget)")
+    ap.add_argument("--arms", default="data/task_arms_tau0.02.json",
+                    help="arms artifact (default: frozen historical; must match --env)")
     args = ap.parse_args()
 
     t0 = time.time()
-    art = load_artifact()
-    env = json.loads(Path("data/ranker_env.json").read_text())
+    art = load_artifact(args.arms)
+    env = json.loads(Path(args.env).read_text())
     remote = LLMClient(GEN_MODEL, base_url=RT_BASE_URL, temperature=0.0,
                        max_tokens=args.max_tokens,
                        extra_body={"chat_template_kwargs": {"enable_thinking": False}})

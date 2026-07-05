@@ -47,8 +47,6 @@ try:  # surrogate-only environments run without the round-trip module
 except ImportError:
     roundtrip_batch = None
 
-ENV_PATH = Path("data/ranker_env.json")
-
 
 def _ctx_of(doc, i):
     """Span i's precomputed context embedding, or None (MLP mode has no doc['ctx']).
@@ -473,12 +471,12 @@ def kl_to_ref(policy, ref, feats, legal):
     return (lp.exp() * (lp - lq)).sum()
 
 
-def enforce_support_gate(force_ungated: bool, probes_path: str):
+def enforce_support_gate(force_ungated: bool, probes_path: str, env_path: str):
     """Round-trip RL training is gated on the support scan
     (results/roundtrip_support_scan.json): verdict must be PASS AND its provenance meta must
-    match the live run (rt_model, rt_base_url, probes_path) — a scan against a different
-    endpoint/model/probe set does not certify this environment. A missing file or missing/
-    stale meta counts as not-passed. --force-ungated bypasses with a loud warning."""
+    match the live run (rt_model, rt_base_url, probes_path, env_path) — a scan against a
+    different endpoint/model/probe set/environment does not certify this run. A missing file
+    or missing/stale meta counts as not-passed. --force-ungated bypasses with a loud warning."""
     from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
     gate = Path("results/roundtrip_support_scan.json")
     reason = None
@@ -493,7 +491,7 @@ def enforce_support_gate(force_ungated: bool, probes_path: str):
             reason = "scan artifact has no provenance meta (stale scan; re-run the support scan)"
         else:
             for field, live in (("rt_model", RT_MODEL), ("rt_base_url", RT_BASE_URL),
-                                ("probes_path", probes_path)):
+                                ("probes_path", probes_path), ("env_path", env_path)):
                 if meta.get(field) != live:
                     reason = (f"stale scan meta[{field!r}]={meta.get(field)!r} != live {live!r}"
                               "; re-run the support scan for this configuration")
@@ -531,6 +529,10 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--n-docs", type=int, default=16,
                     help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
+    ap.add_argument("--env", default="data/ranker_env.json",
+                    help="ranker environment artifact (default: frozen env; pilot env to retarget)")
+    ap.add_argument("--arms", default="data/task_arms_tau0.02.json",
+                    help="arms artifact (default: frozen historical; must match --env)")
     ap.add_argument("--policy", choices=["mlp", "encoder"], default="mlp",
                     help="mlp = feature-only RankerPolicy (default); encoder = doc-conditioned "
                          "EncoderPolicy (frozen HF encoder + trainable head)")
@@ -593,8 +595,8 @@ def main():
     random.Random(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    env = json.loads(ENV_PATH.read_text())
-    art = load_artifact()
+    env = json.loads(Path(args.env).read_text())
+    art = load_artifact(args.arms)
     floors = dict(env["k_floors"])
     if args.floors:
         floors.update((t, float(k)) for t, k in
@@ -709,7 +711,7 @@ def main():
               "static teacher trajectory (accepted mismatch, masked in rollouts)", flush=True)
 
     if roundtrip:
-        enforce_support_gate(args.force_ungated, args.probes)
+        enforce_support_gate(args.force_ungated, args.probes, args.env)
         from cloak.train.roundtrip import RT_MODEL
         t0 = time.time()
         torch.manual_seed(args.seed)

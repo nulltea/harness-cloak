@@ -50,10 +50,14 @@ def main():
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--n-docs", type=int, default=16,
                     help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
+    ap.add_argument("--env", default="data/ranker_env.json",
+                    help="ranker environment artifact (default: frozen env; pilot env to retarget)")
+    ap.add_argument("--arms", default="data/task_arms_tau0.02.json",
+                    help="arms artifact (default: frozen historical; must match --env)")
     args = ap.parse_args()
 
-    art = load_artifact()
-    env = json.loads(Path("data/ranker_env.json").read_text())
+    art = load_artifact(args.arms)
+    env = json.loads(Path(args.env).read_text())
     probes_art = json.loads(Path(args.probes).read_text())
     probes_all = probes_art["docs"]
     floors = dict(env["k_floors"])
@@ -129,7 +133,8 @@ def main():
     v = scan_verdict(rows, mean_probes)
     v.update(mean_probes_per_doc=round(mean_probes, 2),
              meta={"rt_model": RT_MODEL, "rt_base_url": RT_BASE_URL,
-                   "probes_path": args.probes, "probes_meta": probes_art.get("meta"),
+                   "probes_path": args.probes, "env_path": args.env,
+                   "probes_meta": probes_art.get("meta"),
                    "floors": floors, "n_docs": args.n_docs},
              rows=rows)
     OUT.parent.mkdir(exist_ok=True)

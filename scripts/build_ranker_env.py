@@ -14,12 +14,13 @@ assigned at assemble() time.
 Output: data/ranker_env.json
 Run: PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_ranker_env.py
 """
+import argparse
 import json
 import random
 import time
 from pathlib import Path
 
-from build_arms_artifact import load_artifact
+from build_arms_artifact import ARTIFACT, CORPORA, load_artifact
 
 from cloak.anonymity import K_FLOORS
 from cloak.corpora import load_task_docs
@@ -32,8 +33,20 @@ SPLIT_SEED = 0
 
 
 def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--n-docs", type=int, default=16,
+                    help="docs loaded per corpus (must match the arms artifact's coverage)")
+    ap.add_argument("--corpora", default=",".join(CORPORA),
+                    help="comma-separated registered corpus names (e.g. include lexsum)")
+    ap.add_argument("--arms", default=str(ARTIFACT),
+                    help="input arms artifact path (default: the frozen historical artifact)")
+    ap.add_argument("--out", default=str(OUT),
+                    help="output env path (default: the frozen env — override for the pilot env)")
+    args = ap.parse_args()
+    out = Path(args.out)
+
     t0 = time.time()
-    art = load_artifact()
+    art = load_artifact(args.arms)
     env = {"tau": TAU,                    # legacy walk_risk mask — provenance only
            "k_floors": K_FLOORS,          # per-type anonymity-set count floors (the knob)
            "risk_measure": "aset (anonymity-set count); walk_risk retained offline-only",
@@ -41,8 +54,8 @@ def main():
            "probe_models": {"walk_risk": "EleutherAI/pythia-410m (contrastive re-id)",
                             "p6": "all-MiniLM-L6-v2 cos(fill, original)"},
            "corpora": {}}
-    for corpus in ("clinical", "enron", "aeslc"):
-        docs = {d["id"]: d for d in load_task_docs(corpus, 16)}
+    for corpus in args.corpora.split(","):
+        docs = {d["id"]: d for d in load_task_docs(corpus, args.n_docs)}
         probes = probes_for_docs(list(docs.values()),
                                  {i: arms["tau_walk"][1] for i, arms in art[corpus].items()},
                                  workers=6)
@@ -65,10 +78,10 @@ def main():
             }
         n_spans = sum(len(v["spans"]) for v in env["corpora"][corpus].values())
         n_train = sum(v["trainable"] for v in env["corpora"][corpus].values())
-        print(f"[{corpus}] decision spans={n_spans} trainable docs={n_train}/16 "
+        print(f"[{corpus}] decision spans={n_spans} trainable docs={n_train}/{len(docs)} "
               f"{time.time()-t0:.0f}s", flush=True)
-    OUT.write_text(json.dumps(env, indent=1))
-    print(f"wall {time.time()-t0:.0f}s -> {OUT}")
+    out.write_text(json.dumps(env, indent=1))
+    print(f"wall {time.time()-t0:.0f}s -> {out}")
 
 
 if __name__ == "__main__":
