@@ -41,6 +41,11 @@ from cloak.corpora import load_task_docs
 from cloak.train.ranker import RankerPolicy, action_features
 from cloak.train.reward import stage1_reward, u_qa
 
+try:  # surrogate-only environments run without the round-trip module
+    from cloak.train.roundtrip import roundtrip_batch
+except ImportError:
+    roundtrip_batch = None
+
 ENV_PATH = Path("data/ranker_env.json")
 
 
@@ -161,13 +166,11 @@ def verify_bc_reproduction(docs, art) -> int:
 
 # ---------- reward ----------
 
-def rollout_reward(doc, span_rows, feats, policy, alpha, greedy=False):
-    """One rollout with the DYNAMIC injectivity mask (spec §3.3-1: claimed levels are
-    unsampleable, not downgraded post-hoc): spans are decided sequentially in walk order;
-    a level whose fill is already claimed by a different surface is masked out before
-    sampling, so log-probs, A, and ph_rate all describe the action actually executed."""
+def sample_rollout(doc, span_rows, feats, policy, greedy=False):
+    """Sampling half of a rollout under the DYNAMIC injectivity mask (spec §3.3-1).
+    Returns (choice, logps, ph_rate, doc_p, R) — no reward computed here."""
     used: set[str] = set()
-    choice, logps, p6s = {}, [], []
+    choice, logps, n_level = {}, [], 0
     for s, f in zip(span_rows, feats):
         legal_dyn = [i for i in s["legal"]
                      if s["actions"][i]["mode"] == "placeholder"
@@ -176,15 +179,89 @@ def rollout_reward(doc, span_rows, feats, policy, alpha, greedy=False):
         a = s["actions"][a_idx]
         if a["mode"] == "level":
             used.add(a["fill"].lower())
-            p6s.append(a["p6"])
+            n_level += 1
         choice[s["surface"].lower()] = a
         logps.append(lp)
     doc_p, R = assemble(doc["text"], doc["R_walk"], span_rows, choice)
+    return choice, logps, 1.0 - n_level / len(span_rows), doc_p, R
+
+
+def rollout_reward(doc, span_rows, feats, policy, alpha, greedy=False):
+    """One rollout with the DYNAMIC injectivity mask (spec §3.3-1: claimed levels are
+    unsampleable, not downgraded post-hoc): spans are decided sequentially in walk order;
+    a level whose fill is already claimed by a different surface is masked out before
+    sampling, so log-probs, A, and ph_rate all describe the action actually executed."""
+    choice, logps, ph_rate, doc_p, R = sample_rollout(doc, span_rows, feats, policy, greedy)
+    p6s = [c["p6"] for c in choice.values() if c["mode"] == "level"]
     A = sum(p6s) / len(p6s) if p6s else 0.0
     U, _ = u_qa(doc_p, R, doc["probes_train"])
     r = stage1_reward(A, U, alpha)
-    ph_rate = 1.0 - len(p6s) / len(span_rows)
     return r, {"A": A, "U": U or 0.0, "ph_rate": ph_rate}, logps
+
+
+def rloo_advantage(rt: torch.Tensor) -> torch.Tensor:
+    """Leave-one-out baseline, NO std normalization (Dr.GRPO correction; spec Phase 2)."""
+    G = rt.numel()
+    return (rt - rt.mean()) * G / (G - 1)
+
+
+def policy_entropy(policy, feats, legal) -> torch.Tensor:
+    lp = policy.log_probs(feats, legal)
+    return -(lp.exp() * lp).sum()
+
+
+def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
+                    rt_workers, seed, log_rows=None):
+    """RLOO + tie-filter epoch loop against roundtrip_batch. Returns per-epoch stat rows."""
+    opt = torch.optim.Adam(policy.parameters(), lr=lr)
+    rows = []
+    for epoch in range(epochs):
+        rng = random.Random(seed * 1000 + epoch)
+        order = list(range(len(docs)))
+        rng.shuffle(order)
+        ep = {"r": [], "ph": [], "ent": [], "ties_skipped": 0}
+        for di in order:
+            doc = docs[di]
+            logps_l, ph_l = [], []
+            jobs = []
+            for _ in range(G):
+                choice, logps, ph, doc_p, R = sample_rollout(doc, doc["spans"],
+                                                             doc["feats"], policy)
+                jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+                             "probes": doc["probes_train"]})
+                logps_l.append(logps)
+                ph_l.append(ph)
+            res = roundtrip_batch(jobs, workers=rt_workers)
+            rt = torch.tensor([r["recall"] or 0.0 for r in res])
+            ep["r"].append(rt.mean().item())
+            ep["ph"].append(sum(ph_l) / G)
+            if rt.max() == rt.min():                      # DAPO tie filter
+                ep["ties_skipped"] += 1
+                continue
+            adv = rloo_advantage(rt)
+            pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
+            ent = sum(policy_entropy(policy, f, s["legal"])
+                      for s, f in zip(doc["spans"], doc["feats"])) / len(doc["spans"])
+            loss = pg - entropy_coef * ent
+            if kl_coef > 0 and ref is not None:
+                loss = loss + kl_coef * sum(
+                    kl_to_ref(policy, ref, f, s["legal"])
+                    for s, f in zip(doc["spans"], doc["feats"])) / len(doc["spans"])
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            ep["ent"].append(ent.item())
+        n = max(len(ep["r"]), 1)
+        row = {"epoch": epoch, "r": round(sum(ep["r"]) / n, 4),
+               "ph": round(sum(ep["ph"]) / n, 4),
+               "ent": round(sum(ep["ent"]) / max(len(ep["ent"]), 1), 4),
+               "ties_skipped": ep["ties_skipped"]}
+        rows.append(row)
+        if log_rows is not None:
+            log_rows.append(row)
+        print(f"[rt] epoch {epoch}: " +
+              " ".join(f"{k}={v}" for k, v in row.items() if k != "epoch"), flush=True)
+    return rows
 
 
 # ---------- training ----------
@@ -253,8 +330,28 @@ def main():
     ap.add_argument("--kl-coef", type=float, default=0.05)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--smoke", action="store_true", help="2 docs, 2 epochs, G=4")
+    ap.add_argument("--reward", choices=["surrogate", "roundtrip"], default="surrogate",
+                    help="surrogate = local A/u_qa reward; roundtrip = realized fact recall "
+                         "on out_final via roundtrip_batch (hits the proxy)")
+    ap.add_argument("--probes", default="data/probes_validated.json",
+                    help="validated probes artifact (roundtrip mode only)")
+    ap.add_argument("--adv", choices=["group", "rloo"], default=None,
+                    help="advantage baseline (default: group for surrogate, rloo for roundtrip)")
+    ap.add_argument("--entropy-coef", type=float, default=None,
+                    help="entropy bonus (default: 0.0 surrogate, 0.01 roundtrip)")
+    ap.add_argument("--rt-workers", type=int, default=8,
+                    help="round-trip proxy concurrency (roundtrip mode only)")
     args = ap.parse_args()
     assert args.G >= 2, "group-relative advantage needs G >= 2 (std of one reward is NaN)"
+    roundtrip = args.reward == "roundtrip"
+    if roundtrip and roundtrip_batch is None:
+        raise SystemExit("roundtrip reward requires cloak.train.roundtrip (import failed)")
+    # mode defaults: explicit flags win, else surrogate/roundtrip presets
+    adv = args.adv or ("rloo" if roundtrip else "group")
+    entropy_coef = (args.entropy_coef if args.entropy_coef is not None
+                    else (0.01 if roundtrip else 0.0))
+    kl_coef = (0.0 if roundtrip and args.kl_coef == ap.get_default("kl_coef")
+               else args.kl_coef)
     torch.manual_seed(args.seed)
     random.Random(args.seed)
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -283,6 +380,18 @@ def main():
                          "R_walk": art[corpus][doc_id]["tau_walk"][1],
                          "raw_spans": d["spans"], "spans": spans, "feats": feats,
                          "probes_train": d["probes"]["train"]})
+    if roundtrip:
+        # reward uses the validated train-split probes; docs with < 3 are excluded from the
+        # RL reward (global constraint), never silently kept.
+        probes_all = json.loads(Path(args.probes).read_text())
+        kept = []
+        for doc in docs:
+            doc["probes_train"] = probes_all.get(doc["id"], {}).get("train", [])
+            if len(doc["probes_train"]) >= 3:
+                kept.append(doc)
+        print(f"roundtrip probes ({args.probes}): kept {len(kept)}/{len(docs)} docs, "
+              f"dropped {len(docs) - len(kept)} with < 3 validated train probes", flush=True)
+        docs = kept
     if args.smoke:
         docs, args.epochs, args.G = docs[:2], 2, 4
     all_spans = [s for d in docs for s in d["spans"]]
@@ -321,6 +430,45 @@ def main():
         print(f"floor-walk teacher diverges from stored tau-walk; verified every bc_action "
               f"legal on all {len(docs)} docs; {collide}/{len(docs)} have a non-injective "
               "static teacher trajectory (accepted mismatch, masked in rollouts)", flush=True)
+
+    if roundtrip:
+        from cloak.train.roundtrip import RT_MODEL
+        t0 = time.time()
+        torch.manual_seed(args.seed)
+        policy = RankerPolicy().to(device)
+        policy = behavior_clone(policy, docs, args.bc_epochs, args.lr, device,
+                                floors=floors, randomize=args.randomize_floors, seed=args.seed)
+        ref = RankerPolicy().to(device)
+        ref.load_state_dict(policy.state_dict())
+        ref.eval()
+        log = {"reward": "roundtrip", "rt_model": RT_MODEL, "adv": adv, "floors": floors,
+               "randomize_floors": args.randomize_floors, "G": args.G, "epochs": args.epochs,
+               "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,
+               "n_docs": len(docs), "policy": "feature-MLP (plan ablation floor)", "rounds": []}
+        train_roundtrip(docs, policy, G=args.G, epochs=args.epochs, lr=args.lr,
+                        entropy_coef=entropy_coef, kl_coef=kl_coef,
+                        ref=(ref if kl_coef > 0 else None), rt_workers=args.rt_workers,
+                        seed=args.seed, log_rows=log["rounds"])
+        # greedy read-out at the env floors, scored via one round-trip batch (fixed floor only)
+        jobs, phs = [], []
+        with torch.no_grad():
+            for doc in docs:
+                _, _, ph, doc_p, R = sample_rollout(doc, doc["spans"], doc["feats"], policy,
+                                                    greedy=True)
+                jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+                             "probes": doc["probes_train"]})
+                phs.append(ph)
+        res = roundtrip_batch(jobs, workers=args.rt_workers)
+        rs = [r["recall"] or 0.0 for r in res]
+        log["greedy_final"] = {"r": round(sum(rs) / len(rs), 4) if rs else 0.0,
+                               "ph": round(sum(phs) / len(phs), 4) if phs else 0.0}
+        log["wall_s"] = round(time.time() - t0, 1)
+        tag = "rt" + ("_smoke" if args.smoke else "")
+        torch.save(policy.state_dict(), f"data/ranker_policy_{tag}.pt")
+        Path(f"results/ranker_train_{tag}.json").write_text(json.dumps(log, indent=1))
+        print(f"[rt] greedy_final={log['greedy_final']} wall={log['wall_s']}s "
+              f"-> results/ranker_train_{tag}.json", flush=True)
+        return
 
     for alpha in [float(a) for a in args.alphas.split(",")]:
         t0 = time.time()
