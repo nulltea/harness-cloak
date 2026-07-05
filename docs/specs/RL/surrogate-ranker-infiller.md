@@ -15,6 +15,14 @@ supersedes: the 2026-07-03 revision of this file (walk_risk tau-mask design)
 
 # RL specification — surrogate-reward training of the substitutor (ranker + infiller)
 
+> **Partial supersession (2026-07-05):** the surrogate reward and its constructed-arms gate
+> (§5–§6) are superseded by the round-trip spec
+> [roundtrip-ranker-infiller](roundtrip-ranker-infiller.md) (reward = realized fact recall;
+> gate = round-trip support scan), per the
+> [2026-07-05 pivot handoff](../../handoffs/2026-07-05-roundtrip-rl-pivot.md). §1–§4
+> (environment, floors, invariants, risk measure) remain normative and are incorporated there
+> by reference. u_gold survives as a diagnostic only.
+
 Normative statement of the RL system: **pipeline → environment → risk measure → probes →
 reward → baseline → gate**. Design pinned 2026-07-04 (second revision): **structural lattice
 risk** — per-action anonymity-set counts with per-type floors — replaces the walk_risk LM
