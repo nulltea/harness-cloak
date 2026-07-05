@@ -5,7 +5,14 @@ created: 2026-07-05
 updated: 2026-07-05
 tags: [extractor, invert, detector-aligned, pointer, edit-tagger, gliner, architecture]
 companion: [2026-07-05-extractor-inverse-designs.md, ../research/learned-PII-detection.md]
+superseded_by: 2026-07-05-detector-pointer-extractor-v2.md
 ---
+
+> **Superseded by `2026-07-05-detector-pointer-extractor-v2.md`** after the zero-training
+> implementation measured (`research-wiki/experiments/extractor-pointer-by-type.md`): the
+> detector proposes no candidates for generic hypernym fills (the DEM/MISC bulk). v2 adds a
+> lexical head-anchor proposer and a verification gate. This doc stays for the architecture
+> rationale and base-model recommendations, which v2 inherits.
 
 # Detector-pointer extractor: detailed design
 
