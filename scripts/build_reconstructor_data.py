@@ -10,13 +10,21 @@ Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
        --env data/ranker_env_pilot.json --arms data/task_arms_pilot.json \
        --corpora clinical --n-docs 80 --workers 6
 """
-import argparse, json
+import argparse, hashlib, json
 from pathlib import Path
 
 from survival_by_type import (build_jobs, _judge, parse_judge, grounded, SYSTEM, JUDGE_TMPL)
 from cloak.extract import _rule_prepass
 from cloak.reconstruct import linearize_restore_map, build_target, restorable, _load_nli
 from cloak.train.roundtrip import roundtrip_batch
+
+
+def _is_train(doc_id: str, seed, frac: float) -> bool:
+    """Deterministic doc-level train/heldout assignment for the in-domain held-out strata.
+    Reuses the env's split_seed + held_out_frac so the split is stable and project-consistent
+    (a doc is heldout iff its seeded hash falls in the bottom `frac` of [0,1))."""
+    h = int(hashlib.md5(f"{seed}:{doc_id}".encode()).hexdigest(), 16) % 10_000 / 10_000
+    return h >= frac
 
 
 def main():
@@ -26,6 +34,8 @@ def main():
     ap.add_argument("--workers", type=int, default=6)
     args = ap.parse_args()
 
+    env = json.loads(Path(args.env).read_text())
+    seed, frac = env.get("split_seed", 0), env.get("held_out_frac", 0.2)
     jobs, metas = build_jobs(args)
     outs = roundtrip_batch(jobs, workers=args.workers)
     judge = _judge()
@@ -68,10 +78,16 @@ def main():
             "\n".join(json.dumps(r) for r in rows))
         Path(f"data/reconstructor_{corpus}_degeneracies.jsonl").write_text(
             "\n".join(json.dumps(r) for r in degens.get(corpus, [])))
+        # Doc-level train/heldout split for the in-domain held-out eval strata: the trainer
+        # keeps only train-split rows, the eval holds out the complement (--doc-split heldout).
+        doc_ids = sorted({r["doc_id"] for r in rows})
+        train_ids = [d for d in doc_ids if _is_train(d, seed, frac)]
+        Path(f"data/recon_train_ids_{corpus}.txt").write_text("\n".join(train_ids))
         edits = sum(r["n_edits"] for r in rows)
         noops = sum(r["is_noop"] for r in rows)
         print(f"{corpus}: {len(rows)} docs w/ residue | {edits} admitted edits | "
-              f"{noops} no-op targets | {len(degens.get(corpus, []))} logged degeneracies")
+              f"{noops} no-op targets | {len(degens.get(corpus, []))} logged degeneracies | "
+              f"{len(train_ids)}/{len(doc_ids)} docs train-split")
 
 
 if __name__ == "__main__":
