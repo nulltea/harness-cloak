@@ -186,6 +186,7 @@ class Detector:
         self.batch_size = batch_size
         # v7: fine-primary mode prompts the fine DEM leaves; else the coarse TAB-8. self.label2type maps a
         # predicted label phrase -> its (fine or coarse) type; the gate rolls fine types up via rollup_type.
+        self.fine_dem = fine_dem
         self.label2type = FINE_LABELS if fine_dem else GLINER_LABELS
         self.gliner = GLiNER.from_pretrained(gliner_model)
         if torch.cuda.is_available():
@@ -218,8 +219,10 @@ class Detector:
                            self.label2type[e["label"]], e["score"], "gliner") for e in ents]
         for r in self.presidio.analyze(text=text, language="en"):
             if r.entity_type in PRESIDIO_MAP:
-                spans.append(Span(r.start, r.end, text[r.start:r.end],
-                                  PRESIDIO_MAP[r.entity_type], r.score, "presidio"))
+                t = PRESIDIO_MAP[r.entity_type]
+                if self.fine_dem and t == "DEM":   # fine-type Presidio's NRP span by its surface, so it
+                    t = relabel_dem(text[r.start:r.end])   # doesn't clobber GLiNER fine leaves with coarse DEM
+                spans.append(Span(r.start, r.end, text[r.start:r.end], t, r.score, "presidio"))
         spans = [s for s in spans  # pure symbol/emoji spans or bare pronouns: never identifiers
                  if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in _PRONOUNS]
         return _dedupe(spans)
