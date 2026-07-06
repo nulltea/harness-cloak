@@ -14,6 +14,7 @@ import sys
 import time
 from pathlib import Path
 
+from cloak.anonymity import aset_count
 from cloak.corpora import load_task_docs
 from cloak.detect import Detector
 from cloak.probe import fill_proximity, walk_risk
@@ -60,7 +61,11 @@ def action_table(text: str, R: list[dict]) -> dict:
             actions.append({"fill": lvl, "mode": "level",
                             "walk_risk": round(walk_risk(sent_f, e["surface"], lvl,
                                                          e["type"]), 4),
-                            "p6": round(fill_proximity(lvl, e["surface"]), 4)})
+                            "p6": round(fill_proximity(lvl, e["surface"]), 4),
+                            # anonymity-set count (spec Phase-0 step 2): the k-floor legality
+                            # mask reads this; without it every level fails the floor -> desert.
+                            "aset": round(aset_count(lvl, e["type"], e["surface"],
+                                                     strict=True), 4)})
         actions.append({"fill": None, "mode": "placeholder", "walk_risk": 0.0, "p6": 0.0})
         bc = (len(actions) - 1 if e["action"] == "placeholder" else
               next(i for i, a in enumerate(actions) if a["mode"] == "level"

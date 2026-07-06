@@ -147,9 +147,10 @@ def main():
             "excluded_docs": stats["excluded_docs"]}
         print(f"[{corpus}] {report['corpora'][corpus]}", flush=True)
 
+    from cloak.train.reward import QA_MODEL
     artifact = {"meta": {"rt_model": RT_MODEL, "rt_base_url": RT_BASE_URL,
-                         "teacher": TEACHER_MODEL, "th": args.th, "pv": PROMPT_VERSION,
-                         "env_path": args.env,
+                         "teacher": TEACHER_MODEL, "reader": QA_MODEL, "scorer": "fact_score_v2",
+                         "th": args.th, "pv": PROMPT_VERSION, "env_path": args.env,
                          "built_at": datetime.datetime.now().isoformat(timespec="seconds")},
                 "docs": out}
     OUT.write_text(json.dumps(artifact, indent=1))

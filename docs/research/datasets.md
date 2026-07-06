@@ -113,6 +113,8 @@ Auxiliary breadth for PERSON/CODE/LOC only. **Most are synthetic.**
 | `corpora/enron/replies.jsonl` | Enron email replies | task gold (reply) | round-trip utility (email), FIG 03/04; detector demo |
 | `corpora/aeslc/test.jsonl` | AESLC email subject lines ([zhang2019_aeslc_subject_line_generation](../../research-wiki/papers/zhang2019_aeslc_subject_line_generation.md)) | task gold | utility-task corpus |
 | `corpora/cnndm.jsonl` | CNN/DailyMail summarization | task gold | utility-task corpus |
+| `corpora/wikibio/val.jsonl` | Wikipedia biographies ([arXiv 2205.06895](https://arxiv.org/abs/2205.06895)); 400–4000-char band of the vendored NR set | proxy (first sentence) | round-trip QA (bios); span-dense, **viable** (dev-log 2026-07-06) |
+| `corpora/qmsum/val.jsonl` | QMSum committee excerpts (specific-query spans; [arXiv 2004.13822](https://arxiv.org/abs/2004.13822)) | task gold (query answer) | round-trip QA (meetings); **QA desert** under summary task — 86% ceiling-reject, dropped (dev-log 2026-07-06) |
 | ai4privacy pii-masking-400k (referenced, not vendored) | synthetic formal PII | 17 types | planned auxiliary mix (formal-type breadth), not yet used |
 
 ## Gaps and recommendations

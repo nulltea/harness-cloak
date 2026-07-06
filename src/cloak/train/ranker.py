@@ -14,7 +14,7 @@ import torch
 import torch.nn as nn
 
 TYPES = ["DEM", "DATETIME", "LOC", "QUANTITY", "ORG", "MISC", "OTHER"]
-CORPORA = ["clinical", "enron", "aeslc"]
+CORPORA = ["clinical", "enron", "aeslc", "lexsum", "wikibio"]
 N_FEAT = 7 + len(TYPES) + len(CORPORA)
 
 

@@ -192,11 +192,66 @@ def _restatement_report(rows: list[dict]):
     print(f"restatement: n={len(per_doc)} mean={mean:.3f} min={lo:.3f}{flag}")
 
 
+def build_wikibio(n: int, min_chars: int = 400, max_chars: int = 4000):
+    """Wikipedia biographies (Papadopoulou et al., LREC 2022) — already vendored at
+    corpora/wikipedia_bio/{train,test}.json as fact-dense bio summaries with DIRECT/QUASI
+    span gold. Round-trip task: condense the biography, forcing restatement of the person's
+    name/dates/nationality/role. gold_ref = first sentence (the canonical one-line identity
+    summary Wikipedia leads with) — a proxy; the QA build does not consume gold_ref."""
+    src = OUT / "wikipedia_bio"
+    rows_in = []
+    for f in ("train.json", "test.json"):
+        rows_in += json.loads((src / f).read_text(encoding="utf-8"))
+    rows = []
+    for r in rows_in:
+        text = r["text"].strip()
+        if not (min_chars <= len(text) <= max_chars):
+            continue
+        first = re.split(r"(?<=[.!?])\s", text, 1)[0]
+        rows.append({"id": f"wikibio/{r['doc_id']}", "corpus": "wikibio",
+                     "text": text, "gold_ref": first})
+        if len(rows) >= n:
+            break
+    _write(OUT / "wikibio/val.jsonl", rows)
+
+
+def build_qmsum(src: Path, n: int, min_chars: int = 800, max_chars: int = 4000):
+    """QMSum committee subset (parliamentary/committee meetings — real participant names).
+    Unit = one specific-query excerpt: the transcript turns pointed to by relevant_text_span,
+    which bound a short passage (whole meetings are ~60k chars, far past the round-trip window).
+    Round-trip task: summarize the discussion excerpt; gold_ref = the query's gold answer."""
+    def excerpt(mt, spans):
+        turns = []
+        for a, b in spans:
+            for i in range(int(a), int(b) + 1):
+                if i < len(mt):
+                    turns.append(f'{mt[i]["speaker"]}: {mt[i]["content"]}')
+        return "\n".join(turns)
+
+    meetings = [json.loads(l) for f in ("train.jsonl", "val.jsonl", "test.jsonl")
+                for l in open(src / f, encoding="utf-8")]
+    rows = []
+    for mi, m in enumerate(meetings):
+        mt = m["meeting_transcripts"]
+        for qi, q in enumerate(m.get("specific_query_list", [])):
+            exc = excerpt(mt, q.get("relevant_text_span", []))
+            if not (min_chars <= len(exc) <= max_chars):
+                continue
+            rows.append({"id": f"qmsum/{mi}_{qi}", "corpus": "qmsum",
+                         "text": exc, "gold_ref": q.get("answer", "").strip()})
+            if len(rows) >= n:
+                _write(OUT / "qmsum/val.jsonl", rows)
+                return
+    _write(OUT / "qmsum/val.jsonl", rows)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--clinical-src", type=Path, help="clone of the microsoft clinical corpus")
     ap.add_argument("--aeslc-src", type=Path, help="clone of github.com/ryanzhumich/AESLC")
     ap.add_argument("--enron-src", type=Path, help="Enron maildir root (CMU enron_mail)")
+    ap.add_argument("--qmsum-src", type=Path,
+                    help="QMSum committee jsonl dir (QMSum/data/Committee/jsonl)")
     ap.add_argument("--n-aci", type=int, default=67)
     ap.add_argument("--n-mts", type=int, default=200)
     ap.add_argument("--n-aeslc", type=int, default=200)
@@ -204,6 +259,9 @@ def main():
     ap.add_argument("--enron-scan-limit", type=int, default=120000)
     ap.add_argument("--lexsum", action="store_true", help="build lexsum (HF download)")
     ap.add_argument("--n-lexsum", type=int, default=200)
+    ap.add_argument("--wikibio", action="store_true", help="build wikibio (local, vendored)")
+    ap.add_argument("--n-wikibio", type=int, default=200)
+    ap.add_argument("--n-qmsum", type=int, default=200)
     args = ap.parse_args()
 
     if args.clinical_src:
@@ -222,6 +280,14 @@ def main():
         build_lexsum(args.n_lexsum)
     else:
         print("no --lexsum; skipping lexsum", file=sys.stderr)
+    if args.wikibio:
+        build_wikibio(args.n_wikibio)
+    else:
+        print("no --wikibio; skipping wikibio", file=sys.stderr)
+    if args.qmsum_src:
+        build_qmsum(args.qmsum_src, args.n_qmsum)
+    else:
+        print("no --qmsum-src; skipping qmsum", file=sys.stderr)
 
 
 if __name__ == "__main__":

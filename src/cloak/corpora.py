@@ -16,6 +16,8 @@ FILES = {
     "aeslc": ["aeslc/test.jsonl"],
     "enron": ["enron/replies.jsonl"],
     "lexsum": ["lexsum/val.jsonl"],
+    "wikibio": ["wikibio/val.jsonl"],
+    "qmsum": ["qmsum/val.jsonl"],
 }
 
 

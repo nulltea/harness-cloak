@@ -29,8 +29,15 @@ EMAIL_REPLY = ("Write a brief reply to the following email. Reply with only the 
 CASE_SUMMARY = ("Condense the following case summary into one short paragraph covering the "
                 "parties, claims, court, and outcome. Base it only on the text.\n\n"
                 "Case summary:\n{doc}")
+BIO_SUMMARY = ("Write a concise 1-2 sentence summary of the following biography, covering who "
+               "the person is, key dates, and what they are known for. Base it only on the "
+               "text.\n\nBiography:\n{doc}")
+MEETING_SUMMARY = ("Summarize the following committee-meeting discussion in one short paragraph, "
+                   "covering who spoke and the key points. Base it only on the transcript.\n\n"
+                   "Discussion:\n{doc}")
 TASK_TEMPLATE = {"aci": CLINICAL_NOTE, "mts": CLINICAL_NOTE, "clinical": CLINICAL_NOTE,
-                 "aeslc": EMAIL_SUBJECT, "enron": EMAIL_REPLY, "lexsum": CASE_SUMMARY}
+                 "aeslc": EMAIL_SUBJECT, "enron": EMAIL_REPLY, "lexsum": CASE_SUMMARY,
+                 "wikibio": BIO_SUMMARY, "qmsum": MEETING_SUMMARY}
 
 
 def _teacher():

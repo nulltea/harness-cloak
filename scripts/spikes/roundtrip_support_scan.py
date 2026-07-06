@@ -70,7 +70,9 @@ def main():
         texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}
         for doc_id, d in per_doc.items():
             probes = probes_all.get(doc_id, {}).get("train", [])
-            if not d.get("trainable") or not d["spans"] or len(probes) < 3:
+            # env may hold more docs than --n-docs loaded texts for; scan only the first
+            # n_docs/corpus (load_task_docs is deterministic) — a representative subset.
+            if doc_id not in texts or not d.get("trainable") or not d["spans"] or len(probes) < 3:
                 continue
             spans, _ = derive_spans(d["spans"], floors, corpus, "cpu")
             choice = floor_walk_choice(spans)

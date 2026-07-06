@@ -18,7 +18,16 @@ import re
 from cloak.extract import invert
 from cloak.lattice import NLI_MODEL
 
-QA_MODEL = "deepset/roberta-base-squad2"
+QA_MODEL = "Qwen3.5-0.8B"   # SERVED generative reader (llama-swap :8060, UD-Q8_K_XL GGUF, -np 6)
+# — re-pin 2026-07-06 (roberta-base-squad2 -> Qwen3.5-0.8B): the extractive reader abstained ~40%
+# on relational / section-structured notes (FM1); a grounded generative whole-doc reader fixes it.
+# Served, not local torch: Qwen3.5 is hybrid-attention and its fla/causal-conv1d kernels don't
+# build on ROCm; llama.cpp serves it fast and prompt-caches the shared note prefix server-side.
+# temp0/greedy (deterministic), non-thinking, batched via pmap (workers match -np 6).
+QA_BASE_URL = "http://localhost:8060/v1"
+QA_PROMPT = ("Answer the question using ONLY the note below. Reply with the shortest exact "
+             "answer copied from the note (a name, value, number, or phrase). If the note does "
+             "not contain the answer, reply exactly: NONE.\n\nNote:\n{ctx}\n\nQuestion: {q}\nAnswer:")
 # u_gold scorer LM (spec §5.1): pinned + frozen for the whole gate->train->eval cycle.
 # Selection: Qwen/Qwen2.5-1.5B-Instruct when reachable (HF cache/network), else the local
 # EleutherAI/pythia-410m fallback. The value below is THE pin recorded in the gate/training
@@ -30,45 +39,42 @@ _nli = None
 _gold = None
 
 
-def _qa_models():
-    # transformers 5.x dropped the question-answering pipeline; run the reader manually
+def _qa_client():
+    """Served QA reader (QA_MODEL on the llama-swap proxy). Deterministic greedy, short
+    answers, non-thinking; cached on the prompt via INFERDPT_LLM_CACHE."""
     global _qa
     if _qa is None:
-        import torch
-        from transformers import AutoModelForQuestionAnswering, AutoTokenizer
-        tok = AutoTokenizer.from_pretrained(QA_MODEL)
-        model = AutoModelForQuestionAnswering.from_pretrained(QA_MODEL)
-        model.to("cuda" if torch.cuda.is_available() else "cpu").eval()
-        _qa = (tok, model)
+        import os
+        from inferdpt.llm import LLMClient
+        assert os.getenv("INFERDPT_LLM_CACHE"), "reader requires INFERDPT_LLM_CACHE (determinism)"
+        _qa = LLMClient(QA_MODEL, base_url=QA_BASE_URL, api_key="x", temperature=0.0,
+                        max_tokens=32,
+                        extra_body={"chat_template_kwargs": {"enable_thinking": False},
+                                    "cache_prompt": True})   # reuse the note-prefix KV per slot
     return _qa
 
 
-def _qa_answer(question: str, context: str, max_answer_toks: int = 30) -> str:
-    """Best extractive answer, or '' when the no-answer (CLS) span wins (SQuAD2 semantics)."""
-    import torch
-    tok, model = _qa_models()
-    enc = tok(question, context, return_tensors="pt", truncation="only_second",
-              max_length=384, stride=128, return_overflowing_tokens=True,
-              return_offsets_mapping=True, padding=True)
-    offsets = enc.pop("offset_mapping")
-    enc.pop("overflow_to_sample_mapping", None)
-    inputs = {k: v.to(model.device) for k, v in enc.items()}
-    with torch.no_grad():
-        out = model(**inputs)
-    best, best_score = "", -1e9
-    for i in range(inputs["input_ids"].shape[0]):
-        s, e = out.start_logits[i], out.end_logits[i]
-        null_score = (s[0] + e[0]).item()
-        ctx_mask = torch.tensor([sid != 1 for sid in enc.sequence_ids(i)], device=s.device)
-        s = s.masked_fill(ctx_mask, -1e9)
-        e = e.masked_fill(ctx_mask, -1e9)
-        si = int(s.argmax())
-        ei = si + int(e[si:si + max_answer_toks].argmax())
-        score = (s[si] + e[ei]).item()
-        if score > null_score and score > best_score:
-            lo, hi = offsets[i][si], offsets[i][ei]
-            best, best_score = context[lo[0]:hi[1]], score
-    return best
+def _parse(raw: str) -> str:
+    a = raw.strip().splitlines()[0].strip() if raw.strip() else ""
+    return "" if a.upper().strip(".:` ") == "NONE" else a
+
+
+def _read_batch(questions: list[str], context: str) -> list[str]:
+    """Grounded QA over ONE context via the served reader, issued SERIALLY (workers=1) so the
+    questions hit one llama.cpp slot in sequence and its prompt-cache reuses the shared note-
+    prefix KV (measured ~6.6x faster than fanning them across slots, which re-prefills the
+    note per question; local prefix-KV is unavailable — Qwen3.5's hybrid cache breaks it).
+    Cross-context parallelism belongs one level up (concurrent docs/rollouts -> the 6 slots).
+    Deterministic greedy (temp0), non-thinking; '' on NONE."""
+    if not questions:
+        return []
+    client = _qa_client()
+    return [_parse(client.generate(QA_PROMPT.format(ctx=context, q=q))) for q in questions]
+
+
+def _qa_answer(question: str, context: str) -> str:
+    """Single-question grounded read (served). '' when the model replies NONE."""
+    return _read_batch([question], context)[0]
 
 
 def _gold_model():
@@ -231,11 +237,44 @@ def u_qa(doc_p: str, R: list[dict], probes: list[dict]) -> tuple[float | None, l
     return sum(d["f1"] for d in details) / len(details), details
 
 
+def fact_score(pred: str, gold: str) -> float:
+    """Fact-recall scorer v2 (re-pin 2026-07-06): canon-normalize -> NUMBER GATE (every gold
+    numeric token must appear in the answer, else 0 — kills unit false-positives like
+    "10 mg" vs "40 milligrams") -> containment (gold tokens subset of answer -> 1.0, so a
+    verbose-but-correct "AT&T Corporation" for "AT&T" is a hit) -> acronym (CHF == the initials
+    of "Congestive Heart Failure") -> token-F1 fallback. Residual under-scores: non-initial
+    abbreviations (HTN) and pure synonyms (renal == kidney)."""
+    p = re.findall(r"\w+", canon(pred)); g = re.findall(r"\w+", canon(gold))
+    if not g:
+        return float(not p)
+    if not p:
+        return 0.0
+    gnum = [t for t in g if t.isdigit()]
+    pnum = {t for t in p if t.isdigit()}
+    if gnum and not all(n in pnum for n in gnum):
+        return 0.0
+    ps, gs = set(p), set(g)
+    if gs <= ps:
+        return 1.0
+    def _acro(short, long_):
+        return len(short) == 1 and len(short[0]) >= 2 and short[0] == "".join(w[0] for w in long_)
+    if _acro(p, g) or _acro(g, p):
+        return 1.0
+    common = sum(min(p.count(t), g.count(t)) for t in gs)
+    if not common:
+        return 0.0
+    prec, rec = common / len(p), common / len(g)
+    return 2 * prec * rec / (prec + rec)
+
+
 def fact_f1s(out_final: str, probes: list[dict]) -> list[float]:
-    """Per-probe realized token-F1 on out_final (original space — no generalization,
-    no inversion). The per-probe form of fact_recall; shared by the round-trip reward,
+    """Per-probe realized fact score on out_final — batched generative read (one generate for
+    all a doc's questions, which share out_final) + scorer v2. Shared by the round-trip reward,
     probe validation, and the support scan."""
-    return [token_f1(_qa_answer(p["question"], out_final), p["surface"]) for p in probes]
+    if not probes:
+        return []
+    answers = _read_batch([p["question"] for p in probes], out_final)
+    return [fact_score(a, p["surface"]) for a, p in zip(answers, probes)]
 
 
 def _max_by_fact(probes: list[dict], f1s: list[float]) -> dict[str, float]:

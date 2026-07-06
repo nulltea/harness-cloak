@@ -610,7 +610,10 @@ def main():
     for corpus, per_doc in env["corpora"].items():
         texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}
         for doc_id, d in per_doc.items():
-            if not d["trainable"] or not d["spans"]:
+            # env may hold more docs than --n-docs loaded texts for (e.g. a small smoke on a
+            # full env); only build docs whose text is loaded. load_task_docs is deterministic,
+            # so this takes the first n_docs per corpus.
+            if doc_id not in texts or not d["trainable"] or not d["spans"]:
                 continue
             stored_bc = [s["bc_action"] for s in d["spans"]]
             spans, feats = derive_spans(d["spans"], floors, corpus, device)
