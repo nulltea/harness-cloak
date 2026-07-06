@@ -31,20 +31,23 @@ carries the original there, so the extractor's only duty is do-no-harm (don't ov
 The current cascade recovers **~239/293 ≈ 82%** (A-both + B + C, via fill matching). The
 residue is the **54 D-reworded** spans, which are FOUR phenomena — only two recoverable:
 
-| D sub-class | example | recover? |
-|---|---|---|
-| 1. Fill reworded below fuzzy-90 | `an organization`→"the organization" | **yes** — semantic/low-threshold fill match |
-| 2. Acronym / alias of original | `coronary artery bypass grafting`→"CABG surgery" | **yes** — original-surface alias match |
-| 3. Lossy generalization, original removed | `january 13th 1982`→"Early 1980s"; `Minneapolis`→"in Minnesota" | **no — by design** |
-| 4. Model re-derived a different specific | `the last four years`→"three years ago" | **no — abstain** |
+Extraction is client-side and R holds every original, so none of these lack the information
+to recover — the specifics were removed only from the *remote* model. What varies is
+localization difficulty and false-match risk:
 
-**The honest ceiling is ~82% + D-classes 1–2, NOT 100%.** D-classes 3–4 are a material share
-of D and unrecoverable *by design*: the substitutor removed the specifics for privacy, and
-recovering them would fabricate deleted information. The correct out_final for those keeps the
-coherent generalized form. The earlier "push to 37/37 / ~100%" ambition does not survive at
-scale. The design targets D-classes 1–2 (fill-reword + original-alias), hardens do-no-harm on
-A-leaked, and abstains on 3–4 — it does not chase the DEM/MISC "misses" v2 assumed (those were
-leaked originals + fuzzy noise; this supersedes v2's premise).
+| D sub-class | example | limit |
+|---|---|---|
+| 1. Fill reworded below fuzzy-90 | `an organization`→"the organization" | easy — semantic/low-threshold fill match |
+| 2. Acronym / alias of original | `coronary artery bypass grafting`→"CABG surgery" | easy — original-surface alias match |
+| 3. Lossy generalization | `january 13th 1982`→"Early 1980s"; `Minneapolis`→"in Minnesota" | **localization** — locate the reworded fill, swap the exact original from R |
+| 4. Model re-derived a different specific | `the last four years`→"three years ago" | **false-match** — restore from R only if the mention really is that fill; else abstain |
+
+**The true ceiling is ~all 293 survived spans**, bounded by localization precision and
+false-match avoidance, not by lost information. String/fuzzy/acronym matching (this doc's
+deterministic proposers) gets ~82% + the D-1/2 aliases; the paraphrase-level residue (D-1
+semantic, D-3) needs a **learned reconstructor (Design 3)**, and D-4 needs the verification/
+abstain gate. This supersedes v2's DEM/MISC-miss premise (those were leaked originals + fuzzy
+noise).
 
 ## Root mechanism gap
 

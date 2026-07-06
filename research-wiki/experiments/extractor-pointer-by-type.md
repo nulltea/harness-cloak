@@ -105,17 +105,25 @@ B/C misses are proxy artifacts from multi-word surfaces and walk-order placehold
 collisions, not real misses). The gap is the **54 D-reworded** spans, and inspecting them
 shows D is four distinct phenomena — only two are recoverable:
 
-| D sub-class | example | recoverable? |
-|---|---|---|
-| 1. Fill reworded below fuzzy-90 | `an organization`→"the organization"; `a person of color`→"color employees" | **yes** — semantic / lower-threshold fill match; original known from R |
-| 2. Acronym / alias of original | `coronary artery bypass grafting`→"CABG surgery"; `O'Reilly Auto Parts`→"O'Reilly Automotive"; `Second Circuit Court of Appeals`→"Second Circuit" | **yes** — original-surface alias/acronym match |
-| 3. Lossy generalization, original removed | `january 13th 1982`→"Early 1980s"; `Minneapolis`→"in Minnesota"; `the United States`→"a state" | **no — by design**; the specific was removed for privacy, cannot be invented back |
-| 4. Model re-derived a *different* specific | `the last four years`→"three years ago"; `the District of Kansas`→"Wichita U.S. District Court" | **no — abstain**; substituting the original asserts a false fact |
+Extraction is **client-side**, and R holds every original surface. So none of these are
+"unrecoverable" for lack of information — the specifics were removed only from the *remote*
+model's view; the client legitimately restores them from R. Every D sub-class is recoverable
+*in principle*; what varies is the **localization difficulty** (finding the reworded/lossy
+fill mention in `out_p`) and the **false-match risk** (matching a mention that is not that
+fill).
 
-So the honest recoverable ceiling is **~82% + D-classes 1–2**, NOT 100%. D-classes 3–4 are a
-material share of D and are unrecoverable *by design*: the substitutor removed the specifics
-for privacy, and "recovering" them would mean fabricating information the privacy layer
-deliberately deleted. The correct `out_final` for those keeps the coherent generalized form.
+| D sub-class | example | limit on recovery |
+|---|---|---|
+| 1. Fill reworded below fuzzy-90 | `an organization`→"the organization"; `a person of color`→"color employees" | easy — semantic / lower-threshold fill match; original from R |
+| 2. Acronym / alias of original | `coronary artery bypass grafting`→"CABG surgery"; `O'Reilly Auto Parts`→"O'Reilly Automotive" | easy — original-surface alias/acronym match |
+| 3. Lossy generalization | `january 13th 1982`→"Early 1980s"; `Minneapolis`→"in Minnesota"; `the United States`→"a state" | **localization** — the fill echoed reworded; locate it, then swap the exact original from R (NOT fabrication — R has it) |
+| 4. Model re-derived a different specific | `the last four years`→"three years ago"; `the District of Kansas`→"Wichita U.S. District Court" | **false-match** — restoring the true original from R corrects the model's guess, but only if the mention really is that fill; else abstain |
+
+So the true ceiling is **~all 293 survived spans**, bounded not by lost information but by
+**localization precision on reworded mentions and false-match avoidance**. The rule cascade
+gets the string-matchable ~82% (A/B/C + D-1/2 aliases); the reworded/lossy residue (D-1
+semantic, D-3) needs paraphrase-level localization, which is what a learned reconstructor
+(Design 3) is for. D-4 is the precision boundary: a verification/abstain gate, not a wall.
 
 ## Calibration & honesty caveats
 
@@ -131,16 +139,16 @@ deliberately deleted. The correct `out_final` for those keeps the coherent gener
 
 ## Interpretation
 
-The extractor already recovers ~82% of survivable content; the remaining ~18% is the
-D-reworded residue, which splits into a recoverable part (fill-reword + original-alias/
-acronym, D-classes 1–2 — the design's semantic-fill and original-surface proposers target
-exactly these) and an **unrecoverable-by-design part** (lossy generalization + model drift,
-D-classes 3–4). The earlier "push to ~100%/37-of-37" framing does not hold at scale: a real
-fraction of survived spans survive only as lossy generalizations, so the achievable ceiling
-is bounded well below 100% and chasing it would fabricate deleted specifics. The larger
-issue this surfaced — undetected duplicate mentions leaking originals into `doc_p` (74/1059
-= 7% here) — is a
-detector/substitutor coverage matter, out of the extractor's scope but worth its own record.
+The extractor already recovers ~82% of survived content by string matching; the remaining
+~18% is the D-reworded residue. Because extraction is client-side and R holds every original,
+**the true ceiling is ~100% of survived spans** — the residue is a localization problem
+(finding the reworded/lossy fill mention), not lost information, and a false-match precision
+boundary (D-4), not a wall. This is exactly the case for a **learned reconstructor (Design
+3)**: a local seq2seq that reads `out_p + R` and rewrites, resolving paraphrase-level
+localization that string/fuzzy/acronym matching cannot, with a verification gate bounding
+false substitutions. The larger issue this surfaced — undetected duplicate mentions leaking
+originals into `doc_p` (74/1059 = 7% here) — is a detector/substitutor coverage matter, out
+of the extractor's scope but worth its own record.
 
 ## Artifacts
 
