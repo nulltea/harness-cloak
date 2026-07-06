@@ -61,3 +61,36 @@ def test_value_compatible_fail_closed():
     assert _value_compatible("some time ago", "three years ago") is None    # no digits -> defer
     assert _value_compatible("the early 1980s", "late 1990s") is False       # 1990 absent -> reject
     assert _value_compatible("the early 1980s", "Early 1980s") is None        # subset-compatible -> defer
+
+from cloak.reconstruct import reconstruct
+
+class _StubModel:
+    def __init__(self, reply): self.reply = reply
+    def __call__(self, prompt): return self.reply
+
+# The default cascade (semantic-window matcher, extract.invert) is strong enough to resolve a
+# toy "a disease"->"arthritis" itself, leaving no residue — so we stub _rule_prepass at the
+# reconstruct boundary to hand it a controlled residue. That exercises reconstruct()'s real
+# orchestration (cascade -> model -> edit_guard -> do-no-harm fallback) independent of the
+# cascade's matching power; end-to-end cascade integration is covered by the Task 6 eval.
+def _stub_prepass(prepass, residue):
+    from cloak.extract import _base_stats
+    return lambda out_p, R, semantic=True: (prepass, _base_stats(), list(residue))
+
+def test_reconstruct_accepts_guarded_edit(monkeypatch):
+    import cloak.reconstruct as rc
+    R = [{"action": "generalize", "surface": "arthritis", "replacement": "a disease", "type": "DEM"}]
+    monkeypatch.setattr(rc, "_rule_prepass", _stub_prepass("Patient has a disease.", R))
+    monkeypatch.setattr(rc, "run_model", lambda m, p: m(p))
+    # model restores in-place; only 'arthritis' (an allowed surface) is novel -> guard accepts
+    text, stats = reconstruct("Patient has a disease.", R, model=_StubModel("Patient has arthritis."))
+    assert "arthritis" in text and stats["gen_reconstructor"] == 1
+
+def test_reconstruct_rejects_hallucinated_edit_falls_back(monkeypatch):
+    import cloak.reconstruct as rc
+    R = [{"action": "generalize", "surface": "arthritis", "replacement": "a disease", "type": "DEM"}]
+    monkeypatch.setattr(rc, "_rule_prepass", _stub_prepass("Patient has a disease.", R))
+    monkeypatch.setattr(rc, "run_model", lambda m, p: m(p))
+    # model hallucinates 'in Boston' -> edit_guard rejects -> cascade output kept (still 'a disease')
+    text, stats = reconstruct("Patient has a disease.", R, model=_StubModel("Patient has arthritis in Boston."))
+    assert text == "Patient has a disease." and "Boston" not in text and stats.get("gen_recon_rejected") == 1

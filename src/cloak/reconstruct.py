@@ -6,6 +6,54 @@ enforces do-no-harm (only R originals may enter). Plan: docs/plans/2026-07-06-re
 import difflib
 import re
 
+from cloak.extract import _rule_prepass, _finalize
+
+_RECON = {}
+
+
+def load_reconstructor(path: str):
+    import torch
+    from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+    from peft import PeftModel
+    if path not in _RECON:
+        tok = AutoTokenizer.from_pretrained(path)
+        base = AutoModelForSeq2SeqLM.from_pretrained("google/flan-t5-base",
+                                                     torch_dtype=torch.bfloat16)
+        model = PeftModel.from_pretrained(base, path).eval()
+        _RECON[path] = (model, tok)
+    return _RECON[path]
+
+
+def run_model(obj, prompt: str) -> str:
+    import torch
+    model, tok = obj
+    PROMPT = ("Restore the original terms in the CLINICAL/LEGAL answer below. Replace each "
+              "generalized mention with its original from the RESTORE map; copy everything "
+              "else verbatim; if a mapped term is not present, leave the text unchanged.\n\n{input}")
+    ids = tok(PROMPT.format(input=prompt), return_tensors="pt", truncation=True,
+              max_length=1024).input_ids.to(model.device)
+    with torch.no_grad():
+        out = model.generate(ids, max_new_tokens=1024, num_beams=1)
+    return tok.decode(out[0], skip_special_tokens=True)
+
+
+def reconstruct(out_p: str, R: list[dict], model=None) -> tuple[str, dict]:
+    """Cascade first; model edits only the residue, gated by copy-bias (do-no-harm)."""
+    prepass, stats, residue = _rule_prepass(out_p, R, semantic=True)
+    text = prepass
+    if residue and model is not None:
+        prompt = f"{prepass}\n\n[RESTORE]\n{linearize_restore_map(residue)}"
+        cand = run_model(model, prompt)
+        if edit_guard(prepass, cand, residue, max_edits=2 * len(residue) + 1):
+            text = cand
+            stats["gen_reconstructor"] = sum(1 for e in residue if e["surface"] in cand
+                                             and e["surface"] not in prepass)
+        else:
+            stats["gen_recon_rejected"] = 1
+    stats.setdefault("gen_reconstructor", 0)
+    stats["gen_absent"] += len(residue)  # cascade's residue accounting; refined by recon count
+    return _finalize(text, stats)
+
 
 def linearize_restore_map(residue: list[dict]) -> str:
     """One line per residue entry: 'TYPE: "fill" => "original"'. Order preserved."""
