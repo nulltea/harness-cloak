@@ -190,5 +190,7 @@ def _load_nli():
                  "contradiction": "contradiction"}
     def _nli(premise: str, hypothesis: str) -> str:
         out = pipe({"text": premise, "text_pair": hypothesis})
+        if isinstance(out, list):
+            out = out[0]
         return label_map.get(out["label"].lower(), "neutral")
     return _nli
