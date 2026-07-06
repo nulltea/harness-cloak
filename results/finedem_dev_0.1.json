@@ -1,0 +1,137 @@
+{
+  "corpus": "corpora/tab/echr_dev.json",
+  "docs": 127,
+  "threshold": 0.1,
+  "gliner_model": "data/models/pii_gliner_finedem/final",
+  "recall": {
+    "DIRECT": {
+      "any": 1.0,
+      "typed": 0.9885844748858448,
+      "n": 438
+    },
+    "QUASI": {
+      "any": 0.9223709944335791,
+      "typed": 0.8578306002707988,
+      "n": 6647
+    }
+  },
+  "recall_by_type": {
+    "DIRECT/CODE": {
+      "any": 1.0,
+      "typed": 0.9872611464968153,
+      "n": 157
+    },
+    "DIRECT/DATETIME": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 9
+    },
+    "DIRECT/MISC": {
+      "any": 1.0,
+      "typed": 0.6666666666666666,
+      "n": 3
+    },
+    "DIRECT/ORG": {
+      "any": 1.0,
+      "typed": 1.0,
+      "n": 1
+    },
+    "DIRECT/PERSON": {
+      "any": 1.0,
+      "typed": 0.9925373134328358,
+      "n": 268
+    },
+    "QUASI/CODE": {
+      "any": 0.9701986754966887,
+      "typed": 0.9205298013245033,
+      "n": 302
+    },
+    "QUASI/DATETIME": {
+      "any": 1.0,
+      "typed": 0.999252895031752,
+      "n": 2677
+    },
+    "QUASI/DEM": {
+      "any": 0.8628884826325411,
+      "typed": 0.7093235831809872,
+      "n": 547
+    },
+    "QUASI/LOC": {
+      "any": 0.9977426636568849,
+      "typed": 0.909706546275395,
+      "n": 443
+    },
+    "QUASI/MISC": {
+      "any": 0.5941644562334217,
+      "typed": 0.29708222811671087,
+      "n": 377
+    },
+    "QUASI/ORG": {
+      "any": 0.7640117994100295,
+      "typed": 0.6224188790560472,
+      "n": 1017
+    },
+    "QUASI/PERSON": {
+      "any": 0.9864300626304802,
+      "typed": 0.9592901878914405,
+      "n": 958
+    },
+    "QUASI/QUANTITY": {
+      "any": 0.9233128834355828,
+      "typed": 0.901840490797546,
+      "n": 326
+    }
+  },
+  "entity_level_direct_recall": 1.0,
+  "precision_proxy": 0.9050482274834022,
+  "n_pred": 7983,
+  "wall_s": 64.9,
+  "dem_leaf_recall": {
+    "age": {
+      "any": 0.8181818181818182,
+      "n": 11
+    },
+    "demographic-other": {
+      "any": 0.31100478468899523,
+      "n": 209
+    },
+    "ethnicity": {
+      "any": 1.0,
+      "n": 2
+    },
+    "family-role": {
+      "any": 0.34545454545454546,
+      "n": 55
+    },
+    "gender": {
+      "any": 0.2,
+      "n": 5
+    },
+    "health-condition": {
+      "any": 0.8571428571428571,
+      "n": 42
+    },
+    "marital-status": {
+      "any": 0.20833333333333334,
+      "n": 24
+    },
+    "nationality": {
+      "any": 0.4230769230769231,
+      "n": 182
+    },
+    "profession": {
+      "any": 0.14285714285714285,
+      "n": 14
+    },
+    "religion": {
+      "any": 1.0,
+      "n": 1
+    },
+    "sexual-orientation": {
+      "any": 1.0,
+      "n": 2
+    }
+  },
+  "dem_leaf_recall_note": "fine gold = relabel_dem() output (same relabeler as training), so this measures 'learned the relabeler', not ground truth; DEM-rollup recall in recall_by_type['QUASI/DEM'] is the clean anchor.",
+  "gate_pass": true
+}

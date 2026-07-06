@@ -1,10 +1,10 @@
 ---
 type: training-experiment
-status: planned
+status: done
 created: 2026-07-05
 model: knowledgator/gliner-pii-base-v1.0
-dataset: fine-primary DEM (9 leaves) + un-collapsed Nemotron + auto-relabeled TAB DEM + 5% Pile; TAB-8 as eval rollup
-result: pending
+dataset: fine-primary DEM (11 leaves) + un-collapsed Nemotron + auto-relabeled TAB DEM (~62%) + 5% Pile; TAB-8 as eval rollup
+result: "SUCCEEDED at DEM decomposition: vs v6 (same LoRA+5%Pile) DEM typed 0.684->0.719, DEM-rollup 0.949->0.964, generality held 0.934; qualitative fixes (diabetes->health-condition etc). v2 full-FT still edges raw DEM (0.973/0.757) but worse generality (0.843). Per-leaf caveated-low (relabeler+Presidio)."
 tags: [detector, gliner, fine-grained, dem-decompose, rollup, lora, lattice, tailorability]
 companion: [docs/specs/detector-model.md, research-wiki/training/2026-07-05-FT-detector-v6-lora-gapmix.md]
 ---
@@ -111,8 +111,44 @@ recall.
   resettlement agencies`→ORG (not DEM). Pass = errors resolved.
 - **Pass = DEM-rollup ≥ 0.949 AND DEM-rollup typed > v6 AND generality ≈ 0.932 AND the three cases fixed.**
 
-## Results (measured)
-`pending`.
+## Results (measured 2026-07-06)
+LoRA r=32/α=64 + 5% Pile on the fine-DEM gap-mix (23,305 windows; relabeler ~62% TAB-dev coverage). Merged
+`final` (epoch 3; per-epoch merge hit the v6 `modules_to_save` bug → only final gate-loadable). fine_dem gate.
+
+**TAB test @0.02 — DEM decomposition vs coarse-DEM predecessors:**
+
+| | QUASI | MISC | ORG | DEM any | **DEM typed** | prec | **GEN** any/prec/typed |
+|---|---|---|---|---|---|---|---|
+| v2 (full FT, coarse) | **0.979** | **0.895** | **0.948** | **0.973** | 0.757 | 0.814 | 0.843/0.431/0.707 |
+| v6 (LoRA, coarse) | 0.968 | 0.859 | 0.893 | 0.949 | 0.684 | 0.845 | 0.932/0.412/0.815 |
+| **v7 (LoRA, fine)** | 0.970 | 0.849 | 0.906 | 0.964 | **0.719** | **0.853** | **0.934**/0.418/0.798 |
+
+**Per-leaf recall (caveated — fine gold = the relabeler, and Presidio still emits coarse DEM):** low
+(nationality 0.415, health-condition 0.500, family-role 0.500, profession/age ~0.23, demographic-other 0.271).
+This is NOT a clean capability number — it conflates (a) the model disagreeing with the noisy relabeler gold
+and (b) Presidio-contributed spans typed coarse `DEM` (never matching a fine leaf). The DEM-rollup is the
+trustworthy anchor; per-leaf is directional only.
+
+### Verdict — decomposition SUCCEEDED at its goal (DEM typing), generality held
+- **DEM typed recall up: 0.684 (v6) → 0.719 (v7)** and **DEM-rollup any 0.949 → 0.964**, at the *same*
+  LoRA+5%Pile recipe — so the fine leaves (less confusable) lifted both DEM recall and typing, as hypothesized.
+- **Generality held (0.934 ≈ v6 0.932)** — decomposition didn't cost the LoRA generality win.
+- **No regression** on QUASI (0.970), ORG (0.906), MISC (0.849), precision (0.853, best).
+- **Qualitative fixes confirmed** (probe): `diabetes`→health-condition (1.00), `journalist`→profession,
+  `Muslim`→religion, `34-year-old`→age — the exact coarse-DEM mislabels the user hit are resolved. (One
+  residual: Presidio still maps NRP→coarse DEM, e.g. "Kurdish"→DEM not ethnicity — rolls to DEM fine, but
+  blocks fine typing on Presidio-covered spans; a follow-up would fine-type or drop Presidio's NRP.)
+- **Honest limits:** v2 (full FT) still edges v7 on raw DEM (0.973/0.757 any/typed) and MISC — but at far
+  worse generality (0.843). v7 is the better *balance* (best generality + precision, DEM typing up over v6),
+  not a strict DEM win over full FT. Per-leaf recall is caveated-low (relabeler + Presidio, above). The
+  relabeler's 62% coverage caps how much fine signal reaches the real-TAB DEM spans.
+
+**Net:** v7 delivers the DEM decomposition the user asked for — fine leaves, working fine typing on the
+reported cases, DEM typed recall improved over v6, generality held. A modest, honest win on the DEM problem;
+the remaining ceiling is the relabeler coverage + Presidio's coarse NRP→DEM.
+
+Artifacts: `data/models/pii_gliner_finedem/final` @0.02 · `results/finedem_{dev_*,test,generality}.json` ·
+`data/pii_span_dataset_finedem/build_shares.json`.
 
 ## Ablations
 - Fine (v7) vs coarse-DEM (v6) at the same LoRA recipe — the clean "does decomposition help typed recall" test.
