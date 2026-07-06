@@ -35,6 +35,14 @@ def main():
     ap.add_argument("--others-lr", type=float, default=5e-5)   # span/projection layers
     ap.add_argument("--max-width", type=int, default=0)        # >0 overrides model.config.max_width (v5: 60
                                                                # lets base emit long MISC spans; base default 12)
+    # --- LoRA (v6): freeze the deberta encoder (preserves stock open-label generality by construction),
+    # LoRA-adapt its attention (+FFN), fully train the GLiNER head. Merged into base weights on save so the
+    # gate loads standard checkpoints unchanged. --lr becomes the LoRA LR (encoder path), --others-lr the head.
+    ap.add_argument("--lora", action="store_true")
+    ap.add_argument("--lora-r", type=int, default=16)
+    ap.add_argument("--lora-alpha", type=int, default=32)
+    ap.add_argument("--lora-dropout", type=float, default=0.05)
+    ap.add_argument("--lora-target", choices=["attn", "attn+ffn"], default="attn")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--resume", action="store_true")           # resume from latest checkpoint in --out
     ap.add_argument("--resume-from-checkpoint", default=None)   # or resume from an explicit path
@@ -72,9 +80,31 @@ def main():
             f"--max-width {args.max_width} != pretrained head width {model.config.max_width}: unsupported. "
             f"GLiNER's span projection weight is dimensioned for the trained width; changing it needs a "
             f"span-head reinit (see docs/specs/detector-model.md C5). Drop --max-width to train at native width.")
+    if args.lora:
+        # freeze the deberta encoder + LoRA-adapt its attention (+FFN); fully train the GLiNER head
+        # (span_rep/prompt_rep/rnn via modules_to_save). Encoder frozen => stock open-label generality
+        # is preserved by construction (the failure mode of full FT, v1: 0.941->0.835). Validated on CPU:
+        # get_peft_model preserves .config/.data_processor; merge_and_unload -> standard GLiNER checkpoint.
+        from peft import LoraConfig, get_peft_model
+        tgt = ["query_proj", "key_proj", "value_proj"]
+        if args.lora_target == "attn+ffn":
+            tgt += ["intermediate.dense", "output.dense"]
+        lcfg = LoraConfig(r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=args.lora_dropout,
+                          bias="none", target_modules=tgt,
+                          modules_to_save=["span_rep_layer", "prompt_rep_layer", "rnn"])
+        model = get_peft_model(model, lcfg)
+        tr = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        tot = sum(p.numel() for p in model.parameters())
+        lora_p = sum(p.numel() for n, p in model.named_parameters() if p.requires_grad and "lora_" in n)
+        head_p = tr - lora_p
+        print(f"LoRA r={args.lora_r} a={args.lora_alpha} targets={tgt} + head: "
+              f"trainable {tr/1e6:.1f}M/{tot/1e6:.1f}M ({100*tr/tot:.1f}%); deberta encoder base frozen",
+              flush=True)
+        print(f"  trainable split: LoRA {lora_p/1e6:.2f}M (expected --lr {args.lr}) + "
+              f"head {head_p/1e6:.2f}M (expected --others-lr {args.others_lr})", flush=True)
     if torch.cuda.is_available():
         model = model.to("cuda")
-    collator = SpanDataCollator(model.config, data_processor=model.data_processor,
+    collator = SpanDataCollator(model.config, data_processor=model.data_processor,  # peft fallback preserves this
                                 prepare_labels=True)
 
     # train-time preflight: the dataset's subword budget was checked against deberta-v3-base; verify
@@ -108,11 +138,20 @@ def main():
                       eval_dataset=None if smoke else dev, data_collator=collator,
                       processing_class=model.data_processor.transformer_tokenizer)
 
+    if args.lora:   # verify the optimizer actually splits LoRA vs head as intended (Codex R1 #4)
+        trainer.create_optimizer()
+        for i, g in enumerate(trainer.optimizer.param_groups):
+            n = sum(p.numel() for p in g["params"])
+            print(f"  optim group {i}: {len(g['params'])} tensors, {n/1e6:.2f}M params, lr={g['lr']}",
+                  flush=True)
+
     if not smoke:  # run manifest for reproducibility / audit
         import gliner, transformers
         json.dump({"init": args.init, "seed": args.seed, "epochs": args.epochs,
                    "batch_size": args.batch_size, "grad_accum": args.grad_accum,
                    "lr": args.lr, "others_lr": args.others_lr, "max_width": model.config.max_width,
+                   "lora": args.lora, "lora_r": args.lora_r, "lora_alpha": args.lora_alpha,
+                   "lora_target": args.lora_target if args.lora else None,
                    "n_train": len(train), "n_dev": len(dev),
                    "bf16": use_bf16, "fp16": use_fp16,
                    "gliner": gliner.__version__, "transformers": transformers.__version__,
@@ -122,7 +161,38 @@ def main():
     resume = args.resume_from_checkpoint or (args.resume or None)
     trainer.train(resume_from_checkpoint=resume)
     final = os.path.join(args.out, "final")   # NOT the out root: per-epoch checkpoint-* stay separable
-    model.save_pretrained(final)
+    if args.lora:
+        # merge adapters into base -> STANDARD GLiNER checkpoints (no lora keys) the gate loads unchanged.
+        # final = live merged model; per-epoch checkpoint-* are peft-format -> merge each into *_merged for
+        # the dev-sweep selection (which loads via GLiNER.from_pretrained).
+        import glob
+        from peft import PeftModel
+        model.merge_and_unload().save_pretrained(final)
+        print(f"saved merged final -> {final}", flush=True)
+        for ck in sorted(glob.glob(os.path.join(args.out, "checkpoint-*"))):
+            if ck.endswith("_merged"):
+                continue
+            try:
+                base = GLiNER.from_pretrained(args.init)
+                if args.max_width > 0:
+                    base.config.max_width = args.max_width
+                pm = PeftModel.from_pretrained(base, ck)
+                pm.merge_and_unload().save_pretrained(ck + "_merged")
+                # smoke: the merged checkpoint MUST load+predict via GLiNER.from_pretrained before dev
+                # selection trusts it (Codex R1 #3 — per-epoch merge was fragile/unvalidated).
+                sm = GLiNER.from_pretrained(ck + "_merged")
+                sm.predict_entities("A note from Acme Corp about Jane Doe.", ["organization", "person name"],
+                                    threshold=0.3)
+                print(f"  merged+verified {os.path.basename(ck)} -> {os.path.basename(ck)}_merged", flush=True)
+            except Exception as e:   # per-epoch merge is best-effort; final is always produced
+                bad = ck + "_BADMERGE"
+                if os.path.isdir(ck + "_merged"):
+                    os.rename(ck + "_merged", bad)
+                print(f"  WARN merge/verify {os.path.basename(ck)} failed ({type(e).__name__}: {str(e)[:80]}) "
+                      f"-> {os.path.basename(bad) if os.path.isdir(bad) else '(no dir)'}; EXCLUDE from selection, "
+                      f"use merged final or re-merge manually", flush=True)
+    else:
+        model.save_pretrained(final)
     print(f"saved final epoch -> {final}", flush=True)
     if not smoke:
         print(f"NEXT — {final} is the LAST epoch, NOT the deployment model. Select the best checkpoint "
