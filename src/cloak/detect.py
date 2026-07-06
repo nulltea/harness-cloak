@@ -17,6 +17,83 @@ GLINER_LABELS = {
     "other identifying attribute or event": "MISC",
 }
 
+# --- v7 fine-primary DEM: the detector targets these fine leaves; TAB-8's DEM is recovered by rolling
+# them up (FINE_TYPE_ROLLUP) only at eval. See research-wiki/training/2026-07-05-FT-detector-v7-dem-decompose.md.
+FINE_DEM_LABELS = {   # fine leaf phrase -> leaf key
+    "nationality or citizenship": "nationality",
+    "ethnicity or race": "ethnicity",
+    "religion or religious belief": "religion",
+    "profession, occupation or job title": "profession",
+    "age": "age",
+    "gender": "gender",
+    "marital status": "marital-status",
+    "health condition, disease or medical diagnosis": "health-condition",
+    "sexual orientation": "sexual-orientation",
+    "family role or relationship": "family-role",
+    "other demographic attribute": "demographic-other",
+}
+FINE_DEM_PHRASE = {leaf: phrase for phrase, leaf in FINE_DEM_LABELS.items()}   # leaf key -> phrase (builder)
+# inference label set under --fine-dem: the 7 non-DEM TAB phrases (as TAB types) + the fine DEM leaf phrases.
+FINE_LABELS = {p: t for p, t in GLINER_LABELS.items() if t != "DEM"}
+FINE_LABELS.update(FINE_DEM_LABELS)
+# fine type -> TAB-8 type (every DEM leaf -> DEM; the 7 TAB types map to themselves). Used for the eval rollup.
+FINE_TYPE_ROLLUP = {leaf: "DEM" for leaf in FINE_DEM_LABELS.values()}
+FINE_TYPE_ROLLUP.update({t: t for t in set(GLINER_LABELS.values())})
+
+
+def rollup_type(t):
+    """fine leaf type -> TAB-8 type (DEM); TAB-8 types unchanged. For scoring fine predictions vs TAB gold."""
+    return FINE_TYPE_ROLLUP.get(t, t)
+
+
+# gazetteers/keywords for relabeling a TAB DEM span surface -> fine leaf (first-cut lexicons; unmatched ->
+# demographic-other so nothing is lost; ~61% TAB-dev coverage). Shared by the builder (train relabel) and
+# the gate (per-leaf gold). ponytail: expand or swap for a model-based relabeler if coverage is too low.
+_NATIONALITY = {"german","austrian","polish","british","english","swedish","swiss","spanish","french",
+    "american","romanian","russian","italian","dutch","greek","turkish","norwegian","danish","finnish",
+    "belgian","portuguese","irish","scottish","welsh","czech","slovak","hungarian","bulgarian","ukrainian",
+    "croatian","serbian","bosnian","albanian","moldovan","georgian","armenian","azerbaijani","chinese",
+    "japanese","korean","indian","pakistani","afghan","iranian","iraqi","syrian","lebanese","israeli",
+    "nigerian","kenyan","ghanaian","egyptian","moroccan","algerian","tunisian","ethiopian","somali","manx",
+    "sierra leonean"}
+_ETHNICITY = {"kurdish","gypsy","gypsies","roma","romani","sami","tamil","arab","chechen","tatar"}
+_RELIGION = {"muslim","christian","catholic","protestant","jewish","hindu","buddhist","orthodox","sunni",
+    "shia","islam","islamic","christianity","judaism","jehovah","evangelical","atheist","agnostic"}
+_ORIENTATION = {"homosexual","homosexuality","gay","lesbian","bisexual","heterosexual","transsexual",
+    "transgender","lgbt"}
+_GENDER = {"male","female","man","woman","transgender man","transgender woman"}
+_MARITAL = {"married","divorced","single","widow","widower","widowed","unmarried","separated"}
+_FAMILY = {"father","mother","son","daughter","brother","sister","wife","husband","spouse","child",
+    "children","grandmother","grandfather","grandchild","parent","sibling","cousin","uncle","aunt",
+    "nephew","niece","stepson","stepdaughter","stepfather","stepmother","in-law","widow","widower"}
+_CONDITION_KW = ("diabet","depress","cancer","hiv","aids","disorder","syndrome","disease","illness",
+    "schizophren","tumour","tumor","psychiat","psycholog","addict","alcohol","dementia","epilep","asthma",
+    "arthritis","hepatitis","paralys","mesothelioma","devitalis","korsakoff","traumatic stress","disabil",
+    "blood pressure","infection","heart attack","stroke","injur","fracture","wound","amputat")
+_PROFESSION = {"journalist","lawyer","doctor","nurse","teacher","engineer","judge","prosecutor","accountant",
+    "officer","officers","police","policeman","soldier","professor","physician","architect","farmer",
+    "driver","businessman","politician","priest","minister","author","artist","actor","scientist"}
+
+
+def relabel_dem(surface):
+    """TAB DEM span surface -> fine leaf key. Order matters (condition/orientation before the demonym sets,
+    e.g. 'jewish' is religion not nationality). Unmatched -> demographic-other."""
+    s = surface.strip().lower()
+    sn = s.rstrip("s")                                              # crude singular (widows->widow)
+    if any(k in s for k in _CONDITION_KW):                          return "health-condition"
+    if s in _ORIENTATION or "homosexual" in s:                      return "sexual-orientation"
+    if s in _RELIGION:                                              return "religion"
+    if s in _ETHNICITY:                                             return "ethnicity"
+    if s in _NATIONALITY or s.endswith((" national", " nationals")): return "nationality"
+    if s in _GENDER:                                                return "gender"
+    if s in _MARITAL or sn in _MARITAL:                             return "marital-status"
+    if s in _FAMILY or sn in _FAMILY or any(w in s.split() for w in _FAMILY): return "family-role"
+    if re.search(r"\b(aged|years? old)\b", s) or re.search(r"\b\d{1,3}[- ]year", s) \
+       or re.fullmatch(r"\d{1,3}", s):                              return "age"
+    if s in _PROFESSION or sn in _PROFESSION or s.endswith(("ist", "ologist", "ian")): return "profession"
+    return "demographic-other"
+
+
 # Presidio entity -> TAB entity_type (only types its default recognizers emit).
 PRESIDIO_MAP = {
     "PERSON": "PERSON", "LOCATION": "LOC", "NRP": "DEM", "DATE_TIME": "DATETIME",
@@ -100,13 +177,16 @@ class Detector:
     # the record's cross-domain operating point (TAB's own op point is 0.02, corpus-specific).
     # Stock fallback: gliner_model="urchade/gliner_small-v2.1".
     def __init__(self, gliner_model: str = "data/models/pii_gliner_multidomain/checkpoint-2479",
-                 threshold: float = 0.3, batch_size: int = 16):
+                 threshold: float = 0.3, batch_size: int = 16, fine_dem: bool = False):
         import torch
         from gliner import GLiNER
         from presidio_analyzer import AnalyzerEngine
         _install_gliner_bounds_guard()   # guard against padding-region phantom spans (see function docstring)
         self.threshold = threshold
         self.batch_size = batch_size
+        # v7: fine-primary mode prompts the fine DEM leaves; else the coarse TAB-8. self.label2type maps a
+        # predicted label phrase -> its (fine or coarse) type; the gate rolls fine types up via rollup_type.
+        self.label2type = FINE_LABELS if fine_dem else GLINER_LABELS
         self.gliner = GLiNER.from_pretrained(gliner_model)
         if torch.cuda.is_available():
             self.gliner = self.gliner.to("cuda")
@@ -127,7 +207,7 @@ class Detector:
                       Pattern("bare-k-amount", r"\b\d{1,4}(?:\.\d+)?[kKmM]\b", 0.4),
                       Pattern("spelled-amount",
                               rf"(?i)\b(?:{_numword}[\s-]+){{1,6}}(?:dollars?|euros?|pounds?)\b", 0.6)]))
-        self.labels = list(GLINER_LABELS)
+        self.labels = list(self.label2type)
 
     def detect(self, text: str) -> list[Span]:
         spans = []
@@ -135,7 +215,7 @@ class Detector:
         for off, ents in zip(offsets, self.gliner.batch_predict_entities(
                 list(texts), self.labels, threshold=self.threshold, batch_size=self.batch_size)):
             spans += [Span(off + e["start"], off + e["end"], e["text"],
-                           GLINER_LABELS[e["label"]], e["score"], "gliner") for e in ents]
+                           self.label2type[e["label"]], e["score"], "gliner") for e in ents]
         for r in self.presidio.analyze(text=text, language="en"):
             if r.entity_type in PRESIDIO_MAP:
                 spans.append(Span(r.start, r.end, text[r.start:r.end],

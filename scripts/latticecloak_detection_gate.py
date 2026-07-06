@@ -13,7 +13,7 @@ import json
 import time
 from collections import defaultdict
 
-from cloak.detect import Detector
+from cloak.detect import Detector, rollup_type, relabel_dem
 
 
 def gold_mentions(doc):
@@ -37,17 +37,21 @@ def main():
     ap.add_argument("--gliner-model", default="urchade/gliner_small-v2.1",
                     help="GLiNER-format checkpoint to sweep; TAB label phrases held fixed")
     ap.add_argument("--out", default="results/latticecloak_detection_gate.json")
+    ap.add_argument("--fine-dem", action="store_true",
+                    help="v7: detector predicts fine DEM leaves; roll them up to TAB-8 DEM for the coarse "
+                         "recall match, and also report per-leaf recall vs relabeled DEM gold (caveated).")
     args = ap.parse_args()
 
     docs = json.load(open(args.corpus))
     if args.limit:
         docs = docs[: args.limit]
-    det = Detector(gliner_model=args.gliner_model, threshold=args.threshold)
+    det = Detector(gliner_model=args.gliner_model, threshold=args.threshold, fine_dem=args.fine_dem)
     res_model = args.gliner_model
 
     hit = defaultdict(int)      # (id_class, "any"|"typed") -> hits
     tot = defaultdict(int)      # (id_class,) and (id_class, entity_type) -> golds
     ent_all, ent_hit = defaultdict(set), defaultdict(set)  # entity-level DIRECT
+    leaf_hit, leaf_tot = defaultdict(int), defaultdict(int)  # v7 per-leaf (fine gold = relabeler; caveated)
     n_pred = n_pred_gold = 0
     t0 = time.time()
 
@@ -65,9 +69,15 @@ def main():
             if over:
                 hit[idc, "any"] += 1
                 hit[(idc, et), "any"] += 1
-            if any(p.type == et for p in over):
+            # typed match: roll predicted (possibly fine) type up to TAB-8 (identity in coarse mode)
+            if any(rollup_type(p.type) == et for p in over):
                 hit[idc, "typed"] += 1
                 hit[(idc, et), "typed"] += 1
+            if args.fine_dem and et == "DEM":   # per-leaf recall vs relabeler-derived fine gold (caveated)
+                leaf = relabel_dem(text[gs:ge])
+                leaf_tot[leaf] += 1
+                if any(p.type == leaf for p in over):
+                    leaf_hit[leaf] += 1
             if idc == "DIRECT":
                 ent_all[g["entity_id"]].add((gs, ge))
                 if over:
@@ -93,6 +103,12 @@ def main():
         "precision_proxy": n_pred_gold / max(n_pred, 1), "n_pred": n_pred,
         "wall_s": round(time.time() - t0, 1),
     }
+    if args.fine_dem:   # per-leaf recall on DEM gold; fine gold = relabeler output (NOT ground truth) — caveat
+        res["dem_leaf_recall"] = {leaf: {"any": leaf_hit[leaf] / leaf_tot[leaf], "n": leaf_tot[leaf]}
+                                  for leaf in sorted(leaf_tot)}
+        res["dem_leaf_recall_note"] = ("fine gold = relabel_dem() output (same relabeler as training), so this "
+                                       "measures 'learned the relabeler', not ground truth; DEM-rollup recall "
+                                       "in recall_by_type['QUASI/DEM'] is the clean anchor.")
     res["gate_pass"] = res["recall"]["DIRECT"]["any"] >= 0.95
     json.dump(res, open(args.out, "w"), indent=2)
     print(json.dumps({k: res[k] for k in ("recall", "entity_level_direct_recall",

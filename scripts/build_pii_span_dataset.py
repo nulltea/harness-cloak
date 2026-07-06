@@ -38,7 +38,7 @@ import random
 import re
 from collections import Counter
 
-from cloak.detect import GLINER_LABELS
+from cloak.detect import GLINER_LABELS, FINE_DEM_PHRASE, FINE_TYPE_ROLLUP, relabel_dem
 
 TYPE2PHRASE = {t: p for p, t in GLINER_LABELS.items()}   # TAB entity_type -> label phrase
 WINDOW_WORDS = 150
@@ -79,6 +79,24 @@ NEMOTRON_MAP = {
     "job_title": "DEM", "marital_status": "DEM",
 }
 
+# --- v7 (--fine-dem): decompose the coarse DEM into fine leaves. Schema (leaf phrases, rollup, relabeler)
+# lives in cloak.detect (shared with the detector + gate). Nemotron demographic labels -> fine leaf
+# (un-collapse of the old `-> DEM`); ambiguous ones (political_view/language/education_level/
+# employment_status/blood_type) are DROPPED (drop-not-invent).
+NEMOTRON_FINE_MAP = {
+    "nationality": "nationality", "race_ethnicity": "ethnicity", "religious_belief": "religion",
+    "occupation": "profession", "job_title": "profession", "age": "age", "gender": "gender",
+    "marital_status": "marital-status", "sexuality": "sexual-orientation",
+}
+
+
+def _dem_phrase(entity_type, surface, fine_dem):
+    """DEM -> fine leaf phrase under --fine-dem (via the shared relabeler); else the coarse TAB phrase."""
+    if fine_dem and entity_type == "DEM":
+        return FINE_DEM_PHRASE[relabel_dem(surface)]
+    return TYPE2PHRASE[entity_type]
+
+
 _SPLIT = None
 
 
@@ -108,12 +126,13 @@ def tab_gold(doc):
                   for m in best.values() if m["entity_type"] in TYPE2PHRASE)
 
 
-def tab_source(path):
+def tab_source(path, fine_dem=False):
     for doc in json.load(open(path)):
-        yield doc["text"], [(s, e, TYPE2PHRASE[t]) for s, e, t in tab_gold(doc)]
+        text = doc["text"]
+        yield text, [(s, e, _dem_phrase(t, text[s:e], fine_dem)) for s, e, t in tab_gold(doc)]
 
 
-def wikibio_source(path):
+def wikibio_source(path, fine_dem=False):
     """Wikipedia-bio (Papadopoulou et al., arXiv 2205.06895) — same TAB annotation schema. Reads the
     NR-format JSON at `path` if present; skipped (with a warning) otherwise, since it is not on HF."""
     fp = path if os.path.isfile(path) else os.path.join(path, "wikipedia_bio.json")
@@ -121,7 +140,8 @@ def wikibio_source(path):
         print(f"  [wikibio] SKIP — dataset not found at {path} (fetch the NR release first)")
         return
     for doc in json.load(open(fp)):
-        yield doc["text"], [(s, e, TYPE2PHRASE[t]) for s, e, t in tab_gold(doc)]
+        text = doc["text"]
+        yield text, [(s, e, _dem_phrase(t, text[s:e], fine_dem)) for s, e, t in tab_gold(doc)]
 
 
 def _wordchar(c):   # word boundary = alnum or underscore (isalnum misses '_')
@@ -133,23 +153,28 @@ def _spans_field(row):
     return ast.literal_eval(sp) if isinstance(sp, str) else sp
 
 
-def nemotron_source(n):
-    """nvidia/Nemotron-PII — char-offset spans; map labels onto TAB-8, drop unmapped. Every offset is
-    validated against the span's own `text` field (drop-not-trust); mismatches are counted, not used.
-    Streaming .take(n) is deterministic for a fixed dataset revision (see module note)."""
+def nemotron_source(n, fine_dem=False):
+    """nvidia/Nemotron-PII — char-offset spans; map labels onto TAB-8 (or fine DEM leaves under --fine-dem),
+    drop unmapped. Every offset is validated against the span's own `text` field (drop-not-trust); mismatches
+    are counted, not used. Streaming .take(n) is deterministic for a fixed dataset revision (see module note)."""
     from datasets import load_dataset
     ds = load_dataset("nvidia/Nemotron-PII", split="train", streaming=True).take(n)
     bad = 0
     for row in ds:
         text, out = row["text"], []
         for s in _spans_field(row):
-            if s["label"] not in NEMOTRON_MAP:
-                continue
+            label = s["label"]
+            if fine_dem and label in NEMOTRON_FINE_MAP:            # demographic label -> fine leaf phrase
+                ph = FINE_DEM_PHRASE[NEMOTRON_FINE_MAP[label]]
+            elif label in NEMOTRON_MAP and not (fine_dem and NEMOTRON_MAP[label] == "DEM"):
+                ph = TYPE2PHRASE[NEMOTRON_MAP[label]]             # non-DEM (or legacy coarse DEM)
+            else:
+                continue                                          # unmapped, or a DEM label with no fine leaf
             cs, ce = s["start"], s["end"]
             if not (0 <= cs < ce <= len(text)) or (s.get("text") and text[cs:ce] != s["text"]):
                 bad += 1                                    # stale/byte/misaligned offset -> drop
                 continue
-            out.append((cs, ce, TYPE2PHRASE[NEMOTRON_MAP[s["label"]]]))
+            out.append((cs, ce, ph))
         yield text, out
     if bad:
         print(f"  [nemotron] dropped {bad} spans failing offset validation")
@@ -285,7 +310,9 @@ def _balance_rare(recs, rng):
     wikibio oversample) gets no further copy, so nothing ever reaches x3. A bounded nudge (not full
     balance) — stays inside the memorization-safe gap the v2 memorize probe established (MISC train 0.926
     vs test 0.895 at <=x2)."""
-    rare_phrases = {p for p, t in GLINER_LABELS.items() if t in RARE_TYPES}
+    # rare = MISC/QUANTITY (coarse) + all fine DEM leaves (scarce under --fine-dem); fine phrases are absent
+    # when not --fine-dem, so the union is a no-op there.
+    rare_phrases = {p for p, t in GLINER_LABELS.items() if t in RARE_TYPES} | set(FINE_DEM_PHRASE.values())
     key = lambda r: json.dumps(r, sort_keys=True)
     counts = Counter(key(r) for r in recs)          # pre-balance multiplicity (wikibio dups already here)
     out, seen, added = list(recs), set(), 0
@@ -350,8 +377,11 @@ def build(args):
     tok = _tokenizer()
     pile_frac = args.pile_frac if args.pile_frac is not None else PILE_FRAC
 
+    fine = args.fine_dem
+    if fine:
+        print("== --fine-dem: DEM decomposed into fine leaves; TAB-8 recovered via rollup at eval ==")
     print(f"== source: tab ({args.train}) ==")
-    tab, c, d = source_windows(tab_source(args.train))
+    tab, c, d = source_windows(tab_source(args.train, fine))
     train_recs = _finalize("tab", tab, c, d, tok)
     n_tab = len(train_recs)
 
@@ -362,11 +392,11 @@ def build(args):
                 pile_spec = spec                      # sized AFTER balancing (post-balance fraction)
                 continue
             if name == "nemotron":
-                pairs = nemotron_source(spec)
+                pairs = nemotron_source(spec, fine)
             elif name == "pilener":
                 pairs = pilener_source(spec)
             elif name == "wikibio":
-                pairs = wikibio_source(spec)
+                pairs = wikibio_source(spec, fine)
             else:
                 raise SystemExit(f"unknown mix source: {name}")
             cap = int(round(MIX_RATIO[name] / MIX_RATIO["tab"] * n_tab))
@@ -406,8 +436,9 @@ def build(args):
     with open(os.path.join(args.out_dir, "train.jsonl"), "w") as f:
         for r in train_recs:
             f.write(json.dumps(r) + "\n")
-    # dev is always TAB-only (the selection gate scores against TAB)
-    dev, c, d = source_windows(tab_source(args.dev))
+    # dev is TAB-only (the trainer's eval-loss set); fine-labeled too under --fine-dem so it matches training.
+    # NOTE: checkpoint selection is done by the gate on echr_dev.json + FINE->TAB8 rollup, not this dev.jsonl.
+    dev, c, d = source_windows(tab_source(args.dev, fine))
     with open(os.path.join(args.out_dir, "dev.jsonl"), "w") as f:
         for r in dev:
             f.write(json.dumps(r) + "\n")
@@ -460,6 +491,38 @@ def _shares_selfcheck():
     assert s["per_type"]["PERSON"]["tokens"] == 2          # span [1,2] -> 2 words
     assert "animal" not in s["per_type"]                   # diverse labels are not TAB-8 types
     print("shares selfcheck: OK (TAB windows counted, Pile excluded, ORG share + token-len correct)")
+    _finedem_selfcheck()
+
+
+def _finedem_selfcheck():
+    """--fine-dem relabeler: known DEM surfaces map to the right fine leaf; rollup covers every leaf;
+    coverage of the real TAB DEM gold reported (how much lands on a fine leaf vs demographic-other)."""
+    cases = {"german": "nationality", "polish national": "nationality", "kurdish": "ethnicity",
+             "gypsies": "ethnicity", "muslim": "religion", "jewish": "religion", "journalist": "profession",
+             "lawyer": "profession", "homosexual": "sexual-orientation", "diabetes": "health-condition",
+             "high blood pressure": "health-condition", "depression": "health-condition",
+             "34 years old": "age", "married": "marital-status", "brother": "family-role",
+             "his wife": "family-role", "widows": "marital-status", "united kingdom": "demographic-other"}
+    bad = {s: (relabel_dem(s), exp) for s, exp in cases.items() if relabel_dem(s) != exp}
+    assert not bad, f"relabeler mismatches: {bad}"
+    assert all(FINE_TYPE_ROLLUP[k] == "DEM" for k in FINE_DEM_PHRASE)
+    # coverage on the real TAB DEM gold
+    import glob
+    corpus = "corpora/tab/echr_dev.json"
+    if os.path.exists(corpus):
+        leaves, other = Counter(), 0
+        for doc in json.load(open(corpus)):
+            for s, e, t in tab_gold(doc):
+                if t == "DEM":
+                    leaf = relabel_dem(doc["text"][s:e])
+                    leaves[leaf] += 1
+                    other += leaf == "demographic-other"
+        n = sum(leaves.values())
+        cov = 1 - other / max(n, 1)
+        print(f"finedem selfcheck: OK ({len(cases)} cases) | TAB-dev DEM relabel coverage {cov:.1%} "
+              f"({n - other}/{n} to a fine leaf); leaves {dict(leaves.most_common(6))}")
+    else:
+        print(f"finedem selfcheck: OK ({len(cases)} cases); (corpus absent — coverage not computed)")
 
 
 def _balance_selfcheck():
@@ -506,6 +569,9 @@ def main():
     ap.add_argument("--min-tab-share", type=float, default=0.0,
                     help="v5: if >0, abort the build when the realized TAB-schema window share falls below "
                          "this (the ORG-dilution guard). Off (0) = log shares only, don't enforce.")
+    ap.add_argument("--fine-dem", action="store_true",
+                    help="v7: decompose DEM into fine leaves (nationality/religion/health-condition/…) — "
+                         "un-collapse Nemotron + auto-relabel TAB DEM spans. TAB-8 DEM via FINE_TYPE_ROLLUP at eval.")
     args = ap.parse_args()
     build(args)
 
