@@ -106,3 +106,89 @@ def edit_guard(prepass: str, candidate: str, residue: list[dict], max_edits: int
         if not matched:
             return False                      # wrong location, wrong/mixed surface, or hallucination
     return edits <= max_edits
+
+
+def build_target(text: str, located: list[dict]) -> tuple[str, int]:
+    """Splice each located mention's original into text (longest-quote-first so a short quote
+    can't match inside a longer one); entries with a falsy quote are abstains (no edit).
+    Returns (target_text, n_edits)."""
+    edits = 0
+    for e in sorted([x for x in located if x.get("quote")],
+                    key=lambda x: -len(x["quote"])):
+        new, ok = splice_at_quote(text, e["quote"], e["surface"])
+        if ok:
+            text, edits = new, edits + 1
+    return text, edits
+
+
+_AMBIGUOUS_TYPES = {"DATETIME", "QUANTITY", "LOC", "ORG"}  # scalar/named — high false-corr risk
+
+
+def restorable(entry: dict, verdict: dict, prepass: str, nli=None) -> bool:
+    """Target-admission gate (Round-2 fix — type-sanity alone is NOT correspondence: "the
+    last four years" vs "three years ago" are both DATETIME-sane). Admit a splice target
+    only if the judge marked it present, the quote is grounded in the text we edit, AND:
+      - for scalar/named ambiguous types, a MANDATORY correspondence check: the quote must
+        be entailed by / consistent with the FILL (the generalization actually sent), so the
+        mention is the fill's restatement, not a different specific the model invented. This
+        admits D-3 lossy (quote ⊨ fill: "Early 1980s" is consistent with fill "the early
+        1980s") and rejects D-4 ("three years ago" is NOT entailed by fill "some time ago"'s
+        content — it adds a specific not in doc_p).
+      - other types: type-sanity suffices.
+    D-3 (exact original in R) still passes; only D-4 false-correspondence is filtered."""
+    from cloak.extract import _type_sane
+    q = verdict.get("quote")
+    if verdict.get("label") not in ("SURVIVED", "REWORDED") or not q:
+        return False
+    if _norm(q) not in _norm(prepass):
+        return False
+    if not _type_sane(entry.get("type", "MISC"), entry["replacement"], q):
+        return False
+    if entry.get("type", "MISC") in _AMBIGUOUS_TYPES:
+        # mandatory correspondence: quote must not assert a specific beyond the fill's content
+        return _corresponds(entry["replacement"], q, nli)   # NLI: quote ⊨ fill, no added specificity
+    return True
+
+
+def _corresponds(fill: str, quote: str, nli) -> bool:
+    """Admit only if the quote adds NO information beyond the generalized fill — i.e.
+    `fill ⊨ quote` (Round-3 fix: the entailment must run fill→quote, not quote→fill; the
+    latter admits a model-invented specific because "three years ago" ⊨ "some time ago").
+    Admits D-3 lossy ("the early 1980s" ⊨ "Early 1980s"); rejects D-4 ("some time ago" ⊭
+    "three years ago") and inference leaks ("a city" ⊭ "Boston"). For DATETIME/QUANTITY,
+    prefer the deterministic `_value_compatible` check first (NLI is unreliable on scalars);
+    fall back to NLI only when it abstains."""
+    ok = _value_compatible(fill, quote)
+    if ok is not None:
+        return ok
+    if nli is None:
+        return False                       # fail-closed
+    return nli(premise=fill, hypothesis=quote) == "entailment"
+
+
+def _value_compatible(fill: str, quote: str):
+    """Deterministic scalar gate, FAIL-CLOSED (Round-4 fix — never admit on a bare digit
+    subset: "early 1980s"→"late 1980s" shares {1980} but flips the modifier). Only two
+    non-deferring outcomes:
+      False — the quote introduces a digit-run the fill lacks (model-invented specific/leak);
+      None  — digits are subset-compatible but NOT proven equivalent, OR no digits → NLI (or
+              a real date/quantity normalizer) must still approve.
+    It never returns True; equivalence is proven downstream, not assumed here."""
+    fn = set(re.findall(r"\d+", fill))
+    qn = set(re.findall(r"\d+", quote))
+    if qn and not qn <= fn:
+        return False       # hard reject: a specific number absent from the fill
+    return None            # defer: subset-compatible or no digits — NLI must confirm fill ⊨ quote
+
+
+def _load_nli():
+    """cross-encoder/nli-deberta-v3-small -> callable(premise, hypothesis) ->
+    {'entailment'|'neutral'|'contradiction'}. Local, small; loaded once."""
+    from transformers import pipeline
+    pipe = pipeline("text-classification", model="cross-encoder/nli-deberta-v3-small")
+    label_map = {"entailment": "entailment", "neutral": "neutral",
+                 "contradiction": "contradiction"}
+    def _nli(premise: str, hypothesis: str) -> str:
+        out = pipe({"text": premise, "text_pair": hypothesis})
+        return label_map.get(out["label"].lower(), "neutral")
+    return _nli

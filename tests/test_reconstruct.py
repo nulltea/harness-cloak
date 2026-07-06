@@ -45,3 +45,19 @@ def test_guard_rejects_too_many_edits():
     cand = "arthritis and lasix."                        # 2 valid in-place edits > max_edits=1
     assert not edit_guard(prepass, cand,
                           _res(("arthritis", "a disease"), ("lasix", "a drug")), max_edits=1)
+
+def test_build_target_splices_located_mentions_only():
+    from cloak.reconstruct import build_target
+    text = "The org filed in Early 1980s."
+    # judge verdicts: one located (REWORDED), one abstain (ABSENT quote=None)
+    located = [{"surface": "January 13th 1982", "quote": "Early 1980s"},
+               {"surface": "Hamilton County Court", "quote": None}]
+    tgt, n = build_target(text, located)
+    assert tgt == "The org filed in January 13th 1982." and n == 1
+
+def test_value_compatible_fail_closed():
+    # security gate: NEVER returns True; False on a digit-run absent from the fill; None otherwise
+    from cloak.reconstruct import _value_compatible
+    assert _value_compatible("some time ago", "three years ago") is None    # no digits -> defer
+    assert _value_compatible("the early 1980s", "late 1990s") is False       # 1990 absent -> reject
+    assert _value_compatible("the early 1980s", "Early 1980s") is None        # subset-compatible -> defer
