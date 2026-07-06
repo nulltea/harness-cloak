@@ -94,3 +94,21 @@ def test_reconstruct_rejects_hallucinated_edit_falls_back(monkeypatch):
     # model hallucinates 'in Boston' -> edit_guard rejects -> cascade output kept (still 'a disease')
     text, stats = reconstruct("Patient has a disease.", R, model=_StubModel("Patient has arthritis in Boston."))
     assert text == "Patient has a disease." and "Boston" not in text and stats.get("gen_recon_rejected") == 1
+
+
+def test_classify_recovery():
+    from cloak.reconstruct import classify_recovery
+    prepass = "filed in Early 1980s today"
+    # window now holds the original, quote gone -> recovered
+    assert classify_recovery("filed in January 13th 1982 today", "Early 1980s",
+                             "January 13th 1982", prepass) == "recovered"
+    # nothing changed at the mention -> miss
+    assert classify_recovery("filed in Early 1980s today", "Early 1980s",
+                             "January 13th 1982", prepass) == "miss"
+    # quote gone but no surface in-window -> deletion (reworded away, not restored)
+    assert classify_recovery("filed in today", "Early 1980s",
+                             "January 13th 1982", prepass) == "deletion"
+    # surface inserted ELSEWHERE, mention untouched -> miss at the mention (anti-gaming: the
+    # window-local metric refuses to credit a wrong-location insert as recovery)
+    assert classify_recovery("January 13th 1982 note. filed in Early 1980s today",
+                             "Early 1980s", "January 13th 1982", prepass) == "miss"

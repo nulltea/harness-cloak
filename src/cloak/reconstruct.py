@@ -242,3 +242,34 @@ def _load_nli():
             out = out[0]
         return label_map.get(out["label"].lower(), "neutral")
     return _nli
+
+
+def classify_recovery(out_final: str, quote: str, surface: str, prepass: str) -> str:
+    """Per-residue outcome, evaluated in the quote's LOCAL WINDOW (Round-3 fix — a global
+    'surface present ∧ quote gone' counts a wrong-location insert as recovery). Anchor on the
+    words flanking the quote in `prepass`, relocate that window in `out_final`, and judge only
+    there:
+      recovered    — window now holds the original surface, quote no longer stands
+      wrong_insert — surface appears but the quote still stands in-window
+      deletion     — quote gone but surface absent in-window (reworded away, not restored)
+      miss         — quote still stands, surface absent
+    """
+    p, f, sn, ql = _norm(prepass), _norm(out_final), _norm(surface), _norm(quote or "")
+    i = p.find(ql) if ql else -1
+    if i < 0:                                   # can't locate the quote — fall back to global
+        window = f
+    else:
+        left = " ".join(p[max(0, i - 24):i].split()[-3:])
+        right = " ".join(p[i + len(ql):i + len(ql) + 24].split()[:3])
+        lo = (f.find(left) + len(left)) if left and left in f else 0
+        hi = f.find(right, lo) if right and right in f else -1
+        window = f[lo:hi] if hi > lo else f[lo:lo + max(len(sn), len(ql)) + 40]
+    has_surf = sn in window
+    quote_stands = bool(ql) and ql in window and sn not in ql
+    if has_surf and not quote_stands:
+        return "recovered"
+    if has_surf and quote_stands:
+        return "wrong_insert"
+    if not has_surf and not quote_stands:
+        return "deletion"
+    return "miss"
