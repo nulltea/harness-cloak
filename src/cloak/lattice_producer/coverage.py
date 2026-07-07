@@ -74,7 +74,8 @@ def category_registry() -> dict[str, CategoryRegistryEntry]:
             _entry(label, CategoryOutcome.FORCED_PLACEHOLDER, "CODE", "exact address or postal code")
             for label in ("location address", "location street", "location zip")
         ],
-        *[_entry(label, CategoryOutcome.RUNTIME_LATTICE, "ORG") for label in ("organization", "organization medical facility")],
+        _entry("organization", CategoryOutcome.RUNTIME_LATTICE, "ORG"),
+        _entry("organization medical facility", CategoryOutcome.RUNTIME_LATTICE, "organization-medical-facility"),
         *[_entry(label, CategoryOutcome.RUNTIME_LATTICE, "health-condition") for label in ("condition", "injury")],
         *[_entry(label, CategoryOutcome.NEEDS_PROFILE, None) for label in ("medical process", "drug", "blood type")],
         *[

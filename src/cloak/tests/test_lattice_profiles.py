@@ -1,5 +1,6 @@
 import json
 
+from cloak.lattice import lattice_for
 from cloak.lattice_profiles import (
     load_profiles,
     lookup_count,
@@ -176,6 +177,81 @@ def test_lattice_for_uses_profile_levels_for_loc_and_org(monkeypatch, tmp_path):
 
     assert lat.lattice_for("Oslo", "LOC") == ["a city in norway", "a city in europe"]
     assert lat.lattice_for("Sberbank", "ORG") == ["a financial institution", "an organization"]
+
+
+def test_lattice_for_uses_profile_levels_for_drugs(monkeypatch, tmp_path):
+    import cloak.lattice_profiles as lp
+
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "glucophage": {
+            "aliases": ["metformin hydrochloride"],
+            "levels": ["medication"],
+            "source_ids": ["openfda-ndc:0002-8215"],
+            "count": 1000.0,
+        }
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    monkeypatch.setattr(lp, "DEFAULT_PROFILE_PATH", path)
+    lp._load_cached.cache_clear()
+    lp._index_cached.cache_clear()
+
+    assert lookup_levels("metformin hydrochloride", "drug", path) == ["medication"]
+    assert validate_profile_artifact(art) == []
+    assert lattice_for("Glucophage", "drug") == ["medication", "<DRUG_1>"]
+
+
+def test_lattice_for_uses_profile_levels_for_medical_procedures(monkeypatch, tmp_path):
+    import cloak.lattice_profiles as lp
+
+    art = _artifact()
+    art["profiles"]["medical-procedure"] = {
+        "excision appendix open approach": {
+            "aliases": [],
+            "levels": ["medical and surgical procedure", "medical procedure"],
+            "source_ids": ["icd10pcs:0DBJ0ZZ"],
+            "count": 1000.0,
+        }
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    monkeypatch.setattr(lp, "DEFAULT_PROFILE_PATH", path)
+    lp._load_cached.cache_clear()
+    lp._index_cached.cache_clear()
+
+    assert validate_profile_artifact(art) == []
+    assert lattice_for("excision appendix open approach", "medical-procedure") == [
+        "medical and surgical procedure",
+        "medical procedure",
+        "<MEDICAL_PROCEDURE_1>",
+    ]
+
+
+def test_lattice_for_uses_profile_levels_for_medical_facilities(monkeypatch, tmp_path):
+    import cloak.lattice_profiles as lp
+
+    art = _artifact()
+    art["profiles"]["organization-medical-facility"] = {
+        "example general hospital": {
+            "aliases": ["example hospital"],
+            "levels": ["hospital", "healthcare organization"],
+            "source_ids": ["nppes:1234567890"],
+            "count": 1000.0,
+        }
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    monkeypatch.setattr(lp, "DEFAULT_PROFILE_PATH", path)
+    lp._load_cached.cache_clear()
+    lp._index_cached.cache_clear()
+
+    assert validate_profile_artifact(art) == []
+    assert lattice_for("example hospital", "organization-medical-facility") == [
+        "hospital",
+        "healthcare organization",
+        "<ORGANIZATION_MEDICAL_FACILITY_1>",
+    ]
 
 
 def test_substitute_uses_profile_levels(monkeypatch, tmp_path):

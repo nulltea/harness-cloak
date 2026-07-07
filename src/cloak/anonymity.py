@@ -25,7 +25,7 @@ from functools import lru_cache
 
 from cloak.lattice_profiles import lookup_count
 from cloak.lattice import CONTINENTS, TYPE_LABEL, _MONTHS, _load_geo, is_type_name_phrase
-from cloak.runtime_types import FINE_DEM_TYPES, PLACEHOLDER_ONLY_TYPES
+from cloak.runtime_types import DOMAIN_RUNTIME_TYPES, FINE_DEM_TYPES, PLACEHOLDER_ONLY_TYPES
 
 GENERIC = 1e9
 
@@ -43,7 +43,9 @@ K_FLOORS = {"LOC": 100.0, "ORG": 100.0, "DATETIME": 100.0,
             "nationality": 100.0, "ethnicity": 100.0, "religion": 100.0,
             "profession": 100.0, "age": 100.0, "health-condition": 100.0,
             "family-role": 100.0, "demographic-other": 100.0,
-            "gender": 2.0, "marital-status": 2.0, "sexual-orientation": 2.0}
+            "gender": 2.0, "marital-status": 2.0, "sexual-orientation": 2.0,
+            "drug": 100.0, "medical-procedure": 100.0,
+            "organization-medical-facility": 100.0}
 
 _APPROVED_FINE_COUNTS = {
     "nationality": {
@@ -234,11 +236,11 @@ def aset_count(fill: str, span_type: str, original: str, strict: bool = False) -
         got = _quantity_count(fill, original)
     elif span_type in PLACEHOLDER_ONLY_TYPES:
         got = None
-    elif span_type in FINE_DEM_TYPES:
+    elif span_type in FINE_DEM_TYPES or span_type in DOMAIN_RUNTIME_TYPES:
         got = lookup_count(fill, span_type)
-        if got is None:
+        if got is None and span_type in FINE_DEM_TYPES:
             got = _APPROVED_FINE_COUNTS.get(span_type, {}).get(fill.lower().strip())
-        if got is None and span_type != "demographic-other":
+        if got is None and span_type not in {"demographic-other", *DOMAIN_RUNTIME_TYPES}:
             got = _wn_leaf_count(fill, strict)
     else:  # DEM / ORG / MISC / OTHER — WordNet lattices
         got = _wn_leaf_count(fill, strict)

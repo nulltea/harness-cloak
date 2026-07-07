@@ -62,6 +62,21 @@ SUPPORTED_SOURCES = {
         "paths": [],
         "required": True,
     },
+    "openfda-ndc": {
+        "runtime_types": ["drug"],
+        "paths": ["drug/openfda_ndc.json.zip"],
+        "required": False,
+    },
+    "icd10-pcs-order": {
+        "runtime_types": ["medical-procedure"],
+        "paths": ["procedure/icd10pcs_order_2026.zip"],
+        "required": False,
+    },
+    "nppes-weekly": {
+        "runtime_types": ["organization-medical-facility"],
+        "paths": ["org/nppes_weekly_v2.zip"],
+        "required": False,
+    },
 }
 
 UNIMPLEMENTED_SOURCES = {

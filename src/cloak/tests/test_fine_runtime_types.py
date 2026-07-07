@@ -34,7 +34,7 @@ def test_placeholder_token_normalization_and_regex():
 @pytest.mark.parametrize(
     ("surface", "typ", "expected"),
     [
-        ("diabetes", "health-condition", "chronic condition"),
+        ("diabetes", "health-condition", "metabolic condition"),
         ("journalist", "profession", "media worker"),
         ("Kurdish", "ethnicity", "of Middle Eastern ethnicity"),
     ],

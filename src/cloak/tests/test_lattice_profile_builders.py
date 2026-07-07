@@ -14,6 +14,9 @@ from lattice_sources.legacy_cache import rows_from_legacy_teacher_cache
 from lattice_sources.obo import rows_from_obo
 from lattice_sources.occupation import rows_from_esco_rdf, rows_from_isco_csv, rows_from_onet_job_titles, rows_from_onet_titles
 from lattice_sources.religion import rows_from_arda_variable_labels
+from lattice_sources.drugs import rows_from_openfda_ndc_zip
+from lattice_sources.organizations import rows_from_nppes_zip
+from lattice_sources.procedures import rows_from_icd10_pcs_order_zip
 from build_lattice_profiles import collect_rows, coverage_report, merge_rows
 from download.fetch_lattice_sources import fetch, source_report
 
@@ -149,6 +152,128 @@ def test_obo_rows_use_synonyms_and_family_roots(tmp_path):
     row = next(r for r in rows if r.surface == "diabetes mellitus")
     assert "diabetes" in row.aliases
     assert row.levels == ["endocrine condition"]
+
+
+def test_obo_rows_use_transitive_family_roots(tmp_path):
+    src = tmp_path / "doid.obo"
+    src.write_text(
+        "[Term]\n"
+        "id: DOID:9352\n"
+        "name: type 2 diabetes mellitus\n"
+        "synonym: \"T2D\" EXACT []\n"
+        "is_a: DOID:9351 ! diabetes mellitus\n"
+        "\n"
+        "[Term]\n"
+        "id: DOID:9351\n"
+        "name: diabetes mellitus\n"
+        "is_a: DOID:28 ! endocrine system disease\n"
+        "\n"
+        "[Term]\n"
+        "id: DOID:28\n"
+        "name: endocrine system disease\n"
+    )
+
+    rows = rows_from_obo(src, "health-condition", {"DOID:28": "endocrine condition"})
+
+    row = next(r for r in rows if r.surface == "type 2 diabetes mellitus")
+    assert "t2d" in row.aliases
+    assert row.levels == ["endocrine condition"]
+
+
+def test_openfda_ndc_rows_use_names_only(tmp_path):
+    src = tmp_path / "drug-ndc.json.zip"
+    with zipfile.ZipFile(src, "w") as zf:
+        zf.writestr("drug-ndc-0001-of-0001.json", json.dumps({
+            "results": [{
+                "product_ndc": "0002-8215",
+                "brand_name": "Glucophage",
+                "generic_name": "METFORMIN HYDROCHLORIDE",
+                "dosage_form": "TABLET",
+                "route": ["ORAL"],
+                "active_ingredients": [{"name": "METFORMIN HYDROCHLORIDE", "strength": "500 mg/1"}],
+            }]
+        }))
+
+    rows = rows_from_openfda_ndc_zip(src)
+    by_surface = {r.surface: r for r in rows}
+
+    assert by_surface["glucophage"].runtime_type == "drug"
+    assert by_surface["glucophage"].levels == ["medication"]
+    assert "metformin hydrochloride" in by_surface["glucophage"].aliases
+    assert "tablet" not in by_surface
+    assert "oral" not in by_surface
+    assert by_surface["metformin hydrochloride"].source_ids == ["openfda-ndc:0002-8215"]
+
+
+def test_icd10_pcs_order_rows_to_medical_procedure_profiles(tmp_path):
+    src = tmp_path / "icd10pcs_order.zip"
+    with zipfile.ZipFile(src, "w") as zf:
+        zf.writestr(
+            "icd10pcs_order_2026.txt",
+            "00001 0DBJ0ZZ 1 Excision Appendix, Open Approach\n"
+            "00002 B030YZZ 1 Magnetic Resonance Imaging Brain\n",
+        )
+
+    rows = rows_from_icd10_pcs_order_zip(src)
+    by_surface = {r.surface: r for r in rows}
+
+    assert by_surface["excision appendix open approach"].runtime_type == "medical-procedure"
+    assert by_surface["excision appendix open approach"].levels == ["medical and surgical procedure", "medical procedure"]
+    assert by_surface["magnetic resonance imaging brain"].levels == ["imaging procedure", "medical procedure"]
+    assert by_surface["excision appendix open approach"].source_ids == ["icd10pcs:0DBJ0ZZ"]
+
+
+def test_icd10_pcs_order_prefers_long_title_column(tmp_path):
+    src = tmp_path / "icd10pcs_order.zip"
+    with zipfile.ZipFile(src, "w") as zf:
+        zf.writestr(
+            "icd10pcs_order_2026.txt",
+            "00001 0DBJ0ZZ 1 Excision Appendix, Open Approach                        Excision of Appendix, Open Approach\n",
+        )
+
+    rows = rows_from_icd10_pcs_order_zip(src)
+    surfaces = {r.surface for r in rows}
+
+    assert "excision of appendix open approach" in surfaces
+    assert "excision appendix open approach" not in surfaces
+
+
+def test_nppes_rows_to_medical_facility_profiles(tmp_path):
+    src = tmp_path / "nppes.zip"
+    csv_text = (
+        "NPI,Entity Type Code,Provider Organization Name (Legal Business Name),"
+        "Provider Other Organization Name,Healthcare Provider Taxonomy Code_1\n"
+        "1234567890,2,Example General Hospital,Example Hospital,282N00000X\n"
+        "1234567891,1,Jane Smith,,207Q00000X\n"
+    )
+    with zipfile.ZipFile(src, "w") as zf:
+        zf.writestr("npidata_pfile_20260608-20260705.csv", csv_text)
+
+    rows = rows_from_nppes_zip(src)
+    by_surface = {r.surface: r for r in rows}
+
+    assert by_surface["example general hospital"].runtime_type == "organization-medical-facility"
+    assert by_surface["example general hospital"].aliases == ["example hospital"]
+    assert by_surface["example general hospital"].levels == ["hospital", "healthcare organization"]
+    assert "jane smith" not in by_surface
+
+
+def test_nppes_rows_filter_noisy_org_surfaces_and_aliases(tmp_path):
+    src = tmp_path / "nppes.zip"
+    csv_text = (
+        "NPI,Entity Type Code,Provider Organization Name (Legal Business Name),"
+        "Provider Other Organization Name,Healthcare Provider Taxonomy Code_1\n"
+        "1234567890,2,\"20/20 Icare, PLLC\",<UNAVAIL>,261Q00000X\n"
+        "1234567891,2,Evergreen Clinic,<UNAVAIL>,261Q00000X\n"
+    )
+    with zipfile.ZipFile(src, "w") as zf:
+        zf.writestr("npidata_pfile_20260608-20260705.csv", csv_text)
+
+    rows = rows_from_nppes_zip(src)
+    by_surface = {r.surface: r for r in rows}
+
+    assert "20/20 icare, pllc" not in by_surface
+    assert by_surface["evergreen clinic"].aliases == []
 
 
 def test_categorical_alias_rows_have_no_levels():
@@ -395,6 +520,39 @@ def test_merge_rows_drops_profession_surfaces_longer_than_two_words_but_keeps_al
     assert "software application developer" not in professions
 
 
+def test_merge_rows_drops_noisy_health_condition_surfaces():
+    artifact = merge_rows([
+        ProfileRow("health-condition", "asthma", [], ["respiratory condition"], ["DOID:2841"]),
+        ProfileRow(
+            "health-condition",
+            "disease with comma, subtype",
+            [],
+            ["metabolic condition"],
+            ["DOID:comma"],
+        ),
+        ProfileRow(
+            "health-condition",
+            "ataxia-oculomotor apraxia 3",
+            [],
+            ["neurological condition"],
+            ["DOID:number"],
+        ),
+        ProfileRow(
+            "health-condition",
+            "very long condition name",
+            [],
+            ["metabolic condition"],
+            ["DOID:long"],
+        ),
+    ])
+
+    health = artifact["profiles"]["health-condition"]
+    assert "asthma" in health
+    assert "disease with comma, subtype" not in health
+    assert "ataxia-oculomotor apraxia 3" not in health
+    assert "very long condition name" not in health
+
+
 def test_merge_rows_drops_self_leaking_levels_but_keeps_useful_parents():
     artifact = merge_rows([
         ProfileRow(
@@ -497,6 +655,27 @@ def test_collect_rows_uses_downloaded_raw_source_layout(tmp_path):
         "</result>"
         "</results></sparql>"
     )
+    (raw / "drug").mkdir()
+    with zipfile.ZipFile(raw / "drug" / "openfda_ndc.json.zip", "w") as zf:
+        zf.writestr("drug-ndc-0001-of-0001.json", json.dumps({
+            "results": [{
+                "product_ndc": "0002-8215",
+                "brand_name": "Glucophage",
+                "generic_name": "METFORMIN HYDROCHLORIDE",
+                "active_ingredients": [{"name": "METFORMIN HYDROCHLORIDE"}],
+            }]
+        }))
+    (raw / "procedure").mkdir()
+    with zipfile.ZipFile(raw / "procedure" / "icd10pcs_order_2026.zip", "w") as zf:
+        zf.writestr("icd10pcs_order_2026.txt", "00001 0DBJ0ZZ 1 Excision Appendix, Open Approach\n")
+    (raw / "org").mkdir()
+    with zipfile.ZipFile(raw / "org" / "nppes_weekly_v2.zip", "w") as zf:
+        zf.writestr(
+            "npidata_pfile_20260608-20260705.csv",
+            "NPI,Entity Type Code,Provider Organization Name (Legal Business Name),"
+            "Provider Other Organization Name,Healthcare Provider Taxonomy Code_1\n"
+            "1234567890,2,Example General Hospital,Example Hospital,282N00000X\n",
+        )
 
     rows = collect_rows(raw)
     surfaces = {r.surface for r in rows}
@@ -505,6 +684,10 @@ def test_collect_rows_uses_downloaded_raw_source_layout(tmp_path):
     assert "defense attorney" in surfaces
     assert "germany" in surfaces
     assert "judaism" in surfaces
+    assert "glucophage" in surfaces
+    assert "metformin hydrochloride" in surfaces
+    assert "excision appendix open approach" in surfaces
+    assert "example general hospital" in surfaces
 
 
 def test_collect_rows_can_include_geonames_and_legacy_teacher_cache(tmp_path):
@@ -540,6 +723,9 @@ def test_fetch_lattice_sources_dry_run_reports_open_and_manual_sources(tmp_path)
     assert "esco" in report["downloadable"]
     assert "arda" in report["downloadable"]
     assert "cldr-json-full" in report["downloadable"]
+    assert "openfda-ndc" in report["downloadable"]
+    assert "icd10-pcs-order" in report["downloadable"]
+    assert "nppes-weekly" in report["downloadable"]
     assert "wikidata-lattice-seeds" in report["downloadable"]
     assert "umls" in report["manual_or_credentialed"]
     assert "icd11" in report["manual_or_credentialed"]
@@ -561,6 +747,9 @@ def test_fetch_dry_run_knows_requested_lattice_source_paths(tmp_path):
     assert fetch("arda", tmp_path, dry_run=True) == tmp_path / "religion" / "arda_rcsdem2_stata.dta"
     assert fetch("cldr-json-full", tmp_path, dry_run=True) == tmp_path / "nationality" / "cldr-48.2.0-json-full.zip"
     assert fetch("wikidata-lattice-seeds", tmp_path, dry_run=True) == tmp_path / "wikidata" / "lattice_seeds.xml"
+    assert fetch("openfda-ndc", tmp_path, dry_run=True) == tmp_path / "drug" / "openfda_ndc.json.zip"
+    assert fetch("icd10-pcs-order", tmp_path, dry_run=True) == tmp_path / "procedure" / "icd10pcs_order_2026.zip"
+    assert fetch("nppes-weekly", tmp_path, dry_run=True) == tmp_path / "org" / "nppes_weekly_v2.zip"
 
 
 def test_populate_lattice_profiles_writes_artifact_and_missing_source_report(tmp_path):

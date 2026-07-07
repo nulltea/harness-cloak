@@ -30,6 +30,8 @@ def test_category_registry_maps_direct_and_v7_fine_labels() -> None:
     assert registry_entry_for_label("email address").runtime_type == "CODE"
     assert registry_entry_for_label("profession").outcome == CategoryOutcome.RUNTIME_LATTICE
     assert registry_entry_for_label("profession").runtime_type == "profession"
+    assert registry_entry_for_label("organization").runtime_type == "ORG"
+    assert registry_entry_for_label("organization medical facility").runtime_type == "organization-medical-facility"
     assert registry_entry_for_label("medical process").outcome == CategoryOutcome.NEEDS_PROFILE
 
 

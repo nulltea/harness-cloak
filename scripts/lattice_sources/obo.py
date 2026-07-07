@@ -33,11 +33,29 @@ def _terms(path: Path) -> list[dict]:
 
 def rows_from_obo(path: Path, runtime_type: str, family_roots: dict[str, str]) -> list[ProfileRow]:
     rows = []
-    for term in _terms(path):
+    terms = _terms(path)
+    by_id = {term.get("id"): term for term in terms if term.get("id")}
+
+    def family_levels(term_id: str, seen: set[str] | None = None) -> list[str]:
+        seen = seen or set()
+        if term_id in seen:
+            return []
+        seen.add(term_id)
+        term = by_id.get(term_id, {})
+        levels = []
+        for parent in term.get("parents", []):
+            if parent in family_roots and family_roots[parent] not in levels:
+                levels.append(family_roots[parent])
+            for level in family_levels(parent, seen):
+                if level not in levels:
+                    levels.append(level)
+        return levels
+
+    for term in terms:
         name = norm(term.get("name", ""))
         if not name:
             continue
-        levels = [family_roots[p] for p in term.get("parents", []) if p in family_roots]
+        levels = family_levels(term.get("id", ""))
         if not levels:
             continue
         rows.append(ProfileRow(

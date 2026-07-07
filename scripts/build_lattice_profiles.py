@@ -5,6 +5,7 @@ to populate data/lattice_sources/raw first.
 """
 import argparse
 import json
+import re
 import zipfile
 from collections import defaultdict
 from datetime import date
@@ -15,14 +16,33 @@ from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES
 from lattice_sources.categorical import alias_rows
 from lattice_sources.common import ProfileRow, norm
 from lattice_sources.demographics import rows_from_cldr_zip, rows_from_wikidata_sparql_xml
+from lattice_sources.drugs import rows_from_openfda_ndc_zip
 from lattice_sources.geonames import rows_from_geonames
 from lattice_sources.legacy_cache import rows_from_legacy_teacher_cache
 from lattice_sources.obo import rows_from_obo
 from lattice_sources.occupation import rows_from_esco_rdf, rows_from_isco_csv, rows_from_onet_job_titles, rows_from_onet_titles
+from lattice_sources.organizations import rows_from_nppes_zip
+from lattice_sources.procedures import rows_from_icd10_pcs_order_zip
 from lattice_sources.religion import rows_from_arda_stata
 
 HEALTH_FAMILY_ROOTS = {
+    "DOID:0014667": "metabolic condition",
+    "DOID:0050117": "infectious disease",
+    "DOID:0060118": "thoracic condition",
+    "DOID:15": "reproductive system condition",
+    "DOID:16": "skin condition",
+    "DOID:17": "musculoskeletal condition",
+    "DOID:18": "urinary system condition",
     "DOID:28": "endocrine condition",
+    "DOID:74": "hematologic condition",
+    "DOID:77": "gastrointestinal condition",
+    "DOID:150": "mental health condition",
+    "DOID:225": "syndrome",
+    "DOID:863": "neurological condition",
+    "DOID:1287": "cardiovascular condition",
+    "DOID:14566": "neoplastic condition",
+    "DOID:1579": "respiratory condition",
+    "DOID:2914": "immune system condition",
     "MONDO:0005151": "infectious disease",
     "MONDO:0005084": "respiratory condition",
     "MONDO:0002025": "mental health condition",
@@ -42,6 +62,10 @@ NON_INFORMATIVE_LEVELS = {
 def _surface_allowed(runtime_type: str, surface: str) -> bool:
     if runtime_type == "profession" and len(norm(surface).split()) > 2:
         return False
+    if runtime_type == "health-condition":
+        surface = norm(surface)
+        if "," in surface or len(surface.split()) > 3 or re.search(r"\b\d+$", surface):
+            return False
     return True
 
 
@@ -130,6 +154,15 @@ def collect_rows(
     wikidata = raw_dir / "wikidata" / "lattice_seeds.xml"
     if wikidata.exists():
         rows.extend(rows_from_wikidata_sparql_xml(wikidata))
+    openfda_ndc = raw_dir / "drug" / "openfda_ndc.json.zip"
+    if openfda_ndc.exists():
+        rows.extend(rows_from_openfda_ndc_zip(openfda_ndc))
+    icd10pcs = raw_dir / "procedure" / "icd10pcs_order_2026.zip"
+    if icd10pcs.exists():
+        rows.extend(rows_from_icd10_pcs_order_zip(icd10pcs))
+    nppes = raw_dir / "org" / "nppes_weekly_v2.zip"
+    if nppes.exists():
+        rows.extend(rows_from_nppes_zip(nppes))
     for name in ("mondo.obo", "doid.obo"):
         path = raw_dir / "health" / name
         if path.exists():

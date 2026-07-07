@@ -81,6 +81,24 @@ SOURCES = {
         "NLM MeSH terms apply",
         "MeSH RDF N-Triples gzip dump.",
     ),
+    "openfda-ndc": Source(
+        "https://download.open.fda.gov/drug/ndc/drug-ndc-0001-of-0001.json.zip",
+        "drug/openfda_ndc.json.zip",
+        "openFDA terms apply",
+        "FDA NDC Directory bulk JSON ZIP. Used for name-only drug lattices.",
+    ),
+    "icd10-pcs-order": Source(
+        "https://www.cms.gov/files/zip/2026-icd-10-pcs-order-file-long-and-abbreviated-titles.zip",
+        "procedure/icd10pcs_order_2026.zip",
+        "CMS ICD-10 terms apply",
+        "FY 2026 ICD-10-PCS order file with long and abbreviated procedure titles.",
+    ),
+    "nppes-weekly": Source(
+        "https://download.cms.gov/nppes/NPPES_Data_Dissemination_062926_070526_Weekly_V2.zip",
+        "org/nppes_weekly_v2.zip",
+        "CMS NPPES data dissemination terms apply",
+        "Pinned NPPES V.2 weekly incremental ZIP; Type 2 rows feed medical-facility organization lattices.",
+    ),
     "geonames-country-info": Source(
         "https://download.geonames.org/export/dump/countryInfo.txt",
         "nationality/countryInfo.txt",
