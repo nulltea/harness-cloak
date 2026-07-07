@@ -137,12 +137,27 @@ LoRA r=32/α=64 + 5% Pile on the fine-DEM gap-mix (23,305 windows; relabeler ~62
 | family-role / health-condition | 30 / 26 | 0.500 | 0.500 |
 
 **DEM-rollup (0.964/0.719), QUASI (0.970), precision (0.853) UNCHANGED** — the fix only affects fine typing.
-**Decomposition of the low per-leaf:** (a) **Presidio-clobber** explained `nationality` almost entirely
-(0.415→0.901, the largest leaf) + some `profession`; (b) **everything else is the relabeler** — the
-`demographic-other` bucket is n=199 (**42% of all DEM gold**, the relabeler's 38%-uncovered residual) at
-~0.28 and unlearnable as a coherent leaf; thin leaves (age/marital) stay thin. So the **remaining per-leaf
-ceiling is the relabeler's ~62% coverage**, not Presidio. Per-leaf is still directional (fine gold = the
-relabeler); DEM-rollup is the trustworthy anchor.
+
+**Follow-up (design fix): reverted the inference-time relabeler + dropped Presidio NRP in fine mode.** The
+Presidio-relabel patch had put `relabel_dem` into the *inference* path (a training heuristic leaking to
+runtime). A 3-way test (Presidio→DEM / Presidio-relabeled / **NRP-dropped, GLiNER-only**) settled it:
+
+| config | DEM rollup any/typed | QUASI | prec | nationality per-leaf |
+|---|---|---|---|---|
+| Presidio→DEM (orig) | 0.964/0.719 | 0.970 | 0.853 | 0.415 |
+| Presidio relabeled @inf | 0.964/0.719 | 0.970 | 0.853 | 0.901 |
+| **NRP dropped (GLiNER-only)** | 0.964/0.719 | 0.970 | 0.854 | 0.894 |
+
+**Presidio NRP is redundant and was net-negative in fine mode:** dropping it moves DEM-rollup by 0.000,
+QUASI 0.000, precision +0.001. The low original `nationality` (0.415) was **Presidio's coarse DEM clobbering
+GLiNER's learned "nationality" in dedupe** — GLiNER alone types it 0.894 (≈ the relabeled 0.901). So the
+model, not the relabeler, does the fine typing. Now: **inference is pure-model** (fine mode drops Presidio
+NRP; `detect.py` no longer calls `relabel_dem`), **`relabel_dem` is offline-only** (training gold + eval
+gold), and no coarse DEM leaks in fine mode. Coarse mode (v1–v6) keeps NRP→DEM.
+**Corrected per-leaf decomposition:** the residual low per-leaf is entirely the **relabeler's ~62% coverage**
+— `demographic-other` (n=199, 42% of DEM gold, ~0.27, unlearnable as a coherent leaf) + thin leaves
+(age 0.23, marital 0.33). Not Presidio. Per-leaf stays directional (fine gold = the relabeler); DEM-rollup
+is the trustworthy anchor.
 
 ### Verdict — decomposition SUCCEEDED at its goal (DEM typing), generality held
 - **DEM typed recall up: 0.684 (v6) → 0.719 (v7)** and **DEM-rollup any 0.949 → 0.964**, at the *same*

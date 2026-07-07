@@ -220,8 +220,9 @@ class Detector:
         for r in self.presidio.analyze(text=text, language="en"):
             if r.entity_type in PRESIDIO_MAP:
                 t = PRESIDIO_MAP[r.entity_type]
-                if self.fine_dem and t == "DEM":   # fine-type Presidio's NRP span by its surface, so it
-                    t = relabel_dem(text[r.start:r.end])   # doesn't clobber GLiNER fine leaves with coarse DEM
+                if self.fine_dem and t == "DEM":
+                    continue   # fine-dem: GLiNER's learned fine leaves own demographics; drop Presidio's
+                               # coarse NRP->DEM (keeps relabel_dem training/eval-only, inference pure-model).
                 spans.append(Span(r.start, r.end, text[r.start:r.end], t, r.score, "presidio"))
         spans = [s for s in spans  # pure symbol/emoji spans or bare pronouns: never identifiers
                  if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in _PRONOUNS]
