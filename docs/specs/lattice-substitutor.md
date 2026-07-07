@@ -3,8 +3,8 @@ type: reference
 status: current
 created: 2026-07-07
 updated: 2026-07-07
-tags: [substitution, lattice, detector, fine-types, privacy, implementation-plan]
-companion: [docs/specs/detector-model.md, docs/specs/RL/surrogate-ranker-infiller.md]
+tags: [substitution, lattice, detector, fine-types, privacy]
+companion: [docs/specs/detector-model.md, docs/specs/RL/surrogate-ranker-infiller.md, docs/plans/2026-07-07-lattice-substitutor-fine-types.md]
 ---
 
 # Lattice substitutor - fine-type runtime spec
@@ -28,13 +28,20 @@ substitution type for v7 fine mode.
 - **Lattice** - ordered replacement candidates for a span, most specific to most general. The action set
   also includes keep-original at depth 0 where a policy permits it, and a typed placeholder terminal that is
   always legal.
-- **Floor label** - the final generic text node for leaves that can safely expose a broad semantic category.
+- **Coarsest text level** - the broadest grammatical, truthful phrase that may replace the original surface
+  in context. It must be a usable replacement phrase, not a bare restatement of the type name.
+- **Placeholder terminal** - the final privacy action for a runtime type, e.g. `<NATIONALITY_1>`. For fine
+  demographic leaves, this is the lattice/action terminal when no grammatical privacy-legal text level
+  remains.
 - **Placeholder-only leaf** - a leaf whose sensitive categorical fact should not be rewritten into a semantic
   text floor. Its non-keep privacy action is a typed placeholder.
 - **Anonymity floor** - the per-runtime-type minimum anonymity-set count required for a non-placeholder
   replacement to be legal.
 - **Probe pool** - same-runtime-type distractor surfaces used by offline contrastive re-identification
   diagnostics (`walk_risk`). Pools are diagnostics and teacher features, not the deployment privacy mask.
+- **Rule-based generalization** - a deterministic rewrite rule that maps a surface to a coarser truthful
+  phrase, e.g. `34 -> thirty-something` or `120,000 dollars -> between 60,000 and 240,000 dollars`. Earlier
+  notes called these "buckets"; this spec uses the more explicit term.
 
 ## Runtime Type Contract
 
@@ -45,26 +52,26 @@ to conflate:
 - **Span class** - what kind of sensitive surface the type denotes.
 - **Substitution policy family** - which action/lattice rule family handles the type at runtime.
 
-| Runtime type | Detector/schema origin | Span class | Substitution policy family |
-|---|---|---|---|
-| `PERSON` | TAB / Presidio direct type | Person name or alias | Forced typed placeholder |
-| `CODE` | TAB / Presidio direct type | Reference number, contact code, account-like identifier | Forced typed placeholder |
-| `ORG` | TAB-8 coarse type | Organization, company, court, institution | Organization generalization lattice |
-| `LOC` | TAB / Presidio coarse type | Location, address, city, country | GeoNames first, then WordNet / teacher lattice |
-| `DATETIME` | TAB / Presidio coarse type | Date, time, duration | Date/time bucket lattice |
-| `QUANTITY` | TAB / Presidio coarse type | Amount, money, percentage, count | Quantity bucket lattice |
-| `MISC` | TAB-8 coarse type | Identifying residual attribute or event | WordNet / teacher lattice, conservative floor |
-| `nationality` | Fine DEM leaf | Nationality or citizenship | Country/region/continent/nationality lattice |
-| `ethnicity` | Fine DEM leaf | Ethnicity, race, ancestry group | Ethnicity/ancestry-region lattice |
-| `religion` | Fine DEM leaf | Religion, belief, denomination, branch | Religious tradition/affiliation lattice |
-| `profession` | Fine DEM leaf | Profession, occupation, job title | Profession domain/sector lattice |
-| `age` | Fine DEM leaf | Age expression | Age bucket lattice |
-| `gender` | Fine DEM leaf | Gender value | Placeholder-or-keep categorical policy |
-| `marital-status` | Fine DEM leaf | Marital status value | Placeholder-or-keep categorical policy |
-| `health-condition` | Fine DEM leaf | Disease, diagnosis, health condition | Condition-family lattice |
-| `sexual-orientation` | Fine DEM leaf | Sexual orientation value | Placeholder-or-keep categorical policy |
-| `family-role` | Fine DEM leaf | Family role or relationship | Family-relationship lattice with conservative floors |
-| `demographic-other` | Fine DEM leaf | Residual demographic attribute | Placeholder-first residual demographic policy |
+| Runtime type         | Detector/schema origin     | Span class                                              | Substitution policy family                           |
+| -------------------- | -------------------------- | ------------------------------------------------------- | ---------------------------------------------------- |
+| `PERSON`             | TAB / Presidio direct type | Person name or alias                                    | Forced typed placeholder                             |
+| `CODE`               | TAB / Presidio direct type | Reference number, contact code, account-like identifier | Forced typed placeholder                             |
+| `ORG`                | TAB-8 coarse type          | Organization, company, court, institution               | Organization generalization lattice                  |
+| `LOC`                | TAB / Presidio coarse type | Location, address, city, country                        | GeoNames first, then WordNet / teacher lattice       |
+| `DATETIME`           | TAB / Presidio coarse type | Date, time, duration                                    | Rule-based date/time generalization lattice          |
+| `QUANTITY`           | TAB / Presidio coarse type | Amount, money, percentage, count                        | Rule-based quantity-range generalization lattice     |
+| `MISC`               | TAB-8 coarse type          | Identifying residual attribute or event                 | WordNet / teacher lattice, conservative floor        |
+| `nationality`        | Fine DEM leaf              | Nationality or citizenship                              | Country/region/continent/nationality lattice         |
+| `ethnicity`          | Fine DEM leaf              | Ethnicity, race, ancestry group                         | Ethnicity/ancestry-region lattice                    |
+| `religion`           | Fine DEM leaf              | Religion, belief, denomination, branch                  | Religious tradition/affiliation lattice              |
+| `profession`         | Fine DEM leaf              | Profession, occupation, job title                       | Profession domain/sector lattice                     |
+| `age`                | Fine DEM leaf              | Age expression                                          | Rule-based age-range generalization lattice          |
+| `gender`             | Fine DEM leaf              | Gender value                                            | Placeholder-or-keep categorical policy               |
+| `marital-status`     | Fine DEM leaf              | Marital status value                                    | Placeholder-or-keep categorical policy               |
+| `health-condition`   | Fine DEM leaf              | Disease, diagnosis, health condition                    | Condition-family lattice                             |
+| `sexual-orientation` | Fine DEM leaf              | Sexual orientation value                                | Placeholder-or-keep categorical policy               |
+| `family-role`        | Fine DEM leaf              | Family role or relationship                             | Family-relationship lattice with conservative floors |
+| `demographic-other`  | Fine DEM leaf              | Residual demographic attribute                          | Placeholder-first residual demographic policy        |
 
 `DEM` must not be emitted by the v7 fine-mode substitutor. It may still appear when running old coarse
 detectors, historical artifacts, or TAB research gates. Any new fine-mode runtime path that produces `DEM`
@@ -116,20 +123,25 @@ invertible.
 
 `DATETIME`, `QUANTITY`, and `LOC` keep their current special sources:
 
-- `DATETIME` uses date/time buckets. Age-like text should move to the `age` runtime type in fine mode.
-- `QUANTITY` uses numeric range buckets.
+- `DATETIME` uses rule-based date/time generalizations. Age-like text should move to the `age` runtime type
+  in fine mode.
+- `QUANTITY` uses rule-based numeric range generalizations.
 - `LOC` uses GeoNames chains first, then WordNet or teacher fallback.
 
-`ORG` and `MISC` continue to use WordNet / teacher lattices, but their floor labels remain conservative:
+`ORG` and `MISC` continue to use WordNet / teacher lattices, but their coarsest text levels remain
+conservative:
 
-| Type | Floor label |
+| Type | Coarsest text level |
 |---|---|
 | `ORG` | `an organization` |
 | `MISC` | `something` |
 
 ### Hierarchical fine leaves
 
-These leaves should expose useful semantic generalizations when the anonymity floor allows them.
+These leaves should expose useful semantic generalizations when the anonymity floor allows them. Their text
+levels must remain grammatical as replacements for the detected span. A phrase that only names the type, such
+as `a nationality`, `an ethnicity`, or `a profession`, is not a valid terminal text level for these leaves;
+the terminal action is the typed placeholder.
 
 #### `nationality`
 
@@ -137,25 +149,24 @@ Goal: preserve broad nationality/citizenship utility without exposing exact citi
 
 Preferred lattice sources:
 
-1. Demonym/country gazetteer: `Polish -> a Central European nationality -> a European nationality -> a nationality`.
-2. Country-to-continent fallback: `Kenyan -> an East African nationality -> an African nationality -> a nationality`.
-3. Floor: `a nationality`.
+1. Demonym/country gazetteer: `Polish -> Central European -> European -> <NATIONALITY_n>`.
+2. Country-to-continent fallback: `Kenyan -> East African -> African -> <NATIONALITY_n>`.
 
 The exact demonym or country is keep-original only, never a generated floor.
 
 #### `ethnicity`
 
-Goal: support finer ethnicity generalization than `an ethnicity`, especially region/ancestry abstractions.
+Goal: support finer ethnicity generalization through grammatical ancestry/region abstractions.
 
 Examples:
 
-- `Kurdish -> a Middle Eastern ethnicity -> a West Asian ethnicity -> an ethnicity`.
-- `Roma -> a European ethnicity -> an ethnicity`.
-- `Tamil -> a South Asian ethnicity -> an ethnicity`.
+- `Kurdish -> of Middle Eastern ethnicity -> of West Asian ethnicity -> <ETHNICITY_n>`.
+- `Roma -> of European ethnicity -> <ETHNICITY_n>`.
+- `Tamil -> of South Asian ethnicity -> <ETHNICITY_n>`.
 
 Implementation can start with a curated gazetteer for observed TAB/Nemotron terms, then fall back to teacher
-lattices gated by NLI. The floor label is `an ethnicity`, but it should usually be reached through a region
-node when a reliable mapping exists.
+lattices gated by NLI. The coarsest text level should usually be a grammatical region/ancestry phrase when a
+reliable mapping exists; otherwise use the typed placeholder.
 
 #### `religion`
 
@@ -163,30 +174,31 @@ Goal: generalize denominations/traditions carefully without inventing false hier
 
 Examples:
 
-- `Catholic -> a Christian denomination -> a Christian religious affiliation -> a religious affiliation`.
-- `Sunni -> an Islamic branch -> a religious affiliation`.
-- `Muslim -> a religious affiliation` if no stricter truthful intermediate is available.
+- `Catholic -> Christian -> <RELIGION_n>`.
+- `Sunni -> Muslim -> <RELIGION_n>`.
+- `Muslim -> <RELIGION_n>` if no broader grammatical truthful text level is available.
 
-Floor: `a religious affiliation`.
+Do not use `a religious affiliation` as a replacement. It names the type but does not usually substitute
+cleanly for a religion surface.
 
 #### `profession`
 
-Goal: preserve occupational utility through domain/sector ladders instead of collapsing directly to
-`a profession`.
+Goal: preserve occupational utility through domain/sector ladders instead of collapsing to a type-name phrase.
 
 Examples:
 
-- `cardiologist -> a medical specialist -> a healthcare profession -> a profession`.
-- `journalist -> a media profession -> a profession`.
-- `prosecutor -> a legal profession -> a profession`.
-- `teacher -> an education profession -> a profession`.
+- `cardiologist -> medical specialist -> healthcare worker -> <PROFESSION_n>`.
+- `journalist -> media worker -> <PROFESSION_n>`.
+- `prosecutor -> legal professional -> <PROFESSION_n>`.
+- `teacher -> education worker -> <PROFESSION_n>`.
 
 Implementation should include a small profession-domain map for high-frequency occupations, then WordNet or
-teacher fallback. The floor is `a profession`, but the expected useful nodes are domain and sector nodes.
+teacher fallback. `a profession` is not a valid terminal text level; use `<PROFESSION_n>` when no grammatical
+domain/sector replacement is legal.
 
 #### `age`
 
-Goal: reuse the existing age bucket behavior under the external `age` type.
+Goal: reuse the existing rule-based age generalization behavior under the external `age` type.
 
 Examples:
 
@@ -194,8 +206,8 @@ Examples:
 - `17 years old -> teenaged`.
 - `72-year-old -> seventy-something`.
 
-The floor is a bucket, not the text `an age range`, when a bucket can be parsed. If parsing fails, the
-terminal privacy action is `<AGE_n>`.
+The coarsest text level is a parsed age-range generalization, not the text `an age range`, when a
+deterministic rule can parse the surface. If parsing fails, the terminal privacy action is `<AGE_n>`.
 
 #### `health-condition`
 
@@ -203,14 +215,15 @@ Goal: preserve medical/health utility at a condition-family level where possible
 
 Examples:
 
-- `diabetes -> an endocrine condition -> a chronic condition -> a health condition`.
-- `depression -> a mental health condition -> a health condition`.
-- `asthma -> a respiratory condition -> a health condition`.
-- `HIV -> an infectious disease -> a health condition`.
+- `diabetes -> endocrine condition -> chronic condition -> <HEALTH_CONDITION_n>`.
+- `depression -> mental health condition -> <HEALTH_CONDITION_n>`.
+- `asthma -> respiratory condition -> <HEALTH_CONDITION_n>`.
+- `HIV -> infectious disease -> <HEALTH_CONDITION_n>`.
 
 Implementation can start with a curated condition-family map over observed detector training/eval surfaces.
 WordNet may help for common diseases, but must be NLI-gated because medical hypernyms are easy to overstate.
-Floor: `a health condition`.
+Do not use `a health condition` as the terminal text level; use `<HEALTH_CONDITION_n>` when no grammatical
+condition-family replacement is legal.
 
 #### `family-role`
 
@@ -218,13 +231,13 @@ Goal: retain broad family-relation information only when useful and legal.
 
 Examples:
 
-- `daughter -> a child -> a family relationship`.
-- `wife -> a spouse -> a family relationship`.
-- `grandfather -> a grandparent -> a family relationship`.
+- `daughter -> child -> <FAMILY_ROLE_n>`.
+- `wife -> spouse -> <FAMILY_ROLE_n>`.
+- `grandfather -> grandparent -> <FAMILY_ROLE_n>`.
 
 This leaf is more privacy-sensitive than profession or health because exact relationship structure can aid
 re-identification. Its anonymity floor should be conservative, and the placeholder terminal should be common
-at strict operating points. Floor: `a family relationship`.
+at strict operating points. Do not use `a family relationship` as a terminal text level.
 
 ### Placeholder-or-keep categorical leaves
 
@@ -253,10 +266,55 @@ They may exist as internal labels for documentation, but not as generated `doc_p
 Default behavior is placeholder-first:
 
 1. Keep-original only under explicit user waiver.
-2. `a demographic attribute` only if a strict policy permits semantic residual disclosure.
+2. A grammatical text level only if a strict policy permits semantic residual disclosure and the replacement
+   is not just a restatement of the type name.
 3. `<DEMOGRAPHIC_OTHER_n>` otherwise.
 
 The implementation should fail closed to the placeholder if it cannot certify a non-placeholder action.
+
+## Generalization Lattice Construction
+
+Lattices are built by runtime type, not by TAB rollup. Every lattice has the same shape:
+
+1. Optional keep-original action, legal only under the caller's policy.
+2. Zero or more grammatical text levels, ordered most specific to most general.
+3. Typed placeholder terminal, always legal.
+
+The text levels must come from the first trustworthy source that applies:
+
+| Source | Applies to | Runtime requirement |
+|---|---|---|
+| Rule-based generalizer | `DATETIME`, `QUANTITY`, `age` | Deterministic parse only; parse miss means no text level. |
+| Gazetteer / curated map | `nationality`, `ethnicity`, `profession`, `health-condition`, `religion`, `family-role` | Maps observed surfaces to approved grammatical levels. |
+| Structured ontology | `LOC`, selected medical/profession/religion terms when available | Full-phrase match only for certifying privacy. |
+| Strict WordNet | `ORG`, `MISC`, and non-covered hierarchical leaves | Full-phrase synset only; no last-word fallback for legality. |
+| Offline teacher cache | Any hierarchical type with no local hit | Precomputed candidates only, never a live deployed remote call. |
+
+All candidate text levels, regardless of source, must pass the same filters:
+
+- The replacement is grammatical in the original sentence.
+- The replacement is truthfully entailed by the original sentence under NLI or an equivalent deterministic
+  rule.
+- The replacement does not contain the original surface, original-specific numbers, or proper-name tokens.
+- The replacement is not merely a type-name phrase such as `a nationality`, `a profession`, or
+  `a health condition`.
+- `aset_count(fill, type, original, strict=True) >= K_FLOORS[type]` for legality.
+- If the filter removes every text level, the lattice still contains the typed placeholder terminal.
+
+Offline teacher-assisted lattice building is allowed only as an artifact build step:
+
+1. Collect uncovered `(surface, type, context)` triples from fine-mode detector output or training/eval
+   surfaces.
+2. Prompt the teacher with the runtime type and the grammar constraint: candidates must be replacements for
+   the marked span in context, not labels naming the type.
+3. NLI-gate the candidates in the span sentence.
+4. Run the generic candidate filters above.
+5. Store approved candidates in the local lattice cache with the runtime type included in the cache key.
+6. Treat empty approved candidate lists as a valid result: placeholder-only is the safe outcome.
+
+User-defined runtime types must register a lattice profile before they can emit text levels. A profile
+defines the detector label/gazetteer, placeholder token, policy family, candidate sources, `aset_count`
+semantics, and initial `K_FLOORS` entry. Without a profile, a new type is placeholder-only by default.
 
 ## Anonymity Floors
 
@@ -275,7 +333,7 @@ Initial floors:
 | `ethnicity` | 100 | avoid small ethnicity/region cells |
 | `religion` | 100 | conservative until measured |
 | `profession` | 100 | domain/sector nodes should clear or placeholder |
-| `age` | 100 | most decade buckets do not clear 100 by count alone; strict policy will often placeholder |
+| `age` | 100 | most decade ranges do not clear 100 by count alone; strict policy will often placeholder |
 | `health-condition` | 100 | family-level only unless countable |
 | `family-role` | 100 | conservative because household structure can identify |
 | `gender` | 2 | allows keep only under explicit low-floor/user-waiver settings; default policy can still force placeholder |
@@ -300,12 +358,12 @@ Required behavior:
 
 - `fill == original` returns `1`.
 - Typed placeholders are always legal outside `aset_count`; they do not need a count.
-- Known floor labels for hierarchical leaves return `GENERIC` or a large conservative count only when the
-  fill exactly matches an approved floor.
+- Approved coarsest text levels for hierarchical leaves return `GENERIC` or a large conservative count only
+  when the fill exactly matches a grammatical approved replacement.
 - Specific-looking but unparseable fine fills fail closed to `1`.
 - `gender`, `marital-status`, and `sexual-orientation` non-placeholder fills fail closed unless they are exact
   keep-original and the caller's policy permits keep.
-- `age` uses the age branch from date bucketing, not `DATETIME` calendar windows.
+- `age` uses the age-specific rule branch, not `DATETIME` calendar-window rules.
 - `profession`, `health-condition`, `religion`, `ethnicity`, `nationality`, and `family-role` can use curated
   count tables first, then strict WordNet counts only where the phrase has a full-phrase synset. Last-word
   fallbacks are diagnostic-only, not certifying.
@@ -336,7 +394,7 @@ For each non-direct span, the action table should be:
    - `aset = 1`;
    - illegal by default for normal privacy operation unless the type floor/policy permits it.
 2. Zero or more lattice text levels:
-   - only for types with hierarchical or bucketable policy;
+   - only for types with hierarchical or rule-based generalization policy;
    - each level has `fill`, `mode = "level"`, `aset`, `walk_risk` diagnostic, and proximity diagnostic.
 3. Typed placeholder terminal:
    - `mode = "placeholder"`;
@@ -355,8 +413,8 @@ For placeholder-or-keep leaves, the action table contains only keep-original and
     "surface": "journalist",
     "type": "profession",
     "action": "generalize",
-    "replacement": "a media profession",
-    "lattice": ["a media profession", "a profession"],
+    "replacement": "media worker",
+    "lattice": ["media worker", "<PROFESSION_1>"],
     "risk": 0.0
   },
   {
@@ -384,7 +442,7 @@ Required compatibility changes:
 - Pointer compatibility should match fine types exactly. Research-only rollup to `DEM` is not valid for
   runtime inversion.
 - Reconstructor linearization should print fine types as stored in `R`, e.g.
-  `health-condition: "a health condition" => "diabetes"`.
+  `health-condition: "chronic condition" => "diabetes"`.
 - Placeholder-or-keep leaves should be easy to invert because the placeholder path is exact.
 
 Legacy `DEM` entries in old artifacts may remain supported by compatibility code, but new fine-mode tests
@@ -412,147 +470,8 @@ That rollup must not be used in substitution, action construction, anonymity flo
 placeholders, `R`, extractor typing, or ranker features except when explicitly loading legacy coarse
 artifacts.
 
-## Implementation Plan
-
-### Step 1 - Add a runtime type registry
-
-Create one shared registry module or constants block that defines:
-
-- `FINE_DEM_TYPES`
-- `RUNTIME_TYPES`
-- `LEGACY_ROLLUP_TYPES`
-- `PLACEHOLDER_ONLY_TYPES`
-- `FORCED_PLACEHOLDER_TYPES`
-- `placeholder_type_token(type_name: str) -> str`
-- `placeholder_regex`
-
-Use it from detector/substitutor/ranker/extractor rather than duplicating ad hoc type string rules.
-
-Acceptance tests:
-
-- `placeholder_type_token("health-condition") == "HEALTH_CONDITION"`.
-- `placeholder_type_token("PERSON") == "PERSON"`.
-- Placeholder regex matches `<HEALTH_CONDITION_1>` and `<PERSON_1>`.
-- Placeholder regex rejects malformed tokens like `<health-condition_1>`.
-
-### Step 2 - Add fine lattice floors and policies
-
-Update lattice construction so known fine leaves never fall back to `"something"` unless their policy says
-they are residual and placeholder-first.
-
-For placeholder-or-keep leaves, the lattice helper may return an empty text-level list or a policy object that
-marks the type as text-level-disabled. The important contract is that action construction still adds
-keep-original when policy permits and always adds the typed placeholder terminal.
-
-Acceptance tests:
-
-- `lattice_for("diabetes", "health-condition", context)` includes `a health condition` or a stricter
-  health-family node.
-- `lattice_for("journalist", "profession", context)` includes `a media profession` or `a profession`.
-- `lattice_for("Kurdish", "ethnicity", context)` includes a region/ethnicity node or `an ethnicity`.
-- `lattice_for("married", "marital-status", context)` exposes no semantic text level by default; action
-  construction still supplies placeholder.
-- `lattice_for("female", "gender", context)` exposes no semantic text level by default.
-- `lattice_for("gay", "sexual-orientation", context)` exposes no semantic text level by default.
-
-### Step 3 - Add fine anonymity floors and counts
-
-Extend `K_FLOORS` and `aset_count()` for every runtime type.
-
-Acceptance tests:
-
-- Every `RUNTIME_TYPES` member has a floor or an explicit direct-placeholder exemption.
-- `aset_count("a health condition", "health-condition", "diabetes", strict=True) == GENERIC`.
-- `aset_count("a profession", "profession", "journalist", strict=True) == GENERIC`.
-- `aset_count("a gender", "gender", "female", strict=True) == 1.0`.
-- `aset_count("female", "gender", "female", strict=True) == 1.0`.
-- `aset_count("thirty-something", "age", "34", strict=True) == 10.0`.
-
-### Step 4 - Update substitutor placeholder assembly
-
-Make typed placeholders use normalized runtime type tokens and preserve fine type strings in `R`.
-
-Acceptance tests:
-
-- A `Span(type="health-condition", text="diabetes")` that exhausts emits `<HEALTH_CONDITION_1>` and
-  `R[0]["type"] == "health-condition"`.
-- A `Span(type="marital-status", text="married")` emits `<MARITAL_STATUS_1>` under default policy.
-- Fine-mode substitution never writes `type: "DEM"` for fine leaves.
-- Legacy coarse `DEM` still works when an old detector emits it.
-
-### Step 5 - Rebuild or derive fine probe pools
-
-Update the pool builder so fine-mode surfaces are stored under fine runtime keys.
-
-Acceptance tests:
-
-- `data/probe_distractors.json` contains keys for all fine leaves after a fine pool build.
-- Missing/thin fine pools are reported, not silently aliased to `DEM`.
-- `walk_risk(..., span_type="health-condition")` does not fail closed when the pool has at least
-  `MIN_POOL` entries.
-
-### Step 6 - Update ranker/action artifacts
-
-Action tables, floor-walk, and ranker type features must accept fine runtime types.
-
-Acceptance tests:
-
-- `derive_spans()` uses `floors[s["type"]]` for fine leaves, never `DEM`.
-- Ranker one-hot or embedding features include fine leaves or map only truly unknown types to `OTHER`.
-- Placeholder assembly in ranker rollouts emits `<HEALTH_CONDITION_1>` and seeds counters from existing
-  fine placeholders.
-
-### Step 7 - Update extractor/reconstructor consumers
-
-Update placeholder regexes, type sanity, pointer compatibility, and reconstructor prompts.
-
-Acceptance tests:
-
-- `invert("Patient has <HEALTH_CONDITION_1>.", R)` restores the original health condition.
-- Placeholder residue stats count stray `<MARITAL_STATUS_2>`.
-- `_type_sane("health-condition", "a health condition", "a chronic condition")` accepts.
-- `_type_sane("gender", "<GENDER_1>", "female")` is not used to approve semantic inversion for gender.
-- Reconstructor restore map preserves `health-condition` and `profession` type labels.
-
-### Step 8 - Add an end-to-end fine-mode smoke
-
-Use a short text containing at least:
-
-- a person name;
-- a health condition;
-- a profession;
-- an ethnicity;
-- marital status or sexual orientation.
-
-Run fine-mode substitution with deterministic spans or a stub detector. Assert:
-
-- no runtime `DEM` in `R`;
-- fine placeholders are externally visible;
-- hierarchical leaves get lattice candidates;
-- placeholder-or-keep leaves placeholder by default;
-- inversion restores placeholders exactly.
-
-## Verification Protocol
-
-Minimum local verification before claiming the migration complete:
-
-```bash
-PYTHONPATH=src .venv/bin/python -m pytest src/cloak/tests -q
-PYTHONPATH=src .venv/bin/python -m pytest src/cloak/tests/test_extract.py -q
-PYTHONPATH=src .venv/bin/python -m pytest src/cloak/tests/test_train_roundtrip_mode.py -q
-```
-
-If code paths touch detector inference or gate scripts, also run the smallest non-heavy fine-mode smoke before
-any full GPU gate:
-
-```bash
-PYTHONPATH=src .venv/bin/python -u scripts/latticecloak_detection_gate.py \
-  --gliner-model data/models/pii_gliner_finedem/final \
-  --fine-dem --threshold 0.02 --limit 5 \
-  --out results/finedem_runtime_type_smoke.json
-```
-
-Any longer gate or rebuild must follow the repo performance gate and GPU rules in `AGENTS.md`.
+Implementation steps and verification live in
+[2026-07-07-lattice-substitutor-fine-types.md](../plans/2026-07-07-lattice-substitutor-fine-types.md).
 
 ## Non-goals
 
@@ -566,8 +485,8 @@ Any longer gate or rebuild must follow the repo performance gate and GPU rules i
 
 1. The exact curated maps for `ethnicity`, `profession`, `health-condition`, `nationality`, `religion`, and
    `family-role` should start from observed TAB/Nemotron/v7 surfaces and be expanded only as needed.
-2. Whether `age` should keep decade buckets under the initial floor of 100 is an empirical policy question:
-   count-based legality may placeholder many ages. That is acceptable if measured honestly.
+2. Whether `age` should keep decade-range generalizations under the initial floor of 100 is an empirical
+   policy question: count-based legality may placeholder many ages. That is acceptable if measured honestly.
 3. Placeholder-or-keep policy needs a user-facing configuration surface before users can intentionally waive
    hiding for `gender`, `marital-status`, or `sexual-orientation`.
 4. End-to-end privacy and utility remain unmeasured for fine runtime types. Detector and substitutor tests are
