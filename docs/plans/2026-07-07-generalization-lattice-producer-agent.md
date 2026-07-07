@@ -50,6 +50,11 @@ The proposed artifact is a separate cache-shaped file, not the real lattice cach
 incrementally as levels are accepted so crashes do not lose already verified work. It becomes eligible for
 mapping into the canonical runtime cache only after validation and review approval.
 
+Proposed artifacts under `data/lattice_profiles/proposed/` are **fresh agent-output files**. They must not
+copy all rows from the canonical profile artifact. They contain only rows processed and accepted by the
+producer, plus proposal metadata such as `base_profile_hash`. They must set
+`proposal_scope: "producer-processed-only"` so older copied-cache proposal files can be detected and reset.
+
 ## Locked Tool Decision
 
 **LangGraph is the required orchestration tool.** The producer must be implemented as a LangGraph graph with
@@ -198,8 +203,8 @@ Required files:
 
 | File | Owner | Purpose |
 |---|---|---|
-| `EXPERIMENT_BRIEF.md` | graph initialization | Frozen goal, constraints, success metric, model pin |
-| `EXPERIMENT_LOG.md` | graph reporting nodes | Rolling current hypothesis, latest result, next planned step |
+| `EXPERIMENT_BRIEF.md` | graph initialization | Frozen run brief: goal, constraints, success metric, model pin |
+| `EXPERIMENT_LOG.md` | graph reporting nodes | Append-only per-entry processing log plus final status |
 | `queue.jsonl` | queue builder | Normalized work items |
 | `coverage_gaps.json` | coverage node | Missing/weak category coverage by detector label family and runtime type |
 | `generated_universe.jsonl` | generation node | Proposed canonical entries and aliases for categories without mined datasets |
@@ -279,6 +284,7 @@ Required shape:
   "schema_version": 1,
   "created": "2026-07-07",
   "artifact_role": "proposal",
+  "proposal_scope": "producer-processed-only",
   "base_profile_hash": "...",
   "producer_run_id": "...",
   "sources": {},

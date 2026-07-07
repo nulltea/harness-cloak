@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 import json
 from datetime import date
@@ -12,6 +11,8 @@ from typing import Any
 from cloak.lattice_producer.io import atomic_write_json
 from cloak.lattice_profiles import validate_profile_artifact
 from cloak.runtime_types import FORCED_PLACEHOLDER_TYPES, PLACEHOLDER_RE
+
+PROPOSAL_SCOPE = "producer-processed-only"
 
 
 def _load_artifact(path: str | Path) -> dict[str, Any]:
@@ -38,38 +39,21 @@ def _dedupe_append(existing: list[str], additions: list[str]) -> list[str]:
     return out
 
 
-def _upgrade_legacy_rows(artifact: dict[str, Any]) -> None:
-    for runtime_type, entries in artifact.get("profiles", {}).items():
-        for surface, row in entries.items():
-            if not isinstance(row, dict):
-                continue
-            row.setdefault("entry_origin", "dataset-mined")
-            row.setdefault("level_counts", {})
-            row.setdefault("level_groundings", {})
-            row_count = float(row.get("count", 1.0) or 1.0)
-            for level in row.get("levels", []):
-                row["level_counts"].setdefault(level, row_count)
-                row["level_groundings"].setdefault(
-                    level,
-                    {
-                        "status": "legacy-row-count",
-                        "source_family": "canonical-profile",
-                        "selector": f"{runtime_type}:{surface}:{level}",
-                        "member_set_ref": None,
-                    },
-                )
-
-
 def ensure_proposed_artifact(canonical_path: str | Path, proposed_path: str | Path, *, run_id: str) -> None:
-    artifact = _load_artifact(proposed_path) if Path(proposed_path).exists() else copy.deepcopy(_load_artifact(canonical_path))
+    if Path(proposed_path).exists():
+        artifact = _load_artifact(proposed_path)
+        if artifact.get("proposal_scope") != PROPOSAL_SCOPE:
+            artifact = {"schema_version": 1, "created": str(date.today()), "sources": {}, "profiles": {}}
+    else:
+        artifact = {"schema_version": 1, "created": str(date.today()), "sources": {}, "profiles": {}}
     artifact["schema_version"] = 1
     artifact.setdefault("created", str(date.today()))
     artifact["artifact_role"] = "proposal"
+    artifact["proposal_scope"] = PROPOSAL_SCOPE
     artifact["base_profile_hash"] = artifact.get("base_profile_hash") or _hash_file(canonical_path)
     artifact["producer_run_id"] = run_id
     artifact.setdefault("sources", {})
     artifact.setdefault("profiles", {})
-    _upgrade_legacy_rows(artifact)
     atomic_write_json(proposed_path, artifact)
 
 
@@ -125,6 +109,8 @@ def validate_proposed_artifact(path: str | Path) -> list[str]:
     errors = []
     if artifact.get("artifact_role") != "proposal":
         errors.append("artifact_role must be proposal")
+    if artifact.get("proposal_scope") != PROPOSAL_SCOPE:
+        errors.append(f"proposal_scope must be {PROPOSAL_SCOPE}")
     profiles = artifact.get("profiles", {})
     if "DEM" in profiles:
         errors.append("DEM profiles are forbidden in proposed artifacts")
@@ -151,8 +137,9 @@ def validate_proposed_artifact(path: str | Path) -> list[str]:
                 prev = count
                 if row.get("entry_origin") == "generated-universe" and groundings.get(level, {}).get("status") != "proposal-universe":
                     errors.append(f"{runtime_type}:{surface}:{level} generated-universe level is not proposal-universe")
-    runtime_artifact = copy.deepcopy(artifact)
+    runtime_artifact = json.loads(json.dumps(artifact))
     runtime_artifact.pop("artifact_role", None)
+    runtime_artifact.pop("proposal_scope", None)
     runtime_artifact.pop("base_profile_hash", None)
     runtime_artifact.pop("producer_run_id", None)
     errors.extend(validate_profile_artifact(runtime_artifact))

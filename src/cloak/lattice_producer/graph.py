@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import shutil
 import sqlite3
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
@@ -32,6 +32,13 @@ def _load_queue(state: ProducerState) -> list[dict[str, Any]]:
     return read_jsonl(state["queue_path"])
 
 
+def _append_experiment_log(state: ProducerState, lines: list[str]) -> None:
+    log = _jsonl_path(state, "EXPERIMENT_LOG.md")
+    with log.open("a", encoding="utf-8") as fh:
+        fh.write("\n".join(lines))
+        fh.write("\n")
+
+
 def initialize_run(state: ProducerState) -> ProducerState:
     run_dir = Path(state["run_dir"])
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -56,7 +63,20 @@ def initialize_run(state: ProducerState) -> ProducerState:
         )
     log = run_dir / "EXPERIMENT_LOG.md"
     if not log.exists():
-        log.write_text("current hypothesis: initialize producer queue\nlatest result: pending\nnext planned step: build coverage\n")
+        log.write_text(
+            "\n".join(
+                [
+                    "# Experiment Log",
+                    "",
+                    "Current hypothesis: initialize producer queue.",
+                    "Latest result: pending.",
+                    "Next planned step: build coverage.",
+                    "",
+                    "## Processed Entries",
+                    "",
+                ]
+            )
+        )
     for name in ("generated_universe.jsonl", "proposals.jsonl", "accepted.jsonl", "rejected.jsonl", "diagnostics.jsonl"):
         _jsonl_path(state, name).touch(exist_ok=True)
     if not state.get("offline_only"):
@@ -277,16 +297,18 @@ def record_item_result(state: ProducerState) -> ProducerState:
     append_jsonl_unique(_jsonl_path(state, "accepted.jsonl"), accepted, key="record_id")
     append_jsonl_unique(_jsonl_path(state, "rejected.jsonl"), rejected, key="record_id")
     append_jsonl_unique(_jsonl_path(state, "diagnostics.jsonl"), diagnostics, key="record_id")
-    log = _jsonl_path(state, "EXPERIMENT_LOG.md")
-    log.write_text(
-        "\n".join(
-            [
-                "current hypothesis: continue queue processing",
-                f"latest result: item {item.get('item_id')} accepted={len(accepted)} rejected={len(rejected)} diagnostics={len(diagnostics)}",
-                "next planned step: select next item or validate proposal",
-                "",
-            ]
-        )
+    _append_experiment_log(
+        state,
+        [
+            f"- item_id: {item.get('item_id')}",
+            f"  processed_at: {datetime.now(timezone.utc).isoformat()}",
+            f"  runtime_type: {item.get('runtime_type')}",
+            f"  accepted: {len(accepted)}",
+            f"  rejected: {len(rejected)}",
+            f"  diagnostics: {len(diagnostics)}",
+            f"  next: {'validate proposal' if state.get('max_items') is not None and int(state.get('processed', 0)) + 1 >= int(state.get('max_items')) else 'select next item'}",
+            "",
+        ],
     )
     return {
         "processed": int(state.get("processed", 0)) + 1,
@@ -352,8 +374,18 @@ def finalize_run(state: ProducerState) -> ProducerState:
         "status": status,
     }
     Path(state["run_dir"], "coverage.json").write_text(json.dumps(coverage, indent=2, sort_keys=True) + "\n")
-    Path(state["run_dir"], "EXPERIMENT_LOG.md").write_text(
-        f"current hypothesis: run finished\nlatest result: {status}\nnext planned step: review proposed artifact\n"
+    _append_experiment_log(
+        state,
+        [
+            "## Final Status",
+            "",
+            f"- status: {status}",
+            f"- accepted: {state.get('accepted', 0)}",
+            f"- rejected: {state.get('rejected', 0)}",
+            f"- diagnostics: {state.get('diagnostics', 0)}",
+            "- next: review proposed artifact",
+            "",
+        ],
     )
     return {"final_status": status}
 

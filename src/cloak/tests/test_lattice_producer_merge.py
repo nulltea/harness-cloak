@@ -63,6 +63,7 @@ def test_persist_writes_separate_proposal_incrementally_and_leaves_canonical_unt
 
     assert canonical.read_text() == before
     artifact = json.loads(proposed.read_text())
+    assert "journalist" not in artifact["profiles"].get("profession", {})
     row = artifact["profiles"]["profession"]["cardiologist"]
     assert artifact["artifact_role"] == "proposal"
     assert row["entry_origin"] == "generated-universe"
@@ -81,8 +82,35 @@ def test_ensure_proposed_artifact_materializes_empty_review_file(tmp_path: Path)
 
     artifact = json.loads(proposed.read_text())
     assert artifact["artifact_role"] == "proposal"
+    assert artifact["proposal_scope"] == "producer-processed-only"
     assert artifact["producer_run_id"] == "run-empty"
-    assert artifact["profiles"]["profession"]["journalist"]["level_counts"]["media worker"] == 1000.0
+    assert artifact["profiles"] == {}
+
+
+def test_ensure_proposed_artifact_resets_old_copied_proposal_file(tmp_path: Path) -> None:
+    canonical = tmp_path / "fine_lattice_profiles.json"
+    proposed = tmp_path / "proposed" / "fine_lattice_profiles.old.proposed.json"
+    _base_profile(canonical)
+    proposed.parent.mkdir()
+    proposed.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "artifact_role": "proposal",
+                "profiles": {
+                    "profession": {
+                        "journalist": {"aliases": [], "levels": ["media worker"], "source_ids": [], "count": 1000}
+                    }
+                },
+            }
+        )
+    )
+
+    ensure_proposed_artifact(canonical, proposed, run_id="run-reset")
+
+    artifact = json.loads(proposed.read_text())
+    assert artifact["proposal_scope"] == "producer-processed-only"
+    assert artifact["profiles"] == {}
 
 
 def test_validate_proposed_artifact_rejects_dem_placeholders_and_missing_counts(tmp_path: Path) -> None:
