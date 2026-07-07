@@ -93,6 +93,34 @@ def test_config_hash_changes_when_remote_model_changes():
     assert base.config_hash() != changed.config_hash()
 
 
+def test_config_hash_and_json_include_all_model_arguments():
+    base = BenchmarkConfig(
+        suite="primary_utility",
+        limit=2,
+        seed=0,
+        detector_version="current",
+        substitutor_version="current",
+        privacy_setting="tau=0.02",
+        remote_model="gemma 4 (E4B)",
+        extractor_version="current",
+        attacker_version="offline-v1",
+        output_dir="results/roundtrip_benchmark/test",
+        detector_model="data/models/pii_gliner_finedem/final",
+        extractor_model="all-MiniLM-L6-v2",
+        attack_docp_model="offline-exact",
+        attack_reconstruction_model="offline-exact",
+        attack_leak_model="offline-exact",
+    )
+
+    got = BenchmarkConfig.from_json(base.to_json())
+    changed = base.replace(detector_model="data/models/other-detector")
+
+    assert got == base
+    assert got.detector_model == "data/models/pii_gliner_finedem/final"
+    assert got.attack_reconstruction_model == "offline-exact"
+    assert base.config_hash() != changed.config_hash()
+
+
 def test_stable_hash_is_order_invariant_for_dict_keys():
     assert stable_hash({"b": 2, "a": 1}) == stable_hash({"a": 1, "b": 2})
     assert stable_hash({"a": 1}) != stable_hash({"a": 2})

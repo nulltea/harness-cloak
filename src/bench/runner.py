@@ -44,6 +44,7 @@ def run_item(
     config: BenchmarkConfig,
     remote: RemoteClientProtocol | None = None,
 ) -> BenchmarkTrace:
+    validate_model_args(config, use_remote=remote is None)
     detected = _detect(item, config)
     doc_p, R = _substitute(item, detected, config)
     client = remote or _remote(config)
@@ -64,6 +65,7 @@ def run_suite(
     config: BenchmarkConfig,
     remote: RemoteClientProtocol | None = None,
 ) -> list[BenchmarkTrace]:
+    validate_model_args(config, use_remote=remote is None)
     items = load_items(config.suite, limit=config.limit, seed=config.seed)
     return [run_item(item, config, remote=remote) for item in items]
 
@@ -79,6 +81,24 @@ def write_dry_run(config: BenchmarkConfig, output_dir: Path) -> list[BenchmarkIt
 def write_traces(output_dir: Path, traces: list[BenchmarkTrace]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     jsonl_write(output_dir / "traces.jsonl", [trace.to_json() for trace in traces])
+
+
+def validate_model_args(config: BenchmarkConfig, *, use_remote: bool) -> None:
+    if config.detector_version != "gold" and not config.detector_model:
+        raise ValueError("--detector-model is required when --detector-version is not gold")
+    if use_remote and not config.remote_model:
+        raise ValueError("--remote-model is required for live remote benchmark runs")
+    if config.attacker_version != "offline-v1":
+        missing = [
+            name for name, value in [
+                ("--attack-docp-model", config.attack_docp_model),
+                ("--attack-reconstruction-model", config.attack_reconstruction_model),
+                ("--attack-leak-model", config.attack_leak_model),
+            ]
+            if not value
+        ]
+        if missing:
+            raise ValueError(f"{', '.join(missing)} required for attacker version {config.attacker_version}")
 
 
 def _detect(item: BenchmarkItem, config: BenchmarkConfig) -> list[dict]:
@@ -107,7 +127,10 @@ def _detect(item: BenchmarkItem, config: BenchmarkConfig) -> list[dict]:
             "score": span.score,
             "chain": span.chain,
         }
-        for span in Detector().detect(item.doc_orig)
+        for span in Detector(
+            gliner_model=str(config.detector_model),
+            fine_dem=config.detector_fine_dem,
+        ).detect(item.doc_orig)
     ]
 
 
@@ -148,7 +171,7 @@ def _remote(config: BenchmarkConfig) -> RemoteClientProtocol:
         raise RuntimeError("live remote benchmark requires INFERDPT_LLM_CACHE")
     from inferdpt.llm import LLMClient
 
-    return LLMClient(config.remote_model, temperature=0.0, max_tokens=1024)
+    return LLMClient(str(config.remote_model), temperature=0.0, max_tokens=1024)
 
 
 def _json(row: object) -> str:

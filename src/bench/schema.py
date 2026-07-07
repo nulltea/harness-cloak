@@ -170,10 +170,16 @@ class BenchmarkConfig:
     detector_version: str
     substitutor_version: str
     privacy_setting: str
-    remote_model: str
+    remote_model: str | None
     extractor_version: str
     attacker_version: str
     output_dir: str
+    detector_model: str | None = None
+    detector_fine_dem: bool = False
+    extractor_model: str | None = None
+    attack_docp_model: str | None = None
+    attack_reconstruction_model: str | None = None
+    attack_leak_model: str | None = None
 
     def to_json(self) -> JsonDict:
         return asdict(self)
@@ -188,10 +194,16 @@ class BenchmarkConfig:
             detector_version=str(row["detector_version"]),
             substitutor_version=str(row["substitutor_version"]),
             privacy_setting=str(row["privacy_setting"]),
-            remote_model=str(row["remote_model"]),
+            remote_model=_optional_str(row.get("remote_model")),
             extractor_version=str(row["extractor_version"]),
             attacker_version=str(row["attacker_version"]),
             output_dir=str(row["output_dir"]),
+            detector_model=_optional_str(row.get("detector_model")),
+            detector_fine_dem=bool(row.get("detector_fine_dem", False)),
+            extractor_model=_optional_str(row.get("extractor_model")),
+            attack_docp_model=_optional_str(row.get("attack_docp_model")),
+            attack_reconstruction_model=_optional_str(row.get("attack_reconstruction_model")),
+            attack_leak_model=_optional_str(row.get("attack_leak_model")),
         )
 
     def config_hash(self) -> str:
@@ -225,3 +237,7 @@ class BenchmarkScores:
             frontier=list(row.get("frontier", [])),
             gates=list(row.get("gates", [])),
         )
+
+
+def _optional_str(value: object) -> str | None:
+    return None if value is None else str(value)
