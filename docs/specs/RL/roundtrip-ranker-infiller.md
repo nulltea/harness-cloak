@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-06
 tags: [rl, round-trip-reward, ranker, infiller, expert-iteration, rloo, probes,
        fact-recall, count-floors, gates, anti-goodhart, spec]
 companion: [docs/plans/2026-07-05-roundtrip-rl-strategy.md,
@@ -76,7 +76,7 @@ proxy at :8060; family separation across grader/teacher/environment roles):
 | detector                             | spans, once, frozen into the arms artifact                    | GLiNER multidomain fine-tune (`pii_gliner_multidomain` ckpt-2479 @0.3)                                                                                                                                                                                                                                                                                     |
 | lattice + NLI gate                   | generalization candidates, truthfulness-filtered              | WordNet/GeoNames sources + frozen NLI entailment gate; hygiene-audited (perplexity screen) before any run                                                                                                                                                                                                                                                  |
 | `aset_count` + floors k_T            | legality mask; the only privacy knob and operating-point knob | deterministic (`cloak.anonymity`), surrogate spec §3.3-2                                                                                                                                                                                                                                                                                                   |
-| π_rank                               | per-span choice from `legal[s\|k]`                            | ModernBERT-base (~150M) doc encoder + per-span action head, autoregressive over spans; trains on the iGPU in `.venv`; 17-feature MLP retained as capacity-ablation arm                                                                                                                                                                                     |
+| π_rank                               | per-span choice from `legal[s\|k]`                            | ModernBERT-base (~150M) doc encoder + per-span action head, autoregressive over spans; trains on the iGPU in `.venv`; 19-feature vector (§ π_rank — features and how they drive the choice); feature-only MLP retained as capacity-ablation arm                                                                                                                                                                                     |
 | π_fill (E1)                          | grammar-constrained rendering                                 | **TBD — decided at Stage-2 kickoff** (user decision 2026-07-05). Constraints that survive the deferral: torch-side in `.venv` (HF logits-processor grammar masks + LoRA cannot live behind llama-swap), ~1–3B trainable on the iGPU, mature HF/PEFT/TRL support. Candidate at time of writing: Qwen3-1.7B-Instruct                                         |
 | BC teacher                           | π_rank init                                                   | floor-walk                                                                                                                                                                                                                                                                                                                                                 |
 | remote task model                    | executes the task on doc_p; the reward's LLM                  | **gemma 4 (E4B)**, non-thinking (`enable_thinking: false`), max_tokens 512, **temp 0**, cache key `hash(model, template, doc_p)`. Go/no-go: Phase-0 ceiling-anchor pass rate per corpus — fallback Qwen3.6-35B-A3B (re-pin ⇒ re-gate)                                                                                                                      |
@@ -152,6 +152,168 @@ reward — the reward stays the graded mean.
 Normative rules: utility-only (privacy lives in the mask); no cross-floor averaging anywhere;
 the cache is first-class infrastructure (reward memoization = ExIt candidate pool = RM data);
 whole-output similarity (ROUGE/BERTScore) never trains — eval-side only (§ Phase 5).
+
+## π_rank — features and how they drive the choice
+
+π_rank scores every legal action of a span from a per-action feature row, then samples from a
+**masked softmax over that span's legal set**; spans are decided autoregressively (left→right)
+within a doc. Two interchangeable backbones share the identical feature contract and
+`sample`/`log_probs` interface — a context-blind MLP and a doc-conditioned encoder (below).
+
+### The per-action feature row (`action_features`, `cloak/train/ranker.py`)
+
+`action_features(span, corpus, floor) → tensor[n_actions, N_FEAT]`, one row per candidate
+action (lattice levels ∪ placeholder). **`N_FEAT = 7 scalars + 7 type-one-hot + 5 corpus-one-hot
+= 19`** (was 17 pre-`aeslc`/`wikibio`; corpora grew 3→5).
+
+| idx | feature | formula | encodes | context-dependent? |
+|-----|---------|---------|---------|--------------------|
+| 0 | is_placeholder | `1.0` iff placeholder | the drop-everything action | no |
+| 1 | walk_risk | `a["walk_risk"]` | contrastive re-id risk of the fill *in its sentence* | **yes** (slated for removal — see note) |
+| 2 | p6 | `fill_proximity(fill,orig)` = cos_MiniLM | fill↔original semantic closeness | no (context-blind by construction) |
+| 3 | level_index | `min(i,4)/4` | the action's depth in the lattice (0 = most specific) | no |
+| 4 | n_levels | `min(n_lvl,4)/4` | how many level actions this span offers | no |
+| 5 | log10_aset | `log10(max(aset,1))/9` | anonymity-set size of the fill | no |
+| 6 | log10_active_floor | `log10(max(floor,1))/9` | the per-type operating floor (privacy knob; fed so the policy can condition on it under floor-randomization) | no |
+| 7–13 | type one-hot | DEM·DATETIME·LOC·QUANTITY·ORG·MISC·OTHER | the span's PII type | no |
+| 14–18 | corpus one-hot | clinical·enron·aeslc·lexsum·wikibio | the source corpus | no (doc-level, not span) |
+
+Scalars 0–5 and the one-hots are precomputed offline into the arms artifact at env-build
+(`build_arms_artifact.action_table`); the trainer reads cached values and adds only
+`log10_active_floor` at load (it depends on the run's floor).
+
+### How a choice is made (inference, per span)
+
+```python
+# spans decided left→right; each span's distribution is over its legal set only
+feats = action_features(span, corpus, floor)      # [n_actions, N_FEAT]
+legal = [i for i,a in enumerate(span.actions)      # legality mask = the ONLY privacy gate
+         if a.mode=="placeholder" or a.aset >= floor[type]]
+scores = MLP(feats)[legal]                         # feature-only backbone
+#        head(cat[ctx_emb(span), feats])[legal]    # encoder backbone (below)
+logp   = log_softmax(scores)                       # normalized over legal actions only
+action = argmax(logp) if greedy else sample(logp)  # illegal actions are never scored
+```
+
+The masked softmax **is** the inference step: **legality (the floor) decides *what may be
+chosen*; the learned scores decide *which of the safe options*.** Privacy is enforced before the
+policy sees the menu — π_rank is a utility maximizer over an already-safe set, never the privacy
+mechanism.
+
+Trace (LOC span "Oslo", clinical, floor k=100): candidate levels {"a Norwegian city" aset 60,
+"a city in Europe" aset 4000} ∪ {placeholder}. Mask: aset 60 < 100 → illegal; menu =
+[`a city in Europe`, `placeholder`]. Head scores those two → softmax → e.g. `[0.82, 0.18]` →
+pick "a city in Europe" (keeps utility; the floor already guaranteed privacy via the mask).
+
+### Two backbones — and how the encoder interacts with the ranker
+
+Both implement the same `sample`/`log_probs` contract; `--policy {mlp|encoder}` selects one.
+
+| | feature-only MLP (`RankerPolicy`) | doc-encoder (`EncoderPolicy`, default) |
+|-|-----------------------------------|----------------------------------------|
+| head input | `feats` | `cat[ctx_emb ; feats]` |
+| context channel | **none** | frozen ModernBERT-base CLS of the ±256-char span window |
+| trained params | the MLP | the head **only** (encoder frozen) |
+| role | capacity-ablation floor | the doc-conditioned policy |
+
+Encoder wiring (`EncoderPolicy`) — it does **not** replace the ranker, it feeds it:
+- `embed_contexts` runs the **frozen** encoder ONCE per span at load (`span_context` = ±256 chars
+  around the span; `ctx_emb = last_hidden_state[:,0]`, the CLS token) and caches the vector. The
+  encoder never runs inside the RL loop and takes no gradient.
+- `log_probs` concatenates that one per-span vector onto **every** action row:
+  `x = cat[ctx_emb ; feats[legal]] → head(x) → masked softmax`. So the context vector is
+  **per-span, action-agnostic** — it shifts the span's whole distribution and interacts with the
+  per-action features only through the head's learned cross-terms.
+- The KL reference (`clone_for_ref`) **shares the same frozen encoder object** and deep-copies
+  only the head; policy and ref differ solely in head weights.
+
+Because the encoder is frozen + precomputed, both backbones cost the same to optimize; the
+encoder's only price is load-time embedding + VRAM residency.
+
+### How `ctx_emb` changes the choice (why a per-span-constant vector is not inert)
+
+`ctx_emb` is identical across all of a span's actions, so it cannot re-rank them in a *linear*
+scorer — it would add the same term to every action's score and cancel in the softmax. It works
+only through the head's **ReLU nonlinearity**. Head = `Linear(768+19→128) → ReLU → Linear(128→128)
+→ ReLU → Linear(128→1)`. For one span (`ctx` fixed, `feats_a` per action):
+
+```
+W1·[ctx ; feats_a] + b1  =  (W1_ctx·ctx)  +  (W1_feat·feats_a + b1)      # first layer splits
+                             └─── g ───┘      └──── per-action ────┘
+h_a = relu( g + W1_feat·feats_a + b1 )                                   # g = per-span bias
+```
+
+`g = W1_ctx·ctx` is the same 128-vector for every action. The ReLU kink is where it bites: a
+hidden unit driven negative by `g` stays **off (0)** regardless of `feats_a`; one driven positive
+**passes `feats_a` through**. So `g` **selects which hidden units are live → which linear
+combination of the action features scores this span.** The map `feats_a → score_a` is therefore a
+*different function per context*: identical action features (same aset, same p6) can score high
+under one context and low under another. That is how a per-span-constant vector re-ranks actions —
+it reshapes the feature→score function, it does not add to scores. (Same route for type/corpus/
+walk_risk; all are span-constant and all would be dead weight in a linear ranker.)
+
+Flip example — a span with legal levels `L_specific` / `L_coarse` (+ placeholder), same aset
+profile: when `ctx` encodes "this fact is task-relevant", `g` activates units that up-weight
+specificity → `score(L_specific) > score(L_coarse)` → keep the specific fill (utility); when `ctx`
+encodes "not task-relevant", different units fire where specificity carries no score →
+`score(L_coarse) ≥ score(L_specific)` → generalize harder (free privacy headroom). The
+**utility reward** teaches `g`'s unit-selection: rollouts where specificity raised fact-recall
+reinforce the `ctx → specificity-boost` path.
+
+This is a *capacity*, not a guarantee — it requires the frozen CLS to actually encode
+span-task-relevance AND the head to learn the mapping; neither is measured (no ablation; v1/v2
+never left BC init). A raw MLM CLS may not expose task-relevance linearly, which is why a
+contrastively-trained embedder (+ mean-pool) is the upgrade path if the encoder underperforms.
+
+### The context-awareness invariant (critical design surface)
+
+Exactly **two** feature channels depend on *where the span sits in the document*: **walk_risk**
+(sentence-level) and the **encoder CLS** (window-level). Every other feature — `aset`, `p6`,
+`level_index`, `n_levels`, type, corpus — is a function of the fill and type alone, context-free.
+Consequences:
+
+- π_rank *needs* context to choose well: which floor-legal generalization best preserves
+  **utility** depends on the surrounding text (does the downstream task still recover the fact?).
+- Under the **utility-only reward**, the useful context is *utility*-context, learned by the head
+  through the reward gradient — exactly what the encoder supplies (general, trainable-through-the-
+  head), not what walk_risk supplies (a fixed *privacy*-flavored scalar the utility reward cannot
+  gradient on).
+- Therefore `EncoderPolicy` is the context mechanism; `RankerPolicy` is context-blind by
+  construction (identical choice for any span sharing (type, aset-profile, corpus)). **Dropping
+  walk_risk makes the encoder the *sole* context channel** — which raises, not lowers, the bar on
+  validating it (no ablation has run; the frozen raw-CLS representation is unproven, and a
+  contrastively-trained embedder + mean-pool is the principled upgrade if it underperforms).
+
+### Note — walk_risk as a policy feature (status: live in code, slated for removal before the pilot)
+
+walk_risk was a deliberate feature under the *old* reward
+([structural-lattice-risk plan](../../plans/2026-07-04-structural-lattice-risk.md), Task 4 kept
+it; the migration's cleanup grep whitelisted "a feature/diagnostic — none on a deployment
+decision path"). It carries within-span level-ordering signal and the one thing anonymity counts
+are blind to: context-dependent re-identifiability (the famous-context gap of `aset`). The
+third-revision **utility-only** reward orphaned it: privacy is floors-only (the gate, not the
+policy, enforces it) so its privacy content is ungradable, and its utility-relevant content is
+near-collinear with `log10_aset` / `level_index` / `p6` and subsumed by the encoder's context.
+It also drags the pythia-410m contrastive probe into **per-request arms-build at deployment**
+(arms-building is per-request for a novel doc), against the layer's "efficient, local"
+positioning — an unpriced cost, since "offline-only" held for the *legality path* but not the
+*feature path*. Decision (2026-07-05): **cut it as a policy feature before the pilot**
+(`action_features` index 1; N_FEAT 19→18; the arms artifact keeps its stored `walk_risk` as the
+offline diagnostic already designated). Optional confirmation: train the pilot both ways and
+report the (expected-null) delta. *Until that edit lands, index 1 above is live.*
+
+### Note — corpus one-hot (slated for removal, deployment generality)
+
+The corpus one-hot (idx 14–18) is a **train/deploy skew** feature: at deployment the layer
+receives an arbitrary user document with **no corpus label**, so the one-hot cannot be filled
+without asking the user, auto-classifying, or feeding zeros (off-distribution from training). It
+exists only to let one shared policy specialize across the five *training* corpora; domain flavor
+is already carried implicitly by the encoder, which generalizes to unseen domains — the project's
+open-label-generality requirement. It is legitimate for the in-corpus pilot (eval is per-corpus on
+these five) but must go before any open-domain deployment claim. Decision: **remove** (idx 14–18;
+N_FEAT 19 → 14). If walk_risk (idx 1) is also cut, N_FEAT → 13 (6 scalars + 7 type-one-hot); the
+shared policy is then domain-agnostic, relying entirely on the encoder for context — which raises
+the bar on validating the encoder (see the context-awareness invariant above).
 
 ## Phase 2 — Stage A: ranker on E0 (static fills)
 
