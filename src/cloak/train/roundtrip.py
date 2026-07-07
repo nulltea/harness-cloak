@@ -40,22 +40,27 @@ def _remote():
     return _client
 
 
-def roundtrip_batch(jobs: list[dict], workers: int = 8) -> list[dict]:
+def roundtrip_batch(jobs: list[dict], workers: int = 6) -> list[dict]:
     """jobs: [{corpus, doc_p, R, probes}] -> [{out_p, out_final, f1s, recall}].
     recall = deployed fact_recall (per-fact max, mean over facts), None when no probes.
-    f1s stays the raw per-question list (the support scan counts per-question flip deltas)."""
+    f1s stays the raw per-question list (the support scan counts per-question flip deltas).
+
+    Each job's full gen->invert->read->score runs on one worker, so up to `workers` jobs run
+    concurrently (across-context parallelism -> the served `-np 6` slots) while `fact_f1s`
+    stays serial WITHIN a job (its questions share out_final -> note-prefix KV reuse). workers
+    defaults to 6 to match the served slot count; gen and reader share those slots."""
     from inferdpt.pipeline import pmap
     remote = _remote()
-    outs = pmap(lambda j: remote.generate(
-        TASK_TEMPLATE[j["corpus"]].format(doc=j["doc_p"])), jobs, workers=workers)
-    res = []
-    for j, op in zip(jobs, outs):
+
+    def _one(j):
+        op = remote.generate(TASK_TEMPLATE[j["corpus"]].format(doc=j["doc_p"]))
         out_final, _ = invert(op, j["R"])
         f1s = fact_f1s(out_final, j["probes"])
         by_fact = _max_by_fact(j["probes"], f1s)
-        res.append({"out_p": op, "out_final": out_final, "f1s": f1s,
-                    "recall": (sum(by_fact.values()) / len(by_fact)) if by_fact else None})
-    return res
+        return {"out_p": op, "out_final": out_final, "f1s": f1s,
+                "recall": (sum(by_fact.values()) / len(by_fact)) if by_fact else None}
+
+    return pmap(_one, jobs, workers=workers)
 
 
 if __name__ == "__main__":
