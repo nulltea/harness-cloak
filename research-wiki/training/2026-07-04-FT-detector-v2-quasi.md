@@ -32,7 +32,7 @@ to `corpora/wikipedia_bio/{train.json (453 docs), test.json (100, held out for c
 train yields ~571 unique windows → ~1,142 at the ≤×2 anti-memorization cap (≈6% of the mix, below the
 15% target — bio is availability-capped; see Results). It is the **only auxiliary source carrying MISC
 (identifying events)** — so cross-domain MISC now has real supervision, not just TAB.
-**MISC comes only from TAB + bio** — no other source annotates identifying events (stated limit).
+**MISC comesSwit only from TAB + bio** — no other source annotates identifying events (stated limit).
 **MultiNERD is reserved for the held-out generality eval — do NOT train on it** (contamination).
 
 Nemotron→TAB-8 map: person→PERSON · org→ORG · location/city/country→LOC · date/time/DOB→DATETIME ·

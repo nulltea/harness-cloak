@@ -2,8 +2,8 @@
 
 Three measurements on the cached constructed-arms round trips (no new remote calls):
 
-  absent      - decompose gen_absent: exact echo / fuzzy-invertible today / loosely echoed
-                (E1 aligner headroom) / absorbed (unrecoverable by any extractor)
+  absent      - decompose gen_absent: exact echo / fuzzy/semantic-invertible today /
+                loosely echoed (E1 aligner headroom) / absorbed (unrecoverable by any extractor)
   false-pos   - coincidence-echo null control: invert out_p against a MISMATCHED doc's R;
                 every firing is a false positive that would corrupt out_final & inflate
                 fact recall
@@ -50,6 +50,11 @@ def cached_out_p(corpus: str, doc_p: str) -> str | None:
     if _remote is None:
         _remote = LLMClient(GEN_MODEL, **GEN_PARAMS)
     return _remote.generate(TASK_TEMPLATE[corpus].format(doc=doc_p))
+
+
+def _gen_fired(stats: dict) -> int:
+    return (stats["gen_exact"] + stats["gen_fuzzy"] + stats.get("gen_semantic", 0) +
+            stats.get("gen_pointer", 0))
 
 
 def _embedder():
@@ -118,8 +123,8 @@ def check_false_pos(corpora: dict) -> dict:
             gens_other = {e["replacement"].lower() for e in R_other if e["action"] == "generalize"}
             _, st_m = invert(op, R_own)
             _, st_n = invert(op, R_other)
-            fired_match += st_m["gen_exact"] + st_m["gen_fuzzy"]
-            fired_null += st_n["gen_exact"] + st_n["gen_fuzzy"]
+            fired_match += _gen_fired(st_m)
+            fired_null += _gen_fired(st_n)
             n_match += len(gens_own)
             n_null += len(gens_other)
         out[corpus] = {"matched_fire_rate": round(fired_match / n_match, 3) if n_match else None,
