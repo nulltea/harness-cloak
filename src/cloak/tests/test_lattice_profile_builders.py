@@ -371,6 +371,30 @@ def test_merge_rows_drops_profession_rows_with_only_worker_level():
     assert artifact["profiles"]["profession"]["journalist"]["levels"] == ["media worker", "professional worker"]
 
 
+def test_merge_rows_drops_profession_surfaces_longer_than_two_words_but_keeps_aliases():
+    artifact = merge_rows([
+        ProfileRow(
+            "profession",
+            "software developer",
+            ["senior software application developer"],
+            ["computer and mathematical occupation", "professional worker"],
+            ["esco:1"],
+        ),
+        ProfileRow(
+            "profession",
+            "software application developer",
+            ["application developer"],
+            ["computer and mathematical occupation", "professional worker"],
+            ["esco:2"],
+        ),
+    ])
+
+    professions = artifact["profiles"]["profession"]
+    assert "software developer" in professions
+    assert professions["software developer"]["aliases"] == ["senior software application developer"]
+    assert "software application developer" not in professions
+
+
 def test_merge_rows_drops_self_leaking_levels_but_keeps_useful_parents():
     artifact = merge_rows([
         ProfileRow(
@@ -405,7 +429,7 @@ def test_build_lattice_profiles_cli_smoke(tmp_path):
     (raw / "onet").mkdir(parents=True)
     (raw / "onet" / "Alternate Titles.txt").write_text(
         "O*NET-SOC Code\tTitle\tAlternate Title\tShort Title\tSource(s)\n"
-        "27-3023.00\tNews Analysts, Reporters, and Journalists\tReporter\tN\tsample\n"
+        "27-3023.00\tJournalists\tReporter\tN\tsample\n"
     )
     out = tmp_path / "profiles.json"
     cov = tmp_path / "coverage.json"
@@ -544,7 +568,7 @@ def test_populate_lattice_profiles_writes_artifact_and_missing_source_report(tmp
     (raw / "onet").mkdir(parents=True)
     (raw / "onet" / "Alternate Titles.txt").write_text(
         "O*NET-SOC Code\tTitle\tAlternate Title\tShort Title\tSource(s)\n"
-        "27-3023.00\tNews Analysts, Reporters, and Journalists\tReporter\tN\tsample\n"
+        "27-3023.00\tJournalists\tReporter\tN\tsample\n"
     )
     out = tmp_path / "profiles.json"
     cov = tmp_path / "coverage.json"

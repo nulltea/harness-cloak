@@ -41,6 +41,26 @@ def _sentence_around(text: str, start: int, end: int) -> str:
     return text[lo:hi].strip()
 
 
+def _starts_with_vowel_sound(word: str) -> bool:
+    word = word.lower()
+    if word.startswith(("honest", "honor", "hour", "heir")):
+        return True
+    if word.startswith(("uni", "use", "user", "euro", "one")):
+        return False
+    return bool(word) and word[0] in "aeiou"
+
+
+def _fix_indefinite_articles(text: str) -> str:
+    def repl(match: re.Match) -> str:
+        article, word = match.groups()
+        fixed = "an" if _starts_with_vowel_sound(word) else "a"
+        if article[0].isupper():
+            fixed = fixed.title()
+        return f"{fixed} {word}"
+
+    return re.sub(r"\b([Aa]n?)\s+([A-Za-z][A-Za-z-]*)", repl, text)
+
+
 def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, list[dict]]:
     """Returns (doc_p, R). Spans must be non-overlapping (Detector dedupes)."""
     # generic temporals ("daily", "these days", "summer") are not identifiers: substituting
@@ -121,6 +141,7 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
         record.append(entry)
     out = re.sub(r"\b([Aa]n?|[Tt]he) (?=(?:an?|the)\b)", "", out)  # "a a person", "the a structure"
     out = re.sub(r"\b[Ii]n (?=in\b)", "", out)                    # "in in the spring"
+    out = _fix_indefinite_articles(out)
     return out, record[::-1]
 
 

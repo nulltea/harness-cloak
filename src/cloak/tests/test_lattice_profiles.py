@@ -178,6 +178,47 @@ def test_lattice_for_uses_profile_levels_for_loc_and_org(monkeypatch, tmp_path):
     assert lat.lattice_for("Sberbank", "ORG") == ["a financial institution", "an organization"]
 
 
+def test_substitute_uses_profile_levels(monkeypatch, tmp_path):
+    import cloak.lattice_profiles as lp
+    import cloak.substitute as sub
+    from cloak.detect import Span
+
+    art = _artifact()
+    art["profiles"]["profession"]["software developer"] = {
+        "aliases": ["application developer"],
+        "levels": ["computer and mathematical occupation", "professional worker"],
+        "source_ids": ["test:profile"],
+        "count": 1000.0,
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    monkeypatch.setattr(lp, "DEFAULT_PROFILE_PATH", path)
+    monkeypatch.setattr(sub, "walk_risk", lambda *args, **kwargs: 0.0)
+    lp._load_cached.cache_clear()
+    lp._index_cached.cache_clear()
+
+    text = "Mia is an application developer."
+    span = Span(
+        text.index("application developer"),
+        text.index("application developer") + len("application developer"),
+        "application developer",
+        "profession",
+        0.99,
+        "stub",
+    )
+
+    doc_p, record = sub.substitute(text, [span], tau=0.02)
+
+    assert "an computer" not in doc_p
+    assert "a computer and mathematical occupation" in doc_p
+    assert record[0]["action"] == "generalize"
+    assert record[0]["lattice"] == [
+        "computer and mathematical occupation",
+        "professional worker",
+        "<PROFESSION_1>",
+    ]
+
+
 def test_aset_count_uses_profile_count(monkeypatch, tmp_path):
     import cloak.anonymity as anon
     import cloak.lattice_profiles as lp

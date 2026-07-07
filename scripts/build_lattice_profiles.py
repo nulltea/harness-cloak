@@ -39,6 +39,12 @@ NON_INFORMATIVE_LEVELS = {
 }
 
 
+def _surface_allowed(runtime_type: str, surface: str) -> bool:
+    if runtime_type == "profession" and len(norm(surface).split()) > 2:
+        return False
+    return True
+
+
 def _informative_levels(runtime_type: str, surface: str, levels: list[str]) -> list[str]:
     surface = norm(surface)
     out = []
@@ -56,6 +62,8 @@ def _informative_levels(runtime_type: str, surface: str, levels: list[str]) -> l
 def _add_row(dst: dict, row: ProfileRow) -> None:
     rt = row.runtime_type
     surface = norm(row.surface)
+    if not surface or not _surface_allowed(rt, surface):
+        return
     levels = _informative_levels(rt, surface, row.levels)
     if row.levels and not levels:
         return
