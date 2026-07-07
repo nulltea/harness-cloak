@@ -1,0 +1,2 @@
+{"item_id":"profession:cardiologist","task_kind":"generated-universe","runtime_type":"profession","detector_label_family":"profession","surface":"cardiologist","canonical_value":"cardiologist","aliases":["heart doctor"],"entry_origin":"generated-universe","proposed_levels":["medical specialist","healthcare worker"]}
+{"item_id":"age:34","task_kind":"level-proposal","runtime_type":"age","detector_label_family":"age","surface":"34","marked_context_sentence":"She is [SPAN]34[/SPAN]."}
