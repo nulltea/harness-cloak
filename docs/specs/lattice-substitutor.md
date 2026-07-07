@@ -38,28 +38,33 @@ substitution type for v7 fine mode.
 
 ## Runtime Type Contract
 
-The detector must emit these runtime types to the substitutor:
+The detector must emit these runtime types to the substitutor. The table separates three ideas that are easy
+to conflate:
 
-| Runtime type | Source | Runtime role |
-|---|---|---|
-| `PERSON` | direct identifier | forced typed placeholder |
-| `CODE` | direct identifier | forced typed placeholder |
-| `ORG` | named quasi/direct context | lattice via organization generalization |
-| `LOC` | location | GeoNames / WordNet lattice |
-| `DATETIME` | date, time, duration | date/time bucket lattice |
-| `QUANTITY` | amount, money, percent | quantity bucket lattice |
-| `MISC` | identifying residual attribute/event | WordNet / teacher lattice, conservative floor |
-| `nationality` | fine demographic leaf | country/region/continent/nationality lattice |
-| `ethnicity` | fine demographic leaf | ethnicity/ancestry-region lattice |
-| `religion` | fine demographic leaf | religious tradition/affiliation lattice |
-| `profession` | fine demographic leaf | profession domain/sector lattice |
-| `age` | fine demographic leaf | age bucket lattice |
-| `gender` | fine demographic leaf | placeholder-or-keep categorical leaf |
-| `marital-status` | fine demographic leaf | placeholder-or-keep categorical leaf |
-| `health-condition` | fine demographic leaf | condition-family lattice |
-| `sexual-orientation` | fine demographic leaf | placeholder-or-keep categorical leaf |
-| `family-role` | fine demographic leaf | family-relationship lattice with conservative floors |
-| `demographic-other` | fine demographic leaf | placeholder-first residual demographic leaf |
+- **Detector/schema origin** - where the type enters the pipeline.
+- **Span class** - what kind of sensitive surface the type denotes.
+- **Substitution policy family** - which action/lattice rule family handles the type at runtime.
+
+| Runtime type | Detector/schema origin | Span class | Substitution policy family |
+|---|---|---|---|
+| `PERSON` | TAB / Presidio direct type | Person name or alias | Forced typed placeholder |
+| `CODE` | TAB / Presidio direct type | Reference number, contact code, account-like identifier | Forced typed placeholder |
+| `ORG` | TAB-8 coarse type | Organization, company, court, institution | Organization generalization lattice |
+| `LOC` | TAB / Presidio coarse type | Location, address, city, country | GeoNames first, then WordNet / teacher lattice |
+| `DATETIME` | TAB / Presidio coarse type | Date, time, duration | Date/time bucket lattice |
+| `QUANTITY` | TAB / Presidio coarse type | Amount, money, percentage, count | Quantity bucket lattice |
+| `MISC` | TAB-8 coarse type | Identifying residual attribute or event | WordNet / teacher lattice, conservative floor |
+| `nationality` | Fine DEM leaf | Nationality or citizenship | Country/region/continent/nationality lattice |
+| `ethnicity` | Fine DEM leaf | Ethnicity, race, ancestry group | Ethnicity/ancestry-region lattice |
+| `religion` | Fine DEM leaf | Religion, belief, denomination, branch | Religious tradition/affiliation lattice |
+| `profession` | Fine DEM leaf | Profession, occupation, job title | Profession domain/sector lattice |
+| `age` | Fine DEM leaf | Age expression | Age bucket lattice |
+| `gender` | Fine DEM leaf | Gender value | Placeholder-or-keep categorical policy |
+| `marital-status` | Fine DEM leaf | Marital status value | Placeholder-or-keep categorical policy |
+| `health-condition` | Fine DEM leaf | Disease, diagnosis, health condition | Condition-family lattice |
+| `sexual-orientation` | Fine DEM leaf | Sexual orientation value | Placeholder-or-keep categorical policy |
+| `family-role` | Fine DEM leaf | Family role or relationship | Family-relationship lattice with conservative floors |
+| `demographic-other` | Fine DEM leaf | Residual demographic attribute | Placeholder-first residual demographic policy |
 
 `DEM` must not be emitted by the v7 fine-mode substitutor. It may still appear when running old coarse
 detectors, historical artifacts, or TAB research gates. Any new fine-mode runtime path that produces `DEM`
