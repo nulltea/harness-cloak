@@ -34,6 +34,24 @@ def _artifact():
     }
 
 
+def _standard_artifact():
+    return {
+        "schema_version": 1,
+        "created": "2026-07-07",
+        "sources": {"profession": ["esco-rdf"]},
+        "profiles": {
+            "profession": {
+                "journalist": {
+                    "aliases": ["reporter"],
+                    "levels": ["media worker"],
+                    "source_ids": ["esco:2642.7"],
+                    "count": 1000.0,
+                }
+            }
+        },
+    }
+
+
 def test_lookup_levels_by_surface_and_alias(tmp_path):
     path = tmp_path / "profiles.json"
     path.write_text(json.dumps(_artifact()))
@@ -44,6 +62,13 @@ def test_lookup_levels_by_surface_and_alias(tmp_path):
         "endocrine condition",
         "chronic condition",
     ]
+
+
+def test_lookup_levels_accepts_standard_levels_field(tmp_path):
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(_standard_artifact()))
+
+    assert lookup_levels("Reporter", "profession", path) == ["media worker"]
 
 
 def test_lookup_count_by_runtime_type_and_fill(tmp_path):
@@ -70,10 +95,32 @@ def test_validate_rejects_type_name_phrases_and_unknown_types():
     assert any("unknown runtime type" in e for e in errors)
 
 
+def test_validate_standard_cache_schema_requires_inline_levels():
+    art = _standard_artifact()
+
+    assert validate_profile_artifact(art) == []
+
+    bad = _standard_artifact()
+    bad["schema_version"] = 2
+    bad["profiles"]["profession"]["journalist"].pop("levels")
+
+    errors = validate_profile_artifact(bad)
+    assert any("schema_version must be 1" in e for e in errors)
+    assert any("profession:journalist has no levels" in e for e in errors)
+
+
 def test_load_missing_profile_returns_empty_artifact(tmp_path):
     got = load_profiles(tmp_path / "missing.json")
     assert got["schema_version"] == 1
     assert got["profiles"] == {}
+
+
+def test_lookup_indexes_aliases_and_level_counts(tmp_path):
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(_artifact()))
+
+    assert lookup_levels("Reporter", "profession", path) == ["media worker"]
+    assert lookup_count("media worker", "profession", path) == 1000.0
 
 
 def test_lattice_for_uses_profile_levels(monkeypatch, tmp_path):
@@ -96,6 +143,39 @@ def test_lattice_for_uses_profile_levels(monkeypatch, tmp_path):
     got = lat.lattice_for("correspondent", "profession", "The correspondent called.")
 
     assert got == ["publishing worker", "<PROFESSION_1>"]
+
+
+def test_lattice_for_uses_profile_levels_for_loc_and_org(monkeypatch, tmp_path):
+    import cloak.lattice as lat
+    import cloak.lattice_profiles as lp
+
+    art = _artifact()
+    art["profiles"]["LOC"] = {
+        "oslo": {
+            "aliases": [],
+            "levels": ["a city in norway", "a city in europe"],
+            "source_ids": ["geonames:3143244"],
+            "count": 1082575.0,
+        }
+    }
+    art["profiles"]["ORG"] = {
+        "sberbank": {
+            "aliases": [],
+            "levels": ["a financial institution", "an organization"],
+            "source_ids": ["legacy-teacher-cache:sberbank"],
+            "count": 1.0,
+        }
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    monkeypatch.setattr(lp, "DEFAULT_PROFILE_PATH", path)
+    monkeypatch.setattr(lat, "geonames_chain", lambda *args, **kwargs: None)
+    monkeypatch.setattr(lat, "wordnet_chain", lambda *args, **kwargs: None)
+    lp._load_cached.cache_clear()
+    lp._index_cached.cache_clear()
+
+    assert lat.lattice_for("Oslo", "LOC") == ["a city in norway", "a city in europe"]
+    assert lat.lattice_for("Sberbank", "ORG") == ["a financial institution", "an organization"]
 
 
 def test_aset_count_uses_profile_count(monkeypatch, tmp_path):

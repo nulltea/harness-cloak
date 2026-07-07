@@ -56,7 +56,7 @@ approved.
   - Durable artifact builder; consumes cached raw source files and writes approved local profiles.
 - Create `scripts/lattice_sources/`
   - Parser modules for each source family. These are source-specific and never imported by runtime code.
-- Create `scripts/fetch_lattice_sources.py`
+- Create `scripts/download/fetch_lattice_sources.py`
   - Explicit, manually run downloader for open sources. It writes raw files under `data/lattice_sources/raw`.
     It must print each URL before fetching and must not run from tests.
 - Create `data/lattice_sources/README.md`
@@ -667,7 +667,7 @@ Create `scripts/build_lattice_profiles.py`:
 ```python
 """Build fine runtime lattice profiles from cached raw datasets.
 
-Network access is deliberately absent here. Use scripts/fetch_lattice_sources.py or manual downloads
+Network access is deliberately absent here. Use scripts/download/fetch_lattice_sources.py or manual downloads
 to populate data/lattice_sources/raw first.
 """
 import argparse
@@ -908,7 +908,7 @@ Expected: all lattice profile tests pass.
 ## Task 5 - Source Fetcher, Explicit Only
 
 **Files:**
-- Create: `scripts/fetch_lattice_sources.py`
+- Create: `scripts/download/fetch_lattice_sources.py`
 - Modify: `data/lattice_sources/README.md`
 
 **Interfaces:**
@@ -919,7 +919,7 @@ Expected: all lattice profile tests pass.
 
 - [ ] **Step 1: Create fetcher with explicit flags**
 
-Create `scripts/fetch_lattice_sources.py`:
+Create `scripts/download/fetch_lattice_sources.py`:
 
 ```python
 """Explicit downloader for open lattice source files.
@@ -973,7 +973,7 @@ Append to `data/lattice_sources/README.md`:
 Optional explicit fetch for open OBO sources:
 
 ```bash
-PYTHONPATH=src:scripts .venv/bin/python -u scripts/fetch_lattice_sources.py \
+PYTHONPATH=src:scripts .venv/bin/python -u scripts/download/fetch_lattice_sources.py \
   --source disease-ontology \
   --source mondo
 ```
@@ -988,7 +988,7 @@ Run:
 
 ```bash
 PYTHONPATH=src:scripts .venv/bin/python -m py_compile \
-  scripts/fetch_lattice_sources.py \
+  scripts/download/fetch_lattice_sources.py \
   scripts/build_lattice_profiles.py
 ```
 
@@ -1198,7 +1198,7 @@ PYTHONPATH=src .venv/bin/python -m pytest src/cloak/tests/test_fine_runtime_type
 PYTHONPATH=src .venv/bin/python -m pytest src/cloak/tests -q
 
 PYTHONPATH=src:scripts .venv/bin/python -m py_compile \
-  scripts/fetch_lattice_sources.py \
+  scripts/download/fetch_lattice_sources.py \
   scripts/build_lattice_profiles.py
 
 git diff --check

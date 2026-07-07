@@ -1,20 +1,25 @@
 """Build fine runtime lattice profiles from cached raw datasets.
 
-Network access is deliberately absent here. Use scripts/fetch_lattice_sources.py or manual downloads
+Network access is deliberately absent here. Use scripts/download/fetch_lattice_sources.py or manual downloads
 to populate data/lattice_sources/raw first.
 """
 import argparse
 import json
+import zipfile
 from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from cloak.lattice_profiles import validate_profile_artifact
+from cloak.lattice_profiles import SCHEMA_VERSION, validate_profile_artifact
 from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES
 from lattice_sources.categorical import alias_rows
 from lattice_sources.common import ProfileRow, norm
+from lattice_sources.demographics import rows_from_cldr_zip, rows_from_wikidata_sparql_xml
+from lattice_sources.geonames import rows_from_geonames
+from lattice_sources.legacy_cache import rows_from_legacy_teacher_cache
 from lattice_sources.obo import rows_from_obo
-from lattice_sources.occupation import rows_from_isco_csv, rows_from_onet_titles
+from lattice_sources.occupation import rows_from_esco_rdf, rows_from_isco_csv, rows_from_onet_job_titles, rows_from_onet_titles
+from lattice_sources.religion import rows_from_arda_stata
 
 HEALTH_FAMILY_ROOTS = {
     "DOID:28": "endocrine condition",
@@ -29,15 +34,35 @@ CATEGORICAL_ALIASES = {
     "sexual-orientation": {"gay": ["homosexual"], "bisexual": ["bi"], "lesbian": []},
 }
 
+NON_INFORMATIVE_LEVELS = {
+    ("profession", ("worker",)),
+}
+
+
+def _informative_levels(runtime_type: str, surface: str, levels: list[str]) -> list[str]:
+    surface = norm(surface)
+    out = []
+    for level in levels:
+        level = norm(level)
+        if surface and surface in level:
+            continue
+        if level and level not in out:
+            out.append(level)
+    if (runtime_type, tuple(out)) in NON_INFORMATIVE_LEVELS:
+        return []
+    return out
+
 
 def _add_row(dst: dict, row: ProfileRow) -> None:
     rt = row.runtime_type
     surface = norm(row.surface)
+    levels = _informative_levels(rt, surface, row.levels)
+    if row.levels and not levels:
+        return
     cur = dst[rt].setdefault(surface, {"aliases": set(), "levels": [], "source_ids": set(), "count": 1.0})
     cur["aliases"].update(a for a in row.aliases if norm(a) and norm(a) != surface)
-    for level in row.levels:
-        level = norm(level)
-        if level and level not in cur["levels"]:
+    for level in levels:
+        if level not in cur["levels"]:
             cur["levels"].append(level)
     cur["source_ids"].update(s for s in row.source_ids if s)
     cur["count"] = max(float(cur["count"]), float(row.count))
@@ -57,17 +82,46 @@ def merge_rows(rows: list[ProfileRow]) -> dict:
                 "source_ids": sorted(row["source_ids"]),
                 "count": row["count"],
             }
-    return {"schema_version": 1, "created": str(date.today()), "sources": {}, "profiles": profiles}
+    return {
+        "schema_version": SCHEMA_VERSION,
+        "created": str(date.today()),
+        "sources": {},
+        "profiles": profiles,
+    }
 
 
-def collect_rows(raw_dir: Path) -> list[ProfileRow]:
+def collect_rows(
+    raw_dir: Path,
+    geo_dir: Path | None = None,
+    teacher_cache: Path | None = None,
+) -> list[ProfileRow]:
     rows = []
+    if geo_dir and geo_dir.exists():
+        rows.extend(rows_from_geonames(geo_dir))
+    if teacher_cache and teacher_cache.exists():
+        rows.extend(rows_from_legacy_teacher_cache(teacher_cache))
     onet = raw_dir / "onet" / "Alternate Titles.txt"
     if onet.exists():
         rows.extend(rows_from_onet_titles(onet))
+    onet_jobs = raw_dir / "onet" / "Job Titles.txt"
+    if onet_jobs.exists():
+        rows.extend(rows_from_onet_job_titles(onet_jobs))
     isco = raw_dir / "isco" / "isco.csv"
     if isco.exists():
         rows.extend(rows_from_isco_csv(isco))
+    esco = raw_dir / "profession" / "esco_v1.2.0_classification_rdf.zip"
+    if esco.exists():
+        with zipfile.ZipFile(esco) as zf, zf.open("esco-v1.2.0.rdf") as rdf:
+            rows.extend(rows_from_esco_rdf(rdf))
+    arda = raw_dir / "religion" / "arda_rcsdem2_stata.dta"
+    if arda.exists():
+        rows.extend(rows_from_arda_stata(arda))
+    cldr = raw_dir / "nationality" / "cldr-48.2.0-json-full.zip"
+    if cldr.exists():
+        rows.extend(rows_from_cldr_zip(cldr))
+    wikidata = raw_dir / "wikidata" / "lattice_seeds.xml"
+    if wikidata.exists():
+        rows.extend(rows_from_wikidata_sparql_xml(wikidata))
     for name in ("mondo.obo", "doid.obo"):
         path = raw_dir / "health" / name
         if path.exists():
@@ -93,10 +147,12 @@ def coverage_report(artifact: dict) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--raw-dir", default="data/lattice_sources/raw")
+    ap.add_argument("--geo-dir", default="data/geonames")
+    ap.add_argument("--teacher-cache", default="data/lattice_cache.json")
     ap.add_argument("--out", default="data/lattice_profiles/fine_lattice_profiles.json")
     ap.add_argument("--coverage-out", default=None)
     args = ap.parse_args()
-    rows = collect_rows(Path(args.raw_dir))
+    rows = collect_rows(Path(args.raw_dir), Path(args.geo_dir), Path(args.teacher_cache))
     artifact = merge_rows(rows)
     errors = validate_profile_artifact(artifact)
     if errors:

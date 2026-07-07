@@ -452,7 +452,10 @@ def lattice_for(span_text: str, span_type: str, context: str = "") -> list[str]:
         got = bucket_date(span_text)
         deterministic = True
     elif span_type == "LOC":
-        got = geonames_chain(span_text) or wordnet_chain(span_text)
+        got = lookup_levels(span_text, span_type)
+        deterministic = bool(got)
+        if not got:
+            got = geonames_chain(span_text) or wordnet_chain(span_text)
     elif span_type in {
         "nationality", "ethnicity", "profession", "health-condition", "religion",
         "family-role",
@@ -469,7 +472,10 @@ def lattice_for(span_text: str, span_type: str, context: str = "") -> list[str]:
     elif span_type == "demographic-other":
         got = []
     else:
-        got = wordnet_chain(span_text)
+        got = lookup_levels(span_text, span_type)
+        deterministic = bool(got)
+        if not got:
+            got = wordnet_chain(span_text)
         if not got and CACHE.exists():
             cache = json.loads(CACHE.read_text())
             got = (cache.get(_cache_key(span_text, span_type), {}).get("lattice") or

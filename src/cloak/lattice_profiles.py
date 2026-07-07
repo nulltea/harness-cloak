@@ -1,4 +1,4 @@
-"""Dataset-backed fine-type lattice profile artifact loader."""
+"""Dataset-backed generalization lattice cache loader."""
 import json
 import re
 from functools import lru_cache
@@ -7,10 +7,11 @@ from pathlib import Path
 from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES, RUNTIME_TYPES
 
 DEFAULT_PROFILE_PATH = Path("data/lattice_profiles/fine_lattice_profiles.json")
+SCHEMA_VERSION = 1
 
 
 def _empty_artifact() -> dict:
-    return {"schema_version": 1, "created": None, "sources": {}, "profiles": {}}
+    return {"schema_version": SCHEMA_VERSION, "created": None, "sources": {}, "profiles": {}}
 
 
 def _norm(text: str) -> str:
@@ -37,7 +38,7 @@ def load_profiles(path: str | Path | None = None) -> dict:
 
 def validate_profile_artifact(artifact: dict) -> list[str]:
     errors = []
-    if artifact.get("schema_version") != 1:
+    if artifact.get("schema_version") != SCHEMA_VERSION:
         errors.append("schema_version must be 1")
     profiles = artifact.get("profiles")
     if not isinstance(profiles, dict):
@@ -62,23 +63,37 @@ def validate_profile_artifact(artifact: dict) -> list[str]:
     return errors
 
 
-def _iter_rows(artifact: dict, runtime_type: str):
-    for surface, row in artifact.get("profiles", {}).get(runtime_type, {}).items():
-        yield surface, row
+def _build_indexes(artifact: dict) -> dict:
+    by_surface = {}
+    by_level = {}
+    for runtime_type, entries in artifact.get("profiles", {}).items():
+        surface_index = by_surface.setdefault(runtime_type, {})
+        level_index = by_level.setdefault(runtime_type, {})
+        for canonical, row in entries.items():
+            levels = list(row.get("levels", []))
+            for key in [_norm(canonical), *[_norm(a) for a in row.get("aliases", [])]]:
+                if key:
+                    surface_index.setdefault(key, levels)
+            count = float(row.get("count", 1.0))
+            for level in levels:
+                key = _norm(level)
+                if key:
+                    level_index.setdefault(key, count)
+    return {"by_surface": by_surface, "by_level": by_level}
+
+
+@lru_cache(maxsize=16)
+def _index_cached(path_s: str) -> dict:
+    return _build_indexes(load_profiles(path_s))
 
 
 def lookup_levels(surface: str, runtime_type: str, path: str | Path | None = None) -> list[str]:
     key = _norm(surface)
-    for canonical, row in _iter_rows(load_profiles(path), runtime_type):
-        aliases = [_norm(canonical), *[_norm(a) for a in row.get("aliases", [])]]
-        if key in aliases:
-            return list(row.get("levels", []))
-    return []
+    idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
+    return list(idx["by_surface"].get(runtime_type, {}).get(key, []))
 
 
 def lookup_count(fill: str, runtime_type: str, path: str | Path | None = None) -> float | None:
     key = _norm(fill)
-    for _, row in _iter_rows(load_profiles(path), runtime_type):
-        if key in {_norm(x) for x in row.get("levels", [])}:
-            return float(row.get("count", 1.0))
-    return None
+    idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
+    return idx["by_level"].get(runtime_type, {}).get(key)
