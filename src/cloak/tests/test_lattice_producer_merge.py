@@ -73,6 +73,59 @@ def test_persist_writes_separate_proposal_incrementally_and_leaves_canonical_unt
     assert row["source_ids"] == ["producer:run-1:profession:cardiologist"]
 
 
+def test_persist_includes_model_proposed_aliases_from_accepted_records(tmp_path: Path) -> None:
+    canonical = tmp_path / "fine_lattice_profiles.json"
+    proposed = tmp_path / "fine_lattice_profiles.proposed.json"
+    _base_profile(canonical)
+    item = {
+        "item_id": "profession:privacy engineer",
+        "runtime_type": "profession",
+        "surface": "privacy engineer",
+        "aliases": [],
+    }
+    accepted = [
+        {
+            "level": "privacy and security software professional",
+            "aliases": ["data protection engineer", "privacy software engineer"],
+            "level_count": 180.0,
+            "level_grounding": {
+                "status": "model-proposed",
+                "source_family": "model-proposed",
+                "count_evidence": "Includes privacy engineering, security engineering, and software privacy roles.",
+            },
+        }
+    ]
+
+    persist_proposed_artifact(canonical, proposed, run_id="run-1", item=item, accepted=accepted)
+
+    row = json.loads(proposed.read_text())["profiles"]["profession"]["privacy engineer"]
+    assert row["aliases"] == ["data protection engineer", "privacy software engineer"]
+    assert row["level_groundings"]["privacy and security software professional"]["status"] == "model-proposed"
+
+
+def test_persist_keeps_counts_and_groundings_in_level_order(tmp_path: Path) -> None:
+    canonical = tmp_path / "fine_lattice_profiles.json"
+    proposed = tmp_path / "fine_lattice_profiles.proposed.json"
+    _base_profile(canonical)
+    item = {
+        "item_id": "profession:sustainability auditor",
+        "runtime_type": "profession",
+        "surface": "sustainability auditor",
+    }
+    accepted = [
+        {"level": "professional worker", "level_count": 1000.0, "level_grounding": {"status": "certifying"}},
+        {"level": "business and financial occupation", "level_count": 1000.0, "level_grounding": {"status": "certifying"}},
+        {"level": "technical worker", "level_count": 1000.0, "level_grounding": {"status": "certifying"}},
+    ]
+
+    persist_proposed_artifact(canonical, proposed, run_id="run-1", item=item, accepted=accepted)
+
+    row = json.loads(proposed.read_text())["profiles"]["profession"]["sustainability auditor"]
+    assert row["levels"] == ["business and financial occupation", "technical worker", "professional worker"]
+    assert list(row["level_counts"]) == row["levels"]
+    assert list(row["level_groundings"]) == row["levels"]
+
+
 def test_ensure_proposed_artifact_materializes_empty_review_file(tmp_path: Path) -> None:
     canonical = tmp_path / "fine_lattice_profiles.json"
     proposed = tmp_path / "proposed" / "fine_lattice_profiles.empty.proposed.json"

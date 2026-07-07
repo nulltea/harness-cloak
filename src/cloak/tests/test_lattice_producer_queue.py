@@ -8,7 +8,7 @@ from cloak.lattice_producer.coverage import (
     build_category_coverage,
     registry_entry_for_label,
 )
-from cloak.lattice_producer.propose import assemble_context_packet, ensure_local_base_url
+from cloak.lattice_producer.propose import assemble_context_packet, ensure_local_base_url, extract_candidate_levels
 from cloak.lattice_producer.queue import build_or_load_queue
 
 
@@ -114,6 +114,10 @@ def test_context_packet_uses_bounded_artifact_slices_not_logs(tmp_path: Path) ->
     assert len(packet["nearby_profile_rows"]) == 1
     assert "raw model output" not in serialized
     assert "journalist" not in serialized
+    assert "model-provided numeric counts are ignored" not in serialized
+    assert "Do not provide certifying counts" not in serialized
+    assert "aliases" in packet["required_proposal_fields"]
+    assert "proposed_count" in packet["required_level_fields"]
 
 
 def test_context_hash_changes_when_relevant_artifact_slice_changes(tmp_path: Path) -> None:
@@ -157,3 +161,46 @@ def test_proposal_base_url_must_be_local() -> None:
     ensure_local_base_url("http://localhost:8060/v1")
     with pytest.raises(ValueError, match="local"):
         ensure_local_base_url("https://api.openai.com/v1")
+
+
+def test_extract_candidate_levels_accepts_model_schema_variants() -> None:
+    assert extract_candidate_levels({"candidate_levels": ["professional worker", "technical worker"]}) == [
+        {"level": "professional worker", "selector": "candidate_levels", "source_family": "model-proposed"},
+        {"level": "technical worker", "selector": "candidate_levels", "source_family": "model-proposed"},
+    ]
+    assert extract_candidate_levels({"proposed_levels": [{"level": "science occupation"}]}) == [
+        {
+            "level": "science occupation",
+            "selector": "proposed_levels",
+            "source_family": "model-proposed",
+        }
+    ]
+
+
+def test_extract_candidate_levels_preserves_aliases_counts_and_evidence() -> None:
+    candidates = extract_candidate_levels(
+        {
+            "aliases": ["data protection engineer"],
+            "candidates": [
+                {
+                    "level": "privacy and security software professional",
+                    "proposed_count": 180,
+                    "count_evidence": "Estimated candidate set includes privacy engineering, security engineering, GRC engineering, and software privacy roles.",
+                    "rationale": "Preserves the privacy/security/software context without naming the exact profession.",
+                    "selector": "model-domain-cluster:privacy-security-software",
+                }
+            ],
+        }
+    )
+
+    assert candidates == [
+        {
+            "level": "privacy and security software professional",
+            "proposed_count": 180,
+            "count_evidence": "Estimated candidate set includes privacy engineering, security engineering, GRC engineering, and software privacy roles.",
+            "rationale": "Preserves the privacy/security/software context without naming the exact profession.",
+            "selector": "model-domain-cluster:privacy-security-software",
+            "aliases": ["data protection engineer"],
+            "source_family": "model-proposed",
+        }
+    ]

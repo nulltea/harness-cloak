@@ -117,3 +117,111 @@ def test_experiment_log_contains_one_line_per_processed_entry(tmp_path: Path) ->
     assert "- item_id: profession:cardiologist" in log
     assert "- item_id: profession:teacher" in log
     assert log.count("- item_id:") == 2
+
+
+def test_run_writes_readable_review_report(tmp_path: Path) -> None:
+    profiles = tmp_path / "profiles.json"
+    proposed = tmp_path / "proposed.json"
+    run_dir = tmp_path / "run"
+    queue = tmp_path / "queue.jsonl"
+    _profiles(profiles)
+    queue.write_text(
+        json.dumps(
+            {
+                "item_id": "profession:cardiologist",
+                "task_kind": "generated-universe",
+                "runtime_type": "profession",
+                "detector_label_family": "profession",
+                "surface": "cardiologist",
+                "canonical_value": "cardiologist",
+                "entry_origin": "generated-universe",
+                "proposed_levels": ["medical specialist"],
+            }
+        )
+        + "\n"
+    )
+
+    run_producer(
+        run_dir=run_dir,
+        profiles_path=profiles,
+        proposed_out=proposed,
+        queue_path=queue,
+        offline_only=True,
+        max_items=1,
+        review_decision="approve-proposed-only",
+    )
+
+    report = (run_dir / "REVIEW_REPORT.md").read_text()
+    assert "profession:cardiologist" in report
+    assert "medical specialist" in report
+    assert str(proposed) in report
+
+
+def test_review_report_includes_aliases_evidence_and_warning_reasons(tmp_path: Path) -> None:
+    profiles = tmp_path / "profiles.json"
+    proposed = tmp_path / "proposed.json"
+    run_dir = tmp_path / "run"
+    queue = tmp_path / "queue.jsonl"
+    _profiles(profiles)
+    queue.write_text(
+        json.dumps(
+            {
+                "item_id": "profession:privacy engineer",
+                "runtime_type": "profession",
+                "detector_label_family": "profession",
+                "surface": "privacy engineer",
+                "canonical_value": "privacy engineer",
+                "marked_context_sentence": "The client works as a [SPAN]privacy engineer[/SPAN].",
+            }
+        )
+        + "\n"
+    )
+    run_dir.mkdir()
+    for name in ("proposals.jsonl", "accepted.jsonl", "rejected.jsonl", "diagnostics.jsonl"):
+        (run_dir / name).touch()
+    (run_dir / "accepted.jsonl").write_text(
+        json.dumps(
+            {
+                "item_id": "profession:privacy engineer",
+                "runtime_type": "profession",
+                "level": "privacy and security software professional",
+                "aliases": ["data protection engineer"],
+                "level_count": 180.0,
+                "level_grounding": {
+                    "status": "model-proposed",
+                    "source_family": "model-proposed",
+                    "count_evidence": "Includes privacy engineering and security engineering roles.",
+                },
+                "rationale": "Preserves privacy/security/software context.",
+            }
+        )
+        + "\n"
+    )
+    (run_dir / "diagnostics.jsonl").write_text(
+        json.dumps(
+            {
+                "item_id": "profession:beer cicerone",
+                "runtime_type": "profession",
+                "surface": "beer cicerone",
+                "level": "worker",
+                "reason": "weak_semantic_relevance",
+            }
+        )
+        + "\n"
+    )
+
+    run_producer(
+        run_dir=run_dir,
+        profiles_path=profiles,
+        proposed_out=proposed,
+        queue_path=queue,
+        offline_only=True,
+        max_items=0,
+        review_decision="approve-proposed-only",
+    )
+
+    report = (run_dir / "REVIEW_REPORT.md").read_text()
+    assert "aliases: data protection engineer" in report
+    assert "count_evidence: Includes privacy engineering and security engineering roles." in report
+    assert "rationale: Preserves privacy/security/software context." in report
+    assert "weak_semantic_relevance" in report

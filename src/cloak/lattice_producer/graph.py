@@ -19,7 +19,7 @@ from cloak.lattice_producer.coverage import write_category_coverage
 from cloak.lattice_producer.gates import gate_candidates
 from cloak.lattice_producer.io import append_jsonl_unique, read_jsonl
 from cloak.lattice_producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
-from cloak.lattice_producer.propose import ensure_local_base_url, propose_with_llama_swap
+from cloak.lattice_producer.propose import ensure_local_base_url, extract_candidate_levels, propose_with_llama_swap
 from cloak.lattice_producer.queue import build_or_load_queue
 from cloak.lattice_producer.state import ProducerState, make_initial_state, thread_id_for_run
 
@@ -175,7 +175,7 @@ def generate_universe_entries(state: ProducerState) -> ProducerState:
                 "current_candidates": candidates,
                 "generated_entries": int(state.get("generated_entries", 0)) + len(added_entries),
             }
-        levels = [str(candidate.get("level", "")).strip() for candidate in proposal.get("candidates", []) if candidate.get("level")]
+        levels = [candidate["level"] for candidate in extract_candidate_levels(proposal)]
     if not levels:
         return {"current_candidates": [], "generated_entries": state.get("generated_entries", 0)}
     entry = {
@@ -235,8 +235,7 @@ def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
         escalation_model=state.get("escalation_model"),
     )
     append_jsonl_unique(_jsonl_path(state, "proposals.jsonl"), [{**proposal, "item_id": item.get("item_id")}])
-    candidates = [{"level": str(candidate.get("level", "")).strip(), **candidate} for candidate in proposal.get("candidates", [])]
-    return {"current_candidates": [candidate for candidate in candidates if candidate.get("level")]}
+    return {"current_candidates": extract_candidate_levels(proposal)}
 
 
 def route_after_proposal(state: ProducerState) -> Literal["compile_level_counts", "record_item_result"]:
@@ -360,6 +359,90 @@ def review_interrupt(state: ProducerState) -> ProducerState:
     return {"review_decision": str(decision)}
 
 
+def _write_review_report(state: ProducerState, status: str) -> None:
+    run_dir = Path(state["run_dir"])
+    proposals = read_jsonl(run_dir / "proposals.jsonl")
+    accepted = read_jsonl(run_dir / "accepted.jsonl")
+    diagnostics = read_jsonl(run_dir / "diagnostics.jsonl")
+    rejected = read_jsonl(run_dir / "rejected.jsonl")
+    lines = [
+        "# Lattice Producer Review Report",
+        "",
+        f"- run_id: {state['run_id']}",
+        f"- status: {status}",
+        f"- proposed_out: {state['proposed_out']}",
+        f"- accepted: {len(accepted)}",
+        f"- rejected: {len(rejected)}",
+        f"- diagnostics: {len(diagnostics)}",
+        "",
+        "## Accepted Levels",
+        "",
+    ]
+    if accepted:
+        for row in accepted:
+            grounding = row.get("level_grounding") or {}
+            aliases = ", ".join(str(alias) for alias in row.get("aliases", []) if str(alias).strip()) or "none"
+            lines.extend(
+                [
+                    f"- item_id: {row.get('item_id')}",
+                    f"  level: {row.get('level')}",
+                    f"  aliases: {aliases}",
+                    f"  count: {row.get('level_count')}",
+                    f"  grounding_status: {grounding.get('status')}",
+                    f"  source_family: {grounding.get('source_family') or row.get('source_family')}",
+                    f"  selector: {grounding.get('selector') or row.get('selector')}",
+                ]
+            )
+            if grounding.get("count_evidence") or row.get("count_evidence"):
+                lines.append(f"  count_evidence: {grounding.get('count_evidence') or row.get('count_evidence')}")
+            if row.get("rationale"):
+                lines.append(f"  rationale: {row.get('rationale')}")
+    else:
+        lines.append("- none")
+    lines.extend(["", "## Diagnostics", ""])
+    if diagnostics:
+        for row in diagnostics:
+            lines.extend(
+                [
+                    f"- item_id: {row.get('item_id')}",
+                    f"  reason: {row.get('reason')}",
+                    f"  surface: {row.get('surface')}",
+                    f"  level: {row.get('level')}",
+                    f"  count: {row.get('level_count')}",
+                    f"  grounding_status: {(row.get('level_grounding') or {}).get('status')}",
+                ]
+            )
+    else:
+        lines.append("- none")
+    lines.extend(["", "## Rejected", ""])
+    if rejected:
+        for row in rejected:
+            lines.extend([f"- item_id: {row.get('item_id')}", f"  reason: {row.get('reason')}"])
+    else:
+        lines.append("- none")
+    lines.extend(["", "## Raw Proposal Summary", ""])
+    if proposals:
+        for row in proposals:
+            candidates = extract_candidate_levels(row)
+            candidate_text = ", ".join(candidate["level"] for candidate in candidates) or "none"
+            aliases = ", ".join(str(alias) for alias in row.get("aliases", []) if str(alias).strip()) or "none"
+            lines.extend([f"- item_id: {row.get('item_id')}", f"  aliases: {aliases}", f"  candidate_levels: {candidate_text}"])
+            for candidate in candidates:
+                if candidate.get("proposed_count") or candidate.get("count_evidence") or candidate.get("rationale"):
+                    lines.append(
+                        "  - level: {level}; proposed_count: {count}; evidence: {evidence}; rationale: {rationale}".format(
+                            level=candidate.get("level"),
+                            count=candidate.get("proposed_count", candidate.get("level_count")),
+                            evidence=candidate.get("count_evidence", ""),
+                            rationale=candidate.get("rationale", ""),
+                        )
+                    )
+    else:
+        lines.append("- none")
+    lines.append("")
+    (run_dir / "REVIEW_REPORT.md").write_text("\n".join(lines), encoding="utf-8")
+
+
 def finalize_run(state: ProducerState) -> ProducerState:
     status = "failed" if state.get("errors") else "complete"
     if state.get("review_decision") == "reject":
@@ -374,6 +457,7 @@ def finalize_run(state: ProducerState) -> ProducerState:
         "status": status,
     }
     Path(state["run_dir"], "coverage.json").write_text(json.dumps(coverage, indent=2, sort_keys=True) + "\n")
+    _write_review_report(state, status)
     _append_experiment_log(
         state,
         [

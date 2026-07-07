@@ -554,9 +554,10 @@ This can be a helper called by proposal nodes rather than a separate graph node,
 - Call the existing OpenAI-compatible local client pattern against `base_url`.
 - Use temperature `0.0`.
 - Require strict JSON output.
-- For observed-surface tasks, require the model to output candidate levels plus proposed grounding selectors,
-  not certifying numeric counts. Numeric counts in model output are ignored and recorded as non-certifying
-  rationale only.
+- For observed-surface tasks, require the model to output entry aliases, candidate levels ordered from the
+  nearest truthful generalization to broader levels, proposed per-level counts, count evidence, grounding
+  selectors, and rationales. These counts are review evidence only; they must be stored as
+  `model-proposed`, never as certifying source-backed counts.
 - For generated-universe tasks, require the model to output proposed entries, levels, grouping selectors, and
   aliases. Counts are still computed by `compile_level_counts`, not trusted from model text.
 - Build prompts only from `assemble_context_packet()`. Do not use accumulated LangGraph state or messages as
@@ -583,8 +584,9 @@ endpoint, fail the run.
   otherwise reorder if the semantic order is wrong, or reject the offending level.
 - Emit `level_groundings` metadata for every proposed level.
 
-The generative model is not allowed to provide certifying counts. The LangGraph producer may propose
-per-level counts only through this deterministic compiler node.
+The generative model must provide proposed counts and evidence, but it is not allowed to label those counts
+certifying. The LangGraph producer stores them as non-certifying `model-proposed` counts unless a
+deterministic source-backed member set proves the count.
 
 ### `gate_candidates`
 
@@ -599,6 +601,7 @@ Apply the gates uniformly to deterministic and teacher-generated candidates:
 | Type-name | Not a bare runtime label phrase |
 | Ordering | Later levels are no more specific than earlier levels |
 | Count | Dataset-backed levels need certifying `level_counts[level] >= K_FLOORS[runtime_type]`; generated-universe levels may enter the proposed artifact with `proposal-universe` counts but are not runtime-certifying |
+| Model evidence | Model-proposed rows must include aliases, per-level counts, grounding selectors, count evidence, rationales, and non-generic semantic support; missing or flat generic evidence fails closed to diagnostics |
 | Schema | Candidate can be represented in the profile schema |
 
 Below-floor candidates go to `diagnostics.jsonl`, not `accepted.jsonl`.

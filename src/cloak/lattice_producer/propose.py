@@ -62,7 +62,9 @@ def assemble_context_packet(
         "surface_or_entry": surface,
         "marked_context_sentence": item.get("marked_context_sentence", ""),
         "type_policy": "Produce truthful grammatical generalization levels only; never emit placeholders or direct identifiers.",
-        "allowed_outputs": "Strict JSON with candidate levels and grounding selectors; model-provided numeric counts are ignored.",
+        "allowed_outputs": "Strict JSON with entry aliases and ordered candidate levels. Each level must include a proposed_count, count_evidence, selector, and rationale. Counts are review evidence, not certifying source-backed counts.",
+        "required_proposal_fields": ["aliases", "candidates"],
+        "required_level_fields": ["level", "proposed_count", "count_evidence", "selector", "rationale"],
         "nearby_profile_rows": relevant,
         "category_slice": [],
         "forbidden_outputs": ["type-name phrases", "original surface leaks", "direct identifiers"],
@@ -77,6 +79,61 @@ def ensure_local_base_url(base_url: str) -> None:
     host = parsed.hostname or ""
     if host not in {"localhost", "127.0.0.1", "::1"}:
         raise ValueError(f"llama-swap base URL must be local, got {base_url}")
+
+
+def extract_candidate_levels(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    payload_aliases = [str(alias).strip().lower() for alias in payload.get("aliases", []) if str(alias).strip()]
+    if isinstance(payload.get("candidates"), list):
+        candidates = []
+        for candidate in payload["candidates"]:
+            if not isinstance(candidate, dict) or not str(candidate.get("level", "")).strip():
+                continue
+            out = {
+                **candidate,
+                "level": str(candidate.get("level", "")).strip(),
+                "source_family": candidate.get("source_family", "model-proposed"),
+            }
+            aliases = candidate.get("aliases") if isinstance(candidate.get("aliases"), list) else payload_aliases
+            if aliases:
+                out["aliases"] = [str(alias).strip().lower() for alias in aliases if str(alias).strip()]
+            candidates.append(out)
+        return candidates
+    for key in ("candidate_levels", "lattice_generalization_levels"):
+        values = payload.get(key)
+        if isinstance(values, list):
+            selectors = payload.get("grounding_selectors") if isinstance(payload.get("grounding_selectors"), list) else []
+            return [
+                {
+                    "level": str(level).strip(),
+                    "selector": selectors[idx] if idx < len(selectors) else key,
+                    "source_family": "model-proposed",
+                    **({"aliases": payload_aliases} if payload_aliases else {}),
+                }
+                for idx, level in enumerate(values)
+                if str(level).strip()
+            ]
+    proposed_levels = payload.get("proposed_levels") or payload.get("lattice_proposals")
+    if isinstance(proposed_levels, list):
+        candidates = []
+        for record in proposed_levels:
+            if isinstance(record, dict) and str(record.get("level", "")).strip():
+                selectors = record.get("grounding_selectors") or record.get("selectors") or []
+                candidates.append(
+                    {
+                        **record,
+                        "level": str(record["level"]).strip(),
+                        "selector": selectors[0] if selectors else record.get("selector", "proposed_levels"),
+                        "source_family": "model-proposed",
+                        **({"aliases": payload_aliases} if payload_aliases and not record.get("aliases") else {}),
+                    }
+                )
+            elif str(record).strip():
+                candidate = {"level": str(record).strip(), "selector": "proposed_levels", "source_family": "model-proposed"}
+                if payload_aliases:
+                    candidate["aliases"] = payload_aliases
+                candidates.append(candidate)
+        return candidates
+    return []
 
 
 def _cache_path(cache_dir: str | Path, key: str) -> Path:
@@ -116,8 +173,10 @@ def propose_with_llama_swap(
         return json.loads(cache_file.read_text())
     client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "local"))
     prompt = (
-        "Return strict JSON only. Propose lattice generalization levels for this item. "
-        "Do not provide certifying counts.\n\n"
+        "Return strict JSON only. Propose a reviewable lattice profile row for this item. "
+        "Include aliases for the entry. Include candidate levels ordered from nearest truthful generalization "
+        "to broadest useful generalization. For every level include proposed_count, count_evidence, selector, "
+        "and rationale. Proposed counts are evidence for review, not certified counts; do not label them certified.\n\n"
         + json.dumps(packet, sort_keys=True)
     )
     response = client.chat.completions.create(

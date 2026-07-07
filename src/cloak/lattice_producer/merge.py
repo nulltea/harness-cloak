@@ -39,6 +39,55 @@ def _dedupe_append(existing: list[str], additions: list[str]) -> list[str]:
     return out
 
 
+def _accepted_aliases(records: list[dict[str, Any]]) -> list[str]:
+    aliases: list[str] = []
+    for record in records:
+        aliases.extend(str(alias).lower() for alias in record.get("aliases", []) if str(alias).strip())
+    return aliases
+
+
+def _generality_score(level: str) -> int:
+    text = level.strip().lower()
+    exact = {
+        "worker": 120,
+        "professional worker": 110,
+        "technical worker": 70,
+        "production worker": 65,
+        "arts and media worker": 55,
+    }
+    if text in exact:
+        return exact[text]
+    if text.endswith(" worker"):
+        return 60
+    if text.endswith(" occupation"):
+        return 35
+    return 20
+
+
+def _counts_monotone(records: list[dict[str, Any]]) -> bool:
+    counts = [float(record.get("level_count", 1.0)) for record in records]
+    return all(left <= right for left, right in zip(counts, counts[1:]))
+
+
+def _order_accepted_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    semantic = [
+        record
+        for _, record in sorted(
+            enumerate(records),
+            key=lambda pair: (_generality_score(str(pair[1].get("level", ""))), pair[0]),
+        )
+    ]
+    if _counts_monotone(semantic):
+        return semantic
+    return [
+        record
+        for _, record in sorted(
+            enumerate(records),
+            key=lambda pair: (float(pair[1].get("level_count", 1.0)), _generality_score(str(pair[1].get("level", ""))), pair[0]),
+        )
+    ]
+
+
 def ensure_proposed_artifact(canonical_path: str | Path, proposed_path: str | Path, *, run_id: str) -> None:
     if Path(proposed_path).exists():
         artifact = _load_artifact(proposed_path)
@@ -86,17 +135,28 @@ def persist_proposed_artifact(
             "level_groundings": {},
         },
     )
-    row["aliases"] = _dedupe_append(list(row.get("aliases", [])), [str(a).lower() for a in item.get("aliases", []) if a])
+    ordered = _order_accepted_records(accepted)
+    row["aliases"] = _dedupe_append(
+        list(row.get("aliases", [])),
+        [
+            *[str(a).lower() for a in item.get("aliases", []) if a],
+            *_accepted_aliases(ordered),
+        ],
+    )
     row["levels"] = _dedupe_append(
         [level for level in row.get("levels", []) if not PLACEHOLDER_RE.search(str(level))],
-        [record["level"] for record in accepted if not PLACEHOLDER_RE.search(str(record.get("level", "")))],
+        [record["level"] for record in ordered if not PLACEHOLDER_RE.search(str(record.get("level", "")))],
     )
     row.setdefault("level_counts", {})
     row.setdefault("level_groundings", {})
-    for record in accepted:
+    row["level_counts"] = {level: row["level_counts"][level] for level in row["levels"] if level in row["level_counts"]}
+    row["level_groundings"] = {level: row["level_groundings"][level] for level in row["levels"] if level in row["level_groundings"]}
+    for record in ordered:
         level = record["level"]
         row["level_counts"][level] = float(record["level_count"])
         row["level_groundings"][level] = dict(record["level_grounding"])
+    row["level_counts"] = {level: row["level_counts"][level] for level in row["levels"] if level in row["level_counts"]}
+    row["level_groundings"] = {level: row["level_groundings"][level] for level in row["levels"] if level in row["level_groundings"]}
     row["entry_origin"] = row.get("entry_origin") or item.get("entry_origin", "observed-surface")
     row["source_ids"] = _dedupe_append(list(row.get("source_ids", [])), [f"producer:{run_id}:{item.get('item_id')}"])
     if row["level_counts"]:
