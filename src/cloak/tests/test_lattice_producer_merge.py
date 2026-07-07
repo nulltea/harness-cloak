@@ -126,6 +126,27 @@ def test_persist_keeps_counts_and_groundings_in_level_order(tmp_path: Path) -> N
     assert list(row["level_groundings"]) == row["levels"]
 
 
+def test_persist_entry_count_uses_most_specific_lowest_level_count(tmp_path: Path) -> None:
+    canonical = tmp_path / "fine_lattice_profiles.json"
+    proposed = tmp_path / "fine_lattice_profiles.proposed.json"
+    _base_profile(canonical)
+    item = {
+        "item_id": "profession:stage rigger",
+        "runtime_type": "profession",
+        "surface": "stage rigger",
+    }
+    accepted = [
+        {"level": "construction worker", "level_count": 150.0, "level_grounding": {"status": "model-proposed"}},
+        {"level": "skilled trades worker", "level_count": 300.0, "level_grounding": {"status": "model-proposed"}},
+    ]
+
+    persist_proposed_artifact(canonical, proposed, run_id="run-1", item=item, accepted=accepted)
+
+    row = json.loads(proposed.read_text())["profiles"]["profession"]["stage rigger"]
+    assert row["levels"] == ["construction worker", "skilled trades worker"]
+    assert row["count"] == 150.0
+
+
 def test_ensure_proposed_artifact_materializes_empty_review_file(tmp_path: Path) -> None:
     canonical = tmp_path / "fine_lattice_profiles.json"
     proposed = tmp_path / "proposed" / "fine_lattice_profiles.empty.proposed.json"

@@ -1,7 +1,15 @@
 import json
 from pathlib import Path
 
-from cloak.lattice_producer.graph import build_graph, run_producer
+from cloak.lattice_producer.graph import (
+    QWEN36_ESCALATION_MODEL,
+    build_graph,
+    propose_with_llama_swap_node,
+    requeue_rejected_item,
+    route_selected,
+    route_after_gate,
+    run_producer,
+)
 from cloak.lattice_producer.state import make_initial_state, thread_id_for_run
 
 
@@ -31,6 +39,154 @@ def test_graph_builds_langgraph_app_with_persistent_thread_id(tmp_path: Path) ->
     assert callable(getattr(graph, "compile"))
     assert thread_id_for_run(state["run_id"]).startswith("lattice-producer:")
     assert len(thread_id_for_run(state["run_id"])) < 255
+
+
+def test_force_model_proposal_routes_selected_item_to_model_node(tmp_path: Path) -> None:
+    state = make_initial_state(
+        run_id="forced-model",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+    state["current_item"] = {
+        "item_id": "drug:aspirin",
+        "runtime_type": "drug",
+        "surface": "aspirin",
+        "force_model_proposal": True,
+    }
+
+    assert route_selected(state) == "propose_with_llama_swap"
+
+
+def test_default_state_uses_qwen36_as_only_proposal_model(tmp_path: Path) -> None:
+    state = make_initial_state(
+        run_id="retry-smoke",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+
+    assert state["model"] == QWEN36_ESCALATION_MODEL
+    assert state["escalation_model"] == QWEN36_ESCALATION_MODEL
+
+
+def test_rejected_item_requeues_once_with_rejection_feedback(tmp_path: Path) -> None:
+    state = make_initial_state(
+        run_id="retry-smoke",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+    state["current_item"] = {
+        "item_id": "profession:privacy engineer",
+        "runtime_type": "profession",
+        "surface": "privacy engineer",
+    }
+    state["accepted_rows"] = []
+    state["rejected_rows"] = []
+    state["diagnostic_rows"] = [
+        {
+            "item_id": "profession:privacy engineer",
+            "level": "architecture and engineering occupation",
+            "reason": "missing_aliases",
+        }
+    ]
+
+    assert route_after_gate(state) == "requeue_rejected_item"
+    retry = requeue_rejected_item(state)
+
+    assert retry["current_item"]["retry_attempt"] == 1
+    assert retry["current_item"]["rejection_feedback"] == [
+        {
+            "reason": "missing_aliases",
+            "level": "architecture and engineering occupation",
+            "count": None,
+            "grounding_status": None,
+        }
+    ]
+    assert retry["rejected_rows"] == []
+    assert retry["diagnostic_rows"] == []
+
+
+def test_rejected_retry_records_after_one_escalation_attempt(tmp_path: Path) -> None:
+    state = make_initial_state(
+        run_id="retry-smoke",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+    state["current_item"] = {
+        "item_id": "profession:privacy engineer",
+        "runtime_type": "profession",
+        "surface": "privacy engineer",
+        "retry_attempt": 1,
+    }
+    state["accepted_rows"] = []
+    state["rejected_rows"] = []
+    state["diagnostic_rows"] = [{"reason": "weak_semantic_relevance"}]
+
+    assert route_after_gate(state) == "record_item_result"
+
+
+def test_retry_proposal_node_uses_qwen36_escalation_model(monkeypatch, tmp_path: Path) -> None:
+    seen = {}
+
+    def fake_propose(item, **kwargs):
+        seen["item"] = item
+        seen.update(kwargs)
+        return {"candidates": [{"level": "software privacy professional"}]}
+
+    monkeypatch.setattr("cloak.lattice_producer.graph.propose_with_llama_swap", fake_propose)
+    state = make_initial_state(
+        run_id="retry-smoke",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+        model="gemma 4 (E4B)",
+    )
+    Path(state["run_dir"]).mkdir()
+    (Path(state["run_dir"]) / "proposals.jsonl").touch()
+    state["current_item"] = {
+        "item_id": "profession:privacy engineer",
+        "runtime_type": "profession",
+        "surface": "privacy engineer",
+        "retry_attempt": 1,
+    }
+
+    result = propose_with_llama_swap_node(state)
+
+    assert seen["model"] == QWEN36_ESCALATION_MODEL
+    assert seen["escalation_model"] == QWEN36_ESCALATION_MODEL
+    assert result["current_candidates"][0]["level"] == "software privacy professional"
+
+
+def test_first_pass_proposal_node_uses_qwen36_even_if_state_model_is_gemma(monkeypatch, tmp_path: Path) -> None:
+    seen = {}
+
+    def fake_propose(item, **kwargs):
+        seen["item"] = item
+        seen.update(kwargs)
+        return {"candidates": [{"level": "software privacy professional"}]}
+
+    monkeypatch.setattr("cloak.lattice_producer.graph.propose_with_llama_swap", fake_propose)
+    state = make_initial_state(
+        run_id="retry-smoke",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+        model="gemma 4 (E4B)",
+    )
+    Path(state["run_dir"]).mkdir()
+    (Path(state["run_dir"]) / "proposals.jsonl").touch()
+    state["current_item"] = {
+        "item_id": "profession:privacy engineer",
+        "runtime_type": "profession",
+        "surface": "privacy engineer",
+    }
+
+    propose_with_llama_swap_node(state)
+
+    assert seen["model"] == QWEN36_ESCALATION_MODEL
 
 
 def test_offline_graph_persists_accepted_item_before_review_interrupt(tmp_path: Path) -> None:

@@ -14,6 +14,9 @@ from openai import OpenAI
 
 from cloak.lattice_producer.io import atomic_write_json
 
+QWEN36_MODEL = "Qwen3.6-35B-A3B"
+QWEN36_THINKING_BUDGET_TOKENS = 2048
+
 
 def _load_profiles(path: str | Path) -> dict:
     path = Path(path)
@@ -69,6 +72,13 @@ def assemble_context_packet(
         "category_slice": [],
         "forbidden_outputs": ["type-name phrases", "original surface leaks", "direct identifiers"],
     }
+    if item.get("retry_attempt"):
+        packet["retry_attempt"] = int(item.get("retry_attempt", 0))
+        packet["previous_rejection_feedback"] = list(item.get("rejection_feedback", []))
+        packet["retry_instruction"] = (
+            "The previous proposal failed gates. Address every feedback item with stronger aliases, "
+            "more specific truthful levels, non-flat proposed counts, and concrete count evidence."
+        )
     packet["artifact_slice_hashes"] = {"nearby_profile_rows": _hash_payload(relevant)}
     packet["context_packet_hash"] = _hash_payload(packet)
     return packet
@@ -184,6 +194,7 @@ def propose_with_llama_swap(
         temperature=0.0,
         messages=[{"role": "user", "content": prompt}],
         response_format={"type": "json_object"},
+        extra_body={"thinking_budget_tokens": QWEN36_THINKING_BUDGET_TOKENS},
     )
     content = response.choices[0].message.content or "{}"
     try:
@@ -197,9 +208,11 @@ def propose_with_llama_swap(
                 temperature=0.0,
                 messages=[{"role": "user", "content": prompt}],
                 response_format={"type": "json_object"},
+                extra_body={"thinking_budget_tokens": QWEN36_THINKING_BUDGET_TOKENS},
             )
             payload = json.loads(response.choices[0].message.content or "{}")
     payload["cache_key"] = cache_key
     payload["context_packet_hash"] = packet["context_packet_hash"]
+    payload["model_used"] = model
     atomic_write_json(cache_file, payload)
     return payload

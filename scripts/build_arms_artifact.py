@@ -78,7 +78,7 @@ def action_table(text: str, R: list[dict]) -> dict:
     return table
 
 
-def main():
+def parse_args(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--n-docs", type=int, default=LIMIT,
                     help="docs detected per corpus (pilot scale > 16 needs more docs)")
@@ -87,11 +87,30 @@ def main():
     ap.add_argument("--out", default=str(ARTIFACT),
                     help="output artifact path (default: the frozen historical artifact — "
                          "override for a pilot artifact; NEVER overwrite the frozen one)")
-    args = ap.parse_args()
+    ap.add_argument("--detector-model",
+                    help="GLiNER checkpoint/path for detection; omit for Detector's default")
+    ap.add_argument("--threshold", type=float,
+                    help="detector threshold; omit for Detector's default")
+    ap.add_argument("--fine-dem", action="store_true",
+                    help="emit fine demographic runtime types instead of coarse DEM")
+    return ap.parse_args(argv)
+
+
+def make_detector(args):
+    kwargs = {"fine_dem": args.fine_dem}
+    if args.detector_model:
+        kwargs["gliner_model"] = args.detector_model
+    if args.threshold is not None:
+        kwargs["threshold"] = args.threshold
+    return Detector(**kwargs)
+
+
+def main():
+    args = parse_args()
     out = Path(args.out)
 
     t0 = time.time()
-    det = Detector()
+    det = make_detector(args)
     art = {}
     for corpus in args.corpora.split(","):
         docs = load_task_docs(corpus, args.n_docs)

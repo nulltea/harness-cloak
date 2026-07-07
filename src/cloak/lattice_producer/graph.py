@@ -21,7 +21,9 @@ from cloak.lattice_producer.io import append_jsonl_unique, read_jsonl
 from cloak.lattice_producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
 from cloak.lattice_producer.propose import ensure_local_base_url, extract_candidate_levels, propose_with_llama_swap
 from cloak.lattice_producer.queue import build_or_load_queue
-from cloak.lattice_producer.state import ProducerState, make_initial_state, thread_id_for_run
+from cloak.lattice_producer.state import QWEN36_ESCALATION_MODEL, ProducerState, make_initial_state, thread_id_for_run
+
+MAX_REJECTION_RETRIES = 1
 
 
 def _jsonl_path(state: ProducerState, name: str) -> Path:
@@ -34,6 +36,7 @@ def _load_queue(state: ProducerState) -> list[dict[str, Any]]:
 
 def _append_experiment_log(state: ProducerState, lines: list[str]) -> None:
     log = _jsonl_path(state, "EXPERIMENT_LOG.md")
+    log.parent.mkdir(parents=True, exist_ok=True)
     with log.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
         fh.write("\n")
@@ -121,12 +124,20 @@ def select_next_item(state: ProducerState) -> ProducerState:
     return {"current_item": None, "queue_index": idx}
 
 
-def route_selected(state: ProducerState) -> Literal["validate_proposed_artifact", "generate_universe_entries", "deterministic_lookup", "record_item_result"]:
+def route_selected(state: ProducerState) -> Literal[
+    "validate_proposed_artifact",
+    "generate_universe_entries",
+    "deterministic_lookup",
+    "propose_with_llama_swap",
+    "record_item_result",
+]:
     item = state.get("current_item")
     if not item:
         return "validate_proposed_artifact"
     if not item.get("eligible", True):
         return "record_item_result"
+    if item.get("force_model_proposal"):
+        return "propose_with_llama_swap"
     if item.get("task_kind") == "generated-universe" or item.get("entry_origin") == "generated-universe":
         return "generate_universe_entries"
     return "deterministic_lookup"
@@ -143,8 +154,8 @@ def generate_universe_entries(state: ProducerState) -> ProducerState:
             prompt_version=state["prompt_version"],
             max_context_rows=state["max_context_rows"],
             base_url=state["base_url"],
-            model=state["model"],
-            escalation_model=state.get("escalation_model"),
+            model=QWEN36_ESCALATION_MODEL,
+            escalation_model=QWEN36_ESCALATION_MODEL,
         )
         append_jsonl_unique(_jsonl_path(state, "proposals.jsonl"), [{**proposal, "item_id": item.get("item_id")}])
         entries = proposal.get("entries") or []
@@ -224,6 +235,7 @@ def route_after_deterministic(state: ProducerState) -> Literal["compile_level_co
 
 def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
     item = state["current_item"] or {}
+    model = QWEN36_ESCALATION_MODEL
     proposal = propose_with_llama_swap(
         item,
         profiles_path=state["profiles_path"],
@@ -231,10 +243,13 @@ def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
         prompt_version=state["prompt_version"],
         max_context_rows=state["max_context_rows"],
         base_url=state["base_url"],
-        model=state["model"],
-        escalation_model=state.get("escalation_model"),
+        model=model,
+        escalation_model=QWEN36_ESCALATION_MODEL,
     )
-    append_jsonl_unique(_jsonl_path(state, "proposals.jsonl"), [{**proposal, "item_id": item.get("item_id")}])
+    append_jsonl_unique(
+        _jsonl_path(state, "proposals.jsonl"),
+        [{**proposal, "item_id": item.get("item_id"), "retry_attempt": int(item.get("retry_attempt", 0)), "model_used": model}],
+    )
     return {"current_candidates": extract_candidate_levels(proposal)}
 
 
@@ -257,8 +272,21 @@ def gate_candidates_node(state: ProducerState) -> ProducerState:
     return {"accepted_rows": result.accepted, "rejected_rows": result.rejected, "diagnostic_rows": result.diagnostics}
 
 
-def route_after_gate(state: ProducerState) -> Literal["persist_proposed_artifact", "record_item_result"]:
-    return "persist_proposed_artifact" if state.get("accepted_rows") else "record_item_result"
+def _should_retry_rejected_item(state: ProducerState) -> bool:
+    item = state.get("current_item") or {}
+    if state.get("offline_only") or state.get("accepted_rows"):
+        return False
+    if int(item.get("retry_attempt", 0)) >= MAX_REJECTION_RETRIES:
+        return False
+    return bool(state.get("rejected_rows") or state.get("diagnostic_rows"))
+
+
+def route_after_gate(state: ProducerState) -> Literal["persist_proposed_artifact", "requeue_rejected_item", "record_item_result"]:
+    if state.get("accepted_rows"):
+        return "persist_proposed_artifact"
+    if _should_retry_rejected_item(state):
+        return "requeue_rejected_item"
+    return "record_item_result"
 
 
 def persist_proposed_artifact_node(state: ProducerState) -> ProducerState:
@@ -270,6 +298,46 @@ def persist_proposed_artifact_node(state: ProducerState) -> ProducerState:
         accepted=list(state.get("accepted_rows", [])),
     )
     return {"proposed_persisted": int(state.get("proposed_persisted", 0)) + 1}
+
+
+def _rejection_feedback(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    feedback = []
+    for row in rows:
+        grounding = row.get("level_grounding") or {}
+        feedback.append(
+            {
+                "reason": row.get("reason"),
+                "level": row.get("level"),
+                "count": row.get("level_count"),
+                "grounding_status": grounding.get("status"),
+            }
+        )
+    return feedback
+
+
+def requeue_rejected_item(state: ProducerState) -> ProducerState:
+    item = dict(state.get("current_item") or {})
+    retry_attempt = int(item.get("retry_attempt", 0)) + 1
+    feedback = _rejection_feedback([*state.get("rejected_rows", []), *state.get("diagnostic_rows", [])])
+    item["retry_attempt"] = retry_attempt
+    item["rejection_feedback"] = feedback
+    _append_experiment_log(
+        state,
+        [
+            f"- item_id: {item.get('item_id')}",
+            f"  retry_attempt: {retry_attempt}",
+            f"  retry_model: {state.get('escalation_model') or QWEN36_ESCALATION_MODEL}",
+            f"  rejection_reasons: {', '.join(str(row.get('reason')) for row in feedback if row.get('reason')) or 'unknown'}",
+            "",
+        ],
+    )
+    return {
+        "current_item": item,
+        "current_candidates": [],
+        "accepted_rows": [],
+        "rejected_rows": [],
+        "diagnostic_rows": [],
+    }
 
 
 def record_item_result(state: ProducerState) -> ProducerState:
@@ -426,7 +494,15 @@ def _write_review_report(state: ProducerState, status: str) -> None:
             candidates = extract_candidate_levels(row)
             candidate_text = ", ".join(candidate["level"] for candidate in candidates) or "none"
             aliases = ", ".join(str(alias) for alias in row.get("aliases", []) if str(alias).strip()) or "none"
-            lines.extend([f"- item_id: {row.get('item_id')}", f"  aliases: {aliases}", f"  candidate_levels: {candidate_text}"])
+            lines.extend(
+                [
+                    f"- item_id: {row.get('item_id')}",
+                    f"  retry_attempt: {row.get('retry_attempt', 0)}",
+                    f"  model_used: {row.get('model_used')}",
+                    f"  aliases: {aliases}",
+                    f"  candidate_levels: {candidate_text}",
+                ]
+            )
             for candidate in candidates:
                 if candidate.get("proposed_count") or candidate.get("count_evidence") or candidate.get("rationale"):
                     lines.append(
@@ -486,6 +562,7 @@ def build_graph() -> StateGraph:
     graph.add_node("compile_level_counts", compile_level_counts_node)
     graph.add_node("gate_candidates", gate_candidates_node)
     graph.add_node("persist_proposed_artifact", persist_proposed_artifact_node)
+    graph.add_node("requeue_rejected_item", requeue_rejected_item)
     graph.add_node("record_item_result", record_item_result)
     graph.add_node("validate_proposed_artifact", validate_proposed_artifact_node)
     graph.add_node("review_interrupt", review_interrupt)
@@ -500,6 +577,7 @@ def build_graph() -> StateGraph:
     graph.add_conditional_edges("propose_with_llama_swap", route_after_proposal)
     graph.add_edge("compile_level_counts", "gate_candidates")
     graph.add_conditional_edges("gate_candidates", route_after_gate)
+    graph.add_edge("requeue_rejected_item", "propose_with_llama_swap")
     graph.add_edge("persist_proposed_artifact", "record_item_result")
     graph.add_conditional_edges("record_item_result", should_continue)
     graph.add_conditional_edges("validate_proposed_artifact", route_after_validate)

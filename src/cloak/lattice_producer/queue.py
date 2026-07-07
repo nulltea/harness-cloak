@@ -23,6 +23,8 @@ LATTICE_RUNTIME_TYPES = {
     "age",
     "health-condition",
     "family-role",
+    "drug",
+    "medical-procedure",
     "organization-medical-facility",
 }
 

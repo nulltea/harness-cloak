@@ -8,7 +8,13 @@ from cloak.lattice_producer.coverage import (
     build_category_coverage,
     registry_entry_for_label,
 )
-from cloak.lattice_producer.propose import assemble_context_packet, ensure_local_base_url, extract_candidate_levels
+from cloak.lattice_producer.propose import (
+    QWEN36_THINKING_BUDGET_TOKENS,
+    assemble_context_packet,
+    ensure_local_base_url,
+    extract_candidate_levels,
+    propose_with_llama_swap,
+)
 from cloak.lattice_producer.queue import build_or_load_queue
 
 
@@ -76,6 +82,27 @@ def test_queue_skips_forced_placeholder_and_rejects_dem(tmp_path: Path) -> None:
     items = build_or_load_queue(run_dir, profiles, explicit_queue=explicit_queue)
     assert items[0]["eligible"] is False
     assert items[0]["skip_reason"] == "forced_placeholder"
+
+
+def test_queue_treats_domain_profile_types_as_lattice_runtime_types(tmp_path: Path) -> None:
+    profiles = tmp_path / "profiles.json"
+    run_dir = tmp_path / "run"
+    explicit_queue = tmp_path / "queue.jsonl"
+    _write_profiles(profiles, {})
+    explicit_queue.write_text(
+        "\n".join(
+            [
+                json.dumps({"item_id": "drug:aspirin", "runtime_type": "drug", "surface": "aspirin"}),
+                json.dumps({"item_id": "medical-procedure:xray", "runtime_type": "medical-procedure", "surface": "xray"}),
+                json.dumps({"item_id": "health-condition:asthma", "runtime_type": "health-condition", "surface": "asthma"}),
+            ]
+        )
+        + "\n"
+    )
+
+    items = build_or_load_queue(run_dir, profiles, explicit_queue=explicit_queue)
+
+    assert [item["eligible"] for item in items] == [True, True, True]
 
 
 def test_context_packet_uses_bounded_artifact_slices_not_logs(tmp_path: Path) -> None:
@@ -157,10 +184,90 @@ def test_context_hash_changes_when_relevant_artifact_slice_changes(tmp_path: Pat
     assert first["context_packet_hash"] != second["context_packet_hash"]
 
 
+def test_context_packet_includes_rejection_feedback_for_retry(tmp_path: Path) -> None:
+    profiles = tmp_path / "profiles.json"
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_profiles(profiles, {"profession": {}})
+    item = {
+        "item_id": "profession:privacy engineer",
+        "runtime_type": "profession",
+        "detector_label_family": "profession",
+        "surface": "privacy engineer",
+        "retry_attempt": 1,
+        "rejection_feedback": [
+            {
+                "reason": "missing_aliases",
+                "level": "architecture and engineering occupation",
+                "guidance": "Retry must include aliases and profession-specific evidence.",
+            }
+        ],
+    }
+
+    packet = assemble_context_packet(
+        item,
+        profiles_path=profiles,
+        run_dir=run_dir,
+        prompt_version="lattice-producer-v1",
+        max_context_rows=1,
+    )
+
+    assert packet["retry_attempt"] == 1
+    assert packet["previous_rejection_feedback"][0]["reason"] == "missing_aliases"
+    assert "architecture and engineering occupation" in json.dumps(packet)
+
+
 def test_proposal_base_url_must_be_local() -> None:
     ensure_local_base_url("http://localhost:8060/v1")
     with pytest.raises(ValueError, match="local"):
         ensure_local_base_url("https://api.openai.com/v1")
+
+
+def test_proposal_call_sets_qwen_thinking_budget(monkeypatch, tmp_path: Path) -> None:
+    profiles = tmp_path / "profiles.json"
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_profiles(profiles, {"profession": {}})
+    seen = {}
+
+    class FakeCompletions:
+        def create(self, **kwargs):
+            seen.update(kwargs)
+
+            class Message:
+                content = '{"candidates":[]}'
+
+            class Choice:
+                message = Message()
+
+            class Response:
+                choices = [Choice()]
+
+            return Response()
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            seen["client"] = kwargs
+            self.chat = type("Chat", (), {"completions": FakeCompletions()})()
+
+    monkeypatch.setattr("cloak.lattice_producer.propose.OpenAI", FakeClient)
+    monkeypatch.setenv("INFERDPT_LLM_CACHE", str(tmp_path / "cache"))
+
+    propose_with_llama_swap(
+        {
+            "item_id": "profession:privacy engineer",
+            "runtime_type": "profession",
+            "surface": "privacy engineer",
+        },
+        profiles_path=profiles,
+        run_dir=run_dir,
+        prompt_version="lattice-producer-v1",
+        max_context_rows=1,
+        base_url="http://localhost:8060/v1",
+        model="Qwen3.6-35B-A3B",
+    )
+
+    assert seen["extra_body"] == {"thinking_budget_tokens": QWEN36_THINKING_BUDGET_TOKENS}
 
 
 def test_extract_candidate_levels_accepts_model_schema_variants() -> None:

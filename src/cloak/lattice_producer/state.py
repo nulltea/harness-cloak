@@ -7,6 +7,9 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 
+QWEN36_ESCALATION_MODEL = "Qwen3.6-35B-A3B"
+
+
 class ProducerState(TypedDict, total=False):
     run_id: str
     run_dir: str
@@ -55,7 +58,7 @@ def make_initial_state(
     proposed_out: str | Path,
     queue_path: str | Path | None = None,
     prompt_version: str = "lattice-producer-v1",
-    model: str = "",
+    model: str = QWEN36_ESCALATION_MODEL,
     escalation_model: str | None = None,
     base_url: str = "http://localhost:8060/v1",
     offline_only: bool = False,
@@ -80,8 +83,8 @@ def make_initial_state(
         "diagnostic_rows": [],
         "queue_index": 0,
         "prompt_version": prompt_version,
-        "model": model,
-        "escalation_model": escalation_model,
+        "model": QWEN36_ESCALATION_MODEL,
+        "escalation_model": escalation_model or QWEN36_ESCALATION_MODEL,
         "base_url": base_url,
         "offline_only": offline_only,
         "max_items": max_items,

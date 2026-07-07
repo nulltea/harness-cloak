@@ -160,7 +160,7 @@ def persist_proposed_artifact(
     row["entry_origin"] = row.get("entry_origin") or item.get("entry_origin", "observed-surface")
     row["source_ids"] = _dedupe_append(list(row.get("source_ids", [])), [f"producer:{run_id}:{item.get('item_id')}"])
     if row["level_counts"]:
-        row["count"] = max(float(v) for v in row["level_counts"].values())
+        row["count"] = min(float(v) for v in row["level_counts"].values())
     atomic_write_json(proposed_path, artifact)
 
 
