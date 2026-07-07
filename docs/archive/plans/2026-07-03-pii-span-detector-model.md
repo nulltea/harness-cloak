@@ -45,31 +45,31 @@ Full paper notes in `research-wiki/papers/`; key conclusions:
 - **Fine-tuning a compact encoder beats architectural complexity.** On an 82-type multi-source PII
   benchmark, directly fine-tuned DeBERTa token classification with weighted cross-entropy beats
   source-conditioned hierarchical and curriculum variants by 6–37 F1 points
-  ([jha2026_piibench_deberta](../../research-wiki/papers/jha2026_piibench_deberta.md)
+  ([jha2026_piibench_deberta](jha2026_piibench_deberta.md)
   ([arXiv 2605.25816](https://arxiv.org/abs/2605.25816))). The Kaggle PII Data Detection
   competition (22k student essays) was likewise won by fine-tuned DeBERTa-v3 token classifiers.
 - **TAB's own baseline proves the recipe in-domain.** The TAB paper fine-tunes Longformer for token
   classification on the train split and reaches high recall on direct identifiers and good recall
   on quasi-identifiers — on the same corpus and schema as our gate
-  ([pilan2022_tab_benchmark](../../research-wiki/papers/pilan2022_tab_benchmark.md)
+  ([pilan2022_tab_benchmark](pilan2022_tab_benchmark.md)
   ([arXiv 2202.00443](https://arxiv.org/abs/2202.00443))).
 - **Compact encoders beat LLM detectors on cost *and* generalization.** Fine-tuned BERT-class
   models match 70B-class LLMs on de-identification at a fraction of inference cost and generalize
   better across name distributions and languages
-  ([zambare2026_deid_efficiency](../../research-wiki/papers/zambare2026_deid_efficiency.md)
+  ([zambare2026_deid_efficiency](zambare2026_deid_efficiency.md)
   ([arXiv 2602.15869](https://arxiv.org/abs/2602.15869)), EACL 2026 Findings). LLM-as-detector is
   rejected.
 - **The right weight class is ~100–200M.** Production span-level PII detection runs at 145–209M
   params (GLiNER Guard family,
-  [minko2026_gliner_guard](../../research-wiki/papers/minko2026_gliner_guard.md)
+  [minko2026_gliner_guard](minko2026_gliner_guard.md)
   ([arXiv 2605.05277](https://arxiv.org/abs/2605.05277))); GLiNER2 stays under 500M for multi-task
-  extraction ([zaratiana2025_gliner2](../../research-wiki/papers/zaratiana2025_gliner2.md)
+  extraction ([zaratiana2025_gliner2](zaratiana2025_gliner2.md)
   ([arXiv 2507.18546](https://arxiv.org/abs/2507.18546))). Nothing larger is justified before the
   data-side gap is closed.
 - **GLiNER-family = same encoder + span–label matching head.** Retains an open-label interface and
   has off-the-shelf PII fine-tunes (urchade/gliner_multi_pii-v1, Knowledgator GLiNER-PII,
   NVIDIA GLiNER-PII)
-  ([zaratiana2023_gliner](../../research-wiki/papers/zaratiana2023_gliner.md)
+  ([zaratiana2023_gliner](zaratiana2023_gliner.md)
   ([arXiv 2311.08526](https://arxiv.org/abs/2311.08526))). But existing PII fine-tunes target
   formal PII (emails, phones, IDs), not TAB-style quasi-identifiers, so they are a cheap
   first rung, not the expected fix.

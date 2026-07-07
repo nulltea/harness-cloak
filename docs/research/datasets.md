@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-07
 tags: [datasets, pii-detection, quasi-identifier, benchmark, de-identification, anonymization, tab, synthpai]
 companion: docs/research/learned-PII-detection.md
 ---
@@ -116,6 +116,31 @@ Auxiliary breadth for PERSON/CODE/LOC only. **Most are synthetic.**
 | `corpora/wikibio/val.jsonl` | Wikipedia biographies ([arXiv 2205.06895](https://arxiv.org/abs/2205.06895)); 400–4000-char band of the vendored NR set | proxy (first sentence) | round-trip QA (bios); span-dense, **viable** (dev-log 2026-07-06) |
 | `corpora/qmsum/val.jsonl` | QMSum committee excerpts (specific-query spans; [arXiv 2004.13822](https://arxiv.org/abs/2004.13822)) | task gold (query answer) | round-trip QA (meetings); **QA desert** under summary task — 86% ceiling-reject, dropped (dev-log 2026-07-06) |
 | ai4privacy pii-masking-400k (referenced, not vendored) | synthetic formal PII | 17 types | planned auxiliary mix (formal-type breadth), not yet used |
+
+## Top sources by fine type for lattice construction
+
+These sources are for **candidate lattice construction and alias normalization**, not for privacy claims.
+Every candidate level still has to pass the substitutor filters: grammatical replacement in context,
+truthfulness, no original-surface leakage, no type-name terminal phrase, legal anonymity count, and the
+project's attacker-measured privacy evaluation before any privacy claim.
+
+Build status: these sources seed `data/lattice_profiles/fine_lattice_profiles.json` through the offline
+builder planned in `docs/plans/2026-07-07-fine-lattice-dataset-build.md`. Placeholder-only leaves use these
+sources for alias normalization only, not semantic replacement text.
+
+| Fine type | Best datasets to use | Use for |
+|---|---|---|
+| `profession` | [ESCO](https://esco.ec.europa.eu/en/use-esco/download), [O*NET](https://www.onetcenter.org/database.html), [ISCO-08](https://isco-ilo.netlify.app/en/isco-08/), [Wikidata occupation / P106](https://www.wikidata.org/wiki/Property:P106) | Title aliases, occupation hierarchy, sector/domain nodes |
+| `health-condition` | [Mondo Disease Ontology](https://mondo.monarchinitiative.org/pages/download/), [Disease Ontology](https://disease-ontology.org/downloads/), [MeSH RDF](https://id.nlm.nih.gov/mesh/), [ICD-11 API](https://icd.who.int/docs/icd-api/APIDoc-Version2/), [UMLS](https://www.nlm.nih.gov/research/umls/index.html) | Disease synonyms, disease families, condition hierarchy |
+| `ethnicity` | [HANCESTRO](https://ebispot.github.io/hancestro/), [HANCESTRO OBO](https://obofoundry.org/ontology/hancestro.html), [U.S. Census race/ethnicity standards](https://www.census.gov/about/our-research/race-ethnicity/standards-updates.html), Wikidata | Ancestry/population categories, region rollups |
+| `nationality` | Wikidata demonyms, [CLDR territory names](https://cldr.unicode.org/translation/displaynames/countryregion-territory-names), [GeoNames](https://www.geonames.org/export/), HANCESTRO regions | Demonym/country/region/continent chains |
+| `religion` | [Wikidata religion or worldview / P140](https://www.wikidata.org/wiki/Property:P140), [ARDA religion datasets](https://www.thearda.com/data-archive?fid=RCSDEM2), Wikidata subclass graph | Denomination to tradition to broad affiliation |
+| `family-role` | [KIN ontology](https://pedigree.readthedocs.io/en/latest/kin.html), [WordNet](https://wordnet.princeton.edu/homepage), Wikidata kinship properties, [schema.org Person relations](https://schema.org/Person) | Daughter to child, wife to spouse, grandfather to grandparent |
+| `age` | Deterministic parser first; optionally [MeSH Age Groups](https://meshb.nlm.nih.gov/record/ui?ui=D009273), [CDC age group tables](https://www.cdc.gov/nchs/hus/sources-definitions/age-adjustment.htm) | Age buckets and life-stage terms |
+| `gender` | [GSSO](https://bioportal.bioontology.org/ontologies/GSSO), [EBI OLS GSSO](https://www.ebi.ac.uk/ols4/ontologies/gsso), Wikidata sex-or-gender values | Synonym normalization only; placeholder-only by default |
+| `sexual-orientation` | [GSSO](https://bioportal.bioontology.org/ontologies/GSSO), [EBI OLS GSSO](https://www.ebi.ac.uk/ols4/ontologies/gsso), Wikidata sexual-orientation values | Synonym normalization only; placeholder-only by default |
+| `marital-status` | [FHIR marital-status value set](https://build.fhir.org/valueset-marital-status.html), [HL7 marital-status terminology](https://terminology.hl7.org/7.1.0/CodeSystem-v3-MaritalStatus.html) | Synonym normalization only; placeholder-only by default |
+| `demographic-other` | No trustworthy exhaustive source | Placeholder-first residual bucket; do not invent semantic floors |
 
 ## Gaps and recommendations
 

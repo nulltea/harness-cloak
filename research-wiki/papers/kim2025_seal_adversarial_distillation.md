@@ -98,7 +98,7 @@ _None registered._
 
 **Why surfaced:** flagged in the D1 prototype plan (2026-07-02 dataset audit) as "register in the
 wiki and assess overlap before D2 planning" — the closest published neighbor to the D2 round-trip
-co-optimization plan ([`2026-07-02-roundtrip-grpo-training.md`](../../docs/plans/2026-07-02-roundtrip-grpo-training.md)).
+co-optimization plan ([`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md)).
 
 **Overlap assessment (the mandated pre-D2 check):** SEAL shares our corpus (SynthPAI), privacy
 measure (attribute-inference attacker), teacher-time-only-LLM discipline, and the goal of a local

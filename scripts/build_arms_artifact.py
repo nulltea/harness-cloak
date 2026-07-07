@@ -18,6 +18,7 @@ from cloak.anonymity import aset_count
 from cloak.corpora import load_task_docs
 from cloak.detect import Detector
 from cloak.probe import fill_proximity, walk_risk
+from cloak.runtime_types import PLACEHOLDER_RE
 
 sys.path.append(str(Path(__file__).resolve().parent / "spikes"))
 from surrogate_validation import build_arms  # noqa: E402
@@ -57,6 +58,8 @@ def action_table(text: str, R: list[dict]) -> dict:
         sent = _sent_around(text, e["start"], e["end"])
         actions = []
         for lvl in e["lattice"]:
+            if PLACEHOLDER_RE.fullmatch(lvl):
+                continue
             sent_f = sent.replace(e["surface"], lvl) if e["surface"] in sent else lvl
             actions.append({"fill": lvl, "mode": "level",
                             "walk_risk": round(walk_risk(sent_f, e["surface"], lvl,

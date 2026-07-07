@@ -255,7 +255,7 @@ floors were needed. `K_FLOORS` calibrated to a measured-moderate strictness
 (LOC/ORG/DATETIME/DEM/QUANTITY = 100, MISC/OTHER = 1, user-waivable). The migration is done:
 `cloak.anonymity.aset_count` + integer floor comparison is the mask on the inference and
 training paths, walk_risk is offline-only (`src/cloak/probe.py`), and the RL spec was rewritten
-around it — [structural-lattice-risk plan](../plans/2026-07-04-structural-lattice-risk.md),
+around it — [structural-lattice-risk plan](2026-07-04-structural-lattice-risk.md),
 `docs/specs/RL/surrogate-ranker-infiller.md`.
 
 ## Sources

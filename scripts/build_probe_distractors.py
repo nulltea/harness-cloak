@@ -10,12 +10,14 @@ import json
 from pathlib import Path
 
 from build_arms_artifact import load_artifact
+from cloak.probe import MIN_POOL
+from cloak.runtime_types import RUNTIME_TYPES
 
 OUT = Path("data/probe_distractors.json")
 
 
 def main():
-    pools: dict[str, set] = {}
+    pools: dict[str, set] = {t: set() for t in RUNTIME_TYPES}
     art = load_artifact()
     for corpus in art.values():
         for arms in corpus.values():
@@ -23,7 +25,10 @@ def main():
                 pools.setdefault(e["type"], set()).add(e["surface"])
     out = {t: sorted(s) for t, s in pools.items()}
     OUT.write_text(json.dumps(out, indent=1))
+    thin = {t: len(v) for t, v in out.items() if len(v) < MIN_POOL}
     print({t: len(v) for t, v in out.items()}, "->", OUT)
+    if thin:
+        print({"thin_or_missing": thin})
 
 
 if __name__ == "__main__":

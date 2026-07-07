@@ -45,7 +45,7 @@ The GRPO plans freeze the detector; the rationale is sharper than cost and is a 
 
 **Revisit trigger:** if the attack head escalates to the document-level encoder
 (fork 1 escalation in
-[`2026-07-02-surrogate-grpo-training.md`](../plans/2026-07-02-surrogate-grpo-training.md)), misses
+[`2026-07-02-surrogate-grpo-training.md`](2026-07-02-surrogate-grpo-training.md)), misses
 become priced by the reward and detector-in-the-loop stops being a hacking channel — at that point
 it's a legitimate future fork.
 
@@ -70,7 +70,7 @@ it's a legitimate future fork.
 ## Repo state at handoff (context)
 
 Active work: the surrogate-reward GRPO plan is finalized
-([`2026-07-02-surrogate-grpo-training.md`](../plans/2026-07-02-surrogate-grpo-training.md) — read
+([`2026-07-02-surrogate-grpo-training.md`](2026-07-02-surrogate-grpo-training.md) — read
 it first: policy = ranker (frozen-roberta features + MLP, option 1) then + infiller; detector
 frozen; task corpora = clinical + email). Implementation of the surrogate reward module +
 validation gate was just starting (nothing committed for it yet). This detector finetune is

@@ -13,7 +13,9 @@ import math
 import torch
 import torch.nn as nn
 
-TYPES = ["DEM", "DATETIME", "LOC", "QUANTITY", "ORG", "MISC", "OTHER"]
+from cloak.runtime_types import FINE_DEM_TYPES
+
+TYPES = ["DEM", "DATETIME", "LOC", "QUANTITY", "ORG", "MISC", *FINE_DEM_TYPES, "OTHER"]
 CORPORA = ["clinical", "enron", "aeslc", "lexsum", "wikibio"]
 N_FEAT = 7 + len(TYPES) + len(CORPORA)
 

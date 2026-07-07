@@ -9,20 +9,25 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+from cloak.lattice_profiles import lookup_levels
+from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES, placeholder_token
+
 GEONAMES = Path("data/geonames")
 CACHE = Path("data/lattice_cache.json")
 
 E4B_PROMPT = """Entity: "{entity}"
+Runtime type: "{span_type}"
 Context: "{context}"
 
-Give exactly 3 broader, strictly truthful generalizations of this entity as it is used in the context, from most specific to most general. Each must be a short English noun phrase (with article) that the entity IS an instance of. No descriptions, no symbols, no explanations.
+Give exactly 3 broader, strictly truthful replacements for this entity as it is used in the context, from most specific to most general. Each must be a short grammatical phrase that can replace the entity in the marked sentence. Do not output labels that merely name the runtime type. No descriptions, no symbols, no explanations.
 Format: one phrase per line, nothing else."""
 
 QWEN_PROMPT = """Entity: "{entity}"
+Runtime type: "{span_type}"
 Context: "{context}"
 
 First, briefly reason about what this entity is in this context and what would identify it.
-Then output exactly 3 broader, strictly truthful generalizations, most specific first: short noun phrases (with article) such that the entity IS an instance of each. The last line of your answer must be only the 3 phrases separated by " | "."""
+Then output exactly 3 broader, strictly truthful replacement phrases, most specific first. They must replace the entity in context, not label the type. The last line of your answer must be only the 3 phrases separated by " | "."""
 
 
 # ---------- rule buckets ----------
@@ -250,14 +255,139 @@ def _parse_lines(reply: str) -> list[str]:
     return [ln for ln in lines if ln and len(ln.split()) <= 8 and ln[0].isascii()][:3]
 
 
-def teacher_lattices(entities: list[dict], workers: int = 6) -> dict:
-    """entities: [{entity, context}]. Returns {entity: {lattice, tier}}; caches to CACHE.
+_TYPE_NAME_PHRASES = {
+    "a nationality", "an ethnicity", "a religion", "a religious affiliation",
+    "a profession", "an occupation", "an age range", "a gender",
+    "a marital status", "a health condition", "a sexual orientation",
+    "a family relationship", "a demographic attribute",
+}
 
-    Cascade: E4B (parallel, rationale-free) -> NLI gate -> Qwen3.6 CoT retry -> type-label floor.
+_NATIONALITY_LEVELS = {
+    "polish": ["Central European", "European"],
+    "kenyan": ["East African", "African"],
+    "german": ["Central European", "European"],
+    "american": ["North American"],
+    "british": ["Western European", "European"],
+}
+
+_ETHNICITY_LEVELS = {
+    "kurdish": ["of Middle Eastern ethnicity", "of West Asian ethnicity"],
+    "roma": ["of European ethnicity"],
+    "romani": ["of European ethnicity"],
+    "tamil": ["of South Asian ethnicity"],
+    "arab": ["of Middle Eastern ethnicity"],
+}
+
+_RELIGION_LEVELS = {
+    "catholic": ["Christian"],
+    "protestant": ["Christian"],
+    "orthodox": ["Christian"],
+    "sunni": ["Muslim"],
+    "shia": ["Muslim"],
+}
+
+_PROFESSION_LEVELS = {
+    "cardiologist": ["medical specialist", "healthcare worker"],
+    "doctor": ["medical professional", "healthcare worker"],
+    "physician": ["medical professional", "healthcare worker"],
+    "nurse": ["healthcare worker"],
+    "journalist": ["media worker"],
+    "reporter": ["media worker"],
+    "prosecutor": ["legal professional"],
+    "lawyer": ["legal professional"],
+    "judge": ["legal professional"],
+    "teacher": ["education worker"],
+    "professor": ["education worker"],
+    "engineer": ["technical professional"],
+}
+
+_HEALTH_LEVELS = {
+    "diabetes": ["endocrine condition", "chronic condition"],
+    "depression": ["mental health condition"],
+    "asthma": ["respiratory condition"],
+    "hiv": ["infectious disease"],
+    "aids": ["infectious disease"],
+    "cancer": ["serious illness"],
+}
+
+_FAMILY_LEVELS = {
+    "daughter": ["child"],
+    "son": ["child"],
+    "wife": ["spouse"],
+    "husband": ["spouse"],
+    "grandfather": ["grandparent"],
+    "grandmother": ["grandparent"],
+    "mother": ["parent"],
+    "father": ["parent"],
+    "brother": ["sibling"],
+    "sister": ["sibling"],
+}
+
+
+def _cache_key(span_text: str, span_type: str) -> str:
+    return f"{span_type}::{span_text.lower().strip()}"
+
+
+def is_type_name_phrase(fill: str) -> bool:
+    f = re.sub(r"\s+", " ", fill.lower().strip().rstrip("."))
+    return f in _TYPE_NAME_PHRASES
+
+
+def _fine_curated_chain(span_text: str, span_type: str) -> list[str] | None:
+    key = span_text.lower().strip()
+    key_sing = key.rstrip("s")
+    maps = {
+        "nationality": _NATIONALITY_LEVELS,
+        "ethnicity": _ETHNICITY_LEVELS,
+        "religion": _RELIGION_LEVELS,
+        "profession": _PROFESSION_LEVELS,
+        "health-condition": _HEALTH_LEVELS,
+        "family-role": _FAMILY_LEVELS,
+    }
+    table = maps.get(span_type)
+    if not table:
+        return None
+    return table.get(key) or table.get(key_sing)
+
+
+def _filtered_levels(span_text: str, levels: list[str] | None) -> list[str]:
+    if not levels:
+        return []
+    surface = span_text.lower().strip()
+    distinctive_numbers = set(re.findall(r"\d[\d,.]*\d|\d", span_text))
+    out = []
+    seen = set()
+    for cand in levels:
+        c = re.sub(r"\s+", " ", str(cand).strip().rstrip("."))
+        cl = c.lower()
+        if not c or cl in seen:
+            continue
+        if surface and surface in cl:
+            continue
+        if is_type_name_phrase(c):
+            continue
+        if distinctive_numbers & set(re.findall(r"\d[\d,.]*\d|\d", c)):
+            continue
+        seen.add(cl)
+        out.append(c)
+    return out
+
+
+def _with_placeholder(span_text: str, span_type: str, levels: list[str] | None) -> list[str]:
+    got = _filtered_levels(span_text, levels)
+    got.append(placeholder_token(span_type, 1))
+    return got
+
+
+def teacher_lattices(entities: list[dict], workers: int = 6) -> dict:
+    """Offline teacher cache builder keyed by runtime type and surface.
+
+    entities: [{entity, type, context}]. Deployed lattice_for() only reads CACHE; it
+    never calls the teacher. Empty approved lists are valid placeholder-only outcomes.
     """
     from inferdpt.llm import LLMClient
     cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
-    todo = [e for e in entities if e["entity"] not in cache]
+    todo = [e for e in entities if _cache_key(e["entity"], e.get("type", "MISC")) not in cache]
     if not todo:
         return cache
     kw = dict(base_url="http://localhost:8060/v1", api_key="x", temperature=0.0, max_tokens=250)
@@ -267,24 +397,29 @@ def teacher_lattices(entities: list[dict], workers: int = 6) -> dict:
 
     with ThreadPoolExecutor(workers) as ex:
         replies = list(ex.map(lambda e: e4b.generate(
-            E4B_PROMPT.format(entity=e["entity"], context=e["context"])), todo))
+            E4B_PROMPT.format(entity=e["entity"], span_type=e.get("type", "MISC"),
+                              context=e["context"])), todo))
     escalate = []
     for e, r in zip(todo, replies):
         cands = nli_gate(e["entity"], e["context"], _parse_lines(r))
         if cands:
-            cache[e["entity"]] = {"lattice": cands, "tier": "e4b"}
+            cache[_cache_key(e["entity"], e.get("type", "MISC"))] = {
+                "lattice": _filtered_levels(e["entity"], cands), "tier": "e4b"}
         else:
             escalate.append(e)
     if escalate:
         with ThreadPoolExecutor(workers) as ex:
             replies = list(ex.map(lambda e: qwen.generate(
-                QWEN_PROMPT.format(entity=e["entity"], context=e["context"])), escalate))
+                QWEN_PROMPT.format(entity=e["entity"], span_type=e.get("type", "MISC"),
+                                   context=e["context"])), escalate))
         for e, r in zip(escalate, replies):
             last = r.strip().splitlines()[-1] if r.strip() else ""
             cands = nli_gate(e["entity"], e["context"],
                              _parse_lines("\n".join(p.strip() for p in last.split("|"))))
-            cache[e["entity"]] = ({"lattice": cands, "tier": "qwen"} if cands else
-                                  {"lattice": [], "tier": "floor"})
+            approved = _filtered_levels(e["entity"], cands)
+            cache[_cache_key(e["entity"], e.get("type", "MISC"))] = (
+                {"lattice": approved, "tier": "qwen"} if approved else
+                {"lattice": [], "tier": "placeholder-only"})
     CACHE.parent.mkdir(exist_ok=True)
     CACHE.write_text(json.dumps(cache, indent=2))
     return cache
@@ -301,22 +436,49 @@ def lattice_for(span_text: str, span_type: str, context: str = "") -> list[str]:
     Every source passes the NLI truthfulness gate against the span's context — rule sources
     used to bypass it, shipping context-wrong senses ("dragon" -> "a mythical monster",
     "vermont" -> "a city in Australia"); docs/issues/rule-lattice-nli-gate-bypass.md.
-    Gate-empty lattices fall to the generic type label (near-vacuous, safe floor); the
-    substitutor's tau/injectivity exhaustion then decides level vs placeholder.
+    Gate-empty coarse lattices fall to a legacy generic type label. Fine runtime lattices
+    fall closed to their typed placeholder terminal.
     """
+    deterministic = False
+    if span_type in PLACEHOLDER_ONLY_TYPES or span_type in {"PERSON", "CODE"}:
+        return [placeholder_token(span_type, 1)]
     if span_type == "DATETIME":
         got = bucket_date(span_text)
+        deterministic = True
     elif span_type == "QUANTITY":
         got = bucket_quantity(span_text)
+        deterministic = True
+    elif span_type == "age":
+        got = bucket_date(span_text)
+        deterministic = True
     elif span_type == "LOC":
         got = geonames_chain(span_text) or wordnet_chain(span_text)
+    elif span_type in {
+        "nationality", "ethnicity", "profession", "health-condition", "religion",
+        "family-role",
+    }:
+        got = lookup_levels(span_text, span_type)
+        deterministic = bool(got)
+        if not got:
+            got = _fine_curated_chain(span_text, span_type)
+            deterministic = got is not None
+        if got is None:
+            got = wordnet_chain(span_text)
+        if not got and CACHE.exists():
+            got = json.loads(CACHE.read_text()).get(_cache_key(span_text, span_type), {}).get("lattice")
+    elif span_type == "demographic-other":
+        got = []
     else:
         got = wordnet_chain(span_text)
         if not got and CACHE.exists():
-            got = json.loads(CACHE.read_text()).get(span_text.lower(), {}).get("lattice")
-    if got and context:
+            cache = json.loads(CACHE.read_text())
+            got = (cache.get(_cache_key(span_text, span_type), {}).get("lattice") or
+                   cache.get(span_text.lower(), {}).get("lattice"))
+    if got and context and not deterministic:
         got = nli_gate(span_text, context, got)
-    return got or [TYPE_LABEL.get(span_type, "something")]
+    if span_type in {"LOC", "ORG", "MISC", "DEM", "DATETIME", "QUANTITY"}:
+        return _filtered_levels(span_text, got) or [TYPE_LABEL.get(span_type, "something")]
+    return _with_placeholder(span_text, span_type, got)
 
 
 if __name__ == "__main__":

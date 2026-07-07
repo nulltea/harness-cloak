@@ -1,5 +1,5 @@
 ---
-type: reference
+type: research
 status: current
 created: 2026-07-02
 updated: 2026-07-02
@@ -7,7 +7,7 @@ tags: [benchmarks, eval, task-utility, pii-rich, clinical-note, email, pareto, s
 companion: docs/specs/probes.md
 ---
 
-# Benchmark specifications — task-oriented, PII-rich evaluation
+# Benchmark research — task-oriented, PII-rich evaluation
 
 Living doc. Defines the corpora + tasks LatticeCloak is evaluated on. Updated as the eval harness lands.
 

@@ -19,7 +19,7 @@ the remote model (`Qwen3.6-35B-A3B`) reproduces verbatim only 0–7%; **82% (cli
 embedding sim < 0.6), so no extractor, rule-based or learned, can restore the original surface
 into `out_final`. The loosely-echoed remainder (<10% everywhere, and partly spurious fuzzy hits
 on note section headers) is why the E1 semantic-aligner was descoped
-([gaps plan, Phase M](../plans/2026-07-03-surrogate-rl-gaps-fixes.md)). Placeholder caveat
+([gaps plan, Phase M](2026-07-03-surrogate-rl-gaps-fixes.md)). Placeholder caveat
 (corrected 2026-07-04): `ph_swapped 9/9, zero residue` measures *inversion given echo* — every
 placeholder token that appeared in out_p swapped back cleanly. It does **not** mean placeholders
 reliably appear: sampled docs show 1/3 and 0/4 placeholder tokens echoed, vs prose fills the
@@ -91,10 +91,10 @@ compute it when probe supply grows.
   round-trip reward upgrade, not an ŝ revival. Spec §5.2 carries the normative statement.
 - **The surrogate reward cannot see any of this — accepted.** u_qa reads `doc_p`, never
   `out_p`; echo failure is in its null space
-  ([gaps plan, Gap 2](../plans/2026-07-03-surrogate-rl-gaps-fixes.md)), fail-closed for
+  ([gaps plan, Gap 2](2026-07-03-surrogate-rl-gaps-fixes.md)), fail-closed for
   placeholder carriage.
 - **This is the strongest argument yet for the round-trip reward**
-  ([2026-07-02-roundtrip-grpo-training.md](../plans/2026-07-02-roundtrip-grpo-training.md)):
+  ([2026-07-02-roundtrip-grpo-training.md](2026-07-02-roundtrip-grpo-training.md)):
   a round-trip reward observes the real `out_p` per candidate and therefore prices echo and
   absorption *directly, per fill* — no ŝ table, no mode coarseness, and the infiller could learn
   fill-level echo-craft (phrasings the model repeats), which the surrogate structurally cannot
@@ -118,8 +118,8 @@ compute it when probe supply grows.
 
 Measurements: `results/surrogate_env_diagnostics.json` (Phase M, arms artifact
 `data/task_arms_tau0.02.json`); gate numbers `results/surrogate_validation.json`. Plans:
-[gaps + fixes](../plans/2026-07-03-surrogate-rl-gaps-fixes.md),
-[surrogate GRPO](../plans/2026-07-02-surrogate-grpo-training.md),
-[round-trip GRPO](../plans/2026-07-02-roundtrip-grpo-training.md). Anti-extractor deletion
+[gaps + fixes](2026-07-03-surrogate-rl-gaps-fixes.md),
+[surrogate GRPO](2026-07-02-surrogate-grpo-training.md),
+[round-trip GRPO](2026-07-02-roundtrip-grpo-training.md). Anti-extractor deletion
 lesson: [NaPaRe](../../research-wiki/papers/huang2025_tree_search_rewriting.md)
 ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838)).

@@ -11,7 +11,7 @@ companion: [../specs/RL/surrogate-ranker-infiller.md, 2026-07-02-surrogate-grpo-
 
 # Surrogate-RL gap analysis and pre-RL fixes
 
-Companion to the RL spec ([surrogate-ranker-infiller.md](../specs/RL/surrogate-ranker-infiller.md)).
+Companion to the RL spec ([surrogate-ranker-infiller.md](surrogate-ranker-infiller.md)).
 Records the 2026-07-03 component audit: what is broken in the environment/reward stack, which of
 it blocks RL, and the ordered fix plan. Core conclusion: **as wired today, RL would be
 utility-only training on a utility term blind to the dominant realized loss channel** — the gate
@@ -32,7 +32,7 @@ re-pass validated the ground truth, not the reward's gradient direction inside t
 - **ŝ (echo-survival table)** — offline-measured `P(fill recoverable in out_p by the deployed
   extractor | fill mode, span type, task)`; a disclosed environment constant, not a tuning knob.
 - Other terms (u_qa, fact recall, R, fill modes, E0/E1/E2): see the
-  [RL spec definitions](../specs/RL/surrogate-ranker-infiller.md#definitions).
+  [RL spec definitions](surrogate-ranker-infiller.md#definitions).
 
 ## Gap analysis (measured 2026-07-03)
 
@@ -173,7 +173,7 @@ the persisted arms artifact; 16 docs × tau_walk/all_floor × 3 corpora):
 E1 alignment work is off the critical path; revisit only if the eval residual implicates it.
 
 **Phase 1 — candidate-sensitive risk probes (the RL unblocker, ~1–2 days).**
-*Revised 2026-07-04 after the probe shootout* ([attacks.md](../specs/attacks.md)): the appositive
+*Revised 2026-07-04 after the probe shootout* ([attacks.md](attacks.md)): the appositive
 MLM originally planned here **failed attacker correlation under both referees** (AUC ≈ chance,
 level-ordering ≤ coin flip) — spiked before building on it. Decided design (probe-per-job, both
 measured winners):
@@ -197,10 +197,10 @@ order-matching ambiguity branch (dead after injectivity). *Added 2026-07-04:* **
 rule-sourced lattices (WordNet/GeoNames/buckets) through the NLI truthfulness gate** — they
 currently bypass it, shipping context-wrong fills ("dragon"→"a mythical monster",
 "vermont"→"a city in Australia"); see
-[rule-lattice-nli-gate-bypass](../issues/rule-lattice-nli-gate-bypass.md). The second upstream
+[rule-lattice-nli-gate-bypass](rule-lattice-nli-gate-bypass.md). The second upstream
 defect from the same examples — retained sibling mentions, the measured dominant
 attacker-recovery channel — is recorded in
-[detection-sibling-mention-leak](../issues/detection-sibling-mention-leak.md) and stays on the
+[detection-sibling-mention-leak](detection-sibling-mention-leak.md) and stays on the
 detector workstream, off this critical path. Acceptance: self-check asserts injective R; no
 over-τ replacement shipped; typed placeholders invert; the three measured wrong-sense examples
 produce a truthful level or a placeholder.
@@ -214,7 +214,7 @@ Phase 4.
 Grounds: (a) ŝ re-binds the detached surrogate to remote-model behavior; (b) the corrected
 evidence (cached round trips; the "9/9" stat measured inversion-given-echo, not echo) shows echo
 is dominated by *task relevance*, outside the policy's control — see
-[remote-llm-echo-absorption](../issues/remote-llm-echo-absorption.md) and spec §5.2. The reward
+[remote-llm-echo-absorption](remote-llm-echo-absorption.md) and spec §5.2. The reward
 stays fully local: `r = α(1−A_P6) + (1−α)·u_qa` with the uniform reader path; the M3 reader
 abstention is documented as an accepted fail-closed bias (placeholder carriage is locally
 unverifiable), not patched. Echo is measured only at eval; a policy-controllable echo residual
@@ -234,11 +234,11 @@ tuples); document-level attack head (E2, pre-registered escalation); spec §2.3-
 
 ## Sources
 
-RL spec: [surrogate-ranker-infiller.md](../specs/RL/surrogate-ranker-infiller.md). Gate results
+RL spec: [surrogate-ranker-infiller.md](surrogate-ranker-infiller.md). Gate results
 and ground-truth root cause: [2026-07-02-surrogate-grpo-training.md](2026-07-02-surrogate-grpo-training.md)
 (STATUS 2026-07-03), `results/surrogate_validation.json`. Anti-extractor deletion lesson:
-[NaPaRe](../../research-wiki/papers/huang2025_tree_search_rewriting.md)
+[NaPaRe](huang2025_tree_search_rewriting.md)
 ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838)). Overoptimization playbook:
-[Gao et al. 2022](../../research-wiki/papers/gao2022_reward_overoptimization.md)
+[Gao et al. 2022](gao2022_reward_overoptimization.md)
 ([arXiv 2210.10760](https://arxiv.org/abs/2210.10760)) via
-[adverserial-RL.md](../research/adverserial-RL.md).
+[adverserial-RL.md](adverserial-RL.md).

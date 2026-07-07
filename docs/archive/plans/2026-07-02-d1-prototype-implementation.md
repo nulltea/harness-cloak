@@ -198,7 +198,7 @@ values they already cover, so the teacher sees only the named-entity residue.
   cross-checks the KB-covered head if that rate looks suspicious); (ii) **teacher-model dependence** —
   lattice quality is bound to one mid-size model; the distilled-student eval later measures how much
   of it survives 35B→250M. The cache pins model id + prompt for reproducibility. Deployment inherits
-  the [Dou et al. 2024](../../research-wiki/papers/dou2024_self_disclosure_abstraction.md)
+  the [Dou et al. 2024](dou2024_self_disclosure_abstraction.md)
   ([arXiv 2311.09538](https://arxiv.org/abs/2311.09538)) teacher→local pattern (cf. Symbolic Knowledge
   Distillation, [arXiv 2110.07178](https://arxiv.org/abs/2110.07178)). Probase/MS Concept Graph was
   audited (2026-07-02) and dropped: the 85M-pair IsA file with counts is obtainable (Internet Archive
@@ -255,7 +255,7 @@ and assess overlap before D2 planning.
 
 Plan basis: [`2026-07-02-codesign-next-stage.md`](2026-07-02-codesign-next-stage.md) and the seven-paper
 analysis listed there. New registration this pass:
-[Dou et al. 2024](../../research-wiki/papers/dou2024_self_disclosure_abstraction.md)
+[Dou et al. 2024](dou2024_self_disclosure_abstraction.md)
 ([arXiv 2311.09538](https://arxiv.org/abs/2311.09538)).
 Key code artifacts (verified live 2026-07-02): [GLiNER](https://github.com/urchade/GLiNER),
 [fastcoref](https://github.com/shon-otmazgin/fastcoref),

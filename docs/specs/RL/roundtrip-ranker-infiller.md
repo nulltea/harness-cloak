@@ -287,7 +287,7 @@ Consequences:
 ### Note — walk_risk as a policy feature (status: live in code, slated for removal before the pilot)
 
 walk_risk was a deliberate feature under the *old* reward
-([structural-lattice-risk plan](../../plans/2026-07-04-structural-lattice-risk.md), Task 4 kept
+([structural-lattice-risk plan](2026-07-04-structural-lattice-risk.md), Task 4 kept
 it; the migration's cleanup grep whitelisted "a feature/diagnostic — none on a deployment
 decision path"). It carries within-span level-ordering signal and the one thing anonymity counts
 are blind to: context-dependent re-identifiability (the famous-context gap of `aset`). The

@@ -7,11 +7,12 @@ R (substitution record) stays client-side and drives extraction.
 """
 import re
 
-from cloak.detect import Detector, Span, coref_chains
+from cloak.detect import Detector, Span, coref_chains, relabel_dem
 from cloak.lattice import TYPE_LABEL, lattice_for
 from cloak.probe import walk_risk
+from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
-DIRECT_TYPES = {"PERSON", "CODE"}
+DIRECT_TYPES = set(DIRECT_TYPES)
 
 
 def _is_role_phrase(text: str) -> bool:
@@ -20,8 +21,8 @@ def _is_role_phrase(text: str) -> bool:
     dialogue/informal text ("martha") still get placeholders instead of generalizing.
 
     ponytail: WordNet single-token noun + article prefix. A name that is also a common noun
-    ("Bill", "Rose", "May") lowercased still misroutes to DEM — inherent lowercase ambiguity;
-    upgrade with a names gazetteer if it bites.
+    ("Bill", "Rose", "May") lowercased can still misroute to a fine demographic leaf —
+    inherent lowercase ambiguity; upgrade with a names gazetteer if it bites.
     """
     from nltk.corpus import wordnet as wn
     t = text.strip().lower()
@@ -51,7 +52,7 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             s.text, re.IGNORECASE))]
     for s in spans:  # a lowercase "PERSON" role noun (lawyer, patient) generalizes; a
         if s.type == "PERSON" and s.text[0].islower() and _is_role_phrase(s.text):  # name stays
-            s.type = "DEM"
+            s.type = relabel_dem(s.text)
     spans = coref_chains(text, spans)
     counters: dict[str, int] = {}
     chain_ph: dict[int, str] = {}
@@ -61,8 +62,9 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
     out = text
 
     def _typed_placeholder(s) -> str:
-        counters[s.type] = counters.get(s.type, 0) + 1
-        return f"<{s.type}_{counters[s.type]}>"
+        tok = placeholder_type_token(s.type)
+        counters[tok] = counters.get(tok, 0) + 1
+        return placeholder_token(s.type, counters[tok])
 
     for s in sorted(spans, key=lambda s: -s.start):  # right-to-left keeps offsets valid
         entry = {"start": s.start, "end": s.end, "surface": s.text, "type": s.type,
@@ -83,11 +85,15 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             distinctive = set(re.findall(r"\d[\d,.]*\d|\d", s.text)) | \
                 {w.lower() for w in re.findall(r"\b[A-Z][a-z]{2,}\b", s.text)}
             lattice = [c for c in lattice
-                       if not distinctive & (set(re.findall(r"\d[\d,.]*\d|\d", c)) |
-                                             set(re.findall(r"\w{3,}", c.lower())))] \
-                or [TYPE_LABEL.get(s.type, "something")]
+                       if PLACEHOLDER_RE.fullmatch(c) or
+                       not distinctive & (set(re.findall(r"\d[\d,.]*\d|\d", c)) |
+                                           set(re.findall(r"\w{3,}", c.lower())))] \
+                or [placeholder_token(s.type, 1) if s.type not in TYPE_LABEL
+                    else TYPE_LABEL.get(s.type, "something")]
             chosen, risk = None, None
             for cand in lattice:
+                if PLACEHOLDER_RE.fullmatch(cand):
+                    continue
                 if used.get(cand.lower(), skey) != skey:
                     continue  # claimed by a different surface (injectivity)
                 cand_sent = sent.replace(s.text, cand) if s.text in sent else cand
@@ -155,7 +161,7 @@ if __name__ == "__main__":
     # tau is a hard guarantee: every shipped generalization is under budget
     assert all(r["risk"] < sub.tau for r in R if r["action"] == "generalize"), R
     # exhausted spans ship as typed placeholders, never over-tau floors
-    assert all(re.fullmatch(r"<[A-Z]+_\d+>", r["replacement"])
+    assert all(PLACEHOLDER_RE.fullmatch(r["replacement"])
                for r in R if r.get("exhausted")), R
 
     # lowercase-name routing: names stay PERSON, role nouns generalize

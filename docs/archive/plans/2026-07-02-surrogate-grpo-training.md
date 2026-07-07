@@ -93,14 +93,14 @@ Re-run outcome (16 docs × 4 arms × 3 corpora, round trips cached, `results/sur
 
 Residual gate caveats: aeslc has probe-bearing docs on only 5/16 (thin gold restatement); the
 spec change (fact recall as headline utility) still needs to land in
-[`benchmarks.md`](../specs/benchmarks.md).
+[`benchmarks.md`](benchmarks.md).
 
 **Scope (decision 2026-07-02).** This plan is the active v0 of Way 1: the substitutor cascade is
 trained against a **model-free local surrogate reward** — a "mini round trip" through a local QA
 reader, the D1 extractor, and an NLI encoder — instead of the remote-LLM round trip. Motivation:
 the round-trip reward is expensive (a remote generation per rollout candidate) and binds training
 to one frozen remote model (`Qwen3.6-35B-A3B`) whose quirks the policy would learn
-(reward overoptimization — background: [`adverserial-RL.md`](../research/adverserial-RL.md)).
+(reward overoptimization — background: [`adverserial-RL.md`](adverserial-RL.md)).
 The **true round trip remains the evaluation**, and the full round-trip-reward design — mechanism,
 forks, wall-time — stays intact in
 [`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md) for future
@@ -205,20 +205,20 @@ priced by the reward and detector-in-the-loop becomes a legitimate future fork.
 ## Training corpora — the task-oriented benchmarks (2026-07-02 task-eval session)
 
 Training and utility ground use the task corpora
-([`benchmarks.md`](../specs/benchmarks.md); loaders `cloak/corpora.py`, scoring `cloak/score.py`),
+([`benchmarks.md`](benchmarks.md); loaders `cloak/corpora.py`, scoring `cloak/score.py`),
 selected so the **gold output restates the substituted spans** — inversion fires and coarsening
 carries a reference-scored cost (the old prefix/summarization smoke left inversion unexercised,
 gen_absent 128/128):
 
 - **Clinical dialogue→note (primary):** ACI-Bench (67, full SOAP) + MTS-Dialog (200, section
   notes) — notes restate age/sex/meds/dates, exactly the quasi spans lattices coarsen. Wiki:
-  [yim2023_acibench](../../research-wiki/papers/yim2023_acibench_visit_note_generation.md)
+  [yim2023_acibench](yim2023_acibench_visit_note_generation.md)
   ([arXiv 2306.02022](https://arxiv.org/abs/2306.02022)),
-  [benabacha2023_mtsdialog](../../research-wiki/papers/benabacha2023_mtsdialog_clinical_note.md)
+  [benabacha2023_mtsdialog](benabacha2023_mtsdialog_clinical_note.md)
   ([ACL 2023.eacl-main.168](https://aclanthology.org/2023.eacl-main.168/)).
 - **Email, real PII:** AESLC subject-line (200; light restatement) + Enron reply (200; names
   people/orgs — the direct-placeholder stress test de-identified clinical notes can't give). Wiki:
-  [zhang2019_aeslc](../../research-wiki/papers/zhang2019_aeslc_subject_line_generation.md)
+  [zhang2019_aeslc](zhang2019_aeslc_subject_line_generation.md)
   ([arXiv 1906.03497](https://arxiv.org/abs/1906.03497)).
 - **SynthPAI stays on the attacker axis only** (8-attribute inference at evaluation), not the
   utility/training ground.
@@ -345,7 +345,7 @@ Training is now **GPU-bound, not proxy-bound**; the perf gate's job shifts to ba
   remote generations are invisible to the surrogate; this is the residual the evaluation gap
   measures, and the trigger for the round-trip revisit (below).
 - **Still a frozen proxy** — the Gao overoptimization playbook applies (KL leash, held-out eval
-  models, low optimization pressure); see [`adverserial-RL.md`](../research/adverserial-RL.md).
+  models, low optimization pressure); see [`adverserial-RL.md`](adverserial-RL.md).
 - **Reward hacking through R** — unchanged from the round-trip plan: audit R's information
   content; leak-through check on `out_final` stays mandatory.
 - Naming rule: code/artifacts use method names (`surrogate_reward_*`, `ranker_bandit_*`), never
@@ -368,26 +368,26 @@ Training is now **GPU-bound, not proxy-bound**; the perf gate's job shifts to ba
 
 Decisions and surveys: [`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md)
 (all round-trip-reward design, forks, and the tooling/optimization surveys);
-[`adverserial-RL.md`](../research/adverserial-RL.md) (frozen-model RL background, surrogate
+[`adverserial-RL.md`](adverserial-RL.md) (frozen-model RL background, surrogate
 terminology, Goodhart playbook) and the papers registered there:
-[Gao et al. 2022](../../research-wiki/papers/gao2022_reward_overoptimization.md)
+[Gao et al. 2022](gao2022_reward_overoptimization.md)
 ([arXiv 2210.10760](https://arxiv.org/abs/2210.10760)),
-[s3](../../research-wiki/papers/jiang2025_s3_search_agent.md)
+[s3](jiang2025_s3_search_agent.md)
 ([arXiv 2505.14146](https://arxiv.org/abs/2505.14146)),
-[MMOA-RAG](../../research-wiki/papers/chen2025_mmoa_rag.md)
+[MMOA-RAG](chen2025_mmoa_rag.md)
 ([arXiv 2501.15228](https://arxiv.org/abs/2501.15228)). Method anchors:
-[AgentStealth](../../research-wiki/papers/shao2025_agentstealth.md)
+[AgentStealth](shao2025_agentstealth.md)
 ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)),
-[NaPaRe](../../research-wiki/papers/huang2025_tree_search_rewriting.md)
+[NaPaRe](huang2025_tree_search_rewriting.md)
 ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838)) — deletion-is-anti-extractor, priced by
 the surrogate;
-[SEAL](../../research-wiki/papers/kim2025_seal_adversarial_distillation.md)
+[SEAL](kim2025_seal_adversarial_distillation.md)
 ([arXiv 2506.01420](https://arxiv.org/abs/2506.01420)).
 
-Task corpora ([`benchmarks.md`](../specs/benchmarks.md) is the living spec):
-[ACI-Bench](../../research-wiki/papers/yim2023_acibench_visit_note_generation.md)
+Task corpora ([`benchmarks.md`](benchmarks.md) is the living spec):
+[ACI-Bench](yim2023_acibench_visit_note_generation.md)
 ([arXiv 2306.02022](https://arxiv.org/abs/2306.02022)),
-[MTS-Dialog](../../research-wiki/papers/benabacha2023_mtsdialog_clinical_note.md)
+[MTS-Dialog](benabacha2023_mtsdialog_clinical_note.md)
 ([ACL 2023.eacl-main.168](https://aclanthology.org/2023.eacl-main.168/)),
-[AESLC](../../research-wiki/papers/zhang2019_aeslc_subject_line_generation.md)
+[AESLC](zhang2019_aeslc_subject_line_generation.md)
 ([arXiv 1906.03497](https://arxiv.org/abs/1906.03497)).

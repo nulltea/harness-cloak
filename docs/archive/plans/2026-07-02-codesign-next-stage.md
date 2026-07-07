@@ -27,8 +27,8 @@ Spend-Your-Budget-Wisely, RUPTA, AgentStealth, INTACT, NaPaRe.
 - **Leak-through:** sensitive content re-entering `out_final` via the extractor (which sees `doc_orig`)
   or via the substitutor's own memorization.
 - Failure labels (F1–F4, E1–E3) and directions (RD0–RD5): see
-  [`rantext-limitations.md`](../research/rantext-limitations.md) /
-  [`beyond-rantext.md`](../research/beyond-rantext.md).
+  [`rantext-limitations.md`](rantext-limitations.md) /
+  [`beyond-rantext.md`](beyond-rantext.md).
 
 ## What the seven-paper analysis established
 
@@ -36,31 +36,31 @@ Spend-Your-Budget-Wisely, RUPTA, AgentStealth, INTACT, NaPaRe.
    remote output back, and none evaluates against a frontier-LLM re-identification attacker. Both gaps
    are exactly this project's contribution space.
 2. **Free reverse maps exist and are discarded.**
-   [DP-MLM](../../research-wiki/papers/meisenbacher2024_dp_mlm.md) ([arXiv 2407.00637](https://arxiv.org/abs/2407.00637))
+   [DP-MLM](meisenbacher2024_dp_mlm.md) ([arXiv 2407.00637](https://arxiv.org/abs/2407.00637))
    emits a position-aligned `(pos, w_orig, w_sub)` map;
-   [DP-ST](../../research-wiki/papers/meisenbacher2025_dp_st.md) ([arXiv 2508.20736](https://arxiv.org/abs/2508.20736))
+   [DP-ST](meisenbacher2025_dp_st.md) ([arXiv 2508.20736](https://arxiv.org/abs/2508.20736))
    a private↔public triple table;
-   [INTACT](../../research-wiki/papers/pilan2024_truthful_sanitization.md) ([arXiv 2412.12928](https://arxiv.org/abs/2412.12928))
+   [INTACT](pilan2024_truthful_sanitization.md) ([arXiv 2412.12928](https://arxiv.org/abs/2412.12928))
    a span→generalization lattice that is invertible by narrowing. Each is an extractor conditioning
    signal the source paper throws away. **The substitution record R is the co-design interface.**
 3. **Truthful generalization is the right substitution family for a round trip.** The remote model
    computes on true-but-coarser premises instead of Presidio-style falsehoods (INTACT: 93.2% vs 19.7%
    truthful), and narrowing is deterministic for the client. Conversely, deletion is anti-extractor:
-   [NaPaRe](../../research-wiki/papers/huang2025_tree_search_rewriting.md) ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838))'s
+   [NaPaRe](huang2025_tree_search_rewriting.md) ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838))'s
    `delete` action leaves no anchor in `doc_p` for any local extractor to recover.
 4. **The optimization plumbing transfers, with cautions.**
-   [AgentStealth](../../research-wiki/papers/shao2025_agentstealth.md) ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)):
+   [AgentStealth](shao2025_agentstealth.md) ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)):
    GRPO reward `0.5·(1−attack) + 0.5·(BLEU/ROUGE)` — swap the utility term for round-trip `out_final`
    utility and the recipe transfers; but RL adds only **+1.1 pt over SFT** (62.6→63.7), and its utility
    metric (surface similarity to `doc_orig`) rewards under-anonymization.
-   [RUPTA](../../research-wiki/papers/yang2025_rupta.md) ([arXiv 2407.11770](https://arxiv.org/abs/2407.11770)):
+   [RUPTA](yang2025_rupta.md) ([arXiv 2407.11770](https://arxiv.org/abs/2407.11770)):
    the lexicographic schedule "push re-id rank out of top-K, then repair utility" is a ready-made
    matched-realized-privacy operating procedure, and DPO on intermediate-vs-final traces (not SFT) is
    what closes the distillation privacy gap; but the teacher pipeline **sends `doc_orig` to GPT-4** —
    only the distilled local student fits our threat model — and evaluator=attacker circularity must be
    broken with a held-out attacker.
 5. **Budget shaping alone does not fix the trade-off.**
-   [Spend Your Budget Wisely](../../research-wiki/papers/meisenbacher2025_spend_budget_wisely.md)
+   [Spend Your Budget Wisely](meisenbacher2025_spend_budget_wisely.md)
    ([arXiv 2503.22379](https://arxiv.org/abs/2503.22379)) gets mixed privacy results and "nearly always
    lower utility", concentrating distortion on exactly the salient tokens a task answer must mention —
    independent confirmation of E1: the extractor side is load-bearing, the perturbation side alone is not.
@@ -196,14 +196,14 @@ plugging it into the D1 data engine and eval harness.
 ## Sources
 
 Seven analysis pages (this pass, all with co-design-fitness sections):
-[DP-MLM](../../research-wiki/papers/meisenbacher2024_dp_mlm.md) ([arXiv 2407.00637](https://arxiv.org/abs/2407.00637)),
-[DP-ST](../../research-wiki/papers/meisenbacher2025_dp_st.md) ([arXiv 2508.20736](https://arxiv.org/abs/2508.20736)),
-[Spend Your Budget Wisely](../../research-wiki/papers/meisenbacher2025_spend_budget_wisely.md) ([arXiv 2503.22379](https://arxiv.org/abs/2503.22379)),
-[RUPTA](../../research-wiki/papers/yang2025_rupta.md) ([arXiv 2407.11770](https://arxiv.org/abs/2407.11770)),
-[AgentStealth](../../research-wiki/papers/shao2025_agentstealth.md) ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)),
-[INTACT / Truthful Sanitization](../../research-wiki/papers/pilan2024_truthful_sanitization.md) ([arXiv 2412.12928](https://arxiv.org/abs/2412.12928)),
-[NaPaRe / Iterative Tree Search](../../research-wiki/papers/huang2025_tree_search_rewriting.md) ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838)).
-Context: [Staab LLM anonymizers](../../research-wiki/papers/staab2024_llm_anonymizers.md) ([arXiv 2402.13846](https://arxiv.org/abs/2402.13846)),
-[DIRI](../../research-wiki/papers/morris2024_diri.md) ([arXiv 2410.17035](https://arxiv.org/abs/2410.17035)),
-[InferDPT](../../research-wiki/papers/tong2023_inferdpt_privacypreserving_inference.md) ([arXiv 2310.12214](https://arxiv.org/abs/2310.12214)),
-[HaS](../../research-wiki/papers/chen2023_hide_seek_has.md) ([arXiv 2309.03057](https://arxiv.org/abs/2309.03057)).
+[DP-MLM](meisenbacher2024_dp_mlm.md) ([arXiv 2407.00637](https://arxiv.org/abs/2407.00637)),
+[DP-ST](meisenbacher2025_dp_st.md) ([arXiv 2508.20736](https://arxiv.org/abs/2508.20736)),
+[Spend Your Budget Wisely](meisenbacher2025_spend_budget_wisely.md) ([arXiv 2503.22379](https://arxiv.org/abs/2503.22379)),
+[RUPTA](yang2025_rupta.md) ([arXiv 2407.11770](https://arxiv.org/abs/2407.11770)),
+[AgentStealth](shao2025_agentstealth.md) ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)),
+[INTACT / Truthful Sanitization](pilan2024_truthful_sanitization.md) ([arXiv 2412.12928](https://arxiv.org/abs/2412.12928)),
+[NaPaRe / Iterative Tree Search](huang2025_tree_search_rewriting.md) ([arXiv 2509.20838](https://arxiv.org/abs/2509.20838)).
+Context: [Staab LLM anonymizers](staab2024_llm_anonymizers.md) ([arXiv 2402.13846](https://arxiv.org/abs/2402.13846)),
+[DIRI](morris2024_diri.md) ([arXiv 2410.17035](https://arxiv.org/abs/2410.17035)),
+[InferDPT](tong2023_inferdpt_privacypreserving_inference.md) ([arXiv 2310.12214](https://arxiv.org/abs/2310.12214)),
+[HaS](chen2023_hide_seek_has.md) ([arXiv 2309.03057](https://arxiv.org/abs/2309.03057)).

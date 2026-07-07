@@ -19,6 +19,8 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
+from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES, PLACEHOLDER_RE
+
 FUZZ_MIN = 90.0
 BAND_MIN = 60.0
 SEMANTIC_MIN = 0.70
@@ -46,6 +48,15 @@ _LOC_WORDS = ("city", "town", "county", "state", "province", "country", "address
 _ORG_WORDS = ("company", "organization", "organisation", "court", "hospital",
               "university", "school", "agency", "department", "ministry", "firm",
               "bank", "clinic", "institution")
+_HEALTH_WORDS = ("condition", "disease", "illness", "diagnosis", "disorder", "syndrome",
+                 "chronic", "mental health", "respiratory", "infectious", "endocrine")
+_PROFESSION_WORDS = ("worker", "professional", "specialist", "doctor", "nurse", "lawyer",
+                     "engineer", "teacher", "journalist", "media", "legal", "healthcare")
+_ETHNICITY_WORDS = ("ethnicity", "ancestry", "race", "ethnic", "asian", "european",
+                    "african", "middle eastern")
+_RELIGION_WORDS = ("christian", "muslim", "jewish", "hindu", "buddhist", "religion",
+                   "religious")
+_FAMILY_WORDS = ("parent", "child", "spouse", "sibling", "grandparent", "family")
 
 
 @dataclass(frozen=True)
@@ -110,8 +121,13 @@ def _has_numish(text: str) -> bool:
 
 def _type_sane(entity_type: str, fill: str, window: str) -> bool:
     """Cheap typed guard for semantic accepts; abstain when the type has no local cue."""
-    typ = (entity_type or "MISC").upper()
+    raw_typ = entity_type or "MISC"
+    typ = raw_typ.upper()
     wlow = window.lower()
+    if PLACEHOLDER_RE.fullmatch(fill.strip()):
+        return False
+    if raw_typ in PLACEHOLDER_ONLY_TYPES:
+        return False
     if typ == "DATETIME":
         return bool(re.search(r"\b\d{1,4}\b", wlow) or any(m in wlow for m in _MONTHS) or
                     re.search(r"\b(today|yesterday|tomorrow|spring|summer|fall|autumn|winter|"
@@ -123,6 +139,22 @@ def _type_sane(entity_type: str, fill: str, window: str) -> bool:
         return bool(re.search(r"[A-Z]{1,6}[-_/]?\d|\d[-_/]\d|#\s?\d", window))
     if typ == "DEM":
         return bool(_has_numish(window) or any(w in wlow for w in _DEM_WORDS))
+    if raw_typ == "age":
+        return bool(_has_numish(window) or "teen" in wlow or "something" in wlow)
+    if raw_typ == "health-condition":
+        return any(w in wlow for w in _HEALTH_WORDS)
+    if raw_typ == "profession":
+        return any(w in wlow for w in _PROFESSION_WORDS)
+    if raw_typ == "ethnicity":
+        return any(w in wlow for w in _ETHNICITY_WORDS)
+    if raw_typ == "religion":
+        return any(w in wlow for w in _RELIGION_WORDS)
+    if raw_typ == "family-role":
+        return any(w in wlow for w in _FAMILY_WORDS)
+    if raw_typ == "nationality":
+        return any(w in wlow for w in ("european", "african", "asian", "american", "citizen"))
+    if raw_typ == "demographic-other":
+        return False
     if typ == "LOC":
         return any(w in wlow for w in _LOC_WORDS)
     if typ == "ORG":
@@ -189,7 +221,7 @@ def _base_stats() -> dict:
 def _finalize(text: str, stats: dict) -> tuple[str, dict]:
     # Any typed placeholder left in out_final is a leak of mechanism artifacts to the user
     # (exhaustion-fallback placeholders included, not only PERSON/CODE).
-    stats["ph_residue"] = len(re.findall(r"<[A-Z]+_\d+>", text))
+    stats["ph_residue"] = len(PLACEHOLDER_RE.findall(text))
     return text, stats
 
 
@@ -275,7 +307,7 @@ def _dilate_detector_spans(text: str, spans: list[Any], tau_det: float) -> list[
             continue
         start = int(_span_field(span, "start", 0))
         end = int(_span_field(span, "end", 0))
-        typ = str(_span_field(span, "type", _span_field(span, "label", "MISC")) or "MISC").upper()
+        typ = str(_span_field(span, "type", _span_field(span, "label", "MISC")) or "MISC")
         idx = _token_index_for_span(toks, start, end)
         if idx is None:
             continue
@@ -291,9 +323,11 @@ def _dilate_detector_spans(text: str, spans: list[Any], tau_det: float) -> list[
 
 def _compatible(entry_type: str, cand_type: str,
                 type_confusions: dict[str, set[str]] | None = None) -> bool:
-    entry_type = (entry_type or "MISC").upper()
-    cand_type = (cand_type or "MISC").upper()
+    entry_type = entry_type or "MISC"
+    cand_type = cand_type or "MISC"
     if entry_type == cand_type:
+        return True
+    if entry_type.upper() == cand_type.upper() and entry_type.isupper() and cand_type.isupper():
         return True
     return bool(type_confusions and cand_type in type_confusions.get(entry_type, set()))
 

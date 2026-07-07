@@ -28,7 +28,7 @@ variants sharing one objective, the round-trip reward:
   scoring candidates with the same reward — n extra round trips per document. Serves as Way 1's
   **go/no-go probe** (if direct search with the true reward can't shift the Pareto frontier vs the
   τ-walk, a policy trained on that reward won't either) and as an SFT/DPO data generator.
-  Handoff: [`2026-07-02-roundtrip-search-probe.md`](../handoffs/2026-07-02-roundtrip-search-probe.md).
+  Handoff: [`2026-07-02-roundtrip-search-probe.md`](2026-07-02-roundtrip-search-probe.md).
 
 **Gate (from the parent plan, unchanged):** GRPO compute is spent only after Way 2 shows a frontier
 shift at matched realized privacy.
@@ -243,7 +243,7 @@ the honesty rules require to be the method's legitimate knob).
 - **D1 P4 complete:** τ-sweep Pareto + eval harness — the baseline the frontier shift is measured
   against; rung B (or rung A, if D1's kill criterion fired) as the frozen extractor.
 - ~~SEAL registered + overlap assessed~~ **done 2026-07-02**:
-  [wiki page](../../research-wiki/papers/kim2025_seal_adversarial_distillation.md)
+  [wiki page](kim2025_seal_adversarial_distillation.md)
   ([arXiv 2506.01420](https://arxiv.org/abs/2506.01420)). Verdict: no contribution collision
   (text-release, no round trip, no R/extractor, monolithic 8B); strong adjacency — their
   trajectories/recipe are candidate SFT/preference data, critique distillation is the buildable
@@ -290,12 +290,12 @@ run first).
 Parent: [`2026-07-02-codesign-next-stage.md`](2026-07-02-codesign-next-stage.md) (D2, H2, sources
 list); [`2026-07-02-d1-prototype-implementation.md`](2026-07-02-d1-prototype-implementation.md)
 (roles, component stack, trl constraint). Method anchors:
-[AgentStealth](../../research-wiki/papers/shao2025_agentstealth.md)
+[AgentStealth](shao2025_agentstealth.md)
 ([arXiv 2506.22508](https://arxiv.org/abs/2506.22508)) — GRPO recipe + SFT-first;
-[RUPTA](../../research-wiki/papers/yang2025_rupta.md)
+[RUPTA](yang2025_rupta.md)
 ([arXiv 2407.11770](https://arxiv.org/abs/2407.11770)) — evaluator/attacker circularity,
 lexicographic schedule;
-[SEAL](../../research-wiki/papers/kim2025_seal_adversarial_distillation.md)
+[SEAL](kim2025_seal_adversarial_distillation.md)
 ([arXiv 2506.01420](https://arxiv.org/abs/2506.01420)) — closest neighbor, overlap assessed
 2026-07-02, no collision.
 

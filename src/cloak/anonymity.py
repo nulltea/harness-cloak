@@ -23,7 +23,9 @@ from collections import Counter
 from decimal import Decimal
 from functools import lru_cache
 
-from cloak.lattice import CONTINENTS, TYPE_LABEL, _MONTHS, _load_geo
+from cloak.lattice_profiles import lookup_count
+from cloak.lattice import CONTINENTS, TYPE_LABEL, _MONTHS, _load_geo, is_type_name_phrase
+from cloak.runtime_types import FINE_DEM_TYPES, PLACEHOLDER_ONLY_TYPES
 
 GENERIC = 1e9
 
@@ -36,7 +38,39 @@ GENERIC = 1e9
 # closed -> placeholder; keep-original requires an explicit per-type waiver, i.e. the user
 # setting that type's floor to 1).
 K_FLOORS = {"LOC": 100.0, "ORG": 100.0, "DATETIME": 100.0,
-            "DEM": 100.0, "QUANTITY": 100.0, "MISC": 100.0, "OTHER": 100.0}
+            "DEM": 100.0, "QUANTITY": 100.0, "MISC": 100.0, "OTHER": 100.0,
+            "PERSON": 100.0, "CODE": 100.0,
+            "nationality": 100.0, "ethnicity": 100.0, "religion": 100.0,
+            "profession": 100.0, "age": 100.0, "health-condition": 100.0,
+            "family-role": 100.0, "demographic-other": 100.0,
+            "gender": 2.0, "marital-status": 2.0, "sexual-orientation": 2.0}
+
+_APPROVED_FINE_COUNTS = {
+    "nationality": {
+        "central european": 1_000.0, "european": 1_000_000.0, "east african": 1_000.0,
+        "african": 1_000_000.0, "north american": 1_000_000.0,
+    },
+    "ethnicity": {
+        "of middle eastern ethnicity": 1_000.0, "of west asian ethnicity": 1_000.0,
+        "of european ethnicity": 1_000.0, "of south asian ethnicity": 1_000.0,
+    },
+    "religion": {"christian": 1_000_000.0, "muslim": 1_000_000.0},
+    "profession": {
+        "medical specialist": 1_000.0, "medical professional": 1_000.0,
+        "healthcare worker": 1_000_000.0, "media worker": 1_000.0,
+        "legal professional": 1_000.0, "education worker": 1_000.0,
+        "technical professional": 1_000.0,
+    },
+    "health-condition": {
+        "endocrine condition": 1_000.0, "chronic condition": 1_000_000.0,
+        "mental health condition": 1_000.0, "respiratory condition": 1_000.0,
+        "infectious disease": 1_000.0, "serious illness": 1_000.0,
+    },
+    "family-role": {
+        "child": 1_000.0, "spouse": 1_000.0, "grandparent": 1_000.0,
+        "parent": 1_000.0, "sibling": 1_000.0,
+    },
+}
 
 _geo_counts_cache = None
 
@@ -185,6 +219,8 @@ def aset_count(fill: str, span_type: str, original: str, strict: bool = False) -
     type-label coarse fills. strict=True for anything that certifies legality."""
     if fill.lower().strip() == original.lower().strip():
         return 1.0
+    if is_type_name_phrase(fill):
+        return 1.0
     if fill.lower().strip() in {v.lower() for v in TYPE_LABEL.values()}:
         return GENERIC
     got = None
@@ -192,8 +228,18 @@ def aset_count(fill: str, span_type: str, original: str, strict: bool = False) -
         got = _loc_count(fill) or _wn_leaf_count(fill, strict)
     elif span_type == "DATETIME":
         got = _datetime_count(fill, original)
+    elif span_type == "age":
+        got = _datetime_count(fill, original)
     elif span_type == "QUANTITY":
         got = _quantity_count(fill, original)
+    elif span_type in PLACEHOLDER_ONLY_TYPES:
+        got = None
+    elif span_type in FINE_DEM_TYPES:
+        got = lookup_count(fill, span_type)
+        if got is None:
+            got = _APPROVED_FINE_COUNTS.get(span_type, {}).get(fill.lower().strip())
+        if got is None and span_type != "demographic-other":
+            got = _wn_leaf_count(fill, strict)
     else:  # DEM / ORG / MISC / OTHER — WordNet lattices
         got = _wn_leaf_count(fill, strict)
     return got if got else 1.0  # ponytail: fail-closed; per-surface overrides if too strict

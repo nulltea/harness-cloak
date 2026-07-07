@@ -10,7 +10,7 @@ companion: [../plans/2026-07-02-roundtrip-grpo-training.md, ../plans/2026-07-02-
 # RL background: training against frozen models, and what the round trip is called
 
 Background research for the round-trip GRPO plan
-([`2026-07-02-roundtrip-grpo-training.md`](../plans/2026-07-02-roundtrip-grpo-training.md)), which
+([`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md)), which
 trains the substitutor cascade against a reward computed through a frozen remote LLM
 (`Qwen3.6-35B-A3B`). Three questions raised in the 2026-07-02 design session: is training against
 a frozen model standard RL practice; does the trained policy generalize to *other* frozen models;
@@ -35,7 +35,7 @@ when we look for a cheaper training signal.
 - **Frozen-partner pipeline RL:** training one component of a multi-model pipeline while the
   others stay frozen.
 - Round trip, `doc_p`, `out_p`, `out_final`, R, τ-walk, MTI, α, `A`, `U`: see the
-  [plan's definitions](../plans/2026-07-02-roundtrip-grpo-training.md#definitions).
+  [plan's definitions](2026-07-02-roundtrip-grpo-training.md#definitions).
 
 ## Is training against a frozen model common?
 
@@ -122,7 +122,7 @@ H2 earned its cost). Two constraints any candidate surrogate must satisfy:
 The candidate surrogates themselves (model-free QA-answerability + NLI premise retention; learned
 reward model from D1 tuples; local ensemble round trip; hybrid curriculum) are a design fork of
 the plan, not settled background — see the design-session record in
-[`2026-07-02-roundtrip-grpo-training.md`](../plans/2026-07-02-roundtrip-grpo-training.md).
+[`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md).
 
 ## Sources
 

@@ -290,6 +290,30 @@ The text levels must come from the first trustworthy source that applies:
 | Strict WordNet | `ORG`, `MISC`, and non-covered hierarchical leaves | Full-phrase synset only; no last-word fallback for legality. |
 | Offline teacher cache | Any hierarchical type with no local hit | Precomputed candidates only, never a live deployed remote call. |
 
+Initial fine-type lattice source registry:
+
+| Runtime type | Initial dataset-backed sources | Runtime use |
+|---|---|---|
+| `nationality` | Wikidata demonyms, CLDR territory names, GeoNames, HANCESTRO regions | Demonym/country to region/continent chains; exact citizenship remains keep-only |
+| `ethnicity` | HANCESTRO, U.S. Census race/ethnicity standards, Wikidata | Ancestry/population to region rollups; use only grammatical replacement phrases |
+| `religion` | Wikidata religion/worldview graph, ARDA religion datasets, Wikidata subclass graph | Denomination to tradition or broad affiliation; avoid type-label phrases |
+| `profession` | ESCO, O*NET, ISCO-08, Wikidata occupation graph | Job-title aliases and occupation to sector/domain ladders |
+| `age` | Deterministic parser; optional MeSH Age Groups and CDC age-group tables | Numeric age to age bucket/life-stage text when parsed; parse miss goes placeholder |
+| `health-condition` | Mondo, Disease Ontology, MeSH RDF, ICD-11, UMLS | Disease synonym normalization and condition-family hierarchy |
+| `family-role` | KIN ontology, WordNet, Wikidata kinship properties, schema.org Person relations | Kinship term to broad family-role ladders with conservative floors |
+| `gender` | GSSO, Wikidata sex-or-gender values | Alias normalization only; no semantic text level by default |
+| `marital-status` | FHIR marital-status value set, HL7 marital-status terminology | Alias normalization only; no semantic text level by default |
+| `sexual-orientation` | GSSO, Wikidata sexual-orientation values | Alias normalization only; no semantic text level by default |
+| `demographic-other` | None as an exhaustive source | Placeholder-first residual bucket; semantic text only under explicit strict policy |
+
+The durable generated artifact is `data/lattice_profiles/fine_lattice_profiles.json`.
+Runtime code may read this artifact but must not read raw source files or call source APIs.
+Raw source files live under `data/lattice_sources/raw/` and are consumed only by
+`scripts/build_lattice_profiles.py`.
+
+The detailed dataset survey and links live in
+[`docs/research/datasets.md`](../research/datasets.md#top-sources-by-fine-type-for-lattice-construction).
+
 All candidate text levels, regardless of source, must pass the same filters:
 
 - The replacement is grammatical in the original sentence.

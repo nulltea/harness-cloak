@@ -41,6 +41,7 @@ from cloak.corpora import load_task_docs
 from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
 from cloak.train.reward import fact_f1s, stage1_reward, u_qa
+from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
 try:  # surrogate-only environments run without the round-trip module
     from cloak.train.roundtrip import roundtrip_batch
@@ -85,9 +86,11 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
               if e["action"] == "placeholder"}
     counters: dict[str, int] = {}
     for e in R_walk:  # seed above existing <TYPE_n> indices
-        m = re.fullmatch(r"<([A-Z]+)_(\d+)>", e["replacement"])
+        m = PLACEHOLDER_RE.fullmatch(e["replacement"])
         if m:
-            counters[m.group(1)] = max(counters.get(m.group(1), 0), int(m.group(2)))
+            body = e["replacement"][1:-1]
+            typ, idx = body.rsplit("_", 1)
+            counters[typ] = max(counters.get(typ, 0), int(idx))
     ph_by_surface: dict[str, str] = {}
     used: dict[str, str] = {}
     fills: dict[str, dict] = {}
@@ -97,8 +100,9 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
             if skey in art_ph:
                 ph_by_surface[skey] = art_ph[skey]
             else:
-                counters[typ] = counters.get(typ, 0) + 1
-                ph_by_surface[skey] = f"<{typ}_{counters[typ]}>"
+                tok = placeholder_type_token(typ)
+                counters[tok] = counters.get(tok, 0) + 1
+                ph_by_surface[skey] = placeholder_token(typ, counters[tok])
         return ph_by_surface[skey]
 
     for s in spans:  # decision spans, walk order (deterministic)

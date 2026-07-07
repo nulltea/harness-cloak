@@ -117,7 +117,7 @@ anonymity-set **count floors** replace the tau=0.02 walk_risk mask, roughly doub
 freedom (**146/177 spans with ≥2 legal actions vs 72/177** under tau=0.02) and legalizing
 **keep-original** as a first-class action so probe-bearing attribute spans gain keep/level trades.
 walk_risk itself is retired to offline calibration/diagnostics. Migration and spec:
-[structural-lattice-risk plan](../../docs/plans/2026-07-04-structural-lattice-risk.md) ·
+[structural-lattice-risk plan](2026-07-04-structural-lattice-risk.md) ·
 [RL spec (rewritten)](../../docs/specs/RL/surrogate-ranker-infiller.md). Re-measuring probe-flip
 support on the floor environment is a pre-registered part of the next run's gate.
 

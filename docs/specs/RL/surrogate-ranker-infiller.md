@@ -29,7 +29,7 @@ risk** — per-action anonymity-set counts with per-type floors — replaces the
 probe as the legality mask everywhere on the inference and training paths; the probe LM
 retires to offline calibration/validation. Rationale and the option analysis:
 [inference-risk-enforcement](../../research/inference-risk-enforcement.md); migration:
-[structural-lattice-risk plan](../../plans/2026-07-04-structural-lattice-risk.md).
+[structural-lattice-risk plan](2026-07-04-structural-lattice-risk.md).
 
 **Third revision (2026-07-05): reward redesign** — the utility term becomes the graded
 **gold-conditional fact likelihood (u_gold, §5.1)**; the fill-proximity privacy term is
@@ -41,7 +41,7 @@ findability, the old privacy term's optimum was the degenerate all-placeholder p
 contain it ([2026-07-05 training
 record](../../../research-wiki/training/2026-07-05-RL-ranker-v2-stage1-floor-env.md), landscape
 addendum). Decision history and wall-time live in the
-[training plan](../../plans/2026-07-02-surrogate-grpo-training.md).
+[training plan](2026-07-02-surrogate-grpo-training.md).
 
 ## Definitions
 

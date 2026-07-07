@@ -80,7 +80,7 @@ _None registered._
 ## Relevance to This Project
 
 **Why surfaced:** background for the round-trip GRPO plan
-([`2026-07-02-roundtrip-grpo-training.md`](../../docs/plans/2026-07-02-roundtrip-grpo-training.md)):
+([`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md)):
 s3 is the cleanest published instance of the exact pattern the plan proposes — a small local
 policy trained against a **frozen** LLM environment on a **measured downstream outcome**, not a
 surface metric. It answers "is training against a frozen model common?" affirmatively with a

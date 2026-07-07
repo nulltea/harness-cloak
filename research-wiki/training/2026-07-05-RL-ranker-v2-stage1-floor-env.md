@@ -158,4 +158,4 @@ results/ranker_reward_gate.json (refreshed).
 ## Sources
 Spec: [surrogate-ranker-infiller](../../docs/specs/RL/surrogate-ranker-infiller.md) (§2
 Phase 1, §5.4, §6). Predecessor: [2026-07-04 bandit](2026-07-04-RL-ranker-v1-stage1-bandit.md).
-Migration plan: [structural-lattice-risk](../../docs/plans/2026-07-04-structural-lattice-risk.md).
+Migration plan: [structural-lattice-risk](2026-07-04-structural-lattice-risk.md).

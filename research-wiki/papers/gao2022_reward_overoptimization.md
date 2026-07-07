@@ -76,7 +76,7 @@ _None registered._
 ## Relevance to This Project
 
 **Why surfaced:** background for the round-trip GRPO plan
-([`2026-07-02-roundtrip-grpo-training.md`](../../docs/plans/2026-07-02-roundtrip-grpo-training.md)):
+([`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md)):
 the plan trains a substitutor against frozen reward components (frozen remote task model, frozen
 MTI attack head, frozen utility proxy). This paper is the measured demonstration that *any* frozen
 proxy Goodharts under enough optimization pressure, and supplies the mitigation vocabulary the

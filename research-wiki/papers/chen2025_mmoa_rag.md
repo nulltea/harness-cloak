@@ -77,7 +77,7 @@ _None registered._
 ## Relevance to This Project
 
 **Why surfaced:** background for the round-trip GRPO plan
-([`2026-07-02-roundtrip-grpo-training.md`](../../docs/plans/2026-07-02-roundtrip-grpo-training.md)):
+([`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md)):
 MMOA-RAG is the published existence proof for the plan's stage-2 design — multiple heterogeneous
 pipeline components trained jointly on **one shared downstream scalar reward**, no per-component
 reward engineering, no counterfactual machinery. The 2026-07-02 joint-training survey ranked this

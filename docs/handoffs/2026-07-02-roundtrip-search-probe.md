@@ -21,7 +21,7 @@ trained policy can only learn choices that score well under the reward — if di
 search with the true reward in hand can't shift the frontier vs the τ-walk, RL won't either; kill
 D2's training leg cheaply. If it does shift, the scored candidates double as SFT/DPO training data
 for Way 1. Full mechanism, definitions, and the Way-1 counterpart:
-[`2026-07-02-roundtrip-grpo-training.md`](../plans/2026-07-02-roundtrip-grpo-training.md).
+[`2026-07-02-roundtrip-grpo-training.md`](2026-07-02-roundtrip-grpo-training.md).
 
 ## Context established this session (2026-07-02)
 
