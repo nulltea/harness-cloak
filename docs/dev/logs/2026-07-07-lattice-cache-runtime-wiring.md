@@ -66,7 +66,7 @@ legacy teacher-cache import.
   | commit | summary | role |
   |---|---|---|
   | `75ef31e` | Build exhaustive lattice profile cache | Added the dataset-backed cache pipeline, source parsers, runtime lookup integration, standard cache spec, and rebuilt artifact. |
-  | pending | Profession surface cap and substitutor smoke | Filters profession canonical surfaces to at most two words, rebuilds the cache, verifies substitutor cache use, fixes indefinite articles, and adds this dev log. |
+  | `315d9df` | Filter profession lattice surfaces | Filters profession canonical surfaces to at most two words, rebuilds the cache, verifies substitutor cache use, fixes indefinite articles, and adds this dev log. |
 
 - Cache rebuild command:
   `PYTHONPATH=src:scripts .venv/bin/python -u scripts/populate_lattice_profiles.py --raw-dir data/lattice_sources/raw --geo-dir data/geonames --teacher-cache data/lattice_cache.json --out data/lattice_profiles/fine_lattice_profiles.json --coverage-out results/lattice_profile_coverage.json --report-out results/lattice_profile_population.json --require-exhaustive`
