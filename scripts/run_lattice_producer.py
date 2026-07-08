@@ -8,11 +8,12 @@ import sys
 from pathlib import Path
 
 from cloak.lattice_producer.graph import run_producer
+from cloak.lattice_producer.coverage import normalize_category_filters
 
 PROPOSED_ROOT = Path("data/lattice_profiles/proposed")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-dir", required=True)
     parser.add_argument("--profiles", required=True)
@@ -29,8 +30,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--max-generated-entries-per-category", type=int, default=20)
     parser.add_argument("--max-context-rows", type=int, default=8)
-    parser.add_argument("--category")
-    return parser.parse_args()
+    parser.add_argument("--thinking-budget-tokens", type=int, default=-1)
+    parser.add_argument("--category", action="append", default=[])
+    args = parser.parse_args(argv)
+    args.category = normalize_category_filters(categories=args.category)
+    return args
 
 
 def main() -> int:
@@ -54,9 +58,10 @@ def main() -> int:
         max_items=args.max_items,
         max_context_rows=args.max_context_rows,
         max_generated_entries_per_category=args.max_generated_entries_per_category,
+        thinking_budget_tokens=args.thinking_budget_tokens,
         review_decision=args.review_decision,
         allow_canonical_overwrite=args.allow_canonical_overwrite,
-        category=args.category,
+        categories=args.category,
     )
     print(
         "status={status} accepted={accepted} rejected={rejected} diagnostics={diagnostics} proposed={proposed}".format(

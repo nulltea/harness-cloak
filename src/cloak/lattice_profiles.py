@@ -6,7 +6,9 @@ from pathlib import Path
 
 from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES, RUNTIME_TYPES
 
-DEFAULT_PROFILE_PATH = Path("data/lattice_profiles/fine_lattice_profiles.json")
+# Main lattice source (user decision 2026-07-08): the producer-merged artifact, which carries
+# per-level `level_counts`. fine_lattice_profiles.json is the legacy dataset-backed cache.
+DEFAULT_PROFILE_PATH = Path("data/lattice_profiles/lattice_profiles.json")
 SCHEMA_VERSION = 1
 
 
@@ -60,25 +62,50 @@ def validate_profile_artifact(artifact: dict) -> list[str]:
                     errors.append(f"{runtime_type}:{surface} leaks original surface in level: {level}")
             if float(row.get("count", 0.0) or 0.0) < 1.0:
                 errors.append(f"{runtime_type}:{surface} count must be >= 1")
+            level_counts = row.get("level_counts") or {}
+            for level, value in level_counts.items():
+                if level not in levels:
+                    errors.append(f"{runtime_type}:{surface} level_counts key not in levels: {level}")
+                if float(value or 0.0) < 1.0:
+                    errors.append(f"{runtime_type}:{surface} level_counts['{level}'] must be >= 1")
+            # k-anonymity walk invariant: counts non-decreasing from specific to broad along
+            # the row's level order (docs/specs/offline-k-anonimity-risk-walk.md)
+            covered = [(lvl, float(level_counts[lvl])) for lvl in levels if lvl in level_counts]
+            for (prev_l, prev_c), (cur_l, cur_c) in zip(covered, covered[1:]):
+                if cur_c < prev_c:
+                    errors.append(f"{runtime_type}:{surface} level_counts not monotone: "
+                                  f"'{cur_l}' ({cur_c}) < '{prev_l}' ({prev_c})")
     return errors
 
 
 def _build_indexes(artifact: dict) -> dict:
     by_surface = {}
     by_level = {}
+    by_level_explicit = {}
     for runtime_type, entries in artifact.get("profiles", {}).items():
         surface_index = by_surface.setdefault(runtime_type, {})
         level_index = by_level.setdefault(runtime_type, {})
+        explicit_index = by_level_explicit.setdefault(runtime_type, {})
         for canonical, row in entries.items():
             levels = list(row.get("levels", []))
             for key in [_norm(canonical), *[_norm(a) for a in row.get("aliases", [])]]:
                 if key:
                     surface_index.setdefault(key, levels)
             count = float(row.get("count", 1.0))
+            level_counts = row.get("level_counts") or {}
             for level in levels:
                 key = _norm(level)
-                if key:
-                    level_index.setdefault(key, count)
+                if not key:
+                    continue
+                if level in level_counts:
+                    # an explicit per-level count is an absolute estimate for that
+                    # generalization tier, not a per-surface frequency to sum -- it wins over
+                    # the legacy scalar-count aggregation below.
+                    explicit_index[key] = max(explicit_index.get(key, 0.0), float(level_counts[level]))
+                else:
+                    level_index[key] = level_index.get(key, 0.0) + count
+    for runtime_type, explicit in by_level_explicit.items():
+        by_level[runtime_type] = {**by_level.get(runtime_type, {}), **explicit}
     return {"by_surface": by_surface, "by_level": by_level}
 
 

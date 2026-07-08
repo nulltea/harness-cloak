@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -13,6 +14,10 @@ from cloak.lattice_profiles import validate_profile_artifact
 from cloak.runtime_types import FORCED_PLACEHOLDER_TYPES, PLACEHOLDER_RE
 
 PROPOSAL_SCOPE = "producer-processed-only"
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", str(text).strip().lower())
 
 
 def _load_artifact(path: str | Path) -> dict[str, Any]:
@@ -132,7 +137,7 @@ def persist_proposed_artifact(
             "count": 1.0,
             "entry_origin": item.get("entry_origin", "observed-surface"),
             "level_counts": {},
-            "level_groundings": {},
+            "level_grounding": {},
         },
     )
     ordered = _order_accepted_records(accepted)
@@ -148,15 +153,15 @@ def persist_proposed_artifact(
         [record["level"] for record in ordered if not PLACEHOLDER_RE.search(str(record.get("level", "")))],
     )
     row.setdefault("level_counts", {})
-    row.setdefault("level_groundings", {})
+    row.setdefault("level_grounding", {})
     row["level_counts"] = {level: row["level_counts"][level] for level in row["levels"] if level in row["level_counts"]}
-    row["level_groundings"] = {level: row["level_groundings"][level] for level in row["levels"] if level in row["level_groundings"]}
+    row["level_grounding"] = {level: row["level_grounding"][level] for level in row["levels"] if level in row["level_grounding"]}
     for record in ordered:
         level = record["level"]
         row["level_counts"][level] = float(record["level_count"])
-        row["level_groundings"][level] = dict(record["level_grounding"])
+        row["level_grounding"][level] = dict(record["level_grounding"])
     row["level_counts"] = {level: row["level_counts"][level] for level in row["levels"] if level in row["level_counts"]}
-    row["level_groundings"] = {level: row["level_groundings"][level] for level in row["levels"] if level in row["level_groundings"]}
+    row["level_grounding"] = {level: row["level_grounding"][level] for level in row["levels"] if level in row["level_grounding"]}
     row["entry_origin"] = row.get("entry_origin") or item.get("entry_origin", "observed-surface")
     row["source_ids"] = _dedupe_append(list(row.get("source_ids", [])), [f"producer:{run_id}:{item.get('item_id')}"])
     if row["level_counts"]:
@@ -182,15 +187,31 @@ def validate_proposed_artifact(path: str | Path) -> list[str]:
         for surface, row in entries.items():
             levels = row.get("levels", [])
             counts = row.get("level_counts", {})
-            groundings = row.get("level_groundings", {})
+            groundings = row.get("level_grounding", {})
+            counts_by_norm = {_norm(key): key for key in counts}
+            groundings_by_norm = {_norm(key): key for key in groundings}
             prev = 0.0
             for level in levels:
                 if PLACEHOLDER_RE.search(str(level)):
                     errors.append(f"{runtime_type}:{surface} has placeholder in levels")
                 if level not in counts:
-                    errors.append(f"{runtime_type}:{surface}:{level} missing level_counts")
+                    # distinguish "genuinely absent" from "present under different casing" --
+                    # the latter is exactly the bug class that broke a real merge this session
+                    # (a row ending up with "infectious disease" in levels but "Infectious
+                    # disease" in level_counts after two artifacts were combined), and a plain
+                    # "missing" message gives no hint that the fix is a casing reconciliation,
+                    # not filling in a genuinely missing count.
+                    actual = counts_by_norm.get(_norm(level))
+                    if actual is not None:
+                        errors.append(f"{runtime_type}:{surface}:{level} level_counts casing mismatch (found {actual!r})")
+                    else:
+                        errors.append(f"{runtime_type}:{surface}:{level} missing level_counts")
                 if level not in groundings:
-                    errors.append(f"{runtime_type}:{surface}:{level} missing level_groundings")
+                    actual = groundings_by_norm.get(_norm(level))
+                    if actual is not None:
+                        errors.append(f"{runtime_type}:{surface}:{level} level_grounding casing mismatch (found {actual!r})")
+                    else:
+                        errors.append(f"{runtime_type}:{surface}:{level} missing level_grounding")
                 count = float(counts.get(level, 1.0))
                 if count < prev:
                     errors.append(f"{runtime_type}:{surface} level_counts are not monotone")

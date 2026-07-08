@@ -6,6 +6,9 @@ __pycache__
 # Regenerable / large data: vocab lists + embedding matrices + LLM cache (rebuild via embeddings.py)
 data/*
 !data/lattice_profiles/
+!data/lattice_sources/
+data/lattice_sources/*
+!data/lattice_sources/reference/
 
 # Scratch process logs / staging (not part of the repo)
 refine-logs/

@@ -1,3 +1,5 @@
+import json
+
 from cloak.lattice_producer.counts import compile_level_counts
 from cloak.lattice_producer.gates import gate_candidates
 
@@ -162,6 +164,230 @@ def test_gate_fails_closed_for_flat_generic_model_chain():
 
     assert result.accepted == []
     assert {row["reason"] for row in result.diagnostics} == {"flat_model_counts", "weak_semantic_relevance"}
+
+
+def _drug_candidate(level, *, reused=None):
+    grounding = {
+        "status": "model-proposed",
+        "source_family": "model-proposed",
+        "selector": f"model-domain-cluster:{level}",
+        "count_evidence": "Estimated from clinical formulary and pharmacology references.",
+    }
+    candidate = {
+        "level": level,
+        "aliases": ["some brand name"],
+        "source_family": "model-proposed",
+        "level_count": 5000.0,
+        "level_grounding": grounding,
+        "rationale": "Truthful generalization for this entry.",
+    }
+    if reused is not None:
+        candidate["reused_canonical_label"] = reused
+    return candidate
+
+
+def _candidate_with_aliases(level, aliases, runtime_type="drug", level_count=5000.0):
+    return {
+        "level": level,
+        "aliases": aliases,
+        "source_family": "model-proposed",
+        "level_count": level_count,
+        "level_grounding": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": f"model-domain-cluster:{level}",
+            "count_evidence": "Estimated from clinical formulary and pharmacology references.",
+        },
+        "rationale": "Truthful generalization for this entry.",
+    }
+
+
+def test_gate_routes_zero_domain_overlap_chain_to_diagnostics():
+    # real example from the reviewed run: "baseball" filed under health-condition with levels
+    # ["sport", "game", "human activity"] -- none of which share a token with any seeded
+    # health-condition vocabulary label -- passed every other gate and was accepted.
+    item = {"item_id": "hc1", "runtime_type": "health-condition", "surface": "baseball", "aliases": []}
+    candidates = [
+        _candidate_with_aliases("sport", ["athletic activity"], "health-condition"),
+        _candidate_with_aliases("game", ["recreational game"], "health-condition"),
+        _candidate_with_aliases("human activity", ["general activity"], "health-condition"),
+    ]
+
+    result = gate_candidates(item, candidates)
+
+    assert result.accepted == []
+    assert all(row["reason"] == "no_domain_overlap" for row in result.diagnostics)
+
+
+def test_gate_allows_narrow_proposal_when_chain_has_any_domain_overlap():
+    # a narrow, legitimate level not itself in the seeded vocabulary must still be accepted as
+    # long as SOME level in the same chain touches the domain -- this gate only targets chains
+    # with zero domain relevance anywhere, not every level individually.
+    item = {"item_id": "hc2", "runtime_type": "health-condition", "surface": "chlamydia", "aliases": []}
+    candidates = [
+        _candidate_with_aliases(
+            "bacterial sexually transmitted infection", ["chlamydial infection"], "health-condition", level_count=200.0
+        ),
+        _candidate_with_aliases("infectious disease", ["contagious illness"], "health-condition", level_count=1400.0),
+    ]
+
+    result = gate_candidates(item, candidates)
+
+    assert [row["level"] for row in result.accepted] == [
+        "bacterial sexually transmitted infection",
+        "infectious disease",
+    ]
+
+
+def test_gate_routes_generic_filler_aliases_to_diagnostics():
+    # real example from the reviewed run: "mcnuggates" (a McDonald's menu item) got aliased as
+    # if it were a real drug with templated, contentless filler instead of the model admitting
+    # it didn't recognize the surface. Every alias's tokens being a subset of generic filler
+    # words is the tell -- a real alias set always includes at least one specific, identifying
+    # term (a brand name, an active ingredient, a synonym).
+    item = {"item_id": "d4", "runtime_type": "drug", "surface": "mcnuggates", "aliases": []}
+    candidates = [
+        _candidate_with_aliases(
+            "medicinal compound",
+            ["medicinal compound", "pharmaceutical preparation", "clinical agent"],
+        )
+    ]
+
+    result = gate_candidates(item, candidates)
+
+    assert result.accepted == []
+    assert result.diagnostics[0]["reason"] == "generic_filler_aliases"
+
+
+def test_gate_allows_single_generic_sounding_alias() -> None:
+    # a lone alias can't be checked against "ALL aliases are filler" meaningfully -- this must
+    # not become a blanket ban on any alias containing a common word.
+    item = {"item_id": "d5", "runtime_type": "drug", "surface": "gabapentin", "aliases": []}
+    candidates = [_candidate_with_aliases("nonsteroidal anti-inflammatory drug", ["pharmaceutical agent"])]
+
+    result = gate_candidates(item, candidates)
+
+    assert [row["level"] for row in result.accepted] == ["nonsteroidal anti-inflammatory drug"]
+
+
+def test_gate_routes_low_model_confidence_surface_to_diagnostics():
+    item = {"item_id": "d6", "runtime_type": "drug", "surface": "gabapentin", "aliases": []}
+    candidate = _candidate_with_aliases("gaba analog", ["neurontin"])
+    candidate["surface_confidence"] = "ambiguous"
+
+    result = gate_candidates(item, [candidate])
+
+    assert result.accepted == []
+    assert result.diagnostics[0]["reason"] == "low_confidence_surface"
+
+
+def test_gate_backstops_short_surface_even_when_model_claims_high_confidence():
+    # real example from the reviewed run: "pt" resolved to "pentazocine" (real clinical PT
+    # almost always means physical therapy or prothrombin time), reported confidently by the
+    # model. The backstop doesn't trust the model's own surface_confidence field for short
+    # surfaces; it forces the disambiguation outcome anyway. ("pt" is deliberately chosen so it
+    # isn't also a substring of the resolved level, unlike e.g. "cad"/"cadmium" -- this test is
+    # about the length backstop specifically, not the separate pre-existing self-leak check.)
+    item = {"item_id": "d7", "runtime_type": "drug", "surface": "pt", "aliases": []}
+    candidate = _candidate_with_aliases("pentazocine analog", ["central nervous system modulator"])
+    candidate["surface_confidence"] = "high"
+
+    result = gate_candidates(item, [candidate])
+
+    assert result.accepted == []
+    assert result.diagnostics[0]["reason"] == "low_confidence_surface"
+
+
+def test_gate_allows_long_surface_with_high_confidence():
+    item = {"item_id": "d9", "runtime_type": "drug", "surface": "gabapentin", "aliases": []}
+    candidate = _candidate_with_aliases("nonsteroidal anti-inflammatory drug", ["neurontin"])
+    candidate["surface_confidence"] = "high"
+
+    result = gate_candidates(item, [candidate])
+
+    assert [row["level"] for row in result.accepted] == ["nonsteroidal anti-inflammatory drug"]
+
+
+def test_gate_routes_unreused_near_duplicate_of_canonical_label_to_diagnostics():
+    # "pharmaceutical product" is a near-duplicate paraphrase of the seeded anchor
+    # "pharmaceutical compound" -- proposing it as new phrasing without reusing the existing
+    # canonical label is exactly the paraphrase-proliferation failure mode this gate exists for.
+    item = {"item_id": "d1", "runtime_type": "drug", "surface": "ibuprofen", "aliases": []}
+    candidates = [_drug_candidate("pharmaceutical product")]
+
+    result = gate_candidates(item, candidates)
+
+    assert result.accepted == []
+    assert result.diagnostics[0]["reason"] == "unreused_near_duplicate_label"
+    assert "pharmaceutical compound" in result.diagnostics[0]["near_duplicates"]
+
+
+def test_gate_accepts_exact_canonical_label_without_reused_flag():
+    item = {"item_id": "d2", "runtime_type": "drug", "surface": "ibuprofen", "aliases": []}
+    candidates = [_drug_candidate("pharmaceutical compound")]
+
+    result = gate_candidates(item, candidates)
+
+    assert [row["level"] for row in result.accepted] == ["pharmaceutical compound"]
+
+
+def test_gate_catches_duplicate_of_a_label_this_run_already_accepted(tmp_path):
+    # the real fix for paraphrase proliferation outside the static anchor set: an earlier item
+    # in THIS run already had "renal excretion agent" accepted (not a hand-curated anchor, not
+    # in any reference file) -- a later item proposing the near-duplicate "renal elimination
+    # agent" without reusing it must be caught, exactly as if it duplicated an anchor. ("agent"
+    # alone isn't enough to trigger this against the static anchors -- see the sibling test --
+    # so this genuinely isolates the dynamic, run-grown vocabulary's contribution.)
+    proposed = tmp_path / "run.proposed.json"
+    proposed.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "artifact_role": "proposal",
+                "proposal_scope": "producer-processed-only",
+                "profiles": {
+                    "drug": {
+                        "some diuretic": {
+                            "levels": ["renal excretion agent"],
+                            "level_counts": {"renal excretion agent": 42.0},
+                        }
+                    }
+                },
+            }
+        )
+    )
+    item = {"item_id": "d10", "runtime_type": "drug", "surface": "metoprolol", "aliases": []}
+    candidates = [_drug_candidate("renal elimination agent")]
+
+    result = gate_candidates(item, candidates, proposed_out=str(proposed))
+
+    assert result.accepted == []
+    assert result.diagnostics[0]["reason"] == "unreused_near_duplicate_label"
+    assert "renal excretion agent" in result.diagnostics[0]["near_duplicates"]
+
+
+def test_gate_without_proposed_out_falls_back_to_static_anchors_only():
+    # same candidate label as above, but gate_candidates called the old way (no proposed_out)
+    # and with no prior run history -- "renal elimination agent" only shares the generic token
+    # "agent" with any static anchor (below the near-duplicate threshold), so it must be
+    # accepted cleanly. Proves the dynamic behavior is additive, not silently always-on.
+    item = {"item_id": "d11", "runtime_type": "drug", "surface": "metoprolol", "aliases": []}
+    candidates = [_drug_candidate("renal elimination agent")]
+
+    result = gate_candidates(item, candidates)
+
+    assert [row["level"] for row in result.accepted] == ["renal elimination agent"]
+
+
+def test_gate_accepts_new_phrasing_explicitly_marked_as_not_reused_but_unrelated():
+    # a genuinely novel, unrelated label (no vocabulary overlap at all) must not be blocked --
+    # this gate only targets near-duplicates of an existing canonical label, not all new labels.
+    item = {"item_id": "d3", "runtime_type": "drug", "surface": "ibuprofen", "aliases": []}
+    candidates = [_drug_candidate("nonsteroidal anti-inflammatory drug", reused=False)]
+
+    result = gate_candidates(item, candidates)
+
+    assert [row["level"] for row in result.accepted] == ["nonsteroidal anti-inflammatory drug"]
 
 
 def test_gate_accepts_model_chain_with_aliases_counts_and_domain_evidence():

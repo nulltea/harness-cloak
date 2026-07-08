@@ -92,7 +92,7 @@
     "canonical_levels": 744,
     "entries_with_level_changes": 254,
     "duplicate_levels_dropped": 67,
-    "entries_reordered_to_corpus_consensus": 148,
+    "entries_reordered_to_corpus_consensus": 149,
     "anchored_labels": [
       "analgesic",
       "antibacterial agent",
@@ -484,7 +484,7 @@
     "canonical_levels": 469,
     "entries_with_level_changes": 32,
     "duplicate_levels_dropped": 14,
-    "entries_reordered_to_corpus_consensus": 39,
+    "entries_reordered_to_corpus_consensus": 40,
     "anchored_labels": [
       "cardiovascular condition",
       "chronic disease",
@@ -646,6 +646,14 @@
         "levels": [
           "knee pain",
           "joint pain"
+        ]
+      },
+      {
+        "entry": "bile reflux",
+        "count": 449.59,
+        "levels": [
+          "metabolic and digestive disease",
+          "gastrointestinal condition"
         ]
       },
       {

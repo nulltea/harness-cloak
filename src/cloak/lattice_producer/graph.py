@@ -14,12 +14,14 @@ from langgraph.types import Command, interrupt
 
 from cloak.lattice import bucket_date, bucket_quantity, geonames_chain
 from cloak.lattice_profiles import lookup_levels
+from cloak.lattice_producer.coherence import normalize_coherence
 from cloak.lattice_producer.counts import compile_level_counts
 from cloak.lattice_producer.coverage import write_category_coverage
 from cloak.lattice_producer.gates import gate_candidates
 from cloak.lattice_producer.io import append_jsonl_unique, read_jsonl
 from cloak.lattice_producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
 from cloak.lattice_producer.propose import ensure_local_base_url, extract_candidate_levels, propose_with_llama_swap
+from cloak.lattice_producer.reference_sources import reference_candidates_for
 from cloak.lattice_producer.queue import build_or_load_queue
 from cloak.lattice_producer.state import QWEN36_ESCALATION_MODEL, ProducerState, make_initial_state, thread_id_for_run
 
@@ -88,14 +90,25 @@ def initialize_run(state: ProducerState) -> ProducerState:
 
 
 def build_category_coverage_node(state: ProducerState) -> ProducerState:
-    rows = write_category_coverage(state["profiles_path"], _jsonl_path(state, "coverage_gaps.json"), category=state.get("category"))
+    rows = write_category_coverage(
+        state["profiles_path"],
+        _jsonl_path(state, "coverage_gaps.json"),
+        category=state.get("category"),
+        categories=state.get("categories"),
+    )
     return {"coverage_gaps": sum(1 for row in rows if row.get("generated_universe_required"))}
 
 
 def build_or_load_queue_node(state: ProducerState) -> ProducerState:
     queue_path = Path(state["queue_path"])
     explicit = queue_path if queue_path.exists() else None
-    items = build_or_load_queue(state["run_dir"], state["profiles_path"], explicit_queue=explicit, category=state.get("category"))
+    items = build_or_load_queue(
+        state["run_dir"],
+        state["profiles_path"],
+        explicit_queue=explicit,
+        category=state.get("category"),
+        categories=state.get("categories"),
+    )
     if explicit is not None:
         Path(state["run_dir"]).mkdir(parents=True, exist_ok=True)
         Path(state["run_dir"], "queue.jsonl").write_text("".join(json.dumps(item, sort_keys=True) + "\n" for item in items))
@@ -125,7 +138,7 @@ def select_next_item(state: ProducerState) -> ProducerState:
 
 
 def route_selected(state: ProducerState) -> Literal[
-    "validate_proposed_artifact",
+    "normalize_coherence",
     "generate_universe_entries",
     "deterministic_lookup",
     "propose_with_llama_swap",
@@ -133,7 +146,7 @@ def route_selected(state: ProducerState) -> Literal[
 ]:
     item = state.get("current_item")
     if not item:
-        return "validate_proposed_artifact"
+        return "normalize_coherence"
     if not item.get("eligible", True):
         return "record_item_result"
     if item.get("force_model_proposal"):
@@ -156,6 +169,7 @@ def generate_universe_entries(state: ProducerState) -> ProducerState:
             base_url=state["base_url"],
             model=QWEN36_ESCALATION_MODEL,
             escalation_model=QWEN36_ESCALATION_MODEL,
+            thinking_budget_tokens=int(state.get("thinking_budget_tokens", -1)),
         )
         append_jsonl_unique(_jsonl_path(state, "proposals.jsonl"), [{**proposal, "item_id": item.get("item_id")}])
         entries = proposal.get("entries") or []
@@ -215,6 +229,12 @@ def deterministic_lookup(state: ProducerState) -> ProducerState:
     item = state["current_item"] or {}
     surface = str(item.get("surface") or item.get("canonical_value") or "")
     runtime_type = str(item.get("runtime_type") or "")
+    # a real local dataset (FDA pharm_class, Disease Ontology, ICD-10-PCS) always wins over the
+    # profile cache and the model -- it's the most authoritative source available, and produces
+    # certifying, source-backed levels via compile_level_counts's member_set branch.
+    reference_candidates = reference_candidates_for(item)
+    if reference_candidates:
+        return {"current_candidates": reference_candidates}
     levels = lookup_levels(surface, runtime_type, state["profiles_path"])
     if not levels and runtime_type == "LOC":
         levels = geonames_chain(surface) or []
@@ -245,12 +265,23 @@ def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
         base_url=state["base_url"],
         model=model,
         escalation_model=QWEN36_ESCALATION_MODEL,
+        thinking_budget_tokens=int(state.get("thinking_budget_tokens", -1)),
+        proposed_out=state["proposed_out"],
     )
     append_jsonl_unique(
         _jsonl_path(state, "proposals.jsonl"),
         [{**proposal, "item_id": item.get("item_id"), "retry_attempt": int(item.get("retry_attempt", 0)), "model_used": model}],
     )
-    return {"current_candidates": extract_candidate_levels(proposal)}
+    candidates = extract_candidate_levels(proposal)
+    surface_confidence = proposal.get("surface_confidence")
+    if surface_confidence:
+        # a per-item field on the raw proposal, not per-level -- attached to every extracted
+        # candidate here rather than threaded through extract_candidate_levels's several
+        # payload-schema branches, so gate_candidates can act on it uniformly regardless of
+        # which schema variant the model actually returned.
+        for candidate in candidates:
+            candidate.setdefault("surface_confidence", surface_confidence)
+    return {"current_candidates": candidates}
 
 
 def route_after_proposal(state: ProducerState) -> Literal["compile_level_counts", "record_item_result"]:
@@ -268,7 +299,9 @@ def compile_level_counts_node(state: ProducerState) -> ProducerState:
 
 
 def gate_candidates_node(state: ProducerState) -> ProducerState:
-    result = gate_candidates(state["current_item"] or {}, list(state.get("current_candidates", [])))
+    result = gate_candidates(
+        state["current_item"] or {}, list(state.get("current_candidates", [])), proposed_out=state["proposed_out"]
+    )
     return {"accepted_rows": result.accepted, "rejected_rows": result.rejected, "diagnostic_rows": result.diagnostics}
 
 
@@ -390,11 +423,28 @@ def record_item_result(state: ProducerState) -> ProducerState:
     }
 
 
-def should_continue(state: ProducerState) -> Literal["select_next_item", "validate_proposed_artifact"]:
+def should_continue(state: ProducerState) -> Literal["select_next_item", "normalize_coherence"]:
     max_items = state.get("max_items")
     if max_items is not None and int(state.get("processed", 0)) >= int(max_items):
-        return "validate_proposed_artifact"
+        return "normalize_coherence"
     return "select_next_item"
+
+
+def normalize_coherence_node(state: ProducerState) -> ProducerState:
+    """Runs once, over the whole run's accepted output, between the per-item processing loop
+    and validation -- not per-item, since it needs every accepted level for a runtime type at
+    once to compute corpus-wide ranks and anchor placements. Replaces the external
+    scripts/spikes/clean_drug_health_lattice_coherence.py cleanup pass that used to be run by
+    hand after a run finished."""
+    proposed = Path(state["proposed_out"])
+    if not proposed.exists():
+        ensure_proposed_artifact(state["profiles_path"], proposed, run_id=state["run_id"])
+    artifact = json.loads(proposed.read_text())
+    report = normalize_coherence(artifact)
+    proposed.write_text(json.dumps(artifact, indent=2, sort_keys=True))
+    if report:
+        _jsonl_path(state, "coherence_report.json").write_text(json.dumps(report, indent=2))
+    return {}
 
 
 def validate_proposed_artifact_node(state: ProducerState) -> ProducerState:
@@ -564,6 +614,7 @@ def build_graph() -> StateGraph:
     graph.add_node("persist_proposed_artifact", persist_proposed_artifact_node)
     graph.add_node("requeue_rejected_item", requeue_rejected_item)
     graph.add_node("record_item_result", record_item_result)
+    graph.add_node("normalize_coherence", normalize_coherence_node)
     graph.add_node("validate_proposed_artifact", validate_proposed_artifact_node)
     graph.add_node("review_interrupt", review_interrupt)
     graph.add_node("finalize_run", finalize_run)
@@ -580,6 +631,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("requeue_rejected_item", "propose_with_llama_swap")
     graph.add_edge("persist_proposed_artifact", "record_item_result")
     graph.add_conditional_edges("record_item_result", should_continue)
+    graph.add_edge("normalize_coherence", "validate_proposed_artifact")
     graph.add_conditional_edges("validate_proposed_artifact", route_after_validate)
     graph.add_edge("review_interrupt", "finalize_run")
     graph.add_edge("finalize_run", END)
@@ -609,9 +661,11 @@ def run_producer(
     max_items: int | None = None,
     max_context_rows: int = 8,
     max_generated_entries_per_category: int = 20,
+    thinking_budget_tokens: int = -1,
     review_decision: str | None = None,
     allow_canonical_overwrite: bool = False,
     category: str | None = None,
+    categories: list[str] | None = None,
 ) -> ProducerState:
     run_id = run_id or Path(run_dir).name
     state = make_initial_state(
@@ -627,11 +681,12 @@ def run_producer(
         max_items=max_items,
         max_context_rows=max_context_rows,
         max_generated_entries_per_category=max_generated_entries_per_category,
+        thinking_budget_tokens=thinking_budget_tokens,
         review_decision=review_decision,
         allow_canonical_overwrite=allow_canonical_overwrite,
+        category=category,
+        categories=categories,
     )
-    if category:
-        state["category"] = category
     app = build_graph().compile(checkpointer=_checkpointer(run_dir))
     result = app.invoke(state, {"configurable": {"thread_id": thread_id_for_run(run_id)}})
     if isinstance(result, Command):

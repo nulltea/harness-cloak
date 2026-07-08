@@ -13,6 +13,7 @@ from urllib.parse import urlparse
 from openai import OpenAI
 
 from cloak.lattice_producer.io import atomic_write_json
+from cloak.lattice_producer.vocabulary import CanonicalVocabulary
 
 QWEN36_MODEL = "Qwen3.6-35B-A3B"
 QWEN36_THINKING_BUDGET_TOKENS = 2048
@@ -36,6 +37,7 @@ def assemble_context_packet(
     run_dir: str | Path,
     prompt_version: str,
     max_context_rows: int,
+    proposed_out: str | Path | None = None,
 ) -> dict[str, Any]:
     runtime_type = item.get("runtime_type")
     detector_label = item.get("detector_label_family")
@@ -57,6 +59,8 @@ def assemble_context_packet(
                 }
             )
     relevant = relevant[:max_context_rows]
+    vocabulary = CanonicalVocabulary(str(runtime_type), proposed_out=proposed_out) if runtime_type else None
+    vocabulary_slice = vocabulary.context_slice(n=max_context_rows) if vocabulary else []
     packet = {
         "prompt_version": prompt_version,
         "task_kind": item.get("task_kind", "level-proposal"),
@@ -66,9 +70,21 @@ def assemble_context_packet(
         "marked_context_sentence": item.get("marked_context_sentence", ""),
         "type_policy": "Produce truthful grammatical generalization levels only; never emit placeholders or direct identifiers.",
         "allowed_outputs": "Strict JSON with entry aliases and ordered candidate levels. Each level must include a proposed_count, count_evidence, selector, and rationale. Counts are review evidence, not certifying source-backed counts.",
-        "required_proposal_fields": ["aliases", "candidates"],
-        "required_level_fields": ["level", "proposed_count", "count_evidence", "selector", "rationale"],
+        "required_proposal_fields": ["aliases", "candidates", "surface_confidence"],
+        "surface_confidence_instruction": (
+            "surface_confidence must be \"high\", \"low\", or \"ambiguous\". A short (<=4 character) "
+            "or multi-referent clinical/domain abbreviation must be marked \"low\" or \"ambiguous\" "
+            "unless marked_context_sentence clearly disambiguates it -- do not silently pick one "
+            "referent among several equally plausible ones and report \"high\" anyway."
+        ),
+        "required_level_fields": ["level", "proposed_count", "count_evidence", "selector", "rationale", "reused_canonical_label"],
         "nearby_profile_rows": relevant,
+        "canonical_vocabulary_slice": vocabulary_slice,
+        "canonical_vocabulary_instruction": (
+            "If any label in canonical_vocabulary_slice already fits a proposed level, reuse it "
+            "verbatim and set reused_canonical_label: true for that level. Only propose new "
+            "phrasing when nothing in the slice fits, and set reused_canonical_label: false."
+        ),
         "category_slice": [],
         "forbidden_outputs": ["type-name phrases", "original surface leaks", "direct identifiers"],
     }
@@ -150,6 +166,17 @@ def _cache_path(cache_dir: str | Path, key: str) -> Path:
     return Path(cache_dir) / "lattice_producer" / f"{key}.json"
 
 
+def _parse_model_json(content: str) -> dict[str, Any]:
+    raw = content or "{}"
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return {"candidates": [], "parse_error": "invalid_json", "raw": raw}
+    if isinstance(payload, dict):
+        return payload
+    return {"candidates": [], "parse_error": "non_object_json", "raw": raw}
+
+
 def propose_with_llama_swap(
     item: dict[str, Any],
     *,
@@ -160,6 +187,8 @@ def propose_with_llama_swap(
     base_url: str,
     model: str,
     escalation_model: str | None = None,
+    thinking_budget_tokens: int = -1,
+    proposed_out: str | Path | None = None,
 ) -> dict[str, Any]:
     ensure_local_base_url(base_url)
     packet = assemble_context_packet(
@@ -168,6 +197,7 @@ def propose_with_llama_swap(
         run_dir=run_dir,
         prompt_version=prompt_version,
         max_context_rows=max_context_rows,
+        proposed_out=proposed_out,
     )
     identity = {
         "model": model,
@@ -189,28 +219,19 @@ def propose_with_llama_swap(
         "and rationale. Proposed counts are evidence for review, not certified counts; do not label them certified.\n\n"
         + json.dumps(packet, sort_keys=True)
     )
-    response = client.chat.completions.create(
-        model=model,
-        temperature=0.0,
-        messages=[{"role": "user", "content": prompt}],
-        response_format={"type": "json_object"},
-        extra_body={"thinking_budget_tokens": QWEN36_THINKING_BUDGET_TOKENS},
-    )
+    request_kwargs = {
+        "temperature": 0.0,
+        "messages": [{"role": "user", "content": prompt}],
+        "response_format": {"type": "json_object"},
+    }
+    if thinking_budget_tokens >= 0:
+        request_kwargs["extra_body"] = {"thinking_budget_tokens": thinking_budget_tokens}
+    response = client.chat.completions.create(model=model, **request_kwargs)
     content = response.choices[0].message.content or "{}"
-    try:
-        payload = json.loads(content)
-    except json.JSONDecodeError:
-        if not escalation_model:
-            payload = {"candidates": [], "parse_error": "invalid_json", "raw": content}
-        else:
-            response = client.chat.completions.create(
-                model=escalation_model,
-                temperature=0.0,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                extra_body={"thinking_budget_tokens": QWEN36_THINKING_BUDGET_TOKENS},
-            )
-            payload = json.loads(response.choices[0].message.content or "{}")
+    payload = _parse_model_json(content)
+    if payload.get("parse_error") and escalation_model:
+        response = client.chat.completions.create(model=escalation_model, **request_kwargs)
+        payload = _parse_model_json(response.choices[0].message.content or "{}")
     payload["cache_key"] = cache_key
     payload["context_packet_hash"] = packet["context_packet_hash"]
     payload["model_used"] = model

@@ -1,0 +1,705 @@
+{
+  "matched": 143,
+  "skipped_already_specific": 44,
+  "skipped_no_epc_match": 273,
+  "anomalies_epc_count_exceeds_narrower_level": [
+    {
+      "entry": "acne control",
+      "epc_label": "retinoid",
+      "epc_count": 14.0,
+      "existing_narrowest": "dermatological therapy",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "albuterol",
+      "epc_label": "beta2-adrenergic agonist",
+      "epc_count": 13.0,
+      "existing_narrowest": "beta-2 adrenergic agonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "alfalfa",
+      "epc_label": "non-standardized pollen allergenic extract",
+      "epc_count": 357.0,
+      "existing_narrowest": "herbal remedy",
+      "existing_narrowest_count": 51.4
+    },
+    {
+      "entry": "allegra allergy",
+      "epc_label": "histamine-1 receptor antagonist",
+      "epc_count": 70.0,
+      "existing_narrowest": "antihistamine",
+      "existing_narrowest_count": 51.4
+    },
+    {
+      "entry": "almond",
+      "epc_label": "non-standardized food allergenic extract",
+      "epc_count": 216.0,
+      "existing_narrowest": "botanical seed extract",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "amiodarone",
+      "epc_label": "antiarrhythmic",
+      "epc_count": 139.0,
+      "existing_narrowest": "antiarrhythmic agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "amitriptyline",
+      "epc_label": "tricyclic antidepressant",
+      "epc_count": 19.0,
+      "existing_narrowest": "psychoactive medication",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "amlodipine",
+      "epc_label": "dihydropyridine calcium channel blocker",
+      "epc_count": 12.0,
+      "existing_narrowest": "calcium channel blocker",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "anti inflammatory naprosyn",
+      "epc_label": "nonsteroidal anti-inflammatory drug",
+      "epc_count": 90.0,
+      "existing_narrowest": "nonsteroidal anti-inflammatory agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "arabica coffee bean",
+      "epc_label": "non-standardized food allergenic extract",
+      "epc_count": 216.0,
+      "existing_narrowest": "botanical agent",
+      "existing_narrowest_count": 150.49
+    },
+    {
+      "entry": "atenolol",
+      "epc_label": "beta-adrenergic blocker",
+      "epc_count": 39.0,
+      "existing_narrowest": "beta-blocker",
+      "existing_narrowest_count": 20.0
+    },
+    {
+      "entry": "benadryl",
+      "epc_label": "histamine-1 receptor antagonist",
+      "epc_count": 70.0,
+      "existing_narrowest": "first-generation antihistamine",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "bimatoprost",
+      "epc_label": "prostaglandin analog",
+      "epc_count": 13.0,
+      "existing_narrowest": "ophthalmic medication",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "brimonidine",
+      "epc_label": "alpha-adrenergic agonist",
+      "epc_count": 22.0,
+      "existing_narrowest": "sympathomimetic",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "caffeine",
+      "epc_label": "central nervous system stimulant",
+      "epc_count": 23.0,
+      "existing_narrowest": "methylxanthine",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "calcium",
+      "epc_label": "blood coagulation factor",
+      "epc_count": 39.0,
+      "existing_narrowest": "inorganic compound",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "calcium carbonate",
+      "epc_label": "blood coagulation factor",
+      "epc_count": 39.0,
+      "existing_narrowest": "calcium salt",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "calcium phosphate",
+      "epc_label": "blood coagulation factor",
+      "epc_count": 39.0,
+      "existing_narrowest": "bone health agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "celecoxib",
+      "epc_label": "nonsteroidal anti-inflammatory drug",
+      "epc_count": 90.0,
+      "existing_narrowest": "Prescription analgesic",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "cephalexin",
+      "epc_label": "cephalosporin antibacterial",
+      "epc_count": 26.0,
+      "existing_narrowest": "beta-lactam antibiotic",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "cetirizine",
+      "epc_label": "histamine-1 receptor antagonist",
+      "epc_count": 70.0,
+      "existing_narrowest": "antihistamine",
+      "existing_narrowest_count": 51.4
+    },
+    {
+      "entry": "cipro",
+      "epc_label": "fluoroquinolone antibacterial",
+      "epc_count": 11.0,
+      "existing_narrowest": "fluoroquinolone",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "ciprofloxacin",
+      "epc_label": "fluoroquinolone antibacterial",
+      "epc_count": 11.0,
+      "existing_narrowest": "fluoroquinolone antibiotic",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "clindamycin",
+      "epc_label": "lincosamide antibacterial",
+      "epc_count": 14.0,
+      "existing_narrowest": "systemic antibiotic",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "clonidine",
+      "epc_label": "central alpha-2 adrenergic agonist",
+      "epc_count": 20.0,
+      "existing_narrowest": "alpha-2 adrenergic agonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "cozaar",
+      "epc_label": "angiotensin 2 receptor blocker",
+      "epc_count": 13.0,
+      "existing_narrowest": "angiotensin_ii_receptor_blocker",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "crestor",
+      "epc_label": "hmg-coa reductase inhibitor",
+      "epc_count": 14.0,
+      "existing_narrowest": "statin",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "cymbalta",
+      "epc_label": "serotonin and norepinephrine reuptake inhibitor",
+      "epc_count": 14.0,
+      "existing_narrowest": "serotonin-norepinephrine reuptake inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "desvenlafaxine",
+      "epc_label": "serotonin and norepinephrine reuptake inhibitor",
+      "epc_count": 14.0,
+      "existing_narrowest": "serotonin_norepinephrine_reuptake_inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "dexmethylphenidate",
+      "epc_label": "central nervous system stimulant",
+      "epc_count": 23.0,
+      "existing_narrowest": "regulated pharmaceutical active ingredient",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "doxazosin",
+      "epc_label": "alpha-adrenergic blocker",
+      "epc_count": 15.0,
+      "existing_narrowest": "alpha-1 adrenergic antagonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "duloxetine",
+      "epc_label": "serotonin and norepinephrine reuptake inhibitor",
+      "epc_count": 14.0,
+      "existing_narrowest": "selective serotonin and norepinephrine reuptake inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "escitalopram",
+      "epc_label": "serotonin reuptake inhibitor",
+      "epc_count": 20.0,
+      "existing_narrowest": "psychoactive agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "fluconazole",
+      "epc_label": "azole antifungal",
+      "epc_count": 79.0,
+      "existing_narrowest": "antifungal agent",
+      "existing_narrowest_count": 40.01
+    },
+    {
+      "entry": "fluorouracil",
+      "epc_label": "nucleoside metabolic inhibitor",
+      "epc_count": 17.0,
+      "existing_narrowest": "antineoplastic agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "fluoxetine",
+      "epc_label": "serotonin reuptake inhibitor",
+      "epc_count": 20.0,
+      "existing_narrowest": "selective serotonin reuptake inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "formoterol",
+      "epc_label": "beta2-adrenergic agonist",
+      "epc_count": 13.0,
+      "existing_narrowest": "long-acting beta-2 adrenergic agonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "hydralazine",
+      "epc_label": "arteriolar vasodilator",
+      "epc_count": 41.0,
+      "existing_narrowest": "vasodilator",
+      "existing_narrowest_count": 25.24
+    },
+    {
+      "entry": "hydrocodone",
+      "epc_label": "opioid agonist",
+      "epc_count": 35.0,
+      "existing_narrowest": "semi-synthetic opioid",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "hydroxychloroquine",
+      "epc_label": "antimalarial",
+      "epc_count": 13.0,
+      "existing_narrowest": "antimalarial pharmaceutical",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "insulin detemir",
+      "epc_label": "insulin analog",
+      "epc_count": 13.0,
+      "existing_narrowest": "insulin preparation",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "irbesartan",
+      "epc_label": "angiotensin 2 receptor blocker",
+      "epc_count": 13.0,
+      "existing_narrowest": "angiotensin receptor blocker",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "labetalol",
+      "epc_label": "beta-adrenergic blocker",
+      "epc_count": 39.0,
+      "existing_narrowest": "blood_pressure_regulating_agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "lisinopril",
+      "epc_label": "angiotensin converting enzyme inhibitor",
+      "epc_count": 17.0,
+      "existing_narrowest": "ACE inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "mavik",
+      "epc_label": "angiotensin converting enzyme inhibitor",
+      "epc_count": 17.0,
+      "existing_narrowest": "angiotensin-converting enzyme inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "metoprolol",
+      "epc_label": "beta-adrenergic blocker",
+      "epc_count": 39.0,
+      "existing_narrowest": "beta-blocker",
+      "existing_narrowest_count": 20.0
+    },
+    {
+      "entry": "metoprolol succinate",
+      "epc_label": "beta-adrenergic blocker",
+      "epc_count": 39.0,
+      "existing_narrowest": "metoprolol",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "miralax",
+      "epc_label": "osmotic laxative",
+      "epc_count": 115.0,
+      "existing_narrowest": "polyethylene_glycol_formulation",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "mobic",
+      "epc_label": "nonsteroidal anti-inflammatory drug",
+      "epc_count": 90.0,
+      "existing_narrowest": "nsaid",
+      "existing_narrowest_count": 20.0
+    },
+    {
+      "entry": "morphine",
+      "epc_label": "opioid agonist",
+      "epc_count": 35.0,
+      "existing_narrowest": "opioid analgesic",
+      "existing_narrowest_count": 25.24
+    },
+    {
+      "entry": "moxifloxacin",
+      "epc_label": "fluoroquinolone antibacterial",
+      "epc_count": 11.0,
+      "existing_narrowest": "fluoroquinolone antibiotic",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "naproxen",
+      "epc_label": "nonsteroidal anti-inflammatory drug",
+      "epc_count": 90.0,
+      "existing_narrowest": "nonsteroidal anti-inflammatory agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "nebivolol",
+      "epc_label": "beta-adrenergic blocker",
+      "epc_count": 39.0,
+      "existing_narrowest": "beta-blocker",
+      "existing_narrowest_count": 20.0
+    },
+    {
+      "entry": "nicotine",
+      "epc_label": "cholinergic nicotinic agonist",
+      "epc_count": 25.0,
+      "existing_narrowest": "nicotinic receptor agonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "ofloxacin",
+      "epc_label": "quinolone antimicrobial",
+      "epc_count": 16.0,
+      "existing_narrowest": "systemic antimicrobial",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "olanzapine",
+      "epc_label": "atypical antipsychotic",
+      "epc_count": 26.0,
+      "existing_narrowest": "atypical_antipsychotic",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "oryza sativa",
+      "epc_label": "non-standardized food allergenic extract",
+      "epc_count": 216.0,
+      "existing_narrowest": "rice botanical extract",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "oxycodone",
+      "epc_label": "opioid agonist",
+      "epc_count": 35.0,
+      "existing_narrowest": "opioid analgesic",
+      "existing_narrowest_count": 25.24
+    },
+    {
+      "entry": "pantoprazole",
+      "epc_label": "proton pump inhibitor",
+      "epc_count": 30.0,
+      "existing_narrowest": "gastric acid suppressant",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "paroxetine",
+      "epc_label": "serotonin reuptake inhibitor",
+      "epc_count": 20.0,
+      "existing_narrowest": "selective serotonin reuptake inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "potassium chloride",
+      "epc_label": "osmotic laxative",
+      "epc_count": 115.0,
+      "existing_narrowest": "potassium salt",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "prednisone",
+      "epc_label": "corticosteroid",
+      "epc_count": 119.0,
+      "existing_narrowest": "systemic corticosteroid",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "propranolol",
+      "epc_label": "beta-adrenergic blocker",
+      "epc_count": 39.0,
+      "existing_narrowest": "beta-adrenergic antagonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "ramipril",
+      "epc_label": "angiotensin converting enzyme inhibitor",
+      "epc_count": 17.0,
+      "existing_narrowest": "ACE inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "risperdal",
+      "epc_label": "atypical antipsychotic",
+      "epc_count": 26.0,
+      "existing_narrowest": "risperidone",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "rizatriptan",
+      "epc_label": "serotonin-1b and serotonin-1d receptor agonist",
+      "epc_count": 12.0,
+      "existing_narrowest": "triptan class agent",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "rosuvastatin",
+      "epc_label": "hmg-coa reductase inhibitor",
+      "epc_count": 14.0,
+      "existing_narrowest": "statin",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "salmeterol",
+      "epc_label": "beta2-adrenergic agonist",
+      "epc_count": 13.0,
+      "existing_narrowest": "long-acting bronchodilator",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "sertraline",
+      "epc_label": "serotonin reuptake inhibitor",
+      "epc_count": 20.0,
+      "existing_narrowest": "selective serotonin reuptake inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "sumatriptan",
+      "epc_label": "serotonin-1b and serotonin-1d receptor agonist",
+      "epc_count": 12.0,
+      "existing_narrowest": "triptan",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "telmisartan",
+      "epc_label": "angiotensin 2 receptor blocker",
+      "epc_count": 13.0,
+      "existing_narrowest": "angiotensin II receptor blocker",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "terazosin",
+      "epc_label": "alpha-adrenergic blocker",
+      "epc_count": 15.0,
+      "existing_narrowest": "alpha-1 adrenergic antagonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "timolol",
+      "epc_label": "beta-adrenergic blocker",
+      "epc_count": 39.0,
+      "existing_narrowest": "beta-adrenergic antagonist",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "tizanidine",
+      "epc_label": "central alpha-2 adrenergic agonist",
+      "epc_count": 20.0,
+      "existing_narrowest": "active_ingredient",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "trazodone",
+      "epc_label": "serotonin reuptake inhibitor",
+      "epc_count": 20.0,
+      "existing_narrowest": "serotonin antagonist and reuptake inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "valsartan",
+      "epc_label": "angiotensin 2 receptor blocker",
+      "epc_count": 13.0,
+      "existing_narrowest": "angiotensin receptor blocker",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "venlafaxine",
+      "epc_label": "serotonin and norepinephrine reuptake inhibitor",
+      "epc_count": 14.0,
+      "existing_narrowest": "serotonin-norepinephrine reuptake inhibitor",
+      "existing_narrowest_count": 10.56
+    },
+    {
+      "entry": "vitis vinifera",
+      "epc_label": "non-standardized food allergenic extract",
+      "epc_count": 216.0,
+      "existing_narrowest": "plant-based therapeutic",
+      "existing_narrowest_count": 150.49
+    }
+  ],
+  "sample_matches": [
+    {
+      "entry": "acyclovir",
+      "epc_label": "herpes simplex virus nucleoside analog dna polymerase inhibitor",
+      "count": 4.0
+    },
+    {
+      "entry": "alendronate",
+      "epc_label": "bisphosphonate",
+      "count": 6.0
+    },
+    {
+      "entry": "alprazolam",
+      "epc_label": "benzodiazepine",
+      "count": 24.0
+    },
+    {
+      "entry": "amlodipine besylate",
+      "epc_label": "dihydropyridine calcium channel blocker",
+      "count": 12.0
+    },
+    {
+      "entry": "amoxicillin",
+      "epc_label": "penicillin-class antibacterial",
+      "count": 17.0
+    },
+    {
+      "entry": "anastrozole",
+      "epc_label": "aromatase inhibitor",
+      "count": 5.0
+    },
+    {
+      "entry": "ap",
+      "epc_label": "penicillin-class antibacterial",
+      "count": 17.0
+    },
+    {
+      "entry": "apis mellifera",
+      "epc_label": "standardized insect venom allergenic extract",
+      "count": 6.0
+    },
+    {
+      "entry": "apixaban",
+      "epc_label": "factor xa inhibitor",
+      "count": 5.0
+    },
+    {
+      "entry": "aripiprazole",
+      "epc_label": "atypical antipsychotic",
+      "count": 26.0
+    },
+    {
+      "entry": "ascorbic acid",
+      "epc_label": "vitamin c",
+      "count": 4.0
+    },
+    {
+      "entry": "atorvastatin",
+      "epc_label": "hmg-coa reductase inhibitor",
+      "count": 14.0
+    },
+    {
+      "entry": "azelastine",
+      "epc_label": "histamine-1 receptor antagonist",
+      "count": 70.0
+    },
+    {
+      "entry": "azithromycin",
+      "epc_label": "macrolide antimicrobial",
+      "count": 8.0
+    },
+    {
+      "entry": "baclofen",
+      "epc_label": "gamma-aminobutyric acid-ergic agonist",
+      "count": 3.0
+    },
+    {
+      "entry": "benzonatate",
+      "epc_label": "non-narcotic antitussive",
+      "count": 3.0
+    },
+    {
+      "entry": "bisoprolol",
+      "epc_label": "beta-adrenergic blocker",
+      "count": 39.0
+    },
+    {
+      "entry": "bl",
+      "epc_label": "cytoprotective agent",
+      "count": 7.0
+    },
+    {
+      "entry": "brilinta",
+      "epc_label": "p2y12 platelet inhibitor",
+      "count": 6.0
+    },
+    {
+      "entry": "bumetanide",
+      "epc_label": "loop diuretic",
+      "count": 6.0
+    },
+    {
+      "entry": "bupropion",
+      "epc_label": "aminoketone",
+      "count": 9.0
+    },
+    {
+      "entry": "calcitriol",
+      "epc_label": "vitamin d3 analog",
+      "count": 5.0
+    },
+    {
+      "entry": "carafate",
+      "epc_label": "aluminum complex",
+      "count": 3.0
+    },
+    {
+      "entry": "carbamazepine",
+      "epc_label": "mood stabilizer",
+      "count": 23.0
+    },
+    {
+      "entry": "carvedilol",
+      "epc_label": "alpha-adrenergic blocker",
+      "count": 15.0
+    },
+    {
+      "entry": "cefdinir",
+      "epc_label": "cephalosporin antibacterial",
+      "count": 26.0
+    },
+    {
+      "entry": "cialis",
+      "epc_label": "phosphodiesterase 5 inhibitor",
+      "count": 7.0
+    },
+    {
+      "entry": "cisplatin",
+      "epc_label": "platinum-based drug",
+      "count": 3.0
+    },
+    {
+      "entry": "citalopram",
+      "epc_label": "serotonin reuptake inhibitor",
+      "count": 20.0
+    },
+    {
+      "entry": "clopidogrel",
+      "epc_label": "p2y12 platelet inhibitor",
+      "count": 6.0
+    }
+  ]
+}

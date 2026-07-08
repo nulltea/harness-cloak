@@ -1,0 +1,38 @@
+{
+  "_comment": "Best-effort real-world magnitude anchors for common/recurring health-condition generalization tiers, used by src/cloak/lattice_producer/coherence.py to keep per-level counts internally consistent across a run. Not certifying counts (Fix Area 2's DOID loader in reference_sources.py supplies real, certifying chains where a DOID match exists); this is a fallback anchor for the ceiling tiers above DOID's own root and for entries with no DOID match. Promoted from scripts/spikes/clean_drug_health_lattice_coherence.py.",
+  "_sources": {
+    "medical condition": "ICD-10-CM FY2026: 74,719 billable diagnosis codes (icd10data.com/CMS); used here as the practical broadest catch-all bucket, larger than any subordinate anchor by design",
+    "clinical finding": "SNOMED CT: ~371,000 concepts total; Clinical Finding is its largest single hierarchy, commonly cited at roughly a third to half of the total",
+    "mental health condition / psychiatric disorder": "DSM-5: ~300 distinct diagnosable mental disorders",
+    "genetic disorder": "OMIM: similar order to Orphanet's rare-disease count",
+    "rare disease": "Orphanet: >7,000 catalogued rare diseases",
+    "neurological condition": "NINDS: 600+ named neurological disorders",
+    "other entries": "rough counts of distinct commonly-named conditions in that organ-system/diagnostic class, not a specific registry lookup"
+  },
+  "anchors": {
+    "musculoskeletal disorder": 200,
+    "reproductive system condition": 150,
+    "dermatological condition": 2000,
+    "cardiovascular condition": 300,
+    "neurological condition": 600,
+    "infectious disease": 1400,
+    "neoplastic condition": 1000,
+    "malignant neoplasm": 700,
+    "inflammatory condition": 400,
+    "immune system condition": 250,
+    "gastrointestinal condition": 400,
+    "respiratory condition": 300,
+    "mental health condition": 300,
+    "psychiatric disorder": 280,
+    "genetic disorder": 7000,
+    "rare disease": 6800,
+    "syndrome": 4000,
+    "chronic disease": 100,
+    "clinical symptom": 1000,
+    "clinical sign": 500,
+    "disease": 15000,
+    "disease entity": 15000,
+    "clinical finding": 150000,
+    "medical condition": 500000
+  }
+}

@@ -30,6 +30,7 @@ class ProducerState(TypedDict, total=False):
     max_items: int | None
     max_context_rows: int
     max_generated_entries_per_category: int
+    thinking_budget_tokens: int
     processed: int
     accepted: int
     rejected: int
@@ -42,6 +43,7 @@ class ProducerState(TypedDict, total=False):
     review_decision: str | None
     allow_canonical_overwrite: bool
     category: str | None
+    categories: list[str]
     final_status: str | None
 
 
@@ -65,9 +67,11 @@ def make_initial_state(
     max_items: int | None = None,
     max_context_rows: int = 8,
     max_generated_entries_per_category: int = 20,
+    thinking_budget_tokens: int = -1,
     review_decision: str | None = None,
     allow_canonical_overwrite: bool = False,
     category: str | None = None,
+    categories: list[str] | None = None,
 ) -> ProducerState:
     run_dir = Path(run_dir)
     return {
@@ -90,6 +94,7 @@ def make_initial_state(
         "max_items": max_items,
         "max_context_rows": max_context_rows,
         "max_generated_entries_per_category": max_generated_entries_per_category,
+        "thinking_budget_tokens": thinking_budget_tokens,
         "processed": 0,
         "accepted": 0,
         "rejected": 0,
@@ -102,5 +107,6 @@ def make_initial_state(
         "review_decision": review_decision,
         "allow_canonical_overwrite": allow_canonical_overwrite,
         "category": category,
+        "categories": categories or [],
         "final_status": None,
     }

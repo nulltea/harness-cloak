@@ -69,7 +69,7 @@ def test_persist_writes_separate_proposal_incrementally_and_leaves_canonical_unt
     assert row["entry_origin"] == "generated-universe"
     assert row["levels"] == ["medical specialist"]
     assert row["level_counts"]["medical specialist"] == 42.0
-    assert row["level_groundings"]["medical specialist"]["status"] == "proposal-universe"
+    assert row["level_grounding"]["medical specialist"]["status"] == "proposal-universe"
     assert row["source_ids"] == ["producer:run-1:profession:cardiologist"]
 
 
@@ -100,7 +100,7 @@ def test_persist_includes_model_proposed_aliases_from_accepted_records(tmp_path:
 
     row = json.loads(proposed.read_text())["profiles"]["profession"]["privacy engineer"]
     assert row["aliases"] == ["data protection engineer", "privacy software engineer"]
-    assert row["level_groundings"]["privacy and security software professional"]["status"] == "model-proposed"
+    assert row["level_grounding"]["privacy and security software professional"]["status"] == "model-proposed"
 
 
 def test_persist_keeps_counts_and_groundings_in_level_order(tmp_path: Path) -> None:
@@ -123,7 +123,7 @@ def test_persist_keeps_counts_and_groundings_in_level_order(tmp_path: Path) -> N
     row = json.loads(proposed.read_text())["profiles"]["profession"]["sustainability auditor"]
     assert row["levels"] == ["business and financial occupation", "technical worker", "professional worker"]
     assert list(row["level_counts"]) == row["levels"]
-    assert list(row["level_groundings"]) == row["levels"]
+    assert list(row["level_grounding"]) == row["levels"]
 
 
 def test_persist_entry_count_uses_most_specific_lowest_level_count(tmp_path: Path) -> None:
@@ -208,3 +208,40 @@ def test_validate_proposed_artifact_rejects_dem_placeholders_and_missing_counts(
     assert any("DEM" in e for e in errors)
     assert any("placeholder" in e for e in errors)
     assert any("level_counts" in e for e in errors)
+
+
+def test_validate_proposed_artifact_distinguishes_casing_mismatch_from_missing(tmp_path: Path) -> None:
+    # regression: a row where level_counts/level_grounding are present but under different
+    # casing than the levels list (the exact bug class that broke a real merge this session --
+    # "infectious disease" in levels vs "Infectious disease" in level_counts) must fail with a
+    # message that says "casing mismatch", not the generic "missing" message that gives no hint
+    # the fix is reconciling case, not adding a genuinely absent count.
+    proposed = tmp_path / "casing.proposed.json"
+    proposed.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "created": "2026-07-07",
+                "artifact_role": "proposal",
+                "proposal_scope": "producer-processed-only",
+                "profiles": {
+                    "health-condition": {
+                        "chlamydia": {
+                            "aliases": [],
+                            "levels": ["infectious disease"],
+                            "source_ids": [],
+                            "count": 1400.0,
+                            "level_counts": {"Infectious disease": 1400.0},
+                            "level_grounding": {"Infectious disease": {"status": "certifying"}},
+                        }
+                    }
+                },
+            }
+        )
+    )
+
+    errors = validate_proposed_artifact(proposed)
+
+    assert any("level_counts casing mismatch (found 'Infectious disease')" in e for e in errors)
+    assert any("level_grounding casing mismatch (found 'Infectious disease')" in e for e in errors)
+    assert not any("missing level_counts" in e for e in errors)

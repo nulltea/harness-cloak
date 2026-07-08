@@ -61,6 +61,39 @@ def _clean_incoming_row(runtime_type: str, row: dict) -> dict:
     return out
 
 
+def _merge_level_counts(existing: dict, incoming: dict, casing_by_norm: dict[str, str]) -> tuple[dict, dict]:
+    """Fold incoming per-level counts/grounding into existing. An explicit level_counts value
+    is an absolute estimate for that generalization tier (not a per-surface frequency), so a
+    new level from incoming is simply added; a level present on both sides keeps whichever side
+    is certifying (real, source-backed) over a merely model-proposed guess, preferring the
+    existing side on a tie so repeated merges are stable.
+
+    `casing_by_norm` is the normalized-text -> chosen-casing map from the already-merged
+    `levels` list (see _merge_unique_preserve_order). level_counts/level_grounding keys must be
+    remapped through it: the levels merge keeps whichever side's casing it saw first (e.g.
+    existing "infectious disease" beats incoming "Infectious disease"), and copying incoming's
+    level_counts keys verbatim would silently produce a dict keyed by casing that doesn't match
+    any entry in the final `levels` list.
+    """
+
+    def _final(level: str) -> str:
+        return casing_by_norm.get(_norm(level), level)
+
+    merged_counts = {_final(level): value for level, value in (existing.get("level_counts") or {}).items()}
+    merged_grounding = {_final(level): g for level, g in (existing.get("level_grounding") or {}).items()}
+    incoming_counts = incoming.get("level_counts") or {}
+    incoming_grounding = incoming.get("level_grounding") or {}
+    for level, value in incoming_counts.items():
+        final_level = _final(level)
+        existing_status = (merged_grounding.get(final_level) or {}).get("status")
+        incoming_status = (incoming_grounding.get(level) or {}).get("status")
+        if final_level not in merged_counts or (incoming_status == "certifying" and existing_status != "certifying"):
+            merged_counts[final_level] = value
+            if level in incoming_grounding:
+                merged_grounding[final_level] = incoming_grounding[level]
+    return merged_counts, merged_grounding
+
+
 def _merge_row(runtime_type: str, existing_canonical: str, existing: dict, incoming_canonical: str, incoming: dict) -> dict:
     aliases = list(existing.get("aliases", []))
     if runtime_type != "drug" and _norm(incoming_canonical) != _norm(existing_canonical):
@@ -76,12 +109,28 @@ def _merge_row(runtime_type: str, existing_canonical: str, existing: dict, incom
     )
     if runtime_type == "drug":
         source_ids = list(existing.get("source_ids", []))[:DRUG_SOURCE_ID_LIMIT]
-    return {
+    merged_levels = _merge_unique_preserve_order(list(existing.get("levels", [])), list(incoming.get("levels", [])))
+    casing_by_norm = {_norm(level): level for level in merged_levels}
+    level_counts, level_grounding = _merge_level_counts(existing, incoming, casing_by_norm)
+    if level_counts:
+        # existing-then-incoming concatenation order doesn't know which side is narrower --
+        # e.g. existing's sole level "infectious disease" (a broad category) would otherwise
+        # stay first even when incoming contributes a genuinely narrower "sexually transmitted
+        # infection" with a smaller count. Reorder by the now-resolved counts instead (same
+        # "reorder, don't clamp" principle coherence.py's PAVA pass uses) -- a level with no
+        # count at all is conservatively pushed to the end rather than guessed at.
+        merged_levels = sorted(merged_levels, key=lambda level: level_counts.get(level, float("inf")))
+    row = {
         "aliases": sorted(aliases, key=_norm),
-        "levels": _merge_unique_preserve_order(list(existing.get("levels", [])), list(incoming.get("levels", []))),
+        "levels": merged_levels,
         "source_ids": source_ids,
         "count": max(float(existing.get("count", 1.0) or 1.0), float(incoming.get("count", 1.0) or 1.0)),
     }
+    if level_counts:
+        row["level_counts"] = level_counts
+    if level_grounding:
+        row["level_grounding"] = level_grounding
+    return row
 
 
 def merge_profile_artifacts(common_artifact: dict, mined_artifact: dict, *, created: str | None = None) -> dict:

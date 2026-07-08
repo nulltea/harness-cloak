@@ -124,6 +124,75 @@ def test_lookup_indexes_aliases_and_level_counts(tmp_path):
     assert lookup_count("media worker", "profession", path) == 1000.0
 
 
+def test_lookup_level_count_aggregates_multiple_profile_rows(tmp_path):
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "aspirin": {"aliases": [], "levels": ["medication"], "source_ids": [], "count": 4.0},
+        "ibuprofen": {"aliases": [], "levels": ["medication"], "source_ids": [], "count": 7.0},
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+
+    assert lookup_count("medication", "drug", path) == 11.0
+
+
+def test_lookup_count_prefers_explicit_level_counts_over_scalar_sum(tmp_path):
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "aspirin": {"aliases": [], "levels": ["medication"], "source_ids": [], "count": 4.0},
+        "bupropion": {
+            "aliases": [],
+            "levels": ["aminoketone", "medication"],
+            "source_ids": [],
+            "count": 9.0,
+            "level_counts": {"aminoketone": 9.0, "medication": 10999.71},
+            "level_grounding": {
+                "medication": {"status": "certifying", "source_family": "openfda-pharm-class"},
+            },
+        },
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+
+    # an explicit level_counts value on any row sharing the level wins over the legacy
+    # scalar-count sum from rows that only have the old schema.
+    assert lookup_count("medication", "drug", path) == 10999.71
+    assert lookup_count("aminoketone", "drug", path) == 9.0
+
+
+def test_validate_rejects_non_monotone_level_counts():
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "bupropion": {
+            "aliases": [],
+            "levels": ["aminoketone", "medication"],
+            "source_ids": [],
+            "count": 9.0,
+            "level_counts": {"aminoketone": 100.0, "medication": 9.0},
+        },
+    }
+
+    errors = validate_profile_artifact(art)
+    assert any("level_counts not monotone" in e for e in errors)
+
+
+def test_validate_rejects_bad_level_counts():
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "bupropion": {
+            "aliases": [],
+            "levels": ["aminoketone", "medication"],
+            "source_ids": [],
+            "count": 9.0,
+            "level_counts": {"aminoketone": 9.0, "not-a-real-level": 5.0, "medication": 0.5},
+        },
+    }
+
+    errors = validate_profile_artifact(art)
+    assert any("level_counts key not in levels: not-a-real-level" in e for e in errors)
+    assert any("level_counts['medication'] must be >= 1" in e for e in errors)
+
+
 def test_lattice_for_uses_profile_levels(monkeypatch, tmp_path):
     import cloak.lattice as lat
     import cloak.lattice_profiles as lp
