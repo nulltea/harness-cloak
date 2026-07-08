@@ -202,6 +202,39 @@ movers to PASS and so never surfaced that most facts sit at the collapse point.)
 **Not run (deliberately):** Level 2 (joint confirmation) — moot given the Level-1 null; full-corpus
 scope — would reconfirm the flat rate at cost without changing the producer conclusion.
 
+### Ceiling-baseline re-run — MEASURED (2026-07-08, clinical, lattice_profiles.json counts)
+
+The methodology fix above was executed: `context_ablation_labels.py` gained
+`--others-baseline {floor-walk,ceiling}` (ceiling filters `R_walk` to the swept span, so all
+other spans stay original), and the run used the **new per-level counts** from
+`data/lattice_profiles/lattice_profiles.json` (clinical arms re-annotated via
+`annotate_lattice_counts.py`; 67% of level-actions clear floor=100 — no desert). Clinical only,
+n-docs 40, both baselines, on the shared 34-span set:
+
+| baseline | action-dependent | flat@0 (never) | flat@1 (always) |
+|---|---|---|---|
+| floor-walk | 12 (35%) | 17 | 5 |
+| ceiling | 10 (29%) | 14 | 9 |
+
+**The correction was half-right.** 10/34 floor-walk-flat@0 spans DO recover (>0) at ceiling — so
+"never-recovered" is partly a floor-walk artifact, as hypothesized. **But** those spans mostly
+become **flat@1** (fact trivially recovered regardless of the swept span's fill), NOT
+action-dependent — action-dependence *dropped* 35%→29%. So ceiling does not rescue the
+measurement; it trades flat@0 (collapse) for flat@1 (triviality).
+
+**Refined conclusion: neither extreme marginal baseline exposes per-span action value.**
+Floor-walk loses the fact no matter what; ceiling keeps it no matter what. The spans where the
+fill choice moves recall are a ~30% minority at BOTH ends. This is a property of the
+**surface-recall** signal (binary "did the surface survive"), and it directly motivates the
+[task-necessity probe redesign](../../docs/specs/RL/training-task-env.md): granularity-ladder
+probes score *semantic tiers on `out_p`*, which are graded in generalization depth and so
+produce action-dependence where surface own-recall is flat at both extremes. The producer/encoder
+comparison (Finding 2) stays unresolved — but the leverage is confirmed to be the reward/probe
+signal, not the marginal baseline or the context producer. **Caveat:** n=34 shared spans,
+clinical only, validation-scope — directional, not powered.
+
+Artifacts (scratchpad, gitignored): `ablation_clinical_{ceiling,floor-walk}.json`.
+
 ## Connections
 _Edges in `graph/edges.jsonl`; summary for humans:_ tests the π_rank context-injection design in
 the round-trip ranker spec; gates the walk_risk + corpus feature removal (both already decided);

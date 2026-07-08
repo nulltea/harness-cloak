@@ -87,11 +87,22 @@ def main():
     ap.add_argument("--probes", default="data/probes_validated.json")
     ap.add_argument("--n-docs", type=int, default=60,
                     help="docs loaded per corpus; docs beyond the frozen arms artifact are skipped")
+    ap.add_argument("--corpora", default="",
+                    help="comma list to restrict corpora (empty = all in the env)")
+    ap.add_argument("--others-baseline", choices=["floor-walk", "ceiling"], default="floor-walk",
+                    help="what the OTHER spans are held at while one span is swept. floor-walk "
+                         "(original, the utility-collapse point) vs ceiling (others kept original, "
+                         "R filtered to the swept span only) — the 2026-07-08 methodology fix.")
     ap.add_argument("--max-spans", type=int, default=0,
                     help="cap on labelled spans (0 = all probe-bearing spans)")
+    ap.add_argument("--out", default="",
+                    help="output path (default derived: ceiling baseline writes a _ceiling file)")
     ap.add_argument("--workers", type=int, default=6)
     ap.add_argument("--seed", type=int, default=0)
     args = ap.parse_args()
+    out_path = Path(args.out) if args.out else (
+        OUT if args.others_baseline == "floor-walk"
+        else OUT.with_name("context_ablation_labels_ceiling.json"))
 
     art = load_artifact(args.arms)
     env = json.loads(Path(args.env).read_text())
@@ -100,8 +111,11 @@ def main():
     floors = dict(env["k_floors"])
 
     # floor-walk baseline per doc (same walk-order collision rule as the trainer)
+    only = {c.strip() for c in args.corpora.split(",") if c.strip()}
     docs = []
     for corpus, per_doc in env["corpora"].items():
+        if only and corpus not in only:
+            continue
         texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}
         for doc_id, d in per_doc.items():
             probes = probes_all.get(doc_id, {}).get("train", [])
@@ -132,12 +146,23 @@ def main():
             # is downgraded to placeholder, so bc_action may not be the action actually taken.
             base_action = d["floor_choice"][surf.lower()]
             base_idx = next(k for k, a in enumerate(s["actions"]) if a is base_action)
+            # ceiling baseline: hold OTHER spans at original by filtering R_walk to just this
+            # surface's entries, so assemble substitutes only the swept span; floor-walk baseline
+            # keeps the full R_walk + collision-replayed choice for the other spans.
+            ceiling = args.others_baseline == "ceiling"
+            R_walk_use = ([e for e in d["R_walk"] if e["surface"].lower() == surf.lower()]
+                          if ceiling else d["R_walk"])
+            raw_use = ([rs for rs in d["raw_spans"] if rs["surface"].lower() == surf.lower()]
+                       if ceiling else d["raw_spans"])
             for i in s["legal"]:
-                choice = forced_walk_choice(d["spans"], surf.lower(), i)
-                if choice is None:              # forced fill claimed by an earlier span
-                    continue
+                if ceiling:
+                    choice = {surf.lower(): s["actions"][i]}
+                else:
+                    choice = forced_walk_choice(d["spans"], surf.lower(), i)
+                    if choice is None:          # forced fill claimed by an earlier span
+                        continue
                 try:
-                    doc_p, R = assemble(d["text"], d["R_walk"], d["raw_spans"], choice)
+                    doc_p, R = assemble(d["text"], R_walk_use, raw_use, choice)
                 except AssertionError:          # defensive: should not fire post-replay
                     continue
                 jobs.append({"corpus": d["corpus"], "doc_p": doc_p, "R": R, "probes": d["probes"]})
@@ -180,6 +205,8 @@ def main():
 
     out = {"meta": {"rt_model": RT_MODEL, "rt_base_url": RT_BASE_URL,
                     "env": args.env, "arms": args.arms, "probes": args.probes,
+                    "others_baseline": args.others_baseline,
+                    "corpora": sorted(only) if only else "all",
                     "probes_meta": probes_art.get("meta"), "floors": floors,
                     "n_docs": args.n_docs, "feat_dim": 13,
                     "feat_layout": ["is_placeholder", "p6", "level_index", "n_levels",
@@ -187,10 +214,10 @@ def main():
            "n_spans": len(spans),
            "n_flat_spans": sum(1 for s in spans if s["flat"]),
            "spans": spans, "assembly_bundles": bundles}
-    OUT.parent.mkdir(exist_ok=True)
-    OUT.write_text(json.dumps(out, indent=1))
-    print(f"{len(spans)} spans ({out['n_flat_spans']} flat), "
-          f"{len(bundles)} doc bundles -> {OUT}")
+    out_path.parent.mkdir(exist_ok=True)
+    out_path.write_text(json.dumps(out, indent=1))
+    print(f"[{args.others_baseline}] {len(spans)} spans ({out['n_flat_spans']} flat, "
+          f"{out['n_flat_spans']/max(len(spans),1):.0%}), {len(bundles)} bundles -> {out_path}")
 
 
 if __name__ == "__main__":
