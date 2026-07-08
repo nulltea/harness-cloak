@@ -5,8 +5,12 @@ v0): no text encoder, features come entirely from the Phase-0 environment artifa
 (data/ranker_env.json). Spec: docs/specs/RL/surrogate-ranker-infiller.md §2 Phase 1. Upgrade
 path (plan option 1): frozen-encoder span-in-context embeddings appended to FEATURES.
 
-Action features: [is_placeholder, walk_risk, p6, level_index/4, n_levels/4,
-                  log10_aset/9, log10_active_floor/9, type one-hot (7), corpus one-hot (3)]
+Action features: [is_placeholder, p6, level_index/4, n_levels/4,
+                  log10_aset/9, log10_active_floor/9, type one-hot (len(TYPES))]
+walk_risk (privacy scalar, ungradable under the utility-only reward) and the corpus one-hot
+(train/deploy skew — no corpus label at deployment) were removed 2026-07-08 per the spec's
+pre-pilot cleanup notes; the encoder CLS is the sole context channel. walk_risk stays in the
+env artifact as an offline diagnostic, just not fed to the policy.
 """
 import math
 
@@ -16,26 +20,24 @@ import torch.nn as nn
 from cloak.runtime_types import FINE_DEM_TYPES
 
 TYPES = ["DEM", "DATETIME", "LOC", "QUANTITY", "ORG", "MISC", *FINE_DEM_TYPES, "OTHER"]
-CORPORA = ["clinical", "enron", "aeslc", "lexsum", "wikibio"]
-N_FEAT = 7 + len(TYPES) + len(CORPORA)
+N_FEAT = 6 + len(TYPES)
 
 
-def action_features(span: dict, corpus: str, floor: float = 1.0) -> torch.Tensor:
+def action_features(span: dict, corpus: str | None = None, floor: float = 1.0) -> torch.Tensor:
     """(n_actions, N_FEAT) feature matrix for one decision span. `floor` is the active
     per-type anonymity-set count floor (the operating knob), fed so the policy can be
-    conditioned on it under --randomize-floors."""
+    conditioned on it under --randomize-floors. `corpus` is accepted but unused (the corpus
+    one-hot was removed) — kept in the signature for call-site stability."""
     t_oh = [0.0] * len(TYPES)
     t_oh[TYPES.index(span["type"]) if span["type"] in TYPES else TYPES.index("OTHER")] = 1.0
-    c_oh = [0.0] * len(CORPORA)
-    c_oh[CORPORA.index(corpus)] = 1.0
     n_lvl = sum(a["mode"] == "level" for a in span["actions"])
     rows = []
     for i, a in enumerate(span["actions"]):
         rows.append([1.0 if a["mode"] == "placeholder" else 0.0,
-                     a["walk_risk"], a["p6"], min(i, 4) / 4.0, min(n_lvl, 4) / 4.0,
+                     a["p6"], min(i, 4) / 4.0, min(n_lvl, 4) / 4.0,
                      math.log10(max(a.get("aset", 1e9), 1.0)) / 9.0,
                      math.log10(max(floor, 1.0)) / 9.0]
-                    + t_oh + c_oh)
+                    + t_oh)
     return torch.tensor(rows, dtype=torch.float32)
 
 
@@ -144,7 +146,7 @@ if __name__ == "__main__":
     legal = [1, 2]
     f = action_features(span, "clinical", floor=100.0)
     assert f.shape == (3, N_FEAT)
-    assert f[0, 6] == f[1, 6] and f[0, 6] > 0.0            # active-floor feature, shared
+    assert f[0, 5] == f[1, 5] and f[0, 5] > 0.0            # active-floor feature (idx 5), shared
     pi = RankerPolicy()
     lp = pi.log_probs(f, legal)
     assert lp.shape == (2,) and torch.allclose(lp.exp().sum(), torch.tensor(1.0), atol=1e-5)

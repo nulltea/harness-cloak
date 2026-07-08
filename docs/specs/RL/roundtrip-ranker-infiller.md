@@ -163,20 +163,21 @@ within a doc. Two interchangeable backbones share the identical feature contract
 ### The per-action feature row (`action_features`, `cloak/train/ranker.py`)
 
 `action_features(span, corpus, floor) → tensor[n_actions, N_FEAT]`, one row per candidate
-action (lattice levels ∪ placeholder). **`N_FEAT = 7 scalars + 7 type-one-hot + 5 corpus-one-hot
-= 19`** (was 17 pre-`aeslc`/`wikibio`; corpora grew 3→5).
+action (lattice levels ∪ placeholder). **`N_FEAT = 6 scalars + len(TYPES) type-one-hot = 24`**
+(`len(TYPES) = 18`: DEM·DATETIME·LOC·QUANTITY·ORG·MISC + 11 fine-DEM types + OTHER). walk_risk
+and the corpus one-hot were **removed 2026-07-08** (landed in `cloak/train/ranker.py`); the
+per-pilot cleanup notes below are now history, kept for the rationale. `corpus` remains an
+(unused) parameter for call-site stability.
 
 | idx | feature | formula | encodes | context-dependent? |
 |-----|---------|---------|---------|--------------------|
 | 0 | is_placeholder | `1.0` iff placeholder | the drop-everything action | no |
-| 1 | walk_risk | `a["walk_risk"]` | contrastive re-id risk of the fill *in its sentence* | **yes** (slated for removal — see note) |
-| 2 | p6 | `fill_proximity(fill,orig)` = cos_MiniLM | fill↔original semantic closeness | no (context-blind by construction) |
-| 3 | level_index | `min(i,4)/4` | the action's depth in the lattice (0 = most specific) | no |
-| 4 | n_levels | `min(n_lvl,4)/4` | how many level actions this span offers | no |
-| 5 | log10_aset | `log10(max(aset,1))/9` | anonymity-set size of the fill | no |
-| 6 | log10_active_floor | `log10(max(floor,1))/9` | the per-type operating floor (privacy knob; fed so the policy can condition on it under floor-randomization) | no |
-| 7–13 | type one-hot | DEM·DATETIME·LOC·QUANTITY·ORG·MISC·OTHER | the span's PII type | no |
-| 14–18 | corpus one-hot | clinical·enron·aeslc·lexsum·wikibio | the source corpus | no (doc-level, not span) |
+| 1 | p6 | `fill_proximity(fill,orig)` = cos_MiniLM | fill↔original semantic closeness | no (context-blind by construction) |
+| 2 | level_index | `min(i,4)/4` | the action's depth in the lattice (0 = most specific) | no |
+| 3 | n_levels | `min(n_lvl,4)/4` | how many level actions this span offers | no |
+| 4 | log10_aset | `log10(max(aset,1))/9` | anonymity-set size of the fill | no |
+| 5 | log10_active_floor | `log10(max(floor,1))/9` | the per-type operating floor (privacy knob; fed so the policy can condition on it under floor-randomization) | no |
+| 6–23 | type one-hot | DEM·DATETIME·LOC·QUANTITY·ORG·MISC · 11 fine-DEM · OTHER | the span's PII type | no |
 
 Scalars 0–5 and the one-hots are precomputed offline into the arms artifact at env-build
 (`build_arms_artifact.action_table`); the trainer reads cached values and adds only
@@ -284,7 +285,7 @@ Consequences:
   validating it (no ablation has run; the frozen raw-CLS representation is unproven, and a
   contrastively-trained embedder + mean-pool is the principled upgrade if it underperforms).
 
-### Note — walk_risk as a policy feature (status: live in code, slated for removal before the pilot)
+### Note — walk_risk as a policy feature (status: REMOVED 2026-07-08; rationale retained)
 
 walk_risk was a deliberate feature under the *old* reward
 ([structural-lattice-risk plan](2026-07-04-structural-lattice-risk.md), Task 4 kept
@@ -302,7 +303,7 @@ positioning — an unpriced cost, since "offline-only" held for the *legality pa
 offline diagnostic already designated). Optional confirmation: train the pilot both ways and
 report the (expected-null) delta. *Until that edit lands, index 1 above is live.*
 
-### Note — corpus one-hot (slated for removal, deployment generality)
+### Note — corpus one-hot (status: REMOVED 2026-07-08, deployment generality; rationale retained)
 
 The corpus one-hot (idx 14–18) is a **train/deploy skew** feature: at deployment the layer
 receives an arbitrary user document with **no corpus label**, so the one-hot cannot be filled
