@@ -75,10 +75,14 @@ this record (Phase-5 attacker is separate).
 
 ## Cost / bottleneck (measured, pre-flight)
 Reward round-trip ~5.5 rt/s (scan) and no catastrophic gemma↔reader swap-thrash (co-resident).
-On high-probe docs the **serial reader dominates** (~1 rt/s at ~13 probes/doc) — the RL-loop
-optimization is reader parallelism *across* rollouts (serial *within* a context); not yet wired
-into `train_ranker`'s reward loop. Full-scale runs should measure whether the reader dominates
-wall before scaling.
+On high-probe docs the **serial reader dominates** (~1 rt/s at ~13 probes/doc). Reader
+parallelism *across* rollouts (serial *within* a context, for prefix-KV reuse) **is already
+wired** into `train_ranker`'s reward loop — verified 2026-07-08: `exit_round` batches the whole
+corpus (all docs × (baseline + G rollouts)) into one `roundtrip_batch`, and the RLOO loop
+batches per-doc (G jobs); `roundtrip_batch`'s pmap fans those across the served slots. The
+genuine open item is a **measurement** — does the reader dominate wall at full scale? — not more
+wiring. Minor unfilled slots: the counterfactual `base_r` call is a single-job batch
+(`train_ranker.py:331`) and `--rt-workers` defaults to 8 vs the served `-np 6` slots.
 
 ## Risks & caveats
 - **Placeholder-gaming / QA-necessity** (open, pilot proceeds with current impl):
