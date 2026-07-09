@@ -645,7 +645,9 @@ def load_mlm(device: str = "cpu"):
 
     model_id = EXTRACTOR_PINS["models"]["mlm"]
     tokenizer = AutoTokenizer.from_pretrained(model_id)
-    model = AutoModelForMaskedLM.from_pretrained(model_id).to(device)
+    # device_map (not .to): transformers 5.x lazy-loads params on the meta device and
+    # .to() cannot copy out of meta tensors when targeting an accelerator
+    model = AutoModelForMaskedLM.from_pretrained(model_id, device_map=device)
     model.eval()
     return MaskedLanguageModelPLL(tokenizer, model, device=device)
 
