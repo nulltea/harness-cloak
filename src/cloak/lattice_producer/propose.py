@@ -22,21 +22,42 @@ QWEN36_THINKING_BUDGET_TOKENS = 2048
 _RETRYABLE = (APITimeoutError, APIConnectionError, RateLimitError)
 
 
+def _has_choices(response) -> bool:
+    return bool(getattr(response, "choices", None))
+
+
+def _response_content(response) -> str:
+    """Content of the first choice, or "{}" when the provider returned no usable choices (a free
+    endpoint can return an error/empty payload with choices=None that doesn't raise)."""
+    if not _has_choices(response):
+        return "{}"
+    return response.choices[0].message.content or "{}"
+
+
 def _create_with_retry(client, *, model, request_kwargs, attempts=4, base_timeout=600):
     """Bounded retry around a single chat completion. Escalates the per-call timeout each attempt
-    and sleeps a short backoff between tries (so a transient 429/timeout from a rate-limited free
-    endpoint rides through instead of killing the run). Re-raises the last error after `attempts`."""
-    last = None
+    and sleeps a short backoff between tries, so a transient 429/timeout OR an empty (no-choices)
+    payload from a rate-limited free endpoint rides through instead of killing the run. On a real
+    transport error it re-raises after `attempts`; on a persistently empty response it returns that
+    response so the caller degrades to a no-candidates diagnostic rather than crashing."""
+    last_exc = None
+    last_empty = None
     for attempt in range(attempts):
         try:
-            return client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=model, timeout=base_timeout * (attempt + 1), **request_kwargs
             )
         except _RETRYABLE as exc:
-            last = exc
-            if attempt < attempts - 1:
-                time.sleep(min(5.0 * (attempt + 1), 30.0))
-    raise last
+            last_exc = exc
+        else:
+            if _has_choices(response):
+                return response
+            last_empty = response
+        if attempt < attempts - 1:
+            time.sleep(min(5.0 * (attempt + 1), 30.0))
+    if last_empty is not None:
+        return last_empty
+    raise last_exc
 
 
 def _load_profiles(path: str | Path) -> dict:
@@ -319,11 +340,10 @@ def propose_with_llama_swap(
     elif thinking_budget_tokens >= 0:
         request_kwargs["extra_body"] = {"thinking_budget_tokens": thinking_budget_tokens}
     response = _create_with_retry(client, model=model, request_kwargs=request_kwargs)
-    content = response.choices[0].message.content or "{}"
-    payload = _parse_model_json(content)
+    payload = _parse_model_json(_response_content(response))
     if payload.get("parse_error") and escalation_model:
         response = _create_with_retry(client, model=escalation_model, request_kwargs=request_kwargs)
-        payload = _parse_model_json(response.choices[0].message.content or "{}")
+        payload = _parse_model_json(_response_content(response))
     payload["cache_key"] = cache_key
     payload["context_packet_hash"] = packet["context_packet_hash"]
     payload["model_used"] = model
