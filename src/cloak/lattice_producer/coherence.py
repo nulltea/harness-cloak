@@ -30,7 +30,6 @@ from __future__ import annotations
 
 import bisect
 import json
-import math
 import re
 import statistics
 from collections import defaultdict
@@ -178,43 +177,6 @@ def _rank_order(rank: dict[str, float], baseline: dict[str, float], anchored: se
     return sorted(rank, key=lambda label: (slot_of(label), rank[label], baseline.get(label, 1.0)))
 
 
-def enforce_log_gap_band(
-    ordered_labels: list[str],
-    final_count: dict[str, float],
-    fixed_labels: set[str],
-    *,
-    min_decades: float = 0.3,
-    max_decades: float = 2.0,
-) -> dict[str, float]:
-    """Push model-proposed level counts onto a coherent log-spaced curve WITHOUT moving any
-    fixed (certifying/anchored) count. Walks the corpus-consensus order; for each non-fixed
-    label, clamps its count into [prev*10**min_decades, prev*10**max_decades]. Fixed labels are
-    left exactly as-is and reset the running predecessor, so real member-set counts stay pinned
-    (empirical-honesty rule) and only the model's own guesses are reshaped."""
-    out = dict(final_count)
-    prev = None
-    for label in ordered_labels:
-        value = out[label]
-        if label in fixed_labels:
-            prev = value
-            continue
-        if prev is not None and prev > 0:
-            lo = prev * (10.0 ** min_decades)
-            hi = prev * (10.0 ** max_decades)
-            # round *toward* the band interior for clamped values so the log-gap invariant
-            # (>= min_decades, <= max_decades) survives the 2-decimal tidy-up; plain round(,2)
-            # would nudge a lower-clamped count back below the floor.
-            if value < lo:
-                value = math.ceil(lo * 100.0) / 100.0
-            elif value > hi:
-                value = math.floor(hi * 100.0) / 100.0
-            else:
-                value = round(value, 2)
-            out[label] = value
-        prev = out[label]
-    return out
-
-
 def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[str, Any]:
     """Mutates `entries` (a runtime type's profiles dict) in place: canonicalizes/dedupes each
     entry's levels chain, resolves one coherent count per canonical label for the whole set of
@@ -282,8 +244,6 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
     ordered_labels = _rank_order(rank, baseline, anchored_labels)
     label_position = {label: idx for idx, label in enumerate(ordered_labels)}
     final_count = _weighted_pava(ordered_labels, baseline, weight)
-    fixed_labels = set(anchored_labels) | set(real_certifying_value)
-    final_count = enforce_log_gap_band(ordered_labels, final_count, fixed_labels)
 
     reordered_count = 0
     for key, deduped in canonical_by_entry.items():
