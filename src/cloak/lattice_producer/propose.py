@@ -10,13 +10,29 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from openai import OpenAI
+from openai import APIConnectionError, APITimeoutError, OpenAI
 
 from cloak.lattice_producer.io import atomic_write_json
 from cloak.lattice_producer.vocabulary import CanonicalVocabulary
 
 QWEN36_MODEL = "Qwen3.6-35B-A3B"
 QWEN36_THINKING_BUDGET_TOKENS = 2048
+
+_RETRYABLE = (APITimeoutError, APIConnectionError)
+
+
+def _create_with_retry(client, *, model, request_kwargs, attempts=3, base_timeout=600):
+    """Bounded retry around a single chat completion. Escalates the per-call timeout each
+    attempt (600s, 1200s, 1800s by default) and re-raises the last error after `attempts`."""
+    last = None
+    for attempt in range(attempts):
+        try:
+            return client.chat.completions.create(
+                model=model, timeout=base_timeout * (attempt + 1), **request_kwargs
+            )
+        except _RETRYABLE as exc:
+            last = exc
+    raise last
 
 
 def _load_profiles(path: str | Path) -> dict:
@@ -226,11 +242,11 @@ def propose_with_llama_swap(
     }
     if thinking_budget_tokens >= 0:
         request_kwargs["extra_body"] = {"thinking_budget_tokens": thinking_budget_tokens}
-    response = client.chat.completions.create(model=model, **request_kwargs)
+    response = _create_with_retry(client, model=model, request_kwargs=request_kwargs)
     content = response.choices[0].message.content or "{}"
     payload = _parse_model_json(content)
     if payload.get("parse_error") and escalation_model:
-        response = client.chat.completions.create(model=escalation_model, **request_kwargs)
+        response = _create_with_retry(client, model=escalation_model, request_kwargs=request_kwargs)
         payload = _parse_model_json(response.choices[0].message.content or "{}")
     payload["cache_key"] = cache_key
     payload["context_packet_hash"] = packet["context_packet_hash"]

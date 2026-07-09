@@ -30,7 +30,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--max-generated-entries-per-category", type=int, default=20)
     parser.add_argument("--max-context-rows", type=int, default=8)
-    parser.add_argument("--thinking-budget-tokens", type=int, default=-1)
+    parser.add_argument("--thinking-budget-tokens", type=int, default=2048)
     parser.add_argument("--category", action="append", default=[])
     args = parser.parse_args(argv)
     args.category = normalize_category_filters(categories=args.category)
