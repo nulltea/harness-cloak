@@ -104,8 +104,30 @@ PRESIDIO_MAP = {
     # URL deliberately unmapped: Reddit ellipses ("here...co") false-positive as .co domains
 }
 
-_PRONOUNS = {"i", "me", "my", "mine", "you", "your", "he", "him", "his", "she", "her",
-             "it", "its", "we", "us", "our", "they", "them", "their", "rn", "ngl"}
+_PRONOUNS = frozenset({"i", "me", "my", "mine", "you", "your", "he", "him", "his", "she",
+                       "her", "it", "its", "we", "us", "our", "they", "them", "their"})
+_SLANG_STOP = frozenset({"rn", "ngl"})  # chat slang; but "RN" = registered nurse in clinical text
+
+
+@dataclass(frozen=True)
+class DetectorProfile:
+    """Per-corpus detector configuration: which stop words suppress detected spans and
+    whether the custom pattern recognizers (REF_CODE, MONEY) are registered. Those regexes
+    are right for reddit/legal text but misfire on clinical vitals (120/80) and ranges."""
+    name: str
+    slang_stop_words: bool
+    custom_recognizers: bool
+
+
+PROFILES = {
+    "reddit": DetectorProfile("reddit", slang_stop_words=True, custom_recognizers=True),
+    "legal": DetectorProfile("legal", slang_stop_words=False, custom_recognizers=True),
+    "clinical": DetectorProfile("clinical", slang_stop_words=False, custom_recognizers=False),
+}
+
+
+def _stop_words(profile: DetectorProfile) -> frozenset[str]:
+    return _PRONOUNS | _SLANG_STOP if profile.slang_stop_words else _PRONOUNS
 
 
 @dataclass
@@ -195,7 +217,8 @@ class Detector:
     # the record's cross-domain operating point (TAB's own op point is 0.02, corpus-specific).
     # Stock fallback: gliner_model="urchade/gliner_small-v2.1".
     def __init__(self, gliner_model: str = "data/models/pii_gliner_multidomain/checkpoint-2479",
-                 threshold: float = 0.3, batch_size: int = 16, fine_dem: bool = False):
+                 threshold: float = 0.3, batch_size: int = 16, fine_dem: bool = False,
+                 profile: str = "reddit"):
         import torch
         from gliner import GLiNER
         from presidio_analyzer import AnalyzerEngine
@@ -210,22 +233,25 @@ class Detector:
         if torch.cuda.is_available():
             self.gliner = self.gliner.to("cuda")
         self.presidio = AnalyzerEngine()
-        from presidio_analyzer import Pattern, PatternRecognizer
-        self.presidio.registry.add_recognizer(PatternRecognizer(
-            supported_entity="REF_CODE", name="numeric_reference",
-            patterns=[Pattern("num-slash-num", r"\b\d{3,6}/\d{2,4}\b", 0.6)]))
-        _numword = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
-                    r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
-                    r"thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|"
-                    r"million|billion|and|a)")
-        self.presidio.registry.add_recognizer(PatternRecognizer(
-            supported_entity="MONEY", name="money_amount",
-            patterns=[Pattern("amount-currency",
-                              r"(?:[$€£]\s?[\d,]+(?:\.\d+)?[kKmM]?|\b[\d,]+(?:\.\d+)?[kKmM]?\s?"
-                              r"(?:dollars?|euros?|pounds?|USD|EUR|GBP|NOK|kr)\b)", 0.6),
-                      Pattern("bare-k-amount", r"\b\d{1,4}(?:\.\d+)?[kKmM]\b", 0.4),
-                      Pattern("spelled-amount",
-                              rf"(?i)\b(?:{_numword}[\s-]+){{1,6}}(?:dollars?|euros?|pounds?)\b", 0.6)]))
+        self.profile = PROFILES[profile]
+        self.stop_words = _stop_words(self.profile)
+        if self.profile.custom_recognizers:
+            from presidio_analyzer import Pattern, PatternRecognizer
+            self.presidio.registry.add_recognizer(PatternRecognizer(
+                supported_entity="REF_CODE", name="numeric_reference",
+                patterns=[Pattern("num-slash-num", r"\b\d{3,6}/\d{2,4}\b", 0.6)]))
+            _numword = (r"(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|"
+                        r"thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|"
+                        r"thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|"
+                        r"million|billion|and|a)")
+            self.presidio.registry.add_recognizer(PatternRecognizer(
+                supported_entity="MONEY", name="money_amount",
+                patterns=[Pattern("amount-currency",
+                                  r"(?:[$€£]\s?[\d,]+(?:\.\d+)?[kKmM]?|\b[\d,]+(?:\.\d+)?[kKmM]?\s?"
+                                  r"(?:dollars?|euros?|pounds?|USD|EUR|GBP|NOK|kr)\b)", 0.6),
+                          Pattern("bare-k-amount", r"\b\d{1,4}(?:\.\d+)?[kKmM]\b", 0.4),
+                          Pattern("spelled-amount",
+                                  rf"(?i)\b(?:{_numword}[\s-]+){{1,6}}(?:dollars?|euros?|pounds?)\b", 0.6)]))
         self.labels = list(self.label2type)
 
     def detect(self, text: str) -> list[Span]:
@@ -244,8 +270,8 @@ class Detector:
                 rec = (r.recognition_metadata or {}).get("recognizer_name", "")
                 src = "presidio" if rec == "SpacyRecognizer" else "presidio-pattern"
                 spans.append(Span(r.start, r.end, text[r.start:r.end], t, r.score, src))
-        spans = [s for s in spans  # pure symbol/emoji spans or bare pronouns: never identifiers
-                 if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in _PRONOUNS]
+        spans = [s for s in spans  # pure symbol/emoji spans or bare stop words: never identifiers
+                 if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in self.stop_words]
         return _dedupe(spans)
 
 
