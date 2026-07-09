@@ -5,9 +5,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import time
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # sibling-script import from any cwd
 
 from cloak import frozen_extractor as fx
 from extractor_determinism_gate import (
@@ -37,7 +40,8 @@ def run_benchmark(args: argparse.Namespace) -> dict:
         fx.extract(record["doc_p"], record["R"], record["out_p"], models=models)
 
     cuda_peak = None
-    torch = _try_torch()
+    # stub mode must not import torch at all (determinism-gate parity with --stub)
+    torch = None if args.stub else _try_torch()
     if torch is not None and _cuda_available(torch):
         try:
             torch.cuda.reset_peak_memory_stats()
