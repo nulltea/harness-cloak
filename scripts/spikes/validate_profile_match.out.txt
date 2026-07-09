@@ -1,0 +1,70 @@
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 4583.28it/s]
+Loading weights:   0%|          | 0/202 [00:00<?, ?it/s]Loading weights: 100%|██████████| 202/202 [00:00<00:00, 17566.13it/s]
+
+query                  type             gold                   matched                  sim kind     nlv result
+---------------------------------------------------------------------------------------------------------------
+heart murmurs          health-condition heart murmur           heart murmur           0.955 semantic   3 PASS  
+heart problem          health-condition heart problems         heart problems         0.952 semantic   2 PASS  
+aspirins               drug             aspirin                aspirin                0.934 semantic   2 PASS  
+a cataract             health-condition cataract               cataract               0.935 semantic   4 PASS  
+an aspirin             drug             aspirin                aspirin                0.903 semantic   3 PASS  
+diabetes.              health-condition diabetes mellitus      diabetes mellitus      0.877 semantic   2 PASS  
+metformin.             drug             metformin              metformin              0.909 semantic   2 PASS  
+aagenes syndrome       health-condition aagenaes syndrome      aagenaes syndrome      0.962 semantic   4 PASS  
+ibuprofin              drug             ibuprofen              ibuprofen              0.779 semantic   3 PASS  
+diabetic               health-condition diabetes mellitus      diabetes mellitus      0.837 semantic   2 PASS  
+hypertensive           health-condition hypertension           hypertension           0.907 semantic   3 PASS  
+severe asthma          health-condition asthma                 asthma                 0.846 semantic   4 PASS  
+intravenous morphine   drug             morphine               morphine               0.872 semantic   5 PASS  
+belly scan             health-condition abdominal ct           abdominal ct           0.857 semantic   4 PASS  
+blood thinner          drug             warfarin               blood thinners         0.950 semantic   3 FAIL  
+zxqwvbn plooghor       health-condition ABSTAIN                None                   0.000 -          0 PASS  
+ibuprofen              health-condition ABSTAIN                None                   0.000 -          0 PASS  
+suspected cancer       health-condition ABSTAIN                cancer                 0.789 semantic   2 FAIL  
+possible fracture      health-condition ABSTAIN                None                   0.879 -          0 PASS  
+malaria                health-condition ABSTAIN                influenza              0.741 semantic   3 FAIL  
+
+RETRIEVAL CANDIDATES (canonical@sim, top-k>=SIM_FLOOR; empty = retrieval miss):
+  heart murmurs          plural                 -> heart murmur@0.955, carotid bruits@0.829, bilateral heart sounds@0.822  [gold retrieved]
+  heart problem          plural                 -> heart problems@0.952, heart related problems@0.908, heart condition@0.867  [gold retrieved]
+  aspirins               plural                 -> aspirin@0.934, ap@0.934  [gold retrieved]
+  a cataract             article                -> cataract@0.935, eye problems@0.726  [gold retrieved]
+  an aspirin             article                -> aspirin@0.903, ap@0.903  [gold retrieved]
+  diabetes.              punct                  -> diabetes mellitus@0.877, blood sugar@0.836, blood sugars@0.825  [gold retrieved]
+  metformin.             punct                  -> metformin@0.909, glimepiride@0.791, insulin human@0.784  [gold retrieved]
+  aagenes syndrome       typo                   -> aagenaes syndrome@0.962, amme complex@0.743, andersen-tawil syndrome@0.738  [gold retrieved]
+  ibuprofin              typo                   -> ibuprofen@0.779, ep@0.727  [gold retrieved]
+  diabetic               morphology             -> diabetes mellitus@0.837, diabetic neuropathy@0.788, diabetic control@0.785, blood sugar@0.780  [gold retrieved]
+  hypertensive           morphology             -> hypertension@0.907, blood pressure problems@0.897, b p h@0.897, high blood pressure@0.897  [gold retrieved]
+  severe asthma          modifier               -> asthma@0.846, allergic asthma@0.806  [gold retrieved]
+  intravenous morphine   modifier               -> morphine@0.872, iv drugs@0.856, intravenous antibiotics@0.823, i v drugs@0.820  [gold retrieved]
+  belly scan             synonym                -> abdominal ct@0.857, abdomen@0.835, ct@0.806, belly pain@0.794, abdominal pain@0.794  [gold retrieved]
+  blood thinner          synonym                -> blood thinners@0.950, blood pressure medicine@0.775, blood pressure pill@0.775, blood pressure medication@0.764  [GOLD MISSED]
+  zxqwvbn plooghor       gibberish              -> (none above floor)
+  ibuprofen              wrong-type             -> (none above floor)
+  suspected cancer       non-entailed-modifier  -> cancer@0.789, carcinoma@0.765, abnormal growth@0.760, health conditions@0.751
+  possible fracture      non-entailed-modifier  -> fractures@0.879, fracture@0.879, acute fracture@0.833
+  malaria                novel-absent           -> influenza@0.741, illnesses@0.737
+
+============================================================
+SUMMARY
+============================================================
+positives: 15   negatives: 5
+proposer recall (gold in top-k >= 0.7): 14/15 = 0.93
+certified precision (of returned matches, frac == gold): 14/17 = 0.82
+positive end-to-end pass (returned == gold): 14/15 = 0.93
+abstain correctness on negatives: 3/5 = 0.60
+
+per-failure-mode (positives): pass / total
+  plural           3/3  types=['drug', 'health-condition']
+  article          2/2  types=['drug', 'health-condition']
+  punct            2/2  types=['drug', 'health-condition']
+  typo             2/2  types=['drug', 'health-condition']
+  morphology       2/2  types=['health-condition']
+  modifier         2/2  types=['drug', 'health-condition']
+  synonym          1/2  types=['drug', 'health-condition']
+
+TIMINGS
+  index build (incl. corpus embed): 3.55s  (corpus embed 3.53s for 4378 surfaces)
+  query embedding: 0.23s for 19 unique queries
+  NLI: 8.81s over ~70 hypotheses (pairs counted before gate's self-ref/degenerate drop)
