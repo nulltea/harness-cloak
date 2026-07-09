@@ -94,6 +94,14 @@ def assemble_context_packet(
             "referent among several equally plausible ones and report \"high\" anyway."
         ),
         "required_level_fields": ["level", "proposed_count", "count_evidence", "selector", "rationale", "reused_canonical_label"],
+        "min_levels": 2,
+        "count_semantics_instruction": (
+            "proposed_count is an ANONYMITY-SET SIZE: the number of DISTINCT entities of this "
+            "runtime_type that generalize to this level (e.g. how many distinct medical "
+            "conditions fall under 'metabolic disorder'). It is NOT how many people are affected, "
+            "NOT prevalence, NOT disease burden, NOT market size. Typical values are small: a "
+            "specific class holds a handful to a few hundred distinct members, not millions."
+        ),
         "nearby_profile_rows": relevant,
         "canonical_vocabulary_slice": vocabulary_slice,
         "canonical_vocabulary_instruction": (
@@ -233,6 +241,10 @@ def propose_with_llama_swap(
         "Include aliases for the entry. Include candidate levels ordered from nearest truthful generalization "
         "to broadest useful generalization. For every level include proposed_count, count_evidence, selector, "
         "and rationale. Proposed counts are evidence for review, not certified counts; do not label them certified.\n\n"
+        "Provide AT LEAST TWO ordered levels: the nearest truthful generalization and at least "
+        "one broader tier, each semantically close to its neighbor (no jump straight to a "
+        "universal catch-all). proposed_count is an anonymity-set size (count of DISTINCT "
+        "entities under the level), never a count of people or prevalence.\n\n"
         + json.dumps(packet, sort_keys=True)
     )
     request_kwargs = {
