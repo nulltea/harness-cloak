@@ -95,6 +95,8 @@ class _Index:
         return self._by_type.get(runtime_type, [])
 
 
+# Cache keyed on paths, not content: an in-process profile rewrite at the same path is not
+# re-detected until cache_clear() (matches the lattice_profiles caching convention).
 @lru_cache(maxsize=8)
 def load_embindex(index_path: str, profiles_path: str) -> _Index | None:
     path = Path(index_path)
@@ -130,10 +132,14 @@ def match_profile_entry(span_text, runtime_type, context, *, profiles_path=None,
 
     # 3. retrieve: cosine against the type's rows, top-K above the floor
     idxs = index.type_rows(runtime_type)
-    if embed_fn is None:
-        model = _st_model(index.model_id)
-        embed_fn = lambda t: model.encode(t, normalize_embeddings=True)
-    q = _l2norm(embed_fn([span_text]))[0]
+    # Degrade to exact-only if the embedding model can't be loaded/run (spec: index-loading rule).
+    try:
+        if embed_fn is None:
+            model = _st_model(index.model_id)
+            embed_fn = lambda t: model.encode(t, normalize_embeddings=True)
+        q = _l2norm(embed_fn([span_text]))[0]
+    except Exception:
+        return None
     sims = index.vectors[idxs] @ q
     kept = [(idxs[p], float(sims[p])) for p in np.argsort(-sims) if sims[p] >= SIM_FLOOR][:TOP_K]
 

@@ -147,7 +147,10 @@ Notes:
   family-level levels anyway. A top-1/top-2 similarity margin is logged as a diagnostic but is not
   a legality condition.
 - Modifier semantics are handled by the certifier, not string logic: `severe asthma` → entry
-  `asthma` passes (levels remain entailed); `suspected cancer` → entry `cancer` fails NLI.
+  `asthma` passes (levels remain entailed). Hedged/negated modifiers (`suspected X`) are refused by
+  NLI **only when the entry's levels are specific enough to break entailment** — see "Measured
+  limitation" below: the spike measured `suspected cancer` → entry `cancer` *certified* because that
+  entry's levels are generic (`disease` / `medical condition`), which the hedged span still entails.
 - A span with no context sentence cannot be certified, so semantic matching is disabled for it
   (fail closed). Exact hits do not need context, as today.
 
@@ -183,10 +186,30 @@ for the learned canonicalizer.
 | Singular/plural, morphology (`diabetic`) | yes | embedding proximity + NLI |
 | Articles `a/an/the`, trailing punctuation | yes | embedding proximity |
 | Typos | mostly | subword embeddings degrade gracefully; gross typos fall below `SIM_FLOOR` → placeholder |
-| Modifiers (`severe asthma`) | yes | proximity proposes, NLI certifies entailment |
+| Modifiers (`severe asthma`) | entailed: yes; hedged/negated (`suspected X`): only when levels are non-generic | proximity proposes, NLI certifies entailment — but generic levels are weakly entailed even by hedged spans (measured; see below) |
 | Synonyms/paraphrase (`heart attack`) | yes | the case no alias list ever covers |
 | Context-dependent abbreviations (`MI`) | **no** | the query embeds the bare surface; needs the learned canonicalizer |
 | Cross-type mismatch (`medical procedure` vs `medical-procedure` type key) | no | out of scope; type contract is the detector's |
+
+## Measured limitation — generic levels certify too easily
+
+The validation spike (`scripts/spikes/validate_profile_match.py`, evidence
+`scripts/spikes/validate_profile_match.out.txt`) empirically falsified two abstain expectations:
+
+- `suspected cancer` → entry `cancer` **certified** (sim 0.789), where it should have abstained.
+- `malaria` → entry `influenza` **certified** (sim 0.741), a wrong-entry link that should have abstained.
+
+Root cause: **the NLI certifier's protection is only as fine-grained as the entry's levels.** When
+an entry's levels are generic (`disease`, `medical condition`, `illness`), they are weakly entailed
+even by hedged (`suspected X`), negated, or merely-neighboring spans — so the gate approves. This is
+not a property of the modifier: `possible fracture` correctly abstained in the same run, because the
+`fracture` entry's levels are specific enough to break entailment. Hedged-modifier behavior therefore
+depends on level granularity, not on the modifier word.
+
+Mitigation is an open design question — e.g. a minimum level-specificity requirement for semantic
+hits, or an NLI margin against a type-name hypothesis (span must entail the entry's levels *more* than
+it entails the bare type name). No solution is chosen here; the limitation is recorded so a comparison
+does not overstate the certifier's protection.
 
 ## Evaluation
 

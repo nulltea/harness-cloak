@@ -157,6 +157,27 @@ def test_missing_index_degrades_to_exact_only(tmp_path):
     assert sem is None
 
 
+def test_embed_failure_degrades_to_exact_only(tmp_path):
+    pp, ip = _build(tmp_path, "embedfail")
+
+    def raising_embed(texts):
+        raise RuntimeError("model failed to load")
+
+    # semantic path swallows the embed failure and falls closed
+    sem = pm.match_profile_entry(
+        "diabetic", "health-condition", "She is diabetic.",
+        profiles_path=pp, index_path=ip, embed_fn=raising_embed, nli_fn=_approve_all,
+    )
+    assert sem is None
+
+    # exact path never touches the embedder, so it still resolves
+    exact = pm.match_profile_entry(
+        "diabetes", "health-condition", "Patient has diabetes.",
+        profiles_path=pp, index_path=ip, embed_fn=raising_embed, nli_fn=_approve_all,
+    )
+    assert exact is not None and exact.kind == "exact"
+
+
 def test_profile_hash_mismatch_returns_none(tmp_path):
     pp, ip = _build(tmp_path, "stale")
     # rewrite the profiles file after the index was built -> hash mismatch

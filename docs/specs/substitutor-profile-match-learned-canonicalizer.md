@@ -140,7 +140,11 @@ never a deployed call):
 
 Mix and ratios are experiment parameters recorded in the training record. Abstain examples are
 mandatory (surfaces of the right type with no valid entry, and surfaces of the *wrong* type), or
-the model will hallucinate links; target roughly the abstain rate observed in runtime logs.
+the model will hallucinate links; target roughly the abstain rate observed in runtime logs. Abstain
+examples must also include hedged/negated modifier surfaces over generic-level entries (`suspected
+cancer` when `cancer`'s levels are only `disease`/`medical condition`) — the retrieve-then-verify
+spike measured these false-certifying under NLI alone, so the canonicalizer must learn to abstain on
+them rather than rely on the certifier to catch a class it demonstrably passes.
 
 ## Training record
 

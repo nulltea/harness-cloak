@@ -23,7 +23,6 @@ from pathlib import Path
 
 import numpy as np
 
-from cloak import lattice_profiles as lp
 from cloak import profile_match as pm
 from cloak.lattice import nli_gate
 
