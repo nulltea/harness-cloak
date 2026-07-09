@@ -11,6 +11,7 @@ returned window must still be generated and scored globally, never filtered out.
 import hashlib
 import json
 import re
+import threading
 
 import numpy as np
 
@@ -50,6 +51,9 @@ _STOPWORDS = {
 }
 _FILL_SCORE_WEIGHT = 0.6
 _SURFACE_SCORE_WEIGHT = 0.4
+_MODEL_BUNDLE = None
+_MODEL_BUNDLE_DEVICE = None
+_MODEL_BUNDLE_LOCK = threading.Lock()
 
 
 TYPE_HYPOTHESES = {
@@ -442,7 +446,14 @@ def _spans_overlap(left: tuple[int, int], right: tuple[int, int]) -> bool:
     return left[0] < right[1] and right[0] < left[1]
 
 
-def verify(entry: dict, chunk_text: str, sentence: str, nli) -> tuple[bool, str]:
+def verify(
+    entry: dict,
+    chunk_text: str,
+    sentence: str,
+    nli,
+    *,
+    chunk_span: tuple[int, int] | None = None,
+) -> tuple[bool, str]:
     """Verify an assigned chunk before splice; fail closed on the first failed gate."""
     fill = _entry_fill(entry)
     normalized_fill = fill.strip()
@@ -473,7 +484,13 @@ def verify(entry: dict, chunk_text: str, sentence: str, nli) -> tuple[bool, str]
         if not ok:
             return False, reason
 
-    if _has_added_proper_noun(chunk_text, fill, str(entry.get("surface", "")), sentence):
+    if _has_added_proper_noun(
+        chunk_text,
+        fill,
+        str(entry.get("surface", "")),
+        sentence,
+        chunk_span=chunk_span,
+    ):
         return False, "added-proper-noun"
 
     return True, "ok"
@@ -557,6 +574,69 @@ def load_mlm(device: str = "cpu"):
 
 def _load_mlm(device: str = "cpu"):
     return load_mlm(device=device)
+
+
+def load_models(device: str = "cpu") -> dict:
+    """Load and cache the pinned encoder, NLI, and MLM bundle for `extract()`."""
+    global _MODEL_BUNDLE, _MODEL_BUNDLE_DEVICE
+    if _MODEL_BUNDLE is not None and _MODEL_BUNDLE_DEVICE == device:
+        return _MODEL_BUNDLE
+    with _MODEL_BUNDLE_LOCK:
+        if _MODEL_BUNDLE is not None and _MODEL_BUNDLE_DEVICE == device:
+            return _MODEL_BUNDLE
+        _MODEL_BUNDLE = {
+            "encoder": _load_encoder(device),
+            "nli": _load_nli(device),
+            "mlm": _load_mlm(device),
+        }
+        _MODEL_BUNDLE_DEVICE = device
+        return _MODEL_BUNDLE
+
+
+def _load_encoder(device: str = "cpu"):
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(EXTRACTOR_PINS["models"]["encoder"], device=device)
+
+
+def _load_nli(device: str = "cpu"):
+    from transformers import pipeline
+
+    pipe_device = -1 if device == "cpu" else device
+    pipe = pipeline(
+        "text-classification",
+        model=EXTRACTOR_PINS["models"]["nli"],
+        device=pipe_device,
+    )
+    return NliPipeline(pipe)
+
+
+class NliPipeline:
+    """Wrap a transformers pipeline behind `(premise, hypothesis) -> (label, prob)`."""
+
+    def __init__(self, pipe):
+        self.pipe = pipe
+
+    def __call__(self, premise: str, hypothesis: str) -> tuple[str, float]:
+        out = self.pipe({"text": premise, "text_pair": hypothesis})
+        item = _best_pipeline_item(out)
+        return str(item.get("label", "neutral")).lower(), float(item.get("score", 0.0))
+
+
+def _best_pipeline_item(out) -> dict:
+    if isinstance(out, dict):
+        return out
+    if isinstance(out, list):
+        if not out:
+            return {"label": "neutral", "score": 0.0}
+        if all(isinstance(item, dict) for item in out):
+            return max(out, key=lambda item: float(item.get("score", 0.0)))
+        first = out[0]
+        if isinstance(first, list):
+            return _best_pipeline_item(first)
+        if isinstance(first, dict):
+            return first
+    return {"label": "neutral", "score": 0.0}
 
 
 class MaskedLanguageModelPLL:
@@ -674,12 +754,19 @@ def _require_entailment(
     return True, "ok"
 
 
-def _has_added_proper_noun(chunk_text: str, fill: str, surface: str, sentence: str) -> bool:
+def _has_added_proper_noun(
+    chunk_text: str,
+    fill: str,
+    surface: str,
+    sentence: str,
+    *,
+    chunk_span: tuple[int, int] | None = None,
+) -> bool:
     fill_tokens = _normalized_token_set(fill)
     surface_tokens = _normalized_token_set(surface)
     sentence_text = str(sentence)
     sentence_initial = _sentence_initial_token_start(sentence_text)
-    chunk_offset = sentence_text.find(chunk_text) if sentence_text else -1
+    chunk_offset = _chunk_offset(sentence_text, chunk_text, chunk_span)
 
     for match in _CAPITALIZED_TOKEN_RE.finditer(str(chunk_text)):
         token = match.group(0).lower()
@@ -689,6 +776,18 @@ def _has_added_proper_noun(chunk_text: str, fill: str, surface: str, sentence: s
         if token not in fill_tokens and token not in surface_tokens:
             return True
     return False
+
+
+def _chunk_offset(
+    sentence_text: str,
+    chunk_text: str,
+    chunk_span: tuple[int, int] | None,
+) -> int:
+    if chunk_span is not None:
+        start, end = int(chunk_span[0]), int(chunk_span[1])
+        if 0 <= start <= end <= len(sentence_text) and sentence_text[start:end] == chunk_text:
+            return start
+    return sentence_text.find(chunk_text) if sentence_text else -1
 
 
 def _normalized_token_set(text: str) -> set[str]:
@@ -730,9 +829,118 @@ def extract(
     *,
     models: dict | None = None,
 ) -> tuple[str, dict]:
-    """Recover original surfaces from `out_p`; fail closed on unresolved tier-0 residue."""
-    del doc_p  # Stage 1 consumes this when alignment-prior support lands.
+    """Recover original surfaces from `out_p`; fail closed on unresolved entries.
+
+    `stats["entries"]` enumerates only residue entries after tier 0. Tier-0
+    resolutions are exposed as `stats["resolved_tier0"]` because `_rule_prepass`
+    does not return per-mention resolution records.
+    """
     prepass_text, stats, residue = _run_tier0(out_p, R)
-    reason = "no-models" if models is None else "stage-not-implemented"
-    stats = _record_unresolved(stats, residue, reason=reason)
-    return _finalize(prepass_text, stats)
+    stats["resolved_tier0"] = max(0, len(R) - len(residue))
+    if models is None:
+        stats = _record_unresolved(stats, residue, reason="no-models")
+        return _finalize(prepass_text, stats)
+    if not residue:
+        stats["entries"] = []
+        stats["extractor_version"] = extractor_version()
+        return _finalize(prepass_text, stats)
+
+    windows = _entry_windows(doc_p, prepass_text, residue, models["encoder"])
+    chunks = candidate_chunks(prepass_text)
+    scores = score_pairs(residue, chunks, models["encoder"], windows)
+    assignments = assign(scores, len(residue), chunks)
+    verified = _verify_assignments(prepass_text, residue, chunks, assignments, models["nli"])
+    final_text, entries = apply_splices(prepass_text, residue, chunks, verified, models["mlm"])
+    stats["gen_absent"] = stats.get("gen_absent", 0) + sum(
+        1 for entry in entries if entry["outcome"] == "abstained"
+    )
+    stats["entries"] = entries
+    stats["extractor_version"] = extractor_version()
+    return _finalize(final_text, stats)
+
+
+def _entry_windows(
+    doc_p: str | None,
+    out_p: str,
+    residue: list[dict],
+    encoder,
+) -> list[tuple[int, int] | None]:
+    if doc_p is None:
+        return [None] * len(residue)
+
+    doc_sent_spans = sentence_spans(doc_p)
+    out_sent_spans = sentence_spans(out_p)
+    if not doc_sent_spans or not out_sent_spans:
+        return [None] * len(residue)
+
+    texts = _sentences(doc_p, doc_sent_spans) + _sentences(out_p, out_sent_spans)
+    vecs = _as_normalized_matrix(encoder.encode(texts))
+    doc_vecs = vecs[:len(doc_sent_spans)]
+    out_vecs = vecs[len(doc_sent_spans):]
+    alignment = align_sentences(doc_vecs, out_vecs)
+
+    return [
+        position_bonus(
+            _first_fill_span(entry),
+            doc_sent_spans,
+            out_sent_spans,
+            alignment,
+        )
+        for entry in residue
+    ]
+
+
+def _sentences(text: str, spans: list[tuple[int, int]]) -> list[str]:
+    return [text[start:end] for start, end in spans]
+
+
+def _first_fill_span(entry: dict) -> list[int] | None:
+    spans = entry.get("fill_spans")
+    if not spans:
+        return None
+    first = spans[0]
+    if len(first) != 2:
+        return None
+    return first
+
+
+def _verify_assignments(
+    out_p: str,
+    residue: list[dict],
+    chunks: list[tuple[int, int, str]],
+    assignments: Assignment,
+    nli,
+) -> Assignment:
+    verified = Assignment(abstained=dict(assignments.abstained))
+    for entry_idx, chunk_idx in assignments.items():
+        if not (0 <= entry_idx < len(residue) and 0 <= chunk_idx < len(chunks)):
+            continue
+        start, end, chunk_text = chunks[chunk_idx]
+        sentence, sentence_start = _sentence_text_and_start_for_span(out_p, (start, end))
+        ok, reason = verify(
+            residue[entry_idx],
+            chunk_text,
+            sentence,
+            nli,
+            chunk_span=(start - sentence_start, end - sentence_start),
+        )
+        if ok:
+            verified[entry_idx] = chunk_idx
+        else:
+            verified.abstained[entry_idx] = reason
+    return verified
+
+
+def _sentence_text_and_start_for_span(text: str, span: tuple[int, int]) -> tuple[str, int]:
+    spans = sentence_spans(text)
+    if not spans:
+        return str(text).strip(), 0
+    start = max(0, min(int(span[0]), len(text)))
+    end = max(start, min(int(span[1]), len(text)))
+    if start == end and start > 0:
+        start -= 1
+    idx = _containing_sentence(start, max(start + 1, end), spans)
+    if idx is None:
+        return str(text).strip(), 0
+    sent_start, sent_end = spans[idx]
+    return text[sent_start:sent_end], sent_start

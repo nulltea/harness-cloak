@@ -1,7 +1,9 @@
 import copy
 import hashlib
+import os
 
 import numpy as np
+import pytest
 
 import cloak.frozen_extractor as fx
 from cloak.extract import invert
@@ -31,6 +33,30 @@ class CountingToyEncoder(ToyEncoder):
     def encode(self, texts):
         self.calls.append(list(texts))
         return super().encode(texts)
+
+
+class SemanticToyEncoder(ToyEncoder):
+    ALIASES = {
+        "center": "city",
+        "urban": "city",
+        "municipality": "city",
+        "individual": "person",
+        "resident": "person",
+        "worker": "person",
+        "happened": "time",
+        "occurred": "time",
+        "recently": "time",
+    }
+
+    def encode(self, texts):
+        rows = []
+        for text in texts:
+            canonical = " ".join(
+                self.ALIASES.get(token.strip(".,").lower(), token.strip(".,").lower())
+                for token in str(text).split()
+            )
+            rows.append(super().encode([canonical])[0])
+        return np.vstack(rows)
 
 
 def _sentences(text, spans):
@@ -499,6 +525,22 @@ def test_verify_allows_sentence_initial_capitalized_token():
     assert result == (True, "ok")
 
 
+def test_verify_uses_supplied_chunk_span_for_repeated_text_sentence_initial_exemption():
+    nli = ScriptedNLI(("entailment", 0.99), ("entailment", 0.99))
+    sentence = "Albany residents met Albany residents."
+    second_start = sentence.rindex("Albany residents")
+
+    result = fx.verify(
+        {"replacement": "city residents", "surface": "Boston residents", "type": "LOC"},
+        "Albany residents",
+        sentence,
+        nli,
+        chunk_span=(second_start, second_start + len("Albany residents")),
+    )
+
+    assert result == (False, "added-proper-noun")
+
+
 def test_splice_replaces_exact_chunk_span():
     out_p = "The order came from a county court near downtown."
     chunk = (out_p.index("a county court"), out_p.index("near") - 1)
@@ -582,3 +624,208 @@ def test_apply_splices_defers_article_fix_until_pending_left_span_is_safe():
         {"surface": "orange", "type": "MISC", "outcome": "spliced",
          "reason": "ok"},
     ]
+
+
+def _base_stats():
+    return {
+        "ph_swapped": 0,
+        "gen_exact": 0,
+        "gen_fuzzy": 0,
+        "gen_semantic": 0,
+        "gen_absent": 0,
+        "ph_residue": 0,
+    }
+
+
+def _toy_models(nli_returns, mlm_scores):
+    return {
+        "encoder": SemanticToyEncoder(),
+        "nli": ScriptedNLI(*nli_returns),
+        "mlm": ScriptedMLM(mlm_scores),
+    }
+
+
+def test_extract_recovers_reworded_fill_and_splices(monkeypatch):
+    doc_p = "The hearing was in a city."
+    out_p = "The hearing was held in a municipality."
+    fill_start = doc_p.index("a city")
+    residue = [
+        {
+            "action": "generalize",
+            "surface": "Boston",
+            "replacement": "a city",
+            "type": "LOC",
+            "fill_spans": [[fill_start, fill_start + len("a city")]],
+        }
+    ]
+
+    monkeypatch.setattr(
+        fx,
+        "_rule_prepass",
+        lambda out, R, *, semantic: (out, _base_stats(), list(residue)),
+    )
+
+    text, stats = fx.extract(
+        doc_p,
+        [],
+        out_p,
+        models=_toy_models([("entailment", 0.99), ("entailment", 0.99)], [-1.0, -1.0]),
+    )
+
+    assert text == "The hearing was held in Boston."
+    assert stats["gen_absent"] == 0
+    assert stats["entries"] == [
+        {"surface": "Boston", "type": "LOC", "outcome": "spliced", "reason": "ok"}
+    ]
+    assert stats["resolved_tier0"] == 0
+    assert stats["extractor_version"] == fx.extractor_version()
+
+
+def test_extract_abstains_garbage_fill_at_verification_and_leaves_text(monkeypatch):
+    doc_p = "The note mentioned an information."
+    out_p = "The note mentioned random information."
+    fill_start = doc_p.index("an information")
+    residue = [
+        {
+            "action": "generalize",
+            "surface": "Boston",
+            "replacement": "an information",
+            "type": "LOC",
+            "fill_spans": [[fill_start, fill_start + len("an information")]],
+        }
+    ]
+
+    monkeypatch.setattr(
+        fx,
+        "_rule_prepass",
+        lambda out, R, *, semantic: (out, _base_stats(), list(residue)),
+    )
+
+    text, stats = fx.extract(
+        doc_p,
+        [],
+        out_p,
+        models=_toy_models([("neutral", 0.99)], [-1.0, -1.0]),
+    )
+
+    assert text == out_p
+    assert stats["gen_absent"] == 1
+    assert stats["entries"] == [
+        {"surface": "Boston", "type": "LOC", "outcome": "abstained",
+         "reason": "correspondence"}
+    ]
+
+
+def test_extract_repeated_generic_fills_resolve_to_distinct_position_windows(monkeypatch):
+    separator_one = (
+        "Context separates the mentions with a long neutral sentence about procedure "
+        "and scheduling"
+    )
+    separator_two = "Another neutral sentence appears before the second reference"
+    middle = f"{separator_one}. {separator_two}"
+    doc_p = f"Intro. A person arrived. {middle}. A person left."
+    out_p = f"Intro. An individual arrived. {middle}. An individual left."
+    first = doc_p.index("person")
+    second = doc_p.rindex("person")
+    residue = [
+        {
+            "action": "generalize",
+            "surface": "Ada",
+            "replacement": "person",
+            "type": "PERSON",
+            "fill_spans": [[first, first + len("person")]],
+        },
+        {
+            "action": "generalize",
+            "surface": "Grace",
+            "replacement": "person",
+            "type": "PERSON",
+            "fill_spans": [[second, second + len("person")]],
+        },
+    ]
+
+    monkeypatch.setattr(
+        fx,
+        "_rule_prepass",
+        lambda out, R, *, semantic: (out, _base_stats(), list(residue)),
+    )
+
+    text, stats = fx.extract(
+        doc_p,
+        [],
+        out_p,
+        models=_toy_models(
+            [
+                ("entailment", 0.99),
+                ("entailment", 0.99),
+                ("entailment", 0.99),
+                ("entailment", 0.99),
+            ],
+            [-1.0, -1.0, -1.0, -1.0],
+        ),
+    )
+
+    assert text == f"Intro. An Ada arrived. {middle}. A Grace left."
+    assert stats["gen_absent"] == 0
+    assert stats["entries"] == [
+        {"surface": "Ada", "type": "PERSON", "outcome": "spliced", "reason": "ok"},
+        {"surface": "Grace", "type": "PERSON", "outcome": "spliced", "reason": "ok"},
+    ]
+
+
+def test_load_models_is_singleton_and_wraps_pinned_model_loaders(monkeypatch):
+    encoder = object()
+    nli = object()
+    mlm = object()
+    calls = []
+
+    monkeypatch.setattr(fx, "_MODEL_BUNDLE", None, raising=False)
+    monkeypatch.setattr(fx, "_MODEL_BUNDLE_DEVICE", None, raising=False)
+    monkeypatch.setattr(fx, "_load_encoder", lambda device: calls.append(("encoder", device)) or encoder)
+    monkeypatch.setattr(fx, "_load_nli", lambda device: calls.append(("nli", device)) or nli)
+    monkeypatch.setattr(fx, "_load_mlm", lambda device: calls.append(("mlm", device)) or mlm)
+
+    first = fx.load_models(device="cpu")
+    second = fx.load_models(device="cpu")
+
+    assert first is second
+    assert first == {"encoder": encoder, "nli": nli, "mlm": mlm}
+    assert calls == [("encoder", "cpu"), ("nli", "cpu"), ("mlm", "cpu")]
+
+
+def test_nli_pipeline_wrapper_handles_dict_and_list_shapes():
+    wrapper = fx.NliPipeline(
+        lambda payload: [
+            {"label": "neutral", "score": 0.1},
+            {"label": "entailment", "score": 0.9},
+        ]
+    )
+    assert wrapper("premise", "hypothesis") == ("entailment", 0.9)
+
+    wrapper = fx.NliPipeline(lambda payload: {"label": "CONTRADICTION", "score": 0.8})
+    assert wrapper("premise", "hypothesis") == ("contradiction", 0.8)
+
+
+@pytest.mark.slow
+@pytest.mark.skipif(
+    os.environ.get("RUN_SLOW_EXTRACTOR") != "1",
+    reason="set RUN_SLOW_EXTRACTOR=1 to load real extractor models on CPU",
+)
+def test_load_models_cpu_smoke_tiny_doc():
+    doc_p = "The hearing was in a city."
+    out_p = "The hearing was in a city."
+    start = doc_p.index("a city")
+    R = [
+        {
+            "action": "generalize",
+            "surface": "Boston",
+            "replacement": "a city",
+            "type": "LOC",
+            "fill_spans": [[start, start + len("a city")]],
+        }
+    ]
+
+    text, stats = fx.extract(doc_p, R, out_p, models=fx.load_models(device="cpu"))
+
+    assert isinstance(text, str)
+    assert stats["extractor_version"] == fx.extractor_version()
