@@ -107,6 +107,92 @@ PRESIDIO_MAP = {
 _PRONOUNS = frozenset({"i", "me", "my", "mine", "you", "your", "he", "him", "his", "she",
                        "her", "it", "its", "we", "us", "our", "they", "them", "their"})
 _SLANG_STOP = frozenset({"rn", "ngl"})  # chat slang; but "RN" = registered nurse in clinical text
+_NOISE_FILTER_TYPES = frozenset({"drug", "health-condition", "medical-procedure"})
+
+# Cross-type negative filter: confirmed non-entity categories for clinical drug/condition/procedure mining.
+_NOISE_KEEP_PATTERNS = (
+    re.compile(r"tocopherol|ascorbic|lipoic|cholecalciferol|niacin|riboflavin|thiamine|folic|"
+               r"pantothen|biotin|aminobutyric|retino|calciferol|menadione|pyridoxine|cobalamin"),
+)
+_NOISE_KEEP_TOKENS = frozenset({
+    "azo", "mmr", "pcp", "cla", "pop",
+    "cad", "cva", "gerd", "copd", "cf", "chf", "dvt", "uti", "tia", "ckd", "mi",
+})
+_NOISE_LAB_PATTERN = re.compile(r"\b(panel|assay|titer|titre|screen|culture|antibody test|serology)\b")
+_NOISE_LAB_SUFFIX = re.compile(r"\w+ase\b")
+_NOISE_LAB_TESTS = frozenset({
+    # pt is intentionally included as prothrombin time, despite physical-therapy ambiguity.
+    "cbc", "bmp", "cmp", "bnp", "psa", "hcg", "afp", "ldh", "bun", "pcr", "tsh", "esr",
+    "inr", "ua", "hba1c", "a1c", "pt", "ptt", "crp", "troponin", "ferritin",
+})
+_NOISE_IMAGING_DIAGNOSTICS = frozenset({
+    "mri", "ct", "ct scan", "cat scan", "ecg", "ekg", "eeg", "emg", "ncs", "x ray", "xray",
+    "chest x ray", "ultrasound", "echo", "echocardiogram", "angiogram", "mammogram", "dexa",
+    "pet", "pet scan",
+})
+_NOISE_DEVICE_PATTERN = re.compile(
+    r"\b(wrap|wraps|bandage|gauze|tape|swab|kit|dressing|brace|splint|sponge|applicator|"
+    r"cloth|wipe|wipes|pump|pumps|catheter|catheters|stent|stents|pacemaker|pacemakers|"
+    r"nebulizer|nebulizers)\b"
+)
+_NOISE_DEVICE_SUPPLIES = frozenset({"iud", "ace wrap"})
+_NOISE_ANATOMY = frozenset({
+    "arm", "leg", "knee", "hip", "shoulder", "elbow", "wrist", "ankle", "back", "lower back",
+    "neck", "chest", "abdomen", "foot", "hand", "lad",
+})
+_NOISE_LEGAL_ADMIN_PATTERN = re.compile(
+    r"\b(power of attorney|living will|driver(?:s| s)? licen[sc]e|insurance policy|employment contract|"
+    r"advance directive)\b"
+)
+_NOISE_JUNK_NUMERIC = re.compile(r"^[\d][\d .]*$")
+_NOISE_FRAGRANCE_EXCIPIENT = re.compile(r"aldehyde$|cinnamaldehyde|\blimonene\b|\blinalool\b")
+
+
+def _noise_norm(text: str) -> str:
+    out = str(text).lower().strip()
+    out = re.sub(r"[^a-z0-9]+", " ", out)
+    return re.sub(r"\s+", " ", out).strip()
+
+
+def _compact_abbreviation(surface: str) -> str:
+    return surface.replace(" ", "")
+
+
+def _noise_runtime_type(text: str) -> str:
+    out = str(text).lower().strip().replace("_", "-")
+    out = re.sub(r"\s+", "-", out)
+    return out
+
+
+def is_noise_span(surface: str, runtime_type: str) -> bool:
+    """True iff `surface` is confirmed lab/imaging/device/anatomy/legal-admin/junk noise.
+
+    KEEP wins first; unmatched surfaces fail open. The predicate defensively normalizes raw
+    input and only applies to the queue families this filter was designed for.
+    """
+    runtime_type = _noise_runtime_type(runtime_type)
+    if runtime_type not in _NOISE_FILTER_TYPES:
+        return False
+    s = _noise_norm(surface)
+    if not s:
+        return False
+    compact = _compact_abbreviation(s)
+    if compact in _NOISE_KEEP_TOKENS or any(p.search(s) or p.search(compact) for p in _NOISE_KEEP_PATTERNS):
+        return False
+    if _NOISE_LAB_PATTERN.search(s) or _NOISE_LAB_SUFFIX.search(s) or s in _NOISE_LAB_TESTS \
+            or compact in _NOISE_LAB_TESTS:
+        return True
+    if s in _NOISE_IMAGING_DIAGNOSTICS or compact in _NOISE_IMAGING_DIAGNOSTICS:
+        return True
+    if _NOISE_DEVICE_PATTERN.search(s) or s in _NOISE_DEVICE_SUPPLIES or compact in _NOISE_DEVICE_SUPPLIES:
+        return True
+    if s in _NOISE_ANATOMY:
+        return True
+    if _NOISE_LEGAL_ADMIN_PATTERN.search(s):
+        return True
+    if _NOISE_JUNK_NUMERIC.fullmatch(s) or _NOISE_FRAGRANCE_EXCIPIENT.search(s):
+        return True
+    return len(s.split()) == 1 and len(compact) <= 2
 
 
 @dataclass(frozen=True)
@@ -117,12 +203,13 @@ class DetectorProfile:
     name: str
     slang_stop_words: bool
     custom_recognizers: bool
+    negative_filter: bool
 
 
 PROFILES = {
-    "reddit": DetectorProfile("reddit", slang_stop_words=True, custom_recognizers=True),
-    "legal": DetectorProfile("legal", slang_stop_words=False, custom_recognizers=True),
-    "clinical": DetectorProfile("clinical", slang_stop_words=False, custom_recognizers=False),
+    "reddit": DetectorProfile("reddit", slang_stop_words=True, custom_recognizers=True, negative_filter=False),
+    "legal": DetectorProfile("legal", slang_stop_words=False, custom_recognizers=True, negative_filter=False),
+    "clinical": DetectorProfile("clinical", slang_stop_words=False, custom_recognizers=False, negative_filter=True),
 }
 
 
@@ -293,7 +380,11 @@ class Detector:
                 spans.append(Span(r.start, r.end, text[r.start:r.end], t, r.score, src))
         spans = [s for s in spans  # pure symbol/emoji spans or bare stop words: never identifiers
                  if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in self.stop_words]
-        return _dedupe(spans)
+        spans = _dedupe(spans)
+        if self.profile.negative_filter:
+            spans = [s for s in spans
+                     if s.type not in _NOISE_FILTER_TYPES or not is_noise_span(s.text, s.type)]
+        return spans
 
 
 def _dedupe(spans: list[Span]) -> list[Span]:

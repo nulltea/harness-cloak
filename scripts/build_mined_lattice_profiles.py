@@ -17,6 +17,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from cloak.corpora import load_task_docs
+from cloak.detect import is_noise_span
 from cloak.lattice_profiles import SCHEMA_VERSION, validate_profile_artifact
 
 DETECTOR_LABELS = [
@@ -105,6 +106,7 @@ def build_mined_artifact(
         "unique_detected_spans": 0,
         "skipped_common": 0,
         "generic_skipped": 0,
+        "noise_skipped": 0,
         "copied_fine": 0,
         "new_entries": 0,
     }
@@ -120,6 +122,9 @@ def build_mined_artifact(
             continue
         if _is_generic_surface(runtime_type, surface):
             stats["generic_skipped"] += 1
+            continue
+        if is_noise_span(surface, runtime_type):
+            stats["noise_skipped"] += 1
             continue
         if common_index.find(runtime_type, surface):
             stats["skipped_common"] += 1
