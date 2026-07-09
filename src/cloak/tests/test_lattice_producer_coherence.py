@@ -128,6 +128,46 @@ def test_empty_entries_return_zeroed_report_without_crashing() -> None:
     assert report["same_count_collisions"] == []
 
 
+def test_counts_are_corpus_membership_sizes():
+    # 3 entries; "broad" is carried by all 3, "mid" by 2, each specific by 1.
+    # model-reported counts are deliberately nonsense (prevalence-scale) and must be overwritten.
+    entries = {
+        "e1": {"levels": ["alpha", "mid", "broad"],
+                "level_counts": {"alpha": 9e9, "mid": 5e8, "broad": 8e9},
+                "level_grounding": {}},
+        "e2": {"levels": ["beta", "mid", "broad"],
+                "level_counts": {"beta": 1e6, "mid": 2e8, "broad": 7e9},
+                "level_grounding": {}},
+        "e3": {"levels": ["gamma", "broad"],
+                "level_counts": {"gamma": 4e5, "broad": 6e9},
+                "level_grounding": {}},
+    }
+    normalize_runtime_type(entries, "health-condition")
+    # broad carried by e1,e2,e3 -> 3 ; mid by e1,e2 -> 2 ; each specific -> 1
+    assert entries["e1"]["level_counts"]["broad"] == 3.0
+    assert entries["e1"]["level_counts"]["mid"] == 2.0
+    assert entries["e1"]["level_counts"]["alpha"] == 1.0
+    # every chain stays monotone non-decreasing
+    for row in entries.values():
+        cs = [row["level_counts"][l] for l in row["levels"]]
+        assert cs == sorted(cs)
+    # the non-anchored grounding says corpus-membership, not certifying
+    assert entries["e1"]["level_grounding"]["broad"]["status"] == "model-proposed"
+    assert entries["e1"]["level_grounding"]["broad"]["count_basis"] == "corpus-membership"
+
+
+def test_certifying_count_still_pinned_not_membership():
+    # a level with a real certifying member-set count must keep that count, not the membership size
+    entries = {
+        "e1": {"levels": ["benzodiazepine", "broad"],
+                "level_counts": {"benzodiazepine": 24.0, "broad": 5.0},
+                "level_grounding": {"benzodiazepine": {"status": "certifying",
+                                                        "member_set_ref": "openfda-ndc:pharm_class:X"}}},
+    }
+    normalize_runtime_type(entries, "drug")
+    assert entries["e1"]["level_counts"]["benzodiazepine"] == 24.0  # pinned, not 1 (its membership)
+
+
 def test_normalize_coherence_covers_every_runtime_type_in_artifact() -> None:
     artifact = {
         "profiles": {

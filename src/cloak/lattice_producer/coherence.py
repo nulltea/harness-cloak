@@ -227,8 +227,17 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
             "same_count_collisions": [],
         }
 
-    baseline = {canon: statistics.median(vals) for canon, vals in raw_counts_by_canonical.items()}
-    weight = {canon: float(len(vals)) for canon, vals in raw_counts_by_canonical.items()}
+    # Corpus-membership counts: each level's count is the number of DISTINCT entries whose
+    # generalization chain contains it -- a real anonymity-set-within-corpus size, not the
+    # model's fabricated per-item number. Monotone up a chain by construction (a broader level
+    # is carried by a superset of the entries carrying any level that always rolls up into it),
+    # so no forced log-spacing is needed. Certifying/anchored counts still override below.
+    membership: dict[str, set[str]] = defaultdict(set)
+    for entry_key, chain in canonical_by_entry.items():
+        for canon in chain:
+            membership[canon].add(entry_key)
+    baseline = {canon: float(len(members)) for canon, members in membership.items()}
+    weight = {canon: float(len(members)) for canon, members in membership.items()}
 
     references = load_reference_anchors(runtime_type)
     anchored_labels = {canon for canon in references if canon in baseline}
@@ -287,11 +296,11 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
                         f"per-entry counts; still not certifying"
                     )
                 else:
-                    grounding["count_basis"] = "corpus-wide-rank-coherent"
+                    grounding["count_basis"] = "corpus-membership"
                     grounding["count_evidence"] = (
-                        f"resolved via a global average-depth ranking over every entry's "
-                        f"generalization chain so '{canon}' carries the same count everywhere "
-                        f"in this run; not certifying"
+                        f"'{canon}' count is the number of distinct entries in this run whose "
+                        f"generalization chain includes it (corpus-membership anonymity-set "
+                        f"size); not certifying"
                     )
             new_groundings[canon] = grounding
 
