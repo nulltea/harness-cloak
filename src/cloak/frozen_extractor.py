@@ -521,12 +521,18 @@ def apply_splices(
         entry = residue[entry_idx]
         start, end, _ = chunks[chunk_idx]
         before_sentence = _sentence_text_for_span(text, (start, end))
-        candidate = splice(text, (start, end), str(entry.get("surface", "")))
+        start, end = _checked_span((start, end), len(text))
+        surface = str(entry.get("surface", ""))
+        # Do not call splice() here: its document-wide article repair can shift
+        # offsets for pending left-side spans while this loop is still applying them.
+        candidate = f"{text[:start]}{surface}{text[end:]}"
+        surface_end = min(start + len(surface), len(candidate))
         after_sentence = _sentence_text_for_span(
             candidate,
-            (min(start, len(candidate)), min(start + len(str(entry.get("surface", ""))), len(candidate))),
+            (min(start, len(candidate)), surface_end),
         )
-        if pll_delta(before_sentence, after_sentence, mlm) < float(
+        scored_after_sentence = _fix_indefinite_articles(after_sentence)
+        if pll_delta(before_sentence, scored_after_sentence, mlm) < float(
             EXTRACTOR_PINS["thresholds"]["PLL_MIN_DELTA"]
         ):
             outcomes[entry_idx] = _entry_outcome(entry, "abstained", "fluency")
@@ -534,7 +540,8 @@ def apply_splices(
         text = candidate
         outcomes[entry_idx] = _entry_outcome(entry, "spliced", "ok")
 
-    return text, [outcomes[idx] for idx in sorted(outcomes)]
+    # Defer document-wide article repair until no pending chunk offsets remain.
+    return _fix_indefinite_articles(text), [outcomes[idx] for idx in sorted(outcomes)]
 
 
 def load_mlm(device: str = "cpu"):
@@ -580,7 +587,8 @@ class MaskedLanguageModelPLL:
         )
         positions = [
             idx for idx, is_special in enumerate(special)
-            if not is_special and (attention_mask is None or int(attention_mask[0, idx]) == 1)
+            if not is_special
+            and (attention_mask is None or int(attention_mask[0, idx]) == 1)
         ]
         if not positions:
             return 0.0
@@ -591,7 +599,8 @@ class MaskedLanguageModelPLL:
 
         batch_input_ids = input_ids.repeat(len(positions), 1)
         batch_positions = torch.tensor(positions, device=self.device)
-        batch_input_ids[torch.arange(len(positions), device=self.device), batch_positions] = mask_token_id
+        batch_rows = torch.arange(len(positions), device=self.device)
+        batch_input_ids[batch_rows, batch_positions] = mask_token_id
         batch_attention = (
             attention_mask.repeat(len(positions), 1)
             if attention_mask is not None else None
@@ -599,10 +608,10 @@ class MaskedLanguageModelPLL:
 
         with torch.no_grad():
             outputs = self.model(input_ids=batch_input_ids, attention_mask=batch_attention)
-            logits = outputs.logits[torch.arange(len(positions), device=self.device), batch_positions]
+            logits = outputs.logits[batch_rows, batch_positions]
             log_probs = torch.log_softmax(logits, dim=-1)
             target_ids = input_ids[0, batch_positions]
-            token_log_probs = log_probs[torch.arange(len(positions), device=self.device), target_ids]
+            token_log_probs = log_probs[batch_rows, target_ids]
         return float(token_log_probs.mean().detach().cpu().item())
 
 

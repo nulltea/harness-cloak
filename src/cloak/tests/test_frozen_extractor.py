@@ -545,16 +545,40 @@ def test_apply_splices_applies_multiple_splices_right_to_left_without_shift_erro
         (lawyer_start, lawyer_start + len("lawyer"), "lawyer"),
     ]
     residue = [
-        {"surface": "Oslo", "replacement": "city", "type": "LOC"},
+        {"surface": "New Orleans", "replacement": "city", "type": "LOC"},
         {"surface": "Ada Lovelace", "replacement": "lawyer", "type": "PERSON"},
     ]
     mlm = ScriptedMLM([-1.0, -1.0, -1.0, -1.0])
 
     text, entries = fx.apply_splices(out_p, residue, chunks, {0: 0, 1: 1}, mlm)
 
-    assert text == "The Oslo hired the Ada Lovelace after the hearing."
+    assert text == "The New Orleans hired the Ada Lovelace after the hearing."
     assert entries == [
-        {"surface": "Oslo", "type": "LOC", "outcome": "spliced", "reason": "ok"},
+        {"surface": "New Orleans", "type": "LOC", "outcome": "spliced", "reason": "ok"},
         {"surface": "Ada Lovelace", "type": "PERSON", "outcome": "spliced",
+         "reason": "ok"},
+    ]
+
+
+def test_apply_splices_defers_article_fix_until_pending_left_span_is_safe():
+    out_p = "The witness saw a fruit outside."
+    article_start = out_p.index("a fruit")
+    fruit_start = out_p.index("fruit")
+    chunks = [
+        (article_start, article_start + len("a"), "a"),
+        (fruit_start, fruit_start + len("fruit"), "fruit"),
+    ]
+    residue = [
+        {"surface": "the", "replacement": "a", "type": "MISC"},
+        {"surface": "orange", "replacement": "fruit", "type": "MISC"},
+    ]
+    mlm = ScriptedMLM([-1.0, -1.0, -1.0, -1.0])
+
+    text, entries = fx.apply_splices(out_p, residue, chunks, {0: 0, 1: 1}, mlm)
+
+    assert text == "The witness saw the orange outside."
+    assert entries == [
+        {"surface": "the", "type": "MISC", "outcome": "spliced", "reason": "ok"},
+        {"surface": "orange", "type": "MISC", "outcome": "spliced",
          "reason": "ok"},
     ]
