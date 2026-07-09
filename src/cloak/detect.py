@@ -141,23 +141,31 @@ class Span:
     chain: int = -1  # coref chain id (set by coref_chains), -1 = unclustered
 
 
-def _chunks(text: str, max_chars: int = 1200, max_words: int | None = None):
+def _chunks(text: str, max_chars: int = 1200, max_words: int | None = None,
+            overlap_chars: int = 200):
     """Split on line/sentence boundaries into ~max_chars windows; yield (offset, chunk).
 
     Never cuts mid-word: if no newline/sentence break falls in the window's second half,
     back off to the last whitespace instead of a hard character cut (a hard cut splits the
-    entity under it across chunks). max_words re-splits any chunk whose whitespace token
-    count exceeds the encoder window (spaced-out OCR/ASR text inflates tokens ~2x per char;
-    gliner-pii-large has max_len=768 vs 2048 for the base models).
+    entity under it across chunks). A fallback (non-sentence) cut can still bisect a
+    MULTI-WORD entity at its internal space — the chunker cannot know "Sarah Johnson" is one
+    unit — so the next window re-starts overlap_chars earlier on a word boundary: any entity
+    within overlap_chars of the boundary appears whole in one chunk, and _dedupe merges the
+    duplicate detections (same-type overlap keeps the widest). Sentence/newline cuts stay
+    contiguous, so normally punctuated prose chunks exactly as before. max_words re-splits
+    any chunk whose whitespace token count exceeds the encoder window (spaced-out OCR/ASR
+    text inflates tokens ~2x per char; gliner-pii-large has max_len=768 vs 2048 base).
     """
     pos = 0
     while pos < len(text):
         end = min(pos + max_chars, len(text))
+        sentence_cut = True
         if end < len(text):
             cut = max(text.rfind("\n", pos, end), text.rfind(". ", pos, end))
             if cut > pos + max_chars // 2:
                 end = cut + 1
             else:
+                sentence_cut = False
                 ws = text.rfind(" ", pos + max_chars // 2, end)
                 if ws > pos:
                     end = ws + 1  # word boundary, not a mid-word character cut
@@ -169,7 +177,11 @@ def _chunks(text: str, max_chars: int = 1200, max_words: int | None = None):
                 yield pos + words[i].start(), chunk[words[i].start():last.end()]
         else:
             yield pos, chunk
-        pos = end
+        if sentence_cut or end >= len(text):
+            pos = end
+        else:
+            back = text.rfind(" ", end - overlap_chars, end - 1)
+            pos = back + 1 if back > pos else end  # overlap, but always strictly advance
 
 
 def _encoder_max_words(gliner) -> int | None:

@@ -22,15 +22,37 @@ from pathlib import Path
 from cloak.detect import Detector, coref_chains
 
 
-def _spans_on(spans, needle, *, types=None, presidio_only=False, gliner_only=False):
+def _spans_on(spans, needle, *, types=None, presidio_only=False):
     hits = [s for s in spans if needle.lower() in s.text.lower()]
     if types is not None:
         hits = [s for s in hits if s.type in types]
     if presidio_only:
         hits = [s for s in hits if s.source.startswith("presidio")]
-    if gliner_only:  # chunking affects only the GLiNER path; Presidio's full-text pass masks splits
-        hits = [s for s in hits if s.source == "gliner"]
     return hits
+
+
+def _raw_gliner_word_coverage(det, text, words):
+    """Chunking isolation: raw GLiNER over _chunks (pre-dedupe, no Presidio — its full-text pass
+    rescues spaCy-detectable names and would mask chunk splits). Returns the words NOT fully
+    covered by any raw span. The defect signature of a chunk split is a lost word, not span
+    shape: this model splits even an unchunked sentence-initial name into adjacent word spans."""
+    from cloak.detect import _chunks
+
+    spans = []
+    try:
+        pairs = list(_chunks(text, max_words=getattr(det, "max_words", None)))
+    except TypeError:  # pre-fix checkout: _chunks has no max_words parameter
+        pairs = list(_chunks(text))
+    offsets, texts = zip(*pairs)
+    for off, ents in zip(offsets, det.gliner.batch_predict_entities(
+            list(texts), det.labels, threshold=det.threshold, batch_size=det.batch_size)):
+        spans += [(off + e["start"], off + e["end"]) for e in ents]
+    uncovered = []
+    for w in words:
+        i = text.lower().index(w.lower())
+        if not any(s <= i and i + len(w) <= e for s, e in spans):
+            uncovered.append(w)
+    return uncovered
 
 
 def run_cases(det) -> list[dict]:
@@ -72,21 +94,20 @@ def run_cases(det) -> list[dict]:
         case("surname-identity-merge", False, "model did not detect both names (case inconclusive)")
 
     # chunk boundary, single-word entity: the 1200-char hard cut lands INSIDE the word; the fix
-    # backs off to the previous whitespace so the whole word lands in the next chunk intact
+    # backs off to the previous whitespace so the whole word lands in the next chunk intact.
+    # Raw-GLiNER coverage (see _raw_gliner_word_coverage): Presidio would mask the split.
     filler = "the patient reported ongoing fatigue and mild joint stiffness, " * 19  # no '. ' anywhere
     text = filler[:1197] + "Sarah was seen in clinic today and follow-up was arranged."
-    spans = det.detect(text)
-    case("chunk-splits-word", not _spans_on(spans, "sarah", gliner_only=True),
-         f"gliner spans covering the boundary word: {len(_spans_on(spans, 'sarah', gliner_only=True))}")
+    lost = _raw_gliner_word_coverage(det, text, ["Sarah"])
+    case("chunk-splits-word", lost, f"name words with no raw-gliner span: {lost or 'none'}")
 
-    # chunk boundary, multi-word entity straddling the cut BETWEEN its words: KNOWN RESIDUAL —
-    # word-boundary backoff cannot save it (plan Residual risks: needs overlap windows).
-    # Expected to fire before AND after; tracked so a future overlap-window fix shows up here.
-    text = filler[:1190] + "Sarah Johnson was seen in clinic today and follow-up was arranged."
-    spans = det.detect(text)
-    case("chunk-splits-multiword-name (known residual)",
-         not _spans_on(spans, "sarah johnson", gliner_only=True),
-         "gliner full-name span across the inter-word cut")
+    # chunk boundary, multi-word entity straddling the cut BETWEEN its words: word-boundary
+    # backoff alone cannot save it; the overlap window re-presents the whole name in the next
+    # chunk (downstream, _dedupe merges the duplicate detections, widest wins).
+    prefix = "word " * 238  # exactly 1190 chars, ends on a word boundary, no sentence breaks
+    text = prefix + "Sarah Johnson was seen in clinic today and follow-up was arranged."
+    lost = _raw_gliner_word_coverage(det, text, ["Sarah", "Johnson"])
+    case("chunk-splits-multiword-name", lost, f"name words with no raw-gliner span: {lost or 'none'}")
 
     return out
 
