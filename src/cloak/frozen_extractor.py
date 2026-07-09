@@ -18,6 +18,34 @@ from cloak.extract import _finalize, _rule_prepass
 
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"[.!?](?=\s|$)|\n")
+_WORD_RE = re.compile(r"\b[^\W_]+(?:['-][^\W_]+)*\b", re.UNICODE)
+_STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "are",
+    "as",
+    "at",
+    "be",
+    "by",
+    "for",
+    "from",
+    "in",
+    "is",
+    "it",
+    "of",
+    "on",
+    "or",
+    "that",
+    "the",
+    "this",
+    "to",
+    "was",
+    "were",
+    "with",
+}
+_FILL_SCORE_WEIGHT = 0.6
+_SURFACE_SCORE_WEIGHT = 0.4
 
 
 EXTRACTOR_PINS = {
@@ -216,6 +244,176 @@ def _containing_sentence(
     ]
     overlap, idx = max(overlaps, key=lambda item: (item[0], -item[1]))
     return idx if overlap > 0 else None
+
+
+def candidate_chunks(out_p: str) -> list[tuple[int, int, str]]:
+    """Return deterministic word n-gram candidate spans over all of `out_p`."""
+    max_words = int(EXTRACTOR_PINS["thresholds"]["CHUNK_MAX_WORDS"])
+    tokens = [
+        (match.start(), match.end(), match.group(0))
+        for match in _WORD_RE.finditer(out_p)
+    ]
+    chunks: list[tuple[int, int, str]] = []
+    seen: set[tuple[int, int]] = set()
+
+    for start_idx in range(len(tokens)):
+        for n_words in range(1, max_words + 1):
+            end_idx = start_idx + n_words
+            if end_idx > len(tokens):
+                break
+            words = [token for _, _, token in tokens[start_idx:end_idx]]
+            if _only_stopwords_or_punctuation(words):
+                continue
+            start = tokens[start_idx][0]
+            end = tokens[end_idx - 1][1]
+            if (start, end) in seen:
+                continue
+            seen.add((start, end))
+            chunks.append((start, end, out_p[start:end]))
+    return chunks
+
+
+def _only_stopwords_or_punctuation(words: list[str]) -> bool:
+    for word in words:
+        normalized = re.sub(r"[^\w]+", "", word.lower(), flags=re.UNICODE)
+        if normalized and normalized not in _STOPWORDS:
+            return False
+    return True
+
+
+def score_pairs(
+    residue: list[dict],
+    chunks: list[tuple[int, int, str]],
+    encoder,
+    windows: list[tuple[int, int] | None],
+) -> list[tuple[float, int, int]]:
+    """Score every residue entry against every candidate chunk in one encode batch."""
+    if not residue or not chunks:
+        return []
+
+    fills = [_entry_fill(entry) for entry in residue]
+    surfaces = [str(entry.get("surface", "")) for entry in residue]
+    chunk_texts = [chunk_text for _, _, chunk_text in chunks]
+    vecs = _as_normalized_matrix(encoder.encode(fills + surfaces + chunk_texts))
+
+    n_entries = len(residue)
+    fill_vecs = vecs[:n_entries]
+    surface_vecs = vecs[n_entries:2 * n_entries]
+    chunk_vecs = vecs[2 * n_entries:]
+
+    fill_scores = np.clip(fill_vecs @ chunk_vecs.T, -1.0, 1.0)
+    surface_scores = np.clip(surface_vecs @ chunk_vecs.T, -1.0, 1.0)
+    scores: list[tuple[float, int, int]] = []
+    for entry_idx in range(n_entries):
+        window = windows[entry_idx] if entry_idx < len(windows) else None
+        for chunk_idx, chunk in enumerate(chunks):
+            score = (
+                _FILL_SCORE_WEIGHT * fill_scores[entry_idx, chunk_idx]
+                + _SURFACE_SCORE_WEIGHT * surface_scores[entry_idx, chunk_idx]
+                + _prior_bonus(chunk, window)
+            )
+            scores.append((float(score), entry_idx, chunk_idx))
+    return scores
+
+
+def _entry_fill(entry: dict) -> str:
+    return str(entry.get("replacement", entry.get("fill", "")))
+
+
+def _prior_bonus(
+    chunk: tuple[int, int, str],
+    window: tuple[int, int] | None,
+) -> float:
+    if window is None:
+        return 0.0
+    window_start, window_end = int(window[0]), int(window[1])
+    if window_start >= window_end:
+        return 0.0
+
+    prior_weight = float(EXTRACTOR_PINS["thresholds"]["PRIOR_WEIGHT"])
+    chunk_start, chunk_end, _ = chunk
+    chunk_center = (chunk_start + chunk_end) / 2.0
+    if window_start <= chunk_center <= window_end:
+        return prior_weight
+
+    distance = window_start - chunk_center if chunk_center < window_start else chunk_center - window_end
+    decay_width = max(1.0, float(window_end - window_start))
+    return prior_weight * max(0.0, 1.0 - (distance / decay_width))
+
+
+class Assignment(dict):
+    """Entry-to-chunk assignment plus fail-closed reasons for unassigned entries."""
+
+    def __init__(self, *args, abstained: dict[int, str] | None = None):
+        super().__init__(*args)
+        self.abstained = abstained or {}
+
+
+def assign(
+    scores: list[tuple[float, int, int]],
+    n_entries: int,
+    chunks: list[tuple[int, int, str]],
+) -> Assignment:
+    sim_min = float(EXTRACTOR_PINS["thresholds"]["SIM_MIN"])
+    margin = float(EXTRACTOR_PINS["thresholds"]["ASSIGN_MARGIN"])
+    assignments: dict[int, int] = {}
+    assigned_scores: dict[int, float] = {}
+    chunk_owner: dict[int, int] = {}
+    taken_spans: list[tuple[int, int]] = []
+
+    for score, entry_idx, chunk_idx in sorted(scores, key=lambda item: _assign_sort_key(item, chunks)):
+        if score < sim_min:
+            continue
+        if entry_idx in assignments:
+            continue
+        if chunk_idx < 0 or chunk_idx >= len(chunks):
+            continue
+        chunk_start, chunk_end, _ = chunks[chunk_idx]
+        if any(_spans_overlap((chunk_start, chunk_end), span) for span in taken_spans):
+            continue
+        assignments[entry_idx] = chunk_idx
+        assigned_scores[entry_idx] = float(score)
+        chunk_owner[chunk_idx] = entry_idx
+        taken_spans.append((chunk_start, chunk_end))
+
+    ambiguous: set[int] = set()
+    for entry_idx, chunk_idx in assignments.items():
+        taken_score = assigned_scores[entry_idx]
+        alternatives = [
+            score
+            for score, score_entry_idx, score_chunk_idx in scores
+            if score_entry_idx == entry_idx
+            and score_chunk_idx != chunk_idx
+            and chunk_owner.get(score_chunk_idx) not in (None, entry_idx)
+        ]
+        if alternatives and max(alternatives) >= taken_score - margin:
+            ambiguous.add(entry_idx)
+
+    for entry_idx in ambiguous:
+        del assignments[entry_idx]
+
+    abstained = {entry_idx: "ambiguous" for entry_idx in sorted(ambiguous)}
+    for entry_idx in range(n_entries):
+        if entry_idx not in assignments and entry_idx not in abstained:
+            abstained[entry_idx] = "no-candidate"
+
+    return Assignment(assignments, abstained=abstained)
+
+
+def _assign_sort_key(
+    item: tuple[float, int, int],
+    chunks: list[tuple[int, int, str]],
+) -> tuple[float, int, int, int]:
+    score, entry_idx, chunk_idx = item
+    if 0 <= chunk_idx < len(chunks):
+        chunk_start, chunk_end, _ = chunks[chunk_idx]
+    else:
+        chunk_start, chunk_end = 0, 0
+    return -float(score), chunk_start, chunk_end, entry_idx
+
+
+def _spans_overlap(left: tuple[int, int], right: tuple[int, int]) -> bool:
+    return left[0] < right[1] and right[0] < left[1]
 
 
 def _run_tier0(out_p: str, R: list[dict]) -> tuple[str, dict, list[dict]]:

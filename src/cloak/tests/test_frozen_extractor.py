@@ -23,6 +23,16 @@ class ToyEncoder:
         return np.vstack(rows)
 
 
+class CountingToyEncoder(ToyEncoder):
+    def __init__(self, dims=32):
+        super().__init__(dims=dims)
+        self.calls = []
+
+    def encode(self, texts):
+        self.calls.append(list(texts))
+        return super().encode(texts)
+
+
 def _sentences(text, spans):
     return [text[start:end] for start, end in spans]
 
@@ -219,3 +229,85 @@ def test_position_bonus_window_covers_aligned_sentence_plus_neighbors():
     assert out_p[window[0]:window[1]] == (
         "Alpha filed the appeal. Beta argued venue. Gamma closed."
     )
+
+
+def test_candidate_chunks_word_ngrams_keep_offsets_and_skip_stopword_only_chunks():
+    out_p = "In the city, Ada filed."
+
+    chunks = fx.candidate_chunks(out_p)
+
+    assert (7, 11, "city") in chunks
+    assert (13, 16, "Ada") in chunks
+    assert (17, 22, "filed") in chunks
+    assert (3, 11, "the city") in chunks
+    assert (0, 2, "In") not in chunks
+    assert (0, 6, "In the") not in chunks
+    assert len({(start, end) for start, end, _ in chunks}) == len(chunks)
+
+
+def test_score_pairs_batches_once_and_prior_disambiguates_repeated_generic_fills():
+    out_p = "a person arrived. a person left."
+    first = (out_p.index("a person"), out_p.index("a person") + len("a person"))
+    second_start = out_p.rindex("a person")
+    second = (second_start, second_start + len("a person"))
+    chunks = fx.candidate_chunks(out_p)
+    residue = [
+        {"surface": "Alpha One", "replacement": "a person", "type": "PERSON"},
+        {"surface": "Beta Two", "replacement": "a person", "type": "PERSON"},
+    ]
+    encoder = CountingToyEncoder()
+
+    scores = fx.score_pairs(residue, chunks, encoder, [first, second])
+    assignment = fx.assign(scores, len(residue), chunks)
+
+    assert len(encoder.calls) == 1
+    assert encoder.calls[0][:2] == ["a person", "a person"]
+    assert encoder.calls[0][2:4] == ["Alpha One", "Beta Two"]
+    assert chunks[assignment[0]][:2] == first
+    assert chunks[assignment[1]][:2] == second
+    assert assignment.abstained == {}
+
+
+def test_assign_excludes_overlapping_chunk_claims():
+    chunks = [
+        (0, 5, "Alpha"),
+        (0, 11, "Alpha Beta"),
+        (12, 16, "Beta"),
+    ]
+    scores = [
+        (0.90, 0, 1),
+        (0.80, 1, 0),
+        (0.70, 1, 2),
+    ]
+
+    assignment = fx.assign(scores, 2, chunks)
+
+    assert dict(assignment) == {0: 1, 1: 2}
+    assert assignment.abstained == {}
+
+
+def test_assign_abstains_sub_sim_min_pairs_as_no_candidate():
+    chunks = [(0, 8, "a city")]
+    scores = [(fx.EXTRACTOR_PINS["thresholds"]["SIM_MIN"] - 0.01, 0, 0)]
+
+    assignment = fx.assign(scores, 2, chunks)
+
+    assert dict(assignment) == {}
+    assert assignment.abstained == {0: "no-candidate", 1: "no-candidate"}
+
+
+def test_assign_demotes_ambiguous_entry_when_taken_chunk_has_close_claim_elsewhere():
+    chunks = [
+        (0, 8, "a city"),
+        (20, 28, "a city"),
+    ]
+    scores = [
+        (0.80, 0, 0),
+        (0.80, 1, 0),
+        (0.76, 1, 1),
+    ]
+
+    assignment = fx.assign(scores, 2, chunks)
+
+    assert dict(assignment) == {0: 0}
+    assert assignment.abstained == {1: "ambiguous"}
