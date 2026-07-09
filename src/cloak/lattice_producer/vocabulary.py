@@ -86,6 +86,9 @@ class CanonicalVocabulary:
     def has_exact(self, label: str) -> bool:
         return _norm(label) in self._labels
 
+    def count_for(self, label: str) -> float | None:
+        return self._labels.get(_norm(label))
+
     def nearest(self, candidate_label: str, k: int = 3, *, min_overlap: float = 0.0) -> list[str]:
         """Token-Jaccard nearest labels already in the vocabulary, most similar first. No
         embeddings dependency -- this only needs to catch near-duplicate paraphrases of a

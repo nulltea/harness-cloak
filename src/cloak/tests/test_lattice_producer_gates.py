@@ -4,6 +4,45 @@ from cloak.lattice_producer.counts import compile_level_counts
 from cloak.lattice_producer.gates import gate_candidates
 
 
+def _proposed(path, rt, entries):
+    path.write_text(json.dumps({
+        "artifact_role": "proposal", "proposal_scope": "producer-processed-only",
+        "profiles": {rt: entries},
+    }))
+
+
+def _model_cand(level, count):
+    return {
+        "level": level, "source_family": "model-proposed", "level_count": count,
+        "level_grounding": {"status": "model-proposed", "count_evidence": "e", "selector": "s"},
+        "count_evidence": "e", "selector": "s", "rationale": "r",
+    }
+
+
+def test_gate_flags_count_disagreement_on_reused_exact_label(tmp_path):
+    out = tmp_path / "proposed.json"
+    _proposed(out, "drug", {"x": {"levels": ["analgesic"], "level_counts": {"analgesic": 20}}})
+    item = {"runtime_type": "drug", "surface": "ibuprofen", "aliases": ["advil"]}
+    # exact reuse of "analgesic" but count 5000 vs recorded 20 -> disagreement
+    res = gate_candidates(item, [_model_cand("analgesic", 5000)], proposed_out=str(out))
+    assert any(d.get("reason") == "count_disagreement" for d in res.diagnostics)
+
+
+def test_gate_flags_item_with_single_level(tmp_path):
+    out = tmp_path / "proposed.json"
+    out.write_text('{"profiles": {"drug": {}}}')
+    item = {"runtime_type": "drug", "surface": "ibuprofen", "aliases": ["advil"]}
+    # a lone candidate that clears every per-candidate gate (non-anchor level so it dodges the
+    # count-agreement check, count above the k-floor) -- it survives to `accepted` alone, so the
+    # >=2 floor must divert it. ("analgesic"/30 from the original brief instead trips
+    # count_disagreement against the real anchor recorded=150, never reaching accepted.)
+    cand = _model_cand("nonsteroidal anti-inflammatory drug", 5000)
+    res = gate_candidates(item, [cand], proposed_out=str(out))
+    # one accepted level is below the >=2 floor -> the surviving level is diverted to diagnostics
+    assert any(d.get("reason") == "too_few_levels" for d in res.diagnostics)
+    assert not res.accepted
+
+
 def test_count_compiler_counts_generated_universe_as_proposal_only(tmp_path):
     generated = tmp_path / "generated_universe.jsonl"
     generated.write_text(
@@ -77,7 +116,10 @@ def test_count_compiler_fails_closed_for_model_level_without_count_evidence(tmp_
 
 
 def test_gate_rejects_leaks_and_routes_below_floor_to_diagnostics():
-    item = {"item_id": "p1", "runtime_type": "profession", "surface": "cardiologist"}
+    # eligible=False exempts this fixture from the item-level >=2 chain floor: this test isolates
+    # the per-candidate self_leak/type_name_phrase/below_floor rules, which the floor is orthogonal
+    # to (the floor has its own test, test_gate_flags_item_with_single_level).
+    item = {"item_id": "p1", "runtime_type": "profession", "surface": "cardiologist", "eligible": False}
     candidates = [
         {"level": "cardiologist specialist", "level_count": 1000.0, "level_grounding": {"status": "certifying"}},
         {"level": "a profession", "level_count": 1000.0, "level_grounding": {"status": "certifying"}},
@@ -93,7 +135,8 @@ def test_gate_rejects_leaks_and_routes_below_floor_to_diagnostics():
 
 
 def test_gate_allows_generated_universe_counts_but_marks_them_non_certifying():
-    item = {"item_id": "p2", "runtime_type": "profession", "surface": "cardiologist"}
+    # eligible=False: isolates the proposal-universe per-candidate path; exempt from the >=2 floor.
+    item = {"item_id": "p2", "runtime_type": "profession", "surface": "cardiologist", "eligible": False}
     candidates = [
         {
             "level": "medical specialist",
@@ -166,7 +209,7 @@ def test_gate_fails_closed_for_flat_generic_model_chain():
     assert {row["reason"] for row in result.diagnostics} == {"flat_model_counts", "weak_semantic_relevance"}
 
 
-def _drug_candidate(level, *, reused=None):
+def _drug_candidate(level, *, reused=None, level_count=5000.0):
     grounding = {
         "status": "model-proposed",
         "source_family": "model-proposed",
@@ -177,7 +220,7 @@ def _drug_candidate(level, *, reused=None):
         "level": level,
         "aliases": ["some brand name"],
         "source_family": "model-proposed",
-        "level_count": 5000.0,
+        "level_count": level_count,
         "level_grounding": grounding,
         "rationale": "Truthful generalization for this entry.",
     }
@@ -262,7 +305,8 @@ def test_gate_routes_generic_filler_aliases_to_diagnostics():
 def test_gate_allows_single_generic_sounding_alias() -> None:
     # a lone alias can't be checked against "ALL aliases are filler" meaningfully -- this must
     # not become a blanket ban on any alias containing a common word.
-    item = {"item_id": "d5", "runtime_type": "drug", "surface": "gabapentin", "aliases": []}
+    # eligible=False: isolates the single-generic-alias per-candidate rule; exempt from the >=2 floor.
+    item = {"item_id": "d5", "runtime_type": "drug", "surface": "gabapentin", "aliases": [], "eligible": False}
     candidates = [_candidate_with_aliases("nonsteroidal anti-inflammatory drug", ["pharmaceutical agent"])]
 
     result = gate_candidates(item, candidates)
@@ -299,7 +343,8 @@ def test_gate_backstops_short_surface_even_when_model_claims_high_confidence():
 
 
 def test_gate_allows_long_surface_with_high_confidence():
-    item = {"item_id": "d9", "runtime_type": "drug", "surface": "gabapentin", "aliases": []}
+    # eligible=False: isolates the long-surface/high-confidence per-candidate path; exempt from floor.
+    item = {"item_id": "d9", "runtime_type": "drug", "surface": "gabapentin", "aliases": [], "eligible": False}
     candidate = _candidate_with_aliases("nonsteroidal anti-inflammatory drug", ["neurontin"])
     candidate["surface_confidence"] = "high"
 
@@ -323,8 +368,11 @@ def test_gate_routes_unreused_near_duplicate_of_canonical_label_to_diagnostics()
 
 
 def test_gate_accepts_exact_canonical_label_without_reused_flag():
-    item = {"item_id": "d2", "runtime_type": "drug", "surface": "ibuprofen", "aliases": []}
-    candidates = [_drug_candidate("pharmaceutical compound")]
+    # eligible=False: isolates the exact-canonical-label per-candidate rule; exempt from the >=2 floor.
+    item = {"item_id": "d2", "runtime_type": "drug", "surface": "ibuprofen", "aliases": [], "eligible": False}
+    # count matched to the recorded anchor magnitude so the new count-agreement gate doesn't fire;
+    # this test is about reuse of the exact label, not count disagreement.
+    candidates = [_drug_candidate("pharmaceutical compound", level_count=2_800_000.0)]
 
     result = gate_candidates(item, candidates)
 
@@ -371,7 +419,8 @@ def test_gate_without_proposed_out_falls_back_to_static_anchors_only():
     # and with no prior run history -- "renal elimination agent" only shares the generic token
     # "agent" with any static anchor (below the near-duplicate threshold), so it must be
     # accepted cleanly. Proves the dynamic behavior is additive, not silently always-on.
-    item = {"item_id": "d11", "runtime_type": "drug", "surface": "metoprolol", "aliases": []}
+    # eligible=False: isolates the static-anchor fallback per-candidate path; exempt from the >=2 floor.
+    item = {"item_id": "d11", "runtime_type": "drug", "surface": "metoprolol", "aliases": [], "eligible": False}
     candidates = [_drug_candidate("renal elimination agent")]
 
     result = gate_candidates(item, candidates)
@@ -382,7 +431,8 @@ def test_gate_without_proposed_out_falls_back_to_static_anchors_only():
 def test_gate_accepts_new_phrasing_explicitly_marked_as_not_reused_but_unrelated():
     # a genuinely novel, unrelated label (no vocabulary overlap at all) must not be blocked --
     # this gate only targets near-duplicates of an existing canonical label, not all new labels.
-    item = {"item_id": "d3", "runtime_type": "drug", "surface": "ibuprofen", "aliases": []}
+    # eligible=False: isolates the novel-unrelated-label per-candidate rule; exempt from the >=2 floor.
+    item = {"item_id": "d3", "runtime_type": "drug", "surface": "ibuprofen", "aliases": [], "eligible": False}
     candidates = [_drug_candidate("nonsteroidal anti-inflammatory drug", reused=False)]
 
     result = gate_candidates(item, candidates)

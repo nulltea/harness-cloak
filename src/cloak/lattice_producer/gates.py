@@ -204,6 +204,15 @@ def gate_candidates(
                         {**record, "reason": "unreused_near_duplicate_label", "near_duplicates": near_duplicates}
                     )
                     continue
+            if vocabulary is not None and vocabulary.has_exact(level):
+                recorded = vocabulary.count_for(level)
+                proposed = float(candidate.get("level_count", 1.0))
+                if recorded and recorded > 0 and proposed > 0:
+                    ratio = max(proposed / recorded, recorded / proposed)
+                    if ratio > 4.0:
+                        diagnostics.append({**record, "reason": "count_disagreement",
+                                            "recorded_count": recorded})
+                        continue
         if grounding_status == "fail-closed":
             diagnostics.append({**record, "reason": (candidate.get("level_grounding") or {}).get("reason", "fail_closed")})
             continue
@@ -211,4 +220,10 @@ def gate_candidates(
             diagnostics.append({**record, "reason": "below_floor"})
             continue
         accepted.append(record)
+    # >=2-level floor (findings B): an eligible item that yields a single accepted level has no
+    # real generalization chain. Divert the survivors to diagnostics so the item is retried
+    # (route_after_gate -> requeue) rather than persisted as a degenerate 1-level row.
+    if item.get("eligible", True) and 0 < len(accepted) < 2:
+        diagnostics.extend({**row, "reason": "too_few_levels"} for row in accepted)
+        accepted = []
     return GateResult(accepted=accepted, rejected=rejected, diagnostics=diagnostics)
