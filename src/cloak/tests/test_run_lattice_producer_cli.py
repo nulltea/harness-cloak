@@ -35,7 +35,7 @@ def test_lattice_producer_cli_accepts_repeated_and_comma_separated_categories():
     assert args.thinking_budget_tokens == 1024
 
 
-def test_lattice_producer_cli_defaults_to_unbounded_thinking_budget():
+def test_lattice_producer_cli_defaults_to_bounded_thinking_budget():
     cli = _load_cli()
 
     args = cli.parse_args(
@@ -49,4 +49,4 @@ def test_lattice_producer_cli_defaults_to_unbounded_thinking_budget():
         ]
     )
 
-    assert args.thinking_budget_tokens == -1
+    assert args.thinking_budget_tokens == 2048
