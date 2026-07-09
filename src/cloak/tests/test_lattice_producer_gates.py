@@ -4,6 +4,27 @@ from cloak.lattice_producer.counts import compile_level_counts
 from cloak.lattice_producer.gates import gate_candidates
 
 
+def test_compile_drops_frozenset_member_set_so_record_is_json_serializable(tmp_path):
+    # a deterministic reference candidate carries a frozenset member_set; the compiled record must
+    # keep the count + member_set_ref but drop the raw frozenset (not JSON-serializable).
+    candidate = {
+        "level": "extrinsic cardiomyopathy",
+        "source_family": "doid-is-a",
+        "selector": "doid.is_a_descendants(DOID:0050700)",
+        "member_set": frozenset({"DOID:1", "DOID:2", "DOID:3"}),
+        "member_set_ref": "doid:is_a_descendants:DOID:0050700",
+    }
+    compiled = compile_level_counts(
+        {"runtime_type": "health-condition", "surface": "alcoholic cardiomyopathy"},
+        [candidate],
+        generated_universe_path=tmp_path / "missing.jsonl",
+    )
+    assert "member_set" not in compiled[0]
+    assert compiled[0]["level_count"] == 3.0
+    assert compiled[0]["level_grounding"]["status"] == "certifying"
+    json.dumps(compiled[0])  # must not raise
+
+
 def _proposed(path, rt, entries):
     path.write_text(json.dumps({
         "artifact_role": "proposal", "proposal_scope": "producer-processed-only",

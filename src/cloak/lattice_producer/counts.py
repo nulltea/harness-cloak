@@ -48,6 +48,11 @@ def compile_level_counts(
         if not level:
             continue
         out = dict(candidate)
+        # a deterministic reference candidate carries its raw `member_set` (a frozenset used to
+        # compute the count); the count and member_set_ref below capture everything downstream
+        # needs, and a frozenset is not JSON-serializable, so drop it before it reaches a
+        # persisted accepted/diagnostic row.
+        out.pop("member_set", None)
         if item.get("entry_origin") == "generated-universe" or candidate.get("entry_origin") == "generated-universe":
             count = _generated_universe_count(runtime_type, level, generated_universe_path)
             status = "proposal-universe"
