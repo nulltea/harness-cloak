@@ -56,9 +56,9 @@ def test_build_target_splices_located_mentions_only():
     assert tgt == "The org filed in January 13th 1982." and n == 1
 
 def test_value_compatible_fail_closed():
-    # security gate: NEVER returns True; False on a digit-run absent from the fill; None otherwise
+    # security gate: NEVER returns True; False on a numeric marker absent from the fill; None otherwise
     from cloak.reconstruct import _value_compatible
-    assert _value_compatible("some time ago", "three years ago") is None    # no digits -> defer
+    assert _value_compatible("some time ago", "three years ago") is False   # written number absent -> reject
     assert _value_compatible("the early 1980s", "late 1990s") is False       # 1990 absent -> reject
     assert _value_compatible("the early 1980s", "Early 1980s") is None        # subset-compatible -> defer
 

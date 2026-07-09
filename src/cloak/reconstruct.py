@@ -170,6 +170,40 @@ def build_target(text: str, located: list[dict]) -> tuple[str, int]:
 
 
 _AMBIGUOUS_TYPES = {"DATETIME", "QUANTITY", "LOC", "ORG"}  # scalar/named — high false-corr risk
+_NUMBER_WORDS = {
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+    "hundred",
+    "thousand",
+    "million",
+    "billion",
+}
 
 
 def restorable(entry: dict, verdict: dict, prepass: str, nli=None) -> bool:
@@ -218,15 +252,25 @@ def _value_compatible(fill: str, quote: str):
     """Deterministic scalar gate, FAIL-CLOSED (Round-4 fix — never admit on a bare digit
     subset: "early 1980s"→"late 1980s" shares {1980} but flips the modifier). Only two
     non-deferring outcomes:
-      False — the quote introduces a digit-run the fill lacks (model-invented specific/leak);
-      None  — digits are subset-compatible but NOT proven equivalent, OR no digits → NLI (or
-              a real date/quantity normalizer) must still approve.
+      False — the quote introduces a numeric marker the fill lacks (model-invented specific/leak);
+      None  — numeric markers are subset-compatible but NOT proven equivalent, OR absent → NLI
+              (or a real date/quantity normalizer) must still approve.
     It never returns True; equivalence is proven downstream, not assumed here."""
-    fn = set(re.findall(r"\d+", fill))
-    qn = set(re.findall(r"\d+", quote))
+    fn = _numeric_markers(fill)
+    qn = _numeric_markers(quote)
     if qn and not qn <= fn:
         return False       # hard reject: a specific number absent from the fill
     return None            # defer: subset-compatible or no digits — NLI must confirm fill ⊨ quote
+
+
+def _numeric_markers(text: str) -> set[str]:
+    markers = set(re.findall(r"\d+", str(text)))
+    markers.update(
+        token
+        for token in re.findall(r"\b[a-z]+\b", str(text).lower())
+        if token in _NUMBER_WORDS
+    )
+    return markers
 
 
 def _load_nli():

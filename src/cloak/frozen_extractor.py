@@ -15,10 +15,13 @@ import re
 import numpy as np
 
 from cloak.extract import _finalize, _rule_prepass
+from cloak.reconstruct import _value_compatible
+from cloak.runtime_types import PLACEHOLDER_RE
 
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"[.!?](?=\s|$)|\n")
 _WORD_RE = re.compile(r"\b[^\W_]+(?:['-][^\W_]+)*\b", re.UNICODE)
+_CAPITALIZED_TOKEN_RE = re.compile(r"\b[A-Z][A-Za-z0-9]*(?:['-][A-Za-z0-9]+)*\b")
 _STOPWORDS = {
     "a",
     "an",
@@ -48,6 +51,28 @@ _FILL_SCORE_WEIGHT = 0.6
 _SURFACE_SCORE_WEIGHT = 0.4
 
 
+TYPE_HYPOTHESES = {
+    "PERSON": "This text mentions a person name or alias.",
+    "CODE": "This text mentions a reference number, contact code, or account-like identifier.",
+    "ORG": "This text mentions an organization, company, court, or institution.",
+    "LOC": "This text mentions a location, address, city, or country.",
+    "DATETIME": "This text mentions a date, time, or duration.",
+    "QUANTITY": "This text mentions an amount, money, percentage, or count.",
+    "MISC": "This text mentions an identifying residual attribute or event.",
+    "nationality": "This text mentions a nationality or citizenship.",
+    "ethnicity": "This text mentions an ethnicity, race, or ancestry group.",
+    "religion": "This text mentions a religion, belief, denomination, or branch.",
+    "profession": "This text mentions a profession, occupation, or job title.",
+    "age": "This text mentions an age expression.",
+    "gender": "This text mentions a gender value.",
+    "marital-status": "This text mentions a marital status value.",
+    "health-condition": "This text mentions a disease, diagnosis, or health condition.",
+    "sexual-orientation": "This text mentions a sexual orientation value.",
+    "family-role": "This text mentions a family role or relationship.",
+    "demographic-other": "This text mentions a residual demographic attribute.",
+}
+
+
 EXTRACTOR_PINS = {
     "models": {
         "encoder": "BAAI/bge-small-en-v1.5",
@@ -64,7 +89,7 @@ EXTRACTOR_PINS = {
         "EPS_MARGIN": 0.02,
         "CHUNK_MAX_WORDS": 6,
     },
-    "type_hypotheses": {},
+    "type_hypotheses": TYPE_HYPOTHESES,
     "ladder_semver": "0.1.0",
 }
 
@@ -414,6 +439,95 @@ def _assign_sort_key(
 
 def _spans_overlap(left: tuple[int, int], right: tuple[int, int]) -> bool:
     return left[0] < right[1] and right[0] < left[1]
+
+
+def verify(entry: dict, chunk_text: str, sentence: str, nli) -> tuple[bool, str]:
+    """Verify an assigned chunk before splice; fail closed on the first failed gate."""
+    fill = _entry_fill(entry)
+    normalized_fill = fill.strip()
+    if not normalized_fill or PLACEHOLDER_RE.fullmatch(normalized_fill):
+        return False, "bad-fill"
+
+    if _value_compatible(fill, chunk_text) is False:
+        return False, "added-digit"
+
+    ok, reason = _require_entailment(
+        nli(_fill_sentence_template(fill), _chunk_sentence(chunk_text, sentence)),
+        float(EXTRACTOR_PINS["thresholds"]["NLI_ENTAIL"]),
+        margin_reason="margin-correspondence",
+        reject_reason="correspondence",
+    )
+    if not ok:
+        return False, reason
+
+    runtime_type = str(entry.get("type", "MISC"))
+    hypothesis = EXTRACTOR_PINS["type_hypotheses"].get(runtime_type)
+    if hypothesis is not None:
+        ok, reason = _require_entailment(
+            nli(_chunk_sentence(chunk_text, sentence), hypothesis),
+            float(EXTRACTOR_PINS["thresholds"]["TYPE_ENTAIL"]),
+            margin_reason="margin-type",
+            reject_reason="type",
+        )
+        if not ok:
+            return False, reason
+
+    if _has_added_proper_noun(chunk_text, fill, str(entry.get("surface", "")), sentence):
+        return False, "added-proper-noun"
+
+    return True, "ok"
+
+
+def _fill_sentence_template(fill: str) -> str:
+    return f"The text mentions {fill.strip()}."
+
+
+def _chunk_sentence(chunk_text: str, sentence: str) -> str:
+    sentence = str(sentence).strip()
+    return sentence if sentence else str(chunk_text).strip()
+
+
+def _require_entailment(
+    nli_result: tuple[str, float],
+    threshold: float,
+    *,
+    margin_reason: str,
+    reject_reason: str,
+) -> tuple[bool, str]:
+    label, prob = nli_result
+    prob = float(prob)
+    eps = float(EXTRACTOR_PINS["thresholds"]["EPS_MARGIN"])
+    if abs(prob - threshold) <= eps + np.finfo(float).eps * 8:
+        return False, margin_reason
+    if str(label).lower() != "entailment" or prob < threshold:
+        return False, reject_reason
+    return True, "ok"
+
+
+def _has_added_proper_noun(chunk_text: str, fill: str, surface: str, sentence: str) -> bool:
+    fill_tokens = _normalized_token_set(fill)
+    surface_tokens = _normalized_token_set(surface)
+    sentence_text = str(sentence)
+    sentence_initial = _sentence_initial_token_start(sentence_text)
+    chunk_offset = sentence_text.find(chunk_text) if sentence_text else -1
+
+    for match in _CAPITALIZED_TOKEN_RE.finditer(str(chunk_text)):
+        token = match.group(0).lower()
+        absolute_start = chunk_offset + match.start() if chunk_offset >= 0 else match.start()
+        if sentence_initial is not None and absolute_start == sentence_initial:
+            continue
+        if token not in fill_tokens and token not in surface_tokens:
+            return True
+    return False
+
+
+def _normalized_token_set(text: str) -> set[str]:
+    return {match.group(0).lower() for match in _WORD_RE.finditer(str(text))}
+
+
+def _sentence_initial_token_start(sentence: str) -> int | None:
+    match = _WORD_RE.search(str(sentence))
+    return match.start() if match is not None else None
 
 
 def _run_tier0(out_p: str, R: list[dict]) -> tuple[str, dict, list[dict]]:

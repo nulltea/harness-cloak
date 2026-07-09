@@ -37,6 +37,18 @@ def _sentences(text, spans):
     return [text[start:end] for start, end in spans]
 
 
+class ScriptedNLI:
+    def __init__(self, *returns):
+        self.returns = list(returns)
+        self.calls = []
+
+    def __call__(self, premise, hypothesis):
+        self.calls.append((premise, hypothesis))
+        if not self.returns:
+            raise AssertionError("scripted NLI exhausted")
+        return self.returns.pop(0)
+
+
 def test_extractor_pins_include_frozen_model_ids_and_thresholds():
     assert fx.EXTRACTOR_PINS == {
         "models": {
@@ -54,9 +66,36 @@ def test_extractor_pins_include_frozen_model_ids_and_thresholds():
             "EPS_MARGIN": 0.02,
             "CHUNK_MAX_WORDS": 6,
         },
-        "type_hypotheses": {},
+        "type_hypotheses": fx.TYPE_HYPOTHESES,
         "ladder_semver": "0.1.0",
     }
+
+
+def test_type_hypotheses_cover_coarse_and_fine_runtime_types():
+    assert set(fx.TYPE_HYPOTHESES) == {
+        "PERSON",
+        "CODE",
+        "ORG",
+        "LOC",
+        "DATETIME",
+        "QUANTITY",
+        "MISC",
+        "nationality",
+        "ethnicity",
+        "religion",
+        "profession",
+        "age",
+        "gender",
+        "marital-status",
+        "health-condition",
+        "sexual-orientation",
+        "family-role",
+        "demographic-other",
+    }
+    assert (
+        fx.TYPE_HYPOTHESES["health-condition"]
+        == "This text mentions a disease, diagnosis, or health condition."
+    )
 
 
 def test_extract_deterministic_only_matches_invert_for_placeholder():
@@ -311,3 +350,138 @@ def test_assign_demotes_ambiguous_entry_when_taken_chunk_has_close_claim_elsewhe
 
     assert dict(assignment) == {0: 0}
     assert assignment.abstained == {1: "ambiguous"}
+
+
+def test_verify_rejects_empty_and_placeholder_fills_before_nli():
+    nli = ScriptedNLI(("entailment", 0.99))
+
+    assert fx.verify({"replacement": "  ", "surface": "Ada", "type": "PERSON"},
+                     "Ada", "Ada arrived.", nli) == (False, "bad-fill")
+    assert fx.verify({"replacement": "<PERSON_1>", "surface": "Ada", "type": "PERSON"},
+                     "Ada", "Ada arrived.", nli) == (False, "bad-fill")
+    assert nli.calls == []
+
+
+def test_verify_rejects_added_digit_before_nli():
+    nli = ScriptedNLI(("entailment", 0.99))
+
+    result = fx.verify(
+        {"replacement": "some time ago", "surface": "three years ago", "type": "DATETIME"},
+        "three years ago",
+        "The event happened three years ago.",
+        nli,
+    )
+
+    assert result == (False, "added-digit")
+    assert nli.calls == []
+
+
+def test_verify_rejects_failed_correspondence_entailment():
+    nli = ScriptedNLI(("neutral", 0.95))
+
+    result = fx.verify(
+        {"replacement": "a county court", "surface": "Hamilton County Court", "type": "ORG"},
+        "a private company",
+        "The order came from a private company.",
+        nli,
+    )
+
+    assert result == (False, "correspondence")
+    assert len(nli.calls) == 1
+
+
+def test_verify_abstains_correspondence_within_margin_on_either_side():
+    threshold = fx.EXTRACTOR_PINS["thresholds"]["NLI_ENTAIL"]
+    eps = fx.EXTRACTOR_PINS["thresholds"]["EPS_MARGIN"]
+
+    below = fx.verify(
+        {"replacement": "a city", "surface": "Boston", "type": "LOC"},
+        "a city",
+        "The hearing was in a city.",
+        ScriptedNLI(("entailment", threshold - eps)),
+    )
+    above = fx.verify(
+        {"replacement": "a city", "surface": "Boston", "type": "LOC"},
+        "a city",
+        "The hearing was in a city.",
+        ScriptedNLI(("entailment", threshold + eps)),
+    )
+
+    assert below == (False, "margin-correspondence")
+    assert above == (False, "margin-correspondence")
+
+
+def test_verify_rejects_failed_type_entailment():
+    nli = ScriptedNLI(("entailment", 0.99), ("neutral", 0.95))
+
+    result = fx.verify(
+        {"replacement": "a city", "surface": "Boston", "type": "LOC"},
+        "a person",
+        "The hearing concerned a person.",
+        nli,
+    )
+
+    assert result == (False, "type")
+    assert nli.calls[1][1] == fx.TYPE_HYPOTHESES["LOC"]
+
+
+def test_verify_abstains_type_within_margin_on_either_side():
+    threshold = fx.EXTRACTOR_PINS["thresholds"]["TYPE_ENTAIL"]
+    eps = fx.EXTRACTOR_PINS["thresholds"]["EPS_MARGIN"]
+
+    below = fx.verify(
+        {"replacement": "a city", "surface": "Boston", "type": "LOC"},
+        "a city",
+        "The hearing was in a city.",
+        ScriptedNLI(("entailment", 0.99), ("entailment", threshold - eps)),
+    )
+    above = fx.verify(
+        {"replacement": "a city", "surface": "Boston", "type": "LOC"},
+        "a city",
+        "The hearing was in a city.",
+        ScriptedNLI(("entailment", 0.99), ("entailment", threshold + eps)),
+    )
+
+    assert below == (False, "margin-type")
+    assert above == (False, "margin-type")
+
+
+def test_verify_skips_type_gate_for_unknown_runtime_type():
+    nli = ScriptedNLI(("entailment", 0.99))
+
+    result = fx.verify(
+        {"replacement": "an attribute", "surface": "classified", "type": "legacy-type"},
+        "an attribute",
+        "The record contains an attribute.",
+        nli,
+    )
+
+    assert result == (True, "ok")
+    assert len(nli.calls) == 1
+
+
+def test_verify_rejects_added_proper_noun_absent_from_fill_and_surface():
+    nli = ScriptedNLI(("entailment", 0.99), ("entailment", 0.99))
+
+    result = fx.verify(
+        {"replacement": "a city", "surface": "Boston", "type": "LOC"},
+        "a city in Albany",
+        "The hearing was in a city in Albany.",
+        nli,
+    )
+
+    assert result == (False, "added-proper-noun")
+
+
+def test_verify_allows_sentence_initial_capitalized_token():
+    nli = ScriptedNLI(("entailment", 0.99), ("entailment", 0.99))
+
+    result = fx.verify(
+        {"replacement": "the early 1980s", "surface": "January 13th 1982",
+         "type": "DATETIME"},
+        "Early 1980s",
+        "Early 1980s was the relevant period.",
+        nli,
+    )
+
+    assert result == (True, "ok")
