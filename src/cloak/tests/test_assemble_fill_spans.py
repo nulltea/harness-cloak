@@ -5,6 +5,11 @@ of that entry's (surface, replacement) pair, in the FINAL doc_p (after _cleanup)
 Build invariant: doc_p[start:end] == entry["replacement"] exactly (case-adjusted rep
 is what was spliced in).
 """
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
+
 import train_ranker as tr
 
 
