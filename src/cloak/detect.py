@@ -115,7 +115,7 @@ class Span:
     text: str
     type: str      # TAB entity_type
     score: float
-    source: str    # "gliner" | "presidio"
+    source: str    # "gliner" | "presidio" (spaCy NER) | "presidio-pattern"
     chain: int = -1  # coref chain id (set by coref_chains), -1 = unclustered
 
 
@@ -241,19 +241,31 @@ class Detector:
                 if self.fine_dem and t == "DEM":
                     continue   # fine-dem: GLiNER's learned fine leaves own demographics; drop Presidio's
                                # coarse NRP->DEM (keeps relabel_dem training/eval-only, inference pure-model).
-                spans.append(Span(r.start, r.end, text[r.start:r.end], t, r.score, "presidio"))
+                rec = (r.recognition_metadata or {}).get("recognizer_name", "")
+                src = "presidio" if rec == "SpacyRecognizer" else "presidio-pattern"
+                spans.append(Span(r.start, r.end, text[r.start:r.end], t, r.score, src))
         spans = [s for s in spans  # pure symbol/emoji spans or bare pronouns: never identifiers
                  if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in _PRONOUNS]
         return _dedupe(spans)
 
 
 def _dedupe(spans: list[Span]) -> list[Span]:
-    """Overlapping spans: keep the widest, then highest score."""
-    out = []
-    for s in sorted(spans, key=lambda s: (s.start, -(s.end - s.start), -s.score)):
+    """Overlap resolution. Same-type overlaps: keep the widest (extent disagreement over one
+    entity). Cross-type conflicts: higher score wins; pattern-based Presidio hits (fixed regex
+    scores 0.4-0.6, not comparable to GLiNER probabilities) get an effective floor of 0.9.
+    """
+    def eff(s: Span) -> float:
+        return max(s.score, 0.9) if s.source == "presidio-pattern" else s.score
+
+    within_type: list[Span] = []
+    for s in sorted(spans, key=lambda s: (-(s.end - s.start), -s.score, s.start)):
+        if not any(s.type == o.type and s.start < o.end and o.start < s.end for o in within_type):
+            within_type.append(s)
+    out: list[Span] = []
+    for s in sorted(within_type, key=lambda s: (-eff(s), -(s.end - s.start), s.start)):
         if not any(s.start < o.end and o.start < s.end for o in out):
             out.append(s)
-    return out
+    return sorted(out, key=lambda s: s.start)
 
 
 def coref_chains(text: str, spans: list[Span]) -> list[Span]:
