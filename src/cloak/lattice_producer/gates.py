@@ -149,6 +149,7 @@ def gate_candidates(
     # already implied; only the vocabulary and length checks need to run here.
     surface_key = surface.replace(" ", "")
     short_ambiguous_surface = bool(surface_key) and len(surface_key) <= 4 and not (vocabulary and vocabulary.has_exact(surface))
+    floor = float(K_FLOORS.get(str(runtime_type), 100.0))
     for candidate in candidates:
         level = str(candidate.get("level", "")).strip()
         record = {**candidate, "item_id": item.get("item_id"), "runtime_type": runtime_type}
@@ -167,7 +168,6 @@ def gate_candidates(
             rejected.append({**record, "reason": reason})
             continue
         grounding_status = (candidate.get("level_grounding") or {}).get("status")
-        floor = float(K_FLOORS.get(str(runtime_type), 100.0))
         if _is_model_proposed(candidate):
             if candidate.get("surface_confidence") in {"low", "ambiguous"} or short_ambiguous_surface:
                 diagnostics.append({**record, "reason": "low_confidence_surface"})
@@ -216,10 +216,26 @@ def gate_candidates(
         if grounding_status == "fail-closed":
             diagnostics.append({**record, "reason": (candidate.get("level_grounding") or {}).get("reason", "fail_closed")})
             continue
-        if grounding_status != "proposal-universe" and float(candidate.get("level_count", 1.0)) < floor:
-            diagnostics.append({**record, "reason": "below_floor"})
-            continue
+        # NOTE: the k-floor is NOT applied here as a per-rung drop. Per anonymity.py, the floor is
+        # an anonymization-time legality test ("legal iff aset >= k_floors[type]"): the release-time
+        # risk walk climbs the lattice and picks the narrowest rung reaching the floor. A
+        # generalization lattice must therefore KEEP its specific sub-floor rungs (e.g. drug ->
+        # "beta blocker", k~30) as granular options; dropping them here would strip the lattice's
+        # granularity. The floor is instead enforced chain-wide below.
         accepted.append(record)
+    # chain-wide k-floor: keep every truthful rung, but require the chain's BROADEST accepted rung
+    # to reach the floor, so the release-time walk always has at least one legal (k>=floor) target.
+    # A chain whose broadest real rung is still below the floor can't be anonymized safely -> divert
+    # the whole chain (route_after_gate requeues for a broader tier) rather than persist an entry
+    # with no legal generalization. proposal-universe rungs carry provisional counts and are exempt.
+    real_counts = [
+        float(row.get("level_count", 1.0))
+        for row in accepted
+        if (row.get("level_grounding") or {}).get("status") != "proposal-universe"
+    ]
+    if real_counts and max(real_counts) < floor:
+        diagnostics.extend({**row, "reason": "chain_below_floor"} for row in accepted)
+        accepted = []
     # >=2-level floor (findings B): an eligible item that yields a single accepted level has no
     # real generalization chain. Divert the survivors to diagnostics so the item is retried
     # (route_after_gate -> requeue) rather than persisted as a degenerate 1-level row.

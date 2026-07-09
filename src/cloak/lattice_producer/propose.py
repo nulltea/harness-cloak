@@ -46,6 +46,46 @@ def _hash_payload(payload: Any) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()
 
 
+# Per-runtime-type level guidance. Each entry names the SPECIFIC nearest tier for that type and
+# a concrete worked chain, so the model sees only the rule relevant to the item it is processing
+# rather than one prompt with every type's examples jammed together. `_DEFAULT_LEVEL_GUIDANCE`
+# covers any runtime type without a bespoke entry (profession, LOC, ORG, ...).
+_DEFAULT_LEVEL_GUIDANCE = (
+    "The FIRST (nearest) level must be the MOST SPECIFIC truthful category the surface directly "
+    "belongs to -- its immediate parent class, never a broad catch-all. Each subsequent level "
+    "widens by exactly ONE step; do not skip real intermediate tiers or jump to a universal "
+    "catch-all. Prefer 3-4 tiers when genuine intermediate categories exist."
+)
+_TYPE_LEVEL_GUIDANCE: dict[str, str] = {
+    "drug": (
+        "This entry is a DRUG. The nearest level is its specific pharmacologic/mechanistic class, "
+        "e.g. metoprolol -> 'beta blocker' (or 'selective beta-1 adrenergic antagonist'), then "
+        "widen one step at a time: -> 'antihypertensive agent' -> 'cardiovascular agent'. Do NOT "
+        "start at 'medication', 'drug', or 'pharmaceutical compound' -- those are only the broadest "
+        "tier, never the first. proposed_count is the number of DISTINCT drugs in that class "
+        "(a specific class holds ~dozens; the broadest tier at most low thousands)."
+    ),
+    "health-condition": (
+        "This entry is a HEALTH CONDITION. The nearest level is its specific disease family, e.g. "
+        "dermatitis -> 'eczematous skin disorder' -> 'inflammatory skin disease' -> 'skin disease'. "
+        "Do NOT start at 'medical condition', 'disease', or 'disorder' -- those are only the "
+        "broadest tier. proposed_count is the number of DISTINCT conditions in that family "
+        "(a specific family holds ~dozens; the broadest tier at most low thousands)."
+    ),
+    "medical-procedure": (
+        "This entry is a MEDICAL PROCEDURE. The nearest level is its specific procedure class, e.g. "
+        "upper endoscopy -> 'esophagogastroduodenoscopy' -> 'upper gastrointestinal endoscopy' -> "
+        "'endoscopic procedure'. Do NOT start at 'medical procedure', 'clinical service', or "
+        "'human activity' -- those are only the broadest tier. proposed_count is the number of "
+        "DISTINCT procedures in that class (a specific class holds ~dozens)."
+    ),
+}
+
+
+def _level_guidance_for(runtime_type: str) -> str:
+    return _TYPE_LEVEL_GUIDANCE.get(runtime_type, _DEFAULT_LEVEL_GUIDANCE)
+
+
 def assemble_context_packet(
     item: dict[str, Any],
     *,
@@ -96,12 +136,14 @@ def assemble_context_packet(
         "required_level_fields": ["level", "proposed_count", "count_evidence", "selector", "rationale", "reused_canonical_label"],
         "min_levels": 2,
         "count_semantics_instruction": (
-            "proposed_count is an ANONYMITY-SET SIZE: the number of DISTINCT entities of this "
-            "runtime_type that generalize to this level (e.g. how many distinct medical "
-            "conditions fall under 'metabolic disorder'). It is NOT how many people are affected, "
-            "NOT prevalence, NOT disease burden, NOT market size. Typical values are small: a "
-            "specific class holds a handful to a few hundred distinct members, not millions."
+            "proposed_count is an ANONYMITY-SET SIZE: the number of DISTINCT real-world entities "
+            "of this runtime_type that also belong to this level. It is NOT people affected, NOT "
+            "prevalence, NOT disease burden, NOT sales or market size -- a count in the millions "
+            "or billions is always wrong here. It increases monotonically as levels get broader: "
+            "the nearest specific level holds only dozens to a few hundred sibling entities, and "
+            "only the broadest levels reach the low thousands."
         ),
+        "level_guidance": _level_guidance_for(str(runtime_type or "")),
         "nearby_profile_rows": relevant,
         "canonical_vocabulary_slice": vocabulary_slice,
         "canonical_vocabulary_instruction": (
@@ -238,13 +280,11 @@ def propose_with_llama_swap(
     client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "local"))
     prompt = (
         "Return strict JSON only. Propose a reviewable lattice profile row for this item. "
-        "Include aliases for the entry. Include candidate levels ordered from nearest truthful generalization "
-        "to broadest useful generalization. For every level include proposed_count, count_evidence, selector, "
-        "and rationale. Proposed counts are evidence for review, not certified counts; do not label them certified.\n\n"
-        "Provide AT LEAST TWO ordered levels: the nearest truthful generalization and at least "
-        "one broader tier, each semantically close to its neighbor (no jump straight to a "
-        "universal catch-all). proposed_count is an anonymity-set size (count of DISTINCT "
-        "entities under the level), never a count of people or prevalence.\n\n"
+        "Include aliases for the entry, then AT LEAST TWO ordered candidate levels from nearest "
+        "to broadest. Follow the packet's level_guidance (specific to this runtime_type) for how "
+        "specific the nearest level must be, and count_semantics_instruction for proposed_count. "
+        "Give count_evidence, selector, and rationale per level; counts are review evidence, not "
+        "certified.\n\n"
         + json.dumps(packet, sort_keys=True)
     )
     request_kwargs = {

@@ -115,10 +115,13 @@ def test_count_compiler_fails_closed_for_model_level_without_count_evidence(tmp_
     assert compiled[0]["level_grounding"]["source_family"] == "model-proposed"
 
 
-def test_gate_rejects_leaks_and_routes_below_floor_to_diagnostics():
+def test_gate_rejects_leaks_and_keeps_subfloor_rungs_when_chain_reaches_floor():
     # eligible=False exempts this fixture from the item-level >=2 chain floor: this test isolates
-    # the per-candidate self_leak/type_name_phrase/below_floor rules, which the floor is orthogonal
-    # to (the floor has its own test, test_gate_flags_item_with_single_level).
+    # the per-candidate self_leak/type_name_phrase rules and the k-floor semantics. The k-floor is
+    # an anonymization-time legality test (anonymity.py), NOT a per-rung drop: a specific sub-floor
+    # rung ("medical specialist", k=2) is KEPT as a granular lattice option, because the chain's
+    # broadest rung ("healthcare worker", k=120) reaches the floor so the release-time walk has a
+    # legal target.
     item = {"item_id": "p1", "runtime_type": "profession", "surface": "cardiologist", "eligible": False}
     candidates = [
         {"level": "cardiologist specialist", "level_count": 1000.0, "level_grounding": {"status": "certifying"}},
@@ -129,9 +132,40 @@ def test_gate_rejects_leaks_and_routes_below_floor_to_diagnostics():
 
     result = gate_candidates(item, candidates)
 
-    assert [r["level"] for r in result.accepted] == ["healthcare worker"]
+    assert [r["level"] for r in result.accepted] == ["medical specialist", "healthcare worker"]
     assert {r["reason"] for r in result.rejected} == {"self_leak", "type_name_phrase"}
-    assert result.diagnostics[0]["reason"] == "below_floor"
+    assert not result.diagnostics
+
+
+def test_gate_diverts_whole_chain_when_broadest_rung_below_floor():
+    # every truthful rung is below the k-floor of 100, so no rung can serve as a legal
+    # anonymization target -> the whole chain is diverted (chain_below_floor) for a broader tier,
+    # rather than persisting an entry the release-time walk could never anonymize safely.
+    item = {"item_id": "p1b", "runtime_type": "profession", "surface": "cardiologist", "eligible": False}
+    candidates = [
+        {"level": "interventional cardiology specialist", "level_count": 8.0, "level_grounding": {"status": "certifying"}},
+        {"level": "cardiac care specialist", "level_count": 40.0, "level_grounding": {"status": "certifying"}},
+    ]
+
+    result = gate_candidates(item, candidates)
+
+    assert not result.accepted
+    assert {r["reason"] for r in result.diagnostics} == {"chain_below_floor"}
+
+
+def test_gate_exempts_proposal_universe_chain_from_chain_floor():
+    # proposal-universe rungs carry provisional counts, so a chain made only of them is NOT diverted
+    # by the chain-floor check even when every count is below the floor.
+    item = {"item_id": "p1c", "runtime_type": "profession", "surface": "cardiologist", "eligible": False}
+    candidates = [
+        {"level": "medical specialist", "level_count": 2.0, "level_grounding": {"status": "proposal-universe"}},
+        {"level": "healthcare worker", "level_count": 3.0, "level_grounding": {"status": "proposal-universe"}},
+    ]
+
+    result = gate_candidates(item, candidates)
+
+    assert [r["level"] for r in result.accepted] == ["medical specialist", "healthcare worker"]
+    assert not result.diagnostics
 
 
 def test_gate_allows_generated_universe_counts_but_marks_them_non_certifying():
