@@ -26,6 +26,11 @@ condition", "human activity") and the 3-token near-synonyms ("human medical
 condition", "general medical condition") the register flagged. A "new specific
 label" in a chunk = a level not seen in any earlier chunk AND not a generic sink.
 
+NOTE (metric interpretation): absolute `new_specific` counts are heuristic-sensitive
+— they move if `BROAD_HEADS`/`SINK_LEXICON` change. Hold the sink rule CONSTANT
+across baseline vs post-fix runs, and trust the TRAJECTORY across chunks (does
+new_specific decay / fully_generic climb?), never the absolute count in isolation.
+
 Usage:
     python scripts/spikes/measure_lattice_run_quality.py <proposed.json> <accepted.jsonl>
     python scripts/spikes/measure_lattice_run_quality.py --self-check
@@ -54,8 +59,12 @@ SINK_LEXICON = {
 }
 
 # Broad head-words: a short level ending in one of these is a generic sink.
+# Only unambiguously-generic heads belong here. Deliberately EXCLUDED:
+# "disease", "disorder", "syndrome" — these name SPECIFIC leaf conditions far more
+# often than a generic catch-all (parkinson disease, down syndrome, anxiety
+# disorder), so treating them as sinks over-counts sinks and depresses new_specific.
 BROAD_HEADS = {
-    "condition", "disease", "disorder", "syndrome",
+    "condition",
     "procedure", "service", "activity", "process", "intervention",
     "substance", "compound", "chemical", "agent", "material", "drug",
     "entity", "thing", "object", "concept", "phenomenon", "matter",
@@ -94,7 +103,7 @@ def load_items(accepted_path: Path) -> "OrderedDict[str, list[str]]":
 
 def chunk_bounds(n: int, k: int = 5) -> "list[tuple[int, int]]":
     """Split n items into k as-even-as-possible contiguous chunks (remainder to
-    the earliest chunks, matching the register's ~129/129/129/129/130 shape)."""
+    the EARLIEST chunks, e.g. n=646,k=5 -> 130/129/129/129/129)."""
     base, rem = divmod(n, k)
     bounds, start = [], 0
     for i in range(k):
@@ -162,6 +171,8 @@ def count_disagreement(proposed: dict) -> "tuple[int, int, list]":
                 c = float(cnt)
             except (TypeError, ValueError):
                 continue
+            # Exclude non-positive counts (harmless on real data — all counts
+            # are positive — but keeps the min/max ratio well-defined).
             if c > 0:
                 label_counts.setdefault(str(label), []).append(c)
     reused = {lbl: cs for lbl, cs in label_counts.items() if len(cs) >= 2}
