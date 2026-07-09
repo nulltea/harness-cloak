@@ -101,7 +101,15 @@ def test_dynamic_vocabulary_makes_item_two_see_item_ones_accepted_label(monkeypa
                     "selector": "model-domain-cluster:renal",
                     "rationale": "Truthful generalization for this entry.",
                     "reused_canonical_label": False,
-                }
+                },
+                {
+                    "level": "renal system therapeutic",
+                    "proposed_count": 30000,
+                    "count_evidence": "Estimated from clinical formulary references.",
+                    "selector": "model-domain-cluster:renal",
+                    "rationale": "Broader truthful generalization for this entry.",
+                    "reused_canonical_label": False,
+                },
             ],
         }
     )
@@ -112,12 +120,18 @@ def test_dynamic_vocabulary_makes_item_two_see_item_ones_accepted_label(monkeypa
     state.update(compile_level_counts_node(state))
     state.update(gate_candidates_node(state))
 
-    assert [row["level"] for row in state["accepted_rows"]] == ["renal excretion agent"]
+    assert [row["level"] for row in state["accepted_rows"]] == [
+        "renal excretion agent",
+        "renal system therapeutic",
+    ]
     persist_proposed_artifact_node(state)
 
     # confirm it's genuinely durable on disk before item 2 ever runs
     written = json.loads(proposed_out.read_text())
-    assert written["profiles"]["drug"]["aleve"]["levels"] == ["renal excretion agent"]
+    assert written["profiles"]["drug"]["aleve"]["levels"] == [
+        "renal excretion agent",
+        "renal system therapeutic",
+    ]
 
     # --- item 2: "metoprolol" -> unreused near-duplicate paraphrase ---
     item2_payload = json.dumps(
