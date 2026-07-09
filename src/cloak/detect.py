@@ -119,8 +119,15 @@ class Span:
     chain: int = -1  # coref chain id (set by coref_chains), -1 = unclustered
 
 
-def _chunks(text: str, max_chars: int = 1200):
-    """Split on line/sentence boundaries into ~max_chars windows; yield (offset, chunk)."""
+def _chunks(text: str, max_chars: int = 1200, max_words: int | None = None):
+    """Split on line/sentence boundaries into ~max_chars windows; yield (offset, chunk).
+
+    Never cuts mid-word: if no newline/sentence break falls in the window's second half,
+    back off to the last whitespace instead of a hard character cut (a hard cut splits the
+    entity under it across chunks). max_words re-splits any chunk whose whitespace token
+    count exceeds the encoder window (spaced-out OCR/ASR text inflates tokens ~2x per char;
+    gliner-pii-large has max_len=768 vs 2048 for the base models).
+    """
     pos = 0
     while pos < len(text):
         end = min(pos + max_chars, len(text))
@@ -128,7 +135,18 @@ def _chunks(text: str, max_chars: int = 1200):
             cut = max(text.rfind("\n", pos, end), text.rfind(". ", pos, end))
             if cut > pos + max_chars // 2:
                 end = cut + 1
-        yield pos, text[pos:end]
+            else:
+                ws = text.rfind(" ", pos + max_chars // 2, end)
+                if ws > pos:
+                    end = ws + 1  # word boundary, not a mid-word character cut
+        chunk = text[pos:end]
+        if max_words and len(chunk.split()) > max_words:
+            words = list(re.finditer(r"\S+", chunk))
+            for i in range(0, len(words), max_words):
+                last = words[min(i + max_words, len(words)) - 1]
+                yield pos + words[i].start(), chunk[words[i].start():last.end()]
+        else:
+            yield pos, chunk
         pos = end
 
 
