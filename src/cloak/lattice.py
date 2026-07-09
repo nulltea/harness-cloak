@@ -222,30 +222,51 @@ _nli = None
 NLI_MODEL = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
 
 
-def nli_gate(entity: str, context: str, candidates: list[str], thresh: float = 0.6) -> list[str]:
-    """Keep candidates where 'context' entails 'context with entity -> candidate'."""
+def _nli_prep(entity: str, context: str, candidates: list[str]):
+    """Per-job viability: self-ref filter, sentence location, degenerate-dup check.
+    Returns (viable_candidates, hypotheses); ([], []) fails closed."""
+    candidates = [c for c in candidates if entity.lower() not in c.lower()]  # self-reference = leak
+    pat = re.compile(re.escape(entity), re.IGNORECASE)
+    sent = next((s for s in re.split(r"(?<=[.!?])\s+", context) if pat.search(s)), context)
+    if not pat.search(sent):  # can't form the hypothesis -> fail closed (escalate/floor)
+        return [], []
+    hyps = [pat.sub(c, sent, count=1) for c in candidates]
+    # degenerate substitution ("A city city picnics") => vacuous entailment; reject
+    keep = [(c, h, sent) for c, h in zip(candidates, hyps)
+            if not re.search(r"\b(\w{3,}) \1\b", h, re.IGNORECASE)]
+    return [(c, sent) for c, h, sent in keep], [h for _, h, _ in keep]
+
+
+def nli_gate_batch(jobs: list[tuple[str, str, list[str]]],
+                   thresh: float = 0.6) -> list[list[tuple[str, float]]]:
+    """One pipeline call for many (entity, context, candidates) jobs.
+    Per job: approved (candidate, entailment_score) pairs, input order preserved."""
     global _nli
+    prepped = [_nli_prep(e, ctx, cands) for e, ctx, cands in jobs]
+    pairs, owners = [], []  # owners[i] = (job_idx, candidate)
+    for j, (viable, hyps) in enumerate(prepped):
+        for (cand, sent), hyp in zip(viable, hyps):
+            pairs.append({"text": sent, "text_pair": hyp})
+            owners.append((j, cand))
+    if not pairs:
+        return [[] for _ in jobs]
     if _nli is None:
         import torch
         from transformers import pipeline
         _nli = pipeline("text-classification", model=NLI_MODEL,
                         device=0 if torch.cuda.is_available() else -1)
-    candidates = [c for c in candidates if entity.lower() not in c.lower()]  # self-reference = leak
-    pat = re.compile(re.escape(entity), re.IGNORECASE)
-    sent = next((s for s in re.split(r"(?<=[.!?])\s+", context) if pat.search(s)), context)
-    if not pat.search(sent):  # can't form the hypothesis -> fail closed (escalate/floor)
-        return []
-    hyps = [pat.sub(c, sent, count=1) for c in candidates]
-    # degenerate substitution ("A city city picnics") => vacuous entailment; reject
-    ok = [not re.search(r"\b(\w{3,}) \1\b", h, re.IGNORECASE) for h in hyps]
-    pairs = [{"text": sent, "text_pair": h} for h, o in zip(hyps, ok) if o]
-    outs = _nli(pairs, top_k=None, truncation=True) if pairs else []
-    keep = []
-    for c, scores in zip([c for c, o in zip(candidates, ok) if o], outs):
-        ent_score = next(d["score"] for d in scores if d["label"] == "entailment")
-        if ent_score >= thresh:
-            keep.append(c)
-    return keep
+    outs = _nli(pairs, top_k=None, truncation=True)
+    approved: list[list[tuple[str, float]]] = [[] for _ in jobs]
+    for (j, cand), scores in zip(owners, outs):
+        ent = next(d["score"] for d in scores if d["label"] == "entailment")
+        if ent >= thresh:
+            approved[j].append((cand, ent))
+    return approved
+
+
+def nli_gate(entity: str, context: str, candidates: list[str], thresh: float = 0.6) -> list[str]:
+    """Keep candidates where 'context' entails 'context with entity -> candidate'."""
+    return [c for c, _ in nli_gate_batch([(entity, context, candidates)], thresh=thresh)[0]]
 
 
 # ---------- teacher cascade ----------
