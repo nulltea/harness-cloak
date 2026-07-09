@@ -5,7 +5,7 @@ builds — only the teacher configuration varies. Baseline (non-thinking, prompt
 from data/probes_validated.json (probe build 4). Nothing here writes the probe cache or the
 validated artifact. Supersedes teacher_thinking_ab.py (thinking arm = --prompt 2 --thinking).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/teacher_config_ab.py --prompt 3 [--thinking]
        [--n-docs 16] [--workers 6]
 """
@@ -22,8 +22,8 @@ from cloak.corpora import load_task_docs, refs_of
 from cloak.train.probes import PROMPT, TEACHER_MODEL, _parse_questions
 from cloak.train.reward import canon, fact_f1s, restated_probes
 from cloak.train.roundtrip import roundtrip_batch
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 
 # v3 (2026-07-05): targets the measured ceiling-failure taxonomy — full-gold context
 # (cross-document ambiguity), whole-document uniqueness, extractive-grader awareness,

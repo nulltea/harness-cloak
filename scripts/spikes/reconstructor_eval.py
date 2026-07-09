@@ -7,7 +7,7 @@ cascade already resolved. Run ONCE PER STRATUM (Round-1 weakness #4), never aver
 --doc-split heldout keeps only doc_ids not in the training split file (data/recon_train_ids_<corpus>.txt,
 written by the data builder / a 80-20 hash split); 'all' uses every doc.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
        .venv/bin/python -u scripts/spikes/reconstructor_eval.py \
        --env data/ranker_env_pilot.json --arms data/task_arms_pilot.json \
        --corpora lexsum --n-docs 80 --doc-split all --ckpt data/models/reconstructor_v1

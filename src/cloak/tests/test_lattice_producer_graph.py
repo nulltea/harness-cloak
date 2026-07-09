@@ -83,7 +83,7 @@ def test_dynamic_vocabulary_makes_item_two_see_item_ones_accepted_label(monkeypa
     run_dir = tmp_path / "run"
     run_dir.mkdir()
     proposed_out = tmp_path / "proposed.json"
-    monkeypatch.setenv("INFERDPT_LLM_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path / "cache"))
 
     state = make_initial_state(
         run_id="dynamic-vocab-e2e",

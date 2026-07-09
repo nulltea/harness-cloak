@@ -40,12 +40,12 @@ primary utility domain.
 - Extractor model manifest id: `all-MiniLM-L6-v2`
 - Attacker tier: `offline-v1`
 - Attacker model manifest ids: `offline-docp`, `offline-reconstruct`, `offline-leak`
-- LLM cache: `INFERDPT_LLM_CACHE=data/llm_cache`
+- LLM cache: `CLOAK_LLM_CACHE=data/llm_cache`
 
 ## Commands
 
 ```bash
-INFERDPT_LLM_CACHE=data/llm_cache \
+CLOAK_LLM_CACHE=data/llm_cache \
 OPENAI_BASE_URL=http://localhost:8060/v1 \
 PYTHONPATH=src \
 .venv/bin/python -u scripts/run_roundtrip_benchmark.py \

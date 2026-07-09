@@ -12,7 +12,7 @@ hallucination-heavy => the reader is the problem (disqualify / needs abstain-tun
 echo/survivor-heavy => the floor itself leaks; probe-validation floor-reject already drops
 those, so it's not a reader fault.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/qwen_floor_leak_audit.py [--per-corpus 10] [--examples 8]
 """
 import argparse

@@ -562,7 +562,7 @@ This can be a helper called by proposal nodes rather than a separate graph node,
   aliases. Counts are still computed by `compile_level_counts`, not trusted from model text.
 - Build prompts only from `assemble_context_packet()`. Do not use accumulated LangGraph state or messages as
   freeform prompt memory.
-- Cache every model response under `INFERDPT_LLM_CACHE` or an equivalent repo-local cache keyed by prompt
+- Cache every model response under `CLOAK_LLM_CACHE` or an equivalent repo-local cache keyed by prompt
   version, request identity, and context packet hash.
 - Record raw output in `proposals.jsonl`.
 - If the first model returns invalid JSON or empty levels, optionally call `escalation_model`.
@@ -765,7 +765,7 @@ PYTHONPATH=src .venv/bin/python -u scripts/run_lattice_producer.py \
 Live local-model smoke:
 
 ```bash
-INFERDPT_LLM_CACHE=data/llm_cache \
+CLOAK_LLM_CACHE=data/llm_cache \
 PYTHONPATH=src \
 .venv/bin/python -u scripts/run_lattice_producer.py \
   --run-dir data/lattice_producer/runs/live-smoke \

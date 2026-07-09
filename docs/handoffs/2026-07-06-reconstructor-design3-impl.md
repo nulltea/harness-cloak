@@ -55,7 +55,7 @@ Codex-reviewed and execute-ready (see below). Do NOT re-plan or re-derive the nu
 - **Verified deps this session:** `transformers==5.12.1`, `peft==0.19.1`, torch ROCm
   (CUDA-available), `sentence-transformers 5.6.0`, rapidfuzz. Install-free.
 - Proxy at `http://localhost:8060/v1` serves the gemma out_p pin and Qwen judge (`-np 1`,
-  serial). out_p roundtrips are cached (`INFERDPT_LLM_CACHE=data/llm_cache`).
+  serial). out_p roundtrips are cached (`CLOAK_LLM_CACHE=data/llm_cache`).
 - Codex reviews on this box: MCP can't read local files (paste content); `codex exec` needs
   `--sandbox danger-full-access` + `< /dev/null`. The plan-review thread already closed.
 

@@ -12,9 +12,9 @@ path with the behavior-clone (floor-walk) action set:
 Prints the full trace per doc so every component's output is eyeballable: doc_p, R map,
 out_p, out_final, and per-probe (question / gold surface / reader answer / f1), then the
 reward. Hits the proxy once per doc (BC doc_p != anchors, so cache-cold) — needs the proxy
-free and INFERDPT_LLM_CACHE set.
+free and CLOAK_LLM_CACHE set.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/roundtrip_reward_smoke.py
 """
 import json

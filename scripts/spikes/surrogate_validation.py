@@ -12,7 +12,7 @@ gold; surrogate = U_surr(doc_p, R, gold, probes). Go/no-go: per-doc Spearman bet
 two orderings of the 4 arms, averaged over docs — clearly positive = the surrogate ranks
 the kind of variation RL will explore. Plan: docs/plans/2026-07-02-surrogate-grpo-training.md.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src \
        .venv/bin/python -u scripts/surrogate_validation.py --corpora clinical --limit 8
 Needs llama-swap up (probe questions, cached) + the ts-proxy (round trip, cached).
 """
@@ -96,8 +96,8 @@ def main():
     )
     args = ap.parse_args()
 
-    from inferdpt.llm import LLMClient
-    from inferdpt.pipeline import pmap
+    from cloak.llm import LLMClient
+    from cloak.concurrent import pmap
 
     remote = LLMClient(
         args.gen_model,

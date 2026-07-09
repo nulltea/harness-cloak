@@ -14,7 +14,7 @@ hit@k by fuzzy match. Probes scored on the same items:
 Report per probe: AUC(probe score -> attacker hit@1/@5) + mean per-span Spearman across levels
 (the tau-walk's actual use case). Arbiter for the fork-1 correlation rule.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/privacy_probe_shootout.py
 """
 import json
@@ -31,8 +31,8 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 from build_arms_artifact import load_artifact  # noqa: E402
 
 from cloak.probe import _pipe, guess_back_risk  # noqa: E402
-from inferdpt.llm import LLMClient  # noqa: E402
-from inferdpt.pipeline import pmap  # noqa: E402
+from cloak.llm import LLMClient  # noqa: E402
+from cloak.concurrent import pmap  # noqa: E402
 
 ATTACKER_MODEL = "gemini-3.1-pro-preview"  # gpt-5.5 upstream is Cloudflare-blocked; opus-4-6 404s
 CAUSAL_MODEL = "EleutherAI/pythia-410m"
@@ -92,7 +92,7 @@ def attacker_hits(items: list[dict]) -> None:
         import os
 
         import openai
-        from inferdpt.llm import _cache_path
+        from cloak.llm import _cache_path
         prompt = ATTACK_PROMPT.format(fill=it["fill"], typ=it["type"], sent=it["sent_p"])
         cp = _cache_path(ATTACKER_MODEL, [{"role": "user", "content": prompt}],
                          {"temperature": 0.0, "max_tokens": 200})

@@ -9,7 +9,7 @@ reader still scores < TH, categorize the failure and show context:
 Ceiling anchors are cached from stage 3 -> no new gemma calls. Prints per-category counts
 + examples (question / gold / reader answer / the out_hi sentence that contains the gold).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/reader_miss_audit.py [--per-corpus 10] [--examples 6]
 """
 import argparse

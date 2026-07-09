@@ -14,7 +14,7 @@ The point is to SEPARATE reader error from task-model error:
 Prints a per-probe table + aggregates (ceiling/floor pass rates, reader-miss-on-present
 rate, abstention rate, mean dynamic range hi-lo).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/qa_reader_validation_smoke.py [--per-corpus 2] [--max-probes 6]
 """
 import argparse

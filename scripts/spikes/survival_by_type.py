@@ -22,7 +22,7 @@ A generalization span 'survived' iff its fill's content is genuinely mentioned i
 survived-for-extraction = SURVIVED + REWORDED. TEMPLATED/ABSENT reported separately.
 
 Run (out_p already cached from prior audit roundtrips):
-  INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+  CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
     .venv/bin/python -u scripts/spikes/survival_by_type.py \
     --env data/ranker_env.json --arms data/task_arms_tau0.02.json \
     --corpora clinical --n-docs 16
@@ -75,7 +75,7 @@ Reply with ONLY a JSON array, one object per id in order:
 
 
 def _judge():
-    from inferdpt.llm import LLMClient
+    from cloak.llm import LLMClient
     return LLMClient(JUDGE_MODEL, base_url=JUDGE_BASE_URL, api_key="x", temperature=0.0,
                      max_tokens=1500, extra_body={"chat_template_kwargs": {"enable_thinking": False}})
 

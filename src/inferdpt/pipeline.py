@@ -6,9 +6,10 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from cloak.concurrent import pmap
+from cloak.llm import LLMClient
 from inferdpt.embeddings import VocabEmbeddings
 from inferdpt.extraction import extract
-from inferdpt.llm import LLMClient
 from inferdpt.rantext import Perturber
 
 # Remote generation prompt (Ins): continue the perturbed prefix. Wording matches the
@@ -21,15 +22,6 @@ def gen_prompt(prefix: str) -> str:
         " Provide only your Continuation.\n"
         "- Continuation:"
     )
-
-
-def pmap(fn, items, workers: int = 8):
-    """Map fn over items concurrently, order-preserving. For remote LLM calls only — the
-    proxy batches concurrent requests (~7x at 8 workers). Never wrap GPU probes (not thread-safe)."""
-    from concurrent.futures import ThreadPoolExecutor
-
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        return list(ex.map(fn, items))
 
 
 def load_corpus(path: str | Path) -> tuple[list[str], list[str] | None]:

@@ -41,12 +41,12 @@ _gold = None
 
 def _qa_client():
     """Served QA reader (QA_MODEL on the llama-swap proxy). Deterministic greedy, short
-    answers, non-thinking; cached on the prompt via INFERDPT_LLM_CACHE."""
+    answers, non-thinking; cached on the prompt via CLOAK_LLM_CACHE."""
     global _qa
     if _qa is None:
         import os
-        from inferdpt.llm import LLMClient
-        assert os.getenv("INFERDPT_LLM_CACHE"), "reader requires INFERDPT_LLM_CACHE (determinism)"
+        from cloak.llm import LLMClient
+        assert os.getenv("CLOAK_LLM_CACHE"), "reader requires CLOAK_LLM_CACHE (determinism)"
         _qa = LLMClient(QA_MODEL, base_url=QA_BASE_URL, api_key="x", temperature=0.0,
                         max_tokens=32,
                         extra_body={"chat_template_kwargs": {"enable_thinking": False},

@@ -385,7 +385,7 @@ def teacher_lattices(entities: list[dict], workers: int = 6) -> dict:
     entities: [{entity, type, context}]. Deployed lattice_for() only reads CACHE; it
     never calls the teacher. Empty approved lists are valid placeholder-only outcomes.
     """
-    from inferdpt.llm import LLMClient
+    from cloak.llm import LLMClient
     cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
     todo = [e for e in entities if _cache_key(e["entity"], e.get("type", "MISC")) not in cache]
     if not todo:

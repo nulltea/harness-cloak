@@ -6,11 +6,11 @@
 
 **Architecture:** Residue-targeted constrained edit. The existing deterministic cascade (`invert()`) runs first and resolves A/B/C + alias cases; only its residue generalization entries Q are handed to a flan-t5-base + LoRA seq2seq that reads the cascade's partial output plus a linearized restore-map (fill → original, typed) and rewrites, with a **copy-bias guard** that permits only R's original surfaces as novel content (else falls back to the cascade output — do-no-harm). Training targets are distilled from the Qwen survival judge, which already grounds each reworded mention to a verbatim `out_p` quote.
 
-**Tech Stack:** Python, PyTorch (ROCm host `.venv`), transformers 5.12 + peft 0.19 (LoRA), `google/flan-t5-base`, the `inferdpt.llm` OpenAI-compatible client (gemma out_p pin, Qwen judge pin), rapidfuzz.
+**Tech Stack:** Python, PyTorch (ROCm host `.venv`), transformers 5.12 + peft 0.19 (LoRA), `google/flan-t5-base`, the `cloak.llm` OpenAI-compatible client (gemma out_p pin, Qwen judge pin), rapidfuzz.
 
 ## Global Constraints
 
-- **out_p pin (unchanged):** gemma 4 (E4B), temp 0, non-thinking, `RT_BASE_URL=http://localhost:8060/v1`, `max_tokens 1024`; content-addressed cache via `INFERDPT_LLM_CACHE=data/llm_cache`. Reused verbatim from `cloak.train.roundtrip`.
+- **out_p pin (unchanged):** gemma 4 (E4B), temp 0, non-thinking, `RT_BASE_URL=http://localhost:8060/v1`, `max_tokens 1024`; content-addressed cache via `CLOAK_LLM_CACHE=data/llm_cache`. Reused verbatim from `cloak.train.roundtrip`.
 - **Judge pin (target-builder):** `Qwen3.6-35B-A3B`, temp 0, non-thinking, same base_url; llama-swap serves Qwen `-np 1` (serial). Reused verbatim from `scripts/spikes/survival_by_type.py`.
 - **Reconstructor model:** `google/flan-t5-base` + LoRA (peft). **Pinned to the versions verified installed in the host `.venv` this session — `transformers==5.12.1`, `peft==0.19.1`, `torch` (ROCm, CUDA-available)**; the plan is install-free (no `pip install`; never `pip install torch` — see `~/docs/torch-gpu.md`). Checkpoints under `data/models/reconstructor_v1/`.
 - **One GPU process at a time.** Before any training/inference run, `pgrep -af train_pii` and this plan's own jobs; never launch a second GPU run while one is live. Always `.venv/bin/python -u`, log to `results/`.
@@ -371,7 +371,7 @@ residue fill's (possibly reworded) mention in out_p; build the gold target by sp
 original at each grounded quote. Abstains (D-4/absent) keep the text unchanged, teaching
 the model when NOT to edit. Emits data/reconstructor_<corpus>.jsonl.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
        .venv/bin/python -u scripts/build_reconstructor_data.py \
        --env data/ranker_env_pilot.json --arms data/task_arms_pilot.json \
        --corpora clinical --n-docs 80 --workers 6
@@ -449,7 +449,7 @@ if __name__ == "__main__":
 Run: `PYTHONPATH=src .venv/bin/python -m pytest tests/test_reconstruct.py -v` → PASS (9 tests)
 Then (GPU/proxy; check `pgrep -af train_pii` first):
 ```bash
-INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes .venv/bin/python -u \
+CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes .venv/bin/python -u \
   scripts/build_reconstructor_data.py --env data/ranker_env_pilot.json \
   --arms data/task_arms_pilot.json --corpora clinical,lexsum --n-docs 80 --workers 6 \
   > results/build_reconstructor_data.log 2>&1
@@ -783,7 +783,7 @@ cascade already resolved. Run ONCE PER STRATUM (Round-1 weakness #4), never aver
 --doc-split heldout keeps only doc_ids not in the training split file (data/recon_train_ids_<corpus>.txt,
 written by the data builder / a 80-20 hash split); 'all' uses every doc.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
        .venv/bin/python -u scripts/spikes/reconstructor_eval.py \
        --env data/ranker_env_pilot.json --arms data/task_arms_pilot.json \
        --corpora lexsum --n-docs 80 --doc-split all --ckpt data/models/reconstructor_v1

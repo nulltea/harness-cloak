@@ -5,7 +5,7 @@ model generate ladder probes (per lattice-bearing span) and decision probes (per
 parse/lint survival stats, and dump everything to results/ladder_probe_gen_test.json for
 eyeballing. Spike-only caches (results/spike_ladder_cache.*) — never the real probe caches.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/ladder_probe_gen_test.py \
        --models "Qwen3.6-35B-A3B,LFM2.5-8B-A1B" --n-docs 3 --max-spans 5
 """

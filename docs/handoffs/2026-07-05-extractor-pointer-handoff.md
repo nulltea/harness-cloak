@@ -61,7 +61,7 @@ Result: self-check OK.
 Baseline audit rerun:
 
 ```bash
-INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
   scripts/spikes/extractor_miss_audit.py \
   --env data/ranker_env.json --arms data/task_arms_tau0.02.json \
   --corpora clinical --n-docs 16 --workers 6 \
@@ -86,7 +86,7 @@ The user correctly noted that true absent spans are not extractor opportunities.
 Run:
 
 ```bash
-INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
   scripts/spikes/extractor_pointer_by_type.py \
   --env data/ranker_env.json --arms data/task_arms_tau0.02.json \
   --corpora clinical --n-docs 16 --workers 6 --tau-det 0.3 \

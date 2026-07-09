@@ -309,7 +309,7 @@ def propose_with_llama_swap(
         "context_packet_hash": packet["context_packet_hash"],
     }
     cache_key = _hash_payload(identity)
-    cache_dir = Path(os.environ.get("INFERDPT_LLM_CACHE", "data/llm_cache"))
+    cache_dir = Path(os.environ.get("CLOAK_LLM_CACHE", "data/llm_cache"))
     cache_file = _cache_path(cache_dir, cache_key)
     if cache_file.exists():
         return json.loads(cache_file.read_text())

@@ -86,8 +86,8 @@ def probes_for_docs(docs: list[dict], R_of: dict[str, list[dict]], workers: int 
     """docs: corpora.load_task_docs rows; R_of: doc id -> R. Returns {doc_id: [probe]},
     probe = {"surface", "question"}. Teacher-fills the cache for missing (doc, surface)."""
     from cloak.corpora import refs_of
-    from inferdpt.llm import LLMClient
-    from inferdpt.pipeline import pmap
+    from cloak.llm import LLMClient
+    from cloak.concurrent import pmap
 
     cache = json.loads(CACHE.read_text()) if CACHE.exists() else {}
     n_legacy = 0

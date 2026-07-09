@@ -420,7 +420,7 @@ Release-one implementation entry points:
   attackers, and report generation.
 - `scripts/run_roundtrip_benchmark.py` is the durable CLI. `--dry-run` writes only manifest/items;
   `--stub-remote` exercises the full local trace/scoring/report path without remote cost.
-- Live remote runs require `INFERDPT_LLM_CACHE` before the remote client is constructed.
+- Live remote runs require `CLOAK_LLM_CACHE` before the remote client is constructed.
 - Runs must pass explicit model arguments for every model-bearing stage so the manifest and config hash carry
   the full benchmark identity. Current detector runs require `--detector-model`; the release-one fine-dem
   detector command uses `--detector-model data/models/pii_gliner_finedem/final --detector-fine-dem`.

@@ -10,7 +10,7 @@ Writes data/probes_validated.json + results/probe_health.json. Docs with < 3 sur
 train probes are listed in excluded_docs (spec: excluded from the RL reward, never
 silently kept).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/build_probes.py [--corpora clinical,enron,aeslc]
        [--n-docs 16] [--workers 8] [--th 0.5] [--seed 0]
 """

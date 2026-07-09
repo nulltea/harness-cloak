@@ -22,7 +22,7 @@ from inferdpt import diagnostics
 from inferdpt.attacks import embedding_inversion, mask_bert
 from inferdpt.embeddings import VocabEmbeddings
 from inferdpt.extraction import extract
-from inferdpt.llm import LLMClient
+from cloak.llm import LLMClient
 from inferdpt.pipeline import gen_prompt, load_corpus
 from inferdpt.probes import leakage, mi, utility
 from inferdpt.probes._common import content_words

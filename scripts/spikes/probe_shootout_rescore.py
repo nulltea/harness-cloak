@@ -4,7 +4,7 @@ Probe scores (p2/p3/p4/p6) are reused from results/privacy_probe_shootout.json â
 attacker ground truth is recomputed, so swapping referees costs one call per item and zero
 local compute. Written after the gemini max_tokens truncation burned the first label set.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/probe_shootout_rescore.py --attacker "Qwen3.6-35B-A3B"
 """
 import argparse
@@ -18,8 +18,8 @@ from statistics import mean
 sys.path.append(str(Path(__file__).resolve().parent))
 from privacy_probe_shootout import ATTACK_PROMPT, auc, per_span_rank_agreement  # noqa: E402
 
-from inferdpt.llm import LLMClient  # noqa: E402
-from inferdpt.pipeline import pmap  # noqa: E402
+from cloak.llm import LLMClient  # noqa: E402
+from cloak.concurrent import pmap  # noqa: E402
 
 LOCAL_URL = "http://localhost:8060/v1"
 

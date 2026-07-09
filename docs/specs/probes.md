@@ -17,7 +17,7 @@ STS-calibrated, paper-faithful, usable dynamic range); a **cross-encoder reranke
 **PII probes use rapidfuzz fuzzy containment** (not cosine — cosine floors ~0.7 on bare
 entities). The qwen3-embedding scorer remains available (`_common.embed`) for the token-level
 geometry work. Module: `src/inferdpt/probes/` (`leakage.py`, `mi.py`, `utility.py`; shared
-helpers in `_common.py`). LLM responses are disk-cached when `$INFERDPT_LLM_CACHE` is set, so
+helpers in `_common.py`). LLM responses are disk-cached when `$CLOAK_LLM_CACHE` is set, so
 re-runs over identical prompts are instant.
 
 Information-theoretically, a probe is meant to **upper-bound** leakage (what any adversary

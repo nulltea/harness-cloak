@@ -4,7 +4,7 @@ Denominator excludes true absents: only generalization entries whose replacement
 into out_p as exact, fuzzy90, or band60_90 are counted as present-in-out_p.
 
 Run:
-  INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+  CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
     .venv/bin/python -u scripts/spikes/extractor_pointer_by_type.py \
     --env data/ranker_env.json --arms data/task_arms_tau0.02.json \
     --corpora clinical --n-docs 16 --workers 6

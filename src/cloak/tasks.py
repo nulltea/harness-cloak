@@ -41,7 +41,7 @@ TASK_TEMPLATE = {"aci": CLINICAL_NOTE, "mts": CLINICAL_NOTE, "clinical": CLINICA
 
 
 def _teacher():
-    from inferdpt.llm import LLMClient
+    from cloak.llm import LLMClient
     return LLMClient("Qwen3.6-35B-A3B", base_url="http://localhost:8060/v1", api_key="x",
                      temperature=0.0, max_tokens=400,
                      extra_body={"chat_template_kwargs": {"enable_thinking": False}})

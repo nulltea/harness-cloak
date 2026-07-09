@@ -72,21 +72,21 @@ Constraints + runbook), progress ledger `.superpowers/sdd/progress.md`, review t
 
 ```bash
 # 1. Probe build 5 on the pilot env (teacher mostly cached; anchors ≈ 320 RT):
-INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
   scripts/build_probes.py --env data/ranker_env_pilot.json --arms data/task_arms_pilot.json \
   --corpora clinical,lexsum --n-docs 80 --workers 6 > results/build_probes_pilot5.log 2>&1
 # GATE: results/probe_health.json — need >=30 docs/corpus with >=3 TRAIN facts (kept_facts
 # per doc >= 4). Under-yield => raise --n-docs for that corpus and rerun (incremental).
 
 # 2. Support scan (THE training gate; trainer verifies its meta itself):
-INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
   scripts/spikes/roundtrip_support_scan.py --env data/ranker_env_pilot.json \
   --arms data/task_arms_pilot.json --probes data/probes_validated.json --n-docs 80 \
   --max-swaps 150 --workers 6 > results/support_scan_pilot.log 2>&1
 # PASS requires quantization-exceeding moves BOTH directions. A desert = a finding, report it.
 
 # 3. First smoke (movement canary):
-INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
   scripts/train_ranker.py --reward roundtrip --env data/ranker_env_pilot.json \
   --arms data/task_arms_pilot.json --n-docs 80 --smoke > results/rt_smoke.log 2>&1
 
@@ -99,7 +99,7 @@ INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
 
 # 5. Pilot run — ExIt first, then refiner, FIXED floors (--randomize-floors hard-errors in
 #    roundtrip mode; it is BC-only — do not "fix" this by removing the guard):
-INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
   scripts/train_ranker.py --reward roundtrip --env data/ranker_env_pilot.json \
   --arms data/task_arms_pilot.json --n-docs 80 --exit-rounds 4 --exit-epochs 10 \
   --epochs 5 --G 12 --cf-frac 0.25 --policy encoder --rt-workers 6 \

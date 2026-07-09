@@ -7,7 +7,7 @@ This is a one-off spike: same floor-walk round trips as extractor_miss_audit.py,
     wrong-surface risks, so they must stay at zero or be reported plainly.
 
 Run:
-  INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+  CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
     .venv/bin/python -u scripts/spikes/extractor_semantic_verify.py \
     --env data/ranker_env.json --arms data/task_arms_tau0.02.json \
     --corpora clinical --n-docs 16 --workers 6

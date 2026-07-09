@@ -35,7 +35,7 @@ Copied verbatim from the spec / project rules — every task's requirements incl
 - **Pinned reward model:** `RT_MODEL = "gemma 4 (E4B)"` served at
   `RT_BASE_URL = "http://localhost:8060/v1"`, non-thinking (`enable_thinking: false`),
   temperature 0.0, max_tokens 512, cache key = content hash of (model, base_url, messages,
-  params) via `INFERDPT_LLM_CACHE`. Changing any of these re-gates.
+  params) via `CLOAK_LLM_CACHE`. Changing any of these re-gates.
   *(re-pinned 2026-07-05 after the thinking-mode probe; supersedes the original pins in this plan.)*
 - **Reward = graded mean token-F1** (the deployed `fact_recall` definition). The validation
   threshold `TH = 0.5` binarizes only probe keep/drop, never the reward.
@@ -65,7 +65,7 @@ Copied verbatim from the spec / project rules — every task's requirements incl
 ## Existing interfaces (verbatim — do not re-derive)
 
 - `LLMClient(model, temperature=0.0, max_tokens=N, extra_body={"chat_template_kwargs": {"enable_thinking": False}})`
-  → `.generate(prompt) -> str`; disk-cached when `INFERDPT_LLM_CACHE` is set
+  → `.generate(prompt) -> str`; disk-cached when `CLOAK_LLM_CACHE` is set
   (`src/inferdpt/llm.py`).
 - `pmap(fn, jobs, workers=N) -> list` (`src/inferdpt/pipeline.py`).
 - `invert(text, R) -> (inverted_text, stats)` (`src/cloak/extract.py`).
@@ -200,7 +200,7 @@ missing).
 
 R_rt = realized fact recall (graded mean token-F1) on out_final over a doc's train-split
 probes, where out_final = invert(Remote(task_prompt(doc_p)), R). Deterministic given doc_p:
-pinned model, temperature 0, content-addressed disk cache (INFERDPT_LLM_CACHE) — the
+pinned model, temperature 0, content-addressed disk cache (CLOAK_LLM_CACHE) — the
 determinism is load-bearing (cache = reward memoization = ExIt pool; spec "one subtlety").
 """
 import os
@@ -218,9 +218,9 @@ _client = None
 def _remote():
     global _client
     if _client is None:
-        from inferdpt.llm import LLMClient
-        assert os.getenv("INFERDPT_LLM_CACHE"), \
-            "round-trip reward requires INFERDPT_LLM_CACHE (determinism + cost)"
+        from cloak.llm import LLMClient
+        assert os.getenv("CLOAK_LLM_CACHE"), \
+            "round-trip reward requires CLOAK_LLM_CACHE (determinism + cost)"
         _client = LLMClient(RT_MODEL, temperature=0.0, max_tokens=MAX_TOKENS,
                             extra_body={"chat_template_kwargs": {"enable_thinking": False}})
     return _client
@@ -229,7 +229,7 @@ def _remote():
 def roundtrip_batch(jobs: list[dict], workers: int = 8) -> list[dict]:
     """jobs: [{corpus, doc_p, R, probes}] -> [{out_p, out_final, f1s, recall}].
     recall = graded mean token-F1 (the deployed fact_recall), None when a job has no probes."""
-    from inferdpt.pipeline import pmap
+    from cloak.concurrent import pmap
     remote = _remote()
     outs = pmap(lambda j: remote.generate(
         TASK_TEMPLATE[j["corpus"]].format(doc=j["doc_p"])), jobs, workers=workers)
@@ -243,8 +243,8 @@ def roundtrip_batch(jobs: list[dict], workers: int = 8) -> list[dict]:
 
 
 if __name__ == "__main__":
-    # LIVE smoke (hits the proxy once; requires INFERDPT_LLM_CACHE and the proxy up):
-    #   INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src .venv/bin/python -m cloak.train.roundtrip
+    # LIVE smoke (hits the proxy once; requires CLOAK_LLM_CACHE and the proxy up):
+    #   CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src .venv/bin/python -m cloak.train.roundtrip
     r = roundtrip_batch([{"corpus": "enron",
                           "doc_p": "Please send the Q3 numbers to <PERSON_1> by Friday.",
                           "R": [{"surface": "Alice Kim", "type": "PERSON",
@@ -344,7 +344,7 @@ Writes data/probes_validated.json + results/probe_health.json. Docs with < 3 sur
 train probes are listed in excluded_docs (spec: excluded from the RL reward, never
 silently kept).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/build_probes.py [--corpora clinical,enron,aeslc]
        [--n-docs 16] [--workers 8] [--th 0.5] [--seed 0]
 """
@@ -533,7 +533,7 @@ alternative action, capped) -> full cached round trips -> per-probe realized-F1 
 PASS = reward responds in BOTH directions with magnitude above the quantization step.
 A support desert is a FINDING about the environment — report it, never work around it.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/roundtrip_support_scan.py \
        [--max-swaps 150] [--workers 8] [--probes data/probes_validated.json] [--seed 0]
 """
@@ -1404,8 +1404,8 @@ import uuid
 from cloak.corpora import load_task_docs
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.roundtrip import MAX_TOKENS, RT_MODEL
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 
 
 def main():

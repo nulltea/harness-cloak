@@ -10,7 +10,7 @@ calls, no proxy contention). Only the reader model and the token-scorer vary.
 
 Reports per-config: ceiling pass, floor pass, reader-miss-on-present, abstention, mean hi.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/qa_reader_ablation_smoke.py [--per-corpus 2]
 """
 import argparse

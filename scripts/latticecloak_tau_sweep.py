@@ -5,7 +5,7 @@ so the two pages read on the same scales. Per tau: substitute -> remote out_p
 (cached) -> rule-extractor inversion -> out_final -> probes. Also records the knob mechanics: how many
 generalized spans sit at the most-specific vs most-general lattice level.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/latticecloak_tau_sweep.py
 """
 import argparse
@@ -20,8 +20,8 @@ from cloak.probe import _pipe
 from cloak.substitute import substitute
 from cloak.synthpai import load_docs
 from cloak.tasks import doc_tasks, fill, qa_pairs
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 from inferdpt.probes.leakage import overlap, pii_leakage
 from inferdpt.probes.utility import cosine_pairs
 

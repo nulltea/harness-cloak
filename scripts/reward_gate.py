@@ -9,7 +9,7 @@ mixed reward r is reported as context only (spec §6); the privacy term is valid
 attacker-correlation shootout. The
 all-placeholder arm's (reward vs realized) gap is the standing echo-cost diagnostic, not go/no-go.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/reward_gate.py
 """
 import argparse
@@ -27,8 +27,8 @@ from cloak.probe import reward_privacy
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.reward import fact_recall, stage1_reward, u_qa
 from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 
 ARMS = ["no_privacy", "tau_walk", "all_floor", "suppression", "all_placeholder",
         "identity_only"]

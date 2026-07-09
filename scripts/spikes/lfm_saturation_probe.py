@@ -16,8 +16,8 @@ import uuid
 from cloak.corpora import load_task_docs
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.roundtrip import MAX_TOKENS, RT_MODEL
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 
 
 def main():

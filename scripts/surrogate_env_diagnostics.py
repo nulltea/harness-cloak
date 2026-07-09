@@ -10,7 +10,7 @@ Three measurements on the cached constructed-arms round trips (no new remote cal
   reader-bias - u_qa on all-placeholder vs tau_walk vs no_privacy doc_p: does the SQuAD
                 reader unfairly penalize placeholder-laden text?
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/surrogate_env_diagnostics.py
 """
 import json
@@ -24,7 +24,7 @@ from cloak.extract import invert
 from cloak.tasks import TASK_TEMPLATE
 from cloak.train.probes import probes_for_docs
 from cloak.train.reward import _sentences, u_qa
-from inferdpt.llm import LLMClient, _cache_path
+from cloak.llm import LLMClient, _cache_path
 
 import sys
 sys.path.append(str(Path(__file__).resolve().parent / "spikes"))  # runner scripts may live there

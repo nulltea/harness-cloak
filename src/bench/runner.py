@@ -167,9 +167,9 @@ def _tau(setting: str) -> float:
 
 
 def _remote(config: BenchmarkConfig) -> RemoteClientProtocol:
-    if not os.getenv("INFERDPT_LLM_CACHE"):
-        raise RuntimeError("live remote benchmark requires INFERDPT_LLM_CACHE")
-    from inferdpt.llm import LLMClient
+    if not os.getenv("CLOAK_LLM_CACHE"):
+        raise RuntimeError("live remote benchmark requires CLOAK_LLM_CACHE")
+    from cloak.llm import LLMClient
 
     return LLMClient(str(config.remote_model), temperature=0.0, max_tokens=1024)
 

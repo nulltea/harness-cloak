@@ -1,13 +1,24 @@
 ---
 type: research
-status: current
+status: stale
 created: 2026-07-06
-updated: 2026-07-06
+updated: 2026-07-09
 tags: [tech-debt, refactor, inferdpt, namespace, imports, rantext-retired, issue]
-companion: [../../src/inferdpt/pipeline.py, ../../src/inferdpt/llm.py]
+companion: [../../src/cloak/concurrent.py, ../../src/cloak/llm.py, ../../src/inferdpt/pipeline.py, ../../src/inferdpt/llm.py]
+archive_reason: resolved by the 2026-07-09 cloak namespace migration
 ---
 
 # Issue: live `cloak` pipeline still imports generic infra from the retired `inferdpt` namespace
+
+## Resolution (2026-07-09)
+
+Resolved. The shared remote-call infrastructure now lives in `src/cloak/`:
+
+- `pmap` moved to `src/cloak/concurrent.py`.
+- `LLMClient` and `_cache_path` moved to `src/cloak/llm.py`.
+- Live code and active runbooks use `CLOAK_LLM_CACHE`.
+- `src/inferdpt/llm.py` remains only as a compatibility wrapper around `cloak.llm`; retired InferDPT code can still import it without owning the shared implementation.
+- Regression coverage: `src/cloak/tests/test_namespace_migration.py` verifies importing `cloak.concurrent` and `cloak.llm` does not load `inferdpt.pipeline`, `inferdpt.rantext`, `inferdpt.embeddings`, or `inferdpt.extraction`.
 
 ## Summary
 

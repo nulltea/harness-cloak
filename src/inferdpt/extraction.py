@@ -8,7 +8,7 @@ that sees the raw Doc, so it must be a trusted endpoint. Prompt is the paper's
 
 from __future__ import annotations
 
-from inferdpt.llm import LLMClient
+from cloak.llm import LLMClient
 
 EXTRACTION_INSTRUCTION = (
     'Your task is to extend the "Prefix Text". Use the "Perturbed Generation" as your '

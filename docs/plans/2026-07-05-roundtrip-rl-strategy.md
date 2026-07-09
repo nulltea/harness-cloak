@@ -342,7 +342,7 @@ points, document-bootstrap dominance test. Additions for the "real-world" claim:
   the automaton). ExGRPO-style correctness/entropy-bucketed replay
   ([arXiv 2510.02245](https://arxiv.org/abs/2510.02245)) is a lead for stabilizing the small
   policy if off-policy GRPO is attempted.
-- Proxy client: existing `inferdpt.llm` + thread-pool workers; unbuffered logging; one-GPU rule
+- Proxy client: existing `cloak.llm` + thread-pool workers; unbuffered logging; one-GPU rule
   applies to local models only (the reward is remote-proxy-bound).
 
 ## Sources

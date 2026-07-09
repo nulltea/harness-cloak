@@ -2,10 +2,10 @@
 
 Remote task model = Qwen3.6-35B-A3B via the ts-proxy (same as the InferDPT baseline's gen
 model). Substitution is local/GPU (sequential); remote calls are threaded and disk-cached
-via $INFERDPT_LLM_CACHE. Tuples -> data/latticecloak_tuples/tau<tau>.jsonl (append-safe by rerun:
+via $CLOAK_LLM_CACHE. Tuples -> data/latticecloak_tuples/tau<tau>.jsonl (append-safe by rerun:
 existing (author, task_id) pairs are skipped).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/latticecloak_engine.py --limit 8 --tau 0.02
 """
 import argparse
@@ -16,8 +16,8 @@ from pathlib import Path
 from cloak.substitute import Substitutor
 from cloak.synthpai import load_docs
 from cloak.tasks import doc_tasks, fill, qa_pairs
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 
 
 def main():

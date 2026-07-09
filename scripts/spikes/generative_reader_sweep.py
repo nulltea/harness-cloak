@@ -14,7 +14,7 @@ Residual (under-scores): non-initial abbrevs (HTN), pure synonyms (renal==kidney
 Metrics: ceil_pass (recall), floor_pass (hallucination/leak), reader_miss on present, abstain.
 Gemma anchors cached; local models batch per doc; the served reader batches via pmap workers.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/generative_reader_sweep.py [--per-corpus 5]
 """
 import argparse
@@ -101,13 +101,13 @@ def ask_local(tok, model, questions, ctx):
 
 
 def make_served(model_id):
-    from inferdpt.llm import LLMClient
+    from cloak.llm import LLMClient
     return LLMClient(model_id, base_url=RT_BASE_URL, api_key="x", temperature=0.0,
                      max_tokens=32, extra_body={"chat_template_kwargs": {"enable_thinking": False}})
 
 
 def ask_served(client, questions, ctx):
-    from inferdpt.pipeline import pmap
+    from cloak.concurrent import pmap
     return [parse(r) for r in pmap(lambda q: client.generate(PROMPT.format(ctx=ctx, q=q)),
                                    questions, workers=6)]
 

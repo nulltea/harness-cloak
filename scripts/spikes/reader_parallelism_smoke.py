@@ -25,7 +25,7 @@ from pathlib import Path
 
 
 def _reset_clients():
-    """Force fresh LLM clients so a newly-set INFERDPT_LLM_CACHE takes effect."""
+    """Force fresh LLM clients so a newly-set CLOAK_LLM_CACHE takes effect."""
     import cloak.train.reward as rw
     import cloak.train.roundtrip as rt
     rt._client = None
@@ -33,7 +33,7 @@ def _reset_clients():
 
 
 def timed_run(jobs, workers, cache_dir):
-    os.environ["INFERDPT_LLM_CACHE"] = str(cache_dir)
+    os.environ["CLOAK_LLM_CACHE"] = str(cache_dir)
     _reset_clients()
     from cloak.train.roundtrip import roundtrip_batch
     t0 = time.time()

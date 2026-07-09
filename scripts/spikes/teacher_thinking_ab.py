@@ -6,7 +6,7 @@ non-thinking arm is read from the current data/probes_validated.json (probe buil
 thinking arm is generated here (LLM disk cache keys include params, so no collisions) and
 validated out-of-band (no writes to the probe cache or validated artifact).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/teacher_thinking_ab.py [--n-docs 16] [--workers 6]
 """
 import argparse
@@ -21,8 +21,8 @@ from cloak.corpora import load_task_docs, refs_of
 from cloak.train.probes import PROMPT, TEACHER_MODEL, _parse_questions
 from cloak.train.reward import canon, fact_f1s, restated_probes
 from cloak.train.roundtrip import roundtrip_batch
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 
 OUT = Path("results/teacher_thinking_ab.json")
 

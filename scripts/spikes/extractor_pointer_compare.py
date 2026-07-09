@@ -6,7 +6,7 @@ Same jobs / out_p as scripts/spikes/extractor_miss_audit.py, then compare:
   - detector-pointer: invert_detector_pointer() exact + fuzzy + pointer
 
 Run:
-  INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+  CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
     .venv/bin/python -u scripts/spikes/extractor_pointer_compare.py \
     --env data/ranker_env.json --arms data/task_arms_tau0.02.json \
     --corpora clinical --n-docs 16 --workers 6

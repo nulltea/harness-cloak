@@ -2,7 +2,7 @@
 
 R_rt = realized fact recall (graded mean token-F1) on out_final over a doc's train-split
 probes, where out_final = invert(Remote(task_prompt(doc_p)), R). Deterministic given doc_p:
-pinned model, temperature 0, content-addressed disk cache (INFERDPT_LLM_CACHE) — the
+pinned model, temperature 0, content-addressed disk cache (CLOAK_LLM_CACHE) — the
 determinism is load-bearing (cache = reward memoization = ExIt pool; spec "one subtlety").
 
 THE reward pin (changing any re-gates): RT_MODEL = "gemma 4 (E4B)" served at
@@ -31,9 +31,9 @@ _client = None
 def _remote():
     global _client
     if _client is None:
-        from inferdpt.llm import LLMClient
-        assert os.getenv("INFERDPT_LLM_CACHE"), \
-            "round-trip reward requires INFERDPT_LLM_CACHE (determinism + cost)"
+        from cloak.llm import LLMClient
+        assert os.getenv("CLOAK_LLM_CACHE"), \
+            "round-trip reward requires CLOAK_LLM_CACHE (determinism + cost)"
         _client = LLMClient(RT_MODEL, base_url=RT_BASE_URL, temperature=0.0,
                             max_tokens=MAX_TOKENS,
                             extra_body={"chat_template_kwargs": {"enable_thinking": False}})
@@ -49,7 +49,7 @@ def roundtrip_batch(jobs: list[dict], workers: int = 6) -> list[dict]:
     concurrently (across-context parallelism -> the served `-np 6` slots) while `fact_f1s`
     stays serial WITHIN a job (its questions share out_final -> note-prefix KV reuse). workers
     defaults to 6 to match the served slot count; gen and reader share those slots."""
-    from inferdpt.pipeline import pmap
+    from cloak.concurrent import pmap
     remote = _remote()
 
     def _one(j):
@@ -64,8 +64,8 @@ def roundtrip_batch(jobs: list[dict], workers: int = 6) -> list[dict]:
 
 
 if __name__ == "__main__":
-    # LIVE smoke (hits the proxy once; requires INFERDPT_LLM_CACHE and the proxy up):
-    #   INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src .venv/bin/python -m cloak.train.roundtrip
+    # LIVE smoke (hits the proxy once; requires CLOAK_LLM_CACHE and the proxy up):
+    #   CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src .venv/bin/python -m cloak.train.roundtrip
     r = roundtrip_batch([{"corpus": "enron",
                           "doc_p": "Please send the Q3 numbers to <PERSON_1> by Friday.",
                           "R": [{"surface": "Alice Kim", "type": "PERSON",

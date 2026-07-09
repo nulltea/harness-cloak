@@ -11,7 +11,7 @@ this referee's strength; if it jumps, the kept content is a re-identification ch
 Referee = local Qwen3.6 (free proxy) — the shootout's weaker referee; treat absolute
 rates as a lower bound on attack success, compare arms relatively.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/identity_attack.py
 """
 import json
@@ -23,8 +23,8 @@ from rapidfuzz import fuzz
 
 from build_arms_artifact import load_artifact
 from cloak.corpora import load_task_docs
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 from reward_gate import IDENTITY_TYPES, identity_only_choice
 from train_ranker import assemble
 

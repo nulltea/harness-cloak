@@ -41,7 +41,7 @@ wrappers unless a task explicitly extends them.
 - The extractor may use only local inputs available at inference time: `out_p`, `R`, and the deployed local
   extraction model or rules. It must never use gold labels or call the remote model.
 - `out_final` leak-through is reported separately from the remote-threat privacy claim on `doc_p`.
-- Remote task execution must require `INFERDPT_LLM_CACHE` and deterministic decoding before any live call.
+- Remote task execution must require `CLOAK_LLM_CACHE` and deterministic decoding before any live call.
 - Heavy local model workflows run through `.venv/bin/python -u ...`; one GPU process at a time.
 - External or rate-limited API attackers, including agentic web-search tiers, require explicit user approval
   before execution.
@@ -735,7 +735,7 @@ Store `extraction_stats` inside `StageOutput.extractor_trace`.
 ```
 
 Dry-run writes `manifest.json` and `items.jsonl`, prints `dry-run: wrote <N> items`, and performs no detector,
-remote, extractor, or attacker work. Live-run must assert `INFERDPT_LLM_CACHE` before constructing the real
+remote, extractor, or attacker work. Live-run must assert `CLOAK_LLM_CACHE` before constructing the real
 remote client.
 
 - [ ] **Step 5: Run runner and CLI tests**
@@ -1207,7 +1207,7 @@ Append a short `## Implementation Entry Points` section to
 The durable benchmark runner is `scripts/run_roundtrip_benchmark.py`. It writes immutable run artifacts
 under `results/roundtrip_benchmark/<run_id>/` and uses `src/bench/` for schema, registry,
 runner, metrics, privacy, and report code. Dry runs do not hit the detector, remote model, extractor, or
-attacker suite; live runs require `INFERDPT_LLM_CACHE` before constructing the remote client.
+attacker suite; live runs require `CLOAK_LLM_CACHE` before constructing the remote client.
 ```
 
 - [ ] **Step 2: Run focused benchmark tests**
@@ -1316,7 +1316,7 @@ git commit -m "docs: add roundtrip benchmark implementation plan"
 - Start with `--dry-run` and `--stub-remote`; those runs exercise schema, registry, metrics, privacy, and
   reporting without cost.
 - Use live remote execution only after the stub run writes a complete report and
-  `INFERDPT_LLM_CACHE=data/llm_cache` is set.
+  `CLOAK_LLM_CACHE=data/llm_cache` is set.
 - Publication-grade privacy claims require the pre-registered LLM attacker suite or an explicit statement
   that only the deterministic offline attacker tier was run.
 - PriMock57, RAT-Bench, PIIBench, and synthetic financial PII enter implementation through corpus loaders

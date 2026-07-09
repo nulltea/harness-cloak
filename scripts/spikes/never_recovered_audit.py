@@ -10,7 +10,7 @@ floor-walk out_final and split the cause:
                                  scorer miss.
 Reuses the floor-walk assembly + served round trip (deterministic, cached).
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/never_recovered_audit.py
 """
 import argparse

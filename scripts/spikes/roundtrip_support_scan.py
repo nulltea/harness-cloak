@@ -6,7 +6,7 @@ alternative action, capped) -> full cached round trips -> per-probe realized-F1 
 PASS = reward responds in BOTH directions with magnitude above the quantization step.
 A support desert is a FINDING about the environment — report it, never work around it.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/roundtrip_support_scan.py \
        [--max-swaps 150] [--workers 8] [--probes data/probes_validated.json] [--seed 0]
 """

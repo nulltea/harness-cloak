@@ -109,7 +109,7 @@ PYTHONPATH=src:scripts .venv/bin/python -u scripts/spikes/reader_parallelism_smo
 # reports: correctness (serial vs parallel recall diff), STAGE (out_p vs out_final), PERF speedup
 ```
 GPU: one AMD iGPU, one process at a time — check `rocm-smi --showpidgpus` and confirm before any
-run (shared box). Reward needs `INFERDPT_LLM_CACHE` set.
+run (shared box). Reward needs `CLOAK_LLM_CACHE` set.
 
 ## Suggested skills
 

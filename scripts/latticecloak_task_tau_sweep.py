@@ -5,7 +5,7 @@ corpus gold output (the note / reply / subject), so tau's effect shows up in a r
 and rule-based inversion is exercised. Efficient: detect once per doc (tau-independent), out_ctrl once
 per doc; substitute + generate + score per tau. Records lattice mechanics + inversion totals.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/latticecloak_task_tau_sweep.py --corpus clinical --limit 30 --bertscore
 """
 import argparse
@@ -21,8 +21,8 @@ from cloak.extract import invert
 from cloak.score import score_batch
 from cloak.substitute import substitute
 from cloak.tasks import TASK_TEMPLATE
-from inferdpt.llm import LLMClient
-from inferdpt.pipeline import pmap
+from cloak.llm import LLMClient
+from cloak.concurrent import pmap
 from inferdpt.probes.leakage import overlap, pii_leakage
 from latticecloak_tau_sweep import mlm_guess_back  # span-inversion attacker probe
 

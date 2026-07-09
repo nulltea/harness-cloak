@@ -5,7 +5,7 @@ residue fill's (possibly reworded) mention in out_p; build the gold target by sp
 original at each grounded quote. Abstains (D-4/absent) keep the text unchanged, teaching
 the model when NOT to edit. Emits data/reconstructor_<corpus>.jsonl.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts:scripts/spikes \
        .venv/bin/python -u scripts/build_reconstructor_data.py \
        --env data/ranker_env_pilot.json --arms data/task_arms_pilot.json \
        --corpora clinical --n-docs 80 --workers 6

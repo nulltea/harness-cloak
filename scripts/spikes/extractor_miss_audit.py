@@ -14,7 +14,7 @@ Per level fill in floor-walk round trips: classify the echo as
   absent      — no meaningful alignment: absorbed, no extractor can help
 Placeholder entries: echo rate (token present) for the asymmetry comparison.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/extractor_miss_audit.py \
        [--env data/ranker_env.json] [--arms data/task_arms_tau0.02.json] \
        [--corpora clinical] [--n-docs 16] [--workers 6]

@@ -4,10 +4,10 @@ Replaces the prefix/summarization smoke (LatticeCloak report §5.4) with tasks w
 restates the substituted spans, so rule-based inversion fires and utility is sensitive to tau.
 Utility is scored on out_final and out_ctrl (no-privacy) against the corpus reference(s).
 
-Remote = Qwen3.6-35B-A3B via ts-proxy (disk-cached via $INFERDPT_LLM_CACHE); substitution local/GPU.
+Remote = Qwen3.6-35B-A3B via ts-proxy (disk-cached via $CLOAK_LLM_CACHE); substitution local/GPU.
 Spec: docs/specs/benchmarks.md.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/latticecloak_task_eval.py --corpus aci --limit 3 --tau 0.02
 Wiring check (no remote): ... scripts/latticecloak_task_eval.py --corpus aci --limit 3 --dry-run
 """
@@ -62,8 +62,8 @@ def main():
         print(f"dry-run OK: {len(rows)} docs, rougeL(gold|gold)={_agg(sc)}")
         return
 
-    from inferdpt.llm import LLMClient
-    from inferdpt.pipeline import pmap
+    from cloak.llm import LLMClient
+    from cloak.concurrent import pmap
     remote = LLMClient(args.gen_model, temperature=0.0, max_tokens=args.max_tokens,
                        extra_body={"chat_template_kwargs": {"enable_thinking": False}})
     print(f"generating {len(rows)}x2 with {args.gen_model}...", flush=True)

@@ -20,7 +20,7 @@ adds a context vector ON TOP of these.
 Also emits a per-doc ASSEMBLY BUNDLE (text, R_walk, raw_spans) so the harness's Level 2 can
 greedily assemble full-doc choices and score realized joint R_rt.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts \
        .venv/bin/python -u scripts/spikes/context_ablation_labels.py \
        --env data/ranker_env_full.json --arms data/task_arms_full.json \
        --probes data/probes_validated.json --n-docs 60 --workers 6

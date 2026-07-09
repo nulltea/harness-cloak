@@ -156,7 +156,7 @@ LOCAL_BASE_URL = "http://localhost:8060/v1"
 
 class _AnthropicTeacher:
     """Minimal Anthropic Messages client for proxies that expose claude-* models only via
-    anthropic_messages (not openai_chat). Bypasses the INFERDPT_LLM_CACHE disk cache —
+    anthropic_messages (not openai_chat). Bypasses the CLOAK_LLM_CACHE disk cache —
     acceptable for teacher comparison spikes; the probe caches memoize the parsed result."""
 
     def __init__(self, model: str, base_url: str):
@@ -176,7 +176,7 @@ class _AnthropicTeacher:
 def _teacher(model: str, base_url: str = LOCAL_BASE_URL):
     if model.startswith("claude-") and "localhost" not in base_url:
         return _AnthropicTeacher(model, base_url)
-    from inferdpt.llm import LLMClient
+    from cloak.llm import LLMClient
     # chat_template_kwargs is llama.cpp-specific; remote OpenAI-compatible providers may
     # reject unknown extra_body keys, so it is sent only to the local proxy
     extra = ({"chat_template_kwargs": {"enable_thinking": False}}
@@ -199,7 +199,7 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
     """docs: corpora rows; spans_of: doc_id -> env spans (each {surface, type, actions}).
     Returns {doc_id: [{"surface", "rung", "q", "a"}...]} for lattice-bearing spans; teacher
     fills cache misses. Lint-rejected rungs are simply absent (re-asked only on pv bump)."""
-    from inferdpt.pipeline import pmap
+    from cloak.concurrent import pmap
 
     kind = OUTPUT_KIND.get(corpus, "summary")
     cache = _load(cache_path)
@@ -252,7 +252,7 @@ def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: 
     """docs: corpora rows; out_hi_of: doc_id -> ceiling output. One teacher call per doc.
     Structural validation only (gold in 3-5 options, question form); reader-side ceiling/floor
     validation happens at probe-build time, not here."""
-    from inferdpt.pipeline import pmap
+    from cloak.concurrent import pmap
 
     if corpus not in DECISION_KINDS:
         return {d["id"]: [] for d in docs}

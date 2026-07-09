@@ -11,7 +11,7 @@ B: local Qwen3.5-0.8B bf16, torch-conv shim -> fla fast path, _read_prefix (enco
    batch-expand KV, decode question suffixes); falls back to batched generate if the hybrid
    cache won't batch-expand.
 
-Run: INFERDPT_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
+Run: CLOAK_LLM_CACHE=data/llm_cache PYTHONPATH=src:scripts .venv/bin/python -u \
        scripts/spikes/reader_backend_bench.py [--per-corpus 2]
 """
 import argparse, json, time
@@ -50,7 +50,7 @@ def main():
     print(f"docs={len(docs)} questions={nq}", flush=True)
 
     # ---------- A: served serial (llama.cpp prompt-cache) ----------
-    from inferdpt.llm import LLMClient
+    from cloak.llm import LLMClient
     cli = LLMClient("Qwen3.5-0.8B", base_url=RT_BASE_URL, api_key="x", temperature=0.0,
                     max_tokens=32, extra_body={"chat_template_kwargs": {"enable_thinking": False},
                                                "cache_prompt": True})

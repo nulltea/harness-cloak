@@ -336,7 +336,7 @@ def test_proposal_call_omits_thinking_budget_by_default(monkeypatch, tmp_path: P
             self.chat = type("Chat", (), {"completions": FakeCompletions()})()
 
     monkeypatch.setattr("cloak.lattice_producer.propose.OpenAI", FakeClient)
-    monkeypatch.setenv("INFERDPT_LLM_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path / "cache"))
 
     propose_with_llama_swap(
         {
@@ -382,7 +382,7 @@ def test_proposal_call_accepts_custom_thinking_budget(monkeypatch, tmp_path: Pat
             self.chat = type("Chat", (), {"completions": FakeCompletions()})()
 
     monkeypatch.setattr("cloak.lattice_producer.propose.OpenAI", FakeClient)
-    monkeypatch.setenv("INFERDPT_LLM_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path / "cache"))
 
     propose_with_llama_swap(
         {
@@ -430,7 +430,7 @@ def test_proposal_invalid_json_after_escalation_returns_parse_error(monkeypatch,
             self.chat = type("Chat", (), {"completions": FakeCompletions()})()
 
     monkeypatch.setattr("cloak.lattice_producer.propose.OpenAI", FakeClient)
-    monkeypatch.setenv("INFERDPT_LLM_CACHE", str(tmp_path / "cache"))
+    monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path / "cache"))
 
     payload = propose_with_llama_swap(
         {
