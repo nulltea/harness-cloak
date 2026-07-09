@@ -3,13 +3,16 @@ from pathlib import Path
 
 from cloak.lattice_producer.graph import (
     QWEN36_ESCALATION_MODEL,
+    augment_with_model_node,
     build_graph,
     compile_level_counts_node,
     deterministic_lookup,
     gate_candidates_node,
+    merge_anchor_and_model,
     persist_proposed_artifact_node,
     propose_with_llama_swap_node,
     requeue_rejected_item,
+    route_after_deterministic,
     route_selected,
     route_after_gate,
     run_producer,
@@ -206,6 +209,160 @@ def test_deterministic_lookup_prefers_reference_source_over_profile_cache(monkey
     result = deterministic_lookup(state)
 
     assert result == {"current_candidates": reference_hit}
+
+
+def test_merge_anchor_and_model_keeps_certifying_anchor_and_drops_anchor_paraphrase() -> None:
+    anchor = {
+        "level": "benzodiazepine",
+        "source_family": "openfda-pharm-class",
+        "selector": "openfda_ndc.pharm_class == 'Benzodiazepine [EPC]'",
+        "member_set": frozenset({"alprazolam", "lorazepam"}),
+        "member_set_ref": "openfda-ndc:pharm_class:Benzodiazepine [EPC]",
+    }
+    model_candidates = [
+        {"level": "benzodiazepine derivative", "source_family": "model-proposed"},
+        {"level": "central nervous system depressant", "source_family": "model-proposed"},
+        {"level": "medication", "source_family": "model-proposed"},
+    ]
+
+    merged = merge_anchor_and_model([anchor], model_candidates)
+
+    assert [candidate["level"] for candidate in merged] == [
+        "benzodiazepine",
+        "central nervous system depressant",
+        "medication",
+    ]
+    assert merged[0] is anchor
+    assert merged[0]["member_set"] == frozenset({"alprazolam", "lorazepam"})
+
+
+def test_insufficient_deterministic_anchor_routes_to_model_augmentation(tmp_path: Path) -> None:
+    state = make_initial_state(
+        run_id="hybrid-anchor-routing",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+    state["current_item"] = {"item_id": "drug:diazepam", "runtime_type": "drug", "surface": "diazepam"}
+    state["current_candidates"] = [
+        {
+            "level": "benzodiazepine",
+            "source_family": "openfda-pharm-class",
+            "member_set": frozenset({"alprazolam", "lorazepam"}),
+        }
+    ]
+
+    assert route_after_deterministic(state) == "augment_with_model"
+
+
+def test_sufficient_deterministic_chain_routes_directly_to_count_compilation(tmp_path: Path) -> None:
+    state = make_initial_state(
+        run_id="deterministic-chain-routing",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+    state["current_item"] = {"item_id": "health-condition:asthma", "runtime_type": "health-condition", "surface": "asthma"}
+    state["current_candidates"] = [
+        {"level": "asthma", "source_family": "doid-is-a", "member_set": frozenset({"asthma"})},
+        {
+            "level": "respiratory system disease",
+            "source_family": "doid-is-a",
+            "member_set": frozenset(str(idx) for idx in range(150)),
+        },
+    ]
+
+    assert route_after_deterministic(state) == "compile_level_counts"
+
+
+def test_hybrid_anchor_augmentation_keeps_certifying_nearest_rung(monkeypatch, tmp_path: Path) -> None:
+    import cloak.lattice_producer.graph as graph_module
+
+    profiles = tmp_path / "profiles.json"
+    _profiles(profiles)
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "generated_universe.jsonl").touch()
+    (run_dir / "proposals.jsonl").touch()
+    proposed_out = tmp_path / "proposed.json"
+
+    anchor = {
+        "level": "benzodiazepine",
+        "source_family": "openfda-pharm-class",
+        "selector": "openfda_ndc.pharm_class == 'Benzodiazepine [EPC]'",
+        "member_set": frozenset({"alprazolam", "lorazepam"}),
+        "member_set_ref": "openfda-ndc:pharm_class:Benzodiazepine [EPC]",
+    }
+    monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: [anchor])
+
+    def fake_propose(item, **kwargs):
+        return {
+            "surface_confidence": "high",
+            "aliases": ["diazepam"],
+            "candidates": [
+                {
+                    "level": "benzodiazepine derivative",
+                    "aliases": ["diazepam"],
+                    "proposed_count": 150,
+                    "count_evidence": "Broad drug class with more members than the source EPC anchor.",
+                    "selector": "model-domain-cluster:benzodiazepine",
+                    "rationale": "Paraphrases the deterministic anchor and should be dropped.",
+                    "source_family": "model-proposed",
+                },
+                {
+                    "level": "central nervous system depressant",
+                    "aliases": ["diazepam"],
+                    "proposed_count": 5000,
+                    "count_evidence": "Includes sedatives, hypnotics, anxiolytics, and related medications.",
+                    "selector": "model-domain-cluster:cns-depressant",
+                    "rationale": "A broader truthful pharmacologic tier above benzodiazepines.",
+                    "source_family": "model-proposed",
+                    "reused_canonical_label": True,
+                },
+                {
+                    "level": "medication",
+                    "aliases": ["diazepam"],
+                    "proposed_count": 20000,
+                    "count_evidence": "Covers marketed therapeutic drug products.",
+                    "selector": "model-domain-cluster:medication",
+                    "rationale": "The broadest truthful drug tier.",
+                    "source_family": "model-proposed",
+                    "reused_canonical_label": True,
+                },
+            ],
+        }
+
+    monkeypatch.setattr(graph_module, "propose_with_llama_swap", fake_propose)
+    state = make_initial_state(
+        run_id="hybrid-anchor-e2e",
+        run_dir=run_dir,
+        profiles_path=profiles,
+        proposed_out=proposed_out,
+    )
+    state["current_item"] = {
+        "item_id": "drug:diazepam",
+        "runtime_type": "drug",
+        "surface": "diazepam",
+        "canonical_value": "diazepam",
+        "aliases": ["diazepam"],
+    }
+
+    state.update(deterministic_lookup(state))
+    assert route_after_deterministic(state) == "augment_with_model"
+    state.update(augment_with_model_node(state))
+    state.update(compile_level_counts_node(state))
+    state.update(gate_candidates_node(state))
+
+    assert [row["level"] for row in state["accepted_rows"]] == [
+        "benzodiazepine",
+        "central nervous system depressant",
+        "medication",
+    ]
+    assert state["accepted_rows"][0]["level_grounding"]["status"] == "certifying"
+    assert state["accepted_rows"][0]["level_grounding"]["source_family"] == "openfda-pharm-class"
+    assert state["accepted_rows"][0]["level_count"] == 2.0
+    assert max(row["level_count"] for row in state["accepted_rows"]) >= 100.0
+    assert not any(row["reason"] in {"chain_below_floor", "too_few_levels"} for row in state["diagnostic_rows"])
 
 
 def test_deterministic_lookup_falls_back_to_profile_cache_when_no_reference_hit(monkeypatch, tmp_path: Path) -> None:

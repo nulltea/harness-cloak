@@ -43,7 +43,7 @@ def test_category_registry_maps_direct_and_v7_fine_labels() -> None:
 
 
 def test_registry_outcome_for_runtime_type_matches_registry_semantics() -> None:
-    assert registry_outcome_for_runtime_type("drug") == CategoryOutcome.NEEDS_PROFILE
+    assert registry_outcome_for_runtime_type("drug") == CategoryOutcome.RUNTIME_LATTICE
     assert registry_outcome_for_runtime_type("medical-procedure") == CategoryOutcome.RUNTIME_LATTICE
     assert registry_outcome_for_runtime_type("MISC") == CategoryOutcome.RUNTIME_LATTICE
     assert registry_outcome_for_runtime_type("health-condition") == CategoryOutcome.RUNTIME_LATTICE
@@ -151,10 +151,6 @@ def test_queue_skips_forced_placeholder_and_rejects_dem(tmp_path: Path) -> None:
 
 
 def test_queue_treats_domain_profile_types_as_lattice_runtime_types(tmp_path: Path) -> None:
-    # "drug" is deliberately needs_profile (coverage.py registers it that way, matching the
-    # producer plan's policy gate) -- it must stay ineligible even when an item shows up with
-    # runtime_type already set to "drug", which is exactly how it used to sneak past the gate
-    # via a queue.py-local set of "eligible" runtime types that didn't agree with the registry.
     profiles = tmp_path / "profiles.json"
     run_dir = tmp_path / "run"
     explicit_queue = tmp_path / "queue.jsonl"
@@ -173,15 +169,10 @@ def test_queue_treats_domain_profile_types_as_lattice_runtime_types(tmp_path: Pa
 
     items = build_or_load_queue(run_dir, profiles, explicit_queue=explicit_queue)
 
-    assert [item["eligible"] for item in items] == [False, True, True, True]
-    assert items[0]["skip_reason"] == "needs_profile"
+    assert [item["eligible"] for item in items] == [True, True, True, True]
 
 
-def test_queue_from_profile_categories_respects_needs_profile_for_drug(tmp_path: Path) -> None:
-    # regression: _queue_from_profile_categories resolves runtime_type directly from an
-    # existing profile artifact's own top-level keys, which used to skip normalize_item's
-    # registry lookup entirely (it only ran "if label and not item.get('runtime_type')") and
-    # fall through to the same buggy locally-duplicated eligible-types set.
+def test_queue_from_profile_categories_makes_drug_producer_eligible(tmp_path: Path) -> None:
     profiles = tmp_path / "profiles.json"
     run_dir = tmp_path / "run"
     _write_profiles(
@@ -195,8 +186,7 @@ def test_queue_from_profile_categories_respects_needs_profile_for_drug(tmp_path:
     items = build_or_load_queue(run_dir, profiles, categories=["drug", "medical-procedure"])
 
     by_type = {item["runtime_type"]: item for item in items}
-    assert by_type["drug"]["eligible"] is False
-    assert by_type["drug"]["skip_reason"] == "needs_profile"
+    assert by_type["drug"]["eligible"] is True
     assert by_type["medical-procedure"]["eligible"] is True
 
 

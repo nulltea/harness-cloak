@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import sqlite3
 from datetime import date, datetime, timezone
@@ -12,6 +13,7 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
+from cloak.anonymity import K_FLOORS
 from cloak.lattice import bucket_date, bucket_quantity, geonames_chain
 from cloak.lattice_profiles import lookup_levels
 from cloak.lattice_producer.coherence import normalize_coherence
@@ -245,9 +247,43 @@ def deterministic_lookup(state: ProducerState) -> ProducerState:
     return {"current_candidates": [{"level": level, "source_family": "deterministic"} for level in levels]}
 
 
-def route_after_deterministic(state: ProducerState) -> Literal["compile_level_counts", "propose_with_llama_swap", "record_item_result"]:
+def _lvl_tokens(value: str) -> set[str]:
+    return set(re.findall(r"[a-z0-9]+", str(value).lower()))
+
+
+def merge_anchor_and_model(anchors: list[dict[str, Any]], model_cands: list[dict[str, Any]], *, near_dup: float = 0.5) -> list[dict[str, Any]]:
+    """Keep certifying anchors nearest; append broader model tiers above them."""
+    out = list(anchors)
+    anchor_tokens = [_lvl_tokens(str(anchor.get("level", ""))) for anchor in anchors]
+    for candidate in model_cands:
+        candidate_tokens = _lvl_tokens(str(candidate.get("level", "")))
+        if not candidate_tokens:
+            continue
+        if any(
+            tokens and len(candidate_tokens & tokens) / len(candidate_tokens | tokens) >= near_dup
+            for tokens in anchor_tokens
+        ):
+            continue
+        out.append(candidate)
+    return out
+
+
+def _deterministic_chain_sufficient(state: ProducerState) -> bool:
+    candidates = state.get("current_candidates") or []
+    item = state.get("current_item") or {}
+    runtime_type = str(item.get("runtime_type") or "")
+    floor = float(K_FLOORS.get(runtime_type, 100.0))
+    sizes = [len(candidate["member_set"]) for candidate in candidates if candidate.get("member_set")]
+    return len(candidates) >= 2 and bool(sizes) and max(sizes) >= floor
+
+
+def route_after_deterministic(
+    state: ProducerState,
+) -> Literal["compile_level_counts", "augment_with_model", "propose_with_llama_swap", "record_item_result"]:
     if state.get("current_candidates"):
-        return "compile_level_counts"
+        if state.get("offline_only") or _deterministic_chain_sufficient(state):
+            return "compile_level_counts"
+        return "augment_with_model"
     if state.get("offline_only"):
         return "record_item_result"
     return "propose_with_llama_swap"
@@ -282,6 +318,29 @@ def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
         for candidate in candidates:
             candidate.setdefault("surface_confidence", surface_confidence)
     return {"current_candidates": candidates}
+
+
+def augment_with_model_node(state: ProducerState) -> ProducerState:
+    item = state["current_item"] or {}
+    anchors = list(state.get("current_candidates") or [])
+    model = state.get("model") or QWEN36_ESCALATION_MODEL
+    proposal = propose_with_llama_swap(
+        item,
+        profiles_path=state["profiles_path"],
+        run_dir=state["run_dir"],
+        prompt_version=state["prompt_version"],
+        max_context_rows=state["max_context_rows"],
+        base_url=state["base_url"],
+        model=model,
+        escalation_model=state.get("escalation_model") or model,
+        thinking_budget_tokens=int(state.get("thinking_budget_tokens", -1)),
+        proposed_out=state["proposed_out"],
+    )
+    append_jsonl_unique(
+        _jsonl_path(state, "proposals.jsonl"),
+        [{**proposal, "item_id": item.get("item_id"), "augment": True, "model_used": model}],
+    )
+    return {"current_candidates": merge_anchor_and_model(anchors, extract_candidate_levels(proposal))}
 
 
 def route_after_proposal(state: ProducerState) -> Literal["compile_level_counts", "record_item_result"]:
@@ -626,6 +685,7 @@ def build_graph() -> StateGraph:
     graph.add_node("generate_universe_entries", generate_universe_entries)
     graph.add_node("deterministic_lookup", deterministic_lookup)
     graph.add_node("propose_with_llama_swap", propose_with_llama_swap_node)
+    graph.add_node("augment_with_model", augment_with_model_node)
     graph.add_node("compile_level_counts", compile_level_counts_node)
     graph.add_node("gate_candidates", gate_candidates_node)
     graph.add_node("persist_proposed_artifact", persist_proposed_artifact_node)
@@ -643,6 +703,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("generate_universe_entries", "compile_level_counts")
     graph.add_conditional_edges("deterministic_lookup", route_after_deterministic)
     graph.add_conditional_edges("propose_with_llama_swap", route_after_proposal)
+    graph.add_edge("augment_with_model", "compile_level_counts")
     graph.add_edge("compile_level_counts", "gate_candidates")
     graph.add_conditional_edges("gate_candidates", route_after_gate)
     graph.add_edge("requeue_rejected_item", "propose_with_llama_swap")
