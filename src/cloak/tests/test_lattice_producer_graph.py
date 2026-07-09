@@ -13,6 +13,7 @@ from cloak.lattice_producer.graph import (
     route_selected,
     route_after_gate,
     run_producer,
+    should_continue,
 )
 from cloak.lattice_producer.state import make_initial_state, thread_id_for_run
 
@@ -160,6 +161,27 @@ def test_dynamic_vocabulary_makes_item_two_see_item_ones_accepted_label(monkeypa
     assert state["accepted_rows"] == []
     assert state["diagnostic_rows"][0]["reason"] == "unreused_near_duplicate_label"
     assert "renal excretion agent" in state["diagnostic_rows"][0]["near_duplicates"]
+
+
+def test_should_continue_triggers_periodic_normalization():
+    state = {"processed": 50, "max_items": None, "normalize_every": 50}
+    assert should_continue(state) == "normalize_coherence"
+    state = {"processed": 49, "max_items": None, "normalize_every": 50}
+    assert should_continue(state) == "select_next_item"
+
+
+def test_periodic_normalize_resumes_loop_but_exhausted_validates():
+    from cloak.lattice_producer.graph import _route_after_normalize
+
+    # periodic trigger: item cleared by record_item_result, queue not exhausted -> resume
+    resume = {"processed": 50, "max_items": None, "current_item": None, "queue_exhausted": False}
+    assert _route_after_normalize(resume) == "select_next_item"
+    # genuine queue exhaustion -> validate
+    exhausted = {"processed": 50, "max_items": None, "current_item": None, "queue_exhausted": True}
+    assert _route_after_normalize(exhausted) == "validate_proposed_artifact"
+    # max_items hit -> validate
+    maxed = {"processed": 5, "max_items": 5, "current_item": None, "queue_exhausted": False}
+    assert _route_after_normalize(maxed) == "validate_proposed_artifact"
 
 
 def test_deterministic_lookup_prefers_reference_source_over_profile_cache(monkeypatch, tmp_path: Path) -> None:

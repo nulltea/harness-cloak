@@ -134,7 +134,7 @@ def select_next_item(state: ProducerState) -> ProducerState:
         if max_items is not None and processed >= int(max_items):
             return {"current_item": None, "queue_index": idx}
         return {"current_item": item, "queue_index": idx}
-    return {"current_item": None, "queue_index": idx}
+    return {"current_item": None, "queue_index": idx, "queue_exhausted": True}
 
 
 def route_selected(state: ProducerState) -> Literal[
@@ -425,9 +425,26 @@ def record_item_result(state: ProducerState) -> ProducerState:
 
 def should_continue(state: ProducerState) -> Literal["select_next_item", "normalize_coherence"]:
     max_items = state.get("max_items")
-    if max_items is not None and int(state.get("processed", 0)) >= int(max_items):
+    processed = int(state.get("processed", 0))
+    if max_items is not None and processed >= int(max_items):
+        return "normalize_coherence"
+    every = int(state.get("normalize_every", 0) or 0)
+    if every > 0 and processed > 0 and processed % every == 0:
         return "normalize_coherence"
     return "select_next_item"
+
+
+def _route_after_normalize(state: ProducerState) -> Literal["select_next_item", "validate_proposed_artifact"]:
+    max_items = state.get("max_items")
+    processed = int(state.get("processed", 0))
+    done = max_items is not None and processed >= int(max_items)
+    # queue-empty end also arrives here via route_selected -> normalize_coherence with no
+    # current_item; validate only when the run is actually finished, else resume processing.
+    return (
+        "validate_proposed_artifact"
+        if done or (state.get("current_item") is None and state.get("queue_exhausted"))
+        else "select_next_item"
+    )
 
 
 def normalize_coherence_node(state: ProducerState) -> ProducerState:
@@ -631,7 +648,7 @@ def build_graph() -> StateGraph:
     graph.add_edge("requeue_rejected_item", "propose_with_llama_swap")
     graph.add_edge("persist_proposed_artifact", "record_item_result")
     graph.add_conditional_edges("record_item_result", should_continue)
-    graph.add_edge("normalize_coherence", "validate_proposed_artifact")
+    graph.add_conditional_edges("normalize_coherence", _route_after_normalize)
     graph.add_conditional_edges("validate_proposed_artifact", route_after_validate)
     graph.add_edge("review_interrupt", "finalize_run")
     graph.add_edge("finalize_run", END)
@@ -659,6 +676,7 @@ def run_producer(
     escalation_model: str | None = None,
     offline_only: bool = False,
     max_items: int | None = None,
+    normalize_every: int = 50,
     max_context_rows: int = 8,
     max_generated_entries_per_category: int = 20,
     thinking_budget_tokens: int = -1,
@@ -679,6 +697,7 @@ def run_producer(
         escalation_model=escalation_model,
         offline_only=offline_only,
         max_items=max_items,
+        normalize_every=normalize_every,
         max_context_rows=max_context_rows,
         max_generated_entries_per_category=max_generated_entries_per_category,
         thinking_budget_tokens=thinking_budget_tokens,

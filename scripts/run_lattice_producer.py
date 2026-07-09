@@ -27,6 +27,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--review-decision", choices=["approve", "reject", "approve-proposed-only"])
     parser.add_argument("--allow-canonical-overwrite", action="store_true")
     parser.add_argument("--max-items", type=int)
+    parser.add_argument("--normalize-every", type=int, default=50)
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--max-generated-entries-per-category", type=int, default=20)
     parser.add_argument("--max-context-rows", type=int, default=20)
@@ -56,6 +57,7 @@ def main() -> int:
         escalation_model=args.escalation_model,
         offline_only=args.offline_only,
         max_items=args.max_items,
+        normalize_every=args.normalize_every,
         max_context_rows=args.max_context_rows,
         max_generated_entries_per_category=args.max_generated_entries_per_category,
         thinking_budget_tokens=args.thinking_budget_tokens,

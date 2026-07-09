@@ -28,6 +28,8 @@ class ProducerState(TypedDict, total=False):
     base_url: str
     offline_only: bool
     max_items: int | None
+    normalize_every: int
+    queue_exhausted: bool
     max_context_rows: int
     max_generated_entries_per_category: int
     thinking_budget_tokens: int
@@ -65,6 +67,7 @@ def make_initial_state(
     base_url: str = "http://localhost:8060/v1",
     offline_only: bool = False,
     max_items: int | None = None,
+    normalize_every: int = 50,
     max_context_rows: int = 8,
     max_generated_entries_per_category: int = 20,
     thinking_budget_tokens: int = -1,
@@ -92,6 +95,8 @@ def make_initial_state(
         "base_url": base_url,
         "offline_only": offline_only,
         "max_items": max_items,
+        "normalize_every": normalize_every,
+        "queue_exhausted": False,
         "max_context_rows": max_context_rows,
         "max_generated_entries_per_category": max_generated_entries_per_category,
         "thinking_budget_tokens": thinking_budget_tokens,
