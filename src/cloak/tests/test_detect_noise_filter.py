@@ -20,14 +20,31 @@ def test_noise_filter_keep_allowlist_wins(surface, runtime_type):
 
 
 @pytest.mark.parametrize(
+    ("surface", "runtime_type"),
+    [
+        ("ms", "health-condition"),
+        ("ra", "health-condition"),
+        ("ed", "health-condition"),
+        ("paraldehyde", "drug"),
+    ],
+)
+def test_noise_filter_keep_real_abbreviations_and_drug(surface, runtime_type):
+    assert is_noise_span(surface, runtime_type) is False
+
+
+@pytest.mark.parametrize(
     ("surface", "runtime_type", "expected"),
     [
         ("cbc", "medical-procedure", True),
+        ("cbc", "PERSON", False),
         ("appendectomy", "medical-procedure", False),
         ("mri", "drug", True),
         ("metformin", "drug", False),
         ("ace wrap", "drug", True),
         ("arm", "health-condition", True),
+        ("ap", "health-condition", True),
+        ("120 80", "health-condition", True),
+        ("limonene", "drug", True),
         ("asthma", "health-condition", False),
         ("power of attorney", "drug", True),
         ("coronary artery disease", "health-condition", False),

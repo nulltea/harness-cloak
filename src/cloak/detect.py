@@ -118,6 +118,7 @@ _NOISE_KEEP_PATTERNS = (
 _NOISE_KEEP_TOKENS = frozenset({
     "azo", "mmr", "pcp", "cla", "pop",
     "cad", "cva", "gerd", "copd", "cf", "chf", "dvt", "uti", "tia", "ckd", "mi",
+    "ms", "ra", "ed", "tb", "af", "paraldehyde",
 })
 _NOISE_LAB_PATTERN = re.compile(r"\b(panel|assay|titer|titre|screen|culture|antibody test|serology)\b")
 _NOISE_LAB_TESTS = frozenset({
