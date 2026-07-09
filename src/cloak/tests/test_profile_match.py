@@ -1,8 +1,19 @@
 import json
 
 import numpy as np
+import pytest
 
 from cloak import profile_match as pm
+from cloak.profile_match import PROFILE_BACKED_TYPES, match_spans_batch, span_key
+
+
+@pytest.fixture(autouse=True)
+def _clear_module_state():
+    # _PROPOSAL_CACHE / _WARNED_INDEX_PATHS are module-global; don't leak across tests.
+    pm._PROPOSAL_CACHE.clear()
+    pm._WARNED_INDEX_PATHS.clear()
+    pm.load_embindex.cache_clear()
+    yield
 
 # Deterministic stub embeddings (dim=3). Unknown strings map to a far vector.
 VEC = {
@@ -232,3 +243,99 @@ def test_build_embindex_output(tmp_path):
     assert meta["rows"][di]["runtime_type"] == "health-condition"
     assert meta["rows"][di]["canonical"] == "diabetes"
     assert np.allclose(vectors[di], [1.0, 0.0, 0.0], atol=1e-5)
+
+
+# --- batch matcher ---
+
+def test_batch_mixed_exact_semantic_abstain(tmp_path):
+    profiles, index = _build(tmp_path, "batch_mixed")
+    embed_calls = []
+
+    def embed(texts):
+        embed_calls.append(list(texts))
+        return stub_embed(texts)
+
+    def nli_batch(jobs):
+        return [[(lv, 0.9) for lv in cands] if "gib" not in e else []
+                for e, ctx, cands in jobs]
+
+    items = [
+        ("diabetes", "health-condition", "He has diabetes."),        # exact
+        ("diabetic", "health-condition", "He is diabetic."),         # semantic -> diabetes
+        ("gibberish zz", "health-condition", "Has gibberish zz."),   # abstain: below floor
+        ("diabetes", "health-condition", "dup key, second context"), # dedup: one key
+    ]
+    got = match_spans_batch(items, profiles_path=profiles, index_path=index,
+                            embed_fn=embed, nli_batch_fn=nli_batch)
+    assert set(got) == {span_key("diabetes", "health-condition"),
+                        span_key("diabetic", "health-condition"),
+                        span_key("gibberish zz", "health-condition")}
+    assert got[span_key("diabetes", "health-condition")].kind == "exact"
+    sem = got[span_key("diabetic", "health-condition")]
+    assert sem.kind == "semantic" and sem.entry == "diabetes" and sem.nli == 0.9
+    assert got[span_key("gibberish zz", "health-condition")] is None
+    assert len(embed_calls) == 1 and sorted(embed_calls[0]) == ["diabetic", "gibberish zz"]
+
+
+def test_batch_wave2_second_candidate(tmp_path):
+    profiles, index = _build(tmp_path, "batch_wave2")
+    waves = []
+
+    def nli_batch(jobs):
+        waves.append([e for e, _, _ in jobs])
+        # refuse everything in the first wave, approve the first level in the second
+        return [[] if len(waves) == 1 else [(cands[0], 0.8)] for e, ctx, cands in jobs]
+
+    got = match_spans_batch([("endocrine disorder", "health-condition", "She has an endocrine disorder.")],
+                            profiles_path=profiles, index_path=index,
+                            embed_fn=stub_embed, nli_batch_fn=nli_batch)
+    m = got[span_key("endocrine disorder", "health-condition")]
+    assert m is not None and len(waves) == 2   # second-best entry won in wave 2
+    assert m.entry == "hypothyroidism"
+
+
+def test_proposal_cache_skips_embedding(tmp_path):
+    profiles, index = _build(tmp_path, "batch_cache")
+    embed_calls = []
+
+    def embed(texts):
+        embed_calls.append(list(texts))
+        return stub_embed(texts)
+
+    kw = dict(profiles_path=profiles, index_path=index, embed_fn=embed,
+              nli_batch_fn=lambda jobs: [[] for _ in jobs])
+    match_spans_batch([("diabetic", "health-condition", "c1.")], **kw)
+    match_spans_batch([("diabetic", "health-condition", "c2 diabetic.")], **kw)
+    assert len(embed_calls) == 1   # second doc reused cached candidates
+
+
+def test_batch_no_context_and_missing_index(tmp_path):
+    profiles, index = _build(tmp_path, "batch_nocontext")
+    got = match_spans_batch([("diabetic", "health-condition", "")],
+                            profiles_path=profiles, index_path=index,
+                            embed_fn=stub_embed, nli_batch_fn=lambda j: [])
+    assert got[span_key("diabetic", "health-condition")] is None
+    got = match_spans_batch([("diabetic", "health-condition", "ctx diabetic.")],
+                            profiles_path=profiles, index_path=tmp_path / "absent.npz",
+                            embed_fn=stub_embed, nli_batch_fn=lambda j: [])
+    assert got[span_key("diabetic", "health-condition")] is None  # exact-only degradation
+
+
+def test_degradation_warns_once(tmp_path, caplog):
+    profiles, _ = _build(tmp_path, "batch_warn")
+    missing = tmp_path / "gone.npz"
+    import logging
+    with caplog.at_level(logging.WARNING, logger="cloak.profile_match"):
+        for _ in range(3):
+            match_spans_batch([("x", "health-condition", "ctx x.")],
+                              profiles_path=profiles, index_path=missing,
+                              embed_fn=stub_embed, nli_batch_fn=lambda j: [])
+    assert sum("exact-only" in r.message for r in caplog.records) == 1
+
+
+def test_profile_backed_types_contents():
+    assert "health-condition" in PROFILE_BACKED_TYPES and "drug" in PROFILE_BACKED_TYPES
+    assert "LOC" in PROFILE_BACKED_TYPES and "ORG" in PROFILE_BACKED_TYPES
+    for t in ("PERSON", "CODE", "gender", "marital-status", "sexual-orientation",
+              "DATETIME", "QUANTITY", "age", "demographic-other"):
+        assert t not in PROFILE_BACKED_TYPES
