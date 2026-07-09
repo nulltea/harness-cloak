@@ -1,4 +1,6 @@
-from cloak.lattice_producer.coherence import normalize_coherence, normalize_runtime_type
+import math
+
+from cloak.lattice_producer.coherence import enforce_log_gap_band, normalize_coherence, normalize_runtime_type
 
 
 def _row(levels, counts, groundings=None, count=None):
@@ -143,3 +145,23 @@ def test_normalize_coherence_covers_every_runtime_type_in_artifact() -> None:
     # "medication" is a real-world anchor (11,000) -- it overrides the fabricated 100.0, which
     # is exactly the point of anchoring, not a bug in this assertion's original expectation.
     assert artifact["profiles"]["drug"]["aspirin"]["level_counts"]["medication"] == 11000.0
+
+
+def test_log_gap_band_spreads_model_labels_but_pins_fixed():
+    order = ["specific", "mid", "broad"]
+    counts = {"specific": 10.0, "mid": 12.0, "broad": 12.0}  # near-flat, incoherent
+    fixed = {"specific"}  # a real member-set count that must not move
+    out = enforce_log_gap_band(order, counts, fixed, min_decades=0.3, max_decades=2.0)
+    assert out["specific"] == 10.0  # pinned
+    # each non-fixed step is at least 0.3 decades above its predecessor
+    assert math.log10(out["mid"] / out["specific"]) >= 0.3 - 1e-9
+    assert math.log10(out["broad"] / out["mid"]) >= 0.3 - 1e-9
+    # and no step exceeds the max band
+    assert math.log10(out["mid"] / out["specific"]) <= 2.0 + 1e-9
+
+
+def test_log_gap_band_caps_excessive_jump():
+    order = ["a", "b"]
+    counts = {"a": 10.0, "b": 10_000_000.0}  # 6-decade jump
+    out = enforce_log_gap_band(order, counts, fixed_labels=set(), min_decades=0.3, max_decades=2.0)
+    assert math.log10(out["b"] / out["a"]) <= 2.0 + 1e-9
