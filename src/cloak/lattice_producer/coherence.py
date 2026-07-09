@@ -227,11 +227,12 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
             "same_count_collisions": [],
         }
 
-    # Corpus-membership counts: each level's count is the number of DISTINCT entries whose
-    # generalization chain contains it -- a real anonymity-set-within-corpus size, not the
-    # model's fabricated per-item number. Monotone up a chain by construction (a broader level
-    # is carried by a superset of the entries carrying any level that always rolls up into it),
-    # so no forced log-spacing is needed. Certifying/anchored counts still override below.
+    # Corpus-membership counts: each level's baseline count is the number of DISTINCT entries whose
+    # generalization chain contains it -- a real anonymity-set-within-corpus size, not the model's
+    # fabricated per-item number. Raw membership is NOT itself monotone up a chain (a mid tier can
+    # be carried by more entries than a broader tier the reorder places above it); monotonicity is
+    # enforced by the existing _rank_order + _weighted_pava isotonic pass below, which may pool
+    # violating neighbors into a weighted mean. Certifying/anchored counts still override below.
     membership: dict[str, set[str]] = defaultdict(set)
     for entry_key, chain in canonical_by_entry.items():
         for canon in chain:
@@ -298,9 +299,10 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
                 else:
                     grounding["count_basis"] = "corpus-membership"
                     grounding["count_evidence"] = (
-                        f"'{canon}' count is the number of distinct entries in this run whose "
-                        f"generalization chain includes it (corpus-membership anonymity-set "
-                        f"size); not certifying"
+                        f"'{canon}' count is a corpus-membership anonymity-set size (number of "
+                        f"distinct entries in this run whose generalization chain includes it), "
+                        f"adjusted for monotonicity by isotonic pooling where chain order "
+                        f"disagreed; not certifying"
                     )
             new_groundings[canon] = grounding
 
