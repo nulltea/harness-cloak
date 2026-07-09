@@ -365,3 +365,22 @@ def test_profile_backed_types_contents():
     for t in ("PERSON", "CODE", "gender", "marital-status", "sexual-orientation",
               "DATETIME", "QUANTITY", "age", "demographic-other"):
         assert t not in PROFILE_BACKED_TYPES
+
+
+def test_nli_failure_degrades_fail_closed(tmp_path, caplog):
+    profiles, index = _build(tmp_path, "batch_nlifail")
+    import logging
+
+    def boom(jobs):
+        raise RuntimeError("nli model unavailable")
+
+    with caplog.at_level(logging.WARNING, logger="cloak.profile_match"):
+        for _ in range(2):
+            got = match_spans_batch(
+                [("diabetes", "health-condition", "He has diabetes."),      # exact
+                 ("diabetic", "health-condition", "He is diabetic.")],       # semantic miss
+                profiles_path=profiles, index_path=index,
+                embed_fn=stub_embed, nli_batch_fn=boom)
+    assert got[span_key("diabetes", "health-condition")].kind == "exact"   # unaffected
+    assert got[span_key("diabetic", "health-condition")] is None           # abstain, no raise
+    assert sum("exact-only" in r.message for r in caplog.records) == 1     # warn once

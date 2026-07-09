@@ -252,6 +252,16 @@ hits, or an NLI margin against a type-name hypothesis (span must entail the entr
 it entails the bare type name). No solution is chosen here; the limitation is recorded so a comparison
 does not overstate the certifier's protection.
 
+### Per-surface certification granularity
+
+The batch pre-pass deduplicates by `(runtime_type, normalized surface)` and certifies a semantic
+match in the **first occurrence's sentence only**; every repeat of that surface in the document
+inherits the result with the tail NLI gate skipped. This inherits the substitutor's per-surface
+consistency design (`by_surface`: one replacement per unique lowercased surface, required for `R`
+injectivity), which predates the matcher. Consequence: a hedged or negated later mention of the same
+surface inherits the first mention's certification. Per-occurrence certification is a possible
+future tightening if measurement shows the inherited-approval case matters in practice.
+
 ## Evaluation
 
 - Build a held-out set of `(surface variant, context, runtime_type) → gold entry` pairs from

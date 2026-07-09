@@ -1,7 +1,8 @@
 """Retrieve-then-verify profile matcher: exact fast path, else embedding retrieval + NLI.
 
-Standalone MVP (docs/specs/substitutor-profile-match-retrieve-verify.md). Not wired into
-cloak.lattice.lattice_for(); a later task validates it first.
+Spec: docs/specs/substitutor-profile-match-retrieve-verify.md. Wired in as the substitutor's
+batched pre-pass (match_spans_batch -> lattice_for(proposal=...)); match_profile_entry remains
+the single-span entry point for other callers.
 """
 import hashlib
 import json
@@ -115,6 +116,8 @@ class _Index:
 
 # Cache keyed on paths, not content: an in-process profile rewrite at the same path is not
 # re-detected until cache_clear() (matches the lattice_profiles caching convention).
+# _PROPOSAL_CACHE shares the convention: after regenerating profiles in-process, call
+# load_embindex.cache_clear() and clear _PROPOSAL_CACHE.
 @lru_cache(maxsize=8)
 def load_embindex(index_path: str, profiles_path: str) -> _Index | None:
     path = Path(index_path)
@@ -165,6 +168,8 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
     profiles_path = Path(profiles_path or lp.DEFAULT_PROFILE_PATH)
     index_path = Path(index_path) if index_path else _index_path_for(profiles_path)
 
+    # first-context-wins mirrors the substitutor's per-surface reuse invariant (by_surface):
+    # one certification per unique surface, in the first occurrence's sentence; repeats inherit.
     todo: dict[tuple[str, str], tuple[str, str]] = {}   # key -> (span_text, context); first wins
     for span_text, runtime_type, context in items:
         todo.setdefault(span_key(span_text, runtime_type), (span_text, context))
@@ -226,7 +231,11 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
                 owners.append((k, canonical, sim))
         if not jobs:
             break
-        results = nli_batch_fn(jobs)
+        try:
+            results = nli_batch_fn(jobs)
+        except Exception:  # certifier failure degrades like embed failure: abstain, never raise
+            _warn_exact_only(str(index_path), "nli certifier failed")
+            return out
         resolved = set()
         for (k, canonical, sim), approved in zip(owners, results):
             if approved:
