@@ -387,6 +387,12 @@ _LOOKUPS = {
 }
 
 
+def has_reference_source(runtime_type: str) -> bool:
+    """True if this runtime type has a real deterministic reference loader (openFDA/DOID/ICD-10-PCS).
+    Such types must route a reference MISS to the model, never to the profile-cache fallback."""
+    return str(runtime_type or "") in _LOOKUPS
+
+
 def reference_candidates_for(item: dict[str, Any]) -> list[dict[str, Any]] | None:
     """Try the registered real-data loader for this item's runtime type. Returns None (never an
     empty list) when there's no loader or no match, so callers can cleanly fall through to the

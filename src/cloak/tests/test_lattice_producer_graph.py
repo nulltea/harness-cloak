@@ -365,6 +365,32 @@ def test_hybrid_anchor_augmentation_keeps_certifying_nearest_rung(monkeypatch, t
     assert not any(row["reason"] in {"chain_below_floor", "too_few_levels"} for row in state["diagnostic_rows"])
 
 
+def test_deterministic_lookup_reference_type_miss_goes_to_model_not_cache(monkeypatch, tmp_path: Path) -> None:
+    # a runtime type WITH a reference source (drug/openFDA) that MISSES must not fall back to the
+    # lattice_profiles.json cache (unreliable) -- it must return empty candidates so the graph routes
+    # to the model.
+    import cloak.lattice_producer.graph as graph_module
+
+    monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: None)  # openFDA miss
+
+    profiles = tmp_path / "profiles.json"
+    profiles.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "created": "2026-07-07",
+                "sources": {},
+                "profiles": {"drug": {"aspirin": {"aliases": [], "levels": ["nsaid", "medication"], "source_ids": [], "count": 1}}},
+            }
+        )
+    )
+    state = {"current_item": {"surface": "aspirin", "runtime_type": "drug"}, "profiles_path": profiles}
+
+    result = deterministic_lookup(state)
+
+    assert result == {"current_candidates": []}
+
+
 def test_deterministic_lookup_falls_back_to_profile_cache_when_no_reference_hit(monkeypatch, tmp_path: Path) -> None:
     import cloak.lattice_producer.graph as graph_module
 

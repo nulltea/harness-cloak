@@ -148,3 +148,28 @@ position in its `<TASK>-<component>` lineage — defined by the training-record 
 and is **stable** (a completed run's version never renumbers, unlike plan/phase numbers). So `FT-detector v3`
 in a filename, cross-reference, or discussion is correct. This exception is narrow: it does **not** license
 plan/phase/requirement/arm identifiers (`P7`, `D1`, `Arm B`) anywhere.
+
+## Picking the right models for workflows and subagents
+
+Rankings, higher = better. Cost reflects what I actually pay, not list price. Intelligence is how hard a problem you can hand the model unsupervised. Taste covers code quality, codebase design, and research judgment — picking research directions, designing experiments, analyzing results, drawing conclusions. (Not literature search/web search — that's a task, not a taste axis.)
+
+| model    | cost | intelligence | taste |
+|----------|------|--------------|-------|
+| gpt-5.5  | 5    | 8            | 5     |
+| sonnet-5 | 5    | 5            | 7     |
+| opus-4.8 | 4    | 7            | 8     |
+| fable-5  | 2    | 9            | 9     |
+
+How to apply:
+- These are defaults, not limits. You have standing permission to override them: if a cheaper model's output doesn't meet the bar, rerun or redo the work with a smarter model without asking. Judge the output, not the price tag. Escalating costs less than shipping mediocre work.
+- Cost is a tie-breaker only; when axes conflict for anything that ships, intelligence > taste > cost.
+- Bulk/mechanical work (clear-spec implementation, data analysis, migrations): sonnet-5.
+- Reviews (specs, code, findings): default to `/auto-review-loop` (drives codex gpt-5.5) for the actual review pass; opus-4.8 as a Claude-side second opinion when a Codex round-trip is overkill.
+- fable-5 subagents: rarest case only. Try sonnet-5/opus-4.8 first; reach for fable-5 only when a task specifically demands its top intelligence+taste combo and nothing else will do — it is not a routine reviewer or default subagent choice.
+- Manual research (WebFetch, research-lit, web search): sonnet-5 for plain retrieval/summarization; opus-4.8 once the task requires judging or weighing findings (relevance, credibility, which result matters).
+- Never use Haiku.
+- Mechanics: gpt-5.5 is only reachable through the Codex CLI — `codex exec` / `codex review` (my ~/.codex/config.toml defaults to gpt-5.5). Use the codex-implementation, codex-review, and codex-computer-use skills; for work they don't cover (investigation, data analysis), run `codex exec -s read-only` directly with a self-contained prompt.
+- Claude models (sonnet-5, opus-4.8, fable-5) run via the Agent/Workflow model parameter.
+
+Using gpt-5.5 inside workflows and subagents (the model parameter only takes Claude models, so use a wrapper):
+- Spawn a thin Claude wrapper agent with `model: 'sonnet', effort: 'low'` whose prompt instructs it to write a self-contained codex prompt, run `codex exec` via Bash, and return

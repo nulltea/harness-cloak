@@ -23,7 +23,7 @@ from cloak.lattice_producer.gates import gate_candidates
 from cloak.lattice_producer.io import append_jsonl_unique, read_jsonl
 from cloak.lattice_producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
 from cloak.lattice_producer.propose import ensure_local_base_url, extract_candidate_levels, propose_with_llama_swap
-from cloak.lattice_producer.reference_sources import reference_candidates_for
+from cloak.lattice_producer.reference_sources import has_reference_source, reference_candidates_for
 from cloak.lattice_producer.queue import build_or_load_queue
 from cloak.lattice_producer.state import QWEN36_ESCALATION_MODEL, ProducerState, make_initial_state, thread_id_for_run
 
@@ -237,6 +237,13 @@ def deterministic_lookup(state: ProducerState) -> ProducerState:
     reference_candidates = reference_candidates_for(item)
     if reference_candidates:
         return {"current_candidates": reference_candidates}
+    # A runtime type with a real reference source (drug/openFDA, health-condition/DOID,
+    # medical-procedure/ICD-10-PCS) must send a reference MISS to the model, NOT fall back to the
+    # lattice_profiles.json profile cache -- that cache is unreliable, and echoing its stale levels
+    # back (as certifying-by-aset) is exactly what we don't want. Empty candidates ->
+    # route_after_deterministic routes to propose_with_llama_swap (or record_item_result if offline).
+    if has_reference_source(runtime_type):
+        return {"current_candidates": []}
     levels = lookup_levels(surface, runtime_type, state["profiles_path"])
     if not levels and runtime_type == "LOC":
         levels = geonames_chain(surface) or []
