@@ -76,6 +76,38 @@ per the spec; or (b) re-scope the spec: model-proposed + coherence-cleaned count
 operating basis and the "certifying k-anonymity count" language is dropped. Either is honest;
 treating fabricated counts as certifying is not.
 
+### 1b. Round-trip reward is non-deterministic under concurrency (MEASURED 2026-07-09)
+
+The spec's load-bearing invariant — `R_rt` deterministic given `doc_p` (§The one subtlety:
+cache coherence, exact counterfactual credit, ExIt pool all rest on it) — **is violated by the
+concurrent reward loop.** Measured with `scripts/spikes/reader_parallelism_smoke.py` (clinical,
+cache-cold, temp-0): the same jobs at `workers=1` vs `workers=6` produce **different rewards on
+6/18 (larger run) and 1/8 (smaller run) jobs**, parallel systematically higher by ~one
+quantization step (~0.125). Stage-attributed: **`out_p` (gemma generation) itself differs on
+5/8 jobs** — the root is llama.cpp batched-inference non-determinism (logits depend on the
+concurrent batch composition; temp-0 greedy flips the argmax at token boundaries), inherited by
+the reader.
+
+**Scope:** `--rt-workers` defaults to 8, so *every run to date* (v3 smoke, support scan, the
+2026-07-08 ablation) computed rewards under concurrency. Cached reward values depend on how many
+jobs were in flight when first computed; the "exact" per-span counterfactual credit is
+approximate; ExIt "keep the strict winner" can keep a concurrency-lucky rollout.
+
+**Perf context:** the concurrency buys a real 3.1× wall speedup (119s→38s at 13.5 probes/job);
+the reader does dominate wall as the v3 note said. So this is a genuine determinism-vs-throughput
+tradeoff, not a free fix.
+
+**Decision needed (empirical-honesty rule — do not engineer around silently):**
+- (a) **Serialize generation** (`rt_workers=1` for the gen call, reader may stay parallel on a
+  fixed `out_p`): restores determinism, ~3× slower.
+- (b) **Accept as reward noise**, reframe the spec: `R_rt` is deterministic per
+  (doc_p, concurrency) only; quantify the flip rate and fold it into the reward-quantization
+  budget (it compounds the existing ~0.2-step quantization). Cache becomes concurrency-tagged.
+- (c) **Investigate server flags** (llama-server determinism / single-slot gen pool) for a
+  middle ground.
+Recommendation pending user call; (a) for any run that needs the cache/counterfactual guarantees,
+(b) only if the flip rate is small relative to the signal being measured.
+
 ## Degrading
 
 ### 4. Probe density is ~10% of target

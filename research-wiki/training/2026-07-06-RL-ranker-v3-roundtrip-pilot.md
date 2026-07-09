@@ -79,10 +79,16 @@ On high-probe docs the **serial reader dominates** (~1 rt/s at ~13 probes/doc). 
 parallelism *across* rollouts (serial *within* a context, for prefix-KV reuse) **is already
 wired** into `train_ranker`'s reward loop — verified 2026-07-08: `exit_round` batches the whole
 corpus (all docs × (baseline + G rollouts)) into one `roundtrip_batch`, and the RLOO loop
-batches per-doc (G jobs); `roundtrip_batch`'s pmap fans those across the served slots. The
-genuine open item is a **measurement** — does the reader dominate wall at full scale? — not more
-wiring. Minor unfilled slots: the counterfactual `base_r` call is a single-job batch
-(`train_ranker.py:331`) and `--rt-workers` defaults to 8 vs the served `-np 6` slots.
+batches per-doc (G jobs); `roundtrip_batch`'s pmap fans those across the served slots.
+
+Measured 2026-07-09 (`scripts/spikes/reader_parallelism_smoke.py`): **3.1× wall speedup**
+(119s→38s at 13.5 probes/job) — the reader does dominate wall, parallelism helps. **BUT the
+reward is non-deterministic under concurrency** — `out_p` (gemma gen) differs on 5/8 jobs
+workers=1-vs-6, flipping ~1/8–1/3 of rewards by one quantization step (llama.cpp batched-
+inference non-determinism). This violates the spec's "R_rt deterministic given doc_p" and has
+held for every run to date (`--rt-workers` default 8). See issue register §1b — the
+determinism-vs-throughput decision is pending. Minor unfilled slots: counterfactual `base_r`
+single-job batch (`train_ranker.py:331`); `--rt-workers` 8 vs served `-np 6`.
 
 ## Risks & caveats
 - **Placeholder-gaming / QA-necessity** (open, pilot proceeds with current impl):
