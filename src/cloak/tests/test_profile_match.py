@@ -333,6 +333,32 @@ def test_degradation_warns_once(tmp_path, caplog):
     assert sum("exact-only" in r.message for r in caplog.records) == 1
 
 
+def test_cap_clear_reembeds_batch_without_keyerror(tmp_path, monkeypatch):
+    profiles, index = _build(tmp_path, "batch_capclear")
+    embed_calls = []
+
+    def embed(texts):
+        embed_calls.append(list(texts))
+        return stub_embed(texts)
+
+    kw = dict(profiles_path=profiles, index_path=index, embed_fn=embed,
+              nli_batch_fn=lambda jobs: [[] for _ in jobs])
+    # cache "diabetic"
+    match_spans_batch([("diabetic", "health-condition", "c1.")], **kw)
+    assert len(embed_calls) == 1
+    # force a cap-clear on the next call: cache size (1) now exceeds cap
+    monkeypatch.setattr(pm, "_PROPOSAL_CACHE_MAX", 0)
+    got = match_spans_batch(
+        [("diabetic", "health-condition", "c2 diabetic."),      # previously cached -> wiped
+         ("asthma-ish", "health-condition", "c2 asthma-ish.")], # new surface
+        **kw)
+    # no KeyError; both keys resolved/abstained, both re-embedded in one call
+    assert set(got) == {span_key("diabetic", "health-condition"),
+                        span_key("asthma-ish", "health-condition")}
+    assert len(embed_calls) == 2
+    assert sorted(embed_calls[1]) == ["asthma-ish", "diabetic"]
+
+
 def test_profile_backed_types_contents():
     assert "health-condition" in PROFILE_BACKED_TYPES and "drug" in PROFILE_BACKED_TYPES
     assert "LOC" in PROFILE_BACKED_TYPES and "ORG" in PROFILE_BACKED_TYPES

@@ -190,6 +190,11 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
     if not misses:
         return out
 
+    # cap-clear BEFORE computing uncached, so any of this batch's keys wiped here get
+    # re-embedded in the same single call (never left dangling for the unresolved lookup).
+    if len(_PROPOSAL_CACHE) > _PROPOSAL_CACHE_MAX:
+        _PROPOSAL_CACHE.clear()
+
     # one embed batch for surfaces not in the proposal cache
     uncached = [(k, s) for k, s, _ in misses
                 if (str(index_path), k[0], k[1]) not in _PROPOSAL_CACHE]
@@ -202,8 +207,6 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
         except Exception:
             _warn_exact_only(str(index_path), "embedding model failed")
             return out
-        if len(_PROPOSAL_CACHE) > _PROPOSAL_CACHE_MAX:
-            _PROPOSAL_CACHE.clear()
         for (k, _), q in zip(uncached, vecs):
             _PROPOSAL_CACHE[(str(index_path), k[0], k[1])] = _retrieve(index, k[0], q)
 
