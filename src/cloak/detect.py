@@ -269,25 +269,43 @@ def _dedupe(spans: list[Span]) -> list[Span]:
 
 
 def coref_chains(text: str, spans: list[Span]) -> list[Span]:
-    """Attach chain ids by surface aliasing: same-type spans whose casefolded token sets
-    overlap (or one contains the other) share a chain.
+    """Attach chain ids by surface aliasing. Same-type spans chain only when one surface
+    contains the other as whole tokens ("Anna Smith" ~ "Anna") or their first tokens match
+    ("Anna Smith" ~ "Anna S."). A bare single-token mention that is a non-first token of an
+    existing member (bare "Smith") joins the MOST RECENT matching chain. Any-token overlap
+    is deliberately not enough: it merged distinct people sharing a surname into one
+    placeholder.
 
     ponytail: string-alias coref — fastcoref 2.1.6 is incompatible with transformers 5.12
-    (FCorefModel hits removed modeling internals). Aliasing covers placeholder consistency
-    across name variants; upgrade to a real coref model for the TAB pass, where nominal
-    anaphora ("the applicant") matters.
+    (FCorefModel hits removed modeling internals). Upgrade to a real coref model for the TAB
+    pass, where nominal anaphora ("the applicant") matters.
     """
-    chains: list[tuple[str, set]] = []  # (type, token set)
+    def toks(surface: str) -> list[str]:
+        return [t for t in surface.lower().split() if len(t) > 2]
+
+    def aliases(a: list[str], b: list[str]) -> bool:
+        if not a or not b:
+            return False
+        sa, sb = set(a), set(b)
+        if sa <= sb or sb <= sa:
+            return True
+        return a[0] == b[0]
+
+    chains: list[tuple[str, list[list[str]]]] = []  # (type, member token lists)
     for s in sorted(spans, key=lambda s: s.start):
-        toks = {t for t in s.text.lower().split() if len(t) > 2}
+        st = toks(s.text)
         s.chain = -1
-        for ci, (ctype, ctoks) in enumerate(chains):
-            if ctype == s.type and toks and (toks & ctoks):
+        for ci in reversed(range(len(chains))):      # most recent chain wins
+            ctype, members = chains[ci]
+            if ctype != s.type:
+                continue
+            if any(aliases(st, m) for m in members) or (
+                    len(st) == 1 and any(st[0] in m for m in members)):
                 s.chain = ci
-                ctoks |= toks
+                members.append(st)
                 break
         if s.chain < 0:
-            chains.append((s.type, toks))
+            chains.append((s.type, [st]))
             s.chain = len(chains) - 1
     return spans
 
