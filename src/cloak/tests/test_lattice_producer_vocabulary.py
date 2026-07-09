@@ -52,7 +52,7 @@ def test_context_slice_is_bounded_and_ranked_by_count() -> None:
     top = vocab.context_slice(n=3)
 
     assert len(top) == 3
-    assert "chemical substance" in top  # the largest real-world anchor (CAS Registry)
+    assert "chemical substance" in [row["label"] for row in top]  # largest real-world anchor (CAS Registry)
 
 
 def test_medical_procedure_seeds_from_icd10pcs_headers_not_a_hand_file() -> None:
@@ -108,3 +108,35 @@ def test_missing_proposed_out_file_is_a_harmless_no_op(tmp_path: Path) -> None:
     vocab = CanonicalVocabulary("drug", proposed_out=tmp_path / "does-not-exist.json")
 
     assert vocab.has_exact("medication")
+
+
+def test_context_slice_returns_label_count_pairs_ranked_by_surface_overlap(tmp_path):
+    path = tmp_path / "proposed.json"
+    _write_proposed(path, "health-condition", {
+        "eczema": {"levels": ["skin disorder", "human medical condition"],
+                    "level_counts": {"skin disorder": 40, "human medical condition": 900}},
+    })
+    vocab = CanonicalVocabulary("health-condition", proposed_out=path)
+    # n large enough to include both run labels past the high-count static anchors (500k+) that
+    # would otherwise crowd the count-900 sink out of a tiny slice -- the point here is the
+    # overlap-first ORDER, not the slice size.
+    slice_ = vocab.context_slice(n=50, surface="chronic skin rash")
+    assert isinstance(slice_[0], dict) and {"label", "count"} <= set(slice_[0])
+    # "skin disorder" shares 'skin' with the surface, so it must outrank the higher-count sink
+    labels = [row["label"] for row in slice_]
+    assert labels.index("skin disorder") < labels.index("human medical condition")
+
+
+def test_seed_from_run_tracks_latest_count(tmp_path):
+    path = tmp_path / "proposed.json"
+    # "otc pain reliever" is NOT a static drug anchor, so this exercises the run-label latest-count
+    # path (a static anchor would correctly refuse the run count and defeat the test's intent).
+    _write_proposed(path, "drug", {
+        "a": {"levels": ["otc pain reliever"], "level_counts": {"otc pain reliever": 10}},
+        "b": {"levels": ["otc pain reliever"], "level_counts": {"otc pain reliever": 25}},
+    })
+    vocab = CanonicalVocabulary("drug", proposed_out=path)
+    # dict iteration is insertion order; "b" (25) is seen last and must win over "a" (10)
+    assert vocab.context_slice(n=5)[0]["count"] == 25 or any(
+        r["label"] == "otc pain reliever" and r["count"] == 25 for r in vocab.context_slice(n=50)
+    )

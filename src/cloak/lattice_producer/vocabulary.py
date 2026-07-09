@@ -73,8 +73,9 @@ class CanonicalVocabulary:
             level_counts = row.get("level_counts") or {}
             for level in row.get("levels", []):
                 key = _norm(level)
-                if key not in self._labels:
-                    self._labels[key] = float(level_counts.get(level, 1.0))
+                count = float(level_counts.get(level, 1.0))
+                if key not in self._labels or key in self._run_labels:
+                    self._labels[key] = count
                     self._run_labels.add(key)
 
     def is_from_this_run(self, label: str) -> bool:
@@ -107,10 +108,20 @@ class CanonicalVocabulary:
         scored.sort(key=lambda pair: -pair[0])
         return [label for _, label in scored[:k]]
 
-    def context_slice(self, n: int = 10) -> list[str]:
-        """A bounded, representative slice for a context packet: the n labels with the largest
-        known count, since those are the broadest, most-likely-to-recur tiers."""
-        return sorted(self._labels, key=lambda label: -self._labels[label])[:n]
+    def context_slice(self, n: int = 10, *, surface: str | None = None) -> list[dict]:
+        """A bounded, representative slice for a context packet as {label, count} rows. When a
+        surface is given, rank by token-overlap with the surface first (so the model sees the
+        labels most likely to be the right reuse target), then by count; otherwise count-desc."""
+        labels = list(self._labels)
+        if surface:
+            surface_tokens = _tokens(surface)
+            def key(label):
+                overlap = len(_tokens(label) & surface_tokens)
+                return (-overlap, -self._labels[label])
+            labels.sort(key=key)
+        else:
+            labels.sort(key=lambda label: -self._labels[label])
+        return [{"label": label, "count": self._labels[label]} for label in labels[:n]]
 
     def all_labels(self) -> list[str]:
         return list(self._labels)

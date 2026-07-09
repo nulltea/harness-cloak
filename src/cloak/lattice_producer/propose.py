@@ -76,7 +76,7 @@ def assemble_context_packet(
             )
     relevant = relevant[:max_context_rows]
     vocabulary = CanonicalVocabulary(str(runtime_type), proposed_out=proposed_out) if runtime_type else None
-    vocabulary_slice = vocabulary.context_slice(n=max_context_rows) if vocabulary else []
+    vocabulary_slice = vocabulary.context_slice(n=max_context_rows, surface=surface) if vocabulary else []
     packet = {
         "prompt_version": prompt_version,
         "task_kind": item.get("task_kind", "level-proposal"),
@@ -105,9 +105,9 @@ def assemble_context_packet(
         "nearby_profile_rows": relevant,
         "canonical_vocabulary_slice": vocabulary_slice,
         "canonical_vocabulary_instruction": (
-            "If any label in canonical_vocabulary_slice already fits a proposed level, reuse it "
-            "verbatim and set reused_canonical_label: true for that level. Only propose new "
-            "phrasing when nothing in the slice fits, and set reused_canonical_label: false."
+            "canonical_vocabulary_slice lists {label, count} rows this run already uses. If any "
+            "label fits a proposed level, reuse it verbatim, set reused_canonical_label: true, "
+            "and reuse its attached count. Only coin new phrasing when nothing fits."
         ),
         "category_slice": [],
         "forbidden_outputs": ["type-name phrases", "original surface leaks", "direct identifiers"],
