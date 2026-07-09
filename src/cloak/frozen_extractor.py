@@ -303,6 +303,76 @@ def candidate_chunks(out_p: str) -> list[tuple[int, int, str]]:
     return chunks
 
 
+def _protected_surface_spans(
+    prepass_text: str,
+    R: list[dict],
+    residue: list[dict],
+) -> list[tuple[int, int]]:
+    """Return original-surface spans that later extractor tiers must not alter."""
+    unresolved_replacements = {
+        str(entry.get("replacement", ""))
+        for entry in residue
+    }
+    protected_surfaces: list[str] = []
+    seen_surfaces: set[str] = set()
+
+    for replacement, entries in _entries_by_replacement(R).items():
+        if replacement not in unresolved_replacements:
+            for entry in entries:
+                surface = str(entry.get("surface", ""))
+                if surface and surface not in seen_surfaces:
+                    protected_surfaces.append(surface)
+                    seen_surfaces.add(surface)
+
+    # Over-protect unresolved replacement groups as an exact-surface leak lock:
+    # if any original surface is already standing in prepass_text, later tiers
+    # must not overwrite it while trying to resolve a different residue entry.
+    for entry in residue:
+        surface = str(entry.get("surface", ""))
+        if surface and surface not in seen_surfaces:
+            protected_surfaces.append(surface)
+            seen_surfaces.add(surface)
+        replacement = str(entry.get("replacement", ""))
+        for grouped_entry in _entries_by_replacement(R).get(replacement, []):
+            grouped_surface = str(grouped_entry.get("surface", ""))
+            if grouped_surface and grouped_surface not in seen_surfaces:
+                protected_surfaces.append(grouped_surface)
+                seen_surfaces.add(grouped_surface)
+
+    spans: list[tuple[int, int]] = []
+    for surface in protected_surfaces:
+        pattern = re.compile(rf"(?<!\w){re.escape(surface)}(?!\w)")
+        spans.extend((match.start(), match.end()) for match in pattern.finditer(prepass_text))
+    return sorted(spans)
+
+
+def _entries_by_replacement(entries: list[dict]) -> dict[str, list[dict]]:
+    groups: dict[str, list[dict]] = {}
+    for entry in entries:
+        groups.setdefault(str(entry.get("replacement", "")), []).append(entry)
+    return groups
+
+
+def _exclude_protected_chunks(
+    chunks: list[tuple[int, int, str]],
+    protected_spans: list[tuple[int, int]],
+) -> list[tuple[int, int, str]]:
+    if not protected_spans:
+        return chunks
+    return [
+        chunk
+        for chunk in chunks
+        if not _overlaps_any((chunk[0], chunk[1]), protected_spans)
+    ]
+
+
+def _overlaps_any(
+    span: tuple[int, int],
+    protected_spans: list[tuple[int, int]],
+) -> bool:
+    return any(_spans_overlap(span, protected_span) for protected_span in protected_spans)
+
+
 def _only_stopwords_or_punctuation(words: list[str]) -> bool:
     for word in words:
         normalized = re.sub(r"[^\w]+", "", word.lower(), flags=re.UNICODE)
@@ -317,13 +387,15 @@ def score_pairs(
     encoder,
     windows: list[tuple[int, int] | None],
 ) -> list[tuple[float, int, int]]:
-    """Score every residue entry against every candidate chunk in one encode batch."""
+    """Score every residue entry against every candidate chunk in one scoring-stage encode batch."""
     if not residue or not chunks:
         return []
 
     fills = [_entry_fill(entry) for entry in residue]
     surfaces = [str(entry.get("surface", "")) for entry in residue]
     chunk_texts = [chunk_text for _, _, chunk_text in chunks]
+    # Scoring-stage fill/surface/chunk embeddings are one batched encode;
+    # alignment performs its own sentence batch when doc_p is present.
     vecs = _as_normalized_matrix(encoder.encode(fills + surfaces + chunk_texts))
 
     n_entries = len(residue)
@@ -516,9 +588,12 @@ def apply_splices(
     chunks: list[tuple[int, int, str]],
     assignments: dict[int, int],
     mlm,
+    *,
+    protected_spans: list[tuple[int, int]] | None = None,
 ) -> tuple[str, list[dict]]:
     """Apply assigned chunk replacements right-to-left with per-splice fluency reverts."""
     text = out_p
+    protected_spans = protected_spans or []
     outcomes: dict[int, dict] = {}
 
     for entry_idx, reason in getattr(assignments, "abstained", {}).items():
@@ -537,8 +612,11 @@ def apply_splices(
     ):
         entry = residue[entry_idx]
         start, end, _ = chunks[chunk_idx]
-        before_sentence = _sentence_text_for_span(text, (start, end))
         start, end = _checked_span((start, end), len(text))
+        assert not _overlaps_any((start, end), protected_spans), (
+            "candidate chunk overlaps protected span"
+        )
+        before_sentence = _sentence_text_for_span(text, (start, end))
         surface = str(entry.get("surface", ""))
         # Do not call splice() here: its document-wide article repair can shift
         # offsets for pending left-side spans while this loop is still applying them.
@@ -822,6 +900,30 @@ def _record_unresolved(stats: dict, residue: list[dict], *, reason: str) -> dict
     return stats
 
 
+def _resolved_tier0_group_count(out_p: str, R: list[dict], residue: list[dict]) -> int:
+    grouped = _entries_by_replacement(R)
+    unresolved_replacements = {
+        str(entry.get("replacement", ""))
+        for entry in residue
+    }
+    resolved_generalization_groups = sum(
+        1
+        for replacement, entries in grouped.items()
+        if entries
+        and str(entries[0].get("action", "")) != "placeholder"
+        and replacement not in unresolved_replacements
+    )
+    swapped_placeholder_groups = sum(
+        1
+        for replacement, entries in grouped.items()
+        if entries
+        and str(entries[0].get("action", "")) == "placeholder"
+        and replacement
+        and replacement in out_p
+    )
+    return resolved_generalization_groups + swapped_placeholder_groups
+
+
 def extract(
     doc_p: str | None,
     R: list[dict],
@@ -831,12 +933,13 @@ def extract(
 ) -> tuple[str, dict]:
     """Recover original surfaces from `out_p`; fail closed on unresolved entries.
 
-    `stats["entries"]` enumerates only residue entries after tier 0. Tier-0
-    resolutions are exposed as `stats["resolved_tier0"]` because `_rule_prepass`
-    does not return per-mention resolution records.
+    `stats["entries"]` enumerates only residue entries after tier 0.
+    `stats["resolved_tier0"]` counts replacement groups resolved by tier 0:
+    generalized replacement groups not left in residue plus placeholder groups
+    whose token appeared in `out_p`. It is not a per-entry or per-mention count.
     """
     prepass_text, stats, residue = _run_tier0(out_p, R)
-    stats["resolved_tier0"] = max(0, len(R) - len(residue))
+    stats["resolved_tier0"] = _resolved_tier0_group_count(out_p, R, residue)
     if models is None:
         stats = _record_unresolved(stats, residue, reason="no-models")
         return _finalize(prepass_text, stats)
@@ -846,11 +949,19 @@ def extract(
         return _finalize(prepass_text, stats)
 
     windows = _entry_windows(doc_p, prepass_text, residue, models["encoder"])
-    chunks = candidate_chunks(prepass_text)
+    protected_spans = _protected_surface_spans(prepass_text, R, residue)
+    chunks = _exclude_protected_chunks(candidate_chunks(prepass_text), protected_spans)
     scores = score_pairs(residue, chunks, models["encoder"], windows)
     assignments = assign(scores, len(residue), chunks)
     verified = _verify_assignments(prepass_text, residue, chunks, assignments, models["nli"])
-    final_text, entries = apply_splices(prepass_text, residue, chunks, verified, models["mlm"])
+    final_text, entries = apply_splices(
+        prepass_text,
+        residue,
+        chunks,
+        verified,
+        models["mlm"],
+        protected_spans=protected_spans,
+    )
     stats["gen_absent"] = stats.get("gen_absent", 0) + sum(
         1 for entry in entries if entry["outcome"] == "abstained"
     )
@@ -874,6 +985,8 @@ def _entry_windows(
         return [None] * len(residue)
 
     texts = _sentences(doc_p, doc_sent_spans) + _sentences(out_p, out_sent_spans)
+    # Alignment-stage sentence embeddings are intentionally one batched encode;
+    # scoring performs its own separate batch after protected chunk generation.
     vecs = _as_normalized_matrix(encoder.encode(texts))
     doc_vecs = vecs[:len(doc_sent_spans)]
     out_vecs = vecs[len(doc_sent_spans):]

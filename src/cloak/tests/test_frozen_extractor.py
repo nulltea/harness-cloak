@@ -59,6 +59,21 @@ class SemanticToyEncoder(ToyEncoder):
         return np.vstack(rows)
 
 
+class ProtectedSpanToyEncoder(ToyEncoder):
+    ALIASES = {
+        "ada": "person",
+        "grace": "person",
+        "a person": "person",
+    }
+
+    def encode(self, texts):
+        rows = []
+        for text in texts:
+            canonical = self.ALIASES.get(str(text).strip().lower(), str(text).strip().lower())
+            rows.append(super().encode([canonical])[0])
+        return np.vstack(rows)
+
+
 def _sentences(text, spans):
     return [text[start:end] for start, end in spans]
 
@@ -679,6 +694,80 @@ def test_extract_recovers_reworded_fill_and_splices(monkeypatch):
     ]
     assert stats["resolved_tier0"] == 0
     assert stats["extractor_version"] == fx.extractor_version()
+
+
+def test_extract_does_not_splice_over_tier0_restored_surface(monkeypatch):
+    R = [
+        {
+            "action": "placeholder",
+            "surface": "Ada",
+            "replacement": "<PERSON_1>",
+            "type": "PERSON",
+        },
+        {
+            "action": "generalize",
+            "surface": "Grace",
+            "replacement": "a person",
+            "type": "PERSON",
+        },
+    ]
+    residue = [R[1]]
+
+    monkeypatch.setattr(
+        fx,
+        "_rule_prepass",
+        lambda out, entries, *, semantic: (
+            out.replace("<PERSON_1>", "Ada"),
+            _base_stats() | {"ph_swapped": 1},
+            list(residue),
+        ),
+    )
+
+    text, stats = fx.extract(
+        None,
+        R,
+        "<PERSON_1> filed the appeal.",
+        models={
+            "encoder": ProtectedSpanToyEncoder(),
+            "nli": ScriptedNLI(("entailment", 0.99), ("entailment", 0.99)),
+            "mlm": ScriptedMLM([-1.0, -1.0]),
+        },
+    )
+
+    assert text == "Ada filed the appeal."
+    assert stats["entries"] == [
+        {"surface": "Grace", "type": "PERSON", "outcome": "abstained",
+         "reason": "no-candidate"}
+    ]
+
+
+def test_extract_counts_tier0_resolutions_by_replacement_group(monkeypatch):
+    R = [
+        {
+            "action": "generalize",
+            "surface": "Ada",
+            "replacement": "a person",
+            "type": "PERSON",
+        },
+        {
+            "action": "generalize",
+            "surface": "Grace",
+            "replacement": "a person",
+            "type": "PERSON",
+        },
+    ]
+    residue = [R[0]]
+
+    monkeypatch.setattr(
+        fx,
+        "_rule_prepass",
+        lambda out, entries, *, semantic: (out, _base_stats(), list(residue)),
+    )
+
+    text, stats = fx.extract(None, R, "No generalized mention remains.", models=None)
+
+    assert text == "No generalized mention remains."
+    assert stats["resolved_tier0"] == 0
 
 
 def test_extract_abstains_garbage_fill_at_verification_and_leaves_text(monkeypatch):
