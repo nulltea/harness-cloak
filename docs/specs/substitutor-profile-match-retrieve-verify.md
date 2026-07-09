@@ -95,7 +95,6 @@ Runtime loading rules:
 # --- constants (initial; calibrated on the eval set, never per-method fudged) ---
 TOP_K = 5
 SIM_FLOOR = 0.70          # below: no proposal, fall through to placeholder path
-SIM_TRUSTED = 0.995       # at/above: treat as alias-grade duplicate, still NLI-gated
 NLI_THRESH = 0.6          # reuse the existing gate threshold
 
 def match_profile_entry(span_text, runtime_type, context) -> MatchResult | None:
@@ -128,17 +127,31 @@ def match_profile_entry(span_text, runtime_type, context) -> MatchResult | None:
     return None                                               # all candidates refused
 ```
 
-Integration point — `cloak.lattice.lattice_for()` replaces its bare `lookup_levels` calls for
-`LOC`, the hierarchical fine leaves, and the domain types with `match_profile_entry`:
+Integration point — as implemented, `cloak.substitute.substitute()` runs one **document-level
+pre-pass** (`match_spans_batch`) over every profile-backed span, then feeds each certified verdict
+into `cloak.lattice.lattice_for()` as a `proposal`. `lattice_for` reads the pre-pass result via a
+three-state `proposal` argument instead of matching per-span:
 
 ```python
-m = match_profile_entry(span_text, span_type, context)
-if m:
-    got, deterministic = m.levels, m.deterministic
-else:
-    ... existing fallbacks (curated map, GeoNames, teacher cache) ...
-    # wordnet_chain: diagnostic-only for fine/domain types — must not feed `got`
+# substitute(): one batched pre-pass for the whole document
+items = [(s.text, s.type, sentence_around(text, s.start, s.end))
+         for s in spans if s.type in PROFILE_BACKED_TYPES]
+proposals = match_spans_batch(items)          # {span_key: MatchResult | None}
+
+# per span:
+prop = proposals.get(span_key(s.text, s.type), NO_PREPASS)
+lattice = lattice_for(s.text, s.type, sent, proposal=prop)
+
+# lattice_for(): proposal is one of three states
+#   MatchResult -> got, deterministic = m.levels, True   # certified upstream, not re-gated
+#   None        -> abstained: skip the matcher, fall through to curated/GeoNames/teacher cache
+#   NO_PREPASS  -> no pre-pass ran: match_profile_entry(...) per-span here (single-span path)
+# wordnet_chain is now diagnostic-only for fine/domain types — it never feeds `got`.
 ```
+
+The single-span `match_profile_entry` remains as a thin wrapper over `match_spans_batch` (used by
+the `NO_PREPASS` path and by callers that match one span at a time), so both paths share one
+retrieval+certification implementation.
 
 Notes:
 
@@ -161,9 +174,35 @@ matched entry, so `lookup_count(fill, type)` resolves by construction, with the 
 `level_counts` semantics intact. The span variant belongs to the same anonymity set as the entry's
 canonical surface; the count attaches to the generalization tier, not to the surface spelling.
 
+## Efficiency
+
+Retrieval and certification are batched per document, not per span:
+
+- **Per-type brute-force GEMV.** Retrieval is a single matrix-vector product against the queried
+  type's row block (`index.vectors[type_rows] @ q`), then a top-k over `SIM_FLOOR`. Per-type matrices
+  are a few hundred to a few thousand rows; brute force suffices. ANN is out of scope until profiles
+  grow past ~10^5 rows per type.
+- **One embed batch per document.** `match_spans_batch` collects every uncached miss surface across
+  the whole document and embeds them in a single `encode` call; exact hits and cache hits never touch
+  the model.
+- **Wave-batched best-first NLI certification.** `nli_gate_batch` certifies candidates in waves — wave
+  `w` submits every still-unresolved span's `w`-th retrieval candidate as one NLI batch, stopping a span
+  as soon as a candidate is approved. This keeps certification best-first per span while batching the
+  work across spans.
+- **In-process proposal cache** keyed `(index_path, runtime_type, norm_surface)` memoizes **retrieval
+  only** — the candidate list. Certification is context-dependent (NLI in the span's sentence) and is
+  **never** cached. The cache clears wholesale past a size cap before the uncached-embed step, so no key
+  is left dangling.
+- **Alias promotion** from logged `R` semantic matches (folding recovered surfaces back into the
+  profile's alias lists so future runs hit the exact fast path) is a producer-side follow-up, not part
+  of this runtime path.
+
 ## Substitution record `R` diagnostics
 
 Every semantic hit records its provenance for offline analysis and eval-set harvesting:
+
+As implemented in `cloak.substitute.substitute()`, a matched span carries a `match` block on its
+`R` entry:
 
 ```json
 {
@@ -176,8 +215,10 @@ Every semantic hit records its provenance for offline analysis and eval-set harv
 }
 ```
 
-Exact hits may omit the block or record `{"kind": "exact"}`. These logs are the training/eval seed
-for the learned canonicalizer.
+Semantic hits record `{"kind": "semantic", "entry", "similarity", "nli"}` (`similarity` and `nli`
+rounded to 3 places; `nli` is `None` when the certifier returns no per-level score). Exact hits
+record `{"kind": "exact"}`. Spans with no pre-pass verdict (abstained or not profile-backed) carry
+no `match` block. These logs are the training/eval seed for the learned canonicalizer.
 
 ## Failure-mode coverage
 
@@ -238,5 +279,3 @@ does not overstate the certifier's protection.
 2. `SIM_FLOOR` per type family vs global: keep global unless the eval set shows a large,
    attacker-measured utility gap (and then it is a calibrated constant recorded in the artifact,
    not a tuning knob per experiment).
-3. Index growth: per-type matrices are a few hundred to a few thousand rows; brute-force dot
-   product suffices. Revisit ANN only if profiles grow past ~10^5 rows.
