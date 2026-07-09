@@ -11,6 +11,8 @@ from cloak.detect import Detector, PROFILES, is_noise_span, _stop_words
         ("mmr", "drug"),
         ("cad", "health-condition"),
         ("cva", "health-condition"),
+        ("proton pump inhibitor", "drug"),
+        ("ace inhibitor", "drug"),
     ],
 )
 def test_noise_filter_keep_allowlist_wins(surface, runtime_type):
@@ -34,6 +36,8 @@ def test_noise_filter_keep_allowlist_wins(surface, runtime_type):
         ("increase", "medical-procedure", False),
         ("lipase", "medical-procedure", True),
         ("amylase", "drug", True),
+        ("stent", "drug", True),
+        ("pacemaker", "drug", True),
     ],
 )
 def test_noise_filter_category_examples(surface, runtime_type, expected):

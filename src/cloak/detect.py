@@ -113,6 +113,7 @@ _NOISE_FILTER_TYPES = frozenset({"drug", "health-condition", "medical-procedure"
 _NOISE_KEEP_PATTERNS = (
     re.compile(r"tocopherol|ascorbic|lipoic|cholecalciferol|niacin|riboflavin|thiamine|folic|"
                r"pantothen|biotin|aminobutyric|retino|calciferol|menadione|pyridoxine|cobalamin"),
+    re.compile(r"\binhibitor\b"),
 )
 _NOISE_KEEP_TOKENS = frozenset({
     "azo", "mmr", "pcp", "cla", "pop",
