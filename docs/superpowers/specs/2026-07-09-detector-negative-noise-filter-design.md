@@ -98,7 +98,12 @@ Combine compiled regex patterns (for productive suffixes/heads) with modest exac
   pyridoxine, cobalamin, …; tokens azo, mmr, pcp, cla, pop).
 - **Legitimate condition abbreviations** that collide with the abbreviation-noise intuition but are
   real diagnoses: {cad (coronary artery disease), cva (cerebrovascular accident), gerd, copd, cf
-  (cystic fibrosis), chf, dvt, uti, tia, ckd, mi}. These must survive even though they are short.
+  (cystic fibrosis), chf, dvt, uti, tia, ckd, mi, ms (multiple sclerosis), ra (rheumatoid
+  arthritis), ed (erectile dysfunction), tb (tuberculosis), af (atrial fibrillation)}. These must
+  survive even though they are short (the ≤2-char junk rule would otherwise drop them).
+- **`inhibitor` drug classes** — any surface containing the whole word `inhibitor` (proton pump
+  inhibitor, ACE inhibitor, protease inhibitor) is a drug class; KEEP pattern `\binhibitor\b`.
+- **`paraldehyde`** — a real anticonvulsant/sedative that the `aldehyde$` junk pattern matches; KEEP.
 
 ## Detector wiring — profile-gated
 
@@ -106,6 +111,14 @@ Add `negative_filter: bool` to `DetectorProfile`. `PROFILES`:
 - `reddit` (default): `negative_filter=False` — **the merged default must stay bit-identical**.
 - `legal`: `negative_filter=False`.
 - `clinical`: `negative_filter=True`.
+
+**Label-map reality (verified):** the production detector's default `GLINER_LABELS` emit only TAB-8
+types (PERSON/ORG/LOC/DATETIME/CODE/QUANTITY/DEM/MISC) — **none** of the three noise-filter families.
+Only `health-condition` appears, and only in `fine_dem=True` mode (a FINE_DEM leaf). So the
+`detect()`-path filter is a no-op for `drug`/`medical-procedure` by construction (fail-safe), and only
+ever bites `health-condition` under fine_dem. Drug/procedure noise is filtered exclusively on the
+**miner path** (`build_mined_artifact`), which is where those families are produced. This is correct,
+not a gap — but don't expect the round-trip detector to drop drug/procedure noise.
 
 In `Detector.detect()`, after the existing pronoun/symbol filter and `_dedupe`, when
 `self.profile.negative_filter` is true, drop any span whose `(text, type)` maps to a queue family and
