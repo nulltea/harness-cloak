@@ -16,7 +16,7 @@ from cloak.lattice_producer.propose import (
     extract_candidate_levels,
     propose_with_llama_swap,
 )
-from cloak.lattice_producer.queue import build_or_load_queue
+from cloak.lattice_producer.queue import _queue_from_profile_categories, build_or_load_queue
 
 
 def _write_profiles(path: Path, profiles: dict) -> None:
@@ -83,6 +83,16 @@ def test_coverage_accepts_multiple_category_filters(tmp_path: Path) -> None:
     ]
 
 
+def test_category_seeded_items_do_not_force_model_proposal(tmp_path):
+    profiles = tmp_path / "profiles.json"
+    profiles.write_text(json.dumps({
+        "profiles": {"drug": {"aspirin": {"aliases": ["asa"], "levels": [], "level_counts": {}}}}
+    }))
+    items = _queue_from_profile_categories(profiles, ["drug"])
+    assert items, "expected one drug item"
+    assert all("force_model_proposal" not in item for item in items)
+
+
 def test_queue_accepts_multiple_category_filters_for_existing_profile_entries(tmp_path: Path) -> None:
     profiles = tmp_path / "profiles.json"
     run_dir = tmp_path / "run"
@@ -113,7 +123,7 @@ def test_queue_accepts_multiple_category_filters_for_existing_profile_entries(tm
     ]
     assert items[0]["aliases"] == ["acetylsalicylic acid"]
     assert all(item["task_kind"] == "level-proposal" for item in items)
-    assert all(item["force_model_proposal"] is True for item in items)
+    assert all("force_model_proposal" not in item for item in items)
 
 
 def test_queue_skips_forced_placeholder_and_rejects_dem(tmp_path: Path) -> None:

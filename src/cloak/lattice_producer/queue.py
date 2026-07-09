@@ -117,7 +117,6 @@ def _queue_from_profile_categories(profiles_path: str | Path, categories: Iterab
                         "surface": surface,
                         "canonical_value": surface,
                         "aliases": list(row.get("aliases", [])) if isinstance(row, dict) else [],
-                        "force_model_proposal": True,
                     },
                     len(items),
                 )
