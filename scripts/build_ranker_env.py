@@ -42,6 +42,8 @@ def main():
                     help="input arms artifact path (default: the frozen historical artifact)")
     ap.add_argument("--out", default=str(OUT),
                     help="output env path (default: the frozen env — override for the pilot env)")
+    ap.add_argument("--skip-probes", action="store_true",
+                    help="build spans/splits without teacher-generated QA probes")
     args = ap.parse_args()
     out = Path(args.out)
 
@@ -56,9 +58,13 @@ def main():
            "corpora": {}}
     for corpus in args.corpora.split(","):
         docs = {d["id"]: d for d in load_task_docs(corpus, args.n_docs)}
-        probes = probes_for_docs(list(docs.values()),
-                                 {i: arms["tau_walk"][1] for i, arms in art[corpus].items()},
-                                 workers=6)
+        if args.skip_probes:
+            probes = {}
+        else:
+            probes = probes_for_docs(
+                list(docs.values()),
+                {i: arms["tau_walk"][1] for i, arms in art[corpus].items()},
+                workers=6)
         env["corpora"][corpus] = {}
         for doc_id, arms in art[corpus].items():
             spans = []

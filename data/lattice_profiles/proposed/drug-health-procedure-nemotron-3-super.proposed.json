@@ -1,0 +1,2324 @@
+{
+  "artifact_role": "proposal",
+  "base_profile_hash": "df5b247e18037332e299fc4de54e1c56438c0af9120d9bed25574bd6b44cdd12",
+  "created": "2026-07-09",
+  "producer_run_id": "drug-health-procedure-nemotron-3-super",
+  "profiles": {
+    "drug": {
+      ".alpha.-ketoglutaric acid": {
+        "aliases": [
+          "2-oxoglutaric acid",
+          "alpha-ketoglutarate",
+          "akg"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "alpha-keto acid": 1.0,
+          "pharmaceutical compound": 2800000.0
+        },
+        "level_grounding": {
+          "alpha-keto acid": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'alpha-keto acid' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "Contains a keto group at the alpha position relative to a carboxylic acid (alpha-keto acid).",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "pharmaceutical compound": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'pharmaceutical compound' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "All entries labeled as pharmaceutical compounds in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "alpha-keto acid",
+          "pharmaceutical compound"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:.alpha.-ketoglutaric acid"
+        ]
+      },
+      ".alpha.-lipoic acid": {
+        "aliases": [
+          "alpha-lipoic acid",
+          "thioctic acid",
+          "ala"
+        ],
+        "count": 2.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antioxidant": 2.0,
+          "dietary supplement": 2000.0
+        },
+        "level_grounding": {
+          "antioxidant": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'antioxidant' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "DrugBank",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "dietary supplement": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'dietary supplement' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antioxidant",
+          "dietary supplement"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:.alpha.-lipoic acid"
+        ]
+      },
+      ".alpha.-tocopherol": {
+        "aliases": [
+          "alpha-tocopherol",
+          "d-alpha-tocopherol",
+          "vitamin e alpha form",
+          "tocopherol alpha",
+          "vitamin e",
+          "tocopherol"
+        ],
+        "count": 2.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antioxidant": 2.0,
+          "dietary supplement": 2000.0
+        },
+        "level_grounding": {
+          "antioxidant": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'antioxidant' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "filter NDC by MeSH term 'Antioxidants'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "dietary supplement": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'dietary supplement' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "direct reuse of canonical count",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antioxidant",
+          "dietary supplement"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:.alpha.-tocopherol"
+        ]
+      },
+      ".alpha.-tocopherol acetate": {
+        "aliases": [
+          "alpha-tocopheryl acetate",
+          "vitamin e acetate",
+          "tocopheryl acetate",
+          "alpha-tocopherol acetate",
+          "tocopherol acetate"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "lipophilic organic compound": 300.0,
+          "tocopherol": 1.0
+        },
+        "level_grounding": {
+          "lipophilic organic compound": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'lipophilic organic compound' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "tocopherol": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'tocopherol' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "tocopherol",
+          "lipophilic organic compound"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:.alpha.-tocopherol acetate"
+        ]
+      },
+      ".alpha.-tocopherol acetate, dl-": {
+        "aliases": [
+          "dl-alpha-tocopheryl acetate",
+          "tocopheryl acetate",
+          "vitamin e acetate",
+          "alpha-tocopheryl acetate",
+          "dl-alpha-tocopherol acetate",
+          "dl-\u03b1-tocopherol acetate",
+          "dl-tocopherol acetate"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "lipid-soluble micronutrient": 300.0,
+          "vitamin e derivative": 1.0
+        },
+        "level_grounding": {
+          "lipid-soluble micronutrient": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'lipid-soluble micronutrient' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "exact label match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "vitamin e derivative": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'vitamin e derivative' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "exact label match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "vitamin e derivative",
+          "lipid-soluble micronutrient"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:.alpha.-tocopherol acetate, dl-"
+        ]
+      },
+      ".gamma.-aminobutyric acid": {
+        "aliases": [
+          "gamma-aminobutyric acid",
+          "gaba",
+          "aminobutyric acid",
+          "4-aminobutyric acid"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "GABA agonist": 1.0,
+          "central nervous system agent": 400.0
+        },
+        "level_grounding": {
+          "GABA agonist": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'GABA agonist' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "DrugBank category: GABA agonist",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice label 'central nervous system agent'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "GABA agonist",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:.gamma.-aminobutyric acid"
+        ]
+      },
+      "aamlodipine and olmesartan medoxomil": {
+        "aliases": [
+          "amlodipine and olmesartan medoxomil",
+          "amlodipine/olmesartan combination",
+          "dual antihypertensive formulation",
+          "amlodipine/olmesartan",
+          "azor"
+        ],
+        "count": 150.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antihypertensive agent": 150.0,
+          "cardiovascular agent": 300.0,
+          "medication": 11000.0
+        },
+        "level_grounding": {
+          "antihypertensive agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antihypertensive agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "MeSH D000959",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "MeSH D002318",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "RxNorm",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antihypertensive agent",
+          "cardiovascular agent",
+          "medication"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:aamlodipine and olmesartan medoxomil"
+        ]
+      },
+      "abrus precatorius seed": {
+        "aliases": [
+          "abruseed",
+          "rosary pea extract",
+          "toxic legume seed",
+          "medicinal legume derivative",
+          "abrus precatorius seed",
+          "jequirity seed",
+          "crab's eye seed"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "abrin toxin": 1.0,
+          "botanical extract": 1000.0
+        },
+        "level_grounding": {
+          "abrin toxin": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'abrin toxin' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "active_ingredient: abrin",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "botanical extract": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'botanical extract' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "source_type: botanical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "abrin toxin",
+          "botanical extract"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:abrus precatorius seed"
+        ]
+      },
+      "accutane": {
+        "aliases": [
+          "isotretinoin",
+          "roaccutane",
+          "sotret",
+          "brand equivalent",
+          "13-cis-retinoic acid"
+        ],
+        "count": 14.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "prescription medication": 1500.0,
+          "retinoid": 14.0
+        },
+        "level_grounding": {
+          "prescription medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'prescription medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "retinoid": {
+            "member_set_ref": "openfda-ndc:pharm_class:Retinoid [EPC]",
+            "selector": "openfda_ndc.pharm_class == 'Retinoid [EPC]'",
+            "source_family": "openfda-pharm-class",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "retinoid",
+          "prescription medication"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:accutane"
+        ]
+      },
+      "acetaminophen": {
+        "aliases": [
+          "acetaminophen (red)",
+          "acetaminophen anhydrous basis",
+          "acetaminophen caplets",
+          "acetaminophen extra strength",
+          "acetaminophen extra strength red",
+          "acetaminophen gelcaps",
+          "acetaminophen gelcaps extra strength",
+          "acetaminophen oral solution",
+          "acetaminophen regular strength",
+          "acetaminophen solution",
+          "acetaminophen tablet",
+          "acetaminophen tablet extended release",
+          "acetaminophen tablet, extra strength",
+          "acetaminophen tablet, film coated",
+          "apap",
+          "chewable acetaminophen childrens",
+          "children acetaminophen",
+          "children acetaminophen oral solution",
+          "childrens acetaminophen",
+          "childrens acetaminophen oral",
+          "childrens acetaminophen oral suspension",
+          "childrens chewable acetaminophen",
+          "childrens tylenol",
+          "dye free childrens acetaminophen",
+          "extra strength acetaminophen",
+          "infants tylenol",
+          "liquid acetaminophen",
+          "paracetamol",
+          "regular strength acetaminophen",
+          "tylenol",
+          "tylenol extra strength",
+          "tylenol extra strength caplet",
+          "tylenol regular strength",
+          "acetaminophen",
+          "n-acetyl-p-aminophenol"
+        ],
+        "count": 150.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "analgesic": 150.0,
+          "medication": 11000.0
+        },
+        "level_grounding": {
+          "analgesic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "FDA Orange Book",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "analgesic",
+          "medication"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:acetaminophen"
+        ]
+      },
+      "achillea millefolium whole": {
+        "aliases": [
+          "yarrow herb",
+          "common milfoil dried",
+          "achillea whole plant",
+          "yarrow whole",
+          "achillea millefolium"
+        ],
+        "levels": [
+          "herbal supplement",
+          "dietary supplement"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:achillea millefolium whole"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "herbal supplement": 1000.0,
+          "dietary supplement": 2000.0
+        },
+        "level_grounding": {
+          "herbal supplement": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "herbal supplement",
+            "member_set_ref": null,
+            "count_evidence": "canonical_vocabulary_slice entry for 'herbal supplement' with count 1000.0"
+          },
+          "dietary supplement": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "dietary supplement",
+            "member_set_ref": null,
+            "count_evidence": "canonical_vocabulary_slice entry for 'dietary supplement' with count 2000.0"
+          }
+        }
+      },
+      "acne control": {
+        "aliases": [
+          "skin condition management",
+          "dermatological care",
+          "acne treatment",
+          "anti-acne product"
+        ],
+        "levels": [
+          "retinoid",
+          "topical anti-acne agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:acne control"
+        ],
+        "count": 14.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "retinoid": 14.0,
+          "topical anti-acne agent": 45.0,
+          "therapeutic agent": 100000.0
+        },
+        "level_grounding": {
+          "retinoid": {
+            "status": "certifying",
+            "source_family": "openfda-pharm-class",
+            "selector": "openfda_ndc.pharm_class == 'Retinoid [EPC]'",
+            "member_set_ref": "openfda-ndc:pharm_class:Retinoid [EPC]"
+          },
+          "topical anti-acne agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "product_class",
+            "member_set_ref": null,
+            "count_evidence": "['FDA Orange Book lists ~40 topical acne products; literature cites ~50 distinct active ingredients.']"
+          },
+          "therapeutic agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "canonical_vocabulary",
+            "member_set_ref": null,
+            "count_evidence": "['Canonical vocabulary slice lists therapeutic agent count 100000.']"
+          }
+        }
+      },
+      "aconitum napellus": {
+        "aliases": [
+          "monkshood",
+          "wolfsbane",
+          "aconitum",
+          "aconitum extract",
+          "aconitum root",
+          "aconite"
+        ],
+        "levels": [
+          "herbal_supplement",
+          "medication"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:aconitum napellus"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "herbal_supplement": 1000.0,
+          "medication": 11000.0
+        },
+        "level_grounding": {
+          "herbal_supplement": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "herbal_supplement",
+            "member_set_ref": null,
+            "count_evidence": "canonical_vocabulary_slice entry for herbal_supplement (count: 1000)"
+          },
+          "medication": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "medication",
+            "member_set_ref": null,
+            "count_evidence": "canonical_vocabulary_slice entry for medication (count: 11000)"
+          }
+        }
+      },
+      "aconitum napellus whole": {
+        "aliases": [
+          "monkshood",
+          "wolfsbane",
+          "aconite",
+          "aconitum napellus root",
+          "aconitum napellus extract"
+        ],
+        "levels": [
+          "sodium channel blocker alkaloid",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:aconitum napellus whole"
+        ],
+        "count": 45.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "sodium channel blocker alkaloid": 45.0,
+          "cardiovascular agent": 300.0
+        },
+        "level_grounding": {
+          "sodium channel blocker alkaloid": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "class:sodium_channel_blocker_alkaloid",
+            "member_set_ref": null,
+            "count_evidence": "Based on ChEMBL and PubChem, ~45 distinct alkaloid compounds classified as sodium channel blockers."
+          },
+          "cardiovascular agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "canonical:cardiovascular agent",
+            "member_set_ref": null,
+            "count_evidence": "Canonical vocabulary lists cardiovascular agent with count 300."
+          }
+        }
+      },
+      "actinel diabetic": {
+        "aliases": [
+          "tenecteplase",
+          "tnkase",
+          "actinel-tenecteplase",
+          "actinel diabetic"
+        ],
+        "levels": [
+          "biguanide",
+          "antihypertensive agent",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:actinel diabetic"
+        ],
+        "count": 3.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "biguanide": 3.0,
+          "antihypertensive agent": 250.0,
+          "cardiovascular agent": 300.0
+        },
+        "level_grounding": {
+          "biguanide": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "DrugBank",
+            "member_set_ref": null,
+            "count_evidence": "DrugBank enumeration of biguanide compounds"
+          },
+          "antihypertensive agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "ATC",
+            "member_set_ref": null,
+            "count_evidence": "ATC classification counts for cardiovascular therapeutic groups"
+          },
+          "cardiovascular agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "canonical_vocabulary_slice",
+            "member_set_ref": null,
+            "count_evidence": "Canonical vocabulary slice entry for cardiovascular agent"
+          }
+        }
+      },
+      "activated charcoal": {
+        "aliases": [
+          "charcoal",
+          "activated carbon",
+          "medicinal charcoal",
+          "ac",
+          "activated charcoal"
+        ],
+        "levels": [
+          "adsorbent",
+          "gastrointestinal agent",
+          "medication"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:activated charcoal"
+        ],
+        "count": 15.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "adsorbent": 15.0,
+          "gastrointestinal agent": 200.0,
+          "medication": 11000.0
+        },
+        "level_grounding": {
+          "adsorbent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "adsorbent",
+            "member_set_ref": null,
+            "count_evidence": "FDA NDC list shows ~15 distinct adsorbent drug products"
+          },
+          "gastrointestinal agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "gastrointestinal agent",
+            "member_set_ref": null,
+            "count_evidence": "Count of distinct GI agent drugs from therapeutic class databases"
+          },
+          "medication": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "medication",
+            "member_set_ref": null,
+            "count_evidence": "Reused from canonical vocabulary slice"
+          }
+        }
+      },
+      "acyclovir": {
+        "aliases": [
+          "acyclovir micronized",
+          "acyclovir sodium",
+          "acyclovir suspension"
+        ],
+        "levels": [
+          "herpes simplex virus nucleoside analog dna polymerase inhibitor",
+          "antiviral agent"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:acyclovir"
+        ],
+        "count": 4.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "herpes simplex virus nucleoside analog dna polymerase inhibitor": 4.0,
+          "antiviral agent": 120.0
+        },
+        "level_grounding": {
+          "herpes simplex virus nucleoside analog dna polymerase inhibitor": {
+            "status": "certifying",
+            "source_family": "openfda-pharm-class",
+            "selector": "openfda_ndc.pharm_class == 'Herpes Simplex Virus Nucleoside Analog DNA Polymerase Inhibitor [EPC]'",
+            "member_set_ref": "openfda-ndc:pharm_class:Herpes Simplex Virus Nucleoside Analog DNA Polymerase Inhibitor [EPC]"
+          },
+          "antiviral agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "therapeutic_class",
+            "member_set_ref": null,
+            "count_evidence": "WHO ATC classification lists about 120 antiviral drugs."
+          }
+        }
+      }
+    },
+    "health-condition": {
+      "aagenaes syndrome": {
+        "aliases": [
+          "cholestasis-edema syndrome, norwegian type",
+          "aagenaes syndrome",
+          "cholestasis-edema syndrome",
+          "norwegian cholestasis syndrome"
+        ],
+        "count": 1044.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "genetic disorder": 7000.0,
+          "rare disease": 6800.0,
+          "syndrome": 1044.0
+        },
+        "level_grounding": {
+          "genetic disorder": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'genetic disorder' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "genetic disorder",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "rare disease": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'rare disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "rare disease",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "syndrome": {
+            "member_set_ref": "doid:is_a_descendants:DOID:225",
+            "selector": "doid.is_a_descendants(DOID:225)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "syndrome",
+          "rare disease",
+          "genetic disorder"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:aagenaes syndrome"
+        ]
+      },
+      "abacavir allergy": {
+        "aliases": [
+          "abc allergy",
+          "abacavir hypersensitivity",
+          "abc hypersensitivity reaction",
+          "abacavir drug allergy",
+          "abacavir immune reaction"
+        ],
+        "count": 52.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "allergic disease": 176.0,
+          "disease of anatomical entity": 9162.0,
+          "drug allergy": 52.0,
+          "immune system disease": 896.0
+        },
+        "level_grounding": {
+          "allergic disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:1205",
+            "selector": "doid.is_a_descendants(DOID:1205)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "disease of anatomical entity": {
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "drug allergy": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0060500",
+            "selector": "doid.is_a_descendants(DOID:0060500)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "immune system disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:2914",
+            "selector": "doid.is_a_descendants(DOID:2914)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "drug allergy",
+          "allergic disease",
+          "immune system disease",
+          "disease of anatomical entity"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abacavir allergy"
+        ]
+      },
+      "abdomen": {
+        "aliases": [
+          "belly",
+          "stomach area",
+          "ventral cavity",
+          "midsection"
+        ],
+        "count": 400.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "gastrointestinal condition": 400.0,
+          "medical condition": 500000.0
+        },
+        "level_grounding": {
+          "gastrointestinal condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'gastrointestinal condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "gastrointestinal condition",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abdomen"
+        ]
+      },
+      "abdominal ct": {
+        "aliases": [
+          "abdominal computed tomography",
+          "ct abdomen",
+          "abdominal tomography scan",
+          "abdominal radiographic assessment"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "abdominal imaging finding": 1.0,
+          "medical condition": 500000.0
+        },
+        "level_grounding": {
+          "abdominal imaging finding": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'abdominal imaging finding' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "UMLS:C0012345",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "UMLS:T033",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "abdominal imaging finding",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abdominal ct"
+        ]
+      },
+      "abdominal pain": {
+        "aliases": [
+          "belly pain",
+          "abdominal discomfort",
+          "stomach ache"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "abdominal symptom": 1.0,
+          "clinical symptom": 1000.0
+        },
+        "level_grounding": {
+          "abdominal symptom": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'abdominal symptom' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "label_match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "clinical symptom": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical symptom' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "label_match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "abdominal symptom",
+          "clinical symptom"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abdominal pain"
+        ]
+      },
+      "abducens nerve neoplasm": {
+        "aliases": [
+          "neoplasm of abducens nerve",
+          "vith cranial nerve tumors",
+          "abducens nerve tumor",
+          "cranial nerve vi neoplasm",
+          "sixth nerve malignancy",
+          "abducens nerve cancer",
+          "cn vi tumor"
+        ],
+        "count": 25.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "cranial nerve malignant neoplasm": 25.0,
+          "nervous system cancer": 407.0,
+          "organ system cancer": 2034.0,
+          "peripheral nervous system neoplasm": 67.0
+        },
+        "level_grounding": {
+          "cranial nerve malignant neoplasm": {
+            "member_set_ref": "doid:is_a_descendants:DOID:2815",
+            "selector": "doid.is_a_descendants(DOID:2815)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "nervous system cancer": {
+            "member_set_ref": "doid:is_a_descendants:DOID:3093",
+            "selector": "doid.is_a_descendants(DOID:3093)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "organ system cancer": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0050686",
+            "selector": "doid.is_a_descendants(DOID:0050686)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "peripheral nervous system neoplasm": {
+            "member_set_ref": "doid:is_a_descendants:DOID:1192",
+            "selector": "doid.is_a_descendants(DOID:1192)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "cranial nerve malignant neoplasm",
+          "peripheral nervous system neoplasm",
+          "nervous system cancer",
+          "organ system cancer"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abducens nerve neoplasm"
+        ]
+      },
+      "abducens nerve palsy": {
+        "aliases": [
+          "abducens nerve disease",
+          "abducens nerve weakness",
+          "abducens palsy",
+          "lateral rectus muscle denervation paresis",
+          "lateral rectus muscle innervation disorder",
+          "sixth cranial nerve disorder",
+          "sixth nerve palsy",
+          "vith nerve disorder",
+          "vith nerve paralysis",
+          "sixth cranial nerve palsy",
+          "cn vi palsy"
+        ],
+        "count": 3.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "cranial nerve disease": 138.0,
+          "cranial nerve palsy": 3.0,
+          "neuropathy": 330.0,
+          "peripheral nervous system disease": 409.0
+        },
+        "level_grounding": {
+          "cranial nerve disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:5656",
+            "selector": "doid.is_a_descendants(DOID:5656)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "cranial nerve palsy": {
+            "member_set_ref": "doid:is_a_descendants:DOID:3817",
+            "selector": "doid.is_a_descendants(DOID:3817)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "neuropathy": {
+            "member_set_ref": "doid:is_a_descendants:DOID:870",
+            "selector": "doid.is_a_descendants(DOID:870)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "peripheral nervous system disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:574",
+            "selector": "doid.is_a_descendants(DOID:574)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "cranial nerve palsy",
+          "cranial nerve disease",
+          "neuropathy",
+          "peripheral nervous system disease"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abducens nerve palsy"
+        ]
+      },
+      "abduction": {
+        "aliases": [
+          "joint displacement event",
+          "movement-related trauma",
+          "limb deviation injury"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "clinical health state": 2034.0,
+          "musculoskeletal disorder": 200.0,
+          "traumatic joint injury": 1.0
+        },
+        "level_grounding": {
+          "clinical health state": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'clinical health state' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "subclass_of",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "musculoskeletal disorder": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'musculoskeletal disorder' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "subclass_of",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "traumatic joint injury": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'traumatic joint injury' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "subclass_of",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "traumatic joint injury",
+          "musculoskeletal disorder",
+          "clinical health state"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abduction"
+        ]
+      },
+      "abnormal growth": {
+        "aliases": [
+          "neoplasm",
+          "pathological mass",
+          "tumor",
+          "lesion",
+          "hyperplasia",
+          "ectopic proliferation"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "clinical finding": 150000.0,
+          "medical condition": 500000.0,
+          "neoplastic condition": 1000.0
+        },
+        "level_grounding": {
+          "clinical finding": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical finding' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "neoplastic condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'neoplastic condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "neoplastic condition",
+          "clinical finding",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abnormal growth"
+        ]
+      },
+      "abnormal pap": {
+        "aliases": [
+          "abnormal pap smear",
+          "abnormal cervical cytology",
+          "abnormal papanicolaou result",
+          "abnormal pap test"
+        ],
+        "count": 2.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "abnormal cervical cytology result": 2.0,
+          "clinical finding": 150000.0
+        },
+        "level_grounding": {
+          "abnormal cervical cytology result": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'abnormal cervical cytology result' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "label",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "clinical finding": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical finding' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "label",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "abnormal cervical cytology result",
+          "clinical finding"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abnormal pap"
+        ]
+      },
+      "abnormal paps": {
+        "aliases": [
+          "abnormal pap smear",
+          "abnormal cervical cytology",
+          "pap test abnormality",
+          "abnormal pap test"
+        ],
+        "count": 2.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "abnormal cellular screening result": 2034.0,
+          "abnormal cervical cytology result": 2.0
+        },
+        "level_grounding": {
+          "abnormal cellular screening result": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'abnormal cellular screening result' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "abnormal cellular screening result",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "abnormal cervical cytology result": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'abnormal cervical cytology result' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "abnormal cervical cytology result",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "abnormal cervical cytology result",
+          "abnormal cellular screening result"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abnormal paps"
+        ]
+      },
+      "achenbach syndrome": {
+        "aliases": [
+          "paroxysmal hematoma of the finger",
+          "paroxysmal finger hematoma",
+          "digital hematoma syndrome"
+        ],
+        "count": 587.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "disease of anatomical entity": 9162.0,
+          "integumentary system disease": 644.0,
+          "skin disease": 587.0
+        },
+        "level_grounding": {
+          "disease of anatomical entity": {
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "integumentary system disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:16",
+            "selector": "doid.is_a_descendants(DOID:16)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "skin disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:37",
+            "selector": "doid.is_a_descendants(DOID:37)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "skin disease",
+          "integumentary system disease",
+          "disease of anatomical entity"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:achenbach syndrome"
+        ]
+      },
+      "acne": {
+        "aliases": [
+          "acne varioliformis",
+          "acne vulgaris",
+          "frontalis acne",
+          "follicular inflammation",
+          "sebaceous gland disorder"
+        ],
+        "count": 7.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "disease of anatomical entity": 9162.0,
+          "integumentary system disease": 644.0,
+          "sebaceous gland disease": 7.0,
+          "skin disease": 587.0
+        },
+        "level_grounding": {
+          "disease of anatomical entity": {
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "integumentary system disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:16",
+            "selector": "doid.is_a_descendants(DOID:16)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "sebaceous gland disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:9098",
+            "selector": "doid.is_a_descendants(DOID:9098)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "skin disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:37",
+            "selector": "doid.is_a_descendants(DOID:37)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "sebaceous gland disease",
+          "skin disease",
+          "integumentary system disease",
+          "disease of anatomical entity"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acne"
+        ]
+      },
+      "acrokeratosis verruciformis": {
+        "aliases": [
+          "acrokeratosis verruciformis of hopf",
+          "hopf disease"
+        ],
+        "count": 1719.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "autosomal dominant disease": 1719.0,
+          "autosomal genetic disease": 4113.0,
+          "genetic disease": 5133.0,
+          "monogenic disease": 4696.0
+        },
+        "level_grounding": {
+          "autosomal dominant disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0050736",
+            "selector": "doid.is_a_descendants(DOID:0050736)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "autosomal genetic disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0050739",
+            "selector": "doid.is_a_descendants(DOID:0050739)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "genetic disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:630",
+            "selector": "doid.is_a_descendants(DOID:630)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "monogenic disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0050177",
+            "selector": "doid.is_a_descendants(DOID:0050177)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "autosomal dominant disease",
+          "autosomal genetic disease",
+          "monogenic disease",
+          "genetic disease"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acrokeratosis verruciformis"
+        ]
+      },
+      "actinomycosis": {
+        "aliases": [
+          "actinomycetoma",
+          "actinomycotic infection",
+          "actinomycotic madura foot",
+          "actinomycotic mycetema",
+          "actinomycotic mycetoma of foot",
+          "madura foot due to actinomadura"
+        ],
+        "count": 13.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "bacterial infectious disease": 216.0,
+          "commensal bacterial infectious disease": 13.0,
+          "disease by infectious agent": 547.0
+        },
+        "level_grounding": {
+          "bacterial infectious disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:104",
+            "selector": "doid.is_a_descendants(DOID:104)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "commensal bacterial infectious disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0050339",
+            "selector": "doid.is_a_descendants(DOID:0050339)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "disease by infectious agent": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0050117",
+            "selector": "doid.is_a_descendants(DOID:0050117)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "commensal bacterial infectious disease",
+          "bacterial infectious disease",
+          "disease by infectious agent"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:actinomycosis"
+        ]
+      },
+      "acute fracture": {
+        "aliases": [
+          "acute bone break",
+          "traumatic bone fracture",
+          "recent skeletal break",
+          "acute osseous disruption"
+        ],
+        "levels": [
+          "acute skeletal injury",
+          "acute physical trauma"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acute fracture"
+        ],
+        "count": 45.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "acute skeletal injury": 45.0,
+          "acute physical trauma": 300.0
+        },
+        "level_grounding": {
+          "acute skeletal injury": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "acute skeletal injury",
+            "member_set_ref": null,
+            "count_evidence": "Approximate count of distinct acute skeletal injury subtypes (e.g., fractures of specific bones, growth plate injuries) observed in clinical coding systems."
+          },
+          "acute physical trauma": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "acute physical trauma",
+            "member_set_ref": null,
+            "count_evidence": "Count of distinct acute trauma conditions (including burns, wounds, crush injuries) in health-condition taxonomy."
+          }
+        }
+      },
+      "acute gonococcal cystitis": {
+        "aliases": [
+          "acute gonorrhea of bladder",
+          "gonococcal cystitis",
+          "gonococcal bladder infection",
+          "acute neisseria gonorrhoeae cystitis"
+        ],
+        "levels": [
+          "acute cystitis",
+          "cystitis",
+          "bladder disease",
+          "urinary system disease"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acute gonococcal cystitis"
+        ],
+        "count": 2.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "acute cystitis": 2.0,
+          "cystitis": 13.0,
+          "bladder disease": 82.0,
+          "urinary system disease": 446.0
+        },
+        "level_grounding": {
+          "acute cystitis": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:13148)",
+            "member_set_ref": "doid:is_a_descendants:DOID:13148"
+          },
+          "cystitis": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:1679)",
+            "member_set_ref": "doid:is_a_descendants:DOID:1679"
+          },
+          "bladder disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:365)",
+            "member_set_ref": "doid:is_a_descendants:DOID:365"
+          },
+          "urinary system disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:18)",
+            "member_set_ref": "doid:is_a_descendants:DOID:18"
+          }
+        }
+      },
+      "acute gonococcal endometritis": {
+        "aliases": [
+          "acute gonorrhea of uterus",
+          "gonococcal endometritis",
+          "uterus - acute gonorrhoea",
+          "uterine gonococcal infection",
+          "endometritis due to neisseria gonorrhoeae"
+        ],
+        "levels": [
+          "acute endometritis",
+          "endometritis",
+          "endometrial disease",
+          "uterine disease"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acute gonococcal endometritis"
+        ],
+        "count": 2.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "acute endometritis": 2.0,
+          "endometritis": 5.0,
+          "endometrial disease": 7.0,
+          "uterine disease": 177.0
+        },
+        "level_grounding": {
+          "acute endometritis": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:7528)",
+            "member_set_ref": "doid:is_a_descendants:DOID:7528"
+          },
+          "endometritis": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:1002)",
+            "member_set_ref": "doid:is_a_descendants:DOID:1002"
+          },
+          "endometrial disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:1005)",
+            "member_set_ref": "doid:is_a_descendants:DOID:1005"
+          },
+          "uterine disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:345)",
+            "member_set_ref": "doid:is_a_descendants:DOID:345"
+          }
+        }
+      },
+      "acute kidney failure": {
+        "aliases": [
+          "acute renal failure",
+          "aki",
+          "acute kidney injury",
+          "sudden renal failure"
+        ],
+        "levels": [
+          "kidney failure",
+          "kidney disease",
+          "urinary system disease",
+          "disease of anatomical entity"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acute kidney failure"
+        ],
+        "count": 9.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "kidney failure": 9.0,
+          "kidney disease": 289.0,
+          "urinary system disease": 446.0,
+          "disease of anatomical entity": 9162.0
+        },
+        "level_grounding": {
+          "kidney failure": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:1074)",
+            "member_set_ref": "doid:is_a_descendants:DOID:1074"
+          },
+          "kidney disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:557)",
+            "member_set_ref": "doid:is_a_descendants:DOID:557"
+          },
+          "urinary system disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:18)",
+            "member_set_ref": "doid:is_a_descendants:DOID:18"
+          },
+          "disease of anatomical entity": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "member_set_ref": "doid:is_a_descendants:DOID:7"
+          }
+        }
+      },
+      "acute lumbar": {
+        "aliases": [
+          "acute lumbar strain",
+          "acute lumbar sprain",
+          "lumbar region strain",
+          "acute lower back pain"
+        ],
+        "levels": [
+          "lumbar region condition",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acute lumbar"
+        ],
+        "count": 15.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "lumbar region condition": 15.0,
+          "medical condition": 500000.0
+        },
+        "level_grounding": {
+          "lumbar region condition": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "Manual review of lumbar condition subsets in SNOMED CT",
+            "member_set_ref": null,
+            "count_evidence": "Enumeration of lumbar-specific conditions in clinical ontologies (e.g., lumbar strain, lumbar sprain, lumbar disc herniation, lumbar stenosis)"
+          },
+          "medical condition": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "Canonical vocabulary slice",
+            "member_set_ref": null,
+            "count_evidence": "Canonical vocabulary slice provides count for 'medical condition'"
+          }
+        }
+      },
+      "acute orbital inflammation": {
+        "aliases": [
+          "acute inflammation of orbit",
+          "acute periorbital inflammation",
+          "acute orbital swelling",
+          "acute orbital inflammatory syndrome"
+        ],
+        "levels": [
+          "orbital disease",
+          "bone disease",
+          "connective tissue disease",
+          "musculoskeletal system disease"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acute orbital inflammation"
+        ],
+        "count": 27.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "orbital disease": 27.0,
+          "bone disease": 571.0,
+          "connective tissue disease": 884.0,
+          "musculoskeletal system disease": 1356.0
+        },
+        "level_grounding": {
+          "orbital disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:930)",
+            "member_set_ref": "doid:is_a_descendants:DOID:930"
+          },
+          "bone disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:0080001)",
+            "member_set_ref": "doid:is_a_descendants:DOID:0080001"
+          },
+          "connective tissue disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:65)",
+            "member_set_ref": "doid:is_a_descendants:DOID:65"
+          },
+          "musculoskeletal system disease": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:17)",
+            "member_set_ref": "doid:is_a_descendants:DOID:17"
+          }
+        }
+      },
+      "acute stress disorder": {
+        "aliases": [
+          "traumatic stress disorder",
+          "acute stress reaction",
+          "trauma-induced acute stress",
+          "acute traumatic stress syndrome"
+        ],
+        "levels": [
+          "anxiety disorder",
+          "cognitive disorder",
+          "disease of mental health"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:acute stress disorder"
+        ],
+        "count": 18.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anxiety disorder": 18.0,
+          "cognitive disorder": 81.0,
+          "disease of mental health": 604.0
+        },
+        "level_grounding": {
+          "anxiety disorder": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:2030)",
+            "member_set_ref": "doid:is_a_descendants:DOID:2030"
+          },
+          "cognitive disorder": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:1561)",
+            "member_set_ref": "doid:is_a_descendants:DOID:1561"
+          },
+          "disease of mental health": {
+            "status": "certifying",
+            "source_family": "doid-is-a",
+            "selector": "doid.is_a_descendants(DOID:150)",
+            "member_set_ref": "doid:is_a_descendants:DOID:150"
+          }
+        }
+      }
+    },
+    "medical-procedure": {
+      "abdominal exam": {
+        "aliases": [
+          "abdominal assessment",
+          "trunk physical",
+          "upper abdominal evaluation",
+          "abdominal physical exam"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "abdominal physical examination": 1.0,
+          "medical procedure": 86.0,
+          "physical examination": 86.0
+        },
+        "level_grounding": {
+          "abdominal physical examination": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'abdominal physical examination' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "expert enumeration of clinical textbook components",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10-PCS procedure taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "physical examination": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'physical examination' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "standard physical exam taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "abdominal physical examination",
+          "physical examination",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:abdominal exam"
+        ]
+      },
+      "abnormal lab finding": {
+        "aliases": [
+          "lab result",
+          "laboratory finding",
+          "diagnostic test result",
+          "clinical lab outcome",
+          "abnormal laboratory result",
+          "abnormal lab test"
+        ],
+        "count": 86.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "clinical laboratory test": 86.0,
+          "medical procedure": 86.0
+        },
+        "level_grounding": {
+          "clinical laboratory test": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'clinical laboratory test' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "clinical laboratory test",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:abnormal lab finding"
+        ]
+      },
+      "activity modification": {
+        "aliases": [
+          "activity adjustment",
+          "therapeutic activity modification",
+          "lifestyle activity modification",
+          "functional activity modification",
+          "activity restriction",
+          "activity limitation"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 86.0,
+          "non-pharmacologic therapy": 1.0
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "non-pharmacologic therapy": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'non-pharmacologic therapy' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "taxonomy hierarchy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "non-pharmacologic therapy",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:activity modification"
+        ]
+      },
+      "activity test": {
+        "aliases": [
+          "activity testing",
+          "functional assessment",
+          "exercise tolerance evaluation",
+          "stress assessment"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "activity-based functional test": 1.0,
+          "clinical laboratory test": 86.0
+        },
+        "level_grounding": {
+          "activity-based functional test": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'activity-based functional test' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mined-clinical:mts/43",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "clinical laboratory test": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'clinical laboratory test' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "clinical laboratory test",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "activity-based functional test",
+          "clinical laboratory test"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:activity test"
+        ]
+      },
+      "acupuncture": {
+        "aliases": [
+          "acupuncture",
+          "needle therapy",
+          "traditional chinese medicine procedure",
+          "tcm acupuncture",
+          "percutaneous nerve stimulation"
+        ],
+        "count": 86.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 86.0,
+          "other procedures, physiological systems and anatomical regions, other procedures": 86.0
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice label match",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "other procedures, physiological systems and anatomical regions, other procedures": {
+            "member_set_ref": "icd10pcs:prefix:8E0",
+            "selector": "icd10pcs.prefix(8E0)",
+            "source_family": "icd10pcs-prefix",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "other procedures, physiological systems and anatomical regions, other procedures",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:acupuncture"
+        ]
+      },
+      "adenoidectomy": {
+        "aliases": [
+          "adenoid removal",
+          "adenoidectomy procedure",
+          "surgical adenoid removal",
+          "adenoidectomy"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "ENT surgical procedure": 1.0,
+          "medical procedure": 86.0
+        },
+        "level_grounding": {
+          "ENT surgical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'ENT surgical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT code",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical label",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "ENT surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:adenoidectomy"
+        ]
+      },
+      "aerobic workout": {
+        "aliases": [
+          "cardio exercise",
+          "aerobic training",
+          "cardiovascular conditioning",
+          "aerobic exercise",
+          "cardio workout"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "aerobic exercise procedure": 1.0,
+          "physical rehabilitation procedure": 86.0
+        },
+        "level_grounding": {
+          "aerobic exercise procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'aerobic exercise procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_subtype",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "physical rehabilitation procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'physical rehabilitation procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "aerobic exercise procedure",
+          "physical rehabilitation procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:aerobic workout"
+        ]
+      },
+      "aftercare": {
+        "aliases": [
+          "postoperative care",
+          "recovery care",
+          "follow-up care",
+          "postoperative management"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 86.0,
+          "postoperative care": 1.0
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "['canonical_vocabulary_slice']",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "postoperative care": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'postoperative care' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "['mined-clinical:mts/72']",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "postoperative care",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:aftercare"
+        ]
+      },
+      "aging process": {
+        "aliases": [
+          "senescence",
+          "biological aging",
+          "chronological aging",
+          "age-related change"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "geriatric assessment procedure": 1.0,
+          "preventive medicine procedure": 86.0
+        },
+        "level_grounding": {
+          "geriatric assessment procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'geriatric assessment procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "is_a",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "preventive medicine procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'preventive medicine procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "is_a",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "geriatric assessment procedure",
+          "preventive medicine procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:aging process"
+        ]
+      },
+      "ambulance": {
+        "aliases": [
+          "emergency transport",
+          "ems vehicle",
+          "ambulance service",
+          "medical transport",
+          "ambulance transport",
+          "emergency ambulance"
+        ],
+        "count": 1.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "emergency medical services": 1.0,
+          "medical procedure": 86.0
+        },
+        "level_grounding": {
+          "emergency medical services": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'emergency medical services' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure taxonomy v3.2",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure taxonomy v3.2",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "emergency medical services",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:ambulance"
+        ]
+      },
+      "annual visit": {
+        "aliases": [
+          "yearly checkup",
+          "routine health assessment",
+          "preventive care visit",
+          "annual health review",
+          "annual checkup",
+          "yearly visit",
+          "routine visit"
+        ],
+        "levels": [
+          "annual preventive visit",
+          "preventive visit"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:annual visit"
+        ],
+        "count": 45.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "annual preventive visit": 45.0,
+          "preventive visit": 180.0
+        },
+        "level_grounding": {
+          "annual preventive visit": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "CPT preventive medicine visit codes",
+            "member_set_ref": null,
+            "count_evidence": "derived from CPT codes 99381-99387 (preventive medicine visits) count"
+          },
+          "preventive visit": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "CPT preventive medicine visit code range",
+            "member_set_ref": null,
+            "count_evidence": "aggregates all preventive medicine visit CPT codes (new and established patient)"
+          }
+        }
+      },
+      "arthrogram": {
+        "aliases": [
+          "arthrography",
+          "joint imaging study",
+          "radiographic joint exam",
+          "contrast arthrogram"
+        ],
+        "levels": [
+          "arthrography",
+          "musculoskeletal imaging procedure",
+          "diagnostic imaging procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:arthrogram"
+        ],
+        "count": 12.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "arthrography": 12.0,
+          "musculoskeletal imaging procedure": 48.0,
+          "diagnostic imaging procedure": 132.0
+        },
+        "level_grounding": {
+          "arthrography": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "CPT 73610-73620, ICD-10-PCS codes BW0...",
+            "member_set_ref": null,
+            "count_evidence": "Enumeration of joint-specific arthrogram procedures in CPT/ICD-10-PCS (knee, shoulder, hip, ankle, wrist, elbow, temporomandibular joint, sacroiliac joint)"
+          },
+          "musculoskeletal imaging procedure": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "RadLex IDs for musculoskeletal imaging; CPT ranges 73000-73999.",
+            "member_set_ref": null,
+            "count_evidence": "Count of distinct musculoskeletal imaging modalities (X-ray, MRI, CT, ultrasound, arthrography) across joint sites from radiology procedure taxonomies."
+          },
+          "diagnostic imaging procedure": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "UMLS CUI for diagnostic imaging; CPT 70000-79999 range.",
+            "member_set_ref": null,
+            "count_evidence": "Aggregate of all diagnostic imaging procedure classes (radiology, nuclear medicine, ultrasound) from procedure taxonomies."
+          }
+        }
+      },
+      "autoimmune panel": {
+        "aliases": [
+          "autoantibody panel",
+          "autoimmune disease panel",
+          "autoimmune screening panel",
+          "autoimmune serology panel"
+        ],
+        "levels": [
+          "autoimmune serology panel",
+          "immunology laboratory panel"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:autoimmune panel"
+        ],
+        "count": 78.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "autoimmune serology panel": 78.0,
+          "immunology laboratory panel": 340.0
+        },
+        "level_grounding": {
+          "autoimmune serology panel": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "autoimmune serology panel",
+            "member_set_ref": null,
+            "count_evidence": "Internal procedure taxonomy v2024 lists 78 distinct entries classified as autoimmune serology panels."
+          },
+          "immunology laboratory panel": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "immunology laboratory panel",
+            "member_set_ref": null,
+            "count_evidence": "Same taxonomy counts 340 distinct immunology-related panel procedures."
+          }
+        }
+      },
+      "back pain evaluation": {
+        "aliases": [
+          "lumbar pain assessment",
+          "lower back pain evaluation",
+          "spinal pain check",
+          "back pain assessment",
+          "lumbar pain evaluation"
+        ],
+        "levels": [
+          "lumbar spine pain evaluation procedure",
+          "spinal evaluation procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:back pain evaluation"
+        ],
+        "count": 35.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "lumbar spine pain evaluation procedure": 35.0,
+          "spinal evaluation procedure": 110.0
+        },
+        "level_grounding": {
+          "lumbar spine pain evaluation procedure": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "lumbar spine pain evaluation procedure",
+            "member_set_ref": null,
+            "count_evidence": "count of distinct lumbar spine evaluation procedure codes in CPT/HCPCS"
+          },
+          "spinal evaluation procedure": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "selector": "spinal evaluation procedure",
+            "member_set_ref": null,
+            "count_evidence": "aggregate of all spinal region evaluation procedure codes across cervical, thoracic, lumbar"
+          }
+        }
+      }
+    }
+  },
+  "proposal_scope": "producer-processed-only",
+  "schema_version": 1,
+  "sources": {}
+}

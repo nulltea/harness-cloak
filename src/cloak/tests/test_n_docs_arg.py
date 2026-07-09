@@ -40,3 +40,7 @@ def test_help_exposes_flags():
         h = _help(s)
         assert "--env" in h, s
         assert "--arms" in h, s
+
+
+def test_build_ranker_env_can_skip_probe_generation():
+    assert "--skip-probes" in _help("scripts/build_ranker_env.py")

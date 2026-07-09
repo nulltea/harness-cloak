@@ -115,11 +115,16 @@ def bucket_quantity(text: str) -> list[str] | None:
             v = float(m.group().replace(",", ""))
         except ValueError:
             return None
-        if re.search(rf"{re.escape(m.group())}\s?[kK]\b", text):
-            v *= 1_000
-        elif re.search(rf"{re.escape(m.group())}\s?[mM]\b", text):
-            v *= 1_000_000
-        unit = re.sub(r"[\d,.]+\s?[kKmM]?", "", text).strip()
+        # bare k/m suffix only ("95k", "8.5M") — never the first letter of a following
+        # word ("million" was being eaten to "illion" and left v unscaled)
+        suf = re.match(r"\s?([kKmM])(?![A-Za-z])", text[m.end():])
+        if suf:
+            v *= 1_000 if suf.group(1).lower() == "k" else 1_000_000
+        unit = (text[:m.start()] + text[m.end() + (suf.end() if suf else 0):]).strip()
+        for sym, word in (("$", "dollars"), ("€", "euros"), ("£", "pounds")):
+            if sym in unit:  # "$ million" reads as "million dollars"
+                unit = f"{unit.replace(sym, '').strip()} {word}".strip()
+                break
     else:
         # spelled-out: "two hundred thousand dollars"
         um = re.search(r"(dollars?|euros?|pounds?|USD|EUR|GBP|kr)\b", text, re.IGNORECASE)
@@ -520,6 +525,12 @@ if __name__ == "__main__":
     assert bucket_quantity("two hundred thousand dollars") == \
         ["between 100,000 and 400,000 dollars"], bucket_quantity("two hundred thousand dollars")
     assert bucket_quantity("95k") == ["between 47,500 and 190,000"], bucket_quantity("95k")
+    assert bucket_quantity("$8.5 million") == \
+        ["between 4.25 and 17 million dollars"], bucket_quantity("$8.5 million")
+    assert bucket_quantity("$2 billion") == \
+        ["between 1 and 4 billion dollars"], bucket_quantity("$2 billion")
+    assert bucket_quantity("8.5M") == \
+        ["between 4,250,000 and 17,000,000"], bucket_quantity("8.5M")
     assert geonames_chain("Oslo") and "Norway" in " ".join(geonames_chain("Oslo"))
     assert wordnet_chain("cardiologist"), wordnet_chain("cardiologist")
     print("oslo:", geonames_chain("Oslo"))
