@@ -221,10 +221,11 @@ def detect_clinical_spans(
     import torch
     from gliner import GLiNER
 
-    from cloak.detect import _chunks, _install_gliner_bounds_guard
+    from cloak.detect import _chunks, _encoder_max_words, _install_gliner_bounds_guard
 
     _install_gliner_bounds_guard()
     gliner = GLiNER.from_pretrained(model)
+    max_words = _encoder_max_words(gliner)
     if torch.cuda.is_available():
         gliner = gliner.to("cuda")
 
@@ -232,7 +233,7 @@ def detect_clinical_spans(
     docs = load_task_docs(corpus, limit)
     chunk_rows: list[tuple[str, str]] = []
     for doc in docs:
-        chunk_rows.extend((doc["id"], chunk_text) for _, chunk_text in _chunks(doc["text"]))
+        chunk_rows.extend((doc["id"], chunk_text) for _, chunk_text in _chunks(doc["text"], max_words=max_words))
 
     total = len(chunk_rows)
     for start in range(0, total, chunk_window_batch):

@@ -172,6 +172,14 @@ def _chunks(text: str, max_chars: int = 1200, max_words: int | None = None):
         pos = end
 
 
+def _encoder_max_words(gliner) -> int | None:
+    """Word cap for _chunks from the model's window. gliner max_len counts words and varies
+    by model (base/fine-tune 2048, gliner-pii-large 768); overflow is silently truncated by
+    the encoder, so chunks must stay under it. 0.9 margin for the label prompt overhead."""
+    max_len = getattr(gliner.config, "max_len", None)
+    return int(max_len * 0.9) if max_len else None
+
+
 def _guarded_map_entities_to_original(self, outputs, valid_to_orig_idx,
                                       all_start_token_idx_to_text_idx,
                                       all_end_token_idx_to_text_idx, valid_texts, num_original_texts):
@@ -230,6 +238,7 @@ class Detector:
         self.fine_dem = fine_dem
         self.label2type = FINE_LABELS if fine_dem else GLINER_LABELS
         self.gliner = GLiNER.from_pretrained(gliner_model)
+        self.max_words = _encoder_max_words(self.gliner)
         if torch.cuda.is_available():
             self.gliner = self.gliner.to("cuda")
         self.presidio = AnalyzerEngine()
@@ -256,7 +265,7 @@ class Detector:
 
     def detect(self, text: str) -> list[Span]:
         spans = []
-        offsets, texts = zip(*_chunks(text)) if text.strip() else ((), ())
+        offsets, texts = zip(*_chunks(text, max_words=self.max_words)) if text.strip() else ((), ())
         for off, ents in zip(offsets, self.gliner.batch_predict_entities(
                 list(texts), self.labels, threshold=self.threshold, batch_size=self.batch_size)):
             spans += [Span(off + e["start"], off + e["end"], e["text"],
