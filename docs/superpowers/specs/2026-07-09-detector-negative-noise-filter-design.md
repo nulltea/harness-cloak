@@ -70,10 +70,14 @@ def is_noise_span(surface: str, runtime_type: str) -> bool:
 Sourced from category *definitions* so validation on the red-test/additions sets is not circular.
 Combine compiled regex patterns (for productive suffixes/heads) with modest exact-token gazetteers.
 
-- **lab-test** — pattern `\b(panel|assay|titer|titre|screen|culture|antibody test|serology)\b` and
-  suffix `\w+ase\b` (enzyme assays); gazetteer {cbc, bmp, cmp, bnp, psa, hcg, afp, ldh, bun, pcr,
-  tsh, esr, inr, ua, hba1c, a1c, pt, ptt, crp, troponin, ferritin}.
+- **lab-test** — pattern `\b(panel|assay|titer|titre|screen|culture|antibody test|serology)\b`;
+  gazetteer {cbc, bmp, cmp, bnp, psa, hcg, afp, ldh, bun, pcr, tsh, esr, inr, ua, hba1c, a1c, pt,
+  ptt, crp, troponin, ferritin} PLUS the explicit enzyme assays {amylase, lipase, transaminase,
+  aminotransferase, phosphatase}.
   NOTE `pt` is ambiguous (prothrombin time vs physical therapy) — include as lab; document it.
+  **DO NOT use a `\w+ase\b` suffix pattern** — it matches "dise**ase**" and would drop every
+  `…disease` condition (coronary artery disease, Parkinson's disease, COPD, …); measured 26/646
+  real queued conditions falsely dropped. Enzyme assays go in the gazetteer, explicit tokens only.
 - **imaging/diagnostics** — gazetteer {mri, ct, ct scan, cat scan, ecg, ekg, eeg, emg, ncs, x ray,
   xray, chest x ray, ultrasound, echo, echocardiogram, angiogram, mammogram, dexa, pet, pet scan}.
 - **device/supply** — reuse the existing `_DEVICE` pattern from `prune_nondrug_noise.py`
