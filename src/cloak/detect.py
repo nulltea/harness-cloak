@@ -119,11 +119,11 @@ _NOISE_KEEP_TOKENS = frozenset({
     "cad", "cva", "gerd", "copd", "cf", "chf", "dvt", "uti", "tia", "ckd", "mi",
 })
 _NOISE_LAB_PATTERN = re.compile(r"\b(panel|assay|titer|titre|screen|culture|antibody test|serology)\b")
-_NOISE_LAB_SUFFIX = re.compile(r"\w+ase\b")
 _NOISE_LAB_TESTS = frozenset({
     # pt is intentionally included as prothrombin time, despite physical-therapy ambiguity.
     "cbc", "bmp", "cmp", "bnp", "psa", "hcg", "afp", "ldh", "bun", "pcr", "tsh", "esr",
     "inr", "ua", "hba1c", "a1c", "pt", "ptt", "crp", "troponin", "ferritin",
+    "amylase", "lipase", "transaminase", "aminotransferase", "phosphatase",
 })
 _NOISE_IMAGING_DIAGNOSTICS = frozenset({
     "mri", "ct", "ct scan", "cat scan", "ecg", "ekg", "eeg", "emg", "ncs", "x ray", "xray",
@@ -179,8 +179,7 @@ def is_noise_span(surface: str, runtime_type: str) -> bool:
     compact = _compact_abbreviation(s)
     if compact in _NOISE_KEEP_TOKENS or any(p.search(s) or p.search(compact) for p in _NOISE_KEEP_PATTERNS):
         return False
-    if _NOISE_LAB_PATTERN.search(s) or _NOISE_LAB_SUFFIX.search(s) or s in _NOISE_LAB_TESTS \
-            or compact in _NOISE_LAB_TESTS:
+    if _NOISE_LAB_PATTERN.search(s) or s in _NOISE_LAB_TESTS or compact in _NOISE_LAB_TESTS:
         return True
     if s in _NOISE_IMAGING_DIAGNOSTICS or compact in _NOISE_IMAGING_DIAGNOSTICS:
         return True

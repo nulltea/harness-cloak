@@ -28,6 +28,12 @@ def test_noise_filter_keep_allowlist_wins(surface, runtime_type):
         ("arm", "health-condition", True),
         ("asthma", "health-condition", False),
         ("power of attorney", "drug", True),
+        ("coronary artery disease", "health-condition", False),
+        ("parkinsons disease", "health-condition", False),
+        ("chronic obstructive pulmonary disease", "health-condition", False),
+        ("increase", "medical-procedure", False),
+        ("lipase", "medical-procedure", True),
+        ("amylase", "drug", True),
     ],
 )
 def test_noise_filter_category_examples(surface, runtime_type, expected):
