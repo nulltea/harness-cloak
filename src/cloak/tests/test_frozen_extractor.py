@@ -49,6 +49,18 @@ class ScriptedNLI:
         return self.returns.pop(0)
 
 
+class ScriptedMLM:
+    def __init__(self, scores):
+        self.scores = list(scores)
+        self.calls = []
+
+    def pll(self, sentence):
+        self.calls.append(sentence)
+        if not self.scores:
+            raise AssertionError("scripted MLM exhausted")
+        return self.scores.pop(0)
+
+
 def test_extractor_pins_include_frozen_model_ids_and_thresholds():
     assert fx.EXTRACTOR_PINS == {
         "models": {
@@ -485,3 +497,64 @@ def test_verify_allows_sentence_initial_capitalized_token():
     )
 
     assert result == (True, "ok")
+
+
+def test_splice_replaces_exact_chunk_span():
+    out_p = "The order came from a county court near downtown."
+    chunk = (out_p.index("a county court"), out_p.index("near") - 1)
+
+    result = fx.splice(out_p, chunk, "Hamilton County Court")
+
+    assert result == "The order came from Hamilton County Court near downtown."
+
+
+def test_splice_fixes_indefinite_article_at_boundary():
+    out_p = "The witness saw a engineer outside."
+    chunk = (out_p.index("engineer"), out_p.index("engineer") + len("engineer"))
+
+    result = fx.splice(out_p, chunk, "architect")
+
+    assert result == "The witness saw an architect outside."
+
+
+def test_apply_splices_reverts_when_mlm_pll_delta_craters_and_records_fluency():
+    out_p = "The hearing was held in a city."
+    chunk = (out_p.index("a city"), out_p.index("a city") + len("a city"), "a city")
+    residue = [{"surface": "Boston", "replacement": "a city", "type": "LOC"}]
+    mlm = ScriptedMLM([-1.0, -8.0])
+
+    text, entries = fx.apply_splices(out_p, residue, [chunk], {0: 0}, mlm)
+
+    assert text == out_p
+    assert entries == [
+        {"surface": "Boston", "type": "LOC", "outcome": "abstained",
+         "reason": "fluency"}
+    ]
+    assert mlm.calls == [
+        "The hearing was held in a city.",
+        "The hearing was held in Boston.",
+    ]
+
+
+def test_apply_splices_applies_multiple_splices_right_to_left_without_shift_errors():
+    out_p = "The city hired the lawyer after the hearing."
+    city_start = out_p.index("city")
+    lawyer_start = out_p.index("lawyer")
+    chunks = [
+        (city_start, city_start + len("city"), "city"),
+        (lawyer_start, lawyer_start + len("lawyer"), "lawyer"),
+    ]
+    residue = [
+        {"surface": "Oslo", "replacement": "city", "type": "LOC"},
+        {"surface": "Ada Lovelace", "replacement": "lawyer", "type": "PERSON"},
+    ]
+    mlm = ScriptedMLM([-1.0, -1.0, -1.0, -1.0])
+
+    text, entries = fx.apply_splices(out_p, residue, chunks, {0: 0, 1: 1}, mlm)
+
+    assert text == "The Oslo hired the Ada Lovelace after the hearing."
+    assert entries == [
+        {"surface": "Oslo", "type": "LOC", "outcome": "spliced", "reason": "ok"},
+        {"surface": "Ada Lovelace", "type": "PERSON", "outcome": "spliced",
+         "reason": "ok"},
+    ]

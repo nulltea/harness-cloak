@@ -17,6 +17,7 @@ import numpy as np
 from cloak.extract import _finalize, _rule_prepass
 from cloak.reconstruct import _value_compatible
 from cloak.runtime_types import PLACEHOLDER_RE
+from cloak.substitute import _fix_indefinite_articles
 
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"[.!?](?=\s|$)|\n")
@@ -476,6 +477,166 @@ def verify(entry: dict, chunk_text: str, sentence: str, nli) -> tuple[bool, str]
         return False, "added-proper-noun"
 
     return True, "ok"
+
+
+def splice(out_p: str, chunk_span: tuple[int, int], surface: str) -> str:
+    """Replace exactly `chunk_span` with `surface`, then repair a/an agreement."""
+    start, end = _checked_span(chunk_span, len(out_p))
+    spliced = f"{out_p[:start]}{surface}{out_p[end:]}"
+    return _fix_indefinite_articles(spliced)
+
+
+def pll_delta(sentence_before: str, sentence_after: str, mlm) -> float:
+    """Return MLM mean pseudo-log-likelihood delta for a candidate splice."""
+    before = float(mlm.pll(sentence_before))
+    after = float(mlm.pll(sentence_after))
+    return after - before
+
+
+def apply_splices(
+    out_p: str,
+    residue: list[dict],
+    chunks: list[tuple[int, int, str]],
+    assignments: dict[int, int],
+    mlm,
+) -> tuple[str, list[dict]]:
+    """Apply assigned chunk replacements right-to-left with per-splice fluency reverts."""
+    text = out_p
+    outcomes: dict[int, dict] = {}
+
+    for entry_idx, reason in getattr(assignments, "abstained", {}).items():
+        if 0 <= entry_idx < len(residue):
+            outcomes[entry_idx] = _entry_outcome(residue[entry_idx], "abstained", reason)
+
+    assigned_items = [
+        (entry_idx, chunk_idx)
+        for entry_idx, chunk_idx in assignments.items()
+        if 0 <= entry_idx < len(residue) and 0 <= chunk_idx < len(chunks)
+    ]
+    for entry_idx, chunk_idx in sorted(
+        assigned_items,
+        key=lambda item: (chunks[item[1]][0], chunks[item[1]][1], item[0]),
+        reverse=True,
+    ):
+        entry = residue[entry_idx]
+        start, end, _ = chunks[chunk_idx]
+        before_sentence = _sentence_text_for_span(text, (start, end))
+        candidate = splice(text, (start, end), str(entry.get("surface", "")))
+        after_sentence = _sentence_text_for_span(
+            candidate,
+            (min(start, len(candidate)), min(start + len(str(entry.get("surface", ""))), len(candidate))),
+        )
+        if pll_delta(before_sentence, after_sentence, mlm) < float(
+            EXTRACTOR_PINS["thresholds"]["PLL_MIN_DELTA"]
+        ):
+            outcomes[entry_idx] = _entry_outcome(entry, "abstained", "fluency")
+            continue
+        text = candidate
+        outcomes[entry_idx] = _entry_outcome(entry, "spliced", "ok")
+
+    return text, [outcomes[idx] for idx in sorted(outcomes)]
+
+
+def load_mlm(device: str = "cpu"):
+    """Lazily load the pinned masked LM behind the `pll(sentence)` protocol."""
+    from transformers import AutoModelForMaskedLM, AutoTokenizer
+
+    model_id = EXTRACTOR_PINS["models"]["mlm"]
+    tokenizer = AutoTokenizer.from_pretrained(model_id)
+    model = AutoModelForMaskedLM.from_pretrained(model_id).to(device)
+    model.eval()
+    return MaskedLanguageModelPLL(tokenizer, model, device=device)
+
+
+def _load_mlm(device: str = "cpu"):
+    return load_mlm(device=device)
+
+
+class MaskedLanguageModelPLL:
+    """Mean per-token pseudo-log-likelihood scorer for masked language models."""
+
+    def __init__(self, tokenizer, model, *, device: str = "cpu"):
+        self.tokenizer = tokenizer
+        self.model = model
+        self.device = device
+
+    def pll(self, sentence: str) -> float:
+        import torch
+
+        encoded = self.tokenizer(
+            str(sentence),
+            return_tensors="pt",
+            return_attention_mask=True,
+        )
+        input_ids = encoded["input_ids"].to(self.device)
+        attention_mask = encoded.get("attention_mask")
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(self.device)
+
+        token_ids = input_ids[0].tolist()
+        special = self.tokenizer.get_special_tokens_mask(
+            token_ids,
+            already_has_special_tokens=True,
+        )
+        positions = [
+            idx for idx, is_special in enumerate(special)
+            if not is_special and (attention_mask is None or int(attention_mask[0, idx]) == 1)
+        ]
+        if not positions:
+            return 0.0
+
+        mask_token_id = self.tokenizer.mask_token_id
+        if mask_token_id is None:
+            raise ValueError("masked LM tokenizer has no mask token")
+
+        batch_input_ids = input_ids.repeat(len(positions), 1)
+        batch_positions = torch.tensor(positions, device=self.device)
+        batch_input_ids[torch.arange(len(positions), device=self.device), batch_positions] = mask_token_id
+        batch_attention = (
+            attention_mask.repeat(len(positions), 1)
+            if attention_mask is not None else None
+        )
+
+        with torch.no_grad():
+            outputs = self.model(input_ids=batch_input_ids, attention_mask=batch_attention)
+            logits = outputs.logits[torch.arange(len(positions), device=self.device), batch_positions]
+            log_probs = torch.log_softmax(logits, dim=-1)
+            target_ids = input_ids[0, batch_positions]
+            token_log_probs = log_probs[torch.arange(len(positions), device=self.device), target_ids]
+        return float(token_log_probs.mean().detach().cpu().item())
+
+
+def _checked_span(chunk_span: tuple[int, int], text_len: int) -> tuple[int, int]:
+    if len(chunk_span) != 2:
+        raise ValueError("chunk_span must be a (start, end) pair")
+    start, end = int(chunk_span[0]), int(chunk_span[1])
+    if start < 0 or end < start or end > text_len:
+        raise ValueError("chunk_span is outside the text")
+    return start, end
+
+
+def _sentence_text_for_span(text: str, span: tuple[int, int]) -> str:
+    spans = sentence_spans(text)
+    if not spans:
+        return str(text).strip()
+    start = max(0, min(int(span[0]), len(text)))
+    end = max(start, min(int(span[1]), len(text)))
+    if start == end and start > 0:
+        start -= 1
+    idx = _containing_sentence(start, max(start + 1, end), spans)
+    if idx is None:
+        return str(text).strip()
+    sent_start, sent_end = spans[idx]
+    return text[sent_start:sent_end]
+
+
+def _entry_outcome(entry: dict, outcome: str, reason: str) -> dict:
+    return {
+        "surface": entry["surface"],
+        "type": entry.get("type", "MISC"),
+        "outcome": outcome,
+        "reason": reason,
+    }
 
 
 def _fill_sentence_template(fill: str) -> str:
