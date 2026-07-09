@@ -9,8 +9,8 @@ import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from cloak.lattice_profiles import lookup_levels
-from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES, placeholder_token
+from cloak.runtime_types import (DOMAIN_RUNTIME_TYPES, PLACEHOLDER_ONLY_TYPES,
+                                  placeholder_token)
 
 GEONAMES = Path("data/geonames")
 CACHE = Path("data/lattice_cache.json")
@@ -222,30 +222,51 @@ _nli = None
 NLI_MODEL = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
 
 
-def nli_gate(entity: str, context: str, candidates: list[str], thresh: float = 0.6) -> list[str]:
-    """Keep candidates where 'context' entails 'context with entity -> candidate'."""
+def _nli_prep(entity: str, context: str, candidates: list[str]):
+    """Per-job viability: self-ref filter, sentence location, degenerate-dup check.
+    Returns (viable_candidates, hypotheses); ([], []) fails closed."""
+    candidates = [c for c in candidates if entity.lower() not in c.lower()]  # self-reference = leak
+    pat = re.compile(re.escape(entity), re.IGNORECASE)
+    sent = next((s for s in re.split(r"(?<=[.!?])\s+", context) if pat.search(s)), context)
+    if not pat.search(sent):  # can't form the hypothesis -> fail closed (escalate/floor)
+        return [], []
+    hyps = [pat.sub(c, sent, count=1) for c in candidates]
+    # degenerate substitution ("A city city picnics") => vacuous entailment; reject
+    keep = [(c, h, sent) for c, h in zip(candidates, hyps)
+            if not re.search(r"\b(\w{3,}) \1\b", h, re.IGNORECASE)]
+    return [(c, sent) for c, h, sent in keep], [h for _, h, _ in keep]
+
+
+def nli_gate_batch(jobs: list[tuple[str, str, list[str]]],
+                   thresh: float = 0.6) -> list[list[tuple[str, float]]]:
+    """One pipeline call for many (entity, context, candidates) jobs.
+    Per job: approved (candidate, entailment_score) pairs, input order preserved."""
     global _nli
+    prepped = [_nli_prep(e, ctx, cands) for e, ctx, cands in jobs]
+    pairs, owners = [], []  # owners[i] = (job_idx, candidate)
+    for j, (viable, hyps) in enumerate(prepped):
+        for (cand, sent), hyp in zip(viable, hyps):
+            pairs.append({"text": sent, "text_pair": hyp})
+            owners.append((j, cand))
+    if not pairs:
+        return [[] for _ in jobs]
     if _nli is None:
         import torch
         from transformers import pipeline
         _nli = pipeline("text-classification", model=NLI_MODEL,
                         device=0 if torch.cuda.is_available() else -1)
-    candidates = [c for c in candidates if entity.lower() not in c.lower()]  # self-reference = leak
-    pat = re.compile(re.escape(entity), re.IGNORECASE)
-    sent = next((s for s in re.split(r"(?<=[.!?])\s+", context) if pat.search(s)), context)
-    if not pat.search(sent):  # can't form the hypothesis -> fail closed (escalate/floor)
-        return []
-    hyps = [pat.sub(c, sent, count=1) for c in candidates]
-    # degenerate substitution ("A city city picnics") => vacuous entailment; reject
-    ok = [not re.search(r"\b(\w{3,}) \1\b", h, re.IGNORECASE) for h in hyps]
-    pairs = [{"text": sent, "text_pair": h} for h, o in zip(hyps, ok) if o]
-    outs = _nli(pairs, top_k=None, truncation=True) if pairs else []
-    keep = []
-    for c, scores in zip([c for c, o in zip(candidates, ok) if o], outs):
-        ent_score = next(d["score"] for d in scores if d["label"] == "entailment")
-        if ent_score >= thresh:
-            keep.append(c)
-    return keep
+    outs = _nli(pairs, top_k=None, truncation=True)
+    approved: list[list[tuple[str, float]]] = [[] for _ in jobs]
+    for (j, cand), scores in zip(owners, outs):
+        ent = next(d["score"] for d in scores if d["label"] == "entailment")
+        if ent >= thresh:
+            approved[j].append((cand, ent))
+    return approved
+
+
+def nli_gate(entity: str, context: str, candidates: list[str], thresh: float = 0.6) -> list[str]:
+    """Keep candidates where 'context' entails 'context with entity -> candidate'."""
+    return [c for c, _ in nli_gate_batch([(entity, context, candidates)], thresh=thresh)[0]]
 
 
 # ---------- teacher cascade ----------
@@ -430,14 +451,23 @@ TYPE_LABEL = {"ORG": "an organization", "LOC": "a place", "MISC": "something",
               "DATETIME": "at some point", "QUANTITY": "a certain amount"}
 
 
-def lattice_for(span_text: str, span_type: str, context: str = "") -> list[str]:
+NO_PREPASS = object()  # caller ran no pre-pass; lattice_for matches per-span itself
+
+_FINE_LATTICE_TYPES = {"nationality", "ethnicity", "profession", "health-condition",
+                       "religion", "family-role"}
+
+
+def lattice_for(span_text: str, span_type: str, context: str = "",
+                proposal=NO_PREPASS) -> list[str]:
     """Zero-cost sources only; teacher entities must be pre-cached via teacher_lattices.
 
-    Every source passes the NLI truthfulness gate against the span's context — rule sources
-    used to bypass it, shipping context-wrong senses ("dragon" -> "a mythical monster",
-    "vermont" -> "a city in Australia"); docs/issues/rule-lattice-nli-gate-bypass.md.
-    Gate-empty coarse lattices fall to a legacy generic type label. Fine runtime lattices
-    fall closed to their typed placeholder terminal.
+    Profile-backed types resolve through the retrieve-then-verify matcher
+    (docs/specs/substitutor-profile-match-retrieve-verify.md): `proposal` carries the
+    caller's pre-pass result (MatchResult = certified hit, None = abstained, NO_PREPASS =
+    no pre-pass ran -> match per-span here). Proposal levels are certified upstream (exact
+    or NLI in the span's sentence) and are not re-gated. Fallback sources still pass the
+    NLI gate as before. WordNet is diagnostic-only for fine/domain types: it never feeds
+    their lattices (spec: no last-word fallback for legality).
     """
     deterministic = False
     if span_type in PLACEHOLDER_ONLY_TYPES or span_type in {"PERSON", "CODE"}:
@@ -451,35 +481,29 @@ def lattice_for(span_text: str, span_type: str, context: str = "") -> list[str]:
     elif span_type == "age":
         got = bucket_date(span_text)
         deterministic = True
-    elif span_type == "LOC":
-        got = lookup_levels(span_text, span_type)
-        deterministic = bool(got)
-        if not got:
-            got = geonames_chain(span_text) or wordnet_chain(span_text)
-    elif span_type in {
-        "nationality", "ethnicity", "profession", "health-condition", "religion",
-        "family-role",
-    }:
-        got = lookup_levels(span_text, span_type)
-        deterministic = bool(got)
-        if not got:
-            got = _fine_curated_chain(span_text, span_type)
-            deterministic = got is not None
-        if got is None:
-            got = wordnet_chain(span_text)
-        if not got and CACHE.exists():
-            got = json.loads(CACHE.read_text()).get(_cache_key(span_text, span_type), {}).get("lattice")
     elif span_type == "demographic-other":
         got = []
     else:
-        got = lookup_levels(span_text, span_type)
-        deterministic = bool(got)
-        if not got:
+        m = proposal
+        if m is NO_PREPASS:
+            from cloak.profile_match import match_profile_entry
+            m = match_profile_entry(span_text, span_type, context)
+        if m is not None:
+            got, deterministic = m.levels, True  # certified upstream; do not re-gate
+        elif span_type == "LOC":
+            got = geonames_chain(span_text) or wordnet_chain(span_text)
+        elif span_type in _FINE_LATTICE_TYPES or span_type in DOMAIN_RUNTIME_TYPES:
+            got = _fine_curated_chain(span_text, span_type)
+            deterministic = got is not None
+            if not got and CACHE.exists():
+                got = json.loads(CACHE.read_text()).get(
+                    _cache_key(span_text, span_type), {}).get("lattice")
+        else:  # ORG / MISC / DEM / unknown — WordNet lattices remain
             got = wordnet_chain(span_text)
-        if not got and CACHE.exists():
-            cache = json.loads(CACHE.read_text())
-            got = (cache.get(_cache_key(span_text, span_type), {}).get("lattice") or
-                   cache.get(span_text.lower(), {}).get("lattice"))
+            if not got and CACHE.exists():
+                cache = json.loads(CACHE.read_text())
+                got = (cache.get(_cache_key(span_text, span_type), {}).get("lattice") or
+                       cache.get(span_text.lower(), {}).get("lattice"))
     if got and context and not deterministic:
         got = nli_gate(span_text, context, got)
     if span_type in {"LOC", "ORG", "MISC", "DEM", "DATETIME", "QUANTITY"}:

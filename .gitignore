@@ -10,6 +10,10 @@ data/*
 data/lattice_sources/*
 !data/lattice_sources/reference/
 
+# Embedding index sidecars: regenerable from profiles via scripts/build_profile_embindex.py
+data/lattice_profiles/*.embindex.npz
+data/lattice_profiles/**/*.embindex.npz
+
 # Scratch process logs / staging (not part of the repo)
 refine-logs/
 review-stage/

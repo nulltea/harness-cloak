@@ -1,0 +1,14 @@
+building throwaway index for data/lattice_profiles/proposed/drug-health-procedure.proposed.json -> /tmp/claude-1000/smoke_substitute_integration.embindex.npz
+Loading weights:   0%|          | 0/199 [00:00<?, ?it/s]Loading weights: 100%|██████████| 199/199 [00:00<00:00, 20462.03it/s]
+Loading weights:   0%|          | 0/202 [00:00<?, ?it/s]Loading weights: 100%|██████████| 202/202 [00:00<00:00, 18379.31it/s]
+
+doc_orig: The patient is diabetic and takes aspirin daily. Auscultation revealed heart murmurs. The note also listed zxqwvbn plooghor as a finding.
+doc_p   : The patient is metabolic disorder and takes penicillin-class antibacterial daily. Auscultation revealed cardiac auscultation finding. The note also listed <HEALTH_CONDITION_1> as a finding.
+
+R (substitution record):
+  generalize  'diabetic'           -> 'metabolic disorder'       match={'kind': 'semantic', 'entry': 'diabetes mellitus', 'similarity': 0.837, 'nli': 0.982}
+  generalize  'aspirin'            -> 'penicillin-class antibacterial' match={'kind': 'exact'}
+  generalize  'heart murmurs'      -> 'cardiac auscultation finding' match={'kind': 'semantic', 'entry': 'heart murmur', 'similarity': 0.955, 'nli': 0.992}
+  placeholder 'zxqwvbn plooghor'   -> '<HEALTH_CONDITION_1>'     match=None
+
+smoke_substitute_integration OK: semantic + exact + abstain all verified

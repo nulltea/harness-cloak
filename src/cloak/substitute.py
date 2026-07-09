@@ -8,8 +8,9 @@ R (substitution record) stays client-side and drives extraction.
 import re
 
 from cloak.detect import Detector, Span, coref_chains, relabel_dem
-from cloak.lattice import TYPE_LABEL, lattice_for
+from cloak.lattice import TYPE_LABEL, lattice_for, NO_PREPASS
 from cloak.probe import walk_risk
+from cloak.profile_match import PROFILE_BACKED_TYPES, match_spans_batch, span_key
 from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
 DIRECT_TYPES = set(DIRECT_TYPES)
@@ -74,6 +75,11 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
         if s.type == "PERSON" and s.text[0].islower() and _is_role_phrase(s.text):  # name stays
             s.type = relabel_dem(s.text)
     spans = coref_chains(text, spans)
+    # batched matcher pre-pass: one embed batch + wave-batched NLI for the whole doc
+    # (docs/specs/substitutor-profile-match-retrieve-verify.md, Efficiency)
+    items = [(s.text, s.type, _sentence_around(text, s.start, s.end))
+             for s in spans if s.type in PROFILE_BACKED_TYPES]
+    proposals = match_spans_batch(items) if items else {}
     counters: dict[str, int] = {}
     chain_ph: dict[int, str] = {}
     used: dict[str, str] = {}          # replacement canon -> surface canon (injectivity of R)
@@ -100,7 +106,15 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             entry.update(by_surface[skey])
         else:
             sent = _sentence_around(text, s.start, s.end)
-            lattice = lattice_for(s.text, s.type, sent)
+            k = span_key(s.text, s.type)
+            prop = proposals[k] if k in proposals else NO_PREPASS
+            lattice = lattice_for(s.text, s.type, sent, proposal=prop)
+            m = proposals.get(k)
+            if m is not None:
+                entry["match"] = ({"kind": "exact"} if m.kind == "exact" else
+                                  {"kind": "semantic", "entry": m.entry,
+                                   "similarity": round(m.similarity, 3),
+                                   "nli": round(m.nli, 3) if m.nli is not None else None})
             # candidate must not carry the original's numbers or proper names
             distinctive = set(re.findall(r"\d[\d,.]*\d|\d", s.text)) | \
                 {w.lower() for w in re.findall(r"\b[A-Z][a-z]{2,}\b", s.text)}
@@ -134,9 +148,9 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
                 used[chosen.lower()] = skey
                 entry.update(action="generalize", replacement=chosen, lattice=lattice,
                              risk=round(risk, 4))
-            by_surface[skey] = {k: entry[k] for k in
-                                ("action", "replacement", "risk", "lattice")
-                                if k in entry}
+            by_surface[skey] = {k2: entry[k2] for k2 in
+                                ("action", "replacement", "risk", "lattice", "match")
+                                if k2 in entry}
         out = out[:s.start] + entry["replacement"] + out[s.end:]
         record.append(entry)
     out = re.sub(r"\b([Aa]n?|[Tt]he) (?=(?:an?|the)\b)", "", out)  # "a a person", "the a structure"
