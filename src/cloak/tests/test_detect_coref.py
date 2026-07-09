@@ -36,6 +36,20 @@ def test_bare_trailing_token_joins_most_recent():
     assert spans[0].chain != spans[1].chain
 
 
+def test_bare_member_is_not_a_containment_bridge():
+    # regression: a stored bare "Smith" member must not transitively merge two full names
+    text = "Anna Smith testified. Smith spoke. Peter Smith arrived."
+    spans = coref_chains(text, _spans(text, "Anna Smith", "Smith", "Peter Smith"))
+    assert spans[0].chain == spans[1].chain      # bare mention joins most recent (Anna's)
+    assert spans[2].chain != spans[0].chain      # Peter stays a distinct identity
+
+
+def test_leading_bare_token_does_not_bridge():
+    text = "Smith left early. Anna Smith stayed. Peter Smith arrived."
+    spans = coref_chains(text, _spans(text, "Smith", "Anna Smith", "Peter Smith"))
+    assert spans[1].chain != spans[2].chain      # no merge through the bare seed
+
+
 def test_different_types_never_merge():
     text = "Smith worked at Smith Hospital"
     s = _spans(text, "Smith")

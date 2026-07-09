@@ -286,9 +286,13 @@ def coref_chains(text: str, spans: list[Span]) -> list[Span]:
     def aliases(a: list[str], b: list[str]) -> bool:
         if not a or not b:
             return False
-        sa, sb = set(a), set(b)
-        if sa <= sb or sb <= sa:
-            return True
+        # containment requires BOTH sides multi-token: a bare stored member ("smith") must not
+        # become a containment magnet that transitively re-merges distinct people. Single-token
+        # aliasing is handled exclusively by first-token match and the bare-mention clause below.
+        if min(len(a), len(b)) >= 2:
+            sa, sb = set(a), set(b)
+            if sa <= sb or sb <= sa:
+                return True
         return a[0] == b[0]
 
     chains: list[tuple[str, list[list[str]]]] = []  # (type, member token lists)
