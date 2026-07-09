@@ -167,8 +167,8 @@ def generate_universe_entries(state: ProducerState) -> ProducerState:
             prompt_version=state["prompt_version"],
             max_context_rows=state["max_context_rows"],
             base_url=state["base_url"],
-            model=QWEN36_ESCALATION_MODEL,
-            escalation_model=QWEN36_ESCALATION_MODEL,
+            model=state.get("model") or QWEN36_ESCALATION_MODEL,
+            escalation_model=state.get("escalation_model") or state.get("model") or QWEN36_ESCALATION_MODEL,
             thinking_budget_tokens=int(state.get("thinking_budget_tokens", -1)),
         )
         append_jsonl_unique(_jsonl_path(state, "proposals.jsonl"), [{**proposal, "item_id": item.get("item_id")}])
@@ -255,7 +255,7 @@ def route_after_deterministic(state: ProducerState) -> Literal["compile_level_co
 
 def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
     item = state["current_item"] or {}
-    model = QWEN36_ESCALATION_MODEL
+    model = state.get("model") or QWEN36_ESCALATION_MODEL
     proposal = propose_with_llama_swap(
         item,
         profiles_path=state["profiles_path"],
@@ -264,7 +264,7 @@ def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
         max_context_rows=state["max_context_rows"],
         base_url=state["base_url"],
         model=model,
-        escalation_model=QWEN36_ESCALATION_MODEL,
+        escalation_model=state.get("escalation_model") or model,
         thinking_budget_tokens=int(state.get("thinking_budget_tokens", -1)),
         proposed_out=state["proposed_out"],
     )

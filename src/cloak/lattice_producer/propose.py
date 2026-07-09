@@ -6,11 +6,12 @@ import hashlib
 import json
 import os
 import re
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from openai import APIConnectionError, APITimeoutError, OpenAI
+from openai import APIConnectionError, APITimeoutError, OpenAI, RateLimitError
 
 from cloak.lattice_producer.io import atomic_write_json
 from cloak.lattice_producer.vocabulary import CanonicalVocabulary
@@ -18,12 +19,13 @@ from cloak.lattice_producer.vocabulary import CanonicalVocabulary
 QWEN36_MODEL = "Qwen3.6-35B-A3B"
 QWEN36_THINKING_BUDGET_TOKENS = 2048
 
-_RETRYABLE = (APITimeoutError, APIConnectionError)
+_RETRYABLE = (APITimeoutError, APIConnectionError, RateLimitError)
 
 
-def _create_with_retry(client, *, model, request_kwargs, attempts=3, base_timeout=600):
-    """Bounded retry around a single chat completion. Escalates the per-call timeout each
-    attempt (600s, 1200s, 1800s by default) and re-raises the last error after `attempts`."""
+def _create_with_retry(client, *, model, request_kwargs, attempts=4, base_timeout=600):
+    """Bounded retry around a single chat completion. Escalates the per-call timeout each attempt
+    and sleeps a short backoff between tries (so a transient 429/timeout from a rate-limited free
+    endpoint rides through instead of killing the run). Re-raises the last error after `attempts`."""
     last = None
     for attempt in range(attempts):
         try:
@@ -32,6 +34,8 @@ def _create_with_retry(client, *, model, request_kwargs, attempts=3, base_timeou
             )
         except _RETRYABLE as exc:
             last = exc
+            if attempt < attempts - 1:
+                time.sleep(min(5.0 * (attempt + 1), 30.0))
     raise last
 
 
@@ -166,11 +170,22 @@ def assemble_context_packet(
     return packet
 
 
+# Hosts the producer is allowed to send prompts to. localhost is the default (llama-swap on the
+# GPU); openrouter.ai is an explicit opt-in for offline lattice production against a hosted model
+# (the prompts are PII *type* surfaces like "metoprolol", not user documents). Anything else is
+# blocked so a stray base_url can't silently exfiltrate prompts.
+_ALLOWED_REMOTE_HOSTS = {"openrouter.ai"}
+
+
+def is_openrouter(base_url: str) -> bool:
+    return (urlparse(base_url).hostname or "") == "openrouter.ai"
+
+
 def ensure_local_base_url(base_url: str) -> None:
-    parsed = urlparse(base_url)
-    host = parsed.hostname or ""
-    if host not in {"localhost", "127.0.0.1", "::1"}:
-        raise ValueError(f"llama-swap base URL must be local, got {base_url}")
+    host = urlparse(base_url).hostname or ""
+    if host in {"localhost", "127.0.0.1", "::1"} or host in _ALLOWED_REMOTE_HOSTS:
+        return
+    raise ValueError(f"base URL must be localhost or an allowed remote ({_ALLOWED_REMOTE_HOSTS}), got {base_url}")
 
 
 def extract_candidate_levels(payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -277,7 +292,13 @@ def propose_with_llama_swap(
     cache_file = _cache_path(cache_dir, cache_key)
     if cache_file.exists():
         return json.loads(cache_file.read_text())
-    client = OpenAI(base_url=base_url, api_key=os.environ.get("OPENAI_API_KEY", "local"))
+    if is_openrouter(base_url):
+        api_key = os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            raise ValueError("OPENROUTER_API_KEY must be set to use the openrouter.ai base URL")
+    else:
+        api_key = os.environ.get("OPENAI_API_KEY", "local")
+    client = OpenAI(base_url=base_url, api_key=api_key)
     prompt = (
         "Return strict JSON only. Propose a reviewable lattice profile row for this item. "
         "Include aliases for the entry, then AT LEAST TWO ordered candidate levels from nearest "
@@ -292,7 +313,10 @@ def propose_with_llama_swap(
         "messages": [{"role": "user", "content": prompt}],
         "response_format": {"type": "json_object"},
     }
-    if thinking_budget_tokens >= 0:
+    if is_openrouter(base_url):
+        # OpenRouter's reasoning knob (not the local llama-swap thinking_budget_tokens field).
+        request_kwargs["extra_body"] = {"reasoning": {"enabled": True}}
+    elif thinking_budget_tokens >= 0:
         request_kwargs["extra_body"] = {"thinking_budget_tokens": thinking_budget_tokens}
     response = _create_with_retry(client, model=model, request_kwargs=request_kwargs)
     content = response.choices[0].message.content or "{}"

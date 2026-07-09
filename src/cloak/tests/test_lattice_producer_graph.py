@@ -333,7 +333,7 @@ def test_rejected_retry_records_after_one_escalation_attempt(tmp_path: Path) -> 
     assert route_after_gate(state) == "record_item_result"
 
 
-def test_retry_proposal_node_uses_qwen36_escalation_model(monkeypatch, tmp_path: Path) -> None:
+def test_retry_proposal_node_uses_state_model_for_escalation(monkeypatch, tmp_path: Path) -> None:
     seen = {}
 
     def fake_propose(item, **kwargs):
@@ -360,12 +360,14 @@ def test_retry_proposal_node_uses_qwen36_escalation_model(monkeypatch, tmp_path:
 
     result = propose_with_llama_swap_node(state)
 
-    assert seen["model"] == QWEN36_ESCALATION_MODEL
-    assert seen["escalation_model"] == QWEN36_ESCALATION_MODEL
+    # the node now threads the configured model through (was hardcoded to Qwen); escalation falls
+    # back to the same model when no distinct escalation_model is set.
+    assert seen["model"] == "gemma 4 (E4B)"
+    assert seen["escalation_model"] == "gemma 4 (E4B)"
     assert result["current_candidates"][0]["level"] == "software privacy professional"
 
 
-def test_first_pass_proposal_node_uses_qwen36_even_if_state_model_is_gemma(monkeypatch, tmp_path: Path) -> None:
+def test_first_pass_proposal_node_uses_state_model(monkeypatch, tmp_path: Path) -> None:
     seen = {}
 
     def fake_propose(item, **kwargs):
@@ -388,6 +390,29 @@ def test_first_pass_proposal_node_uses_qwen36_even_if_state_model_is_gemma(monke
         "runtime_type": "profession",
         "surface": "privacy engineer",
     }
+
+    propose_with_llama_swap_node(state)
+
+    assert seen["model"] == "gemma 4 (E4B)"
+
+
+def test_proposal_node_defaults_to_qwen36_when_no_model_configured(monkeypatch, tmp_path: Path) -> None:
+    seen = {}
+
+    def fake_propose(item, **kwargs):
+        seen.update(kwargs)
+        return {"candidates": [{"level": "software privacy professional"}]}
+
+    monkeypatch.setattr("cloak.lattice_producer.graph.propose_with_llama_swap", fake_propose)
+    state = make_initial_state(
+        run_id="default-model",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+    Path(state["run_dir"]).mkdir()
+    (Path(state["run_dir"]) / "proposals.jsonl").touch()
+    state["current_item"] = {"item_id": "profession:x", "runtime_type": "profession", "surface": "x"}
 
     propose_with_llama_swap_node(state)
 
