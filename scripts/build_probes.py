@@ -20,6 +20,8 @@ import json
 import random
 from pathlib import Path
 
+from cloak.profile_match import match_spans_batch, span_key
+
 TH = 0.5
 OUT = Path("data/probes_validated.json")
 LADDER_VALIDATED_OUT = Path("data/probes_ladder_validated.json")
@@ -357,14 +359,15 @@ DETECT_LABELS = {
 
 
 def _detect_docs(docs, model, threshold, max_words=320):
-    """Fresh zero-shot detection -> {doc_id: [{surface, type, role, sent}]}. `lattice` spans are
-    kept only when (surface, runtime_type) resolves to non-empty levels in lattice_profiles.json;
-    `placeholder`/`quasi` spans are kept as detected (floor anonymization). Deduped per
-    (surface, type). GPU (GLiNER)."""
+    """Fresh zero-shot detection -> {doc_id: [{surface, type, role, sent[, entry]}]}.
+    `lattice` spans resolve through the shared retrieve-then-verify matcher
+    (cloak.profile_match.match_spans_batch - same machinery as the substitutor) and are
+    deduped per (runtime_type, matched canonical entry), so co-referent surfaces collapse to
+    one span per document; matcher abstain drops the span (as a no-profile span is dropped
+    today). `placeholder`/`quasi` spans are deduped per (surface, type). GPU (GLiNER)."""
     import torch
     from gliner import GLiNER
 
-    from cloak.lattice_profiles import lookup_levels
     from cloak.train.ladder_probes import sentence_of
 
     g = GLiNER.from_pretrained(model)
@@ -374,7 +377,7 @@ def _detect_docs(docs, model, threshold, max_words=320):
     out = {}
     for d in docs:
         words = d["text"].split()
-        seen, spans = set(), []
+        seen, cands = set(), []
         for i in range(0, len(words), max_words):
             piece = " ".join(words[i:i + max_words])
             for e in g.predict_entities(piece, labels, threshold=threshold):
@@ -383,10 +386,24 @@ def _detect_docs(docs, model, threshold, max_words=320):
                 if not surface or key in seen:
                     continue
                 seen.add(key)
-                if role == "lattice" and not lookup_levels(surface, rtype):
-                    continue  # lattice role but profile has no row -> not a probe span, drop
-                spans.append({"surface": surface, "type": rtype, "role": role,
+                cands.append({"surface": surface, "type": rtype, "role": role,
                               "sent": sentence_of(d["text"], surface)})
+        lattice_cands = [c for c in cands if c["role"] == "lattice"]
+        matches = match_spans_batch(
+            [(c["surface"], c["type"], c["sent"]) for c in lattice_cands])
+        spans, seen_entries = [], set()
+        for c in cands:
+            if c["role"] != "lattice":
+                spans.append(c)
+                continue
+            m = matches.get(span_key(c["surface"], c["type"]))
+            if m is None:
+                continue  # abstain: not a probe span, drop (current no-profile behavior)
+            entry_key = (c["type"], m.entry)
+            if entry_key in seen_entries:
+                continue  # co-referent duplicate within this document
+            seen_entries.add(entry_key)
+            spans.append({**c, "entry": m.entry})
         out[d["id"]] = spans
     return out
 
