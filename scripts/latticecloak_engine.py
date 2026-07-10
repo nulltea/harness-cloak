@@ -38,7 +38,8 @@ def main():
     qa = qa_pairs(docs)
     sub = Substitutor(tau=args.tau)
     remote = LLMClient(args.gen_model, temperature=0.0, max_tokens=400,
-                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                       single_flight=True)
 
     t0 = time.time()
     rows = []

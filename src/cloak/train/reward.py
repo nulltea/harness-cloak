@@ -59,7 +59,7 @@ def _parse(raw: str) -> str:
     return "" if a.upper().strip(".:` ") == "NONE" else a
 
 
-def _read_batch(questions: list[str], context: str) -> list[str]:
+def _read_batch(questions: list[str], context: str, refresh: bool = False) -> list[str]:
     """Grounded QA over ONE context via the served reader, issued SERIALLY (workers=1) so the
     questions hit one llama.cpp slot in sequence and its prompt-cache reuses the shared note-
     prefix KV (measured ~6.6x faster than fanning them across slots, which re-prefills the
@@ -69,7 +69,8 @@ def _read_batch(questions: list[str], context: str) -> list[str]:
     if not questions:
         return []
     client = _qa_client()
-    return [_parse(client.generate(QA_PROMPT.format(ctx=context, q=q))) for q in questions]
+    return [_parse(client.generate(QA_PROMPT.format(ctx=context, q=q), refresh=refresh))
+            for q in questions]
 
 
 def _qa_answer(question: str, context: str) -> str:
@@ -267,13 +268,13 @@ def fact_score(pred: str, gold: str) -> float:
     return 2 * prec * rec / (prec + rec)
 
 
-def fact_f1s(out_final: str, probes: list[dict]) -> list[float]:
+def fact_f1s(out_final: str, probes: list[dict], refresh: bool = False) -> list[float]:
     """Per-probe realized fact score on out_final — batched generative read (one generate for
     all a doc's questions, which share out_final) + scorer v2. Shared by the round-trip reward,
     probe validation, and the support scan."""
     if not probes:
         return []
-    answers = _read_batch([p["question"] for p in probes], out_final)
+    answers = _read_batch([p["question"] for p in probes], out_final, refresh=refresh)
     return [fact_score(a, p["surface"]) for a, p in zip(answers, probes)]
 
 

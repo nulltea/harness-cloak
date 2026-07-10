@@ -27,7 +27,8 @@ def main():
     args = ap.parse_args()
     docs = load_task_docs("clinical", max(4, args.n // 4))
     remote = LLMClient(RT_MODEL, temperature=0.0, max_tokens=MAX_TOKENS,
-                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                       single_flight=True)
     for w in [int(x) for x in args.workers.split(",")]:
         prompts = [TASK_TEMPLATE["clinical"].format(doc=docs[i % len(docs)]["text"])
                    + f"\n[probe-nonce {uuid.uuid4()}]" for i in range(args.n)]

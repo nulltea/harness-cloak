@@ -85,7 +85,8 @@ def main():
     env = json.loads(Path(args.env).read_text())
     remote = LLMClient(GEN_MODEL, base_url=RT_BASE_URL, temperature=0.0,
                        max_tokens=args.max_tokens,
-                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                       single_flight=True)
     report = {"alpha": args.alpha, "gen_model": GEN_MODEL, "gen_base_url": RT_BASE_URL,
               "arms": ARMS, "corpora": {}}
 

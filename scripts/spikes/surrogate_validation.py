@@ -104,6 +104,7 @@ def main():
         temperature=0.0,
         max_tokens=args.max_tokens,
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        single_flight=True,
     )
     det = Detector()
     t0 = time.time()

@@ -16,7 +16,8 @@ def test_roundtrip_batch_inverts_and_scores(monkeypatch):
     # remote echoes the fill; invert() must map it back; probes scored on out_final
     stub = _StubClient(["Patient is a fifty-something female with chest pain."])
     monkeypatch.setattr(rt, "_remote", lambda: stub)
-    monkeypatch.setattr(rt, "fact_f1s", lambda out, probes: [1.0 if "50" in out else 0.0])
+    monkeypatch.setattr(rt, "fact_f1s",
+                        lambda out, probes, refresh=False: [1.0 if "50" in out else 0.0])
     jobs = [{"corpus": "clinical",
              "doc_p": "a fifty-something female reports chest pain",
              "R": [{"surface": "50-year-old", "type": "DEM", "action": "generalize",
@@ -27,6 +28,63 @@ def test_roundtrip_batch_inverts_and_scores(monkeypatch):
     assert "50-year-old" in res[0]["out_final"]          # inversion fired
     assert res[0]["recall"] == 1.0 and res[0]["f1s"] == [1.0]
     assert "fifty-something female reports" in stub.prompts[0]   # doc_p reached the template
+
+
+def test_remote_gen_client_uses_single_flight(monkeypatch):
+    seen = {}
+
+    class FakeLLMClient:
+        def __init__(self, model, **kwargs):
+            seen["model"] = model
+            seen["kwargs"] = kwargs
+
+        def generate(self, prompt, **kwargs):
+            return "unused"
+
+    import cloak.llm as llm
+    monkeypatch.setenv("CLOAK_LLM_CACHE", "test-cache")
+    monkeypatch.setattr(llm, "LLMClient", FakeLLMClient)
+    monkeypatch.setattr(rt, "_client", None)
+
+    try:
+        rt._remote()
+    finally:
+        monkeypatch.setattr(rt, "_client", None)
+
+    assert seen["model"] == rt.RT_MODEL
+    assert seen["kwargs"]["single_flight"] is True
+
+
+def test_reader_refresh_reaches_reader_but_never_gen(monkeypatch):
+    import cloak.train.reward as rw
+
+    gen_refreshes = []
+    reader_refreshes = []
+
+    class FakeGen:
+        def generate(self, prompt, **kwargs):
+            gen_refreshes.append(kwargs.get("refresh", False))
+            return "Alice received the numbers."
+
+    class FakeReader:
+        def generate(self, prompt, refresh=None, **kwargs):
+            reader_refreshes.append(refresh)
+            return "Alice"
+
+    monkeypatch.setattr(rt, "_remote", lambda: FakeGen())
+    monkeypatch.setattr(rw, "_qa_client", lambda: FakeReader())
+    monkeypatch.setattr(rt, "fact_f1s", rw.fact_f1s)
+
+    jobs = [{"corpus": "enron",
+             "doc_p": "Alice received the numbers.",
+             "R": [],
+             "probes": [{"surface": "Alice", "question": "Who received the numbers?"}]}]
+
+    rt.roundtrip_batch(jobs, workers=1)
+    rt.roundtrip_batch(jobs, workers=1, reader_refresh=True)
+
+    assert reader_refreshes == [False, True]
+    assert gen_refreshes == [False, False]
 
 
 def test_roundtrip_batch_no_probes_gives_none(monkeypatch):

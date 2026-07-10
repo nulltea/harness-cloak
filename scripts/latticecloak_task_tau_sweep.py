@@ -53,7 +53,8 @@ def main():
     print(f"detected {len(docs)} docs in {time.time()-t0:.0f}s", flush=True)
 
     remote = LLMClient(args.gen_model, temperature=0.0, max_tokens=args.max_tokens,
-                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                       single_flight=True)
     outs_ctrl = pmap(lambda d: remote.generate(template.format(doc=d["text"])), docs, workers=args.workers)
     sc_ctrl = _agg(score_batch(outs_ctrl, refs_list, args.bertscore))  # no-privacy ceiling, tau-independent
     print(f"utility_ctrl={sc_ctrl}", flush=True)

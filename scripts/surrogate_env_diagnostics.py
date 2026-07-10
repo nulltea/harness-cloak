@@ -48,7 +48,7 @@ def cached_out_p(corpus: str, doc_p: str) -> str | None:
     if p and Path(p).exists():
         return json.loads(Path(p).read_text())["content"]
     if _remote is None:
-        _remote = LLMClient(GEN_MODEL, **GEN_PARAMS)
+        _remote = LLMClient(GEN_MODEL, **GEN_PARAMS, single_flight=True)
     return _remote.generate(TASK_TEMPLATE[corpus].format(doc=doc_p))
 
 

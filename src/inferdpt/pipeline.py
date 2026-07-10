@@ -77,6 +77,7 @@ def default(
     perturber = Perturber(VocabEmbeddings.load(vocab_cache))
     # These are thinking models; disable reasoning so they emit content directly.
     no_think = {"chat_template_kwargs": {"enable_thinking": False}}
-    gen_client = LLMClient(gen_model, temperature=0.7, max_tokens=256, extra_body=no_think)
+    gen_client = LLMClient(gen_model, temperature=0.7, max_tokens=256,
+                           extra_body=no_think, single_flight=True)
     ext_client = LLMClient(ext_model, temperature=0.3, max_tokens=256, extra_body=no_think)
     return InferDPT(perturber, gen_client, ext_client, epsilon=epsilon)

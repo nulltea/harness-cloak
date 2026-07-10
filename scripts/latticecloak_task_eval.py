@@ -65,7 +65,8 @@ def main():
     from cloak.llm import LLMClient
     from cloak.concurrent import pmap
     remote = LLMClient(args.gen_model, temperature=0.0, max_tokens=args.max_tokens,
-                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                       single_flight=True)
     print(f"generating {len(rows)}x2 with {args.gen_model}...", flush=True)
     outs_p = pmap(lambda r: remote.generate(template.format(doc=r["doc_p"])), rows, workers=args.workers)
     outs_ctrl = pmap(lambda r: remote.generate(template.format(doc=r["doc"])), rows, workers=args.workers)

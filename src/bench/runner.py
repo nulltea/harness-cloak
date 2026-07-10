@@ -171,7 +171,8 @@ def _remote(config: BenchmarkConfig) -> RemoteClientProtocol:
         raise RuntimeError("live remote benchmark requires CLOAK_LLM_CACHE")
     from cloak.llm import LLMClient
 
-    return LLMClient(str(config.remote_model), temperature=0.0, max_tokens=1024)
+    return LLMClient(str(config.remote_model), temperature=0.0, max_tokens=1024,
+                     single_flight=True)
 
 
 def _json(row: object) -> str:

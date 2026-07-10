@@ -2,8 +2,9 @@
 
 R_rt = realized fact recall (graded mean token-F1) on out_final over a doc's train-split
 probes, where out_final = invert(Remote(task_prompt(doc_p)), R). Deterministic given doc_p:
-pinned model, temperature 0, content-addressed disk cache (CLOAK_LLM_CACHE) — the
-determinism is load-bearing (cache = reward memoization = ExIt pool; spec "one subtlety").
+pinned model, temperature 0, single-flight generation, and content-addressed disk cache
+(CLOAK_LLM_CACHE) — the determinism is load-bearing (cache = reward memoization = ExIt
+pool; spec §Determinism under concurrency).
 
 THE reward pin (changing any re-gates): RT_MODEL = "gemma 4 (E4B)" served at
 RT_BASE_URL = "http://localhost:8060/v1", temperature 0, max_tokens 1024, non-thinking.
@@ -39,7 +40,8 @@ def _remote():
             "round-trip reward requires CLOAK_LLM_CACHE (determinism + cost)"
         _client = LLMClient(RT_MODEL, base_url=RT_BASE_URL, temperature=0.0,
                             max_tokens=MAX_TOKENS,
-                            extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                            single_flight=True)
     return _client
 
 
@@ -47,6 +49,7 @@ def roundtrip_batch(
     jobs: list[dict],
     workers: int = 6,
     extractor_models: dict | None = None,
+    reader_refresh: bool = False,
 ) -> list[dict]:
     """jobs: [{corpus, doc_p, R, probes}] -> [{out_p, out_final, f1s, recall}].
     recall = deployed fact_recall (per-fact max, mean over facts), None when no probes.
@@ -55,7 +58,9 @@ def roundtrip_batch(
     Each job's full gen->invert->read->score runs on one worker, so up to `workers` jobs run
     concurrently (across-context parallelism -> the served `-np 6` slots) while `fact_f1s`
     stays serial WITHIN a job (its questions share out_final -> note-prefix KV reuse). workers
-    defaults to 6 to match the served slot count; gen and reader share those slots."""
+    defaults to 6 to match the served slot count; gen is single-flight/cached while
+    reader_refresh can bypass the reader cache for winner re-verification (spec
+    §Determinism under concurrency)."""
     from cloak.concurrent import pmap
     remote = _remote()
     if extractor_models is not None:
@@ -74,7 +79,7 @@ def roundtrip_batch(
                 models=extractor_models,
             )
             extractor_version = frozen_extractor.extractor_version()
-        f1s = fact_f1s(out_final, j["probes"])
+        f1s = fact_f1s(out_final, j["probes"], refresh=reader_refresh)
         by_fact = _max_by_fact(j["probes"], f1s)
         result = {"out_p": op, "out_final": out_final, "f1s": f1s,
                   "recall": (sum(by_fact.values()) / len(by_fact)) if by_fact else None}

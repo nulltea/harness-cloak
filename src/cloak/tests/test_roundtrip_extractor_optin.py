@@ -22,7 +22,7 @@ def test_roundtrip_default_uses_legacy_invert_without_extractor_version(monkeypa
 
     monkeypatch.setattr(rt, "_remote", lambda: stub)
     monkeypatch.setattr(rt, "invert", fake_invert)
-    monkeypatch.setattr(rt, "fact_f1s", lambda out_final, probes: [1.0])
+    monkeypatch.setattr(rt, "fact_f1s", lambda out_final, probes, refresh=False: [1.0])
 
     R = [{"surface": "Alice", "replacement": "<PERSON_1>"}]
     result = rt.roundtrip_batch(
@@ -48,7 +48,7 @@ def test_roundtrip_optin_uses_frozen_extractor_and_stamps_version(monkeypatch):
         return "frozen final", {"unused": True}
 
     monkeypatch.setattr(rt, "_remote", lambda: stub)
-    monkeypatch.setattr(rt, "fact_f1s", lambda out_final, probes: [1.0])
+    monkeypatch.setattr(rt, "fact_f1s", lambda out_final, probes, refresh=False: [1.0])
     monkeypatch.setattr(fx, "extract", fake_extract)
     monkeypatch.setattr(fx, "extractor_version", lambda: "fx-test-version")
 

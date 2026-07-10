@@ -56,7 +56,8 @@ def run(cache, eps_grid, corpus, gen_model, ext_model, out, seed=0, workers=8, l
     print(f"calibrated Z={noise_fn(2.0):.2f} for |C_r|/|V|≈{cr_target} ({cache})")
     rng = np.random.default_rng(seed)
 
-    Y = LLMClient(gen_model, temperature=0.7, max_tokens=256, extra_body=NOTHINK)
+    Y = LLMClient(gen_model, temperature=0.7, max_tokens=256, extra_body=NOTHINK,
+                  single_flight=True)
     X = LLMClient(ext_model, temperature=0.3, max_tokens=256, extra_body=NOTHINK)
     controls = _pmap(lambda d: Y.generate(gen_prompt(d)), docs, workers)  # ε-independent
     ablates = _pmap(lambda d: extract(d, "", X), docs, workers)           # ε-independent (prefix-only)

@@ -66,7 +66,8 @@ def main():
     det = Detector()
     spans_per_doc = {d["author"]: det.detect(d["text"]) for d in docs}
     remote = LLMClient(args.gen_model, temperature=0.0, max_tokens=400,
-                       extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+                       extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                       single_flight=True)
 
     # out_ref is tau-independent: one call per (doc, task)
     ref_rows = [(d, t) for d in docs for t in doc_tasks(d, qa)]
