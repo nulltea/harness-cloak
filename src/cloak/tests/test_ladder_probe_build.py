@@ -141,6 +141,33 @@ def test_validate_ladder_semantic_rungs_use_pre_inversion_floor():
     assert rows[0]["lo_answer"] == ""
 
 
+def test_validate_ladder_semantic_rungs_use_pre_inversion_ceiling():
+    # Guards the CEILING side of F2: rung >= 1 must score against out_p, not out_final.
+    # reader_hi_final returns a non-entailing answer; a regression routing the ceiling check
+    # to out_final would score 0 and reject the rung ("ceiling"), so keeping it proves out_p
+    # was read at the ceiling anchor.
+    entry = {
+        "id": "semantic",
+        "surface": "heart failure",
+        "rungs": ["heart failure", "a cardiovascular disease"],
+        "rung": 1,
+        "q": "What condition category prompted the cardiology follow-up?",
+    }
+
+    kept, rows = validate_ladder(
+        [entry],
+        lambda _q: "",                       # hi_final: would fail if wrongly used for rung 1
+        lambda _q: "a cardiovascular disease",  # hi_p: the correct semantic-channel anchor
+        lambda _q: "heart failure",
+        lambda _q: "",
+        th=0.5,
+    )
+
+    assert [e["id"] for e in kept] == ["semantic"]
+    assert rows[0]["verdict"] == "kept"
+    assert rows[0]["hi_answer"] == "a cardiovascular disease"
+
+
 def test_locator_lint_drops_cross_span_question():
     assert locator_lint(
         "What condition is managed with daily medication?",

@@ -307,9 +307,13 @@ def _teacher(model: str, base_url: str = LOCAL_BASE_URL):
     from cloak.llm import LLMClient
     # chat_template_kwargs is llama.cpp-specific; remote OpenAI-compatible providers may
     # reject unknown extra_body keys, so it is sent only to the local proxy
-    extra = ({"chat_template_kwargs": {"enable_thinking": False}}
-             if "localhost" in base_url else None)
-    return LLMClient(model, base_url=base_url, api_key="x",
+    is_local = "localhost" in base_url
+    extra = {"chat_template_kwargs": {"enable_thinking": False}} if is_local else None
+    # OpenRouter (hosted teacher, same wiring as the lattice producer) authenticates with
+    # OPENROUTER_API_KEY; local proxy is keyless.
+    import os
+    api_key = (os.environ.get("OPENROUTER_API_KEY") if "openrouter.ai" in base_url else "x") or "x"
+    return LLMClient(model, base_url=base_url, api_key=api_key,
                      temperature=0.0, max_tokens=1024, extra_body=extra)
 
 

@@ -208,6 +208,9 @@ def build_ladder(args):
     from cloak.train import ladder_probes as lp
     from cloak.train.roundtrip import roundtrip_batch
 
+    teacher_model = args.teacher_model or lp.TEACHER_MODEL
+    teacher_base_url = args.teacher_base_url or lp.LOCAL_BASE_URL
+
     art = load_artifact(args.arms)
     env = json.loads(Path(args.env).read_text())
     flat_rung0 = _validated_rung0_lookup()
@@ -253,8 +256,10 @@ def build_ladder(args):
             if "hi" in pair
         }
 
-        ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers)
-        decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers)
+        ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers,
+                                            model=teacher_model, base_url=teacher_base_url)
+        decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers,
+                                                model=teacher_model, base_url=teacher_base_url)
         stats = {"docs": 0, "spans": 0, "rung_candidates": 0, "rung_kept": 0,
                  "decisions_kept": 0}
         for d in rows:
@@ -265,7 +270,7 @@ def build_ladder(args):
                 ladders.get(doc_id, []),
                 spans_of.get(doc_id, []),
                 flat_rung0.get(doc_id, {}),
-                teacher=lp.TEACHER_MODEL,
+                teacher=teacher_model,
                 pv=lp.LADDER_PV,
             )
             kept, ladder_rows = lp.validate_ladder(
@@ -308,6 +313,8 @@ def build_ladder(args):
         decision_out,
         {
             "th": args.th,
+            "teacher": teacher_model,
+            "teacher_base_url": teacher_base_url,
             "corpora": args.corpora.split(","),
             "env_path": args.env,
             "built_at": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -341,6 +348,12 @@ def main():
                     help="arms artifact (default: frozen historical; must match --env)")
     ap.add_argument("--ladder", action="store_true",
                     help="build ladder and decision probes from cached anchors")
+    ap.add_argument("--teacher-model", default="",
+                    help="override the ladder/decision teacher (default: ladder_probes.TEACHER_MODEL). "
+                         "Remote OpenRouter model ids (e.g. nvidia/nemotron-3-super-120b-a12b:free) need "
+                         "--teacher-base-url https://openrouter.ai/api/v1 and OPENROUTER_API_KEY set.")
+    ap.add_argument("--teacher-base-url", default="",
+                    help="teacher base_url (default: local proxy; openrouter.ai for hosted teachers)")
     args = ap.parse_args()
 
     if args.ladder:

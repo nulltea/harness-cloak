@@ -122,7 +122,8 @@ def _score_decisions(decisions: list[dict], out_final: str, refresh: bool) -> fl
 
 
 def _template(job: dict) -> str:
-    if job.get("template") == "schema" or (job.get("schema") and job["corpus"] in SCHEMA_TEMPLATE):
+    wants_schema = job.get("template") == "schema" or job.get("schema")
+    if wants_schema and job["corpus"] in SCHEMA_TEMPLATE:
         return SCHEMA_TEMPLATE[job["corpus"]]
     return TASK_TEMPLATE[job["corpus"]]
 
