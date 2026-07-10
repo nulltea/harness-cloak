@@ -794,3 +794,70 @@ def test_review_report_includes_aliases_evidence_and_warning_reasons(tmp_path: P
     assert "count_evidence: Includes privacy engineering and security engineering roles." in report
     assert "rationale: Preserves privacy/security/software context." in report
     assert "weak_semantic_relevance" in report
+
+
+def test_propose_node_consumes_prefetched_payload_without_inline_call(monkeypatch, tmp_path: Path) -> None:
+    from concurrent.futures import Future
+
+    import cloak.lattice_producer.graph as graph_module
+    from cloak.lattice_producer.graph import _PREFETCHER
+
+    profiles = tmp_path / "profiles.json"
+    _profiles(profiles)
+    state = make_initial_state(
+        run_id="prefetch-consume",
+        run_dir=tmp_path / "run",
+        profiles_path=profiles,
+        proposed_out=tmp_path / "proposed.json",
+    )
+    state["current_item"] = {"item_id": "drug:aleve", "runtime_type": "drug", "surface": "aleve"}
+    (tmp_path / "run").mkdir()
+
+    payload = {"candidates": [{"level": "nsaid", "proposed_count": 900, "count_evidence": "e", "selector": "s", "rationale": "r"}]}
+    future: Future = Future()
+    future.set_result(payload)
+    _PREFETCHER._futures["drug:aleve"] = future
+    monkeypatch.setattr(
+        graph_module,
+        "propose_with_llama_swap",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("inline propose must not run when a prefetched payload exists")),
+    )
+    try:
+        result = propose_with_llama_swap_node(state)
+    finally:
+        _PREFETCHER._futures.clear()
+    assert [c["level"] for c in result["current_candidates"]] == ["nsaid"]
+    # a failed prefetch future falls back to the inline call
+    failed: Future = Future()
+    failed.set_exception(RuntimeError("boom"))
+    _PREFETCHER._futures["drug:aleve"] = failed
+    monkeypatch.setattr(graph_module, "propose_with_llama_swap", lambda *a, **k: payload)
+    try:
+        result = propose_with_llama_swap_node(state)
+    finally:
+        _PREFETCHER._futures.clear()
+    assert [c["level"] for c in result["current_candidates"]] == ["nsaid"]
+
+
+def test_will_call_model_mirrors_routing(monkeypatch) -> None:
+    import cloak.lattice_producer.graph as graph_module
+    from cloak.lattice_producer.graph import _will_call_model
+
+    monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: [])
+    monkeypatch.setattr(graph_module, "has_reference_source", lambda rt: rt == "drug")
+    assert _will_call_model({"item_id": "drug:x", "runtime_type": "drug"}) is True  # reference miss -> model
+    assert _will_call_model({"item_id": "LOC:paris", "runtime_type": "LOC"}) is False  # no reference source
+    assert _will_call_model({"item_id": "drug:x", "runtime_type": "drug", "eligible": False}) is False
+    assert _will_call_model({"item_id": "drug:x", "runtime_type": "drug", "task_kind": "generated-universe"}) is False
+    assert _will_call_model({"item_id": "LOC:paris", "runtime_type": "LOC", "force_model_proposal": True}) is True
+
+    insufficient = [{"level": "retinoid", "member_set": frozenset({"a"}), "source_family": "openfda-pharm-class"}]
+    monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: insufficient)
+    assert _will_call_model({"item_id": "drug:accutane", "runtime_type": "drug"}) is True  # augment path
+
+    sufficient = [
+        {"level": "l1", "member_set": frozenset(f"m{i}" for i in range(150))},
+        {"level": "l2", "member_set": frozenset(f"m{i}" for i in range(200))},
+    ]
+    monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: sufficient)
+    assert _will_call_model({"item_id": "drug:x", "runtime_type": "drug"}) is False  # chain sufficient

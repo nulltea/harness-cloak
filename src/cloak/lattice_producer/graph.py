@@ -135,6 +135,8 @@ def select_next_item(state: ProducerState) -> ProducerState:
             continue
         if max_items is not None and processed >= int(max_items):
             return {"current_item": None, "queue_index": idx}
+        upcoming = [q for q in queue[idx:] if str(q.get("item_id")) not in seen]
+        _PREFETCHER.submit_lookahead(state, upcoming[: _PREFETCHER.workers * 3])
         return {"current_item": item, "queue_index": idx}
     return {"current_item": None, "queue_index": idx, "queue_exhausted": True}
 
@@ -275,13 +277,98 @@ def merge_anchor_and_model(anchors: list[dict[str, Any]], model_cands: list[dict
     return out
 
 
-def _deterministic_chain_sufficient(state: ProducerState) -> bool:
-    candidates = state.get("current_candidates") or []
-    item = state.get("current_item") or {}
-    runtime_type = str(item.get("runtime_type") or "")
+def _chain_sufficient(candidates: list[dict[str, Any]], runtime_type: str) -> bool:
     floor = float(K_FLOORS.get(runtime_type, 100.0))
     sizes = [len(candidate["member_set"]) for candidate in candidates if candidate.get("member_set")]
     return len(candidates) >= 2 and bool(sizes) and max(sizes) >= floor
+
+
+def _deterministic_chain_sufficient(state: ProducerState) -> bool:
+    item = state.get("current_item") or {}
+    return _chain_sufficient(list(state.get("current_candidates") or []), str(item.get("runtime_type") or ""))
+
+
+def _propose_kwargs(state: ProducerState) -> dict[str, Any]:
+    model = state.get("model") or QWEN36_ESCALATION_MODEL
+    return {
+        "profiles_path": state["profiles_path"],
+        "run_dir": state["run_dir"],
+        "prompt_version": state["prompt_version"],
+        "max_context_rows": state["max_context_rows"],
+        "base_url": state["base_url"],
+        "model": model,
+        "escalation_model": state.get("escalation_model") or model,
+        "thinking_budget_tokens": int(state.get("thinking_budget_tokens", -1)),
+        "proposed_out": state["proposed_out"],
+    }
+
+
+def _will_call_model(item: dict[str, Any]) -> bool:
+    """Mirror of route_selected + route_after_deterministic for the prefetcher: True iff this
+    item's turn will issue a model call. Conservative -- anything unrecognized returns False
+    and that item simply proposes inline, exactly as before."""
+    if not item.get("eligible", True):
+        return False
+    if item.get("task_kind") == "generated-universe" or item.get("entry_origin") == "generated-universe":
+        return False
+    if item.get("force_model_proposal"):
+        return True
+    candidates = reference_candidates_for(item)
+    if candidates:
+        return not _chain_sufficient(candidates, str(item.get("runtime_type") or ""))
+    return has_reference_source(str(item.get("runtime_type") or ""))
+
+
+class _ProposalPrefetcher:
+    """Read-ahead pool for the model call (the ~44s decode that dominates wall time): while the
+    graph loop gates the current item, N workers run propose_with_llama_swap for upcoming
+    model-route items. Handoff is by item_id in memory -- the disk cache cannot carry it because
+    its key includes the evolving context_packet_hash. Prefetched prompts therefore see slightly
+    stale context rows (same staleness a resume already tolerates); gates, counts, and artifact
+    persistence remain strictly serial in the graph loop."""
+
+    def __init__(self) -> None:
+        self.workers = 1
+        self._pool = None
+        self._futures: dict[str, Any] = {}
+
+    def configure(self, workers: int) -> None:
+        self.workers = max(1, int(workers))
+        if self.workers > 1 and self._pool is None:
+            from concurrent.futures import ThreadPoolExecutor
+
+            self._pool = ThreadPoolExecutor(max_workers=self.workers, thread_name_prefix="propose-prefetch")
+
+    def shutdown(self) -> None:
+        if self._pool is not None:
+            self._pool.shutdown(wait=False, cancel_futures=True)
+            self._pool = None
+        self._futures.clear()
+
+    def submit_lookahead(self, state: ProducerState, upcoming: list[dict[str, Any]]) -> None:
+        if self._pool is None or state.get("offline_only"):
+            return
+        pending = sum(1 for future in self._futures.values() if not future.done())
+        for item in upcoming:
+            if pending >= self.workers:
+                break
+            item_id = str(item.get("item_id"))
+            if item_id in self._futures or not _will_call_model(item):
+                continue
+            self._futures[item_id] = self._pool.submit(propose_with_llama_swap, dict(item), **_propose_kwargs(state))
+            pending += 1
+
+    def take(self, item_id: str) -> dict[str, Any] | None:
+        future = self._futures.pop(str(item_id), None)
+        if future is None:
+            return None
+        try:
+            return future.result()
+        except Exception:
+            return None  # node falls back to the inline call (which has its own retry)
+
+
+_PREFETCHER = _ProposalPrefetcher()
 
 
 def route_after_deterministic(
@@ -299,18 +386,7 @@ def route_after_deterministic(
 def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
     item = state["current_item"] or {}
     model = state.get("model") or QWEN36_ESCALATION_MODEL
-    proposal = propose_with_llama_swap(
-        item,
-        profiles_path=state["profiles_path"],
-        run_dir=state["run_dir"],
-        prompt_version=state["prompt_version"],
-        max_context_rows=state["max_context_rows"],
-        base_url=state["base_url"],
-        model=model,
-        escalation_model=state.get("escalation_model") or model,
-        thinking_budget_tokens=int(state.get("thinking_budget_tokens", -1)),
-        proposed_out=state["proposed_out"],
-    )
+    proposal = _PREFETCHER.take(str(item.get("item_id"))) or propose_with_llama_swap(item, **_propose_kwargs(state))
     append_jsonl_unique(
         _jsonl_path(state, "proposals.jsonl"),
         [{**proposal, "item_id": item.get("item_id"), "retry_attempt": int(item.get("retry_attempt", 0)), "model_used": model}],
@@ -331,18 +407,7 @@ def augment_with_model_node(state: ProducerState) -> ProducerState:
     item = state["current_item"] or {}
     anchors = list(state.get("current_candidates") or [])
     model = state.get("model") or QWEN36_ESCALATION_MODEL
-    proposal = propose_with_llama_swap(
-        item,
-        profiles_path=state["profiles_path"],
-        run_dir=state["run_dir"],
-        prompt_version=state["prompt_version"],
-        max_context_rows=state["max_context_rows"],
-        base_url=state["base_url"],
-        model=model,
-        escalation_model=state.get("escalation_model") or model,
-        thinking_budget_tokens=int(state.get("thinking_budget_tokens", -1)),
-        proposed_out=state["proposed_out"],
-    )
+    proposal = _PREFETCHER.take(str(item.get("item_id"))) or propose_with_llama_swap(item, **_propose_kwargs(state))
     append_jsonl_unique(
         _jsonl_path(state, "proposals.jsonl"),
         [{**proposal, "item_id": item.get("item_id"), "augment": True, "model_used": model}],
@@ -752,8 +817,10 @@ def run_producer(
     allow_canonical_overwrite: bool = False,
     category: str | None = None,
     categories: list[str] | None = None,
+    workers: int = 1,
 ) -> ProducerState:
     run_id = run_id or Path(run_dir).name
+    _PREFETCHER.configure(workers)
     state = make_initial_state(
         run_id=run_id,
         run_dir=run_dir,
@@ -775,7 +842,10 @@ def run_producer(
         categories=categories,
     )
     app = build_graph().compile(checkpointer=_checkpointer(run_dir))
-    result = app.invoke(state, {"configurable": {"thread_id": thread_id_for_run(run_id)}})
+    try:
+        result = app.invoke(state, {"configurable": {"thread_id": thread_id_for_run(run_id)}})
+    finally:
+        _PREFETCHER.shutdown()
     if isinstance(result, Command):
         raise RuntimeError("unexpected command result")
     return result
