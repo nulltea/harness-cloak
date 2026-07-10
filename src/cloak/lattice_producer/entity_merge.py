@@ -53,10 +53,20 @@ def doid_synonyms(obo_path: str = str(DEFAULT_DOID_OBO)) -> dict[str, list[str]]
 
 def row_ontology_id(canonical: str, row: dict[str, Any],
                     surface_index: dict[str, str]) -> str | None:
-    """Unanimous ontology id across the row's surfaces; None when unknown or conflicting."""
-    ids = {surface_index[key] for key in map(_norm, _row_surfaces(canonical, row))
-           if key in surface_index}
-    return next(iter(ids)) if len(ids) == 1 else None
+    """Ontology id for the row, canonical-surface-first.
+
+    The canonical surface names the entity; aliases are often broader/narrower or noisy and must
+    not overrule it. So: if the canonical resolves, that id wins outright. Only when the canonical
+    is unlinked do aliases decide, and then unanimously (conflicting aliases -> None). Requiring
+    ALL surfaces to agree (the earlier rule) silently dropped the id of cleanly-linked rows whose
+    aliases pointed elsewhere, sending genuinely-distinct diseases into the gate where an NLI
+    scorer merged antonym pairs (hyper-/hypo- prefixed conditions scored 0.91 and merged)."""
+    canon_id = surface_index.get(_norm(canonical))
+    if canon_id is not None:
+        return canon_id
+    alias_ids = {surface_index[_norm(a)] for a in row.get("aliases", [])
+                 if _norm(a) in surface_index}
+    return next(iter(alias_ids)) if len(alias_ids) == 1 else None
 
 
 def block_pairs(entries: dict[str, dict], embed_fn: Callable | None = None) -> set[tuple[str, str]]:

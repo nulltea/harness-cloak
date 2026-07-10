@@ -56,12 +56,20 @@ def test_surface_index_skips_ambiguous_and_maps_synonyms(tmp_path):
     assert "ambiguous surface" not in idx          # claimed by two ids -> excluded
 
 
-def test_row_ontology_id_requires_unanimous_surfaces(tmp_path):
+def test_row_ontology_id_canonical_surface_wins(tmp_path):
     idx = doid_surface_index(_obo(tmp_path))
     assert row_ontology_id("blorbitis", _row(["organ disease"]), idx) == "DOID:0000001"
-    # aliases spanning two ids -> conflicting row, no id
+    # canonical resolves cleanly -> its id wins even if an alias points to another entity
+    # (the real hyper-/hypo- bug: noisy aliases must not strip a cleanly-linked row's id).
     mixed = _row(["organ disease"], aliases=["glimmer syndrome"])
-    assert row_ontology_id("blorbitis", mixed, idx) is None
+    assert row_ontology_id("blorbitis", mixed, idx) == "DOID:0000001"
+    # canonical unlinked -> a single alias id decides
+    assert row_ontology_id("unknownitis", _row(["organ disease"],
+                                              aliases=["blorb inflammation"]), idx) == "DOID:0000001"
+    # canonical unlinked, aliases conflict -> None
+    assert row_ontology_id("unknownitis",
+                           _row(["organ disease"],
+                                aliases=["blorb inflammation", "glimmer syndrome"]), idx) is None
     assert row_ontology_id("unknownitis", _row(["organ disease"]), idx) is None
 
 
