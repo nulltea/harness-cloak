@@ -415,6 +415,7 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
     through the cached round trip. Returns (winners, stats)."""
     torch.manual_seed(seed)
     jobs, meta = [], []          # baseline job per doc first, then G rollouts per doc
+    bc_jobs = {}
     for di, doc in enumerate(docs):
         # ExIt reference = THE floor-walk baseline via floor_walk_choice (walk-order collision
         # rule resolves colliding fills to placeholder), per spec Phase 2: a rollout is a
@@ -422,8 +423,10 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
         # construction, so assemble() can no longer collide.
         bc_choice = floor_walk_choice(doc["spans"])
         doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], bc_choice)
-        jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-                     "probes": doc["probes_train"]})
+        job = {"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+               "probes": doc["probes_train"]}
+        jobs.append(job)
+        bc_jobs[di] = job
         meta.append(("bc", di, None))
         for _ in range(G):
             choice, _, _, doc_p, R, _ = sample_rollout(doc, doc["spans"], doc["feats"], policy)
@@ -431,29 +434,50 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
                        i for i, a in enumerate(s["actions"])
                        if a is choice[s["surface"].lower()])
                    for s in doc["spans"]}
-            jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-                         "probes": doc["probes_train"]})
+            job = {"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+                   "probes": doc["probes_train"]}
+            jobs.append(job)
             meta.append(("roll", di, idx))
     res = roundtrip_batch(jobs, workers=rt_workers)
     it = iter(res)
     bc_r, rolls = {}, {di: [] for di in range(len(docs))}
-    for kind, di, idx in meta:
+    for (kind, di, idx), job in zip(meta, jobs):
         r = next(it)["recall"] or 0.0
         if kind == "bc":
             bc_r[di] = r
         else:
-            rolls[di].append((r, idx))
-    winners, best_rs = [], []
+            rolls[di].append((r, idx, job))
+    winners, clean_bc_r = [], {}
+    best_rs = []
+    n_candidates = 0
+    n_verify_dropped = 0
     for di in range(len(docs)):
         if not rolls[di]:
             continue
-        best_r, best_idx = max(rolls[di], key=lambda t: t[0])
+        best_r = max(r for r, _, _ in rolls[di])
         best_rs.append(best_r)
         if best_r > bc_r[di]:
-            winners.append((di, best_idx))
+            n_candidates += 1
+            kept = False
+            for r, idx, win_job in rolls[di]:
+                if r != best_r:
+                    continue
+                clean_win = roundtrip_batch(
+                    [win_job], workers=1, reader_refresh=True)[0]["recall"] or 0.0
+                if di not in clean_bc_r:
+                    clean_bc_r[di] = roundtrip_batch(
+                        [bc_jobs[di]], workers=1, reader_refresh=True)[0]["recall"] or 0.0
+                if clean_win > clean_bc_r[di]:
+                    winners.append((di, idx))
+                    kept = True
+                    break
+            if not kept:
+                n_verify_dropped += 1
     bc_vals = list(bc_r.values())
     stats = {"mean_best_r": round(sum(best_rs) / max(len(best_rs), 1), 4),
              "mean_bc_r": round(sum(bc_vals) / len(bc_vals), 4) if bc_vals else None,
+             "n_candidates": n_candidates,
+             "n_verify_dropped": n_verify_dropped,
              "n_winners": len(winners)}
     return winners, stats
 

@@ -24,10 +24,141 @@ def _doc():
             "probes_train": [{"surface": "metformin", "question": "What drug?"}]}
 
 
+def _exit_doc():
+    actions = [{"mode": "level", "fill": "a biguanide", "aset": 100.0, "p6": 0.8,
+                "walk_risk": 0.0},
+               {"mode": "level", "fill": "a medication", "aset": 200.0, "p6": 0.7,
+                "walk_risk": 0.0},
+               {"mode": "placeholder", "fill": "<QUANTITY_1>", "p6": 0.0,
+                "walk_risk": 0.0}]
+    span = {"surface": "metformin", "type": "QUANTITY", "start": 0, "actions": actions}
+    raw = [dict(span)]
+    spans, feats = tr.derive_spans(raw, {"QUANTITY": 100.0}, "clinical", "cpu")
+    return {"id": "d0", "corpus": "clinical", "text": "metformin daily",
+            "R_walk": [{"surface": "metformin", "type": "QUANTITY", "action": "generalize",
+                        "replacement": "a biguanide", "start": 0, "end": 9,
+                        "lattice": ["a biguanide", "a medication"]}],
+            "raw_spans": raw, "spans": spans, "feats": feats,
+            "probes_train": [{"surface": "metformin", "question": "What drug?"}]}
+
+
 def fake_roundtrip(jobs, workers=1):
     # reward 1.0 iff the level fill survived into doc_p, else 0.0
     return [{"out_p": "", "out_final": j["doc_p"], "f1s": [float("biguanide" in j["doc_p"])],
              "recall": float("biguanide" in j["doc_p"])} for j in jobs]
+
+
+def _candidate_rollout(doc, span_rows, feats, policy):
+    choice = {"metformin": span_rows[0]["actions"][1]}
+    doc_p, R = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
+    return choice, [], 0.0, doc_p, R, []
+
+
+def _rollout_sequence(action_indices):
+    actions = iter(action_indices)
+
+    def rollout(doc, span_rows, feats, policy):
+        action_idx = next(actions)
+        choice = {"metformin": span_rows[0]["actions"][action_idx]}
+        doc_p, R = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
+        return choice, [], 0.0, doc_p, R, []
+
+    return rollout
+
+
+def _assert_serial_verify_calls(calls):
+    assert len(calls) == 3
+    assert calls[0]["workers"] == 9
+    assert calls[0]["reader_refresh"] is False
+    assert len(calls[0]["doc_ps"]) == 2
+    assert all(call["workers"] == 1 for call in calls[1:])
+    assert all(call["reader_refresh"] is True for call in calls[1:])
+    assert sorted(call["doc_ps"][0] for call in calls[1:]) == [
+        "A biguanide daily", "A medication daily"]
+
+
+def test_exit_round_keeps_candidate_after_serial_reverification(monkeypatch):
+    doc = _exit_doc()
+    calls = []
+
+    def fake_roundtrip_exit(jobs, workers=1, reader_refresh=False):
+        calls.append({"doc_ps": [j["doc_p"] for j in jobs], "workers": workers,
+                      "reader_refresh": reader_refresh})
+        if not reader_refresh:
+            return [{"recall": 0.2}, {"recall": 0.9}]
+        return [{"recall": 0.8 if "medication" in jobs[0]["doc_p"].lower() else 0.4}]
+
+    monkeypatch.setattr(tr, "sample_rollout", _candidate_rollout)
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_exit)
+
+    winners, stats = tr.exit_round([doc], tr.RankerPolicy(), G=1, rt_workers=9, seed=0)
+
+    assert winners == [(0, {"metformin": 1})]
+    assert stats["n_candidates"] == 1
+    assert stats["n_winners"] == 1
+    assert stats["n_verify_dropped"] == 0
+    _assert_serial_verify_calls(calls)
+
+
+def test_exit_round_drops_candidate_when_clean_baseline_catches_up(monkeypatch):
+    doc = _exit_doc()
+    calls = []
+
+    def fake_roundtrip_exit(jobs, workers=1, reader_refresh=False):
+        calls.append({"doc_ps": [j["doc_p"] for j in jobs], "workers": workers,
+                      "reader_refresh": reader_refresh})
+        if not reader_refresh:
+            return [{"recall": 0.2}, {"recall": 0.9}]
+        return [{"recall": 0.3 if "medication" in jobs[0]["doc_p"].lower() else 0.4}]
+
+    monkeypatch.setattr(tr, "sample_rollout", _candidate_rollout)
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_exit)
+
+    winners, stats = tr.exit_round([doc], tr.RankerPolicy(), G=1, rt_workers=9, seed=0)
+
+    assert winners == []
+    assert stats["n_candidates"] == 1
+    assert stats["n_winners"] == 0
+    assert stats["n_verify_dropped"] == 1
+    _assert_serial_verify_calls(calls)
+
+
+def test_exit_round_uses_verification_as_tiebreak_and_keeps_one_winner(monkeypatch):
+    doc = _exit_doc()
+    calls = []
+
+    def fake_roundtrip_exit(jobs, workers=1, reader_refresh=False):
+        calls.append({"doc_ps": [j["doc_p"] for j in jobs], "workers": workers,
+                      "reader_refresh": reader_refresh})
+        if not reader_refresh:
+            return [{"recall": 0.2}, {"recall": 0.9}, {"recall": 0.9}]
+        doc_p = jobs[0]["doc_p"].lower()
+        if "biguanide" in doc_p:
+            return [{"recall": 0.4}]
+        if "medication" in doc_p:
+            return [{"recall": 0.8}]
+        return [{"recall": 0.3}]
+
+    monkeypatch.setattr(tr, "sample_rollout", _rollout_sequence([2, 1]))
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_exit)
+
+    winners, stats = tr.exit_round([doc], tr.RankerPolicy(), G=2, rt_workers=9, seed=0)
+
+    assert winners == [(0, {"metformin": 1})]
+    assert stats["n_candidates"] == 1
+    assert stats["n_winners"] == 1
+    assert stats["n_verify_dropped"] == 0
+    assert stats["n_candidates"] == stats["n_winners"] + stats["n_verify_dropped"]
+    assert len(calls) == 4
+    assert calls[0]["workers"] == 9
+    assert calls[0]["reader_refresh"] is False
+    assert len(calls[0]["doc_ps"]) == 3
+    assert all(call["workers"] == 1 for call in calls[1:])
+    assert all(call["reader_refresh"] is True for call in calls[1:])
+    clean_doc_ps = [call["doc_ps"][0].lower() for call in calls[1:]]
+    assert clean_doc_ps == ["<quantity_1> daily", "a biguanide daily",
+                            "a medication daily"]
+    assert sum("biguanide" in doc_p for doc_p in clean_doc_ps) == 1
 
 
 def test_sample_rollout_shapes():
