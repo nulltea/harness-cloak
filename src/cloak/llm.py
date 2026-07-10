@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import tempfile
 import threading
 
 from openai import OpenAI
@@ -39,6 +40,35 @@ def _cache_path(
         default=str,
     )
     return os.path.join(cache_dir, hashlib.sha256(blob.encode()).hexdigest() + ".json")
+
+
+def _read_cache(path: str) -> str | None:
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path) as f:
+            return json.load(f)["content"]
+    except json.JSONDecodeError:
+        return None
+
+
+def _write_cache(path: str, content: str, model: str) -> None:
+    cache_dir = os.path.dirname(path)
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=cache_dir, delete=False) as f:
+            tmp_path = f.name
+            json.dump({"content": content, "model": model}, f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp_path, path)
+        tmp_path = None
+    finally:
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except FileNotFoundError:
+                pass
 
 
 class LLMClient:
@@ -85,11 +115,16 @@ class LLMClient:
         """
         params = {**self._defaults, **overrides}
         path = _cache_path(self.model, messages, params, self.base_url)
-        if path and not refresh and os.path.exists(path):
-            with open(path) as f:
-                return json.load(f)["content"]
+        if path and not refresh:
+            cached = _read_cache(path)
+            if cached is not None:
+                return cached
         if self.single_flight:
             with self._lock_for(self.base_url, self.model):
+                if path and not refresh:
+                    cached = _read_cache(path)
+                    if cached is not None:
+                        return cached
                 return self._compute(messages, params, path)
         return self._compute(messages, params, path)
 
@@ -97,8 +132,7 @@ class LLMClient:
         resp = self._client.chat.completions.create(model=self.model, messages=messages, **params)
         content = resp.choices[0].message.content or ""
         if path:
-            with open(path, "w") as f:
-                json.dump({"content": content, "model": self.model}, f)
+            _write_cache(path, content, self.model)
         return content
 
     def generate(

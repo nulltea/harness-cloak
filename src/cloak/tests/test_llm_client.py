@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from types import SimpleNamespace
 
 import pytest
 
+from cloak import llm
 from cloak.llm import LLMClient
 
 
@@ -72,6 +74,66 @@ def test_refresh_bypasses_and_overwrites(monkeypatch, tmp_path):
     # subsequent normal call reads the refreshed value
     assert c.chat(msgs) == "second"
     assert len(c._client.calls) == 2
+
+
+def test_cache_write_uses_atomic_replace(monkeypatch, tmp_path):
+    calls = []
+    real_replace = llm.os.replace
+
+    def replace_spy(src, dst):
+        calls.append((src, dst))
+        real_replace(src, dst)
+
+    monkeypatch.setattr(llm.os, "replace", replace_spy)
+    c = _make_client(monkeypatch, tmp_path, transport=FakeTransport(reply="atomic"))
+
+    assert c.chat([{"role": "user", "content": "write"}]) == "atomic"
+
+    assert len(calls) == 1
+    src, dst = calls[0]
+    assert src != dst
+    assert llm.os.path.dirname(llm.os.fspath(src)) == llm.os.path.dirname(llm.os.fspath(dst))
+    assert _cache_files(tmp_path) == [llm.os.path.basename(llm.os.fspath(dst))]
+
+
+def test_single_flight_double_checks_cache_for_cold_key(monkeypatch, tmp_path):
+    transport = FakeTransport(reply="once", delay=0.1)
+    c = _make_client(monkeypatch, tmp_path, single_flight=True, transport=transport)
+    msgs = [{"role": "user", "content": "same cold key"}]
+    barrier = threading.Barrier(2)
+    results = []
+    errors = []
+
+    def worker():
+        try:
+            barrier.wait()
+            results.append(c.chat(msgs))
+        except Exception as exc:  # pragma: no cover - surfaced below
+            errors.append(exc)
+
+    threads = [threading.Thread(target=worker) for _ in range(2)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+
+    assert errors == []
+    assert results == ["once", "once"]
+    assert len(transport.calls) == 1
+
+
+def test_corrupt_cache_file_is_treated_as_miss(monkeypatch, tmp_path):
+    msgs = [{"role": "user", "content": "corrupt"}]
+    c = _make_client(monkeypatch, tmp_path, transport=FakeTransport(reply="fresh"))
+
+    assert c.chat(msgs) == "fresh"
+    cache_path = next(tmp_path.glob("*.json"))
+    cache_path.write_text('{"content": ')
+
+    c._client.reply = "recovered"
+    assert c.chat(msgs) == "recovered"
+    assert len(c._client.calls) == 2
+    assert json.loads(cache_path.read_text())["content"] == "recovered"
 
 
 def test_refresh_not_in_params(monkeypatch, tmp_path):
