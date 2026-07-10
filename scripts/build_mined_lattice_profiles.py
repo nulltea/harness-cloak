@@ -145,6 +145,11 @@ def _gate_and_build_rows(
                 stats["noise_skipped" if decision.layer == "denylist" else "gate_dropped"] += 1
                 continue
             if decision.action == "retype" and decision.new_type:
+                if decision.new_type not in FALLBACK_LEVELS:
+                    # real entity of a type this miner doesn't build rows for (e.g. a place
+                    # name detected as clinical) -> out of scope, skip rather than crash
+                    stats["gate_retyped_out"] = stats.get("gate_retyped_out", 0) + 1
+                    continue
                 runtime_type = decision.new_type
                 stats["gate_retyped"] += 1
                 # re-run type-specific surface handling for the NEW type: the surface was
