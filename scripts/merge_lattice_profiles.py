@@ -110,8 +110,17 @@ def _merge_row(runtime_type: str, existing_canonical: str, existing: dict, incom
     if runtime_type == "drug":
         source_ids = list(existing.get("source_ids", []))[:DRUG_SOURCE_ID_LIMIT]
     merged_levels = _merge_unique_preserve_order(list(existing.get("levels", [])), list(incoming.get("levels", [])))
+    # Folding a narrower surface into a broader canonical (e.g. "aortic valve stenosis" -> alias
+    # of "aortic valve disease") pulls the narrower entry's most-specific level, which can BE the
+    # canonical surface -- a self-referential level that leaks the original. Drop any merged level
+    # containing the canonical surface, the same invariant validate_profile_artifact() enforces.
+    surface_norm = _norm(existing_canonical)
+    merged_levels = [level for level in merged_levels if surface_norm not in _norm(level)]
+    surviving = set(merged_levels)
     casing_by_norm = {_norm(level): level for level in merged_levels}
     level_counts, level_grounding = _merge_level_counts(existing, incoming, casing_by_norm)
+    level_counts = {level: value for level, value in level_counts.items() if level in surviving}
+    level_grounding = {level: g for level, g in level_grounding.items() if level in surviving}
     if level_counts:
         # existing-then-incoming concatenation order doesn't know which side is narrower --
         # e.g. existing's sole level "infectious disease" (a broad category) would otherwise
@@ -125,6 +134,7 @@ def _merge_row(runtime_type: str, existing_canonical: str, existing: dict, incom
         "levels": merged_levels,
         "source_ids": source_ids,
         "count": max(float(existing.get("count", 1.0) or 1.0), float(incoming.get("count", 1.0) or 1.0)),
+        "entry_origin": existing.get("entry_origin") or incoming.get("entry_origin", "observed-surface"),
     }
     if level_counts:
         row["level_counts"] = level_counts

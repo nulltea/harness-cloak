@@ -93,6 +93,7 @@ def test_merge_profile_artifacts_dedupes_mined_entry_against_existing_alias():
         "levels": ["medication", "over the counter medication"],
         "source_ids": ["common:acetaminophen"],
         "count": 1000.0,
+        "entry_origin": "observed-surface",
     }
 
 
@@ -144,6 +145,52 @@ def test_merge_profile_artifacts_carries_level_counts_into_matched_entry():
         "chemical substance": 249969031.57,
     }
     assert row["level_grounding"]["aminoketone"]["status"] == "certifying"
+
+
+def test_merge_profile_artifacts_drops_self_referential_level_from_folded_narrower_entry():
+    # regression: a narrower entry ("aortic valve stenosis") folds into the broader canonical
+    # ("aortic valve disease") via alias match; its most-specific level IS the canonical surface,
+    # which would leak the original. The merge must drop that self-referential level (and its
+    # level_counts/level_grounding) rather than emit an artifact validate_profile_artifact rejects.
+    common = {
+        "schema_version": 1,
+        "created": "2026-07-01",
+        "sources": {},
+        "profiles": {
+            "health-condition": {
+                "aortic valve disease": _row(
+                    ["heart valve disease", "heart disease"],
+                    aliases=["aortic valve stenosis"],
+                    count=1.0,
+                ),
+            },
+        },
+    }
+    mined = {
+        "schema_version": 1,
+        "created": "2026-07-08",
+        "sources": {},
+        "profiles": {
+            "health-condition": {
+                "aortic valve stenosis": {
+                    "aliases": [],
+                    "levels": ["aortic valve disease", "heart valve disease"],
+                    "source_ids": ["producer:x:aortic valve stenosis"],
+                    "count": 1.0,
+                    "level_counts": {"aortic valve disease": 29.0, "heart valve disease": 40.0},
+                    "level_grounding": {"aortic valve disease": {"status": "model-proposed"}},
+                }
+            }
+        },
+    }
+
+    artifact = merge_profile_artifacts(common, mined, created="2026-07-08")
+    row = artifact["profiles"]["health-condition"]["aortic valve disease"]
+
+    assert "aortic valve disease" not in row["levels"]
+    assert "aortic valve disease" not in row.get("level_counts", {})
+    assert "aortic valve disease" not in row.get("level_grounding", {})
+    assert "aortic valve stenosis" in row["aliases"]
 
 
 def test_merge_profile_artifacts_matches_level_counts_casing_to_merged_levels():

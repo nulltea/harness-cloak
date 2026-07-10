@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-07-10
 tags: [substitution, lattice, cache, schema, datasets]
 companion: [docs/specs/lattice-substitutor.md, docs/plans/2026-07-07-fine-lattice-dataset-build.md]
 ---
@@ -89,13 +89,43 @@ standard dataset-backed lattice cache.
         "aliases": [],
         "levels": ["a coffee shop", "a retail chain", "a commercial establishment"],
         "source_ids": ["legacy-teacher-cache:starbucks"],
-        "count": 1.0
+        "count": 1.0,
+        "entry_origin": "observed-surface"
       },
       "sberbank": {
         "aliases": [],
         "levels": ["a financial institution", "an organization"],
         "source_ids": ["legacy-teacher-cache:sberbank"],
-        "count": 1.0
+        "count": 1.0,
+        "entry_origin": "observed-surface"
+      }
+    },
+    "drug": {
+      "bupropion": {
+        "aliases": [],
+        "levels": ["aminoketone", "central nervous system agent"],
+        "source_ids": ["producer:drug-health-procedure-nemotron-3-super:drug:bupropion"],
+        "count": 9.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "aminoketone": 9.0,
+          "central nervous system agent": 400.0
+        },
+        "level_grounding": {
+          "aminoketone": {
+            "status": "certifying",
+            "source_family": "openfda-pharm-class",
+            "selector": "openfda_ndc.pharm_class == 'Aminoketone [EPC]'",
+            "member_set_ref": "openfda-ndc:pharm_class:Aminoketone [EPC]"
+          },
+          "central nervous system agent": {
+            "status": "model-proposed",
+            "source_family": "model-proposed",
+            "count_basis": "real-world-reference-estimate",
+            "selector": "central nervous system agent",
+            "member_set_ref": null
+          }
+        }
       }
     },
     "profession": {
@@ -156,9 +186,28 @@ standard dataset-backed lattice cache.
   stored here; runtime appends the typed placeholder where required.
 - `source_ids`: source-local provenance identifiers such as `cldr:DE` or `esco:<uuid>`.
 - `count`: conservative anonymity-set count for the row's lattice fills.
+- `entry_origin`: how the row's surface was obtained. `observed-surface` (a real surface from a corpus or a
+  seed dataset — GeoNames/CLDR/ESCO and every dataset-seeded row use this) or `generated-universe` (a synthetic
+  surface produced by the lattice producer to fill out a level's membership). Runtime lookup ignores this field.
+- `level_counts` (optional): per-level anonymity-set size, keyed by a member of `levels`. An explicit value is
+  an absolute estimate for that generalization tier, not a per-surface frequency, and it overrides the legacy
+  row-`count` fallback in the runtime `(runtime_type, level) -> count` index. Carried by the producer-built
+  types (`drug`/`health-condition`/`medical-procedure`) and by `LOC`/`nationality`/`organization-medical-facility`,
+  whose per-level counts are deterministically countable (GeoNames universe / CLDR M49 containment /
+  corpus-membership; see `scripts/spikes/ground_deterministic_level_counts.py`). The remaining dataset-seeded types carry only the
+  row-level `count`, since their per-level anonymity sizes are not grounded (fabricating them would invent
+  privacy numbers). A row may carry counts for only a subset of its levels — the k-anonymity walk is enforced
+  over the covered subset.
+- `level_grounding` (optional): per-level provenance for each `level_counts` entry, keyed the same way. Fields:
+  `status` (`certifying` · `corpus-adjusted-from-certifying-source` · `model-proposed`), `source_family` (e.g.
+  `doid-is-a`, `icd10pcs-prefix`, `openfda-pharm-class`, `geonames-universe`, `cldr-m49`, `corpus-membership`,
+  `model-proposed`),
+  `count_basis` (e.g. `corpus-membership`, `real-world-reference-estimate`), `count_evidence`, `selector`,
+  `member_set_ref`. Review/audit metadata only; runtime lookup does not read it.
 
 Rows are intentionally self-contained. A reviewer can inspect or edit a surface's aliases and replacement
-levels without dereferencing source-family metadata elsewhere in the file.
+levels without dereferencing source-family metadata elsewhere in the file. `entry_origin`, `level_counts`, and
+`level_grounding` are optional: a row with only `aliases`, `levels`, `source_ids`, and `count` is valid.
 
 Current local builders populate this schema for every runtime type with local data:
 
@@ -166,6 +215,14 @@ Current local builders populate this schema for every runtime type with local da
 - `ORG` from conservative rows in the legacy teacher cache.
 - `nationality`, `profession`, `religion`, `gender`, `marital-status`, and `sexual-orientation` from the
   dataset-backed fine-type builders.
+- `drug`, `health-condition`, and `medical-procedure` from the generalization lattice producer, merged in via
+  `scripts/merge_lattice_profiles.py`. These carry `level_counts`/`level_grounding`.
+- `LOC`, `nationality`, and `organization-medical-facility` also carry `level_counts`/`level_grounding`,
+  grounded deterministically by `scripts/spikes/ground_deterministic_level_counts.py`: `LOC` from the GeoNames
+  universe and `nationality` from CLDR M49 (both real-world, `status: certifying`); `organization-medical-facility`
+  from corpus-membership over its own rows (`status: model-proposed`, `count_basis: corpus-membership`), a
+  conservative undercount used because the full NPPES universe is not available locally. The remaining
+  dataset-seeded types (`profession`, `religion`, `ORG`, placeholder-only categoricals) carry only `count`.
 
 Placeholder-only categorical types have `levels: []` by design. Their runtime non-keep action is the typed
 placeholder terminal, e.g. `<GENDER_1>` or `<MARITAL_STATUS_1>`.
@@ -186,6 +243,10 @@ edit.
 - Runtime types must be members of `cloak.runtime_types.RUNTIME_TYPES`.
 - Non-placeholder-only runtime types must have at least one text candidate in `levels`.
 - `levels` entries must be grammatical replacement phrases, not type-name labels such as `a profession`.
-- A `levels` entry must not contain the canonical surface text.
+- A `levels` entry must not contain the canonical surface text. (Merges that fold a narrower surface into a
+  broader canonical drop any pulled-in level that would violate this — see `scripts/merge_lattice_profiles.py`.)
 - `count` must be at least `1.0`.
+- Every `level_counts` key must be a member of `levels`, and each value must be at least `1.0`.
+- `level_counts` must be non-decreasing along the row's `levels` order (specific → broad k-anonymity walk;
+  see `docs/specs/offline-k-anonimity-risk-walk.md`).
 - Runtime substitution reads this cache locally and deterministically.
