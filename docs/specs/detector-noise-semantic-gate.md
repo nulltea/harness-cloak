@@ -87,25 +87,43 @@ positively justify:
 
 ### Per-consumer operating points (the asymmetry is the design)
 
-| Consumer | Layers | Bias | Rationale |
+Every pipeline that consumes detected spans runs the **full gate** — miner, RL
+training/reward, and production inference alike. What differs is only the frozen operating
+point:
+
+| Consumer | Layers | Operating point | Rationale |
 |---|---|---|---|
-| Miner (`build_mined_lattice_profiles`) | 1–4 + skweak aggregation | balanced, precision-leaning | junk rows poison the profile; a missed real entity costs one lost row |
-| Runtime detect (`negative_filter` in `detect.py`) | 1, 2, 4 + layer 3 at a strict bar | drop only near-certain noise | a false drop at runtime is a privacy leak — the substitutor never sees the span |
+| Miner (`build_mined_lattice_profiles`) | 1–4 (+ aggregation) | precision-leaning | junk rows poison the profile; a missed real entity costs one lost row |
+| RL training env + reward (span sets feeding ranker decisions and per-span credit) | 1–4 (+ aggregation) | **identical to production** | junk spans split reward credit and force the substitutor to rank/placehold non-sensitive spans |
+| Production inference (`negative_filter` path in `detect.py`, feeding the substitutor) | 1–4 (+ aggregation) | calibrated at ≈zero measured false-drop rate | a false drop is a privacy leak, so the drop bar is strict — but layer 3 stays *active*: never dropping anything is the current failure, not safety |
 | QA build (`_detect_docs`) | 1 (via dedup Task B) | unchanged | matcher abstain already excludes non-probe spans |
 
-### Miner aggregation (skweak)
+**Train/deploy consistency (hard requirement):** the RL env/reward and production inference
+use the *same gate version and the same operating point* — otherwise the policy trains on a
+different span distribution than deployment serves. The gate's artifact hashes (anchor
+indexes, aggregation model, thresholds) are recorded in RL run configs; a mismatch fails the
+run, not silently degrades.
 
-For the miner, layer outputs become LFs — deny-list hit, link verdict, anchor margin bucket,
-detector confidence bucket, label-stability vote (span survives detection under the type's
-alternate label phrasings — the agreement-filter idea from
+### Aggregation (skweak) — fitted offline, applied everywhere
+
+Layer outputs become LFs — deny-list hit, link verdict, anchor margin bucket, detector
+confidence bucket, label-stability vote (span survives detection under the type's alternate
+label phrasings — the agreement-filter idea from
 [CrossWeigh](https://arxiv.org/abs/1909.01441)) — and skweak's HMM label model aggregates them
-into a keep/drop posterior; the accept threshold on the posterior is frozen at calibration.
+into a keep/drop posterior; accept thresholds on the posterior are the per-consumer operating
+points.
+
+Fitting is corpus-level and happens **once, offline** (on the mined span corpus); the fitted
+label model is then a frozen, versioned artifact applied at *every* call site — miner, RL, and
+production — like the embindex. Per-span application is cheap (the LF signals are computed
+anyway; aggregation is a lookup-scale computation).
 
 **Adoption spike (gates skweak in or out):** install skweak, fit on the measured re-mine span
-set, compare keep/drop quality against the plain layered gate on the labeled eval set. Adopt
-only if it beats the layered gate on drop-precision at equal or better drop-recall; otherwise
-record the numbers and ship the layered gate alone. skweak is corpus-fitting machinery — it is
-**miner-only** either way; the runtime path always uses the thin layered gate.
+set, compare keep/drop quality against the plain layered gate (fixed layer precedence) on the
+labeled eval set. Adopt only if it beats the layered gate on drop-precision at equal or better
+drop-recall; otherwise record the numbers and ship the layered gate alone at all call sites.
+Either way, all consumers run the same decision core — the spike chooses the core, not a
+per-pipeline split.
 
 ### LLM triage band (miner only, optional)
 
@@ -120,12 +138,13 @@ usual paid-call approval.
 - **Labeled eval set:** the measured junk/real split of the large re-mine (the issue documents
   ~200 surviving entries with a known noise fraction) as drop-positives; profile surfaces and
   their certified variants as keep-positives. Frozen file under `data/`, versioned.
-- `FLOOR`/`MARGIN` (per operating point) and the skweak posterior threshold are chosen **once**
-  on this set and frozen — the runtime point at ≈zero false-drop rate (report the achieved
-  rate), the miner point precision-first. Published as a calibration artifact JSON
-  (sweep + chosen values), same shape as the entity-merge gate eval.
-- **Empirical honesty:** if layer 3 cannot reach the runtime bar at any useful recall, the
-  runtime path ships with layers 1/2/4 only and the sweep is the finding. No per-run threshold
+- `FLOOR`/`MARGIN` (per operating point) and the skweak posterior thresholds are chosen
+  **once** on this set and frozen — the shared RL/production point at ≈zero measured
+  false-drop rate (report the achieved rate), the miner point precision-first. Published as a
+  calibration artifact JSON (sweep + chosen values per operating point), same shape as the
+  entity-merge gate eval.
+- **Empirical honesty:** if layer 3 cannot reach the RL/production bar at any useful recall,
+  those paths ship with layers 1/2/4 only and the sweep is the finding. No per-run threshold
   tuning, ever.
 - Detector scores are used only as bucketed LF input, never as a calibrated probability
   (GLiNER-class scores are not assumed calibrated;
