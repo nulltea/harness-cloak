@@ -87,6 +87,23 @@ def test_parse_sections_extracts_well_formed_clinical_rows():
     ]
 
 
+def test_parse_sections_keeps_embedded_dash_inside_field_value():
+    parsed = _parse_sections(
+        """
+        ASSESSMENT:
+        post–COVID syndrome — respiratory — stable
+        """
+    )
+
+    assert parsed["assessment"] == [
+        {
+            "problem": "post–COVID syndrome",
+            "category": "respiratory",
+            "status": "stable",
+        }
+    ]
+
+
 def test_parse_sections_missing_and_none_sections_are_empty():
     parsed = _parse_sections(
         """
@@ -154,6 +171,25 @@ def test_schema_field_score_aligns_rows_and_penalizes_missing_gold_problems():
     """
 
     assert _schema_field_score(missing, ceiling) == pytest.approx(0.5)
+
+
+def test_schema_field_score_counts_duplicate_problem_rows_positionally():
+    ceiling = """
+    ASSESSMENT:
+    asthma — respiratory condition — stable
+    asthma — respiratory condition — stable
+    PLAN:
+    asthma — continue inhaler — primary care
+    asthma — continue inhaler — primary care
+    """
+    out_final = """
+    ASSESSMENT:
+    asthma — respiratory condition — stable
+    PLAN:
+    asthma — continue inhaler — primary care
+    """
+
+    assert _schema_field_score(out_final, ceiling) == pytest.approx(0.5)
 
 
 def test_schema_field_score_uses_category_acceptance_sets():

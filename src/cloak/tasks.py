@@ -29,6 +29,7 @@ EMAIL_REPLY = ("Write a brief reply to the following email. Reply with only the 
 CASE_SUMMARY = ("Condense the following case summary into one short paragraph covering the "
                 "parties, claims, court, and outcome. Base it only on the text.\n\n"
                 "Case summary:\n{doc}")
+# The {doc} slot receives doc_p under the TASK_TEMPLATE[corpus].format(doc=doc_p) contract.
 SCHEMA_NOTE = ("Write a clinical visit note for the following dialogue with EXACTLY these "
                "sections:\n\n"
                "CHIEF COMPLAINT: one line.\n"

@@ -20,7 +20,7 @@ _HEADER_RE = re.compile(
     r"\s*:?\s*(.*)$",
     re.IGNORECASE,
 )
-_DASH_RE = re.compile(r"\s*(?:--+|[—–]|\s-\s)\s*")
+_DASH_RE = re.compile(r"\s+(?:--+|[—–-])\s+")
 _ROW_FIELDS = {
     "assessment": ("problem", "category", "status"),
     "plan": ("problem", "action", "follow_up"),
@@ -71,24 +71,26 @@ def schema_field_score(
     out_hi_text: str,
     acceptance_sets: Mapping[str, Iterable[str]] | None = None,
 ) -> float | None:
-    """Score parsed schema fields against ceiling rows aligned by canonical problem name."""
+    """Score parsed schema fields against ceiling rows aligned by problem and duplicate position."""
     out_rows = _clinical_rows_by_problem(parse_sections(out_final_text))
     hi_rows = _clinical_rows_by_problem(parse_sections(out_hi_text))
     if not hi_rows:
         return None
 
     scores: list[float] = []
-    for problem_key, gold_row in hi_rows.items():
-        pred_row = out_rows.get(problem_key, {})
-        for field in ("category", "status", "action", "follow_up"):
-            gold = gold_row.get(field, "")
-            if not gold:
-                continue
-            pred = pred_row.get(field, "")
-            if field == "category":
-                scores.append(_category_score(pred, gold, problem_key, acceptance_sets))
-            else:
-                scores.append(fact_score(pred, gold))
+    for problem_key, gold_rows in hi_rows.items():
+        pred_rows = out_rows.get(problem_key, [])
+        for i, gold_row in enumerate(gold_rows):
+            pred_row = pred_rows[i] if i < len(pred_rows) else {}
+            for field in ("category", "status", "action", "follow_up"):
+                gold = gold_row.get(field, "")
+                if not gold:
+                    continue
+                pred = pred_row.get(field, "")
+                if field == "category":
+                    scores.append(_category_score(pred, gold, problem_key, acceptance_sets))
+                else:
+                    scores.append(fact_score(pred, gold))
     if not scores:
         return None
     return max(0.0, min(1.0, sum(scores) / len(scores)))
@@ -110,15 +112,21 @@ def _is_none_line(text: str) -> bool:
     return bool(re.fullmatch(r"none\.?", str(text or "").strip(), flags=re.IGNORECASE))
 
 
-def _clinical_rows_by_problem(parsed: dict) -> dict[str, dict[str, str]]:
-    rows: dict[str, dict[str, str]] = {}
+def _clinical_rows_by_problem(parsed: dict) -> dict[str, list[dict[str, str]]]:
+    rows: dict[str, list[dict[str, str]]] = {}
     for section in ("assessment", "plan"):
+        next_index_by_key: dict[str, int] = {}
         for row in parsed.get(section, []):
             problem = row.get("problem", "")
             if not problem:
                 continue
             key = canon(problem)
-            merged = rows.setdefault(key, {"problem": problem})
+            index = next_index_by_key.get(key, 0)
+            next_index_by_key[key] = index + 1
+            problem_rows = rows.setdefault(key, [])
+            while len(problem_rows) <= index:
+                problem_rows.append({"problem": problem})
+            merged = problem_rows[index]
             merged.update({k: v for k, v in row.items() if k != "problem"})
     return rows
 
