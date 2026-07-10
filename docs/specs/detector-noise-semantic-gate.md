@@ -150,6 +150,13 @@ usual paid-call approval.
 - Detector scores are used only as bucketed LF input, never as a calibrated probability
   (GLiNER-class scores are not assumed calibrated;
   cf. [arXiv 1706.04599](https://arxiv.org/abs/1706.04599)).
+- **Measured limitation (2026-07-10, frozen point floor=0.75/margin=0.0):** exact profile
+  keep-surfaces show 0/2,793 false drops, but cheap synthetic *variants* of keep-surfaces
+  (plural/article/typo) measure a 0.23% false-drop rate (2/887). The gate's link layer is
+  exact-only; a variant that misses the alias list relies on its (usually high) positive
+  similarity to survive the margin layer. Follow-up if this matters in production: same-type
+  link-keep through the retrieve-then-verify matcher (`match_spans_batch`) before the margin
+  layer, at NLI cost.
 
 ## Shared machinery with the entry-dedup work (implement once, there)
 
