@@ -94,10 +94,26 @@ def _validated_rung0_lookup(path=OUT):
     return lookup
 
 
-def _with_validated_rung0(entries, spans, validated):
+def _with_validated_rung0(entries, spans, validated, teacher=None, pv=None):
     from cloak.train.reward import canon
 
     by_surface = {canon(s["surface"]): _span_rungs(s) for s in spans if _span_rungs(s)}
+
+    def validated_row(surface, q, rungs):
+        row = {
+            "surface": surface,
+            "rung": 0,
+            "q": q,
+            "a": surface,
+            "rungs": rungs,
+            "source": "probes_validated",
+        }
+        if teacher is not None:
+            row["teacher"] = teacher
+        if pv is not None:
+            row["pv"] = pv
+        return row
+
     out = []
     replaced = set()
     for e in entries:
@@ -109,14 +125,9 @@ def _with_validated_rung0(entries, spans, validated):
         if row.get("rung") == 0 and key in validated:
             if key not in replaced:
                 probe = validated[key]
-                out.append({
-                    "surface": row["surface"],
-                    "rung": 0,
-                    "q": probe.get("question") or probe.get("q"),
-                    "a": row["surface"],
-                    "rungs": by_surface[key],
-                    "source": "probes_validated",
-                })
+                out.append(validated_row(row["surface"],
+                                         probe.get("question") or probe.get("q"),
+                                         by_surface[key]))
                 replaced.add(key)
             continue
         out.append(row)
@@ -126,14 +137,8 @@ def _with_validated_rung0(entries, spans, validated):
         rungs = by_surface.get(key)
         if rungs and key in validated and (key, 0) not in present_r0:
             probe = validated[key]
-            out.append({
-                "surface": s["surface"],
-                "rung": 0,
-                "q": probe.get("question") or probe.get("q"),
-                "a": s["surface"],
-                "rungs": rungs,
-                "source": "probes_validated",
-            })
+            out.append(validated_row(s["surface"], probe.get("question") or probe.get("q"),
+                                     rungs))
     return out
 
 
@@ -220,7 +225,11 @@ def build_ladder(args):
             if doc_id not in anchor:
                 continue
             entries = _with_validated_rung0(
-                ladders.get(doc_id, []), spans_of.get(doc_id, []), flat_rung0.get(doc_id, {})
+                ladders.get(doc_id, []),
+                spans_of.get(doc_id, []),
+                flat_rung0.get(doc_id, {}),
+                teacher=lp.TEACHER_MODEL,
+                pv=lp.LADDER_PV,
             )
             kept, ladder_rows = lp.validate_ladder(
                 entries,
