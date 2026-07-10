@@ -94,9 +94,27 @@ def test_exact_hit_is_deterministic_and_skips_embed_and_nli(tmp_path):
     assert m.kind == "exact"
     assert m.deterministic is True
     assert m.similarity == 1.0
-    assert m.entry is None
+    assert m.entry == "diabetes"
     assert m.levels == ["endocrine condition", "chronic condition"]
     assert calls == {"embed": 0, "nli": 0}
+
+
+def test_exact_hit_carries_canonical_entry(tmp_path):
+    artifact = {
+        "schema_version": 1, "created": "2026-07-10", "sources": {},
+        "profiles": {"health-condition": {
+            "blorbitis": {"aliases": ["blorb inflammation"],
+                          "levels": ["organ disease"], "source_ids": ["t:1"], "count": 10.0},
+        }},
+    }
+    p = tmp_path / "profiles.json"
+    p.write_text(json.dumps(artifact))
+    from cloak.profile_match import match_spans_batch, span_key
+    got = match_spans_batch([("blorb inflammation", "health-condition", "ctx sentence")],
+                            profiles_path=p)
+    m = got[span_key("blorb inflammation", "health-condition")]
+    assert m is not None and m.kind == "exact"
+    assert m.entry == "blorbitis"
 
 
 def test_semantic_hit_via_variant(tmp_path):

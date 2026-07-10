@@ -111,7 +111,7 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             lattice = lattice_for(s.text, s.type, sent, proposal=prop)
             m = proposals.get(k)
             if m is not None:
-                entry["match"] = ({"kind": "exact"} if m.kind == "exact" else
+                entry["match"] = ({"kind": "exact", "entry": m.entry} if m.kind == "exact" else
                                   {"kind": "semantic", "entry": m.entry,
                                    "similarity": round(m.similarity, 3),
                                    "nli": round(m.nli, 3) if m.nli is not None else None})

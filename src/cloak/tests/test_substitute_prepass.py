@@ -29,7 +29,7 @@ def test_prepass_feeds_lattice_and_records_match(monkeypatch):
                 MatchResult(["endocrine condition"], "semantic", False, 0.84,
                             "diabetes", nli=0.91),
             span_key("aspirin", "drug"):
-                MatchResult(["analgesic drug"], "exact", True, 1.0, None),
+                MatchResult(["analgesic drug"], "exact", True, 1.0, "aspirin"),
             span_key("insulin", "drug"): None,   # abstained -> teacher-cache/placeholder path
         }
     monkeypatch.setattr(sub, "match_spans_batch", fake_batch)
@@ -41,7 +41,7 @@ def test_prepass_feeds_lattice_and_records_match(monkeypatch):
     assert by_surface["diabetic"]["match"] == {"kind": "semantic", "entry": "diabetes",
                                                "similarity": 0.84, "nli": 0.91}
     assert by_surface["diabetic"]["replacement"] == "endocrine condition"
-    assert by_surface["aspirin"]["match"] == {"kind": "exact"}
+    assert by_surface["aspirin"]["match"] == {"kind": "exact", "entry": "aspirin"}
     assert "match" not in by_surface["insulin"]   # abstain: placeholder, no provenance
     assert by_surface["insulin"]["replacement"].startswith("<DRUG_")
 

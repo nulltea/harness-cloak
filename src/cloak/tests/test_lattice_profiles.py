@@ -72,6 +72,29 @@ def test_lookup_levels_by_surface_and_alias(tmp_path):
     ]
 
 
+def test_lookup_entry_returns_canonical_for_canonical_and_alias(tmp_path):
+    artifact = {
+        "schema_version": 1, "created": "2026-07-10", "sources": {},
+        "profiles": {"health-condition": {
+            "blorbitis": {"aliases": ["blorb inflammation"],
+                          "levels": ["organ disease", "disease"],
+                          "source_ids": ["t:1"], "count": 100.0},
+        }},
+    }
+    p = tmp_path / "profiles.json"
+    p.write_text(json.dumps(artifact))
+    from cloak.lattice_profiles import lookup_entry, lookup_levels
+    assert lookup_entry("Blorbitis", "health-condition", p) == \
+        ("blorbitis", ["organ disease", "disease"])
+    assert lookup_entry("blorb  inflammation", "health-condition", p) == \
+        ("blorbitis", ["organ disease", "disease"])
+    assert lookup_entry("unknownitis", "health-condition", p) is None
+    # wrapper unchanged behavior
+    assert lookup_levels("blorb inflammation", "health-condition", p) == \
+        ["organ disease", "disease"]
+    assert lookup_levels("unknownitis", "health-condition", p) == []
+
+
 def test_lookup_levels_accepts_standard_levels_field(tmp_path):
     path = tmp_path / "profiles.json"
     path.write_text(json.dumps(_standard_artifact()))

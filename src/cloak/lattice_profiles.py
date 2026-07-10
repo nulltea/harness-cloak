@@ -90,7 +90,7 @@ def _build_indexes(artifact: dict) -> dict:
             levels = list(row.get("levels", []))
             for key in [_norm(canonical), *[_norm(a) for a in row.get("aliases", [])]]:
                 if key:
-                    surface_index.setdefault(key, levels)
+                    surface_index.setdefault(key, (canonical, levels))
             count = float(row.get("count", 1.0))
             level_counts = row.get("level_counts") or {}
             for level in levels:
@@ -114,10 +114,21 @@ def _index_cached(path_s: str) -> dict:
     return _build_indexes(load_profiles(path_s))
 
 
-def lookup_levels(surface: str, runtime_type: str, path: str | Path | None = None) -> list[str]:
+def lookup_entry(surface: str, runtime_type: str,
+                 path: str | Path | None = None) -> tuple[str, list[str]] | None:
+    """Resolve a surface to its profile row: (canonical, levels). None = no entry."""
     key = _norm(surface)
     idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
-    return list(idx["by_surface"].get(runtime_type, {}).get(key, []))
+    got = idx["by_surface"].get(runtime_type, {}).get(key)
+    if got is None:
+        return None
+    canonical, levels = got
+    return canonical, list(levels)
+
+
+def lookup_levels(surface: str, runtime_type: str, path: str | Path | None = None) -> list[str]:
+    got = lookup_entry(surface, runtime_type, path)
+    return got[1] if got else []
 
 
 def lookup_count(fill: str, runtime_type: str, path: str | Path | None = None) -> float | None:

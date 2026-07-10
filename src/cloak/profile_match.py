@@ -45,7 +45,7 @@ class MatchResult:
     kind: str            # "exact" | "semantic"
     deterministic: bool
     similarity: float
-    entry: str | None    # matched canonical; None for exact hits
+    entry: str | None    # matched canonical (exact and semantic hits)
     nli: float | None = None  # top approved level's entailment score; None for exact / custom nli_fn
 
 
@@ -177,9 +177,9 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
     out: dict[tuple[str, str], MatchResult | None] = {}
     misses: list[tuple[tuple[str, str], str, str]] = []  # (key, span_text, context)
     for key, (span_text, context) in todo.items():
-        levels = lp.lookup_levels(span_text, key[0], profiles_path)
-        if levels:
-            out[key] = MatchResult(levels, "exact", True, 1.0, None)
+        got = lp.lookup_entry(span_text, key[0], profiles_path)
+        if got:
+            out[key] = MatchResult(list(got[1]), "exact", True, 1.0, got[0])
         else:
             out[key] = None
             if context:
