@@ -324,12 +324,31 @@ re-measurement).
   disease` 896 → `disease of anatomical entity` 9162), not prevalence.
 - **Chain length (#B):** no length-1 entries (baseline ~170 flagged); chains are 2–5 levels.
 
-### medical-procedure: pending (this batch's 60 items were all health-condition by queue order)
+### medical-procedure — 12-record batch (`data/lattice_runs/smoke-mp`): #13 CONFIRMED, model-dependent
 
-A dedicated `medical-procedure` batch (`data/lattice_runs/smoke-mp`) is the real test of #13
-(ICD-10-PCS ~5% surface coverage → model fallback) and of the model-path prompt work
-(type-specific level guidance, specificity-first nearest tier, anonymity-set count semantics),
-which the health-condition run did not exercise. Results appended when that run completes.
+The dedicated `medical-procedure` batch ran (12 records, 26 accepted level-rows). It is the real
+test of #13 (ICD-10-PCS surface coverage → model fallback) and of the model-path guardrails
+(#9/#10/#11), which the health-condition run did not exercise.
+
+- **Grounding (#13):** **22/26 (85%) `source_family: model-proposed`, only 4/26 deterministic**
+  (`deterministic-aset` on the reused `medical procedure` / `medical and surgical procedure` /
+  `obstetric procedure` anchors). The opposite of health-condition's 215/215 certifying — because
+  ICD-10-PCS's coded-procedure vocabulary does not match informal clinically-mined phrases
+  (`arthrography`, `alcohol consumption`, `upper endoscopy`), the deterministic path rarely fires
+  and the model supplies the levels.
+- **The "mimics grounding" pattern persists on the model path** (issue #1's signature, now
+  isolated to model-proposed rows): `count_evidence` cites "CPT code range… 112 distinct codes",
+  "SNOMED CT hierarchy… 85 concepts", "ICD-10-PCS… 120 codes" while `source_family` underneath
+  reads `model-proposed` — invented counts wearing citation clothing.
+- **Coherence held better than the pre-overhaul baseline:** the count-agreement gate +
+  relevance-ranked slice kept reuse consistent (coherence report: 16 canonical levels, 0 level
+  changes, 1 same-count collision) — so #2/#3/#6's *mechanisms* work on the model path; what they
+  cannot do is make an invented count *certifying*.
+
+**Verdict:** the deterministic-first strategy resolves health-condition (DOID) but **not**
+medical-procedure — mp remains model-dependent, and no second procedure source was added. The
+open decision from #13 stands: accept 85% model-proposed for mp, or add a procedure source
+(SNOMED-CT procedure hierarchy / CPT) before relying on grounded counts for it.
 
 ### What resolved each issue
 
@@ -349,9 +368,32 @@ which the health-condition run did not exercise. Results appended when that run 
 
 ### Deferred / still open
 
-- **#13** (ICD-10-PCS coverage): unresolved by design — no second procedure source added; the
-  medical-procedure run measures how often it falls through to the model.
+- **#13** (ICD-10-PCS coverage): **measured, confirmed open** — the mp run fell through to the
+  model on 85% of levels (above). Decision pending: accept model-proposed counts for
+  medical-procedure, or add a SNOMED-CT-procedure / CPT reference source.
 - **#5** (static `CLUSTERS` table): not extended; the relevance-ranked reuse + count-agreement gate
-  reduce synonym proliferation at the source, re-evaluate need after the mp run.
+  reduce synonym proliferation at the source, and the mp coherence report (0 level changes)
+  suggests it is now low-priority — re-evaluate only if a larger mp/model-path run regresses.
 - Minor: the ≥2-level floor can discard a lone deterministic-`certifying` level (narrow; those
   chains are usually multi-tier).
+
+## Status refresh (2026-07-09, late)
+
+Fixed/open at a glance after the overhaul + hybrid-drug work:
+
+| issue | status | resolved by |
+|---|---|---|
+| #1 forced model proposal | **fixed** | overhaul (drop `force_model_proposal`) |
+| #2/#3/#6 count incoherence, sink ranking | **fixed** | membership-derived counts + count-agreement gate + relevance-ranked slice (`59b63fe`, `4e74eb6`) |
+| #4 single normalize pass | **fixed** | periodic `--normalize-every` |
+| #7 no retry/backoff | **fixed** | bounded retry incl. 429 (`9ff83b5`); empty-response tolerance (`3285369`) |
+| #8 creativity collapse | **fixed for health-condition** (deterministic-first makes it moot); **unproven on the model path** (mp is model-dependent — re-bucket a larger mp run to confirm the guardrails hold) |
+| #9/#10/#11 prompt genericness, advisory reuse, 8-row context | **fixed** | type-specific prompts, count-annotated slice, rows 8→20 |
+| #12 no cross-item memory | structural (by design); mitigated by the count-annotated slice |
+| #13 ICD-10-PCS coverage | **confirmed open** — mp 85% model-proposed; second source undecided |
+| #5 static CLUSTERS | deferred — low priority post-overhaul |
+
+New mechanisms since this register was written (not in the table above): hybrid drug augmentation
+(`bc0d2f7`, `af52cbd`) and reference-source-miss routing to the model rather than the profile
+cache (`639c9b5`) — these extend the drug path and the deterministic/model routing; they do not
+change the health-condition (resolved) or medical-procedure (#13 open) verdicts.
