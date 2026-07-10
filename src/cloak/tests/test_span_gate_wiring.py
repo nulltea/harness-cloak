@@ -39,6 +39,38 @@ def test_margin_scores_pos_neg_maxima():
     assert scores[1][0] == 0.0 and scores[1][1] == 1.0   # "b": pos low, neg high -> drop
 
 
+def _fake_index():
+    from cloak.profile_match import _Index
+    # "drug" anchor aligns with e0; "injury" anchor aligns with e1 (orthogonal to e0).
+    vectors = np.array([[1.0, 0.0], [0.0, 1.0]], dtype=np.float32)
+    rows = [{"runtime_type": "drug", "canonical": "aspirin"},
+            {"runtime_type": "injury", "canonical": "sprain"}]
+    return _Index("m", vectors, rows)
+
+
+def test_keep_scored_against_own_type():
+    # a keep whose OWN-type sim is high but the OTHER type's sim is 0 must be scored against
+    # its own type (drug) — pooling or picking injury would give pos=0.0 and drop it.
+    from calibrate_span_gate import keep_scores_per_type
+    index = _fake_index()
+    neg = np.array([[0.0, 1.0]], dtype=np.float32)                  # aligns with the OTHER type
+    embed = lambda ts: np.array([[1.0, 0.0]] * len(ts), dtype=np.float32)   # aligns with drug
+    (pos, nsim), = keep_scores_per_type([("aspirin", "drug")], index, neg, embed)
+    assert pos == 1.0                                               # OWN type (drug), not injury
+    assert nsim == 0.0
+
+
+def test_drop_worst_case_picks_lowest_pos_type():
+    # a negative aligned with the drug anchor is scored against both types; worst case (most
+    # likely to drop) = injury, whose sim is 0.0 -> pos must be the min across types.
+    from calibrate_span_gate import drop_scores_worst_case
+    index = _fake_index()
+    neg = np.zeros((1, 2), dtype=np.float32)
+    embed = lambda ts: np.array([[1.0, 0.0]] * len(ts), dtype=np.float32)   # aligns with drug
+    (pos, _), = drop_scores_worst_case(["junk"], index, neg, embed, ["drug", "injury"])
+    assert pos == 0.0                                              # min over types, not drug's 1.0
+
+
 def test_miner_gate_wiring_drop_retype_keep(monkeypatch, tmp_path):
     import build_mined_lattice_profiles as m
     from cloak.span_gate import GateDecision
@@ -84,10 +116,15 @@ def test_miner_gate_retype_reapplies_type_handling(monkeypatch):
 def test_negatives_index_is_current():
     from calibrate_span_gate import negatives_index_is_current
     anchor = ["aaa surface", "bbb surface", "ccc surface"]
-    assert negatives_index_is_current({"surfaces": list(anchor)}, anchor)
-    assert not negatives_index_is_current({"surfaces": anchor[:2]}, anchor)   # missing eval-safe subset
-    assert not negatives_index_is_current({}, anchor)                          # legacy/no surfaces
-    assert not negatives_index_is_current({"surfaces": list(reversed(anchor))}, anchor)  # order
+    mid = "sentence-transformers/all-MiniLM-L6-v2"
+    ok = {"surfaces": list(anchor), "model_id": mid}
+    assert negatives_index_is_current(ok, anchor, mid)
+    assert not negatives_index_is_current({"surfaces": anchor[:2], "model_id": mid}, anchor, mid)  # subset
+    assert not negatives_index_is_current({"model_id": mid}, anchor, mid)      # legacy/no surfaces
+    assert not negatives_index_is_current({"surfaces": list(reversed(anchor)), "model_id": mid},
+                                          anchor, mid)                          # order
+    assert not negatives_index_is_current(ok, anchor, "other/model")           # model mismatch
+    assert not negatives_index_is_current({"surfaces": list(anchor)}, anchor, mid)  # legacy/no model
 
 
 def test_runtime_gate_drop_retype_keep(monkeypatch):

@@ -17,8 +17,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import random
 from pathlib import Path
-from typing import Callable
 
 import numpy as np
 
@@ -31,11 +31,11 @@ from cloak.span_gate import (DEFAULT_CALIBRATION_PATH, DEFAULT_NEGATIVES_PATH, S
 
 
 def margin_scores(surfaces, index_vectors, neg_vectors, embed_fn) -> list[tuple[float, float]]:
-    """For each surface: (pos, neg) = max cosine to the positive anchor / negative index.
+    """For each surface: (pos, neg) = max cosine to the given positive rows / negative index.
 
-    ponytail: pooled positive anchors (all noise-filter types) rather than per-type rows;
-    the runtime gate scores per-type, so this is a slightly optimistic keep estimate — the
-    floor/margin sweep is the calibration knob that absorbs the gap.
+    Primitive scored against a FIXED positive-row set. The eval builders below call it per
+    runtime type (index.type_rows(t)) so pos matches gate_spans, which scores each span
+    against its OWN type's rows only.
     """
     if len(surfaces) == 0:
         return []
@@ -48,6 +48,52 @@ def margin_scores(surfaces, index_vectors, neg_vectors, embed_fn) -> list[tuple[
         nsim = float(np.max(neg @ v)) if neg.size else 0.0
         out.append((pos, nsim))
     return out
+
+
+def keep_scores_per_type(keep_pairs, index, neg_vectors, embed_fn) -> list[tuple[float, float]]:
+    """Score (surface, runtime_type) keeps EXACTLY as gate_spans: pos = max cosine to that
+    surface's OWN type rows only (index.type_rows), never the pooled noise-filter anchors."""
+    by_type: dict[str, list[str]] = {}
+    for surface, rt in keep_pairs:
+        by_type.setdefault(rt, []).append(surface)
+    out: list[tuple[float, float]] = []
+    for rt, surfaces in by_type.items():
+        rows = index.type_rows(rt)
+        out.extend(margin_scores(surfaces, index.vectors[rows], neg_vectors, embed_fn))
+    return out
+
+
+def drop_scores_worst_case(surfaces, index, neg_vectors, embed_fn, types
+                           ) -> list[tuple[float, float]]:
+    """Score eval drop-surfaces per noise-filter type and keep the WORST CASE across types.
+
+    An eval negative arrives at runtime tagged as some noise-filter type, but which one is
+    unknown here — so we score it against every type and take the configuration MOST LIKELY
+    TO DROP: the lowest pos (a drop needs pos < floor AND neg-pos >= margin, both eased by a
+    smaller pos; neg is type-independent). This makes drop_recall an optimistic bound — it
+    credits a drop when ANY plausible type would trigger it — matching how the gate can fire
+    under the span's actual tag. Types with no anchors fail-open (keep) in gate_spans, so
+    they can never be the dropping config and are excluded from the min.
+    """
+    if not surfaces:
+        return []
+    typed = [(t, index.type_rows(t)) for t in types]
+    typed = [(t, r) for t, r in typed if r]
+    if not typed:   # no anchors for any noise-filter type -> gate fail-opens (keep)
+        return [(1.0, 0.0)] * len(surfaces)
+    per_type = [margin_scores(surfaces, index.vectors[r], neg_vectors, embed_fn)
+                for _, r in typed]
+    return [(min(pt[i][0] for pt in per_type), per_type[0][i][1])   # neg identical across types
+            for i in range(len(surfaces))]
+
+
+def _variants(surface: str) -> set[str]:
+    """Cheap near-miss surface variants a robust gate must still keep: plural, article
+    prefix, and (for surfaces > 6 chars) a one-char deletion typo."""
+    vs = {surface + "s", "the " + surface}
+    if len(surface) > 6:
+        vs.add(surface[:1] + surface[2:])   # delete the 2nd char
+    return vs
 
 
 def _rates(keeps, drops, floor: float, margin: float) -> tuple[float, float, float]:
@@ -92,13 +138,16 @@ def choose_points(keeps, drops, *, floors, margins, production_false_drop, miner
     return sweep, points
 
 
-def negatives_index_is_current(meta: dict, anchor: list[str]) -> bool:
-    """True iff the stored negatives index was built from exactly the current anchor half.
+def negatives_index_is_current(meta: dict, anchor: list[str], model_id: str) -> bool:
+    """True iff the stored negatives index matches the current anchor half AND embedding model.
 
     Guards against reusing a stale index whose surfaces overlap the eval half — that would
-    leak eval negatives into the anchors and inflate the sweep's separability.
+    leak eval negatives into the anchors and inflate the sweep's separability — and against
+    one embedded by a different model than the calibration will record (its vectors live in a
+    different space, so the neg-similarity that drives every margin drop is meaningless).
     """
-    return list(meta.get("surfaces") or []) == list(anchor)
+    return (list(meta.get("surfaces") or []) == list(anchor)
+            and meta.get("model_id") == model_id)
 
 
 def _frange(lo: float, hi: float, step: float) -> list[float]:
@@ -123,9 +172,9 @@ def main() -> int:
 
     anchor, eval_half = anchor_seed_split(seed_negative_surfaces())
     negatives = _load_negatives(args.negatives)
-    if negatives is None or not negatives_index_is_current(negatives[1], anchor):
+    if negatives is None or not negatives_index_is_current(negatives[1], anchor, model_id):
         if negatives is not None:
-            print(f"negatives index stale (surfaces != current anchor half) — "
+            print(f"negatives index stale (surfaces/model != current anchor half) — "
                   f"rebuilding from {len(anchor)} anchor surfaces")
         build_negative_index(out_path=args.negatives, model_id=model_id, surfaces=anchor)
         negatives = _load_negatives(args.negatives)
@@ -133,22 +182,20 @@ def main() -> int:
         raise SystemExit(f"could not build/load negatives index at {args.negatives}")
     neg_vectors, neg_meta = negatives
 
-    # positive anchors: pooled rows of the noise-filter types
-    pos_rows = [i for i, r in enumerate(index.rows) if r["runtime_type"] in _NOISE_FILTER_TYPES]
-    index_vectors = index.vectors[pos_rows] if pos_rows else np.zeros((0, 0), dtype=np.float32)
-
-    # eval set
+    # eval set: keeps carry their own profile type; each is scored against ONLY that type's
+    # rows, exactly as gate_spans does at runtime.
     artifact = lp.load_profiles(profiles_path)
-    keep_surfaces = sorted({s for rt in _NOISE_FILTER_TYPES
-                            for canonical, row in artifact.get("profiles", {}).get(rt, {}).items()
-                            for s in (canonical, *row.get("aliases", []))})
+    keep_pairs = sorted({(s, rt) for rt in _NOISE_FILTER_TYPES
+                         for canonical, row in artifact.get("profiles", {}).get(rt, {}).items()
+                         for s in (canonical, *row.get("aliases", []))})
     drop_surfaces = eval_half
     assert set(anchor).isdisjoint(drop_surfaces), "anchor/eval negatives overlap"
+    noise_types = sorted(_NOISE_FILTER_TYPES)
 
     model = _st_model(model_id)
     embed_fn = lambda t: model.encode(t, normalize_embeddings=True)
-    keeps = margin_scores(keep_surfaces, index_vectors, neg_vectors, embed_fn)
-    drops = margin_scores(drop_surfaces, index_vectors, neg_vectors, embed_fn)
+    keeps = keep_scores_per_type(keep_pairs, index, neg_vectors, embed_fn)
+    drops = drop_scores_worst_case(drop_surfaces, index, neg_vectors, embed_fn, noise_types)
 
     floors = _frange(0.4, 0.8, 0.05)
     margins = _frange(0.0, 0.4, 0.05)
@@ -156,17 +203,33 @@ def main() -> int:
                                   production_false_drop=args.production_false_drop,
                                   miner_precision=args.miner_precision)
 
+    # variant-surface slice: cheap near-misses of a seeded sample of keeps, scored per-type
+    # like runtime. Reported only (measure-first) — if variant_false_drop_rate is nonzero the
+    # documented follow-up is wiring the semantic matcher into span_gate, NOT done here.
+    sample = random.Random(0).sample(keep_pairs, min(300, len(keep_pairs)))
+    variant_pairs = sorted({(v, rt) for surface, rt in sample for v in _variants(surface)})
+    variant_scores = keep_scores_per_type(variant_pairs, index, neg_vectors, embed_fn)
+    prod = points.get("production")
+    variant_fdr = (_rates(variant_scores, [], prod["floor"], prod["margin"])[0]
+                   if prod and variant_scores else None)
+
     out = {"schema_version": SCHEMA_VERSION, "model_id": model_id,
            "seed_rule": neg_meta.get("seed_rule", "sha256-even-anchor"),
            "eval": {"keeps": len(keeps), "drops": len(drops)},
+           "variant_eval": {"n_variants": len(variant_scores),
+                            "variant_false_drop_rate": variant_fdr},
            "sweep": sweep, "points": points}
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
+    n_pos = sum(len(index.type_rows(t)) for t in noise_types)
     print(f"eval: keeps={len(keeps)} drops={len(drops)} "
-          f"pos_anchors={index_vectors.shape[0] if index_vectors.size else 0} "
+          f"pos_anchors={n_pos} "
           f"neg_anchors={neg_vectors.shape[0] if neg_vectors.size else 0}")
+    print(f"variant_eval: n_variants={len(variant_scores)} "
+          f"variant_false_drop_rate="
+          f"{'n/a (no production point)' if variant_fdr is None else f'{variant_fdr:.4f}'}")
     for name, pt in points.items():
         row = next(r for r in sweep if r["floor"] == pt["floor"] and r["margin"] == pt["margin"])
         print(f"{name}: floor={pt['floor']} margin={pt['margin']} "

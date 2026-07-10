@@ -14,6 +14,7 @@ import sys
 import time
 from pathlib import Path
 
+import cloak.span_gate as span_gate
 from cloak.anonymity import aset_count
 from cloak.corpora import load_task_docs
 from cloak.detect import Detector
@@ -28,13 +29,27 @@ TAU = 0.02
 CORPORA = ("clinical", "enron", "aeslc")
 LIMIT = 16
 
+# Detector profile per corpus (spec hard rule: train/deploy consistency). Clinical text must
+# go through the production "clinical" profile so RL artifacts see the same span gate as
+# deployment; the other corpora keep the historical "reddit" default.
+DEFAULT_PROFILE = "reddit"
+CORPUS_PROFILES = {"clinical": "clinical"}
+
+
+def profile_for(corpus: str) -> str:
+    return CORPUS_PROFILES.get(corpus, DEFAULT_PROFILE)
+
 
 def load_artifact(path: str | Path = ARTIFACT) -> dict:
     """{corpus: {doc_id: {arm: [doc_p, R], action_table: {...}}}} — consumers use this,
     never re-detect and never recompute risks (both are build-time-only: detection is
     process-nondeterministic, and walk_risk depends on the distractor-pools snapshot).
-    Default is the frozen historical artifact; pass a path for the pilot artifact."""
-    return json.loads(Path(path).read_text())
+    Default is the frozen historical artifact; pass a path for the pilot artifact.
+    The top-level "_meta" provenance block (gate_fingerprint, per-corpus profiles) is
+    stripped so callers keep iterating {corpus: {doc_id: ...}} unchanged."""
+    art = json.loads(Path(path).read_text())
+    art.pop("_meta", None)
+    return art
 
 
 def _sent_around(text: str, start: int, end: int) -> str:
@@ -96,8 +111,8 @@ def parse_args(argv=None):
     return ap.parse_args(argv)
 
 
-def make_detector(args):
-    kwargs = {"fine_dem": args.fine_dem}
+def make_detector(args, profile: str):
+    kwargs = {"fine_dem": args.fine_dem, "profile": profile}
     if args.detector_model:
         kwargs["gliner_model"] = args.detector_model
     if args.threshold is not None:
@@ -108,11 +123,16 @@ def make_detector(args):
 def main():
     args = parse_args()
     out = Path(args.out)
+    corpora = args.corpora.split(",")
 
     t0 = time.time()
-    det = make_detector(args)
+    detectors: dict[str, Detector] = {}   # one detector per distinct profile (reuses the load)
     art = {}
-    for corpus in args.corpora.split(","):
+    for corpus in corpora:
+        profile = profile_for(corpus)
+        det = detectors.setdefault(profile, None)
+        if det is None:
+            det = detectors[profile] = make_detector(args, profile)
         docs = load_task_docs(corpus, args.n_docs)
         art[corpus] = {}
         for d in docs:
@@ -120,7 +140,9 @@ def main():
             entry = {arm: [doc_p, R] for arm, (doc_p, R) in arms.items()}
             entry["action_table"] = action_table(d["text"], arms["tau_walk"][1])
             art[corpus][d["id"]] = entry
-        print(f"[{corpus}] {len(docs)} docs {time.time()-t0:.0f}s", flush=True)
+        print(f"[{corpus}] {len(docs)} docs (profile={profile}) {time.time()-t0:.0f}s", flush=True)
+    art["_meta"] = {"gate_fingerprint": span_gate.gate_fingerprint(),
+                    "profiles": {c: profile_for(c) for c in corpora}}
     out.write_text(json.dumps(art, indent=1))
     print(f"wall {time.time()-t0:.0f}s -> {out}")
 

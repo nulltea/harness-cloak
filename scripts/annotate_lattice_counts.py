@@ -24,6 +24,8 @@ path = Path(ap.parse_args().artifact)
 art = json.loads(path.read_text())
 n_spans = n_keep = 0
 for corpus, per_doc in art.items():
+    if corpus == "_meta":  # builder metadata (gate_fingerprint), not a corpus
+        continue
     for doc_id, entry in per_doc.items():
         for key, span in entry.get("action_table", {}).items():
             acts = span["actions"]
