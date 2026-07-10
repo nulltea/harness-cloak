@@ -76,9 +76,10 @@ Changes in `scripts/build_probes.py::_detect_docs`:
 
 - For lattice-role spans, replace the bare `lookup_levels` filter with `match_spans_batch` over
   `(surface, runtime_type, sent)` — the sentence is already computed and is the NLI certifier's
-  input. Matcher abstain (`None`) = the span is not a probe span (kept as detected for the floor
-  anonymization), which preserves current drop behavior while adding certified semantic recovery
-  of variant surfaces missing from alias lists.
+  input. Matcher abstain (`None`) = the span is dropped, exactly as a no-levels lattice span is
+  dropped today (it does not reach the floor either — preserving current behavior; widening
+  floor coverage is out of scope), while adding certified semantic recovery of variant surfaces
+  missing from alias lists.
 - Dedup key for lattice-role spans changes from `(surface, runtime_type)` to
   `(runtime_type, MatchResult.entry)`. The **first-occurring surface** stays the representative
   span — the reader lookup must use the surface the note actually states.
@@ -123,9 +124,12 @@ Pipeline, per runtime type:
      cheap, deterministic part of resolution coverage.
    - `count` = max; `level_counts` = per-level max (validator monotonicity re-checked);
      `source_ids` = union.
-4. **Validate.** `validate_profile_artifact` gains: no normalized surface (canonical or alias)
-   claimed by more than one row within a type. Today a duplicate claim silently resolves
-   first-wins in the index.
+4. **Duplicate-claim diagnostic.** The merge report lists every normalized surface (canonical
+   or alias) claimed by more than one row within a type. This is a report diagnostic, not a
+   validator error: cross-row homonyms are legitimate (measured 2026-07-10: 47 duplicate claims
+   in the live artifact, all in location/profession/religion — e.g. one place name naming two
+   distinct locations), so a hard uniqueness check would reject correct data. Today a duplicate
+   claim silently resolves first-wins in the loader index; the diagnostic makes it visible.
 
 ### Cross-encoder calibration (the "test how well it works" gate)
 
