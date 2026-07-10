@@ -304,17 +304,34 @@ class _AnthropicTeacher:
 def _teacher(model: str, base_url: str = LOCAL_BASE_URL):
     if model.startswith("claude-") and "localhost" not in base_url:
         return _AnthropicTeacher(model, base_url)
-    from cloak.llm import LLMClient
-    # chat_template_kwargs is llama.cpp-specific; remote OpenAI-compatible providers may
-    # reject unknown extra_body keys, so it is sent only to the local proxy
-    is_local = "localhost" in base_url
-    extra = {"chat_template_kwargs": {"enable_thinking": False}} if is_local else None
-    # OpenRouter (hosted teacher, same wiring as the lattice producer) authenticates with
-    # OPENROUTER_API_KEY; local proxy is keyless.
     import os
-    api_key = (os.environ.get("OPENROUTER_API_KEY") if "openrouter.ai" in base_url else "x") or "x"
-    return LLMClient(model, base_url=base_url, api_key=api_key,
+    from cloak.llm import LLMClient
+    if "openrouter.ai" in base_url:
+        # Hosted teacher, same wiring as the lattice producer: authenticate with
+        # OPENROUTER_API_KEY, enable OpenRouter's reasoning channel (Nemotron etc. are
+        # reasoning models — the JSON answer lands in `content`, thinking in `reasoning`),
+        # and give a generous token budget so reasoning does not truncate the JSON before it
+        # is emitted (the 1024 cap starved it — finish_reason=length). Verified 2026-07-10.
+        api_key = os.environ.get("OPENROUTER_API_KEY") or "x"
+        return LLMClient(model, base_url=base_url, api_key=api_key, temperature=0.0,
+                         max_tokens=8000, extra_body={"reasoning": {"enabled": True}})
+    # chat_template_kwargs is llama.cpp-specific; sent only to the local proxy.
+    extra = {"chat_template_kwargs": {"enable_thinking": False}} if "localhost" in base_url else None
+    return LLMClient(model, base_url=base_url, api_key="x",
                      temperature=0.0, max_tokens=1024, extra_body=extra)
+
+
+def _safe_generate(teacher, prompt: str) -> str:
+    """Teacher call that never aborts the pmap batch. The client already retries 429/5xx with
+    backoff (cloak.llm max_retries); if a call still exhausts retries, return '' so the batch
+    finishes — an empty reply is counted unparseable and re-asked next run (successful calls
+    are cached per-call, so re-runs resume)."""
+    try:
+        return teacher.generate(prompt)
+    except Exception as e:  # noqa: BLE001 — degrade one failed call, not the whole batch
+        print(f"ladder_probes: teacher call failed ({type(e).__name__}: {e}); "
+              f"treating as unparseable", flush=True)
+        return ""
 
 
 def _load(path: Path) -> dict:
@@ -354,7 +371,7 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
                              rungs="\n".join(f"  {i}: {r}" for i, r in enumerate(rungs)))})
     if todo:
         teacher = _teacher(model, base_url)
-        replies = pmap(lambda t: teacher.generate(t["prompt"]), todo, workers=workers)
+        replies = pmap(lambda t: _safe_generate(teacher, t["prompt"]), todo, workers=workers)
         n_bad = 0
         for t, r in zip(todo, replies):
             rows = _parse_json_list((r or "").strip())
@@ -401,7 +418,7 @@ def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: 
                         for e in cache.get(d["id"], []))]
     if todo:
         teacher = _teacher(model, base_url)
-        replies = pmap(lambda d: teacher.generate(DECISION_PROMPT.format(
+        replies = pmap(lambda d: _safe_generate(teacher, DECISION_PROMPT.format(
             output_kind=kind, k=k, decision_kinds=DECISION_KINDS[corpus],
             doc=d["text"], out_hi=out_hi_of[d["id"]])), todo, workers=workers)
         n_bad = 0
@@ -453,6 +470,11 @@ if __name__ == "__main__":
     assert not lint_rung("Which endocrine condition does the patient have?", rungs, 1)  # gold
     assert not lint_rung("What kind of issue is the hypothyroidism?", rungs, 2)  # finer leak
     assert lint_rung("What kind of ongoing health issue does the patient have?", rungs, 2)
+    class _Boom:
+        def generate(self, _p):
+            raise RuntimeError("429 rate limit")
+    assert _safe_generate(_Boom(), "x") == ""          # a failed call degrades, never aborts
+    assert _safe_generate(type("T", (), {"generate": staticmethod(lambda p: "ok")})(), "x") == "ok"
     assert _parse_json_list('noise [{"rung": 0, "q": "x?", "a": "y"}] tail') is not None
     assert _parse_json_list("<think>...</think>[]") is None
     assert _empty_gold("something") and _empty_gold("A physical condition.")

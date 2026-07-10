@@ -97,15 +97,22 @@ class LLMClient:
         base_url: str | None = None,
         api_key: str | None = None,
         single_flight: bool = False,
+        max_retries: int | None = None,
         **defaults: object,
     ) -> None:
         self.model = model
         self._defaults = defaults
         self.single_flight = single_flight
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or DEFAULT_BASE_URL
+        # The OpenAI SDK already retries 408/409/429/>=500 with exponential backoff and honors
+        # Retry-After; its default cap of 2 is too low for throttled free tiers (OpenRouter
+        # :free 429s in bursts), so lift it. CLOAK_LLM_MAX_RETRIES overrides for a hard run.
+        if max_retries is None:
+            max_retries = int(os.getenv("CLOAK_LLM_MAX_RETRIES", "8"))
         self._client = OpenAI(
             base_url=self.base_url,
             api_key=api_key or os.getenv("OPENAI_API_KEY") or "not-needed",
+            max_retries=max_retries,
         )
 
     def chat(self, messages: list[Message], *, refresh: bool = False, **overrides: object) -> str:
@@ -130,8 +137,14 @@ class LLMClient:
 
     def _compute(self, messages: list[Message], params: dict, path: str | None) -> str:
         resp = self._client.chat.completions.create(model=self.model, messages=messages, **params)
+        # Throttled/free endpoints (OpenRouter :free) can return HTTP 200 with no choices — an
+        # error payload the SDK's max_retries does not catch. Degrade to "" WITHOUT caching, so
+        # the empty is treated as a miss and re-tried on the next run instead of crashing on
+        # resp.choices[0] or poisoning the cache.
+        if not resp.choices:
+            return ""
         content = resp.choices[0].message.content or ""
-        if path:
+        if content and path:
             _write_cache(path, content, self.model)
         return content
 
