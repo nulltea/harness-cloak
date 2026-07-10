@@ -162,6 +162,13 @@ def gate_spans(items, operating_point: str, *, profiles_path=None, negatives_pat
         _warn_once(f"{calibration_path}:{operating_point}", reason)
         return out
     neg_vectors, neg_meta = negatives
+    # review guards: a margin drop is only trustworthy when negatives were embedded by the
+    # SAME model as the positive index and are non-empty/dimension-compatible; anything else
+    # is a stale artifact -> whole layer fails open.
+    if (neg_meta.get("model_id") != index.model_id or neg_vectors.size == 0
+            or neg_vectors.shape[1] != index.vectors.shape[1]):
+        _warn_once(str(negatives_path), "negatives stale (model/dim mismatch or empty)")
+        return out
     if embed_fn is None:
         model = _st_model(index.model_id)
         embed_fn = lambda t: model.encode(t, normalize_embeddings=True)
@@ -173,8 +180,11 @@ def gate_spans(items, operating_point: str, *, profiles_path=None, negatives_pat
     floor, margin = float(point["floor"]), float(point["margin"])
     for (key, _), q in zip(margin_todo, vectors):
         rows = index.type_rows(key[0])
-        pos = float(np.max(index.vectors[rows] @ q)) if rows else 0.0
-        neg = float(np.max(neg_vectors @ q)) if neg_vectors.size else 0.0
+        if not rows:  # no positive anchors for this type -> cannot judge, fail open
+            out[key] = GateDecision("keep", "open")
+            continue
+        pos = float(np.max(index.vectors[rows] @ q))
+        neg = float(np.max(neg_vectors @ q))
         if pos < floor and (neg - pos) >= margin:
             out[key] = GateDecision("drop", "margin", pos_sim=pos, neg_sim=neg)
         else:

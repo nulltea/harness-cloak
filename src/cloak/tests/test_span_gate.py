@@ -59,7 +59,7 @@ def test_gate_link_keep_and_retype(profile, tmp_path):
 
 def test_gate_margin_drops_junk_keeps_ambiguous(profile, tmp_path):
     neg = tmp_path / "negatives.npz"
-    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed,
+    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="fake",
                                    surfaces=["weird fragment"])
     calib = tmp_path / "calib.json"
     calib.write_text(json.dumps({"schema_version": 1, "model_id": "fake",
@@ -92,3 +92,27 @@ def test_denylist_layer_still_fires(profile, tmp_path, monkeypatch):
                                negatives_path=tmp_path / "none.npz",
                                calibration_path=tmp_path / "none.json")
     assert got[span_key("known junk", "health-condition")].layer == "denylist"
+
+
+def test_margin_fails_open_on_model_mismatch_and_missing_type_rows(profile, tmp_path):
+    # negatives embedded by a DIFFERENT model than the profile embindex -> stale -> fail open
+    neg = tmp_path / "negatives.npz"
+    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="other-model",
+                                   surfaces=["weird fragment"])
+    calib = tmp_path / "calib.json"
+    calib.write_text(json.dumps({"schema_version": 1, "model_id": "fake",
+        "points": {"production": {"floor": 0.6, "margin": 0.2}}}))
+    from cloak.profile_match import build_embindex
+    build_embindex(profile, embed_fn=fake_embed, model_id="fake")
+    got = span_gate.gate_spans([("brickish thing", "health-condition")], "production",
+                               profiles_path=profile, negatives_path=neg,
+                               calibration_path=calib, embed_fn=fake_embed)
+    assert got[span_key("brickish thing", "health-condition")].action == "keep"
+    # matching model but the span's type has no positive anchors -> fail open per span
+    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="fake",
+                                   surfaces=["weird fragment"])
+    got2 = span_gate.gate_spans([("brickish thing", "drug")], "production",
+                                profiles_path=profile, negatives_path=neg,
+                                calibration_path=calib, embed_fn=fake_embed)
+    d = got2[span_key("brickish thing", "drug")]
+    assert (d.action, d.layer) == ("keep", "open") and d.pos_sim is None
