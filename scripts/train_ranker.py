@@ -41,6 +41,7 @@ from cloak.corpora import load_task_docs
 from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
 from cloak.train.reward import fact_f1s, stage1_reward, u_qa
+from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
 try:  # surrogate-only environments run without the round-trip module
@@ -54,6 +55,42 @@ def _ctx_of(doc, i):
     set_context(None) is a no-op on RankerPolicy; in encoder mode doc['ctx'] is always set."""
     ctx = doc.get("ctx")
     return None if ctx is None else ctx[i]
+
+
+def _roundtrip_job(doc, doc_p, R):
+    """Build a roundtrip_batch job, preserving the legacy schema unless carrier fields exist."""
+    job = {"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+           "probes": doc["probes_train"]}
+    for key in ("ladder", "decisions", "out_hi", "schema"):
+        if key in doc:
+            job[key] = doc[key]
+    return job
+
+
+def _artifact_docs(path):
+    if path is None:
+        return {}
+    payload = json.loads(Path(path).read_text())
+    return payload.get("docs", payload) if isinstance(payload, dict) else {}
+
+
+def _artifact_entries(payload):
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        return [e for e in payload if isinstance(e, dict) and e.get("kept", True) is not False]
+    if isinstance(payload, dict):
+        entries = (payload.get("entries") or payload.get("train") or payload.get("probes")
+                   or payload.get("ladder") or payload.get("decisions") or [])
+        return [e for e in entries if isinstance(e, dict) and e.get("kept", True) is not False]
+    return []
+
+
+def _artifact_out_hi(*payloads):
+    for payload in payloads:
+        if isinstance(payload, dict) and payload.get("out_hi"):
+            return payload["out_hi"]
+    return None
 
 
 # ---------- assembly (rollout -> doc_p, R) ----------
@@ -313,8 +350,7 @@ def counterfactual_terms(doc, policy, choice, logps, base_r, *, frac, rng, rt_wo
         ph_idx = next(k for k, a in enumerate(s["actions"]) if a["mode"] == "placeholder")
         cf[s["surface"].lower()] = s["actions"][ph_idx]
         doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], cf)
-        jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-                     "probes": doc["probes_train"]})
+        jobs.append(_roundtrip_job(doc, doc_p, R))
     res = roundtrip_batch(jobs, workers=rt_workers)
     term = 0.0
     for i, r in zip(take, res):
@@ -342,8 +378,7 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             for _ in range(G):
                 choice, logps, ph, doc_p, R, legals = sample_rollout(
                     doc, doc["spans"], doc["feats"], policy)
-                jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-                             "probes": doc["probes_train"]})
+                jobs.append(_roundtrip_job(doc, doc_p, R))
                 logps_l.append(logps)
                 ph_l.append(ph)
                 legals_l.append(legals)
@@ -385,8 +420,7 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
                 g_choice, g_logps, _, g_doc_p, g_R, _ = sample_rollout(
                     doc, doc["spans"], doc["feats"], policy, greedy=True)
                 base_r = roundtrip_batch(
-                    [{"corpus": doc["corpus"], "doc_p": g_doc_p, "R": g_R,
-                      "probes": doc["probes_train"]}], workers=rt_workers)[0]["recall"] or 0.0
+                    [_roundtrip_job(doc, g_doc_p, g_R)], workers=rt_workers)[0]["recall"] or 0.0
                 term, n_cf = counterfactual_terms(doc, policy, g_choice, g_logps, base_r,
                                                   frac=cf_frac, rng=rng, rt_workers=rt_workers)
                 if n_cf > 0 and isinstance(term, torch.Tensor):
@@ -423,8 +457,7 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
         # construction, so assemble() can no longer collide.
         bc_choice = floor_walk_choice(doc["spans"])
         doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], bc_choice)
-        job = {"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-               "probes": doc["probes_train"]}
+        job = _roundtrip_job(doc, doc_p, R)
         jobs.append(job)
         bc_jobs[di] = job
         meta.append(("bc", di, None))
@@ -434,8 +467,7 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
                        i for i, a in enumerate(s["actions"])
                        if a is choice[s["surface"].lower()])
                    for s in doc["spans"]}
-            job = {"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-                   "probes": doc["probes_train"]}
+            job = _roundtrip_job(doc, doc_p, R)
             jobs.append(job)
             meta.append(("roll", di, idx))
     res = roundtrip_batch(jobs, workers=rt_workers)
@@ -629,6 +661,10 @@ def main():
                          "on out_final via roundtrip_batch (hits the proxy)")
     ap.add_argument("--probes", default="data/probes_validated.json",
                     help="validated probes artifact (roundtrip mode only)")
+    ap.add_argument("--ladder-probes", default=None,
+                    help="optional ladder probe artifact for two-channel roundtrip reward")
+    ap.add_argument("--decision-probes", default=None,
+                    help="optional decision probe artifact for two-channel roundtrip reward")
     ap.add_argument("--adv", choices=["group", "rloo"], default=None,
                     help="advantage baseline (default: group for surrogate, rloo for roundtrip)")
     ap.add_argument("--entropy-coef", type=float, default=None,
@@ -731,14 +767,39 @@ def main():
         print(f"probe artifact {args.probes}: teacher={meta.get('teacher')!r} "
               f"th={meta.get('th')} rt_model={meta.get('rt_model')!r}", flush=True)
         probes_all = probes_art["docs"]
+        ladder_all = _artifact_docs(args.ladder_probes)
+        decision_all = _artifact_docs(args.decision_probes)
         kept = []
         for doc in docs:
-            doc["probes_train"] = probes_all.get(doc["id"], {}).get("train", [])
-            doc["probes_heldout"] = probes_all.get(doc["id"], {}).get("heldout", [])
+            probes_doc = probes_all.get(doc["id"], {})
+            ladder_doc = ladder_all.get(doc["id"])
+            decision_doc = decision_all.get(doc["id"])
+            doc["probes_train"] = probes_doc.get("train", [])
+            doc["probes_heldout"] = probes_doc.get("heldout", [])
+            if args.ladder_probes is not None:
+                doc["ladder"] = _artifact_entries(ladder_doc)
+            if args.decision_probes is not None:
+                doc["decisions"] = _artifact_entries(decision_doc)
+            if args.ladder_probes is not None or args.decision_probes is not None:
+                out_hi = _artifact_out_hi(probes_doc, ladder_doc, decision_doc)
+                if out_hi is not None:
+                    doc["out_hi"] = out_hi
+                if doc["corpus"] in SCHEMA_CORPORA:
+                    doc["schema"] = True
             if len({canon(p["surface"]) for p in doc["probes_train"]}) >= 3:
                 kept.append(doc)
         print(f"roundtrip probes ({args.probes}): kept {len(kept)}/{len(docs)} docs, "
               f"dropped {len(docs) - len(kept)} with < 3 distinct train facts", flush=True)
+        if args.ladder_probes is not None:
+            n_ladder = sum(len(d.get("ladder", [])) for d in kept)
+            print(f"ladder probes ({args.ladder_probes}): attached {n_ladder} kept rungs",
+                  flush=True)
+        if args.decision_probes is not None:
+            n_decisions = sum(len(d.get("decisions", [])) for d in kept)
+            n_out_hi = sum("out_hi" in d for d in kept)
+            print(f"decision probes ({args.decision_probes}): attached {n_decisions} "
+                  f"decisions; out_hi available for {n_out_hi}/{len(kept)} docs",
+                  flush=True)
         docs = kept
     if args.smoke:
         docs, args.epochs, args.G = docs[:2], 2, 4
@@ -815,6 +876,8 @@ def main():
                "randomize_floors": False, "G": args.G, "epochs": args.epochs,
                "n_exit_rounds": args.exit_rounds, "exit_epochs": args.exit_epochs,
                "cf_frac": args.cf_frac,
+               "ladder_probes": args.ladder_probes,
+               "decision_probes": args.decision_probes,
                "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,
                "n_docs": len(docs),
                "policy": (f"encoder:{args.encoder_model}" if encoder_mode
@@ -842,8 +905,7 @@ def main():
             for doc in docs:
                 _, _, ph, doc_p, R, _ = sample_rollout(doc, doc["spans"], doc["feats"],
                                                        policy, greedy=True)
-                jobs.append({"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
-                             "probes": doc["probes_train"]})
+                jobs.append(_roundtrip_job(doc, doc_p, R))
                 phs.append(ph)
         res = roundtrip_batch(jobs, workers=args.rt_workers)
         rs = [r["recall"] or 0.0 for r in res]

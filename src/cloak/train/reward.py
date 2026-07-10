@@ -28,6 +28,8 @@ QA_BASE_URL = "http://localhost:8060/v1"
 QA_PROMPT = ("Answer the question using ONLY the note below. Reply with the shortest exact "
              "answer copied from the note (a name, value, number, or phrase). If the note does "
              "not contain the answer, reply exactly: NONE.\n\nNote:\n{ctx}\n\nQuestion: {q}\nAnswer:")
+W_EXACT = 0.5
+W_SEM = 0.5
 # u_gold scorer LM (spec §5.1): pinned + frozen for the whole gate->train->eval cycle.
 # Selection: Qwen/Qwen2.5-1.5B-Instruct when reachable (HF cache/network), else the local
 # EleutherAI/pythia-410m fallback. The value below is THE pin recorded in the gate/training
@@ -276,6 +278,24 @@ def fact_f1s(out_final: str, probes: list[dict], refresh: bool = False) -> list[
         return []
     answers = _read_batch([p["question"] for p in probes], out_final, refresh=refresh)
     return [fact_score(a, p["surface"]) for a, p in zip(answers, probes)]
+
+
+def _mc_pick(answer: str, options: list[str]) -> str | None:
+    """Map a free-form reader answer back to one of the shuffled options."""
+    answer_c = canon(answer or "").strip()
+    if not answer_c:
+        return None
+    for option in options:
+        option_c = canon(option or "").strip()
+        if option_c and (option_c == answer_c or option_c in answer_c or answer_c in option_c):
+            return option
+    return None
+
+
+def mc_score(answer: str, gold: str, options: list[str]) -> float:
+    """Multiple-choice decision score: 1 iff the reader's picked option is the gold."""
+    pick = _mc_pick(answer, options)
+    return float(pick is not None and canon(pick) == canon(gold or ""))
 
 
 def _max_by_fact(probes: list[dict], f1s: list[float]) -> dict[str, float]:

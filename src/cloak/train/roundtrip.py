@@ -15,8 +15,11 @@ under the pin they were produced with.
 import os
 
 from cloak.extract import invert
-from cloak.tasks import TASK_TEMPLATE
-from cloak.train.reward import _max_by_fact, fact_f1s
+from cloak.tasks import SCHEMA_TEMPLATE, TASK_TEMPLATE
+from cloak.train.ladder_probes import entail_score, mc_shuffle
+from cloak.train.reward import (_max_by_fact, _read_batch, canon, fact_f1s, fact_score,
+                                mc_score, W_EXACT, W_SEM)
+from cloak.train.schema_task import schema_field_score
 
 RT_MODEL = "gemma 4 (E4B)"   # THE pin (spec components table); changing it re-gates.
 RT_BASE_URL = "http://localhost:8060/v1"   # THE endpoint pin; part of the reward pin.
@@ -45,14 +48,99 @@ def _remote():
     return _client
 
 
+def _kept(entries: list[dict] | None) -> list[dict]:
+    return [e for e in (entries or []) if e.get("kept", True) is not False]
+
+
+def _ladder_key(entry: dict, fallback: int) -> str:
+    return str(entry.get("span_id") or canon(entry.get("surface", "")) or entry.get("id")
+               or fallback)
+
+
+def _rung_question(entry: dict) -> str | None:
+    return entry.get("question") or entry.get("q")
+
+
+def _score_ladder(ladder: list[dict], out_final: str, out_p: str,
+                  refresh: bool) -> tuple[list[float], list[float]]:
+    """Return (per-span carrier parts, raw rung-0 echo F1s)."""
+    entries = _kept(ladder)
+    groups: dict[str, dict[str, list[float]]] = {}
+    exact_rows, sem_rows = [], []
+    for i, entry in enumerate(entries):
+        q = _rung_question(entry)
+        rungs = entry.get("rungs") or [entry.get("surface") or entry.get("a") or ""]
+        if not q or not rungs:
+            continue
+        rung = int(entry.get("rung", 0))
+        key = _ladder_key(entry, i)
+        groups.setdefault(key, {"exact": [], "sem": []})
+        if rung == 0:
+            exact_rows.append((key, q, entry.get("surface") or rungs[0]))
+        elif rung >= 1:
+            sem_rows.append((key, q, rungs, rung))
+
+    echo_f1s = []
+    if exact_rows:
+        answers = _read_batch([q for _, q, _ in exact_rows], out_final, refresh=refresh)
+        for answer, (key, _q, surface) in zip(answers, exact_rows):
+            score = fact_score(answer, surface)
+            echo_f1s.append(score)
+            groups[key]["exact"].append(score)
+
+    if sem_rows:
+        answers = _read_batch([q for _, q, _, _ in sem_rows], out_p, refresh=refresh)
+        for answer, (key, _q, rungs, rung) in zip(answers, sem_rows):
+            groups[key]["sem"].append(entail_score(answer, rungs, rung))
+
+    parts = []
+    for scores in groups.values():
+        exact = sum(scores["exact"]) / len(scores["exact"]) if scores["exact"] else 0.0
+        sem = sum(scores["sem"]) / len(scores["sem"]) if scores["sem"] else 0.0
+        parts.append(W_EXACT * exact + W_SEM * sem)
+    return parts, echo_f1s
+
+
+def _decision_prompt(q: str, options: list[str]) -> str:
+    return q + "\nOptions:\n" + "\n".join(f"- {o}" for o in options)
+
+
+def _score_decisions(decisions: list[dict], out_final: str, refresh: bool) -> float | None:
+    rows = []
+    for i, entry in enumerate(_kept(decisions)):
+        q, options, gold = entry.get("q"), entry.get("options") or [], entry.get("gold")
+        if not q or not options or gold is None:
+            continue
+        shuffled = mc_shuffle(options, f"{q}|{i}|{out_final}")
+        rows.append((q, shuffled, gold))
+    if not rows:
+        return None
+    answers = _read_batch([_decision_prompt(q, opts) for q, opts, _ in rows],
+                          out_final, refresh=refresh)
+    scores = [mc_score(answer, gold, opts) for answer, (_q, opts, gold) in zip(answers, rows)]
+    return sum(scores) / len(scores)
+
+
+def _template(job: dict) -> str:
+    if job.get("schema") and job["corpus"] in SCHEMA_TEMPLATE:
+        return SCHEMA_TEMPLATE[job["corpus"]]
+    return TASK_TEMPLATE[job["corpus"]]
+
+
+def _carrier_enabled(job: dict) -> bool:
+    return bool(job.get("ladder") or job.get("decisions") or job.get("schema"))
+
+
 def roundtrip_batch(
     jobs: list[dict],
     workers: int = 6,
     extractor_models: dict | None = None,
     reader_refresh: bool = False,
 ) -> list[dict]:
-    """jobs: [{corpus, doc_p, R, probes}] -> [{out_p, out_final, f1s, recall}].
+    """jobs: [{corpus, doc_p, R, probes, ladder?, decisions?, out_hi?, schema?}].
+    Returns [{out_p, out_final, f1s, recall, ...}].
     recall = deployed fact_recall (per-fact max, mean over facts), None when no probes.
+    With carrier fields, recall is R_carrier's unweighted mean over available components.
     f1s stays the raw per-question list (the support scan counts per-question flip deltas).
 
     Each job's full gen->invert->read->score runs on one worker, so up to `workers` jobs run
@@ -67,7 +155,7 @@ def roundtrip_batch(
         from cloak import frozen_extractor
 
     def _one(j):
-        op = remote.generate(TASK_TEMPLATE[j["corpus"]].format(doc=j["doc_p"]))
+        op = remote.generate(_template(j).format(doc=j["doc_p"]))
         if extractor_models is None:
             out_final, _ = invert(op, j["R"])
             extractor_version = None
@@ -79,6 +167,36 @@ def roundtrip_batch(
                 models=extractor_models,
             )
             extractor_version = frozen_extractor.extractor_version()
+        if _carrier_enabled(j):
+            span_parts, f1s = _score_ladder(j.get("ladder") or [], out_final, op,
+                                            reader_refresh)
+            components = []
+            span_score = None
+            if span_parts:
+                span_score = sum(span_parts) / len(span_parts)
+                components.append(span_score)
+            decision_score = _score_decisions(j.get("decisions") or [], out_final,
+                                              reader_refresh)
+            if decision_score is not None:
+                components.append(decision_score)
+            schema_score = None
+            if j.get("schema") and j.get("out_hi"):
+                schema_score = schema_field_score(out_final, j["out_hi"])
+                if schema_score is not None:
+                    components.append(schema_score)
+            result = {
+                "out_p": op,
+                "out_final": out_final,
+                "f1s": f1s,
+                "recall": (sum(components) / len(components)) if components else None,
+                "span_parts": span_parts,
+                "span_score": span_score,
+                "decision_score": decision_score,
+                "schema_score": schema_score,
+            }
+            if extractor_version is not None:
+                result["extractor_version"] = extractor_version
+            return result
         f1s = fact_f1s(out_final, j["probes"], refresh=reader_refresh)
         by_fact = _max_by_fact(j["probes"], f1s)
         result = {"out_p": op, "out_final": out_final, "f1s": f1s,

@@ -42,10 +42,21 @@ def _exit_doc():
             "probes_train": [{"surface": "metformin", "question": "What drug?"}]}
 
 
-def fake_roundtrip(jobs, workers=1):
+def fake_roundtrip(jobs, workers=1, reader_refresh=False):
     # reward 1.0 iff the level fill survived into doc_p, else 0.0
     return [{"out_p": "", "out_final": j["doc_p"], "f1s": [float("biguanide" in j["doc_p"])],
              "recall": float("biguanide" in j["doc_p"])} for j in jobs]
+
+
+def _with_carrier(doc):
+    doc = dict(doc)
+    doc["ladder"] = [{"surface": "metformin", "rung": 0, "q": "What drug?",
+                      "rungs": ["metformin", "a biguanide"]}]
+    doc["decisions"] = [{"q": "Which route?", "options": ["endocrinology", "primary care"],
+                         "gold": "primary care", "span_ids": ["metformin"]}]
+    doc["out_hi"] = "ASSESSMENT: metformin - medication - active"
+    doc["schema"] = True
+    return doc
 
 
 def _candidate_rollout(doc, span_rows, feats, policy):
@@ -191,3 +202,49 @@ def test_roundtrip_epoch_moves_policy(monkeypatch):
     assert not torch.allclose(before, after)          # first-smoke movement canary
     assert after[0] > before[0]                       # level action (rewarded) went UP
     assert "ties_skipped" in stats[-1]
+
+
+def test_train_roundtrip_threads_optional_carrier_fields(monkeypatch):
+    doc = _with_carrier(_doc())
+    captured = []
+
+    def fake_roundtrip_carrier(jobs, workers=1):
+        captured.extend(jobs)
+        return [{"recall": float(i % 2), "out_p": "", "out_final": "", "f1s": []}
+                for i, _ in enumerate(jobs)]
+
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_carrier)
+
+    tr.train_roundtrip([doc], tr.RankerPolicy(), G=2, epochs=1, lr=0.01,
+                       entropy_coef=0.0, kl_coef=0.0, ref=None,
+                       rt_workers=1, seed=0)
+
+    assert len(captured) == 2
+    assert all(j["ladder"] == doc["ladder"] for j in captured)
+    assert all(j["decisions"] == doc["decisions"] for j in captured)
+    assert all(j["out_hi"] == doc["out_hi"] for j in captured)
+    assert all(j["schema"] is True for j in captured)
+
+
+def test_counterfactual_terms_threads_optional_carrier_fields(monkeypatch):
+    doc = _with_carrier(_doc())
+    choice = {"metformin": doc["spans"][0]["actions"][0]}
+    logps = [torch.tensor(0.0, requires_grad=True)]
+    captured = []
+
+    def fake_roundtrip_carrier(jobs, workers=1):
+        captured.extend(jobs)
+        return [{"recall": 0.0, "out_p": "", "out_final": "", "f1s": []} for _ in jobs]
+
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_carrier)
+
+    term, n_cf = tr.counterfactual_terms(doc, tr.RankerPolicy(), choice, logps, 1.0,
+                                         frac=1.0, rng=__import__("random").Random(0),
+                                         rt_workers=1)
+
+    assert n_cf == 1
+    assert isinstance(term, torch.Tensor)
+    assert captured[0]["ladder"] == doc["ladder"]
+    assert captured[0]["decisions"] == doc["decisions"]
+    assert captured[0]["out_hi"] == doc["out_hi"]
+    assert captured[0]["schema"] is True
