@@ -118,7 +118,9 @@ Pipeline, per runtime type:
      disabled for that type).
 3. **Merge semantics.**
    - Canonical key = the ontology preferred label when linked (this also repairs
-     acronym-fragment canonical keys); otherwise the higher-`count` row's key (tie: lexicographically smaller key, for determinism).
+     acronym-fragment canonical keys), normalized to the artifact's lowercase key convention;
+     otherwise the higher-`count` row's key (tie: lexicographically smaller key, for
+     determinism).
    - `aliases` = union of both rows' canonicals + aliases (minus the new canonical), enriched
      with the ontology's exact synonyms for the linked id — widening the exact fast path is the
      cheap, deterministic part of resolution coverage.

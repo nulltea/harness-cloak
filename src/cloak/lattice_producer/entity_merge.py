@@ -124,12 +124,27 @@ def merge_runtime_type(entries: dict[str, dict], *, oracle_index: dict[str, str]
               for k in entries}
 
     parent = {k: k for k in entries}
+    component_ids: dict[str, set[str]] = {k: ({row_id[k]} if row_id[k] else set())
+                                          for k in entries}
 
     def find(x: str) -> str:
         while parent[x] != x:
             parent[x] = parent[parent[x]]
             x = parent[x]
         return x
+
+    def union(a: str, b: str) -> bool:
+        """Union a's and b's components unless that would put two distinct ontology ids in
+        one component (an unlinked bridge row must never fuse ontology-distinct entities)."""
+        ra, rb = find(a), find(b)
+        if ra == rb:
+            return True
+        merged_ids = component_ids[ra] | component_ids[rb]
+        if len(merged_ids) > 1:
+            return False
+        parent[ra] = rb
+        component_ids[rb] = merged_ids
+        return True
 
     pairs = block_pairs(entries, embed_fn=embed_fn)
     by_id: dict[str, list[str]] = defaultdict(list)
@@ -146,7 +161,7 @@ def merge_runtime_type(entries: dict[str, dict], *, oracle_index: dict[str, str]
         ia, ib = row_id[a], row_id[b]
         if ia and ib and ia == ib:
             if same_levels:
-                parent[find(a)] = find(b)
+                union(a, b)   # same id on both sides: can never bridge distinct ids
                 report["merged"].append({"a": a, "b": b, "why": f"ontology:{ia}"})
             else:
                 report["review"].append({"a": a, "b": b, "why": f"ontology:{ia} levels differ"})
@@ -159,8 +174,11 @@ def merge_runtime_type(entries: dict[str, dict], *, oracle_index: dict[str, str]
             score = gate_fn(_row_surfaces(a, entries[a])[:4], _row_surfaces(b, entries[b])[:4])
             report["gate_scored"] += 1
             if score >= gate_threshold:
-                parent[find(a)] = find(b)
-                report["merged"].append({"a": a, "b": b, "why": f"gate:{score:.3f}"})
+                if union(a, b):
+                    report["merged"].append({"a": a, "b": b, "why": f"gate:{score:.3f}"})
+                else:
+                    report["review"].append(
+                        {"a": a, "b": b, "why": "would bridge distinct ontology ids"})
                 continue
         report["review"].append({"a": a, "b": b, "why": "unlinked identical levels"})
 

@@ -126,6 +126,24 @@ def test_gate_merges_unlinked_identical_levels_above_threshold(tmp_path):
     assert any(r["why"] == "unlinked identical levels" for r in report2["review"])
 
 
+def test_gate_never_bridges_distinct_ontology_ids(tmp_path):
+    # blorbitis -> DOID:0000001, glimmerosis -> DOID:0000003, flurbitis unlinked; identical
+    # levels and a gate that passes EVERY pair. The unlinked bridge row may join one side,
+    # but the two ontology-distinct rows must never end in one component.
+    obo = _obo(tmp_path)
+    entries = {
+        "blorbitis": _row(["organ disease"], count=30.0),
+        "glimmerosis": _row(["organ disease"], count=20.0),
+        "flurbitis": _row(["organ disease"], count=10.0),
+    }
+    merged, report = merge_runtime_type(
+        entries, oracle_index=doid_surface_index(obo),
+        preferred_name={"DOID:0000001": "blorbitis", "DOID:0000003": "glimmerosis"},
+        gate_fn=lambda sa, sb: 0.99, gate_threshold=0.9)
+    assert "blorbitis" in merged and "glimmerosis" in merged
+    assert any(r["why"] == "would bridge distinct ontology ids" for r in report["review"])
+
+
 def test_merged_row_level_counts_take_per_level_max():
     entries = {
         "flurbitis": {**_row(["organ disease"]), "level_counts": {"organ disease": 100.0}},
