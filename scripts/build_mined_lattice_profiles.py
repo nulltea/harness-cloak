@@ -17,8 +17,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from cloak.corpora import load_task_docs
-from cloak.detect import is_noise_span, strip_dose_suffix
+from cloak.detect import strip_dose_suffix
 from cloak.lattice_profiles import SCHEMA_VERSION, validate_profile_artifact
+from cloak.profile_match import span_key
+from cloak.span_gate import gate_fingerprint, gate_spans
 
 DETECTOR_LABELS = [
     "condition",
@@ -33,7 +35,7 @@ DETECTOR_LABELS = [
 
 LABEL_TO_RUNTIME_TYPE = {
     "condition": "health-condition",
-    "injury": "health-condition",
+    "injury": "injury",
     "medical process": "medical-procedure",
     "drug": "drug",
     "organization medical facility": "organization-medical-facility",
@@ -41,13 +43,15 @@ LABEL_TO_RUNTIME_TYPE = {
 
 FALLBACK_LEVELS = {
     "health-condition": ["medical condition"],
+    "injury": ["injury"],
     "medical-procedure": ["medical procedure"],
     "drug": ["medication"],
     "organization-medical-facility": ["healthcare organization"],
 }
 
 GENERIC_SURFACES = {
-    "health-condition": {"condition", "conditions", "medical condition", "medical conditions", "injury", "injuries"},
+    "health-condition": {"condition", "conditions", "medical condition", "medical conditions"},
+    "injury": {"injury", "injuries", "trauma", "wound", "wounds"},
     "medical-procedure": {"medical process", "medical procedure", "procedure", "procedures", "process"},
     "drug": {"drug", "drugs", "medication", "medications", "medicine", "medicines"},
     "organization-medical-facility": {
@@ -94,30 +98,32 @@ def normalize_detector_label(label: str) -> str:
     return LABEL_TO_RUNTIME_TYPE[key]
 
 
-def build_mined_artifact(
-    spans: list[DetectedSpan],
-    common_artifact: dict,
-    fine_artifact: dict,
-    *,
-    created: str | None = None,
-) -> tuple[dict, dict[str, int]]:
-    common_index = ProfileIndex(common_artifact)
-    fine_index = ProfileIndex(fine_artifact)
-    profiles: dict[str, dict[str, dict]] = defaultdict(dict)
-    stats = {
+def _new_stats() -> dict[str, object]:
+    return {
         "detected_spans": 0,
         "unique_detected_spans": 0,
         "skipped_common": 0,
         "generic_skipped": 0,
-        "noise_skipped": 0,
+        "noise_skipped": 0,     # gate deny-list drops (was is_noise_span)
+        "gate_dropped": 0,      # gate anchor-margin drops
+        "gate_retyped": 0,      # gate layer-2 retypes
         "copied_fine": 0,
         "new_entries": 0,
     }
 
-    unique = _unique_spans(spans)
-    stats["detected_spans"] = len(spans)
-    stats["unique_detected_spans"] = len(unique)
 
+def _gate_and_build_rows(
+    unique: list[DetectedSpan],
+    common_index: "ProfileIndex",
+    fine_index: "ProfileIndex",
+    stats: dict,
+) -> dict[str, dict[str, dict]]:
+    """Apply the semantic gate per unique span, then build profile rows for the survivors.
+
+    The gate replaces the old is_noise_span call: deny-list drops keep noise_skipped, margin
+    drops count gate_dropped, layer-2 retypes reassign runtime_type + count gate_retyped, keeps
+    proceed unchanged. Fail-opens to keep when gate artifacts are absent."""
+    prepared: list[tuple[DetectedSpan, str, str]] = []
     for span in unique:
         runtime_type = normalize_detector_label(span.detector_label)
         surface = _norm(span.surface)
@@ -125,12 +131,22 @@ def build_mined_artifact(
             surface = strip_dose_suffix(surface)
         if not surface:
             continue
+        prepared.append((span, runtime_type, surface))
+
+    decisions = gate_spans([(surface, rt) for _, rt, surface in prepared], "miner")
+    profiles: dict[str, dict[str, dict]] = defaultdict(dict)
+    for span, runtime_type, surface in prepared:
         if _is_generic_surface(runtime_type, surface):
             stats["generic_skipped"] += 1
             continue
-        if is_noise_span(surface, runtime_type):
-            stats["noise_skipped"] += 1
-            continue
+        decision = decisions.get(span_key(surface, runtime_type))
+        if decision is not None:
+            if decision.action == "drop":
+                stats["noise_skipped" if decision.layer == "denylist" else "gate_dropped"] += 1
+                continue
+            if decision.action == "retype" and decision.new_type:
+                runtime_type = decision.new_type
+                stats["gate_retyped"] += 1
         if common_index.find(runtime_type, surface):
             stats["skipped_common"] += 1
             continue
@@ -143,6 +159,38 @@ def build_mined_artifact(
         row = _new_row(runtime_type, span)
         _merge_new_row(profiles[runtime_type], surface, row)
         stats["new_entries"] += 1
+    return profiles
+
+
+def build_rows_for_test(spans: list[DetectedSpan]) -> tuple[dict[str, dict[str, dict]], dict]:
+    """Thin seam: gate + row-build over spans with no common/fine coverage (test-only)."""
+    empty = ProfileIndex({"profiles": {}})
+    stats = _new_stats()
+    unique = _unique_spans(spans)
+    stats["detected_spans"] = len(spans)
+    stats["unique_detected_spans"] = len(unique)
+    profiles = _gate_and_build_rows(unique, empty, empty, stats)
+    stats["gate_fingerprint"] = gate_fingerprint()
+    return profiles, stats
+
+
+def build_mined_artifact(
+    spans: list[DetectedSpan],
+    common_artifact: dict,
+    fine_artifact: dict,
+    *,
+    created: str | None = None,
+) -> tuple[dict, dict[str, int]]:
+    common_index = ProfileIndex(common_artifact)
+    fine_index = ProfileIndex(fine_artifact)
+    stats = _new_stats()
+
+    unique = _unique_spans(spans)
+    stats["detected_spans"] = len(spans)
+    stats["unique_detected_spans"] = len(unique)
+
+    profiles = _gate_and_build_rows(unique, common_index, fine_index, stats)
+    stats["gate_fingerprint"] = gate_fingerprint()
 
     artifact = {
         "schema_version": SCHEMA_VERSION,
@@ -265,15 +313,20 @@ def detect_clinical_spans(
 
 
 def _unique_spans(spans: list[DetectedSpan]) -> list[DetectedSpan]:
-    best: dict[tuple[str, str], DetectedSpan] = {}
+    """Resolve each surface to a single best-scoring label. GLiNER emits the same surface under
+    competing labels (e.g. "kidney stones" as both condition 0.93 and injury 0.60); keying on
+    surface alone -- not (label, surface) -- picks the label the model was most confident about,
+    so a surface lands in exactly one runtime profile instead of being double-counted across the
+    injury/condition (and any other) type boundary."""
+    best: dict[str, DetectedSpan] = {}
     for span in spans:
         surface = _norm(span.surface)
         label = _norm(span.detector_label)
         if not surface or len(surface) < 2:
             continue
-        cur = best.get((label, surface))
+        cur = best.get(surface)
         if cur is None or span.score > cur.score:
-            best[(label, surface)] = DetectedSpan(surface, label, span.doc_id, span.score)
+            best[surface] = DetectedSpan(surface, label, span.doc_id, span.score)
     return [best[k] for k in sorted(best)]
 
 

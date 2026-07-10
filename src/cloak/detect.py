@@ -3,7 +3,7 @@
 Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 """
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 # Zero-shot label phrase -> TAB entity_type. Phrasing matters for GLiNER; tune only here.
 GLINER_LABELS = {
@@ -107,7 +107,7 @@ PRESIDIO_MAP = {
 _PRONOUNS = frozenset({"i", "me", "my", "mine", "you", "your", "he", "him", "his", "she",
                        "her", "it", "its", "we", "us", "our", "they", "them", "their"})
 _SLANG_STOP = frozenset({"rn", "ngl"})  # chat slang; but "RN" = registered nurse in clinical text
-_NOISE_FILTER_TYPES = frozenset({"drug", "health-condition", "medical-procedure"})
+_NOISE_FILTER_TYPES = frozenset({"drug", "health-condition", "medical-procedure", "injury"})
 
 # Cross-type negative filter: confirmed non-entity categories for clinical drug/condition/procedure mining.
 _NOISE_KEEP_PATTERNS = (
@@ -398,8 +398,7 @@ class Detector:
                  if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in self.stop_words]
         spans = _dedupe(spans)
         if self.profile.negative_filter:
-            spans = [s for s in spans
-                     if s.type not in _NOISE_FILTER_TYPES or not is_noise_span(s.text, s.type)]
+            spans = _apply_negative_filter(spans)
         return spans
 
 
@@ -420,6 +419,31 @@ def _dedupe(spans: list[Span]) -> list[Span]:
         if not any(s.start < o.end and o.start < s.end for o in out):
             out.append(s)
     return sorted(out, key=lambda s: s.start)
+
+
+def _apply_negative_filter(spans: list[Span]) -> list[Span]:
+    """Semantic-gate the noise-filter types: drop margin/deny-list negatives, apply layer-2
+    retypes, keep the rest. Types outside _NOISE_FILTER_TYPES bypass the gate. Fail-opens to
+    keep when gate artifacts are absent (== the old is_noise_span filter via the deny-list
+    layer). span_gate is imported lazily so a non-clinical profile never pulls numpy at load."""
+    gated = [s for s in spans if s.type in _NOISE_FILTER_TYPES]
+    if not gated:
+        return spans
+    from cloak import span_gate
+    from cloak.profile_match import span_key
+    decisions = span_gate.gate_spans([(s.text, s.type) for s in gated], "production")
+    out: list[Span] = []
+    for s in spans:
+        if s.type not in _NOISE_FILTER_TYPES:
+            out.append(s)
+            continue
+        d = decisions.get(span_key(s.text, s.type))
+        if d is None or d.action == "keep":
+            out.append(s)
+        elif d.action == "retype" and d.new_type:
+            out.append(replace(s, type=d.new_type))
+        # d.action == "drop": omit
+    return out
 
 
 def coref_chains(text: str, spans: list[Span]) -> list[Span]:
