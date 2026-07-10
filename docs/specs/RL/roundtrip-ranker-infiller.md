@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-05
-updated: 2026-07-06
+updated: 2026-07-10
 tags: [rl, round-trip-reward, ranker, infiller, expert-iteration, rloo, probes,
        fact-recall, count-floors, gates, anti-goodhart, spec]
 companion: [docs/plans/2026-07-05-roundtrip-rl-strategy.md,
@@ -29,7 +29,15 @@ literature basis: [round-trip RL strategy plan](../../plans/2026-07-05-roundtrip
 - **R (substitution record)** — client-side `{surface → replacement}` map, injective per doc.
 - **Round-trip reward `R_rt`** — realized fact recall on out_final over a doc's train-split
   probes (§ Phase 1). The only training reward; deterministic given doc_p (pinned temp-0
-  remote model + cache).
+  remote model + single-flight generation + cache — § Determinism under concurrency).
+- **Single-flight generation** — at most one in-flight request to the remote task model,
+  ever (client-side lock shared per (base_url, model)); llama.cpp batched inference makes
+  temp-0 outputs depend on concurrent batch composition, so serving concurrency is part of
+  the reward pin.
+- **Winner re-verification** — before an ExIt winner enters the SFT set, its reward and its
+  doc's floor-walk baseline are recomputed serially with cache-bypassed reader answers; the
+  winner is kept only if the clean values still satisfy `r > baseline`. Select-by-max is a
+  biased order statistic under any residual jitter — only verified values become labels.
 - **Probe** — one QA pair `(q, a)` whose answer `a` is a detected sensitive span restated by
   the gold task output; validated action-sensitive by the ceiling/floor anchor checks
   (§ Phase 0 step 4). Train/held-out split per doc.
@@ -79,7 +87,7 @@ proxy at :8060; family separation across grader/teacher/environment roles):
 | π_rank                               | per-span choice from `legal[s\|k]`                            | ModernBERT-base (~150M) doc encoder + per-span action head, autoregressive over spans; trains on the iGPU in `.venv`; 19-feature vector (§ π_rank — features and how they drive the choice); feature-only MLP retained as capacity-ablation arm                                                                                                                                                                                     |
 | π_fill (E1)                          | grammar-constrained rendering                                 | **TBD — decided at Stage-2 kickoff** (user decision 2026-07-05). Constraints that survive the deferral: torch-side in `.venv` (HF logits-processor grammar masks + LoRA cannot live behind llama-swap), ~1–3B trainable on the iGPU, mature HF/PEFT/TRL support. Candidate at time of writing: Qwen3-1.7B-Instruct                                         |
 | BC teacher                           | π_rank init                                                   | floor-walk                                                                                                                                                                                                                                                                                                                                                 |
-| remote task model                    | executes the task on doc_p; the reward's LLM                  | **gemma 4 (E4B)**, non-thinking (`enable_thinking: false`), max_tokens 512, **temp 0**, cache key `hash(model, template, doc_p)`. Go/no-go: Phase-0 ceiling-anchor pass rate per corpus — fallback Qwen3.6-35B-A3B (re-pin ⇒ re-gate)                                                                                                                      |
+| remote task model                    | executes the task on doc_p; the reward's LLM                  | **gemma 4 (E4B)**, non-thinking (`enable_thinking: false`), max_tokens 1024, **temp 0**, **single-flight** (one in-flight gen request — serving concurrency is part of this pin; § Determinism under concurrency), cache key `hash(model, template, doc_p)`. Go/no-go: Phase-0 ceiling-anchor pass rate per corpus — fallback Qwen3.6-35B-A3B (re-pin ⇒ re-gate)                                                                                                                      |
 | task prompt                          | the SAME per-corpus template everywhere                       | `TASK_TEMPLATE[corpus]`, `src/cloak/tasks.py`                                                                                                                                                                                                                                                                                                              |
 | extractor                            | `invert(out_p, R)`                                            | rule exact/fuzzy-90, deployed path                                                                                                                                                                                                                                                                                                                         |
 | QA reader                            | answers probes against out_final                              | **Qwen3.5-0.8B** generative reader (re-pin 2026-07-06 from `roberta-base-squad2`: extractive abstained ~40% on relational/section-structured notes, FM1); grounded+abstaining prompt, temp0/greedy (deterministic), non-thinking, **batched per out_final** (pmap workers = `-np 6`); **served on llama-swap** (:8060, `UD-Q8_K_XL` GGUF — Qwen3.5 is hybrid-attention, its fla/causal-conv1d kernels don't build on ROCm, so llama.cpp serves it and prompt-caches the shared note prefix; must stay co-resident with the reward model to avoid swap-thrash in training). Shares no gradients. Fact scorer v2 (`fact_score`): canon + number-gate + containment + acronym. See `docs/issues/2026-07-06-placeholder-gaming-reward-qa-necessity.md` for the reader-selection sweep. |
@@ -152,6 +160,36 @@ reward — the reward stays the graded mean.
 Normative rules: utility-only (privacy lives in the mask); no cross-floor averaging anywhere;
 the cache is first-class infrastructure (reward memoization = ExIt candidate pool = RM data);
 whole-output similarity (ROUGE/BERTScore) never trains — eval-side only (§ Phase 5).
+
+### Determinism under concurrency (added 2026-07-10; finding 2026-07-09)
+
+Measured (issue register §1b, `docs/issues/2026-07-08-rl-env-and-lattice-count-issue-register.md`):
+with concurrent whole round trips, llama.cpp batched inference makes temp-0 `out_p` depend on
+concurrent batch composition — same jobs at `workers=1` vs `workers=6` flipped ~1/8–1/3 of
+per-doc rewards by ~one quantization step, parallel systematically higher. Because the cache
+freezes whatever value is computed first, the defect is specifically **cache-cold computation
+under concurrency**. Resolution (approved 2026-07-10), three parts:
+
+1. **Single-flight generation.** All requests to the remote task model hold a client-side lock
+   shared per (base_url, model): one in-flight gen request, ever. Cached `out_p` is then the
+   canonical serial temp-0 output. Reader traffic stays concurrent across rollouts — it targets
+   a different served model process, whose batching cannot perturb the gen model's numerics
+   (assumption verified by the gen-determinism probe before any gated run). This keeps
+   gen/read pipeline overlap, so most of the measured 3.1× concurrency speedup survives.
+2. **Residual reader jitter is measured, not assumed.** The reader is also llama.cpp temp-0;
+   its own cross-rollout concurrency jitter on fixed `out_final` is priced by a probe. If
+   nonzero it affects only RLOO's gradient variance (tolerated by construction); ExIt is
+   firewalled by (3).
+3. **Winner re-verification (ExIt).** Selection-by-max harvests upward jitter into SFT labels.
+   Each candidate winner and its doc's floor-walk baseline are re-scored serially with
+   cache-bypassed reader answers (nothing else in flight); the winner enters the SFT set only
+   if the clean values still satisfy strict improvement. Costs two clean evaluations per
+   winning doc per round instead of serializing all G rollouts.
+
+Cache hygiene: entries written under the pre-fix concurrent loop are non-canonical and keep
+their keys — any post-fix gate/train/eval cycle starts from a fresh `CLOAK_LLM_CACHE` (this is
+the ordinary re-gate cache invalidation; the concurrency regime is part of the pin). All
+pre-fix verdicts (v3 smoke, support scan, 2026-07-08 ablation) are void for gating purposes.
 
 ## π_rank — features and how they drive the choice
 
@@ -327,7 +365,10 @@ for round in 1..5:
         group = [sample(pi_rank, legal[.|k]) for _ in range(G)]        # G = 16-32
         r     = [R_rt(doc, a) for a in group]
         if max(r) > R_rt(doc, floor_walk(doc, k)):
-            D += [(doc, k, group[argmax(r)])]       # keep-the-best only
+            best = group[argmax(r)]                 # candidate winner
+            r_clean, bc_clean = verify_serial(doc, best), verify_serial(doc, floor_walk(doc, k))
+            if r_clean > bc_clean:                  # winner re-verification (§ Determinism):
+                D += [(doc, k, best)]               # only clean values become SFT labels
     pi_rank = SFT(pi_rank, D)
 
 # ── refiner: RLOO from the ExIt checkpoint ──
@@ -396,14 +437,22 @@ reported, never calibrated away. Additions (2026-07-05):
 
 ## Gates (before any training run; report format pre-registered)
 
-1. **Round-trip support scan** — THE training gate (handoff-mandated): from the floor-walk
+1. **Gen-determinism + reader-jitter probe** — first: (i) `out_p` exact-match between the
+   single-flight concurrent loop and full `workers=1` on the same jobs (validates the
+   single-flight assumption); (ii) reader answer flip rate on fixed `out_final` at
+   `workers=1` vs `workers=6` with cache bypass (prices residual reader jitter). Reported in
+   the gate report; a nonzero (ii) is a finding, not a blocker (ExIt is firewalled by winner
+   re-verification; RLOO tolerates variance).
+2. **Round-trip support scan** — THE training gate (handoff-mandated): from the floor-walk
    baseline, ~100 single-action counterfactuals → cached round trips → per-probe realized
    recall deltas. Pass = flips exist in BOTH directions and per-swap deltas exceed the
    quantization step on ≥ 1 corpus-representative subset. A support desert is a finding about
-   the environment, reported, never worked around.
-2. **Probe health report** — per corpus: probes/doc (mean/min), ceiling/floor rejection rates,
+   the environment, reported, never worked around. **Must run under the single-flight
+   deterministic loop with a fresh cache** — the pre-fix PASS (computed under the concurrent
+   noisy loop, § Determinism under concurrency) is void.
+3. **Probe health report** — per corpus: probes/doc (mean/min), ceiling/floor rejection rates,
    docs excluded (< 3 train probes), reader spot-check error rate on `out_hi`.
-3. Re-run both on ANY pinned-component change. Pass criteria name the failing clause; no
+4. Re-run all on ANY pinned-component change. Pass criteria name the failing clause; no
    partial credit.
 
 ## The one subtlety
@@ -413,7 +462,10 @@ cache a shared substrate (reward memoization = ExIt pool = RM training set), mak
 counterfactual span advantages *exact* instead of estimated, and makes probe validation
 meaningful. It holds only while every pinned-components row stays fixed; change one and every
 cached number, gate verdict, and trained policy is invalidated **together** — the re-gate rule
-is cache coherence, not bureaucracy.
+is cache coherence, not bureaucracy. Temp-0 alone does not deliver the property: llama.cpp
+batched serving makes the argmax depend on concurrent batch composition (measured 2026-07-09),
+so determinism additionally requires single-flight generation and winner re-verification
+(§ Determinism under concurrency) — the serving-concurrency regime is part of the pin.
 
 ## Worked example (one doc, one ExIt round)
 
