@@ -111,8 +111,12 @@ Pipeline, per runtime type:
      provided their `levels` are identical; linked pairs with differing levels go to the review
      file, never auto-merge.
    - *Cross-encoder gate (unlinked pairs):* auto-merge only if `levels` are byte-identical AND
-     the same-entity score clears the calibrated threshold. Pairs below threshold, or any pair if
-     the gate fails calibration, land in the review file.
+     the same-entity score clears the calibrated threshold, AND the runtime type is covered by
+     the gate's calibration eval (health-condition for the DOID-derived eval) — the precision
+     guarantee does not transfer to type distributions it was never measured on (first live
+     dry-run: a disease-calibrated threshold gate-merged 27.6% of profession rows). Pairs below
+     threshold, outside gate scope, or any pair if the gate fails calibration, land in the
+     review file.
    - The blocking + gate machinery is type-agnostic; only the health-condition ontology adapter
      ships now. Types without an oracle run blocking + gate (or review-only if the gate is
      disabled for that type).

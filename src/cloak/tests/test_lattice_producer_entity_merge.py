@@ -163,3 +163,19 @@ def test_apply_entity_merge_reports_duplicate_surface_claims(tmp_path):
     assert set(artifact["profiles"]["LOC"]) == {"springtown", "springtown two"}
     assert report["duplicate_surface_claims"]["LOC"] == [
         {"surface": "the springs", "rows": ["springtown", "springtown two"]}]
+
+
+def test_gate_only_merges_types_covered_by_its_calibration(tmp_path):
+    # gate calibrated on the oracle type's distribution: LOC pairs must not gate-merge even
+    # with a perfect score; the oracle type still can.
+    artifact = {"schema_version": 1, "created": "2026-07-10", "sources": {}, "profiles": {
+        "LOC": {"springtown": _row(["city"]), "springtown city": _row(["city"])},
+        "health-condition": {"flurbitis": _row(["organ disease"]),
+                             "flurb disease": _row(["organ disease"])}}}
+    obo = tmp_path / "mini.obo"
+    obo.write_text("[Term]\nid: DOID:9\nname: unrelated\n")
+    report = apply_entity_merge(artifact, obo_paths={"health-condition": str(obo)},
+                                gate_fn=lambda sa, sb: 1.0, gate_threshold=0.9)
+    assert set(artifact["profiles"]["LOC"]) == {"springtown", "springtown city"}
+    assert len(artifact["profiles"]["health-condition"]) == 1
+    assert report["types"]["LOC"]["gate_scored"] == 0

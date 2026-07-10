@@ -214,13 +214,19 @@ def _duplicate_surface_claims(entries: dict[str, dict]) -> list[dict]:
 
 def apply_entity_merge(artifact: dict, *, obo_paths: dict[str, str] | None = None,
                        gate_fn: Callable | None = None, gate_threshold: float | None = None,
+                       gate_types: frozenset[str] | set[str] | None = None,
                        embed_fn: Callable | None = None) -> dict:
     """Mutates artifact['profiles'] in place (like coherence.normalize_coherence); returns
-    the merge report. Ontology oracles apply only to types in obo_paths."""
+    the merge report. Ontology oracles apply only to types in obo_paths. The gate auto-merges
+    only within gate_types — the types its calibration eval covers (default: the oracle types);
+    its precision guarantee does not transfer to distributions it was never measured on."""
     obo_paths = DEFAULT_OBO_PATHS if obo_paths is None else obo_paths
+    gate_types = frozenset(obo_paths) if gate_types is None else frozenset(gate_types)
     report: dict[str, Any] = {"types": {}, "duplicate_surface_claims": {}}
     for runtime_type, entries in artifact.get("profiles", {}).items():
-        kwargs: dict[str, Any] = {"gate_fn": gate_fn, "gate_threshold": gate_threshold,
+        gated = runtime_type in gate_types
+        kwargs: dict[str, Any] = {"gate_fn": gate_fn if gated else None,
+                                  "gate_threshold": gate_threshold if gated else None,
                                   "embed_fn": embed_fn}
         if runtime_type in obo_paths:
             obo = obo_paths[runtime_type]
