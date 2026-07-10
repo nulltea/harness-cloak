@@ -327,6 +327,167 @@ def build_ladder(args):
     print(f"-> {LADDER_VALIDATED_OUT} + {REPORT}")
 
 
+# Zero-shot GLiNER label phrase -> lattice_profiles.json runtime_type (lattice-bearing types only).
+# QA lattices come from the profile (the single source of truth); detection only supplies which
+# surfaces+types a doc contains, replacing the staleness-prone baked env spans.
+DETECT_LABELS = {
+    "drug or medication": "drug",
+    "disease, health condition or medical diagnosis": "health-condition",
+    "medical procedure, test or imaging": "medical-procedure",
+    "hospital, clinic or medical facility": "organization-medical-facility",
+    "location, city or country": "LOC",
+    "organization, company or institution": "ORG",
+    "nationality or citizenship": "nationality",
+    "profession, occupation or job title": "profession",
+    "religion or religious belief": "religion",
+    "gender": "gender",
+    "marital status": "marital-status",
+    "sexual orientation": "sexual-orientation",
+}
+
+
+def _detect_docs(docs, model, threshold, max_words=320):
+    """Fresh zero-shot detection -> {doc_id: [{surface, type, sent}]}, keeping only spans whose
+    (surface, runtime_type) resolves to non-empty levels in lattice_profiles.json. Deduped per
+    (surface, type). GPU (GLiNER)."""
+    import torch
+    from gliner import GLiNER
+
+    from cloak.lattice_profiles import lookup_levels
+    from cloak.train.ladder_probes import sentence_of
+
+    g = GLiNER.from_pretrained(model)
+    if torch.cuda.is_available():
+        g = g.to("cuda")
+    labels = list(DETECT_LABELS)
+    out = {}
+    for d in docs:
+        words = d["text"].split()
+        seen, spans = set(), []
+        for i in range(0, len(words), max_words):
+            piece = " ".join(words[i:i + max_words])
+            for e in g.predict_entities(piece, labels, threshold=threshold):
+                surface, rtype = e["text"].strip(), DETECT_LABELS[e["label"]]
+                key = (surface.lower(), rtype)
+                if not surface or key in seen:
+                    continue
+                seen.add(key)
+                if lookup_levels(surface, rtype):
+                    spans.append({"surface": surface, "type": rtype,
+                                  "sent": sentence_of(d["text"], surface)})
+        out[d["id"]] = spans
+    return out
+
+
+def _all_placeholder(text, spans):
+    """Floor doc_p + R: replace each detected lattice span's surface with a typed placeholder."""
+    from cloak.train.reward import generalize_text
+
+    R, counts = [], {}
+    for s in spans:
+        t = s["type"]
+        counts[t] = counts.get(t, 0) + 1
+        ph = f"<{t.upper().replace('-', '_')}_{counts[t]}>"
+        R.append({"surface": s["surface"], "type": t, "action": "placeholder", "replacement": ph})
+    return generalize_text(text, R), R
+
+
+def build_ladder_detected(args):
+    """Ladder/decision QA build with FRESH detection + levels from lattice_profiles.json (no env).
+
+    Spans: zero-shot detection (args.detector_model). Levels: lattice_profiles.json (span_levels).
+    Anchors: ceiling = Remote(task(doc_orig), R=[]); floor = Remote(task(all-placeholder)); schema
+    prompt on SCHEMA_CORPORA. Determinism: anchors at workers=1.
+    """
+    from cloak.corpora import load_task_docs
+    from cloak.tasks import SCHEMA_CORPORA
+    from cloak.train import ladder_probes as lp
+    from cloak.train.roundtrip import roundtrip_batch
+
+    teacher_model = args.teacher_model or lp.TEACHER_MODEL
+    teacher_base_url = args.teacher_base_url or lp.LOCAL_BASE_URL
+    report = json.loads(REPORT.read_text()) if REPORT.exists() else {"corpora": {}}
+    report["th"] = args.th
+    report.setdefault("corpora", {})
+    ladder_out, decision_out = {}, {}
+
+    for corpus in args.corpora.split(","):
+        all_docs = load_task_docs(corpus, args.n_docs)
+        spans_of = _detect_docs(all_docs, args.detector_model, args.detector_threshold)
+        rows = [d for d in all_docs if spans_of.get(d["id"])]
+        print(f"[{corpus}] detected lattice spans in {len(rows)}/{len(all_docs)} docs "
+              f"({sum(len(spans_of[d['id']]) for d in rows)} spans)", flush=True)
+
+        jobs, meta = [], []
+        for d in rows:
+            lo_doc, lo_R = _all_placeholder(d["text"], spans_of[d["id"]])
+            for kind, doc_p, R in (("hi", d["text"], []), ("lo", lo_doc, lo_R)):
+                job = {"corpus": corpus, "doc_p": doc_p, "R": R, "probes": []}
+                if corpus in SCHEMA_CORPORA:
+                    job["template"] = "schema"
+                jobs.append(job)
+                meta.append((d["id"], kind))
+        outs = roundtrip_batch(jobs, workers=1)
+        anchor = {}
+        for (doc_id, kind), r in zip(meta, outs):
+            anchor.setdefault(doc_id, {})[kind] = {"out_p": r["out_p"], "out_final": r["out_final"]}
+        out_hi_of = {doc_id: pair["hi"]["out_final"]
+                     for doc_id, pair in anchor.items() if "hi" in pair}
+
+        ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers,
+                                            model=teacher_model, base_url=teacher_base_url)
+        decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers,
+                                                model=teacher_model, base_url=teacher_base_url)
+        stats = {"docs": 0, "spans": 0, "rung_candidates": 0, "rung_kept": 0, "decisions_kept": 0}
+        for d in rows:
+            doc_id = d["id"]
+            if doc_id not in anchor:
+                continue
+            entries = _with_validated_rung0(ladders.get(doc_id, []), spans_of.get(doc_id, []), {},
+                                            teacher=teacher_model, pv=lp.LADDER_PV)
+            kept, ladder_rows = lp.validate_ladder(
+                entries,
+                _reader_for_context(anchor[doc_id]["hi"]["out_final"]),
+                _reader_for_context(anchor[doc_id]["hi"]["out_p"]),
+                _reader_for_context(anchor[doc_id]["lo"]["out_final"]),
+                _reader_for_context(anchor[doc_id]["lo"]["out_p"]),
+                args.th,
+            )
+            ladder_out[doc_id] = _validated_entries(entries, ladder_rows)
+
+            decision_entries = [{**e, "detected_spans": spans_of.get(doc_id, [])}
+                                for e in decisions.get(doc_id, [])]
+            kept_decisions, decision_rows = lp.validate_decisions(
+                decision_entries,
+                _reader_mc_for_context(anchor[doc_id]["hi"]["out_final"]),
+                _reader_mc_for_context(anchor[doc_id]["lo"]["out_final"]),
+            )
+            decision_out[doc_id] = _validated_entries(
+                [{k: v for k, v in e.items() if k != "detected_spans"} for e in decision_entries],
+                decision_rows,
+            )
+
+            stats["docs"] += 1
+            stats["spans"] += len(spans_of.get(doc_id, []))
+            stats["rung_candidates"] += len(entries)
+            stats["rung_kept"] += len(kept)
+            stats["decisions_kept"] += len(kept_decisions)
+
+        row = ladder_health_row(**stats)
+        report["corpora"].setdefault(corpus, {}).update(row)
+        print(f"[{corpus} ladder/detect] {row}", flush=True)
+
+    artifact = validated_artifact(ladder_out, decision_out, {
+        "th": args.th, "teacher": teacher_model, "teacher_base_url": teacher_base_url,
+        "corpora": args.corpora.split(","), "spans_source": f"detected:{args.detector_model}",
+        "env_path": None, "built_at": datetime.datetime.now().isoformat(timespec="seconds")})
+    LADDER_VALIDATED_OUT.parent.mkdir(parents=True, exist_ok=True)
+    LADDER_VALIDATED_OUT.write_text(json.dumps(artifact, indent=1))
+    REPORT.parent.mkdir(exist_ok=True)
+    REPORT.write_text(json.dumps(report, indent=1))
+    print(f"-> {LADDER_VALIDATED_OUT} + {REPORT}", flush=True)
+
+
 def main():
     from build_arms_artifact import load_artifact
     from train_ranker import assemble
@@ -347,7 +508,13 @@ def main():
     ap.add_argument("--arms", default="data/task_arms_tau0.02.json",
                     help="arms artifact (default: frozen historical; must match --env)")
     ap.add_argument("--ladder", action="store_true",
-                    help="build ladder and decision probes from cached anchors")
+                    help="build ladder and decision probes from cached anchors (env spans_source)")
+    ap.add_argument("--detect", action="store_true",
+                    help="ladder/decision build with FRESH detection + levels from "
+                         "lattice_profiles.json (no env). Overrides --ladder.")
+    ap.add_argument("--detector-model", default="knowledgator/gliner-pii-large-v1.0",
+                    help="zero-shot GLiNER detector for --detect")
+    ap.add_argument("--detector-threshold", type=float, default=0.35)
     ap.add_argument("--teacher-model", default="",
                     help="override the ladder/decision teacher (default: ladder_probes.TEACHER_MODEL). "
                          "Remote OpenRouter model ids (e.g. nvidia/nemotron-3-super-120b-a12b:free) need "
@@ -356,6 +523,9 @@ def main():
                     help="teacher base_url (default: local proxy; openrouter.ai for hosted teachers)")
     args = ap.parse_args()
 
+    if args.detect:
+        build_ladder_detected(args)
+        return
     if args.ladder:
         build_ladder(args)
         return

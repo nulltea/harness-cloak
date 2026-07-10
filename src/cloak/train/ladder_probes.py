@@ -110,11 +110,18 @@ def rung_phrases(surface: str, levels: list[str]) -> list[str]:
 
 
 def span_levels(span: dict) -> list[str]:
-    """Ladder levels of an env span, specific -> broad.
-
-    Drops the keep action (fill == surface) and sorts the remaining level actions by
-    ascending anonymity-set size. Env action lists are not guaranteed to be sorted.
+    """Ladder levels for a span, specific -> broad, from lattice_profiles.json — the single
+    source of truth (its `levels` is validated monotone and never contains the surface, so no
+    sort or keep-drop is needed). Keyed by (surface, runtime_type); aliases resolve in the
+    loader. Falls back to the span's own baked level actions ONLY when the profile has no
+    entry, so legacy env artifacts (coarse types with no profile row) still work.
     """
+    from cloak.lattice_profiles import lookup_levels
+
+    levels = lookup_levels(span.get("surface", ""), span.get("type", ""))
+    if levels:
+        return list(levels)
+    # legacy fallback: env-baked action fills (older envs predate the profile / use coarse types)
     surface = canon(span.get("surface", ""))
     acts = [a for a in span.get("actions", [])
             if a.get("mode") == "level" and canon(a.get("fill") or "") != surface]
