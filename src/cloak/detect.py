@@ -150,6 +150,21 @@ _NOISE_JUNK_NUMERIC = re.compile(r"^[\d][\d .]*$")
 _NOISE_FRAGRANCE_EXCIPIENT = re.compile(r"aldehyde$|cinnamaldehyde|\blimonene\b|\blinalool\b")
 
 
+# Dictation transcripts verbalize doses inside the drug span ("flomax zero point four
+# milligrams", "aspirin 81 milligrams daily"); both stock and large GLiNER include them.
+_DOSE_NUM_WORD = r"(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|thousand|half|point|and|a)"
+_DOSE_SUFFIX = re.compile(
+    rf"\s+(?:\d+(?:\.\d+)?|{_DOSE_NUM_WORD}(?:[\s-]{_DOSE_NUM_WORD})*)"
+    r"\s*(?:mg|mcg|milligrams?|micrograms?|grams?|units?)"
+    r"(?:\s+(?:once|twice|three times)?\s*(?:daily|nightly|weekly|a day|per day|bid|tid|qid|qd|qhs|prn))?$"
+)
+
+
+def strip_dose_suffix(surface: str) -> str:
+    """Strip a trailing dose (+ optional frequency) from a mined drug surface, keeping the drug."""
+    return _DOSE_SUFFIX.sub("", surface).strip()
+
+
 def _noise_norm(text: str) -> str:
     out = str(text).lower().strip()
     out = re.sub(r"[^a-z0-9]+", " ", out)

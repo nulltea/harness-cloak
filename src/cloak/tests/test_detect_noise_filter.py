@@ -2,7 +2,7 @@
 
 import pytest
 
-from cloak.detect import Detector, PROFILES, is_noise_span, _stop_words
+from cloak.detect import Detector, PROFILES, is_noise_span, strip_dose_suffix, _stop_words
 
 
 @pytest.mark.parametrize(
@@ -30,6 +30,28 @@ def test_noise_filter_keep_allowlist_wins(surface, runtime_type):
 )
 def test_noise_filter_keep_real_abbreviations_and_drug(surface, runtime_type):
     assert is_noise_span(surface, runtime_type) is False
+
+
+@pytest.mark.parametrize(
+    ("surface", "expected"),
+    [
+        # verbalized doses from dictation transcripts
+        ("flomax zero point four milligrams", "flomax"),
+        ("cardura four milligrams", "cardura"),
+        ("hydrochlorothiazide ten milligrams", "hydrochlorothiazide"),
+        # numeric doses, with and without trailing frequency
+        ("metformin 500 mg", "metformin"),
+        ("aspirin 81 milligrams daily", "aspirin"),
+        ("lortab 5 milligram", "lortab"),
+        # no dose -> untouched (incl. bare numbers without a unit)
+        ("flomax", "flomax"),
+        ("lortab 500", "lortab 500"),
+        ("julie morning after pill", "julie morning after pill"),
+        ("one a day multivitamin", "one a day multivitamin"),
+    ],
+)
+def test_strip_dose_suffix(surface, expected):
+    assert strip_dose_suffix(surface) == expected
 
 
 @pytest.mark.parametrize(

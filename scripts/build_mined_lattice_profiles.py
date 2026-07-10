@@ -17,7 +17,7 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from cloak.corpora import load_task_docs
-from cloak.detect import is_noise_span
+from cloak.detect import is_noise_span, strip_dose_suffix
 from cloak.lattice_profiles import SCHEMA_VERSION, validate_profile_artifact
 
 DETECTOR_LABELS = [
@@ -26,6 +26,9 @@ DETECTOR_LABELS = [
     "drug",
     "injury",
     "organization medical facility",
+    # not mapped to a runtime type -- offered so GLiNER puts verbalized doses here instead of
+    # absorbing them into the drug span ("flomax zero point four milligrams" -> "flomax")
+    "dosage",
 ]
 
 LABEL_TO_RUNTIME_TYPE = {
@@ -118,6 +121,8 @@ def build_mined_artifact(
     for span in unique:
         runtime_type = normalize_detector_label(span.detector_label)
         surface = _norm(span.surface)
+        if runtime_type == "drug":
+            surface = strip_dose_suffix(surface)
         if not surface:
             continue
         if _is_generic_surface(runtime_type, surface):
