@@ -3,6 +3,7 @@ fake that rewards keeping level fills (so RLOO has a real gradient direction).""
 import sys
 from pathlib import Path
 
+import pytest
 import torch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
@@ -52,8 +53,10 @@ def _with_carrier(doc):
     doc = dict(doc)
     doc["ladder"] = [{"surface": "metformin", "rung": 0, "q": "What drug?",
                       "rungs": ["metformin", "a biguanide"]}]
-    doc["decisions"] = [{"q": "Which route?", "options": ["endocrinology", "primary care"],
-                         "gold": "primary care", "span_ids": ["metformin"]}]
+    doc["decisions"] = [
+        {"q": "Which route?", "options": ["endocrinology", "primary care"],
+         "gold": "primary care", "span_ids": ["metformin"]},
+    ]
     doc["out_hi"] = "ASSESSMENT: metformin - medication - active"
     doc["schema"] = True
     return doc
@@ -248,3 +251,37 @@ def test_counterfactual_terms_threads_optional_carrier_fields(monkeypatch):
     assert captured[0]["decisions"] == doc["decisions"]
     assert captured[0]["out_hi"] == doc["out_hi"]
     assert captured[0]["schema"] is True
+
+
+def test_counterfactual_terms_excludes_span_free_decisions(monkeypatch):
+    doc = _with_carrier(_doc())
+    doc["decisions"] = [
+        {"q": "Which route?", "options": ["endocrinology", "primary care"],
+         "gold": "primary care", "span_ids": ["metformin"]},
+        {"q": "Which billing path?", "options": ["routine", "complex"],
+         "gold": "routine", "span_ids": []},
+    ]
+    choice = {"metformin": doc["spans"][0]["actions"][0]}
+    logps = [torch.tensor(-0.7, requires_grad=True)]
+    captured = []
+
+    def fake_roundtrip_carrier(jobs, workers=1):
+        captured.extend(jobs)
+        out = []
+        for job in jobs:
+            has_span_free = any(not d.get("span_ids") for d in job.get("decisions", []))
+            span_placeholdered = "<QUANTITY_1>" in job["doc_p"]
+            reward = 0.0 if has_span_free and span_placeholdered else 1.0
+            out.append({"recall": reward, "out_p": "", "out_final": "", "f1s": []})
+        return out
+
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_carrier)
+
+    term, n_cf = tr.counterfactual_terms(doc, tr.RankerPolicy(), choice, logps, base_r=999.0,
+                                         frac=1.0, rng=__import__("random").Random(0),
+                                         rt_workers=1)
+
+    assert n_cf == 1
+    assert term.item() == pytest.approx(0.0)
+    assert len(captured) == 2
+    assert all(job["decisions"] == [doc["decisions"][0]] for job in captured)

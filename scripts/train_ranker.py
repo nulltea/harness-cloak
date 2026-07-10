@@ -57,14 +57,29 @@ def _ctx_of(doc, i):
     return None if ctx is None else ctx[i]
 
 
-def _roundtrip_job(doc, doc_p, R):
+_DEFAULT_DECISIONS = object()
+
+
+def _roundtrip_job(doc, doc_p, R, *, decisions=_DEFAULT_DECISIONS):
     """Build a roundtrip_batch job, preserving the legacy schema unless carrier fields exist."""
     job = {"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
            "probes": doc["probes_train"]}
     for key in ("ladder", "decisions", "out_hi", "schema"):
-        if key in doc:
+        if key == "decisions" and decisions is not _DEFAULT_DECISIONS:
+            job[key] = decisions
+        elif key in doc:
             job[key] = doc[key]
     return job
+
+
+def _span_credit_decisions(doc):
+    return [entry for entry in doc.get("decisions", []) if entry.get("span_ids")]
+
+
+def _counterfactual_roundtrip_job(doc, doc_p, R):
+    if "decisions" not in doc:
+        return _roundtrip_job(doc, doc_p, R)
+    return _roundtrip_job(doc, doc_p, R, decisions=_span_credit_decisions(doc))
 
 
 def _artifact_docs(path):
@@ -333,27 +348,30 @@ def policy_entropy(policy, feats, legal) -> torch.Tensor:
     return -(lp.exp() * lp).sum()
 
 
-def counterfactual_terms(doc, policy, choice, logps, base_r, *, frac, rng, rt_workers):
+def counterfactual_terms(doc, policy, choice, logps, base_r=None, *, frac, rng, rt_workers):
     """Exact per-span credit (spec Phase 2; COMA made exact by reward determinism):
     for a sampled fraction of non-placeholder spans, re-run the round trip with ONLY that
     span flipped to its placeholder; adv_s = base_r - r_cf weights that span's logp.
-    Counterfactual doc_p's are cache-friendly (identical across epochs at fixed choices)."""
+    Counterfactual doc_p's are cache-friendly (identical across epochs at fixed choices).
+    base_r is accepted for old call sites; the restricted base reward is recomputed here."""
     cand = [i for i, s in enumerate(doc["spans"])
             if choice[s["surface"].lower()]["mode"] == "level"]
     take = [i for i in cand if rng.random() < frac]
     if not take:
         return 0.0, 0
-    jobs = []
+    base_doc_p, base_R = assemble(doc["text"], doc["R_walk"], doc["spans"], choice)
+    jobs = [_counterfactual_roundtrip_job(doc, base_doc_p, base_R)]
     for i in take:
         s = doc["spans"][i]
         cf = dict(choice)
         ph_idx = next(k for k, a in enumerate(s["actions"]) if a["mode"] == "placeholder")
         cf[s["surface"].lower()] = s["actions"][ph_idx]
         doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], cf)
-        jobs.append(_roundtrip_job(doc, doc_p, R))
+        jobs.append(_counterfactual_roundtrip_job(doc, doc_p, R))
     res = roundtrip_batch(jobs, workers=rt_workers)
+    base_r = res[0]["recall"] or 0.0
     term = 0.0
-    for i, r in zip(take, res):
+    for i, r in zip(take, res[1:]):
         adv_s = base_r - (r["recall"] or 0.0)
         term = term - adv_s * logps[i]
     return term, len(take)
@@ -417,11 +435,9 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             opt.step()
             ep["ent"].append(ent.item())
             if cf_frac > 0:                             # exact per-span counterfactual credit
-                g_choice, g_logps, _, g_doc_p, g_R, _ = sample_rollout(
+                g_choice, g_logps, _, _, _, _ = sample_rollout(
                     doc, doc["spans"], doc["feats"], policy, greedy=True)
-                base_r = roundtrip_batch(
-                    [_roundtrip_job(doc, g_doc_p, g_R)], workers=rt_workers)[0]["recall"] or 0.0
-                term, n_cf = counterfactual_terms(doc, policy, g_choice, g_logps, base_r,
+                term, n_cf = counterfactual_terms(doc, policy, g_choice, g_logps,
                                                   frac=cf_frac, rng=rng, rt_workers=rt_workers)
                 if n_cf > 0 and isinstance(term, torch.Tensor):
                     opt.zero_grad()

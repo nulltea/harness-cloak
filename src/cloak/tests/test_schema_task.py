@@ -217,5 +217,50 @@ def test_schema_field_score_uses_category_acceptance_sets():
     assert with_acceptance == pytest.approx(1.0)
 
 
+def test_schema_field_score_scores_lexsum_case_rows():
+    ceiling = """
+    CLAIMS:
+    breach of contract — contract — proven
+    negligence — tort — dismissed
+    OUTCOME:
+    breach of contract — damages — plaintiff wins
+    negligence — no remedy — defendant wins
+    """
+    out_final = """
+    OUTCOME:
+    negligence — no remedy — defendant wins
+    breach of contract — damages — plaintiff wins
+    CLAIMS:
+    negligence — tort — dismissed
+    breach of contract — contract — proven
+    """
+
+    assert _schema_field_score(out_final, ceiling) == pytest.approx(1.0)
+
+    accepted_category = """
+    CLAIMS:
+    breach of contract — contract claim — proven
+    negligence — tort — dismissed
+    OUTCOME:
+    breach of contract — damages — plaintiff wins
+    negligence — no remedy — defendant wins
+    """
+
+    assert _schema_field_score(
+        accepted_category,
+        ceiling,
+        acceptance_sets={"breach of contract": ["contract claim"]},
+    ) == pytest.approx(1.0)
+
+    missing = """
+    CLAIMS:
+    breach of contract — contract — proven
+    OUTCOME:
+    breach of contract — damages — plaintiff wins
+    """
+
+    assert _schema_field_score(missing, ceiling) == pytest.approx(0.5)
+
+
 def test_schema_field_score_returns_none_when_ceiling_has_no_rows():
     assert _schema_field_score("ASSESSMENT: asthma - respiratory - stable", "PLAN: none") is None

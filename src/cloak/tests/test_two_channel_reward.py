@@ -132,6 +132,40 @@ def test_carrier_combines_available_components_unweighted(monkeypatch):
     assert all("Options:" in p for p in decision_prompts)
 
 
+def test_main_reward_scores_span_free_decisions(monkeypatch):
+    stub = _StubClient(["OUT_P: patient has <CONDITION_1>."])
+    decision_prompts = []
+
+    def fake_read(questions, context, refresh=False):
+        out = []
+        for q in questions:
+            if "Options:" in q:
+                decision_prompts.append(q)
+                out.append("route to endocrinology" if "route" in q else "routine")
+            else:
+                out.append("")
+        return out
+
+    monkeypatch.setattr(rt, "_remote", lambda: stub)
+    monkeypatch.setattr(rt, "invert", lambda out_p, R: ("OUT_FINAL", None))
+    monkeypatch.setattr(rt, "_read_batch", fake_read)
+
+    decisions = [
+        {"q": "Which route?", "options": ["primary care", "route to endocrinology"],
+         "gold": "route to endocrinology", "span_ids": ["s0"]},
+        {"q": "Which billing path?", "options": ["routine", "complex"],
+         "gold": "routine", "span_ids": []},
+    ]
+
+    res = rt.roundtrip_batch([
+        _job(ladder=[], decisions=decisions)
+    ], workers=1)[0]
+
+    assert res["decision_score"] == pytest.approx(1.0)
+    assert res["recall"] == pytest.approx(1.0)
+    assert len(decision_prompts) == 2
+
+
 def test_schema_component_requires_flag_and_out_hi(monkeypatch):
     stub = _StubClient(["OUT_P: patient has <CONDITION_1>.",
                         "OUT_P: patient has <CONDITION_1>."])

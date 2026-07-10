@@ -71,29 +71,55 @@ def schema_field_score(
     out_hi_text: str,
     acceptance_sets: Mapping[str, Iterable[str]] | None = None,
 ) -> float | None:
-    """Score parsed schema fields against ceiling rows aligned by problem and duplicate position."""
-    out_rows = _clinical_rows_by_problem(parse_sections(out_final_text))
-    hi_rows = _clinical_rows_by_problem(parse_sections(out_hi_text))
-    if not hi_rows:
-        return None
+    """Score parsed schema fields against ceiling rows aligned by key and duplicate position."""
+    out_parsed = parse_sections(out_final_text)
+    hi_parsed = parse_sections(out_hi_text)
+    scores = []
 
+    clinical_hi = _clinical_rows_by_problem(hi_parsed)
+    if clinical_hi:
+        scores.extend(_row_scores(
+            _clinical_rows_by_problem(out_parsed),
+            clinical_hi,
+            ("category", "status", "action", "follow_up"),
+            acceptance_sets,
+        ))
+
+    case_hi = _case_rows_by_claim(hi_parsed)
+    if case_hi:
+        scores.extend(_row_scores(
+            _case_rows_by_claim(out_parsed),
+            case_hi,
+            ("category", "status", "remedy", "posture"),
+            acceptance_sets,
+        ))
+
+    if not scores:
+        return None
+    return max(0.0, min(1.0, sum(scores) / len(scores)))
+
+
+def _row_scores(
+    out_rows: dict[str, list[dict[str, str]]],
+    hi_rows: dict[str, list[dict[str, str]]],
+    fields: tuple[str, ...],
+    acceptance_sets: Mapping[str, Iterable[str]] | None,
+) -> list[float]:
     scores: list[float] = []
-    for problem_key, gold_rows in hi_rows.items():
-        pred_rows = out_rows.get(problem_key, [])
+    for key, gold_rows in hi_rows.items():
+        pred_rows = out_rows.get(key, [])
         for i, gold_row in enumerate(gold_rows):
             pred_row = pred_rows[i] if i < len(pred_rows) else {}
-            for field in ("category", "status", "action", "follow_up"):
+            for field in fields:
                 gold = gold_row.get(field, "")
                 if not gold:
                     continue
                 pred = pred_row.get(field, "")
                 if field == "category":
-                    scores.append(_category_score(pred, gold, problem_key, acceptance_sets))
+                    scores.append(_category_score(pred, gold, key, acceptance_sets))
                 else:
                     scores.append(fact_score(pred, gold))
-    if not scores:
-        return None
-    return max(0.0, min(1.0, sum(scores) / len(scores)))
+    return scores
 
 
 def _scalar_value(lines: list[str]) -> str:
@@ -113,21 +139,33 @@ def _is_none_line(text: str) -> bool:
 
 
 def _clinical_rows_by_problem(parsed: dict) -> dict[str, list[dict[str, str]]]:
+    return _rows_by_key(parsed, ("assessment", "plan"), "problem")
+
+
+def _case_rows_by_claim(parsed: dict) -> dict[str, list[dict[str, str]]]:
+    return _rows_by_key(parsed, ("claims", "outcome"), "claim")
+
+
+def _rows_by_key(
+    parsed: dict,
+    sections: tuple[str, ...],
+    key_field: str,
+) -> dict[str, list[dict[str, str]]]:
     rows: dict[str, list[dict[str, str]]] = {}
-    for section in ("assessment", "plan"):
+    for section in sections:
         next_index_by_key: dict[str, int] = {}
         for row in parsed.get(section, []):
-            problem = row.get("problem", "")
-            if not problem:
+            value = row.get(key_field, "")
+            if not value:
                 continue
-            key = canon(problem)
+            key = canon(value)
             index = next_index_by_key.get(key, 0)
             next_index_by_key[key] = index + 1
-            problem_rows = rows.setdefault(key, [])
-            while len(problem_rows) <= index:
-                problem_rows.append({"problem": problem})
-            merged = problem_rows[index]
-            merged.update({k: v for k, v in row.items() if k != "problem"})
+            keyed_rows = rows.setdefault(key, [])
+            while len(keyed_rows) <= index:
+                keyed_rows.append({key_field: value})
+            merged = keyed_rows[index]
+            merged.update({k: v for k, v in row.items() if k != key_field})
     return rows
 
 
