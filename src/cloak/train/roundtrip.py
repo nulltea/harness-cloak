@@ -7,6 +7,9 @@ determinism is load-bearing (cache = reward memoization = ExIt pool; spec "one s
 
 THE reward pin (changing any re-gates): RT_MODEL = "gemma 4 (E4B)" served at
 RT_BASE_URL = "http://localhost:8060/v1", temperature 0, max_tokens 1024, non-thinking.
+The extractor is part of the reward pin: legacy rewards are pinned to the `invert` cascade,
+frozen-extractor rewards are keyed by `extractor_version`, and cached rewards are valid only
+under the pin they were produced with.
 """
 import os
 
@@ -40,7 +43,11 @@ def _remote():
     return _client
 
 
-def roundtrip_batch(jobs: list[dict], workers: int = 6) -> list[dict]:
+def roundtrip_batch(
+    jobs: list[dict],
+    workers: int = 6,
+    extractor_models: dict | None = None,
+) -> list[dict]:
     """jobs: [{corpus, doc_p, R, probes}] -> [{out_p, out_final, f1s, recall}].
     recall = deployed fact_recall (per-fact max, mean over facts), None when no probes.
     f1s stays the raw per-question list (the support scan counts per-question flip deltas).
@@ -51,14 +58,29 @@ def roundtrip_batch(jobs: list[dict], workers: int = 6) -> list[dict]:
     defaults to 6 to match the served slot count; gen and reader share those slots."""
     from cloak.concurrent import pmap
     remote = _remote()
+    if extractor_models is not None:
+        from cloak import frozen_extractor
 
     def _one(j):
         op = remote.generate(TASK_TEMPLATE[j["corpus"]].format(doc=j["doc_p"]))
-        out_final, _ = invert(op, j["R"])
+        if extractor_models is None:
+            out_final, _ = invert(op, j["R"])
+            extractor_version = None
+        else:
+            out_final, _ = frozen_extractor.extract(
+                j.get("doc_p"),
+                j["R"],
+                op,
+                models=extractor_models,
+            )
+            extractor_version = frozen_extractor.extractor_version()
         f1s = fact_f1s(out_final, j["probes"])
         by_fact = _max_by_fact(j["probes"], f1s)
-        return {"out_p": op, "out_final": out_final, "f1s": f1s,
-                "recall": (sum(by_fact.values()) / len(by_fact)) if by_fact else None}
+        result = {"out_p": op, "out_final": out_final, "f1s": f1s,
+                  "recall": (sum(by_fact.values()) / len(by_fact)) if by_fact else None}
+        if extractor_version is not None:
+            result["extractor_version"] = extractor_version
+        return result
 
     return pmap(_one, jobs, workers=workers)
 

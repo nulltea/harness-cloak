@@ -65,10 +65,40 @@ def _case_adjust(fill: str, text: str, start: int) -> str:
     return (fill[0].upper() if sent_start else fill[0].lower()) + fill[1:]
 
 
-def _cleanup(out: str) -> str:
-    """substitute.py's post-substitution cleanup (duplicate articles / 'in in')."""
-    out = re.sub(r"\b([Aa]n?|[Tt]he) (?=(?:an?|the)\b)", "", out)
-    return re.sub(r"\b[Ii]n (?=in\b)", "", out)
+_CLEANUP_DELETIONS = (
+    re.compile(r"\b([Aa]n?|[Tt]he) (?=(?:an?|the)\b)"),  # duplicate article
+    re.compile(r"\b[Ii]n (?=in\b)"),                     # 'in in'
+)
+
+
+def _cleanup_tracked(out: str, spans: list[dict]) -> tuple[str, int]:
+    """_cleanup as tracked deletions over recorded spans (each span: {"box": [s0, s1]}).
+
+    Each cleanup regex is a pure deletion. For every match [d0, d1): shift boxes lying
+    fully to its right left by the deletion length; boxes fully left are untouched; a box
+    whose interior the deletion overlaps is dropped (box -> None) and counted. Matches are
+    applied right-to-left so their (d0, d1) stay valid in the shrinking string; the untouched
+    left prefix means each match's original offsets equal its current-string offsets, so the
+    match and box comparisons live in one coordinate system."""
+    dropped = 0
+    for pat in _CLEANUP_DELETIONS:
+        matches = [(m.start(), m.end()) for m in pat.finditer(out)]
+        for d0, d1 in sorted(matches, reverse=True):
+            out = out[:d0] + out[d1:]
+            length = d1 - d0
+            for sp in spans:
+                box = sp["box"]
+                if box is None:
+                    continue
+                if d1 <= box[0]:        # deletion fully left of span -> shift span left
+                    box[0] -= length
+                    box[1] -= length
+                elif d0 >= box[1]:      # deletion fully right of span -> unchanged
+                    continue
+                else:                   # deletion overlaps span interior -> drop it
+                    sp["box"] = None
+                    dropped += 1
+    return out, dropped
 
 
 def assemble(text: str, R_walk: list[dict], spans: list[dict],
@@ -118,7 +148,10 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
                            "action": "placeholder"}
 
     out, R = text, []
-    seen = set()
+    seen: dict[tuple[str, str], dict] = {}
+    # spans: one record per APPLIED replacement, {"box": [start, end], "entry": R-entry};
+    # box tracked through the right-to-left pass and _cleanup into FINAL doc_p offsets.
+    spans_rec: list[dict] = []
     for e in sorted(R_walk, key=lambda e: -e["start"]):
         skey = e["surface"].lower()
         # apply the decision only to occurrences the walk treated as quasi (they carry a
@@ -128,15 +161,38 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
             rep, act = fills[skey]["replacement"], fills[skey]["action"]
         else:
             rep, act = e["replacement"], e["action"]
-        out = out[:e["start"]] + rep + out[e["end"]:]
+        start, end = e["start"], e["end"]
+        out = out[:start] + rep + out[end:]
+        # right-to-left: every already-recorded span lies to the right of this edit, so all
+        # shift by the length delta; the new span sits at (start, start+len(rep))
+        delta = len(rep) - (end - start)
+        for sp in spans_rec:
+            sp["box"][0] += delta
+            sp["box"][1] += delta
         # R must cover every APPLIED replacement: mixed-typing surfaces legally map one
         # surface to two replacements (e.g. 'participant'→'a person' AND '<PERSON_1>'),
         # and dropping either breaks inversion of out_p
-        if (skey, rep.lower()) not in seen:
-            seen.add((skey, rep.lower()))
-            R.append({"surface": e["surface"], "type": e["type"],
-                      "action": act, "replacement": rep})
-    return _cleanup(out), R
+        key = (skey, rep.lower())
+        if key not in seen:
+            seen[key] = {"surface": e["surface"], "type": e["type"],
+                         "action": act, "replacement": rep}
+            R.append(seen[key])
+        spans_rec.append({"box": [start, start + len(rep)], "entry": seen[key]})
+
+    out, _dropped = _cleanup_tracked(out, spans_rec)
+
+    for entry in R:
+        entry["fill_spans"] = []
+    for sp in spans_rec:
+        if sp["box"] is not None:
+            sp["entry"]["fill_spans"].append(sp["box"])
+    for entry in R:
+        entry["fill_spans"].sort()
+        for s0, s1 in entry["fill_spans"]:
+            assert out[s0:s1] == entry["replacement"], (
+                f"fill_spans invariant: doc_p[{s0}:{s1}]={out[s0:s1]!r} != "
+                f"{entry['replacement']!r}")
+    return out, R
 
 
 def derive_spans(raw_spans, floors, corpus, device):
