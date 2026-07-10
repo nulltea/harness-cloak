@@ -22,6 +22,7 @@ from pathlib import Path
 
 TH = 0.5
 OUT = Path("data/probes_validated.json")
+LADDER_VALIDATED_OUT = Path("data/probes_ladder_validated.json")
 REPORT = Path("results/probe_health.json")
 
 
@@ -71,9 +72,34 @@ def ladder_health_row(*, docs, spans, rung_candidates, rung_kept, decisions_kept
     }
 
 
+def validated_artifact(ladder_out, decision_out, meta):
+    from cloak.train import ladder_probes as lp
+    from cloak.train.reward import QA_MODEL
+    from cloak.train.roundtrip import RT_MODEL
+
+    return {
+        "meta": {
+            "teacher": meta.get("teacher", lp.TEACHER_MODEL),
+            "reader": meta.get("reader", QA_MODEL),
+            "rt_model": meta.get("rt_model", RT_MODEL),
+            "th": meta["th"],
+            "ladder_pv": meta.get("ladder_pv", lp.LADDER_PV),
+            "decision_pv": meta.get("decision_pv", lp.DECISION_PV),
+            "corpora": meta["corpora"],
+            "determinism": meta.get("determinism", "workers1"),
+            "env_path": meta["env_path"],
+            "built_at": meta["built_at"],
+        },
+        "ladder": ladder_out,
+        "decisions": decision_out,
+    }
+
+
 def _span_rungs(span):
-    levels = [a["fill"] for a in span.get("actions", []) if a.get("mode") == "level"]
-    return [span["surface"], *levels] if levels else []
+    from cloak.train.ladder_probes import rung_phrases, span_levels
+
+    levels = span_levels(span)
+    return rung_phrases(span["surface"], levels) if levels else []
 
 
 def _validated_rung0_lookup(path=OUT):
@@ -178,6 +204,7 @@ def build_ladder(args):
     from train_ranker import assemble
 
     from cloak.corpora import load_task_docs
+    from cloak.tasks import SCHEMA_CORPORA
     from cloak.train import ladder_probes as lp
     from cloak.train.roundtrip import roundtrip_batch
 
@@ -208,13 +235,23 @@ def build_ladder(args):
             lo_doc, lo_R = assemble(d["text"], art[corpus][d["id"]]["tau_walk"][1],
                                     spans, ph_choice)
             for kind, doc_p, R in (("hi", d["text"], []), ("lo", lo_doc, lo_R)):
-                jobs.append({"corpus": corpus, "doc_p": doc_p, "R": R, "probes": []})
+                job = {"corpus": corpus, "doc_p": doc_p, "R": R, "probes": []}
+                if corpus in SCHEMA_CORPORA:
+                    job["template"] = "schema"
+                jobs.append(job)
                 meta.append((d["id"], kind))
-        outs = roundtrip_batch(jobs, workers=args.workers)
+        outs = roundtrip_batch(jobs, workers=1)
         anchor = {}
         for (doc_id, kind), r in zip(meta, outs):
-            anchor.setdefault(doc_id, {})[kind] = r["out_final"]
-        out_hi_of = {doc_id: pair["hi"] for doc_id, pair in anchor.items() if "hi" in pair}
+            anchor.setdefault(doc_id, {})[kind] = {
+                "out_p": r["out_p"],
+                "out_final": r["out_final"],
+            }
+        out_hi_of = {
+            doc_id: pair["hi"]["out_final"]
+            for doc_id, pair in anchor.items()
+            if "hi" in pair
+        }
 
         ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers)
         decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers)
@@ -233,8 +270,10 @@ def build_ladder(args):
             )
             kept, ladder_rows = lp.validate_ladder(
                 entries,
-                _reader_for_context(anchor[doc_id]["hi"]),
-                _reader_for_context(anchor[doc_id]["lo"]),
+                _reader_for_context(anchor[doc_id]["hi"]["out_final"]),
+                _reader_for_context(anchor[doc_id]["hi"]["out_p"]),
+                _reader_for_context(anchor[doc_id]["lo"]["out_final"]),
+                _reader_for_context(anchor[doc_id]["lo"]["out_p"]),
                 args.th,
             )
             ladder_out[doc_id] = _validated_entries(entries, ladder_rows)
@@ -245,8 +284,8 @@ def build_ladder(args):
             ]
             kept_decisions, decision_rows = lp.validate_decisions(
                 decision_entries,
-                _reader_mc_for_context(anchor[doc_id]["hi"]),
-                _reader_mc_for_context(anchor[doc_id]["lo"]),
+                _reader_mc_for_context(anchor[doc_id]["hi"]["out_final"]),
+                _reader_mc_for_context(anchor[doc_id]["lo"]["out_final"]),
             )
             decision_out[doc_id] = _validated_entries(
                 [{k: v for k, v in e.items() if k != "detected_spans"}
@@ -264,13 +303,21 @@ def build_ladder(args):
         report["corpora"].setdefault(corpus, {}).update(row)
         print(f"[{corpus} ladder] {row}", flush=True)
 
-    lp.LADDER_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    lp.LADDER_CACHE.write_text(json.dumps(ladder_out, indent=1))
-    lp.DECISION_CACHE.parent.mkdir(parents=True, exist_ok=True)
-    lp.DECISION_CACHE.write_text(json.dumps(decision_out, indent=1))
+    artifact = validated_artifact(
+        ladder_out,
+        decision_out,
+        {
+            "th": args.th,
+            "corpora": args.corpora.split(","),
+            "env_path": args.env,
+            "built_at": datetime.datetime.now().isoformat(timespec="seconds"),
+        },
+    )
+    LADDER_VALIDATED_OUT.parent.mkdir(parents=True, exist_ok=True)
+    LADDER_VALIDATED_OUT.write_text(json.dumps(artifact, indent=1))
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(json.dumps(report, indent=1))
-    print(f"-> {lp.LADDER_CACHE} + {lp.DECISION_CACHE} + {REPORT}")
+    print(f"-> {LADDER_VALIDATED_OUT} + {REPORT}")
 
 
 def main():

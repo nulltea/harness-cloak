@@ -4,6 +4,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
+import build_probes  # noqa: E402
 from build_probes import _with_validated_rung0, ladder_health_row  # noqa: E402
 from cloak.train import ladder_probes as lp  # noqa: E402
 from cloak.train.ladder_probes import (  # noqa: E402
@@ -12,6 +13,23 @@ from cloak.train.ladder_probes import (  # noqa: E402
     validate_decisions,
     validate_ladder,
 )
+
+
+def test_span_levels_drops_keep_and_sorts_by_aset():
+    span_levels = getattr(lp, "span_levels", None)
+    assert callable(span_levels)
+
+    span = {
+        "surface": "heart failure",
+        "actions": [
+            {"mode": "level", "fill": "a physical condition", "aset": 1313},
+            {"mode": "level", "fill": "a cardiovascular disease", "aset": 28},
+            {"mode": "level", "fill": "heart failure", "aset": 1.0},
+            {"mode": "placeholder", "fill": "<HEALTH_CONDITION_1>"},
+        ],
+    }
+
+    assert span_levels(span) == ["a cardiovascular disease", "a physical condition"]
 
 
 def test_validate_ladder_keeps_only_ceiling_pass_floor_fail_rungs():
@@ -50,7 +68,7 @@ def test_validate_ladder_keeps_only_ceiling_pass_floor_fail_rungs():
         entries[2]["q"]: "a respiratory condition",
     }
 
-    kept, rows = validate_ladder(entries, hi.get, lo.get, th=0.5)
+    kept, rows = validate_ladder(entries, hi.get, hi.get, lo.get, lo.get, th=0.5)
 
     assert [e["id"] for e in kept] == ["keep"]
     assert {r["id"]: r["verdict"] for r in rows} == {
@@ -87,7 +105,7 @@ def test_validate_ladder_threshold_boundaries_are_inclusive_for_hi_strict_for_lo
         entries[1]["q"]: "delta",
     }
 
-    kept, rows = validate_ladder(entries, hi.get, lo.get, th=0.5)
+    kept, rows = validate_ladder(entries, hi.get, hi.get, lo.get, lo.get, th=0.5)
 
     assert [e["id"] for e in kept] == ["hi-boundary"]
     assert {r["id"]: r["verdict"] for r in rows} == {
@@ -96,6 +114,31 @@ def test_validate_ladder_threshold_boundaries_are_inclusive_for_hi_strict_for_lo
     }
     assert {r["id"]: r["hi_score"] for r in rows}["hi-boundary"] == 0.5
     assert {r["id"]: r["lo_score"] for r in rows}["lo-boundary"] == 0.5
+
+
+def test_validate_ladder_semantic_rungs_use_pre_inversion_floor():
+    entry = {
+        "id": "semantic",
+        "surface": "heart failure",
+        "rungs": ["heart failure", "a cardiovascular disease"],
+        "rung": 1,
+        "q": "What condition category prompted the cardiology follow-up?",
+    }
+    q = entry["q"]
+
+    kept, rows = validate_ladder(
+        [entry],
+        lambda _q: "heart failure",
+        lambda _q: "a cardiovascular disease",
+        lambda _q: "heart failure",
+        lambda _q: "",
+        th=0.5,
+    )
+
+    assert [e["id"] for e in kept] == ["semantic"]
+    assert rows[0]["verdict"] == "kept"
+    assert rows[0]["q"] == q
+    assert rows[0]["lo_answer"] == ""
 
 
 def test_locator_lint_drops_cross_span_question():
@@ -244,3 +287,35 @@ def test_ladder_health_row_reports_reader_rejects_tiers_and_decisions():
     assert row["reader_rung_reject_rate"] == 0.3
     assert row["tiers_per_span_kept"] == 1.4
     assert row["decisions_kept_per_doc"] == 1.5
+
+
+def test_validated_artifact_meta_contains_reward_pins():
+    helper = getattr(build_probes, "validated_artifact", None)
+    assert callable(helper)
+
+    artifact = helper(
+        {"doc-1": []},
+        {"doc-1": []},
+        {
+            "th": 0.5,
+            "corpora": ["clinical"],
+            "env_path": "data/ranker_env.json",
+            "built_at": "2026-07-10T12:00:00",
+        },
+    )
+
+    assert artifact["ladder"] == {"doc-1": []}
+    assert artifact["decisions"] == {"doc-1": []}
+    assert set(artifact["meta"]) >= {
+        "teacher",
+        "reader",
+        "rt_model",
+        "th",
+        "ladder_pv",
+        "decision_pv",
+        "corpora",
+        "determinism",
+        "env_path",
+        "built_at",
+    }
+    assert artifact["meta"]["determinism"] == "workers1"

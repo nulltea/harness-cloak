@@ -109,6 +109,19 @@ def rung_phrases(surface: str, levels: list[str]) -> list[str]:
     return [surface, *levels]
 
 
+def span_levels(span: dict) -> list[str]:
+    """Ladder levels of an env span, specific -> broad.
+
+    Drops the keep action (fill == surface) and sorts the remaining level actions by
+    ascending anonymity-set size. Env action lists are not guaranteed to be sorted.
+    """
+    surface = canon(span.get("surface", ""))
+    acts = [a for a in span.get("actions", [])
+            if a.get("mode") == "level" and canon(a.get("fill") or "") != surface]
+    acts.sort(key=lambda a: a.get("aset") or 0)
+    return [a["fill"] for a in acts]
+
+
 def entail_score(answer: str, rungs: list[str], rung: int) -> float:
     """Acceptance-set scoring: an answer at or finer than the rung counts."""
     return max(fact_score(answer, a) for a in rungs[:rung + 1])
@@ -147,18 +160,21 @@ def locator_lint(q, span_surface, other_surfaces):
     return True
 
 
-def validate_ladder(entries, reader_hi, reader_lo, th):
+def validate_ladder(entries, reader_hi_final, reader_hi_p, reader_lo_final, reader_lo_p, th):
     """Per-rung anchor validation with injected readers.
 
-    `reader_hi(q)` and `reader_lo(q)` return short answers from the ceiling and floor
-    anchors. An entry survives when the ceiling answer entails its rung and the floor
-    answer does not.
+    Rung 0 uses post-inversion anchors (`out_final`), matching the exact echo channel.
+    Semantic rungs use pre-inversion anchors (`out_p`), matching the semantic channel.
+    An entry survives when the ceiling answer entails its rung and the floor answer does
+    not.
     """
     kept, rows = [], []
     for e in entries:
         q = e.get("q", "")
         rung = int(e.get("rung", 0))
         rungs = e.get("rungs") or [e.get("a") or e.get("surface", "")]
+        reader_hi = reader_hi_final if rung == 0 else reader_hi_p
+        reader_lo = reader_lo_final if rung == 0 else reader_lo_p
         hi_answer = reader_hi(q) or ""
         lo_answer = reader_lo(q) or ""
         hi_score = entail_score(hi_answer, rungs, rung)
@@ -320,7 +336,7 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
         have = _covered(cache.get(d["id"], []), model, LADDER_PV)
         all_surfaces = [s.get("surface", "") for s in spans_of.get(d["id"], [])]
         for s in spans_of.get(d["id"], []):
-            levels = [a["fill"] for a in s.get("actions", []) if a.get("mode") == "level"]
+            levels = span_levels(s)
             if not levels or s["surface"] in have:
                 continue
             rungs = rung_phrases(s["surface"], levels)
@@ -413,6 +429,15 @@ def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: 
 if __name__ == "__main__":
     rungs = rung_phrases("hypothyroidism", ["an endocrine condition", "a chronic condition"])
     assert rungs[0] == "hypothyroidism" and len(rungs) == 3
+    assert span_levels({
+        "surface": "heart failure",
+        "actions": [
+            {"mode": "level", "fill": "a physical condition", "aset": 1313},
+            {"mode": "level", "fill": "a cardiovascular disease", "aset": 28},
+            {"mode": "level", "fill": "heart failure", "aset": 1.0},
+            {"mode": "placeholder", "fill": "<HEALTH_CONDITION_1>"},
+        ],
+    }) == ["a cardiovascular disease", "a physical condition"]
     # entailment: a finer answer satisfies a coarser rung
     assert entail_score("hypothyroidism", rungs, 1) == 1.0
     assert entail_score("an endocrine condition", rungs, 2) == 1.0

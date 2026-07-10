@@ -44,6 +44,32 @@ def test_schema_prompt_constants_are_additive_templates():
     assert SCHEMA_CORPORA == frozenset({"aci", "mts", "clinical", "lexsum"})
 
 
+def test_roundtrip_batch_template_schema_selects_schema_prompt(monkeypatch):
+    roundtrip = importlib.import_module("cloak.train.roundtrip")
+    prompts = []
+
+    class FakeRemote:
+        def generate(self, prompt):
+            prompts.append(prompt)
+            return "generated output"
+
+    monkeypatch.setattr(roundtrip, "_remote", lambda: FakeRemote())
+    monkeypatch.setattr(roundtrip, "invert", lambda out_p, _R: (out_p, []))
+
+    jobs = [
+        {"corpus": "clinical", "doc_p": "Patient has chest pain.", "R": [], "probes": [],
+         "template": "schema"},
+        {"corpus": "clinical", "doc_p": "Patient has chest pain.", "R": [], "probes": []},
+    ]
+
+    roundtrip.roundtrip_batch(jobs, workers=1)
+
+    assert prompts[0].startswith("Write a clinical visit note")
+    assert "CHIEF COMPLAINT" in prompts[0]
+    assert prompts[1].startswith("Write a clinical visit note")
+    assert "CHIEF COMPLAINT" not in prompts[1]
+
+
 def test_parse_sections_extracts_well_formed_clinical_rows():
     parsed = _parse_sections(
         """
