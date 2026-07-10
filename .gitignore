@@ -8,6 +8,8 @@ __pycache__
 # Regenerable / large data: vocab lists + embedding matrices + LLM cache (rebuild via embeddings.py)
 data/*
 !data/lattice_profiles/
+!data/span_gate/
+data/span_gate/negatives.npz
 !data/lattice_sources/
 data/lattice_sources/*
 !data/lattice_sources/reference/
