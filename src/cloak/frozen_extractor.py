@@ -535,12 +535,29 @@ def verify(
     if _value_compatible(fill, chunk_text) is False:
         return False, "added-digit"
 
+    # Correspondence at PHRASE granularity, both sides templated: a generic fill statement
+    # can never entail a full specific sentence, so sentence-level hypotheses made this gate
+    # unsatisfiable for true pairs (measured on the calibration set: 27/27 golds rejected at
+    # any threshold). Two accept channels, both margin-ruled:
+    #   (a) fill ⊨ mention  — the mention restates the generalization (D-1/D-3);
+    #   (b) surface ⊨ mention — the mention echoes the ORIGINAL surface (D-2 variant/alias);
+    #       restoring the surface where its own variant stands adds no unsupported content.
+    thr = float(EXTRACTOR_PINS["thresholds"]["NLI_ENTAIL"])
     ok, reason = _require_entailment(
-        nli(_fill_sentence_template(fill), _chunk_sentence(chunk_text, sentence)),
-        float(EXTRACTOR_PINS["thresholds"]["NLI_ENTAIL"]),
+        nli(_fill_sentence_template(fill), _fill_sentence_template(chunk_text)),
+        thr,
         margin_reason="margin-correspondence",
         reject_reason="correspondence",
     )
+    if not ok:
+        surface = str(entry.get("surface") or "").strip()
+        if surface:
+            ok, reason = _require_entailment(
+                nli(_fill_sentence_template(surface), _fill_sentence_template(chunk_text)),
+                thr,
+                margin_reason="margin-correspondence",
+                reject_reason="correspondence",
+            )
     if not ok:
         return False, reason
 

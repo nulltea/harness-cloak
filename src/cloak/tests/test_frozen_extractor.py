@@ -430,7 +430,7 @@ def test_verify_rejects_added_digit_before_nli():
 
 
 def test_verify_rejects_failed_correspondence_entailment():
-    nli = ScriptedNLI(("neutral", 0.95))
+    nli = ScriptedNLI(("neutral", 0.95), ("neutral", 0.95))
 
     result = fx.verify(
         {"replacement": "a county court", "surface": "Hamilton County Court", "type": "ORG"},
@@ -440,7 +440,8 @@ def test_verify_rejects_failed_correspondence_entailment():
     )
 
     assert result == (False, "correspondence")
-    assert len(nli.calls) == 1
+    # two-channel correspondence: fill => mention, then surface => mention fallback
+    assert len(nli.calls) == 2
 
 
 def test_verify_abstains_correspondence_within_margin_on_either_side():
@@ -451,13 +452,13 @@ def test_verify_abstains_correspondence_within_margin_on_either_side():
         {"replacement": "a city", "surface": "Boston", "type": "LOC"},
         "a city",
         "The hearing was in a city.",
-        ScriptedNLI(("entailment", threshold - eps)),
+        ScriptedNLI(("entailment", threshold - eps), ("entailment", threshold - eps)),
     )
     above = fx.verify(
         {"replacement": "a city", "surface": "Boston", "type": "LOC"},
         "a city",
         "The hearing was in a city.",
-        ScriptedNLI(("entailment", threshold + eps)),
+        ScriptedNLI(("entailment", threshold + eps), ("entailment", threshold + eps)),
     )
 
     assert below == (False, "margin-correspondence")
@@ -794,7 +795,7 @@ def test_extract_abstains_garbage_fill_at_verification_and_leaves_text(monkeypat
         doc_p,
         [],
         out_p,
-        models=_toy_models([("neutral", 0.99)], [-1.0, -1.0]),
+        models=_toy_models([("neutral", 0.99), ("neutral", 0.99)], [-1.0, -1.0]),
     )
 
     assert text == out_p
