@@ -56,6 +56,214 @@ def split_by_fact(kept, seed=0):
     return train, heldout, len(keys) - n_hold
 
 
+def ladder_health_row(*, docs, spans, rung_candidates, rung_kept, decisions_kept):
+    return {
+        "docs": docs,
+        "spans": spans,
+        "rung_candidates": rung_candidates,
+        "rung_kept": rung_kept,
+        "reader_rung_reject_rate": round(
+            (rung_candidates - rung_kept) / max(rung_candidates, 1), 3
+        ),
+        "tiers_per_span_kept": round(rung_kept / max(spans, 1), 2),
+        "decisions_kept": decisions_kept,
+        "decisions_kept_per_doc": round(decisions_kept / max(docs, 1), 2),
+    }
+
+
+def _span_rungs(span):
+    levels = [a["fill"] for a in span.get("actions", []) if a.get("mode") == "level"]
+    return [span["surface"], *levels] if levels else []
+
+
+def _validated_rung0_lookup(path=OUT):
+    from cloak.train.reward import canon
+
+    if not path.exists():
+        return {}
+    artifact = json.loads(path.read_text())
+    docs = artifact.get("docs", {}) if isinstance(artifact, dict) else {}
+    lookup = {}
+    for doc_id, payload in docs.items():
+        for split in ("train", "heldout"):
+            for probe in payload.get(split, []):
+                q = probe.get("question") or probe.get("q")
+                surface = probe.get("surface")
+                if q and surface:
+                    lookup.setdefault(doc_id, {})[canon(surface)] = probe
+    return lookup
+
+
+def _with_validated_rung0(entries, spans, validated):
+    from cloak.train.reward import canon
+
+    by_surface = {canon(s["surface"]): _span_rungs(s) for s in spans if _span_rungs(s)}
+    out = []
+    replaced = set()
+    for e in entries:
+        key = canon(e.get("surface", ""))
+        if key not in by_surface:
+            out.append(e)
+            continue
+        row = {**e, "rungs": e.get("rungs") or by_surface[key]}
+        if row.get("rung") == 0 and key in validated:
+            if key not in replaced:
+                probe = validated[key]
+                out.append({
+                    "surface": row["surface"],
+                    "rung": 0,
+                    "q": probe.get("question") or probe.get("q"),
+                    "a": row["surface"],
+                    "rungs": by_surface[key],
+                    "source": "probes_validated",
+                })
+                replaced.add(key)
+            continue
+        out.append(row)
+    present_r0 = {(canon(e.get("surface", "")), e.get("rung")) for e in out}
+    for s in spans:
+        key = canon(s["surface"])
+        rungs = by_surface.get(key)
+        if rungs and key in validated and (key, 0) not in present_r0:
+            probe = validated[key]
+            out.append({
+                "surface": s["surface"],
+                "rung": 0,
+                "q": probe.get("question") or probe.get("q"),
+                "a": s["surface"],
+                "rungs": rungs,
+                "source": "probes_validated",
+            })
+    return out
+
+
+def _validated_entries(entries, rows):
+    out = []
+    for e, r in zip(entries, rows):
+        row = {**e, "validation": r, "kept": r["verdict"] == "kept"}
+        if "span_ids" in r:
+            row["span_ids"] = r["span_ids"]
+        out.append(row)
+    return out
+
+
+def _reader_for_context(context):
+    from cloak.train.reward import _read_batch
+
+    return lambda q: _read_batch([q], context)[0]
+
+
+def _reader_mc_for_context(context):
+    from cloak.train.reward import _read_batch, canon
+
+    def read(q, options):
+        prompt = q + "\nOptions:\n" + "\n".join(f"- {o}" for o in options)
+        answer = _read_batch([prompt], context)[0]
+        answer_c = canon(answer)
+        for option in options:
+            option_c = canon(option)
+            if option_c and (option_c in answer_c or answer_c in option_c):
+                return option
+        return None
+    return read
+
+
+def build_ladder(args):
+    from build_arms_artifact import load_artifact
+    from train_ranker import assemble
+
+    from cloak.corpora import load_task_docs
+    from cloak.train import ladder_probes as lp
+    from cloak.train.roundtrip import roundtrip_batch
+
+    art = load_artifact(args.arms)
+    env = json.loads(Path(args.env).read_text())
+    flat_rung0 = _validated_rung0_lookup()
+    ladder_out, decision_out = {}, {}
+    report = json.loads(REPORT.read_text()) if REPORT.exists() else {"corpora": {}}
+    report["th"] = args.th
+    report.setdefault("corpora", {})
+
+    for corpus in args.corpora.split(","):
+        docs = load_task_docs(corpus, args.n_docs)
+        per_doc = env["corpora"].get(corpus, {})
+        rows = [d for d in docs if d["id"] in per_doc and per_doc[d["id"]]["spans"]]
+        spans_of = {
+            d["id"]: [s for s in per_doc[d["id"]]["spans"] if _span_rungs(s)]
+            for d in rows
+        }
+
+        jobs, meta = [], []
+        for d in rows:
+            spans = per_doc[d["id"]]["spans"]
+            ph_choice = {s["surface"].lower():
+                         s["actions"][next(i for i, a in enumerate(s["actions"])
+                                           if a["mode"] == "placeholder")]
+                         for s in spans}
+            lo_doc, lo_R = assemble(d["text"], art[corpus][d["id"]]["tau_walk"][1],
+                                    spans, ph_choice)
+            for kind, doc_p, R in (("hi", d["text"], []), ("lo", lo_doc, lo_R)):
+                jobs.append({"corpus": corpus, "doc_p": doc_p, "R": R, "probes": []})
+                meta.append((d["id"], kind))
+        outs = roundtrip_batch(jobs, workers=args.workers)
+        anchor = {}
+        for (doc_id, kind), r in zip(meta, outs):
+            anchor.setdefault(doc_id, {})[kind] = r["out_final"]
+        out_hi_of = {doc_id: pair["hi"] for doc_id, pair in anchor.items() if "hi" in pair}
+
+        ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers)
+        decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers)
+        stats = {"docs": 0, "spans": 0, "rung_candidates": 0, "rung_kept": 0,
+                 "decisions_kept": 0}
+        for d in rows:
+            doc_id = d["id"]
+            if doc_id not in anchor:
+                continue
+            entries = _with_validated_rung0(
+                ladders.get(doc_id, []), spans_of.get(doc_id, []), flat_rung0.get(doc_id, {})
+            )
+            kept, ladder_rows = lp.validate_ladder(
+                entries,
+                _reader_for_context(anchor[doc_id]["hi"]),
+                _reader_for_context(anchor[doc_id]["lo"]),
+                args.th,
+            )
+            ladder_out[doc_id] = _validated_entries(entries, ladder_rows)
+
+            decision_entries = [
+                {**e, "detected_spans": spans_of.get(doc_id, [])}
+                for e in decisions.get(doc_id, [])
+            ]
+            kept_decisions, decision_rows = lp.validate_decisions(
+                decision_entries,
+                _reader_mc_for_context(anchor[doc_id]["hi"]),
+                _reader_mc_for_context(anchor[doc_id]["lo"]),
+            )
+            decision_out[doc_id] = _validated_entries(
+                [{k: v for k, v in e.items() if k != "detected_spans"}
+                 for e in decision_entries],
+                decision_rows,
+            )
+
+            stats["docs"] += 1
+            stats["spans"] += len(spans_of.get(doc_id, []))
+            stats["rung_candidates"] += len(entries)
+            stats["rung_kept"] += len(kept)
+            stats["decisions_kept"] += len(kept_decisions)
+
+        row = ladder_health_row(**stats)
+        report["corpora"].setdefault(corpus, {}).update(row)
+        print(f"[{corpus} ladder] {row}", flush=True)
+
+    lp.LADDER_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    lp.LADDER_CACHE.write_text(json.dumps(ladder_out, indent=1))
+    lp.DECISION_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    lp.DECISION_CACHE.write_text(json.dumps(decision_out, indent=1))
+    REPORT.parent.mkdir(exist_ok=True)
+    REPORT.write_text(json.dumps(report, indent=1))
+    print(f"-> {lp.LADDER_CACHE} + {lp.DECISION_CACHE} + {REPORT}")
+
+
 def main():
     from build_arms_artifact import load_artifact
     from train_ranker import assemble
@@ -75,7 +283,13 @@ def main():
                     help="ranker environment artifact (default: frozen env; pilot env to retarget)")
     ap.add_argument("--arms", default="data/task_arms_tau0.02.json",
                     help="arms artifact (default: frozen historical; must match --env)")
+    ap.add_argument("--ladder", action="store_true",
+                    help="build ladder and decision probes from cached anchors")
     args = ap.parse_args()
+
+    if args.ladder:
+        build_ladder(args)
+        return
 
     art = load_artifact(args.arms)
     env = json.loads(Path(args.env).read_text())

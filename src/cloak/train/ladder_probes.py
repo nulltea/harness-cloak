@@ -10,6 +10,8 @@ Teacher-cached like cloak.train.probes: entries tagged {teacher, pv}; other-teac
 other-pv entries are ignored and regenerated, never mixed.
 """
 import json
+import hashlib
+import random
 import re
 from pathlib import Path
 
@@ -128,6 +130,116 @@ def lint_rung(q: str, rungs: list[str], rung: int) -> bool:
     return not ((finer_t - gold_t) & qt)
 
 
+def locator_lint(q, span_surface, other_surfaces):
+    """Reject locator questions that identify this span through another detected span.
+
+    Rung >= 1 questions are asked over anonymized `out_p`; if the question names another
+    sensitive span, the reader cannot ground it after that other span is replaced.
+    """
+    qt = _tokens(q or "")
+    this = canon(span_surface or "")
+    for surface in other_surfaces or []:
+        if canon(surface or "") == this:
+            continue
+        st = _tokens(surface or "")
+        if st and st <= qt:
+            return False
+    return True
+
+
+def validate_ladder(entries, reader_hi, reader_lo, th):
+    """Per-rung anchor validation with injected readers.
+
+    `reader_hi(q)` and `reader_lo(q)` return short answers from the ceiling and floor
+    anchors. An entry survives when the ceiling answer entails its rung and the floor
+    answer does not.
+    """
+    kept, rows = [], []
+    for e in entries:
+        q = e.get("q", "")
+        rung = int(e.get("rung", 0))
+        rungs = e.get("rungs") or [e.get("a") or e.get("surface", "")]
+        hi_answer = reader_hi(q) or ""
+        lo_answer = reader_lo(q) or ""
+        hi_score = entail_score(hi_answer, rungs, rung)
+        lo_score = entail_score(lo_answer, rungs, rung)
+        if hi_score < th:
+            verdict = "ceiling"
+        elif lo_score >= th:
+            verdict = "floor"
+        else:
+            verdict = "kept"
+        row = {
+            "id": e.get("id") or e.get("surface"),
+            "surface": e.get("surface"),
+            "rung": rung,
+            "q": q,
+            "hi_answer": hi_answer,
+            "lo_answer": lo_answer,
+            "hi_score": round(hi_score, 3),
+            "lo_score": round(lo_score, 3),
+            "verdict": verdict,
+        }
+        rows.append(row)
+        out = {**e, "validation": row}
+        if verdict == "kept":
+            kept.append(out)
+    return kept, rows
+
+
+def mc_shuffle(options, seed_key):
+    """Deterministic per-call multiple-choice option shuffle."""
+    out = list(options or [])
+    seed = int.from_bytes(hashlib.sha256(str(seed_key).encode("utf-8")).digest()[:8], "big")
+    random.Random(seed).shuffle(out)
+    return out
+
+
+def _decision_span_ids(entry):
+    spans = entry.get("detected_spans") or entry.get("spans") or []
+    depends = entry.get("depends_on") or []
+    dep_text = " ".join(canon(str(d)) for d in depends)
+    ids = []
+    for i, span in enumerate(spans):
+        sid = span.get("id") or span.get("span_id") or str(i)
+        surface = canon(str(span.get("surface", ""))).strip()
+        if surface and surface in dep_text:
+            ids.append(sid)
+    return ids
+
+
+def validate_decisions(entries, reader_mc_hi, reader_mc_lo):
+    """Validate multiple-choice decision probes with injected pinned readers."""
+    kept, rows = [], []
+    for idx, e in enumerate(entries):
+        q = e.get("q", "")
+        gold = e.get("gold")
+        hi_options = mc_shuffle(e.get("options") or [], f"{q}|{idx}|hi")
+        lo_options = mc_shuffle(e.get("options") or [], f"{q}|{idx}|lo")
+        hi_pick = reader_mc_hi(q, hi_options)
+        lo_pick = reader_mc_lo(q, lo_options)
+        if hi_pick != gold:
+            verdict = "ceiling"
+        elif lo_pick == gold:
+            verdict = "floor"
+        else:
+            verdict = "kept"
+        row = {
+            "id": e.get("id") or q,
+            "q": q,
+            "gold": gold,
+            "hi_pick": hi_pick,
+            "lo_pick": lo_pick,
+            "span_ids": _decision_span_ids(e),
+            "verdict": verdict,
+        }
+        rows.append(row)
+        out = {**e, "span_ids": _decision_span_ids(e), "validation": row}
+        if verdict == "kept":
+            kept.append(out)
+    return kept, rows
+
+
 def _parse_json_list(reply: str) -> list | None:
     if not reply or "<think>" in reply:
         return None
@@ -206,12 +318,14 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
     todo = []
     for d in docs:
         have = _covered(cache.get(d["id"], []), model, LADDER_PV)
+        all_surfaces = [s.get("surface", "") for s in spans_of.get(d["id"], [])]
         for s in spans_of.get(d["id"], []):
             levels = [a["fill"] for a in s.get("actions", []) if a.get("mode") == "level"]
             if not levels or s["surface"] in have:
                 continue
             rungs = rung_phrases(s["surface"], levels)
             todo.append({"doc_id": d["id"], "surface": s["surface"], "type": s.get("type", ""),
+                         "other_surfaces": [x for x in all_surfaces if canon(x) != canon(s["surface"])],
                          "rungs": rungs,
                          "prompt": LADDER_PROMPT.format(
                              output_kind=kind, doc=d["text"], surface=s["surface"],
@@ -231,10 +345,13 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
                 rung = row.get("rung")
                 if (isinstance(rung, int) and 0 <= rung < len(t["rungs"])
                         and not _empty_gold(t["rungs"][rung])
-                        and lint_rung(row.get("q", ""), t["rungs"], rung)):
+                        and lint_rung(row.get("q", ""), t["rungs"], rung)
+                        and (rung == 0 or locator_lint(row.get("q", ""), t["surface"],
+                                                       t["other_surfaces"]))):
                     cache.setdefault(t["doc_id"], []).append(
                         {"surface": t["surface"], "rung": rung, "q": row["q"].strip(),
-                         "a": t["rungs"][rung], "teacher": model, "pv": LADDER_PV})
+                         "a": t["rungs"][rung], "rungs": t["rungs"],
+                         "teacher": model, "pv": LADDER_PV})
         if n_bad:
             print(f"ladder_probes: {n_bad}/{len(todo)} teacher replies unparseable", flush=True)
         if cache_path:
