@@ -88,15 +88,19 @@ def _load_negatives(path) -> tuple[np.ndarray, dict] | None:
         return None
 
 
-def load_thresholds(path=DEFAULT_CALIBRATION_PATH) -> dict | None:
+def load_calibration(path=DEFAULT_CALIBRATION_PATH) -> dict | None:
+    """Full calibration artifact (schema_version, model_id, points, ...) or None."""
     path = Path(path)
     if not path.exists():
         return None
     try:
-        artifact = json.loads(path.read_text())
-        return artifact.get("points") or None
+        return json.loads(path.read_text())
     except (OSError, ValueError):
         return None
+
+
+def load_thresholds(path=DEFAULT_CALIBRATION_PATH) -> dict | None:
+    return (load_calibration(path) or {}).get("points") or None
 
 
 def _warn_once(key: str, message: str) -> None:
@@ -151,8 +155,8 @@ def gate_spans(items, operating_point: str, *, profiles_path=None, negatives_pat
 
     if not margin_todo:
         return out
-    points = load_thresholds(calibration_path)
-    point = (points or {}).get(operating_point)
+    calibration = load_calibration(calibration_path)
+    point = ((calibration or {}).get("points") or {}).get(operating_point)
     negatives = _load_negatives(negatives_path)
     index = load_embindex(str(_index_path_for(profiles_path)), str(profiles_path))
     if point is None or negatives is None or index is None:
@@ -160,6 +164,13 @@ def gate_spans(items, operating_point: str, *, profiles_path=None, negatives_pat
                   "negatives index missing/stale" if negatives is None else
                   "profile embindex missing/stale")
         _warn_once(f"{calibration_path}:{operating_point}", reason)
+        return out
+    # review guard: the calibration must match the loaded embindex — same schema and same
+    # embedding model — or its floor/margin were fit in a different space; fail open.
+    if (calibration.get("schema_version") != SCHEMA_VERSION
+            or calibration.get("model_id") != index.model_id):
+        _warn_once(f"{calibration_path}:model",
+                   "calibration schema/model mismatch vs profile embindex")
         return out
     neg_vectors, neg_meta = negatives
     # review guards: a margin drop is only trustworthy when negatives were embedded by the

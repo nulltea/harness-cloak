@@ -92,6 +92,15 @@ def choose_points(keeps, drops, *, floors, margins, production_false_drop, miner
     return sweep, points
 
 
+def negatives_index_is_current(meta: dict, anchor: list[str]) -> bool:
+    """True iff the stored negatives index was built from exactly the current anchor half.
+
+    Guards against reusing a stale index whose surfaces overlap the eval half — that would
+    leak eval negatives into the anchors and inflate the sweep's separability.
+    """
+    return list(meta.get("surfaces") or []) == list(anchor)
+
+
 def _frange(lo: float, hi: float, step: float) -> list[float]:
     n = round((hi - lo) / step)
     return [round(lo + i * step, 4) for i in range(n + 1)]
@@ -112,9 +121,13 @@ def main() -> int:
         raise SystemExit(f"no usable embindex for {profiles_path} (build it first)")
     model_id = index.model_id
 
+    anchor, eval_half = anchor_seed_split(seed_negative_surfaces())
     negatives = _load_negatives(args.negatives)
-    if negatives is None:
-        build_negative_index(out_path=args.negatives, model_id=model_id)
+    if negatives is None or not negatives_index_is_current(negatives[1], anchor):
+        if negatives is not None:
+            print(f"negatives index stale (surfaces != current anchor half) — "
+                  f"rebuilding from {len(anchor)} anchor surfaces")
+        build_negative_index(out_path=args.negatives, model_id=model_id, surfaces=anchor)
         negatives = _load_negatives(args.negatives)
     if negatives is None:
         raise SystemExit(f"could not build/load negatives index at {args.negatives}")
@@ -129,7 +142,8 @@ def main() -> int:
     keep_surfaces = sorted({s for rt in _NOISE_FILTER_TYPES
                             for canonical, row in artifact.get("profiles", {}).get(rt, {}).items()
                             for s in (canonical, *row.get("aliases", []))})
-    _, drop_surfaces = anchor_seed_split(seed_negative_surfaces())
+    drop_surfaces = eval_half
+    assert set(anchor).isdisjoint(drop_surfaces), "anchor/eval negatives overlap"
 
     model = _st_model(model_id)
     embed_fn = lambda t: model.encode(t, normalize_embeddings=True)

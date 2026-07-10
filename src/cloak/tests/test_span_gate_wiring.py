@@ -59,6 +59,37 @@ def test_miner_gate_wiring_drop_retype_keep(monkeypatch, tmp_path):
     assert "gate_fingerprint" in stats
 
 
+def test_miner_gate_retype_reapplies_type_handling(monkeypatch):
+    import build_mined_lattice_profiles as m
+    from cloak.span_gate import GateDecision
+    from cloak.profile_match import span_key
+
+    decisions = {
+        # retyped into "drug": surface must now be dose-stripped
+        span_key("wingivax 20 mg", "injury"): GateDecision("retype", "retype", new_type="drug"),
+        # retyped into a type where the surface is generic: must be skipped, not added
+        span_key("procedure", "injury"): GateDecision("retype", "retype",
+                                                      new_type="medical-procedure"),
+    }
+    monkeypatch.setattr(m, "gate_spans", lambda items, point, **kw: decisions)
+    spans = [m.DetectedSpan("wingivax 20 mg", "injury", "doc1", 0.9),
+             m.DetectedSpan("procedure", "injury", "doc1", 0.9)]
+    rows, stats = m.build_rows_for_test(spans)
+    assert "wingivax" in rows.get("drug", {})           # dose-stripped for the NEW type
+    assert "wingivax 20 mg" not in rows.get("drug", {})
+    assert "medical-procedure" not in rows              # generic-for-new-type -> skipped
+    assert stats["generic_skipped"] == 1 and stats["gate_retyped"] == 2
+
+
+def test_negatives_index_is_current():
+    from calibrate_span_gate import negatives_index_is_current
+    anchor = ["aaa surface", "bbb surface", "ccc surface"]
+    assert negatives_index_is_current({"surfaces": list(anchor)}, anchor)
+    assert not negatives_index_is_current({"surfaces": anchor[:2]}, anchor)   # missing eval-safe subset
+    assert not negatives_index_is_current({}, anchor)                          # legacy/no surfaces
+    assert not negatives_index_is_current({"surfaces": list(reversed(anchor))}, anchor)  # order
+
+
 def test_runtime_gate_drop_retype_keep(monkeypatch):
     from cloak import detect
     from cloak.span_gate import GateDecision

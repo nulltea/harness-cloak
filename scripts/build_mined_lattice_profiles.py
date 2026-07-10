@@ -147,6 +147,15 @@ def _gate_and_build_rows(
             if decision.action == "retype" and decision.new_type:
                 runtime_type = decision.new_type
                 stats["gate_retyped"] += 1
+                # re-run type-specific surface handling for the NEW type: the surface was
+                # normalized/dose-stripped for its original type, not this one.
+                if runtime_type == "drug":
+                    surface = strip_dose_suffix(surface)
+                if not surface:
+                    continue
+                if _is_generic_surface(runtime_type, surface):
+                    stats["generic_skipped"] += 1
+                    continue
         if common_index.find(runtime_type, surface):
             stats["skipped_common"] += 1
             continue

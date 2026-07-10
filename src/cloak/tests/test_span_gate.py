@@ -75,6 +75,24 @@ def test_gate_margin_drops_junk_keeps_ambiguous(profile, tmp_path):
     assert got[span_key("ambiguous middle", "health-condition")].action == "keep"  # fail-open
 
 
+def test_margin_fails_open_on_calibration_model_mismatch(profile, tmp_path):
+    # negatives + embindex share model "fake", but the calibration was fit for a DIFFERENT
+    # model -> its floor/margin live in another space -> margin layer must fail open.
+    neg = tmp_path / "negatives.npz"
+    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="fake",
+                                   surfaces=["weird fragment"])
+    calib = tmp_path / "calib.json"
+    calib.write_text(json.dumps({"schema_version": 1, "model_id": "other-model",
+        "points": {"production": {"floor": 0.6, "margin": 0.2}}}))
+    from cloak.profile_match import build_embindex
+    build_embindex(profile, embed_fn=fake_embed, model_id="fake")
+    got = span_gate.gate_spans([("brickish thing", "health-condition")], "production",
+                               profiles_path=profile, negatives_path=neg,
+                               calibration_path=calib, embed_fn=fake_embed)
+    d = got[span_key("brickish thing", "health-condition")]
+    assert (d.action, d.layer) == ("keep", "open")
+
+
 def test_gate_fails_open_without_artifacts(profile, tmp_path):
     got = span_gate.gate_spans([("brickish thing", "health-condition")], "production",
                                profiles_path=profile,
