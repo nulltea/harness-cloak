@@ -29,12 +29,34 @@ EMAIL_REPLY = ("Write a brief reply to the following email. Reply with only the 
 CASE_SUMMARY = ("Condense the following case summary into one short paragraph covering the "
                 "parties, claims, court, and outcome. Base it only on the text.\n\n"
                 "Case summary:\n{doc}")
+SCHEMA_NOTE = ("Write a clinical visit note for the following dialogue with EXACTLY these "
+               "sections:\n\n"
+               "CHIEF COMPLAINT: one line.\n"
+               "HISTORY OF PRESENT ILLNESS: short paragraph.\n"
+               "ASSESSMENT: one line per active problem, formatted "
+               "\"problem — category — status\".\n"
+               "PLAN: one line per active problem, formatted "
+               "\"problem — action — follow-up\".\n\n"
+               "Base it only on the dialogue. Do not invent content for missing sections; "
+               "write \"none\".\n\n"
+               "Dialogue:\n{doc}")
+SCHEMA_CASE = ("Write a legal case summary for the following case summary with EXACTLY these "
+               "sections:\n\n"
+               "PARTIES: one line.\n"
+               "CLAIMS: one line per claim, formatted \"claim — category — status\".\n"
+               "OUTCOME: one line per claim, formatted \"claim — remedy — posture\".\n\n"
+               "Base it only on the case summary. Do not invent content for missing sections; "
+               "write \"none\".\n\n"
+               "Case summary:\n{doc}")
 BIO_SUMMARY = ("Write a concise 1-2 sentence summary of the following biography, covering who "
                "the person is, key dates, and what they are known for. Base it only on the "
                "text.\n\nBiography:\n{doc}")
 MEETING_SUMMARY = ("Summarize the following committee-meeting discussion in one short paragraph, "
                    "covering who spoke and the key points. Base it only on the transcript.\n\n"
                    "Discussion:\n{doc}")
+SCHEMA_TEMPLATE = {"aci": SCHEMA_NOTE, "mts": SCHEMA_NOTE, "clinical": SCHEMA_NOTE,
+                   "lexsum": SCHEMA_CASE}
+SCHEMA_CORPORA = frozenset(SCHEMA_TEMPLATE)
 TASK_TEMPLATE = {"aci": CLINICAL_NOTE, "mts": CLINICAL_NOTE, "clinical": CLINICAL_NOTE,
                  "aeslc": EMAIL_SUBJECT, "enron": EMAIL_REPLY, "lexsum": CASE_SUMMARY,
                  "wikibio": BIO_SUMMARY, "qmsum": MEETING_SUMMARY}
