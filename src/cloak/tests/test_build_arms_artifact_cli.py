@@ -29,10 +29,11 @@ def test_build_arms_accepts_fine_detector_args(monkeypatch):
             seen.update(kwargs)
 
     monkeypatch.setattr(mod, "Detector", FakeDetector)
-    mod.make_detector(args)
+    mod.make_detector(args, "clinical")
 
     assert seen == {
         "gliner_model": "data/models/pii_gliner_finedem/final",
         "threshold": 0.22,
         "fine_dem": True,
+        "profile": "clinical",
     }
