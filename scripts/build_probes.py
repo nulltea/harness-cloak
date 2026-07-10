@@ -23,6 +23,7 @@ from pathlib import Path
 TH = 0.5
 OUT = Path("data/probes_validated.json")
 LADDER_VALIDATED_OUT = Path("data/probes_ladder_validated.json")
+GEN_REJECTS_OUT = Path("results/ladder_gen_rejects.json")
 REPORT = Path("results/probe_health.json")
 
 
@@ -422,6 +423,7 @@ def build_ladder_detected(args):
     report["th"] = args.th
     report.setdefault("corpora", {})
     ladder_out, decision_out = {}, {}
+    all_gen_rejects = {}
 
     for corpus in args.corpora.split(","):
         all_docs = load_task_docs(corpus, args.n_docs)
@@ -451,8 +453,13 @@ def build_ladder_detected(args):
         out_hi_of = {doc_id: pair["hi"]["out_final"]
                      for doc_id, pair in anchor.items() if "hi" in pair}
 
+        all_surfaces_of = {doc_id: [s["surface"] for s in spans]
+                           for doc_id, spans in detected.items()}
+        gen_rejects = []
         ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers,
-                                            model=teacher_model, base_url=teacher_base_url)
+                                            model=teacher_model, base_url=teacher_base_url,
+                                            all_surfaces_of=all_surfaces_of,
+                                            reject_sink=gen_rejects)
         decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers,
                                                 model=teacher_model, base_url=teacher_base_url)
         stats = {"docs": 0, "spans": 0, "rung_candidates": 0, "rung_kept": 0, "decisions_kept": 0}
@@ -492,7 +499,10 @@ def build_ladder_detected(args):
 
         row = ladder_health_row(**stats)
         report["corpora"].setdefault(corpus, {}).update(row)
-        print(f"[{corpus} ladder/detect] {row}", flush=True)
+        all_gen_rejects[corpus] = gen_rejects
+        import collections as _c
+        print(f"[{corpus} ladder/detect] {row}  gen_rejects="
+              f"{dict(_c.Counter(r['gate'] for r in gen_rejects))}", flush=True)
 
     artifact = validated_artifact(ladder_out, decision_out, {
         "th": args.th, "teacher": teacher_model, "teacher_base_url": teacher_base_url,
@@ -500,9 +510,10 @@ def build_ladder_detected(args):
         "env_path": None, "built_at": datetime.datetime.now().isoformat(timespec="seconds")})
     LADDER_VALIDATED_OUT.parent.mkdir(parents=True, exist_ok=True)
     LADDER_VALIDATED_OUT.write_text(json.dumps(artifact, indent=1))
+    GEN_REJECTS_OUT.write_text(json.dumps(all_gen_rejects, indent=1))
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(json.dumps(report, indent=1))
-    print(f"-> {LADDER_VALIDATED_OUT} + {REPORT}", flush=True)
+    print(f"-> {LADDER_VALIDATED_OUT} + {GEN_REJECTS_OUT} + {REPORT}", flush=True)
 
 
 def main():

@@ -351,10 +351,19 @@ def _covered(entries: list[dict], model: str, pv: int) -> set[str]:
 
 def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, workers: int = 6,
                            model: str = TEACHER_MODEL, base_url: str = LOCAL_BASE_URL,
-                           cache_path: Path = LADDER_CACHE) -> dict:
-    """docs: corpora rows; spans_of: doc_id -> env spans (each {surface, type, actions}).
+                           cache_path: Path = LADDER_CACHE,
+                           all_surfaces_of: dict | None = None,
+                           reject_sink: list | None = None) -> dict:
+    """docs: corpora rows; spans_of: doc_id -> spans (each {surface, type, ...}).
     Returns {doc_id: [{"surface", "rung", "q", "a"}...]} for lattice-bearing spans; teacher
-    fills cache misses. Lint-rejected rungs are simply absent (re-asked only on pv bump)."""
+    fills cache misses.
+
+    all_surfaces_of: doc_id -> every detected surface (lattice + placeholder + quasi); the
+    hidden-detail list the prompt tells the teacher to avoid and the locator-lint checks
+    against. Falls back to spans_of surfaces when None.
+    reject_sink: if given, generation-stage drops append
+    {doc_id, surface, rung, q, gate, gold} so callers can report why a rung was cut
+    (gates: parse, bad_rung, empty_gold, lint, locator)."""
     from cloak.concurrent import pmap
 
     kind = OUTPUT_KIND.get(corpus, "summary")
@@ -362,15 +371,17 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
     todo = []
     for d in docs:
         have = _covered(cache.get(d["id"], []), model, LADDER_PV)
-        all_surfaces = [s.get("surface", "") for s in spans_of.get(d["id"], [])]
+        hidden = (all_surfaces_of or {}).get(d["id"])
+        if hidden is None:
+            hidden = [s.get("surface", "") for s in spans_of.get(d["id"], [])]
         for s in spans_of.get(d["id"], []):
             levels = span_levels(s)
             if not levels or s["surface"] in have:
                 continue
             rungs = rung_phrases(s["surface"], levels)
+            other = [x for x in hidden if x and canon(x) != canon(s["surface"])]
             todo.append({"doc_id": d["id"], "surface": s["surface"], "type": s.get("type", ""),
-                         "other_surfaces": [x for x in all_surfaces if canon(x) != canon(s["surface"])],
-                         "rungs": rungs,
+                         "other_surfaces": other, "rungs": rungs,
                          "prompt": LADDER_PROMPT.format(
                              output_kind=kind, doc=d["text"], surface=s["surface"],
                              type=s.get("type", ""),
@@ -380,22 +391,34 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
         teacher = _teacher(model, base_url)
         replies = pmap(lambda t: _safe_generate(teacher, t["prompt"]), todo, workers=workers)
         n_bad = 0
+
+        def _rej(t, rung, q, gate, gold=""):
+            if reject_sink is not None:
+                reject_sink.append({"doc_id": t["doc_id"], "surface": t["surface"],
+                                    "rung": rung, "q": q, "gate": gate, "gold": gold})
+
         for t, r in zip(todo, replies):
             rows = _parse_json_list((r or "").strip())
             if rows is None:
                 n_bad += 1
+                _rej(t, None, "", "parse")
                 continue
             for row in rows:
-                rung = row.get("rung")
-                if (isinstance(rung, int) and 0 <= rung < len(t["rungs"])
-                        and not _empty_gold(t["rungs"][rung])
-                        and lint_rung(row.get("q", ""), t["rungs"], rung)
-                        and (rung == 0 or locator_lint(row.get("q", ""), t["surface"],
-                                                       t["other_surfaces"]))):
+                rung, q = row.get("rung"), (row.get("q") or "").strip()
+                if not (isinstance(rung, int) and 0 <= rung < len(t["rungs"])):
+                    _rej(t, rung, q, "bad_rung")
+                    continue
+                gold = t["rungs"][rung]
+                if _empty_gold(gold):
+                    _rej(t, rung, q, "empty_gold", gold)
+                elif not lint_rung(q, t["rungs"], rung):
+                    _rej(t, rung, q, "lint", gold)
+                elif rung != 0 and not locator_lint(q, t["surface"], t["other_surfaces"]):
+                    _rej(t, rung, q, "locator", gold)
+                else:
                     cache.setdefault(t["doc_id"], []).append(
-                        {"surface": t["surface"], "rung": rung, "q": row["q"].strip(),
-                         "a": t["rungs"][rung], "rungs": t["rungs"],
-                         "teacher": model, "pv": LADDER_PV})
+                        {"surface": t["surface"], "rung": rung, "q": q,
+                         "a": gold, "rungs": t["rungs"], "teacher": model, "pv": LADDER_PV})
         if n_bad:
             print(f"ladder_probes: {n_bad}/{len(todo)} teacher replies unparseable", flush=True)
         if cache_path:
