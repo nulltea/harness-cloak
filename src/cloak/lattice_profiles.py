@@ -100,10 +100,10 @@ def _build_indexes(artifact: dict) -> dict:
                 if level in level_counts:
                     # an explicit per-level count is an absolute estimate for that
                     # generalization tier, not a per-surface frequency to sum -- it wins over
-                    # the legacy scalar-count aggregation below.
+                    # the legacy row-count max below.
                     explicit_index[key] = max(explicit_index.get(key, 0.0), float(level_counts[level]))
                 else:
-                    level_index[key] = level_index.get(key, 0.0) + count
+                    level_index[key] = max(level_index.get(key, 0.0), count)
     for runtime_type, explicit in by_level_explicit.items():
         by_level[runtime_type] = {**by_level.get(runtime_type, {}), **explicit}
     return {"by_surface": by_surface, "by_level": by_level}

@@ -9,6 +9,13 @@ from cloak.lattice_profiles import (
 )
 
 
+def _clear_lattice_profile_caches():
+    import cloak.lattice_profiles as lp
+
+    lp._load_cached.cache_clear()
+    lp._index_cached.cache_clear()
+
+
 def _artifact():
     return {
         "schema_version": 1,
@@ -124,7 +131,51 @@ def test_lookup_indexes_aliases_and_level_counts(tmp_path):
     assert lookup_count("media worker", "profession", path) == 1000.0
 
 
-def test_lookup_level_count_aggregates_multiple_profile_rows(tmp_path):
+def test_lookup_count_uses_explicit_level_count_not_row_count(tmp_path):
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "bupropion": {
+            "aliases": [],
+            "levels": ["aminoketone", "medication"],
+            "source_ids": [],
+            "count": 9.0,
+            "level_counts": {"aminoketone": 9.0, "medication": 10999.71},
+        },
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    _clear_lattice_profile_caches()
+
+    assert lookup_count("medication", "drug", path) == 10999.71
+    assert lookup_count("aminoketone", "drug", path) == 9.0
+
+
+def test_lookup_count_uses_max_when_multiple_explicit_rows_share_level(tmp_path):
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "aspirin": {
+            "aliases": [],
+            "levels": ["analgesic", "medication"],
+            "source_ids": [],
+            "count": 4.0,
+            "level_counts": {"analgesic": 4.0, "medication": 20.0},
+        },
+        "ibuprofen": {
+            "aliases": [],
+            "levels": ["analgesic", "medication"],
+            "source_ids": [],
+            "count": 7.0,
+            "level_counts": {"analgesic": 7.0, "medication": 35.0},
+        },
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    _clear_lattice_profile_caches()
+
+    assert lookup_count("medication", "drug", path) == 35.0
+
+
+def test_lookup_count_uses_max_of_legacy_row_counts_when_level_counts_absent(tmp_path):
     art = _artifact()
     art["profiles"]["drug"] = {
         "aspirin": {"aliases": [], "levels": ["medication"], "source_ids": [], "count": 4.0},
@@ -132,8 +183,28 @@ def test_lookup_level_count_aggregates_multiple_profile_rows(tmp_path):
     }
     path = tmp_path / "profiles.json"
     path.write_text(json.dumps(art))
+    _clear_lattice_profile_caches()
 
-    assert lookup_count("medication", "drug", path) == 11.0
+    assert lookup_count("medication", "drug", path) == 7.0
+
+
+def test_lookup_count_prefers_explicit_level_count_over_legacy_row_count(tmp_path):
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "aspirin": {"aliases": [], "levels": ["medication"], "source_ids": [], "count": 900.0},
+        "bupropion": {
+            "aliases": [],
+            "levels": ["aminoketone", "medication"],
+            "source_ids": [],
+            "count": 9.0,
+            "level_counts": {"aminoketone": 9.0, "medication": 42.0},
+        },
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    _clear_lattice_profile_caches()
+
+    assert lookup_count("medication", "drug", path) == 42.0
 
 
 def test_lookup_count_prefers_explicit_level_counts_over_scalar_sum(tmp_path):
@@ -383,3 +454,36 @@ def test_aset_count_uses_profile_count(monkeypatch, tmp_path):
     anon.aset_count.cache_clear()
 
     assert anon.aset_count("publishing worker", "profession", "correspondent", strict=True) == 321.0
+
+
+def test_aset_count_uses_profile_level_counts_for_domain_types_and_fails_closed(monkeypatch, tmp_path):
+    import cloak.anonymity as anon
+    import cloak.lattice_profiles as lp
+
+    art = _artifact()
+    art["profiles"]["drug"] = {
+        "bupropion": {
+            "aliases": [],
+            "levels": ["aminoketone", "medication"],
+            "source_ids": ["test:drug"],
+            "count": 9.0,
+            "level_counts": {"aminoketone": 9.0, "medication": 42.0},
+        },
+    }
+    art["profiles"]["health-condition"]["asthma"] = {
+        "aliases": [],
+        "levels": ["respiratory condition", "chronic condition"],
+        "source_ids": ["test:health"],
+        "count": 12.0,
+        "level_counts": {"respiratory condition": 12.0, "chronic condition": 88.0},
+    }
+    path = tmp_path / "profiles.json"
+    path.write_text(json.dumps(art))
+    monkeypatch.setattr(lp, "DEFAULT_PROFILE_PATH", path)
+    monkeypatch.setattr(anon, "_wn_leaf_count", lambda *args, **kwargs: None)
+    _clear_lattice_profile_caches()
+    anon.aset_count.cache_clear()
+
+    assert anon.aset_count("medication", "drug", "bupropion", strict=True) == 42.0
+    assert anon.aset_count("chronic condition", "health-condition", "asthma", strict=True) == 88.0
+    assert anon.aset_count("not in the profile", "drug", "bupropion", strict=True) == 1.0
