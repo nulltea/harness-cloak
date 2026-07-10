@@ -118,12 +118,13 @@ label model is then a frozen, versioned artifact applied at *every* call site �
 production — like the embindex. Per-span application is cheap (the LF signals are computed
 anyway; aggregation is a lookup-scale computation).
 
-**Adoption spike (gates skweak in or out):** install skweak, fit on the measured re-mine span
-set, compare keep/drop quality against the plain layered gate (fixed layer precedence) on the
-labeled eval set. Adopt only if it beats the layered gate on drop-precision at equal or better
-drop-recall; otherwise record the numbers and ship the layered gate alone at all call sites.
-Either way, all consumers run the same decision core — the spike chooses the core, not a
-per-pipeline split.
+**Adoption spike — RESOLVED 2026-07-10: skweak NOT adopted.** Measured
+(`scripts/spikes/skweak_gate_spike.py`, `results/skweak_spike.json`; skweak 0.3.3
+NaiveBayes aggregator fit unsupervised on the 2,770 re-mine spans, evaluated on the
+calibration eval set of 2,793 keeps / 46 drops): layered gate drop-precision 1.0 at recall
+0.739 vs fused 1.0 at 0.696, both zero false drops — the fused model is strictly worse at
+matched precision. The layered gate (fixed precedence) ships alone at all call sites; all
+consumers run the same decision core.
 
 ### LLM triage band (miner only, optional)
 
