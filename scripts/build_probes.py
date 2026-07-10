@@ -327,28 +327,38 @@ def build_ladder(args):
     print(f"-> {LADDER_VALIDATED_OUT} + {REPORT}")
 
 
-# Zero-shot GLiNER label phrase -> lattice_profiles.json runtime_type (lattice-bearing types only).
-# QA lattices come from the profile (the single source of truth); detection only supplies which
-# surfaces+types a doc contains, replacing the staleness-prone baked env spans.
+# Zero-shot GLiNER label (native knowledgator/gliner-pii-large-v1.0 training label) ->
+# (runtime_type, role). Only `lattice` spans generate ladder probes, with levels sourced from
+# lattice_profiles.json (the single source of truth). `placeholder`/`quasi` spans are detected
+# so the floor anchor hides them (faithful all-sensitive-hidden baseline) but carry no lattice
+# and produce no probes. Labels are the model's trained strings (model card), not free phrasing.
 DETECT_LABELS = {
-    "drug or medication": "drug",
-    "disease, health condition or medical diagnosis": "health-condition",
-    "medical procedure, test or imaging": "medical-procedure",
-    "hospital, clinic or medical facility": "organization-medical-facility",
-    "location, city or country": "LOC",
-    "organization, company or institution": "ORG",
-    "nationality or citizenship": "nationality",
-    "profession, occupation or job title": "profession",
-    "religion or religious belief": "religion",
-    "gender": "gender",
-    "marital status": "marital-status",
-    "sexual orientation": "sexual-orientation",
+    # lattice-bearing (ladder probes; levels from lattice_profiles.json)
+    "condition": ("health-condition", "lattice"),
+    "drug": ("drug", "lattice"),
+    "medical process": ("medical-procedure", "lattice"),
+    "location city": ("LOC", "lattice"),
+    "location country": ("LOC", "lattice"),
+    "location state": ("LOC", "lattice"),
+    # direct identifiers / no useful lattice -> placeholder (hidden in floor, no probes)
+    "name": ("PERSON", "placeholder"),
+    "first name": ("PERSON", "placeholder"),
+    "last name": ("PERSON", "placeholder"),
+    "age": ("age", "placeholder"),
+    "gender": ("gender", "placeholder"),
+    "marital status": ("marital-status", "placeholder"),
+    "organization medical facility": ("organization-medical-facility", "placeholder"),
+    "healthcare number": ("CODE", "placeholder"),
+    "medical code": ("CODE", "placeholder"),
+    # quasi -> rule-based range at substitution time; for the QA build it is hidden in the floor
+    "dose": ("QUANTITY", "quasi"),
 }
 
 
 def _detect_docs(docs, model, threshold, max_words=320):
-    """Fresh zero-shot detection -> {doc_id: [{surface, type, sent}]}, keeping only spans whose
-    (surface, runtime_type) resolves to non-empty levels in lattice_profiles.json. Deduped per
+    """Fresh zero-shot detection -> {doc_id: [{surface, type, role, sent}]}. `lattice` spans are
+    kept only when (surface, runtime_type) resolves to non-empty levels in lattice_profiles.json;
+    `placeholder`/`quasi` spans are kept as detected (floor anonymization). Deduped per
     (surface, type). GPU (GLiNER)."""
     import torch
     from gliner import GLiNER
@@ -367,20 +377,22 @@ def _detect_docs(docs, model, threshold, max_words=320):
         for i in range(0, len(words), max_words):
             piece = " ".join(words[i:i + max_words])
             for e in g.predict_entities(piece, labels, threshold=threshold):
-                surface, rtype = e["text"].strip(), DETECT_LABELS[e["label"]]
+                surface, (rtype, role) = e["text"].strip(), DETECT_LABELS[e["label"]]
                 key = (surface.lower(), rtype)
                 if not surface or key in seen:
                     continue
                 seen.add(key)
-                if lookup_levels(surface, rtype):
-                    spans.append({"surface": surface, "type": rtype,
-                                  "sent": sentence_of(d["text"], surface)})
+                if role == "lattice" and not lookup_levels(surface, rtype):
+                    continue  # lattice role but profile has no row -> not a probe span, drop
+                spans.append({"surface": surface, "type": rtype, "role": role,
+                              "sent": sentence_of(d["text"], surface)})
         out[d["id"]] = spans
     return out
 
 
 def _all_placeholder(text, spans):
-    """Floor doc_p + R: replace each detected lattice span's surface with a typed placeholder."""
+    """Floor doc_p + R: replace EVERY detected sensitive span's surface (lattice + placeholder +
+    quasi) with a typed placeholder — the faithful all-sensitive-hidden floor anchor."""
     from cloak.train.reward import generalize_text
 
     R, counts = [], {}
@@ -413,14 +425,19 @@ def build_ladder_detected(args):
 
     for corpus in args.corpora.split(","):
         all_docs = load_task_docs(corpus, args.n_docs)
-        spans_of = _detect_docs(all_docs, args.detector_model, args.detector_threshold)
-        rows = [d for d in all_docs if spans_of.get(d["id"])]
-        print(f"[{corpus}] detected lattice spans in {len(rows)}/{len(all_docs)} docs "
-              f"({sum(len(spans_of[d['id']]) for d in rows)} spans)", flush=True)
+        detected = _detect_docs(all_docs, args.detector_model, args.detector_threshold)
+        # lattice spans feed the ladder; ALL detected spans feed the floor anonymization
+        lattice_of = {doc_id: [s for s in spans if s["role"] == "lattice"]
+                      for doc_id, spans in detected.items()}
+        rows = [d for d in all_docs if lattice_of.get(d["id"])]
+        spans_of = lattice_of  # ladder_probes_for_docs / _with_validated_rung0 read lattice spans
+        print(f"[{corpus}] {len(rows)}/{len(all_docs)} docs with lattice spans; "
+              f"{sum(len(lattice_of[d['id']]) for d in rows)} lattice + "
+              f"{sum(len(detected[d['id']]) for d in rows)} total detected", flush=True)
 
         jobs, meta = [], []
         for d in rows:
-            lo_doc, lo_R = _all_placeholder(d["text"], spans_of[d["id"]])
+            lo_doc, lo_R = _all_placeholder(d["text"], detected[d["id"]])
             for kind, doc_p, R in (("hi", d["text"], []), ("lo", lo_doc, lo_R)):
                 job = {"corpus": corpus, "doc_p": doc_p, "R": R, "probes": []}
                 if corpus in SCHEMA_CORPORA:
