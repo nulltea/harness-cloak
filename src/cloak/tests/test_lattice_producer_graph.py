@@ -187,6 +187,28 @@ def test_periodic_normalize_resumes_loop_but_exhausted_validates():
     assert _route_after_normalize(maxed) == "validate_proposed_artifact"
 
 
+def test_normalize_coherence_node_applies_entity_merge(tmp_path, monkeypatch):
+    proposed = tmp_path / "proposed.json"
+    proposed.write_text(json.dumps({
+        "schema_version": 1, "created": "2026-07-10", "sources": {}, "profiles": {
+            "health-condition": {
+                "blorbitis": {"aliases": [], "levels": ["organ disease"],
+                              "source_ids": ["t:1"], "count": 10.0}}},
+        "artifact_role": "proposal", "proposal_scope": "producer-processed-only"}))
+    calls = {}
+    def fake_merge(artifact, **kwargs):
+        calls["profiles"] = artifact["profiles"]
+        return {"types": {"health-condition": {"merged": [], "review": [], "gate_scored": 0}},
+                "duplicate_surface_claims": {}}
+    monkeypatch.setattr("cloak.lattice_producer.graph.apply_entity_merge", fake_merge)
+    state = {"proposed_out": str(proposed), "profiles_path": str(tmp_path / "canon.json"),
+             "run_id": "test-run", "run_dir": str(tmp_path)}
+    from cloak.lattice_producer.graph import normalize_coherence_node
+    normalize_coherence_node(state)
+    assert "health-condition" in calls["profiles"]
+    assert (tmp_path / "entity_merge_report.json").exists()
+
+
 def test_deterministic_lookup_prefers_reference_source_over_profile_cache(monkeypatch, tmp_path: Path) -> None:
     import cloak.lattice_producer.graph as graph_module
 

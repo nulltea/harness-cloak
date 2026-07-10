@@ -127,6 +127,37 @@ def test_doid_returns_none_when_no_match(tmp_path: Path) -> None:
     assert lookup_doid_reference({"surface": "completely unrelated condition", "aliases": []}, obo_path=str(obo_path)) is None
 
 
+OBO_FIXTURE = """format-version: 1.2
+
+[Term]
+id: DOID:0000001
+name: blorbitis
+synonym: "blorb inflammation" EXACT []
+synonym: "blorby feeling" RELATED []
+is_a: DOID:0000009 ! organ disease
+
+[Term]
+id: DOID:0000002
+name: old blorbitis
+is_obsolete: true
+
+[Term]
+id: DOID:0000009
+name: organ disease
+"""
+
+
+def test_doid_index_parses_exact_synonyms_and_obsolete(tmp_path):
+    obo = tmp_path / "mini.obo"
+    obo.write_text(OBO_FIXTURE)
+    from cloak.lattice_producer.reference_sources import load_doid_index
+    nodes = load_doid_index(str(obo))
+    assert nodes["DOID:0000001"].exact_synonyms == ["blorb inflammation"]
+    assert nodes["DOID:0000001"].obsolete is False
+    assert nodes["DOID:0000002"].obsolete is True
+    assert nodes["DOID:0000009"].exact_synonyms == []
+
+
 def _icd10pcs_line(code: str, flag: str, short_desc: str, long_desc: str) -> str:
     return f"00001 {code:<7} {flag} {short_desc:<61}{long_desc}"
 

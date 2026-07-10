@@ -145,11 +145,15 @@ class DoidNode:
     id: str
     name: str
     parents: list[str] = field(default_factory=list)
+    exact_synonyms: list[str] = field(default_factory=list)
+    obsolete: bool = False
 
 
 _TERM_ID_RE = re.compile(r"^id:\s*(DOID:\d+)", re.M)
 _TERM_NAME_RE = re.compile(r"^name:\s*(.+)$", re.M)
 _TERM_ISA_RE = re.compile(r"^is_a:\s*(DOID:\d+)", re.M)
+_TERM_SYN_EXACT_RE = re.compile(r'^synonym:\s*"(.+?)"\s+EXACT\b', re.M)
+_TERM_OBSOLETE_RE = re.compile(r"^is_obsolete:\s*true", re.M)
 
 DOID_ROOT = "DOID:4"  # "disease" -- the ontology root, treated as a ceiling, not a mid-chain rung
 
@@ -171,6 +175,8 @@ def load_doid_index(obo_path: str = str(DEFAULT_DOID_OBO)) -> dict[str, DoidNode
             id=node_id,
             name=name_match.group(1).strip(),
             parents=_TERM_ISA_RE.findall(stanza),
+            exact_synonyms=_TERM_SYN_EXACT_RE.findall(stanza),
+            obsolete=bool(_TERM_OBSOLETE_RE.search(stanza)),
         )
     return nodes
 

@@ -19,6 +19,7 @@ from cloak.lattice_profiles import lookup_levels
 from cloak.lattice_producer.coherence import normalize_coherence
 from cloak.lattice_producer.counts import compile_level_counts
 from cloak.lattice_producer.coverage import write_category_coverage
+from cloak.lattice_producer.entity_merge import apply_entity_merge
 from cloak.lattice_producer.gates import gate_candidates
 from cloak.lattice_producer.io import append_jsonl_unique, read_jsonl
 from cloak.lattice_producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
@@ -589,9 +590,13 @@ def normalize_coherence_node(state: ProducerState) -> ProducerState:
         ensure_proposed_artifact(state["profiles_path"], proposed, run_id=state["run_id"])
     artifact = json.loads(proposed.read_text())
     report = normalize_coherence(artifact)
-    proposed.write_text(json.dumps(artifact, indent=2, sort_keys=True))
     if report:
         _jsonl_path(state, "coherence_report.json").write_text(json.dumps(report, indent=2))
+    entity_report = apply_entity_merge(artifact)
+    proposed.write_text(json.dumps(artifact, indent=2, sort_keys=True))
+    if entity_report.get("types") or entity_report.get("duplicate_surface_claims"):
+        _jsonl_path(state, "entity_merge_report.json").write_text(
+            json.dumps(entity_report, indent=2, sort_keys=True))
     return {}
 
 
