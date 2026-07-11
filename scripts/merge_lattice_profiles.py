@@ -143,7 +143,20 @@ def _merge_row(runtime_type: str, existing_canonical: str, existing: dict, incom
     return row
 
 
-def merge_profile_artifacts(common_artifact: dict, mined_artifact: dict, *, created: str | None = None) -> dict:
+def merge_profile_artifacts(common_artifact: dict, mined_artifact: dict, *,
+                            created: str | None = None, entity_dedup: bool = False) -> dict:
+    """Merge mined entries into the common base per runtime type.
+
+    Default (``entity_dedup=False``): incoming entries alias-fold into the base -- an incoming
+    canonical (or, for non-drug types, an incoming alias) matching an existing surface merges via
+    ``_merge_row``. The common+mined build depends on this behavior.
+
+    ``entity_dedup=True``: no alias fold. Incoming entries UNION into the base -- each incoming
+    canonical becomes its own entry, and only an EXACT canonical norm-equality with an existing
+    entry merges via ``_merge_row``. This produces an un-deduped union; the CALLER is expected to
+    run ``cloak.lattice_producer.entity_merge.apply_entity_merge`` on the result for ontology-gated
+    dedup. This function stays dependency-light and never imports entity_merge itself.
+    """
     artifact = {
         "schema_version": SCHEMA_VERSION,
         "created": created or str(date.today()),
@@ -156,12 +169,16 @@ def merge_profile_artifacts(common_artifact: dict, mined_artifact: dict, *, crea
         index = _index_entries(entries)
         for incoming_canonical, incoming_row in mined_entries.items():
             incoming_row = _clean_incoming_row(runtime_type, incoming_row)
-            match = index.get(_norm(incoming_canonical))
-            if match is None and runtime_type != "drug":
-                for alias in incoming_row.get("aliases", []):
-                    match = index.get(_norm(alias))
-                    if match is not None:
-                        break
+            if entity_dedup:
+                # exact canonical norm-equality only -- no alias fold; caller runs apply_entity_merge
+                match = next((c for c in entries if _norm(c) == _norm(incoming_canonical)), None)
+            else:
+                match = index.get(_norm(incoming_canonical))
+                if match is None and runtime_type != "drug":
+                    for alias in incoming_row.get("aliases", []):
+                        match = index.get(_norm(alias))
+                        if match is not None:
+                            break
             if match is None:
                 entries[incoming_canonical] = copy.deepcopy(incoming_row)
                 match = incoming_canonical
@@ -177,6 +194,35 @@ def merge_profile_artifacts(common_artifact: dict, mined_artifact: dict, *, crea
     if errors:
         raise ValueError("invalid merged lattice profile artifact:\n" + "\n".join(errors[:50]))
     return artifact
+
+
+def apply_curated_merges(artifact: dict, pairs: list[tuple[str, str, str]]) -> None:
+    """Apply human-reviewed merges in place. Each pair is (runtime_type, keep_canonical,
+    fold_canonical): fold fold_canonical's row into keep_canonical -- union aliases (including the
+    folded canonical name), union source_ids, max count, per-shared-level max level_counts; keep
+    keep_canonical's levels and level_grounding -- then delete fold_canonical. A pair whose keep or
+    fold canonical is absent is skipped with a warning."""
+    for runtime_type, keep, fold in pairs:
+        entries = artifact.get("profiles", {}).get(runtime_type, {})
+        if keep not in entries or fold not in entries:
+            print(f"WARN curated-merge skipped (missing entry): "
+                  f"{runtime_type} keep={keep!r} fold={fold!r}", flush=True)
+            continue
+        keep_row, fold_row = entries[keep], entries[fold]
+        aliases = _merge_unique_preserve_order(
+            [*keep_row.get("aliases", []), fold, *fold_row.get("aliases", [])], [])
+        keep_row["aliases"] = sorted(
+            (a for a in aliases if _norm(a) != _norm(keep)), key=_norm)
+        keep_row["source_ids"] = sorted(
+            {s for s in [*keep_row.get("source_ids", []), *fold_row.get("source_ids", [])] if s})
+        keep_row["count"] = max(float(keep_row.get("count", 1.0) or 1.0),
+                                float(fold_row.get("count", 1.0) or 1.0))
+        if keep_row.get("level_counts"):
+            fold_counts = fold_row.get("level_counts") or {}
+            keep_row["level_counts"] = {
+                level: max(value, float(fold_counts[level])) if level in fold_counts else value
+                for level, value in keep_row["level_counts"].items()}
+        del entries[fold]
 
 
 def main() -> None:

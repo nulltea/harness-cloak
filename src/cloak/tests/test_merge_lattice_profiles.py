@@ -3,7 +3,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
-from merge_lattice_profiles import merge_profile_artifacts
+from merge_lattice_profiles import apply_curated_merges, merge_profile_artifacts
 
 
 def _row(levels, *, aliases=None, source_ids=None, count=1.0):
@@ -326,3 +326,82 @@ def test_merge_profile_artifacts_does_not_match_drugs_by_noisy_mined_aliases():
         ],
         "count": 1.0,
     }
+
+
+def test_merge_profile_artifacts_entity_dedup_unions_distinct_canonicals():
+    # entity_dedup=True: no alias fold. An incoming entry whose canonical (or alias) points at an
+    # existing surface is kept SEPARATE; only an exact canonical norm-equality merges via _merge_row.
+    common = {
+        "schema_version": 1,
+        "created": "2026-07-01",
+        "sources": {},
+        "profiles": {
+            "health-condition": {
+                "zorbosis": _row(["fictional ailment"], source_ids=["common:zorbosis"], count=5.0),
+            }
+        },
+    }
+    mined = {
+        "schema_version": 1,
+        "created": "2026-07-02",
+        "sources": {},
+        "profiles": {
+            "health-condition": {
+                # alias points at the existing canonical -> DEFAULT path folds; dedup keeps separate
+                "quibbex": _row(["fictional ailment"], aliases=["zorbosis"], source_ids=["mined:1"]),
+                # exact canonical dup -> merges into the existing entry even under dedup
+                "zorbosis": _row(["fictional ailment", "broad ailment"], source_ids=["mined:2"]),
+            }
+        },
+    }
+
+    deduped = merge_profile_artifacts(common, mined, entity_dedup=True, created="2026-07-07")
+    hc = deduped["profiles"]["health-condition"]
+    assert set(hc) == {"zorbosis", "quibbex"}          # quibbex NOT alias-folded
+    assert "quibbex" not in hc["zorbosis"].get("aliases", [])
+    assert "broad ailment" in hc["zorbosis"]["levels"]  # exact-canonical dup merged
+    assert "mined:2" in hc["zorbosis"]["source_ids"]
+
+    # contrast: the default alias-fold path collapses quibbex into zorbosis
+    folded = merge_profile_artifacts(common, mined, created="2026-07-07")
+    assert set(folded["profiles"]["health-condition"]) == {"zorbosis"}
+
+
+def test_apply_curated_merges_folds_pair_and_skips_missing(capsys):
+    artifact = {
+        "schema_version": 1,
+        "created": "2026-07-01",
+        "sources": {},
+        "profiles": {
+            "drug": {
+                "zalprix": {
+                    "aliases": ["zx"],
+                    "levels": ["antiviral medication"],
+                    "source_ids": ["common:zalprix"],
+                    "count": 3.0,
+                    "level_counts": {"antiviral medication": 100.0},
+                },
+                "zalprex": {
+                    "aliases": ["zpx"],
+                    "levels": ["antiviral medication"],
+                    "source_ids": ["mined:zalprex"],
+                    "count": 7.0,
+                    "level_counts": {"antiviral medication": 250.0},
+                },
+            }
+        },
+    }
+
+    apply_curated_merges(artifact, [
+        ("drug", "zalprix", "zalprex"),
+        ("drug", "zalprix", "does-not-exist"),  # missing fold -> warn + skip
+    ])
+    drugs = artifact["profiles"]["drug"]
+
+    assert "zalprex" not in drugs                       # folded canonical removed
+    keep = drugs["zalprix"]
+    assert set(keep["aliases"]) == {"zalprex", "zpx", "zx"}   # aliases + folded name union
+    assert set(keep["source_ids"]) == {"common:zalprix", "mined:zalprex"}
+    assert keep["count"] == 7.0                          # max count
+    assert keep["level_counts"]["antiviral medication"] == 250.0  # per-shared-level max
+    assert "WARN curated-merge skipped" in capsys.readouterr().out

@@ -1,0 +1,10 @@
+[
+  ["health-condition", "allergic rhinitis", "seasonal allergies"],
+  ["health-condition", "dermatitis", "skin irritation"],
+  ["health-condition", "exostosis", "large spur"],
+  ["health-condition", "eye twitch", "eye tics"],
+  ["drug", "amlodipine", "amlodipine besylate"],
+  ["drug", "blood pressure medication", "blood pressure medications"],
+  ["drug", "blood pressure medication", "blood pressure pill"],
+  ["drug", "illicit drug", "illicit drugs"]
+]
