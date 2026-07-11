@@ -357,7 +357,8 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
                            model: str = TEACHER_MODEL, base_url: str = LOCAL_BASE_URL,
                            cache_path: Path = LADDER_CACHE,
                            all_surfaces_of: dict | None = None,
-                           reject_sink: list | None = None) -> dict:
+                           reject_sink: list | None = None,
+                           gen_sink: list | None = None) -> dict:
     """docs: corpora rows; spans_of: doc_id -> spans (each {surface, type, ...}).
     Returns {doc_id: [{"surface", "rung", "q", "a"}...]} for lattice-bearing spans; teacher
     fills cache misses.
@@ -405,6 +406,9 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
                                     "rung": rung, "q": q, "gate": gate, "gold": gold})
 
         for t, r in zip(todo, replies):
+            if gen_sink is not None:
+                gen_sink.append({"doc_id": t["doc_id"], "surface": t["surface"],
+                                 "type": t["type"], "rungs": t["rungs"], "raw": r})
             rows = _parse_json_list((r or "").strip())
             if rows is None:
                 n_bad += 1
@@ -440,7 +444,8 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
 def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: int = 4,
                              workers: int = 6, model: str = TEACHER_MODEL,
                              base_url: str = LOCAL_BASE_URL,
-                             cache_path: Path = DECISION_CACHE) -> dict:
+                             cache_path: Path = DECISION_CACHE,
+                             gen_sink: list | None = None) -> dict:
     """docs: corpora rows; out_hi_of: doc_id -> ceiling output. One teacher call per doc.
     Structural validation only (gold in 3-5 options, question form); reader-side ceiling/floor
     validation happens at probe-build time, not here."""
@@ -461,6 +466,8 @@ def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: 
             doc=d["text"], out_hi=out_hi_of[d["id"]])), todo, workers=workers)
         n_bad = 0
         for d, r in zip(todo, replies):
+            if gen_sink is not None:
+                gen_sink.append({"doc_id": d["id"], "raw": r})
             rows = _parse_json_list((r or "").strip())
             if rows is None:
                 n_bad += 1

@@ -26,6 +26,7 @@ TH = 0.5
 OUT = Path("data/probes_validated.json")
 LADDER_VALIDATED_OUT = Path("data/probes_ladder_validated.json")
 GEN_REJECTS_OUT = Path("results/ladder_gen_rejects.json")
+GENERATIONS_OUT = Path("results/ladder_generations.json")
 REPORT = Path("results/probe_health.json")
 
 
@@ -436,11 +437,17 @@ def build_ladder_detected(args):
 
     teacher_model = args.teacher_model or lp.TEACHER_MODEL
     teacher_base_url = args.teacher_base_url or lp.LOCAL_BASE_URL
+    tag = args.out_tag or ""
+    suffix = f".{tag}" if tag else ""
+    validated_out = LADDER_VALIDATED_OUT.with_suffix(f"{suffix}.json")
+    rejects_out = GEN_REJECTS_OUT.with_suffix(f"{suffix}.json")
+    generations_out = GENERATIONS_OUT.with_suffix(f"{suffix}.json")
     report = json.loads(REPORT.read_text()) if REPORT.exists() else {"corpora": {}}
     report["th"] = args.th
     report.setdefault("corpora", {})
     ladder_out, decision_out = {}, {}
     all_gen_rejects = {}
+    generations = {}   # doc_id -> {out_hi, out_lo, ladder_raw, decision_raw} for later analysis
 
     for corpus in args.corpora.split(","):
         all_docs = load_task_docs(corpus, args.n_docs)
@@ -472,13 +479,25 @@ def build_ladder_detected(args):
 
         all_surfaces_of = {doc_id: [s["surface"] for s in spans]
                            for doc_id, spans in detected.items()}
-        gen_rejects = []
+        gen_rejects, ladder_raw, decision_raw = [], [], []
         ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers,
                                             model=teacher_model, base_url=teacher_base_url,
                                             all_surfaces_of=all_surfaces_of,
-                                            reject_sink=gen_rejects)
+                                            reject_sink=gen_rejects, gen_sink=ladder_raw)
         decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers,
-                                                model=teacher_model, base_url=teacher_base_url)
+                                                model=teacher_model, base_url=teacher_base_url,
+                                                gen_sink=decision_raw)
+        # record every generation (raw teacher replies + the anchors they were graded against)
+        for d in rows:
+            if d["id"] in anchor:
+                generations[d["id"]] = {
+                    "corpus": corpus,
+                    "out_hi": anchor[d["id"]]["hi"]["out_final"],
+                    "out_lo_p": anchor[d["id"]]["lo"]["out_p"],
+                    "out_lo_final": anchor[d["id"]]["lo"]["out_final"],
+                    "ladder_raw": [g for g in ladder_raw if g["doc_id"] == d["id"]],
+                    "decision_raw": [g for g in decision_raw if g["doc_id"] == d["id"]],
+                }
         stats = {"docs": 0, "spans": 0, "rung_candidates": 0, "rung_kept": 0, "decisions_kept": 0}
         for d in rows:
             doc_id = d["id"]
@@ -525,12 +544,15 @@ def build_ladder_detected(args):
         "th": args.th, "teacher": teacher_model, "teacher_base_url": teacher_base_url,
         "corpora": args.corpora.split(","), "spans_source": f"detected:{args.detector_model}",
         "env_path": None, "built_at": datetime.datetime.now().isoformat(timespec="seconds")})
-    LADDER_VALIDATED_OUT.parent.mkdir(parents=True, exist_ok=True)
-    LADDER_VALIDATED_OUT.write_text(json.dumps(artifact, indent=1))
-    GEN_REJECTS_OUT.write_text(json.dumps(all_gen_rejects, indent=1))
+    validated_out.parent.mkdir(parents=True, exist_ok=True)
+    validated_out.write_text(json.dumps(artifact, indent=1))
+    rejects_out.parent.mkdir(parents=True, exist_ok=True)
+    rejects_out.write_text(json.dumps(all_gen_rejects, indent=1))
+    generations_out.write_text(json.dumps(
+        {"meta": artifact["meta"], "docs": generations}, indent=1))
     REPORT.parent.mkdir(exist_ok=True)
     REPORT.write_text(json.dumps(report, indent=1))
-    print(f"-> {LADDER_VALIDATED_OUT} + {GEN_REJECTS_OUT} + {REPORT}", flush=True)
+    print(f"-> {validated_out} + {rejects_out} + {generations_out} + {REPORT}", flush=True)
 
 
 def main():
@@ -560,6 +582,9 @@ def main():
     ap.add_argument("--detector-model", default="knowledgator/gliner-pii-large-v1.0",
                     help="zero-shot GLiNER detector for --detect")
     ap.add_argument("--detector-threshold", type=float, default=0.35)
+    ap.add_argument("--out-tag", default="",
+                    help="suffix for --detect outputs (probes_ladder_validated.<tag>.json etc.), "
+                         "so a teacher-model sweep writes side-by-side artifacts")
     ap.add_argument("--teacher-model", default="",
                     help="override the ladder/decision teacher (default: ladder_probes.TEACHER_MODEL). "
                          "Remote OpenRouter model ids (e.g. nvidia/nemotron-3-super-120b-a12b:free) need "
