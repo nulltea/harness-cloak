@@ -408,19 +408,19 @@ def _teacher(model: str, base_url: str = LOCAL_BASE_URL):
 
     if "openrouter.ai" in base_url:
         # Hosted teacher (Nemotron etc. are reasoning models). Authenticate with
-        # OPENROUTER_API_KEY. Use reasoning=exclude, NOT enabled: the model still reasons
-        # internally but the reasoning is not returned — with `enabled` the :free endpoint
-        # load-balances across providers and some route the reasoning into `content` (measured:
-        # 30-37 KB reasoning dumps that consume the token budget and truncate the JSON, giving
-        # unparseable replies). `exclude` keeps `content` to the JSON answer only. Generous
-        # max_tokens is headroom for the answer (the 1024 cap once starved it). Verified 2026-07-11.
+        # OPENROUTER_API_KEY; response_format hard-enforces a JSON object; reasoning=exclude asks
+        # the provider not to return reasoning. But the :free endpoint load-balances across
+        # providers and some IGNORE exclude, dumping 30-37 KB of reasoning into `content` — and a
+        # reasoning model burns any max_tokens cap on that reasoning before emitting the JSON
+        # (measured: with an 8000 cap, ultra truncated mid-reasoning -> unparseable). So set NO
+        # max_tokens cap: let reasoning run to completion so the JSON is always emitted at the end
+        # (_parse_json_list recovers the trailing object/list even after a reasoning preamble).
         api_key = os.environ.get("OPENROUTER_API_KEY") or "x"
         return LLMClient(
             model,
             base_url=base_url,
             api_key=api_key,
             temperature=0.0,
-            max_tokens=8000,
             response_format={"type": "json_object"},   # hard-enforce a JSON object reply
             extra_body={"reasoning": {"exclude": True}},
         )
