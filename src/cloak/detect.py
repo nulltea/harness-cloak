@@ -422,8 +422,8 @@ def _dedupe(spans: list[Span]) -> list[Span]:
 
 
 def _apply_negative_filter(spans: list[Span]) -> list[Span]:
-    """Semantic-gate the noise-filter types: drop margin/deny-list negatives, apply layer-2
-    retypes, keep the rest. Types outside _NOISE_FILTER_TYPES bypass the gate. Fail-opens to
+    """Semantic-gate the noise-filter types: drop deny-list negatives + link retypes (NLI layer
+    opt-in, off), keep the rest. Types outside _NOISE_FILTER_TYPES bypass the gate. Fail-opens to
     keep when gate artifacts are absent (== the old is_noise_span filter via the deny-list
     layer). span_gate is imported lazily so a non-clinical profile never pulls numpy at load."""
     gated = [s for s in spans if s.type in _NOISE_FILTER_TYPES]

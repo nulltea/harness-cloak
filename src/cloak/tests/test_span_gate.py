@@ -1,6 +1,5 @@
 import json
 
-import numpy as np
 import pytest
 
 from cloak import span_gate
@@ -21,116 +20,67 @@ def profile(tmp_path):
     return p
 
 
-def _vec(x):  # 2-d unit vectors for fake embeddings
-    v = np.asarray(x, dtype=np.float32)
-    return v / np.linalg.norm(v)
-
-
-FAKE_SPACE = {  # surface -> direction; positives near [1,0], junk near [0,1]
-    "blorbitis": [1.0, 0.0], "blorb inflammation": [1.0, 0.05],
-    "weird fragment": [0.05, 1.0], "brickish thing": [0.1, 1.0],
-    "ambiguous middle": [0.7, 0.7],
-}
-
-
-def fake_embed(texts):
-    return np.stack([_vec(FAKE_SPACE.get(t, [0.5, 0.5])) for t in texts])
-
-
-def test_seed_split_is_deterministic_and_disjoint():
-    surfaces = [f"surface {i}" for i in range(50)]
-    a1, e1 = span_gate.anchor_seed_split(surfaces)
-    a2, e2 = span_gate.anchor_seed_split(list(reversed(surfaces)))
-    assert set(a1) == set(a2) and set(e1) == set(e2)
-    assert set(a1).isdisjoint(e1) and set(a1) | set(e1) == set(surfaces)
-
-
-def test_gate_link_keep_and_retype(profile, tmp_path):
+def test_gate_link_keep_and_retype(profile):
     got = span_gate.gate_spans(
         [("Blorbitis", "health-condition"), ("flurbectomy", "health-condition")],
-        "production", profiles_path=profile,
-        negatives_path=tmp_path / "missing.npz",   # layer 3 disabled -> still links
-        calibration_path=tmp_path / "missing.json")
+        "production", profiles_path=profile)
     d1 = got[span_key("Blorbitis", "health-condition")]
     assert (d1.action, d1.layer, d1.entry) == ("keep", "link", "blorbitis")
     d2 = got[span_key("flurbectomy", "health-condition")]
     assert (d2.action, d2.new_type) == ("retype", "medical-procedure")
 
 
-def test_gate_margin_drops_junk_keeps_ambiguous(profile, tmp_path):
-    neg = tmp_path / "negatives.npz"
-    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="fake",
-                                   surfaces=["weird fragment"])
-    calib = tmp_path / "calib.json"
-    calib.write_text(json.dumps({"schema_version": 1, "model_id": "fake",
-        "points": {"production": {"floor": 0.6, "margin": 0.2}}}))
-    # embindex for the profile with the fake embedder
-    from cloak.profile_match import build_embindex
-    build_embindex(profile, embed_fn=fake_embed, model_id="fake")
-    got = span_gate.gate_spans(
-        [("brickish thing", "health-condition"), ("ambiguous middle", "health-condition")],
-        "production", profiles_path=profile, negatives_path=neg, calibration_path=calib,
-        embed_fn=fake_embed)
-    assert got[span_key("brickish thing", "health-condition")].action == "drop"
-    assert got[span_key("ambiguous middle", "health-condition")].action == "keep"  # fail-open
-
-
-def test_margin_fails_open_on_calibration_model_mismatch(profile, tmp_path):
-    # negatives + embindex share model "fake", but the calibration was fit for a DIFFERENT
-    # model -> its floor/margin live in another space -> margin layer must fail open.
-    neg = tmp_path / "negatives.npz"
-    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="fake",
-                                   surfaces=["weird fragment"])
-    calib = tmp_path / "calib.json"
-    calib.write_text(json.dumps({"schema_version": 1, "model_id": "other-model",
-        "points": {"production": {"floor": 0.6, "margin": 0.2}}}))
-    from cloak.profile_match import build_embindex
-    build_embindex(profile, embed_fn=fake_embed, model_id="fake")
-    got = span_gate.gate_spans([("brickish thing", "health-condition")], "production",
-                               profiles_path=profile, negatives_path=neg,
-                               calibration_path=calib, embed_fn=fake_embed)
-    d = got[span_key("brickish thing", "health-condition")]
-    assert (d.action, d.layer) == ("keep", "open")
-
-
-def test_gate_fails_open_without_artifacts(profile, tmp_path):
-    got = span_gate.gate_spans([("brickish thing", "health-condition")], "production",
-                               profiles_path=profile,
-                               negatives_path=tmp_path / "none.npz",
-                               calibration_path=tmp_path / "none.json")
-    d = got[span_key("brickish thing", "health-condition")]
-    assert (d.action, d.layer) == ("keep", "open")
-
-
-def test_denylist_layer_still_fires(profile, tmp_path, monkeypatch):
+def test_denylist_layer_still_fires(profile, monkeypatch):
     monkeypatch.setattr(span_gate, "is_noise_span",
                         lambda s, t: s == "known junk", raising=False)
     got = span_gate.gate_spans([("known junk", "health-condition")], "miner",
-                               profiles_path=profile,
-                               negatives_path=tmp_path / "none.npz",
-                               calibration_path=tmp_path / "none.json")
+                               profiles_path=profile)
     assert got[span_key("known junk", "health-condition")].layer == "denylist"
 
 
-def test_margin_fails_open_on_model_mismatch_and_missing_type_rows(profile, tmp_path):
-    # negatives embedded by a DIFFERENT model than the profile embindex -> stale -> fail open
-    neg = tmp_path / "negatives.npz"
-    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="other-model",
-                                   surfaces=["weird fragment"])
-    calib = tmp_path / "calib.json"
-    calib.write_text(json.dumps({"schema_version": 1, "model_id": "fake",
-        "points": {"production": {"floor": 0.6, "margin": 0.2}}}))
-    from cloak.profile_match import build_embindex
-    build_embindex(profile, embed_fn=fake_embed, model_id="fake")
-    got = span_gate.gate_spans([("brickish thing", "health-condition")], "production",
-                               profiles_path=profile, negatives_path=neg,
-                               calibration_path=calib, embed_fn=fake_embed)
-    assert got[span_key("brickish thing", "health-condition")].action == "keep"
-    # matching model but the span's type has no positive anchors -> fail open per span
-    span_gate.build_negative_index(out_path=neg, embed_fn=fake_embed, model_id="fake",
-                                   surfaces=["weird fragment"])
-    got2 = span_gate.gate_spans([("brickish thing", "drug")], "production",
-                                profiles_path=profile, negatives_path=neg,
-                                calibration_path=calib, embed_fn=fake_embed)
-    d = got2[span_key("brickish thing", "drug")]
-    assert (d.action, d.layer) == ("keep", "open") and d.pos_sim is None
+def test_residue_fails_open_by_default_no_nli(profile):
+    # a span that misses the links and the deny-list stays keep/open, and no NLI is invoked
+    def boom(jobs):
+        raise AssertionError("nli_batch_fn must not be called when nli_verify=False")
+
+    got = span_gate.gate_spans(
+        [("brickthing", "health-condition", "the patient had brickthing")],
+        "production", profiles_path=profile, nli_batch_fn=boom)
+    d = got[span_key("brickthing", "health-condition")]
+    assert (d.action, d.layer) == ("keep", "open")
+
+
+def test_nli_layer_drops_unentailed_keeps_entailed(profile):
+    seen = []
+
+    def fake_nli(jobs):
+        seen.extend(jobs)
+        # blorbthing not entailed -> [] ; wobbling entailed -> approved phrase
+        return [[] if surface == "blorbthing" else [("a medication", 0.95)]
+                for surface, _ctx, _cands in jobs]
+
+    got = span_gate.gate_spans(
+        [("blorbthing", "health-condition", "diagnosed with blorbthing"),
+         ("wobbling", "drug", "took wobbling twice daily")],
+        "production", profiles_path=profile, nli_verify=True, nli_batch_fn=fake_nli)
+
+    dropped = got[span_key("blorbthing", "health-condition")]
+    assert (dropped.action, dropped.layer) == ("drop", "nli")
+    kept = got[span_key("wobbling", "drug")]
+    assert (kept.action, kept.layer) == ("keep", "open")
+    # context and the type's substitution phrase reach the NLI call
+    by_surface = {j[0]: j for j in seen}
+    assert by_surface["blorbthing"][1] == "diagnosed with blorbthing"
+    assert by_surface["blorbthing"][2] == ["a medical condition"]
+    assert by_surface["wobbling"][2] == ["a medication"]
+
+
+def test_nli_span_without_context_stays_open(profile):
+    # nli_verify on, but no context -> cannot check -> fail open, no job emitted
+    def boom(jobs):
+        raise AssertionError("no context spans must not reach the NLI call")
+
+    got = span_gate.gate_spans([("brickthing", "health-condition")], "production",
+                               profiles_path=profile, nli_verify=True, nli_batch_fn=boom)
+    d = got[span_key("brickthing", "health-condition")]
+    assert (d.action, d.layer) == ("keep", "open")
