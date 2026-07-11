@@ -42,12 +42,11 @@ def _empty_gold(phrase: str) -> bool:
 
 LADDER_CACHE = Path("data/ladder_probes.json")
 DECISION_CACHE = Path("data/decision_probes.json")
-LADDER_PV = (
-    2  # pv2: grounding constrained to the fact's clinical role; positional/ordinal
-)
-# and enumeration grounding forbidden (they echo-game the exact tier and are
-# unanswerable/reordered on out_p) — see docs/issues placeholder-gaming regression
-DECISION_PV = 1
+# pv2: clinical-role grounding, positional/enumeration forbidden.
+# pv3: JSON-object output ({"probes": [...]}) enforced via response_format=json_object.
+LADDER_PV = 3
+# pv2: JSON-object output ({"decisions": [...]}) enforced via response_format=json_object.
+DECISION_PV = 2
 
 OUTPUT_KIND = {
     "aci": "clinical note",
@@ -91,7 +90,8 @@ condition"); or by ENUMERATING the other facts it appears alongside ("the condit
 with X, Y and Z"). Position and neighbouring facts are reordered or hidden when the answer is \
 graded, and a question answerable by position or by echoing a name does NOT test whether the \
 fact's meaning was preserved — it must be answerable only by understanding this fact;
-4. is a wh- question with a short-phrase answer; no yes/no questions;
+4. is a wh- question (what / which / who / where / when / why / how) with a short-phrase \
+answer; no yes/no questions;
 5. is answerable from the {output_kind} alone, by a reader who never saw the document.
 
 Document:
@@ -101,7 +101,7 @@ Target fact: "{surface}"   (type: {type}; appears in: "{sentence}")
 Ladder rungs, exact -> broad:
 {rungs}
 
-Reply ONLY with a JSON list: [{{"rung": 0, "q": "...", "a": "<that rung's phrase>"}}, ...]"""
+Reply ONLY with a JSON object: {{"probes": [{{"rung": 0, "q": "...", "a": "<that rung's phrase>"}}, ...]}}"""
 
 DECISION_PROMPT = """You design decision checks that grade whether a {output_kind} supports \
 the decisions its readers must make.
@@ -121,8 +121,8 @@ Document:
 The {output_kind}:
 {out_hi}
 
-Reply ONLY with a JSON list:
-[{{"q": "...", "options": ["...", "..."], "gold": "...", "depends_on": ["...", "..."]}}]"""
+Reply ONLY with a JSON object:
+{{"decisions": [{{"q": "...", "options": ["...", "..."], "gold": "...", "depends_on": ["...", "..."]}}]}}"""
 
 _STOP = {
     "a",
@@ -321,8 +321,21 @@ def validate_decisions(entries, reader_mc_hi, reader_mc_lo):
 
 
 def _parse_json_list(reply: str) -> list | None:
+    """Extract the probe list from a teacher reply. Accepts the enforced JSON-object form
+    ({"probes"/"decisions": [...]}, or any single list-valued key) and, as a fallback for
+    unconstrained providers, a bare JSON list."""
     if not reply or "<think>" in reply:
         return None
+    obj = re.search(r"\{.*\}", reply, re.DOTALL)
+    if obj:
+        try:
+            v = json.loads(obj.group())
+        except json.JSONDecodeError:
+            v = None
+        if isinstance(v, dict):
+            lists = [x for x in v.values() if isinstance(x, list)]
+            if len(lists) == 1:
+                return lists[0]
     m = re.search(r"\[.*\]", reply, re.DOTALL)
     if not m:
         return None
@@ -393,6 +406,7 @@ def _teacher(model: str, base_url: str = LOCAL_BASE_URL):
             api_key=api_key,
             temperature=0.0,
             max_tokens=8000,
+            response_format={"type": "json_object"},   # hard-enforce a JSON object reply
             extra_body={"reasoning": {"exclude": True}},
         )
     # chat_template_kwargs is llama.cpp-specific; sent only to the local proxy.
@@ -745,6 +759,10 @@ if __name__ == "__main__":
     )
     assert _parse_json_list('noise [{"rung": 0, "q": "x?", "a": "y"}] tail') is not None
     assert _parse_json_list("<think>...</think>[]") is None
+    # enforced JSON-object form ({"probes"/"decisions": [...]}) unwraps to the list
+    assert _parse_json_list('{"probes": [{"rung": 0, "q": "x?", "a": "y"}]}') == \
+        [{"rung": 0, "q": "x?", "a": "y"}]
+    assert _parse_json_list('{"decisions": [{"q": "x?", "gold": "y"}]}') == [{"q": "x?", "gold": "y"}]
     assert _empty_gold("something") and _empty_gold("A physical condition.")
     assert not _empty_gold("a cardiovascular disease") and not _empty_gold(
         "an endocrine condition"
