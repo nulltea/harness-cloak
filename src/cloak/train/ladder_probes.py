@@ -349,8 +349,16 @@ def _load(path: Path) -> dict:
     return json.loads(path.read_text()) if path and path.exists() else {}
 
 
-def _covered(entries: list[dict], model: str, pv: int) -> set[str]:
-    return {e["surface"] for e in entries if e.get("teacher") == model and e.get("pv") == pv}
+def _reusable(entry: dict, model: str, want: dict) -> bool:
+    """A cached ladder entry is reusable only if it was built by THIS teacher+pv AND its rungs
+    still match the current profile-sourced ladder for its surface (want: canon(surface) ->
+    rungs, built from THIS run's detected spans). This is the guard against cross-run / cross-path
+    cache leakage: a surface not detected this run (a prior env-path 'dragon'), or a detected
+    surface whose lattice changed since it was cached, is not reusable and is re-generated."""
+    if entry.get("teacher") != model or entry.get("pv") != LADDER_PV:
+        return False
+    key = canon(entry.get("surface", ""))
+    return key in want and list(entry.get("rungs") or []) == list(want[key])
 
 
 def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, workers: int = 6,
@@ -375,17 +383,28 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
 
     kind = OUTPUT_KIND.get(corpus, "summary")
     cache = _load(cache_path)
+    # want[doc_id][canon(surface)] = current profile-sourced rungs for each detected lattice span.
+    # Cache reuse and the return are both scoped to this — never to (teacher, pv) alone.
+    want_of = {
+        d["id"]: {canon(s["surface"]): rung_phrases(s["surface"], span_levels(s))
+                  for s in spans_of.get(d["id"], []) if span_levels(s)}
+        for d in docs
+    }
     todo = []
     for d in docs:
-        have = _covered(cache.get(d["id"], []), model, LADDER_PV)
+        want = want_of[d["id"]]
+        doc_cache = cache.get(d["id"], [])
         hidden = (all_surfaces_of or {}).get(d["id"])
         if hidden is None:
             hidden = [s.get("surface", "") for s in spans_of.get(d["id"], [])]
         for s in spans_of.get(d["id"], []):
-            levels = span_levels(s)
-            if not levels or s["surface"] in have:
+            key = canon(s["surface"])
+            if key not in want:            # no profile levels -> not a probe span
                 continue
-            rungs = rung_phrases(s["surface"], levels)
+            if any(_reusable(e, model, want) and canon(e.get("surface", "")) == key
+                   for e in doc_cache):    # valid cached entry already -> skip re-generation
+                continue
+            rungs = want[key]
             other = [x for x in hidden if x and canon(x) != canon(s["surface"])]
             aliases = lookup_aliases(s["surface"], s.get("type", ""))
             todo.append({"doc_id": d["id"], "surface": s["surface"], "type": s.get("type", ""),
@@ -436,8 +455,10 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
         if cache_path:
             cache_path.parent.mkdir(exist_ok=True)
             cache_path.write_text(json.dumps(cache, indent=1))
+    # Return ONLY entries that match this run's detected spans + current lattice (want_of),
+    # so stale cross-run / cross-path cache entries never leak into the artifact.
     return {d["id"]: [e for e in cache.get(d["id"], [])
-                      if e.get("teacher") == model and e.get("pv") == LADDER_PV]
+                      if _reusable(e, model, want_of[d["id"]])]
             for d in docs}
 
 

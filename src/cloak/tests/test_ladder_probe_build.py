@@ -332,6 +332,43 @@ def test_validated_rung0_cache_entries_prevent_reteaching(monkeypatch, tmp_path)
     assert second["doc-1"][0]["pv"] == lp.LADDER_PV
 
 
+def test_ladder_probes_scopes_cache_to_current_spans_and_rungs(monkeypatch, tmp_path):
+    # Regression: the return/reuse must be scoped to THIS run's detected spans + current lattice,
+    # not to (teacher, pv) alone. A prior run left two contaminating entries in the cache:
+    #  - 'dragon' (a surface not detected this run, env-style rungs) -> must NOT be returned;
+    #  - 'hypertension' with STALE rungs (lattice changed since) -> must be re-generated, and the
+    #    stale-rung entry must NOT be returned.
+    docs = [{"id": "d1", "text": "Patient with hypertension."}]
+    span = {"surface": "hypertension", "type": "health-condition"}
+    spans_of = {"d1": [span]}
+    monkeypatch.setattr(lp, "span_levels",
+                        lambda s: ["artery disease"] if s["surface"] == "hypertension" else [])
+
+    cache_path = tmp_path / "ladder_probes.json"
+    cache_path.write_text(json.dumps({"d1": [
+        {"surface": "dragon", "rung": 0, "q": "q?", "a": "dragon",
+         "rungs": ["dragon", "a mythical monster"], "teacher": "fake", "pv": lp.LADDER_PV},
+        {"surface": "hypertension", "rung": 1, "q": "old?", "a": "a cardiovascular disease",
+         "rungs": ["hypertension", "a cardiovascular disease"], "teacher": "fake",
+         "pv": lp.LADDER_PV},
+    ]}))
+
+    class FakeTeacher:
+        def generate(self, _prompt):
+            return ('[{"rung": 0, "q": "What condition is present?", "a": "hypertension"},'
+                    ' {"rung": 1, "q": "What cardiovascular category?", "a": "artery disease"}]')
+
+    monkeypatch.setattr(lp, "_teacher", lambda _m, _b: FakeTeacher())
+
+    out = lp.ladder_probes_for_docs(docs, spans_of, "clinical", workers=1,
+                                    model="fake", cache_path=cache_path)
+    returned = out["d1"]
+    assert all(e["surface"] != "dragon" for e in returned)                 # stale surface gone
+    hyp = [e for e in returned if e["surface"] == "hypertension"]
+    assert hyp and all(e["rungs"] == ["hypertension", "artery disease"] for e in hyp)  # fresh rungs
+    assert all(e["rungs"] != ["hypertension", "a cardiovascular disease"] for e in hyp)  # not stale
+
+
 def test_ladder_health_row_reports_reader_rejects_tiers_and_decisions():
     row = ladder_health_row(
         docs=4,
