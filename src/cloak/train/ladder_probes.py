@@ -9,6 +9,7 @@ must answer, gold recovered from the ceiling output (ceiling agreement).
 Teacher-cached like cloak.train.probes: entries tagged {teacher, pv}; other-teacher /
 other-pv entries are ignored and regenerated, never mixed.
 """
+
 import json
 import hashlib
 import random
@@ -23,34 +24,55 @@ from cloak.train.reward import canon, fact_score
 # useless probe golds — a question whose best answer carries no content grades nothing, and
 # such fills SHOULD earn no semantic-tier credit over a placeholder. No rung question is kept
 # for them (measured: mammogram->"something" in results/ladder_probe_gen_test.json).
-_EMPTY_GOLDS = {"something", "a thing", "an issue", "a disorder", "a condition",
-                "a physical condition", "a problem"}
+_EMPTY_GOLDS = {
+    "something",
+    "a thing",
+    "an issue",
+    "a disorder",
+    "a condition",
+    "a physical condition",
+    "a problem",
+}
 
 
 def _empty_gold(phrase: str) -> bool:
     f = re.sub(r"\s+", " ", canon(phrase)).strip().rstrip(".")
     return f in _EMPTY_GOLDS or is_type_name_phrase(phrase)
 
+
 LADDER_CACHE = Path("data/ladder_probes.json")
 DECISION_CACHE = Path("data/decision_probes.json")
-LADDER_PV = 2   # pv2: grounding constrained to the fact's clinical role; positional/ordinal
-                # and enumeration grounding forbidden (they echo-game the exact tier and are
-                # unanswerable/reordered on out_p) — see docs/issues placeholder-gaming regression
+LADDER_PV = (
+    2  # pv2: grounding constrained to the fact's clinical role; positional/ordinal
+)
+# and enumeration grounding forbidden (they echo-game the exact tier and are
+# unanswerable/reordered on out_p) — see docs/issues placeholder-gaming regression
 DECISION_PV = 1
 
-OUTPUT_KIND = {"aci": "clinical note", "mts": "clinical note", "clinical": "clinical note",
-               "lexsum": "case summary", "wikibio": "biography summary",
-               "enron": "email reply", "aeslc": "email subject line",
-               "qmsum": "meeting summary"}
+OUTPUT_KIND = {
+    "aci": "clinical note",
+    "mts": "clinical note",
+    "clinical": "clinical note",
+    "lexsum": "case summary",
+    "wikibio": "biography summary",
+    "enron": "email reply",
+    "aeslc": "email subject line",
+    "qmsum": "meeting summary",
+}
 
 DECISION_KINDS = {
-    "clinical": ("referral routing, medication continue/adjust/stop, follow-up interval, "
-                 "or appropriateness of a plan element"),
-    "lexsum": ("likely prevailing party, remedy type, procedural posture, or which court's "
-               "rules govern"),
+    "clinical": (
+        "referral routing, medication continue/adjust/stop, follow-up interval, "
+        "or appropriateness of a plan element"
+    ),
+    "lexsum": (
+        "likely prevailing party, remedy type, procedural posture, or which court's "
+        "rules govern"
+    ),
 }
 DECISION_KINDS["aci"] = DECISION_KINDS["mts"] = DECISION_KINDS["clinical"]
 
+# TODO: this prompt as written is clinical-specific (meantions "clinical consequence") - when expending to other datasets - this must be fixed!
 LADDER_PROMPT = """You write probe questions used to grade how well a {output_kind} preserves \
 facts at different levels of detail.
 
@@ -102,9 +124,26 @@ The {output_kind}:
 Reply ONLY with a JSON list:
 [{{"q": "...", "options": ["...", "..."], "gold": "...", "depends_on": ["...", "..."]}}]"""
 
-_STOP = {"a", "an", "the", "of", "in", "on", "at", "for", "to", "and", "or", "with", "by"}
-_YESNO = re.compile(r"^(is|are|was|were|does|did|do|has|have|had|can|could|should|would|will"
-                    r"|may|might)\b", re.IGNORECASE)
+_STOP = {
+    "a",
+    "an",
+    "the",
+    "of",
+    "in",
+    "on",
+    "at",
+    "for",
+    "to",
+    "and",
+    "or",
+    "with",
+    "by",
+}
+_YESNO = re.compile(
+    r"^(is|are|was|were|does|did|do|has|have|had|can|could|should|would|will"
+    r"|may|might)\b",
+    re.IGNORECASE,
+)
 
 
 def _tokens(text: str) -> set[str]:
@@ -130,8 +169,11 @@ def span_levels(span: dict) -> list[str]:
         return list(levels)
     # legacy fallback: env-baked action fills (older envs predate the profile / use coarse types)
     surface = canon(span.get("surface", ""))
-    acts = [a for a in span.get("actions", [])
-            if a.get("mode") == "level" and canon(a.get("fill") or "") != surface]
+    acts = [
+        a
+        for a in span.get("actions", [])
+        if a.get("mode") == "level" and canon(a.get("fill") or "") != surface
+    ]
     acts.sort(key=lambda a: a.get("aset") or 0)
     return [a["fill"] for a in acts]
 
@@ -141,7 +183,7 @@ def entail_score(answer: str, rungs: list[str], rung: int, aliases=()) -> float:
     surface-equivalent strings (the matched canonical + its profile aliases); they are the
     finest tier, so they satisfy every rung — folding them in accepts synonym answers the
     note may use (HTN vs hypertension) that the exact surface alone would miss."""
-    return max(fact_score(answer, a) for a in [*rungs[:rung + 1], *aliases])
+    return max(fact_score(answer, a) for a in [*rungs[: rung + 1], *aliases])
 
 
 def lint_rung(q: str, rungs: list[str], rung: int) -> bool:
@@ -177,7 +219,9 @@ def locator_lint(q, span_surface, other_surfaces):
     return True
 
 
-def validate_ladder(entries, reader_hi_final, reader_hi_p, reader_lo_final, reader_lo_p, th):
+def validate_ladder(
+    entries, reader_hi_final, reader_hi_p, reader_lo_final, reader_lo_p, th
+):
     """Per-rung anchor validation with injected readers.
 
     Rung 0 uses post-inversion anchors (`out_final`), matching the exact echo channel.
@@ -224,7 +268,9 @@ def validate_ladder(entries, reader_hi_final, reader_hi_p, reader_lo_final, read
 def mc_shuffle(options, seed_key):
     """Deterministic per-call multiple-choice option shuffle."""
     out = list(options or [])
-    seed = int.from_bytes(hashlib.sha256(str(seed_key).encode("utf-8")).digest()[:8], "big")
+    seed = int.from_bytes(
+        hashlib.sha256(str(seed_key).encode("utf-8")).digest()[:8], "big"
+    )
     random.Random(seed).shuffle(out)
     return out
 
@@ -294,7 +340,7 @@ def sentence_of(doc_text: str, surface: str) -> str:
         return ""
     start = max(doc_text.rfind(c, 0, i) for c in ".!?\n") + 1
     ends = [j for j in (doc_text.find(c, i + len(surface)) for c in ".!?\n") if j >= 0]
-    return doc_text[start:min(ends) + 1 if ends else len(doc_text)].strip()
+    return doc_text[start : min(ends) + 1 if ends else len(doc_text)].strip()
 
 
 LOCAL_BASE_URL = "http://localhost:8060/v1"
@@ -310,11 +356,18 @@ class _AnthropicTeacher:
 
     def generate(self, prompt: str) -> str:
         import httpx
-        r = httpx.post(f"{self.base_url}/messages",
-                       headers={"x-api-key": "x", "anthropic-version": "2023-06-01"},
-                       json={"model": self.model, "max_tokens": 1024, "temperature": 0.0,
-                             "messages": [{"role": "user", "content": prompt}]},
-                       timeout=180)
+
+        r = httpx.post(
+            f"{self.base_url}/messages",
+            headers={"x-api-key": "x", "anthropic-version": "2023-06-01"},
+            json={
+                "model": self.model,
+                "max_tokens": 1024,
+                "temperature": 0.0,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=180,
+        )
         r.raise_for_status()
         return "".join(b.get("text", "") for b in r.json().get("content", []))
 
@@ -324,19 +377,38 @@ def _teacher(model: str, base_url: str = LOCAL_BASE_URL):
         return _AnthropicTeacher(model, base_url)
     import os
     from cloak.llm import LLMClient
+
     if "openrouter.ai" in base_url:
-        # Hosted teacher, same wiring as the lattice producer: authenticate with
-        # OPENROUTER_API_KEY, enable OpenRouter's reasoning channel (Nemotron etc. are
-        # reasoning models — the JSON answer lands in `content`, thinking in `reasoning`),
-        # and give a generous token budget so reasoning does not truncate the JSON before it
-        # is emitted (the 1024 cap starved it — finish_reason=length). Verified 2026-07-10.
+        # Hosted teacher (Nemotron etc. are reasoning models). Authenticate with
+        # OPENROUTER_API_KEY. Use reasoning=exclude, NOT enabled: the model still reasons
+        # internally but the reasoning is not returned — with `enabled` the :free endpoint
+        # load-balances across providers and some route the reasoning into `content` (measured:
+        # 30-37 KB reasoning dumps that consume the token budget and truncate the JSON, giving
+        # unparseable replies). `exclude` keeps `content` to the JSON answer only. Generous
+        # max_tokens is headroom for the answer (the 1024 cap once starved it). Verified 2026-07-11.
         api_key = os.environ.get("OPENROUTER_API_KEY") or "x"
-        return LLMClient(model, base_url=base_url, api_key=api_key, temperature=0.0,
-                         max_tokens=8000, extra_body={"reasoning": {"enabled": True}})
+        return LLMClient(
+            model,
+            base_url=base_url,
+            api_key=api_key,
+            temperature=0.0,
+            max_tokens=8000,
+            extra_body={"reasoning": {"exclude": True}},
+        )
     # chat_template_kwargs is llama.cpp-specific; sent only to the local proxy.
-    extra = {"chat_template_kwargs": {"enable_thinking": False}} if "localhost" in base_url else None
-    return LLMClient(model, base_url=base_url, api_key="x",
-                     temperature=0.0, max_tokens=1024, extra_body=extra)
+    extra = (
+        {"chat_template_kwargs": {"enable_thinking": False}}
+        if "localhost" in base_url
+        else None
+    )
+    return LLMClient(
+        model,
+        base_url=base_url,
+        api_key="x",
+        temperature=0.0,
+        max_tokens=1024,
+        extra_body=extra,
+    )
 
 
 def _safe_generate(teacher, prompt: str) -> str:
@@ -347,8 +419,11 @@ def _safe_generate(teacher, prompt: str) -> str:
     try:
         return teacher.generate(prompt)
     except Exception as e:  # noqa: BLE001 — degrade one failed call, not the whole batch
-        print(f"ladder_probes: teacher call failed ({type(e).__name__}: {e}); "
-              f"treating as unparseable", flush=True)
+        print(
+            f"ladder_probes: teacher call failed ({type(e).__name__}: {e}); "
+            f"treating as unparseable",
+            flush=True,
+        )
         return ""
 
 
@@ -368,12 +443,18 @@ def _reusable(entry: dict, model: str, want: dict) -> bool:
     return key in want and list(entry.get("rungs") or []) == list(want[key])
 
 
-def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, workers: int = 6,
-                           model: str = TEACHER_MODEL, base_url: str = LOCAL_BASE_URL,
-                           cache_path: Path = LADDER_CACHE,
-                           all_surfaces_of: dict | None = None,
-                           reject_sink: list | None = None,
-                           gen_sink: list | None = None) -> dict:
+def ladder_probes_for_docs(
+    docs: list[dict],
+    spans_of: dict,
+    corpus: str,
+    workers: int = 6,
+    model: str = TEACHER_MODEL,
+    base_url: str = LOCAL_BASE_URL,
+    cache_path: Path = LADDER_CACHE,
+    all_surfaces_of: dict | None = None,
+    reject_sink: list | None = None,
+    gen_sink: list | None = None,
+) -> dict:
     """docs: corpora rows; spans_of: doc_id -> spans (each {surface, type, ...}).
     Returns {doc_id: [{"surface", "rung", "q", "a"}...]} for lattice-bearing spans; teacher
     fills cache misses.
@@ -393,8 +474,11 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
     # want[doc_id][canon(surface)] = current profile-sourced rungs for each detected lattice span.
     # Cache reuse and the return are both scoped to this — never to (teacher, pv) alone.
     want_of = {
-        d["id"]: {canon(s["surface"]): rung_phrases(s["surface"], span_levels(s))
-                  for s in spans_of.get(d["id"], []) if span_levels(s)}
+        d["id"]: {
+            canon(s["surface"]): rung_phrases(s["surface"], span_levels(s))
+            for s in spans_of.get(d["id"], [])
+            if span_levels(s)
+        }
         for d in docs
     }
     todo = []
@@ -406,35 +490,65 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
             hidden = [s.get("surface", "") for s in spans_of.get(d["id"], [])]
         for s in spans_of.get(d["id"], []):
             key = canon(s["surface"])
-            if key not in want:            # no profile levels -> not a probe span
+            if key not in want:  # no profile levels -> not a probe span
                 continue
-            if any(_reusable(e, model, want) and canon(e.get("surface", "")) == key
-                   for e in doc_cache):    # valid cached entry already -> skip re-generation
+            if any(
+                _reusable(e, model, want) and canon(e.get("surface", "")) == key
+                for e in doc_cache
+            ):  # valid cached entry already -> skip re-generation
                 continue
             rungs = want[key]
             other = [x for x in hidden if x and canon(x) != canon(s["surface"])]
             aliases = lookup_aliases(s["surface"], s.get("type", ""))
-            todo.append({"doc_id": d["id"], "surface": s["surface"], "type": s.get("type", ""),
-                         "other_surfaces": other, "rungs": rungs, "aliases": aliases,
-                         "prompt": LADDER_PROMPT.format(
-                             output_kind=kind, doc=d["text"], surface=s["surface"],
-                             type=s.get("type", ""),
-                             sentence=s.get("sent") or sentence_of(d["text"], s["surface"]),
-                             rungs="\n".join(f"  {i}: {r}" for i, r in enumerate(rungs)))})
+            todo.append(
+                {
+                    "doc_id": d["id"],
+                    "surface": s["surface"],
+                    "type": s.get("type", ""),
+                    "other_surfaces": other,
+                    "rungs": rungs,
+                    "aliases": aliases,
+                    "prompt": LADDER_PROMPT.format(
+                        output_kind=kind,
+                        doc=d["text"],
+                        surface=s["surface"],
+                        type=s.get("type", ""),
+                        sentence=s.get("sent") or sentence_of(d["text"], s["surface"]),
+                        rungs="\n".join(f"  {i}: {r}" for i, r in enumerate(rungs)),
+                    ),
+                }
+            )
     if todo:
         teacher = _teacher(model, base_url)
-        replies = pmap(lambda t: _safe_generate(teacher, t["prompt"]), todo, workers=workers)
+        replies = pmap(
+            lambda t: _safe_generate(teacher, t["prompt"]), todo, workers=workers
+        )
         n_bad = 0
 
         def _rej(t, rung, q, gate, gold=""):
             if reject_sink is not None:
-                reject_sink.append({"doc_id": t["doc_id"], "surface": t["surface"],
-                                    "rung": rung, "q": q, "gate": gate, "gold": gold})
+                reject_sink.append(
+                    {
+                        "doc_id": t["doc_id"],
+                        "surface": t["surface"],
+                        "rung": rung,
+                        "q": q,
+                        "gate": gate,
+                        "gold": gold,
+                    }
+                )
 
         for t, r in zip(todo, replies):
             if gen_sink is not None:
-                gen_sink.append({"doc_id": t["doc_id"], "surface": t["surface"],
-                                 "type": t["type"], "rungs": t["rungs"], "raw": r})
+                gen_sink.append(
+                    {
+                        "doc_id": t["doc_id"],
+                        "surface": t["surface"],
+                        "type": t["type"],
+                        "rungs": t["rungs"],
+                        "raw": r,
+                    }
+                )
             rows = _parse_json_list((r or "").strip())
             if rows is None:
                 n_bad += 1
@@ -450,30 +564,52 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
                     _rej(t, rung, q, "empty_gold", gold)
                 elif not lint_rung(q, t["rungs"], rung):
                     _rej(t, rung, q, "lint", gold)
-                elif rung != 0 and not locator_lint(q, t["surface"], t["other_surfaces"]):
+                elif rung != 0 and not locator_lint(
+                    q, t["surface"], t["other_surfaces"]
+                ):
                     _rej(t, rung, q, "locator", gold)
                 else:
                     cache.setdefault(t["doc_id"], []).append(
-                        {"surface": t["surface"], "rung": rung, "q": q,
-                         "a": gold, "rungs": t["rungs"], "aliases": t["aliases"],
-                         "teacher": model, "pv": LADDER_PV})
+                        {
+                            "surface": t["surface"],
+                            "rung": rung,
+                            "q": q,
+                            "a": gold,
+                            "rungs": t["rungs"],
+                            "aliases": t["aliases"],
+                            "teacher": model,
+                            "pv": LADDER_PV,
+                        }
+                    )
         if n_bad:
-            print(f"ladder_probes: {n_bad}/{len(todo)} teacher replies unparseable", flush=True)
+            print(
+                f"ladder_probes: {n_bad}/{len(todo)} teacher replies unparseable",
+                flush=True,
+            )
         if cache_path:
             cache_path.parent.mkdir(exist_ok=True)
             cache_path.write_text(json.dumps(cache, indent=1))
     # Return ONLY entries that match this run's detected spans + current lattice (want_of),
     # so stale cross-run / cross-path cache entries never leak into the artifact.
-    return {d["id"]: [e for e in cache.get(d["id"], [])
-                      if _reusable(e, model, want_of[d["id"]])]
-            for d in docs}
+    return {
+        d["id"]: [
+            e for e in cache.get(d["id"], []) if _reusable(e, model, want_of[d["id"]])
+        ]
+        for d in docs
+    }
 
 
-def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: int = 4,
-                             workers: int = 6, model: str = TEACHER_MODEL,
-                             base_url: str = LOCAL_BASE_URL,
-                             cache_path: Path = DECISION_CACHE,
-                             gen_sink: list | None = None) -> dict:
+def decision_probes_for_docs(
+    docs: list[dict],
+    out_hi_of: dict,
+    corpus: str,
+    k: int = 4,
+    workers: int = 6,
+    model: str = TEACHER_MODEL,
+    base_url: str = LOCAL_BASE_URL,
+    cache_path: Path = DECISION_CACHE,
+    gen_sink: list | None = None,
+) -> dict:
     """docs: corpora rows; out_hi_of: doc_id -> ceiling output. One teacher call per doc.
     Structural validation only (gold in 3-5 options, question form); reader-side ceiling/floor
     validation happens at probe-build time, not here."""
@@ -483,15 +619,31 @@ def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: 
         return {d["id"]: [] for d in docs}
     kind = OUTPUT_KIND.get(corpus, "summary")
     cache = _load(cache_path)
-    todo = [d for d in docs
-            if d["id"] in out_hi_of
-            and not any(e.get("teacher") == model and e.get("pv") == DECISION_PV
-                        for e in cache.get(d["id"], []))]
+    todo = [
+        d
+        for d in docs
+        if d["id"] in out_hi_of
+        and not any(
+            e.get("teacher") == model and e.get("pv") == DECISION_PV
+            for e in cache.get(d["id"], [])
+        )
+    ]
     if todo:
         teacher = _teacher(model, base_url)
-        replies = pmap(lambda d: _safe_generate(teacher, DECISION_PROMPT.format(
-            output_kind=kind, k=k, decision_kinds=DECISION_KINDS[corpus],
-            doc=d["text"], out_hi=out_hi_of[d["id"]])), todo, workers=workers)
+        replies = pmap(
+            lambda d: _safe_generate(
+                teacher,
+                DECISION_PROMPT.format(
+                    output_kind=kind,
+                    k=k,
+                    decision_kinds=DECISION_KINDS[corpus],
+                    doc=d["text"],
+                    out_hi=out_hi_of[d["id"]],
+                ),
+            ),
+            todo,
+            workers=workers,
+        )
         n_bad = 0
         for d, r in zip(todo, replies):
             if gen_sink is not None:
@@ -502,59 +654,101 @@ def decision_probes_for_docs(docs: list[dict], out_hi_of: dict, corpus: str, k: 
                 continue
             kept = []
             for row in rows[:k]:
-                q, opts, gold = row.get("q", "").strip(), row.get("options"), row.get("gold")
-                if (q.endswith("?") and isinstance(opts, list) and 3 <= len(opts) <= 5
-                        and gold in opts):
-                    kept.append({"q": q, "options": opts, "gold": gold,
-                                 "depends_on": row.get("depends_on") or [],
-                                 "teacher": model, "pv": DECISION_PV})
+                q, opts, gold = (
+                    row.get("q", "").strip(),
+                    row.get("options"),
+                    row.get("gold"),
+                )
+                if (
+                    q.endswith("?")
+                    and isinstance(opts, list)
+                    and 3 <= len(opts) <= 5
+                    and gold in opts
+                ):
+                    kept.append(
+                        {
+                            "q": q,
+                            "options": opts,
+                            "gold": gold,
+                            "depends_on": row.get("depends_on") or [],
+                            "teacher": model,
+                            "pv": DECISION_PV,
+                        }
+                    )
             cache[d["id"]] = cache.get(d["id"], []) + kept
         if n_bad:
-            print(f"decision_probes: {n_bad}/{len(todo)} teacher replies unparseable",
-                  flush=True)
+            print(
+                f"decision_probes: {n_bad}/{len(todo)} teacher replies unparseable",
+                flush=True,
+            )
         if cache_path:
             cache_path.parent.mkdir(exist_ok=True)
             cache_path.write_text(json.dumps(cache, indent=1))
-    return {d["id"]: [e for e in cache.get(d["id"], [])
-                      if e.get("teacher") == model and e.get("pv") == DECISION_PV]
-            for d in docs}
+    return {
+        d["id"]: [
+            e
+            for e in cache.get(d["id"], [])
+            if e.get("teacher") == model and e.get("pv") == DECISION_PV
+        ]
+        for d in docs
+    }
 
 
 if __name__ == "__main__":
-    rungs = rung_phrases("hypothyroidism", ["an endocrine condition", "a chronic condition"])
+    rungs = rung_phrases(
+        "hypothyroidism", ["an endocrine condition", "a chronic condition"]
+    )
     assert rungs[0] == "hypothyroidism" and len(rungs) == 3
-    assert span_levels({
-        "surface": "heart failure",
-        "actions": [
-            {"mode": "level", "fill": "a physical condition", "aset": 1313},
-            {"mode": "level", "fill": "a cardiovascular disease", "aset": 28},
-            {"mode": "level", "fill": "heart failure", "aset": 1.0},
-            {"mode": "placeholder", "fill": "<HEALTH_CONDITION_1>"},
-        ],
-    }) == ["a cardiovascular disease", "a physical condition"]
+    assert span_levels(
+        {
+            "surface": "heart failure",
+            "actions": [
+                {"mode": "level", "fill": "a physical condition", "aset": 1313},
+                {"mode": "level", "fill": "a cardiovascular disease", "aset": 28},
+                {"mode": "level", "fill": "heart failure", "aset": 1.0},
+                {"mode": "placeholder", "fill": "<HEALTH_CONDITION_1>"},
+            ],
+        }
+    ) == ["a cardiovascular disease", "a physical condition"]
     # entailment: a finer answer satisfies a coarser rung
     assert entail_score("hypothyroidism", rungs, 1) == 1.0
     assert entail_score("an endocrine condition", rungs, 2) == 1.0
     assert entail_score("no idea", rungs, 2) == 0.0
     # alias acceptance: a surface-equivalent synonym the note used satisfies rung 0
-    assert entail_score("HTN", ["hypertension"], 0) == 0.0                 # surface-only: miss
-    assert entail_score("HTN", ["hypertension"], 0, ["htn", "high bp"]) == 1.0  # +aliases: hit
+    assert entail_score("HTN", ["hypertension"], 0) == 0.0  # surface-only: miss
+    assert (
+        entail_score("HTN", ["hypertension"], 0, ["htn", "high bp"]) == 1.0
+    )  # +aliases: hit
     # lint: generic token shared with own gold is fine; finer-rung distinctive token leaks
-    assert lint_rung("What body-system category of condition is managed with medication?",
-                     rungs, 1)
-    assert not lint_rung("Is the condition endocrine?", rungs, 1)          # yes/no
-    assert not lint_rung("Which endocrine condition does the patient have?", rungs, 1)  # gold
-    assert not lint_rung("What kind of issue is the hypothyroidism?", rungs, 2)  # finer leak
-    assert lint_rung("What kind of ongoing health issue does the patient have?", rungs, 2)
+    assert lint_rung(
+        "What body-system category of condition is managed with medication?", rungs, 1
+    )
+    assert not lint_rung("Is the condition endocrine?", rungs, 1)  # yes/no
+    assert not lint_rung(
+        "Which endocrine condition does the patient have?", rungs, 1
+    )  # gold
+    assert not lint_rung(
+        "What kind of issue is the hypothyroidism?", rungs, 2
+    )  # finer leak
+    assert lint_rung(
+        "What kind of ongoing health issue does the patient have?", rungs, 2
+    )
+
     class _Boom:
         def generate(self, _p):
             raise RuntimeError("429 rate limit")
-    assert _safe_generate(_Boom(), "x") == ""          # a failed call degrades, never aborts
-    assert _safe_generate(type("T", (), {"generate": staticmethod(lambda p: "ok")})(), "x") == "ok"
+
+    assert _safe_generate(_Boom(), "x") == ""  # a failed call degrades, never aborts
+    assert (
+        _safe_generate(type("T", (), {"generate": staticmethod(lambda p: "ok")})(), "x")
+        == "ok"
+    )
     assert _parse_json_list('noise [{"rung": 0, "q": "x?", "a": "y"}] tail') is not None
     assert _parse_json_list("<think>...</think>[]") is None
     assert _empty_gold("something") and _empty_gold("A physical condition.")
-    assert not _empty_gold("a cardiovascular disease") and not _empty_gold("an endocrine condition")
+    assert not _empty_gold("a cardiovascular disease") and not _empty_gold(
+        "an endocrine condition"
+    )
     s = sentence_of("He said hi. She takes Synthroid daily. End.", "synthroid")
     assert s == "She takes Synthroid daily.", s
     print("ladder_probes.py self-check OK")
