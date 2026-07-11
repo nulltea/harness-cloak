@@ -73,25 +73,28 @@ def _score_ladder(ladder: list[dict], out_final: str, out_p: str,
         if not q or not rungs:
             continue
         rung = int(entry.get("rung", 0))
+        aliases = entry.get("aliases") or []
         key = _ladder_key(entry, i)
         groups.setdefault(key, {"exact": [], "sem": []})
         if rung == 0:
-            exact_rows.append((key, q, entry.get("surface") or rungs[0]))
+            exact_rows.append((key, q, entry.get("surface") or rungs[0], aliases))
         elif rung >= 1:
-            sem_rows.append((key, q, rungs, rung))
+            sem_rows.append((key, q, rungs, rung, aliases))
 
     echo_f1s = []
     if exact_rows:
-        answers = _read_batch([q for _, q, _ in exact_rows], out_final, refresh=refresh)
-        for answer, (key, _q, surface) in zip(answers, exact_rows):
-            score = fact_score(answer, surface)
+        answers = _read_batch([q for _, q, _, _ in exact_rows], out_final, refresh=refresh)
+        for answer, (key, _q, surface, aliases) in zip(answers, exact_rows):
+            # accept a surface-equivalent alias the note may have used (HTN vs hypertension),
+            # matching the acceptance rule the probe was validated under (ladder_probes)
+            score = max(fact_score(answer, s) for s in [surface, *aliases])
             echo_f1s.append(score)
             groups[key]["exact"].append(score)
 
     if sem_rows:
-        answers = _read_batch([q for _, q, _, _ in sem_rows], out_p, refresh=refresh)
-        for answer, (key, _q, rungs, rung) in zip(answers, sem_rows):
-            groups[key]["sem"].append(entail_score(answer, rungs, rung))
+        answers = _read_batch([q for _, q, _, _, _ in sem_rows], out_p, refresh=refresh)
+        for answer, (key, _q, rungs, rung, aliases) in zip(answers, sem_rows):
+            groups[key]["sem"].append(entail_score(answer, rungs, rung, aliases))
 
     parts = []
     for scores in groups.values():

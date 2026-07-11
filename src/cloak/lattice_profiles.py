@@ -82,15 +82,22 @@ def _build_indexes(artifact: dict) -> dict:
     by_surface = {}
     by_level = {}
     by_level_explicit = {}
+    by_group = {}
     for runtime_type, entries in artifact.get("profiles", {}).items():
         surface_index = by_surface.setdefault(runtime_type, {})
         level_index = by_level.setdefault(runtime_type, {})
         explicit_index = by_level_explicit.setdefault(runtime_type, {})
+        group_index = by_group.setdefault(runtime_type, {})
         for canonical, row in entries.items():
             levels = list(row.get("levels", []))
+            # surface-equivalent group: the canonical + every alias, as written (a reader may
+            # answer with any of them). Inherits the row's alias quality (see the near-duplicate
+            # issue: a mis-folded alias like hypotension-as-hypertension would over-accept).
+            group = [canonical, *row.get("aliases", [])]
             for key in [_norm(canonical), *[_norm(a) for a in row.get("aliases", [])]]:
                 if key:
                     surface_index.setdefault(key, (canonical, levels))
+                    group_index.setdefault(key, group)
             count = float(row.get("count", 1.0))
             level_counts = row.get("level_counts") or {}
             for level in levels:
@@ -106,7 +113,7 @@ def _build_indexes(artifact: dict) -> dict:
                     level_index[key] = max(level_index.get(key, 0.0), count)
     for runtime_type, explicit in by_level_explicit.items():
         by_level[runtime_type] = {**by_level.get(runtime_type, {}), **explicit}
-    return {"by_surface": by_surface, "by_level": by_level}
+    return {"by_surface": by_surface, "by_level": by_level, "by_group": by_group}
 
 
 @lru_cache(maxsize=16)
@@ -135,3 +142,12 @@ def lookup_count(fill: str, runtime_type: str, path: str | Path | None = None) -
     key = _norm(fill)
     idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
     return idx["by_level"].get(runtime_type, {}).get(key)
+
+
+def lookup_aliases(surface: str, runtime_type: str, path: str | Path | None = None) -> list[str]:
+    """Surface-equivalent group for `surface`'s row: [canonical, *aliases]. These are alternative
+    strings for the SAME exact value, so any of them satisfies a ladder rung the exact surface
+    would (finest tier -> entails every rung). [] when there is no matching row."""
+    key = _norm(surface)
+    idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
+    return list(idx["by_group"].get(runtime_type, {}).get(key, []))

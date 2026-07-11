@@ -168,6 +168,36 @@ def test_validate_ladder_semantic_rungs_use_pre_inversion_ceiling():
     assert rows[0]["hi_answer"] == "a cardiovascular disease"
 
 
+def test_validate_ladder_accepts_canonical_alias_at_rung0():
+    # rung 0 gold is the detected surface; the note wrote a synonym alias (HTN). The alias
+    # acceptance set keeps the rung; without it the surface-exact score would ceiling-reject.
+    entry = {
+        "id": "alias",
+        "surface": "hypertension",
+        "rungs": ["hypertension", "artery disease"],
+        "aliases": ["htn", "high blood pressure"],
+        "rung": 0,
+        "q": "What condition is listed as an active problem?",
+    }
+    kept, rows = validate_ladder(
+        [entry],
+        lambda _q: "HTN",   # ceiling out_final wrote the abbreviation
+        lambda _q: "HTN",
+        lambda _q: "",      # floor: hidden
+        lambda _q: "",
+        th=0.5,
+    )
+    assert [e["id"] for e in kept] == ["alias"]
+    assert rows[0]["hi_score"] == 1.0
+
+    # without the alias set, the same answer misses -> ceiling reject
+    kept2, _ = validate_ladder(
+        [{**entry, "aliases": []}],
+        lambda _q: "HTN", lambda _q: "HTN", lambda _q: "", lambda _q: "", th=0.5,
+    )
+    assert kept2 == []
+
+
 def test_locator_lint_drops_cross_span_question():
     assert locator_lint(
         "What condition is managed with daily medication?",

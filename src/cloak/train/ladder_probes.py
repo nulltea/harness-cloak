@@ -129,9 +129,12 @@ def span_levels(span: dict) -> list[str]:
     return [a["fill"] for a in acts]
 
 
-def entail_score(answer: str, rungs: list[str], rung: int) -> float:
-    """Acceptance-set scoring: an answer at or finer than the rung counts."""
-    return max(fact_score(answer, a) for a in rungs[:rung + 1])
+def entail_score(answer: str, rungs: list[str], rung: int, aliases=()) -> float:
+    """Acceptance-set scoring: an answer at or finer than the rung counts. `aliases` are
+    surface-equivalent strings (the matched canonical + its profile aliases); they are the
+    finest tier, so they satisfy every rung — folding them in accepts synonym answers the
+    note may use (HTN vs hypertension) that the exact surface alone would miss."""
+    return max(fact_score(answer, a) for a in [*rungs[:rung + 1], *aliases])
 
 
 def lint_rung(q: str, rungs: list[str], rung: int) -> bool:
@@ -180,12 +183,13 @@ def validate_ladder(entries, reader_hi_final, reader_hi_p, reader_lo_final, read
         q = e.get("q", "")
         rung = int(e.get("rung", 0))
         rungs = e.get("rungs") or [e.get("a") or e.get("surface", "")]
+        aliases = e.get("aliases") or []
         reader_hi = reader_hi_final if rung == 0 else reader_hi_p
         reader_lo = reader_lo_final if rung == 0 else reader_lo_p
         hi_answer = reader_hi(q) or ""
         lo_answer = reader_lo(q) or ""
-        hi_score = entail_score(hi_answer, rungs, rung)
-        lo_score = entail_score(lo_answer, rungs, rung)
+        hi_score = entail_score(hi_answer, rungs, rung, aliases)
+        lo_score = entail_score(lo_answer, rungs, rung, aliases)
         if hi_score < th:
             verdict = "ceiling"
         elif lo_score >= th:
@@ -366,6 +370,8 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
     (gates: parse, bad_rung, empty_gold, lint, locator)."""
     from cloak.concurrent import pmap
 
+    from cloak.lattice_profiles import lookup_aliases
+
     kind = OUTPUT_KIND.get(corpus, "summary")
     cache = _load(cache_path)
     todo = []
@@ -380,8 +386,9 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
                 continue
             rungs = rung_phrases(s["surface"], levels)
             other = [x for x in hidden if x and canon(x) != canon(s["surface"])]
+            aliases = lookup_aliases(s["surface"], s.get("type", ""))
             todo.append({"doc_id": d["id"], "surface": s["surface"], "type": s.get("type", ""),
-                         "other_surfaces": other, "rungs": rungs,
+                         "other_surfaces": other, "rungs": rungs, "aliases": aliases,
                          "prompt": LADDER_PROMPT.format(
                              output_kind=kind, doc=d["text"], surface=s["surface"],
                              type=s.get("type", ""),
@@ -418,7 +425,8 @@ def ladder_probes_for_docs(docs: list[dict], spans_of: dict, corpus: str, worker
                 else:
                     cache.setdefault(t["doc_id"], []).append(
                         {"surface": t["surface"], "rung": rung, "q": q,
-                         "a": gold, "rungs": t["rungs"], "teacher": model, "pv": LADDER_PV})
+                         "a": gold, "rungs": t["rungs"], "aliases": t["aliases"],
+                         "teacher": model, "pv": LADDER_PV})
         if n_bad:
             print(f"ladder_probes: {n_bad}/{len(todo)} teacher replies unparseable", flush=True)
         if cache_path:
@@ -493,6 +501,9 @@ if __name__ == "__main__":
     assert entail_score("hypothyroidism", rungs, 1) == 1.0
     assert entail_score("an endocrine condition", rungs, 2) == 1.0
     assert entail_score("no idea", rungs, 2) == 0.0
+    # alias acceptance: a surface-equivalent synonym the note used satisfies rung 0
+    assert entail_score("HTN", ["hypertension"], 0) == 0.0                 # surface-only: miss
+    assert entail_score("HTN", ["hypertension"], 0, ["htn", "high bp"]) == 1.0  # +aliases: hit
     # lint: generic token shared with own gold is fine; finer-rung distinctive token leaks
     assert lint_rung("What body-system category of condition is managed with medication?",
                      rungs, 1)
