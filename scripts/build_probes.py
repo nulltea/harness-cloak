@@ -359,6 +359,22 @@ DETECT_LABELS = {
 }
 
 
+import re as _re
+
+_DENIAL_CUES = _re.compile(r"\b(denies|denied|negative for|ruled out|no history of|"
+                           r"without any|denying)\b", _re.IGNORECASE)
+
+
+def _negated_or_screening(sent: str) -> bool:
+    """A lattice fact mentioned only to be ruled out or screened for is not a documented finding
+    and must not become a probe target (measured: mts/0 'congestion' lives only in 'Have you had
+    any ... congestion? / No', which the teacher then fabricated a premise around). Conservative:
+    fires on interrogative (screening-question) sentences and explicit denial cues ONLY — never on
+    bare 'no/not', so 'no changes regarding hypertension' (patient HAS hypertension) is kept."""
+    s = (sent or "").strip()
+    return s.endswith("?") or bool(_DENIAL_CUES.search(s))
+
+
 def _detect_docs(docs, model, threshold, max_words=320):
     """Fresh zero-shot detection -> {doc_id: [{surface, type, role, sent[, entry]}]}.
     `lattice` spans resolve through the shared retrieve-then-verify matcher
@@ -387,8 +403,11 @@ def _detect_docs(docs, model, threshold, max_words=320):
                 if not surface or key in seen:
                     continue
                 seen.add(key)
-                cands.append({"surface": surface, "type": rtype, "role": role,
-                              "sent": sentence_of(d["text"], surface)})
+                sent = sentence_of(d["text"], surface)
+                # a lattice fact mentioned only under negation/screening is not a probe target
+                if role == "lattice" and _negated_or_screening(sent):
+                    continue
+                cands.append({"surface": surface, "type": rtype, "role": role, "sent": sent})
         lattice_cands = [c for c in cands if c["role"] == "lattice"]
         matches = match_spans_batch(
             [(c["surface"], c["type"], c["sent"]) for c in lattice_cands])

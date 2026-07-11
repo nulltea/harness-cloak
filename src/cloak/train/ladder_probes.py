@@ -33,7 +33,9 @@ def _empty_gold(phrase: str) -> bool:
 
 LADDER_CACHE = Path("data/ladder_probes.json")
 DECISION_CACHE = Path("data/decision_probes.json")
-LADDER_PV = 1
+LADDER_PV = 2   # pv2: grounding constrained to the fact's clinical role; positional/ordinal
+                # and enumeration grounding forbidden (they echo-game the exact tier and are
+                # unanswerable/reordered on out_p) — see docs/issues placeholder-gaming regression
 DECISION_PV = 1
 
 OUTPUT_KIND = {"aci": "clinical note", "mts": "clinical note", "clinical": "clinical note",
@@ -60,8 +62,13 @@ For EACH rung, write ONE question that:
 1. has exactly that rung's phrase as its best answer when the {output_kind} states the fact \
 at that rung — ask about the PROPERTY the rung expresses, not the specific value;
 2. does not contain the exact value, any finer rung's phrase, or close synonyms of them;
-3. identifies which fact it asks about through surrounding circumstances (what it is treated \
-with, its role in the document, who raised it) — never through the fact itself;
+3. identifies which fact it asks about ONLY through the fact's own clinical role — what it is \
+managed or treated with, its documented status or course, or its clinical consequence. NEVER \
+identify it by the fact itself; by its POSITION or ORDER in a list ("the first/last/third \
+condition"); or by ENUMERATING the other facts it appears alongside ("the condition listed \
+with X, Y and Z"). Position and neighbouring facts are reordered or hidden when the answer is \
+graded, and a question answerable by position or by echoing a name does NOT test whether the \
+fact's meaning was preserved — it must be answerable only by understanding this fact;
 4. is a wh- question with a short-phrase answer; no yes/no questions;
 5. is answerable from the {output_kind} alone, by a reader who never saw the document.
 

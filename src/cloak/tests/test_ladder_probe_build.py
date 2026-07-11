@@ -5,7 +5,11 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
 import build_probes  # noqa: E402
-from build_probes import _with_validated_rung0, ladder_health_row  # noqa: E402
+from build_probes import (  # noqa: E402
+    _negated_or_screening,
+    _with_validated_rung0,
+    ladder_health_row,
+)
 from cloak.train import ladder_probes as lp  # noqa: E402
 from cloak.train.ladder_probes import (  # noqa: E402
     locator_lint,
@@ -367,6 +371,18 @@ def test_ladder_probes_scopes_cache_to_current_spans_and_rungs(monkeypatch, tmp_
     hyp = [e for e in returned if e["surface"] == "hypertension"]
     assert hyp and all(e["rungs"] == ["hypertension", "artery disease"] for e in hyp)  # fresh rungs
     assert all(e["rungs"] != ["hypertension", "a cardiovascular disease"] for e in hyp)  # not stale
+
+
+def test_negated_or_screening_drops_denials_not_documented_conditions():
+    # screening question + explicit denial -> drop (fact only ruled out, not documented)
+    assert _negated_or_screening("Have you had any fever or chills, cough, congestion?")
+    assert _negated_or_screening("Patient denies chest pain.")
+    assert _negated_or_screening("Exam was negative for lymphadenopathy.")
+    # a documented condition with 'no changes' MUST be kept (patient HAS it) — the over-drop trap
+    assert not _negated_or_screening(
+        "No changes or concerns were reported regarding hypertension.")
+    assert not _negated_or_screening(
+        "Doctor Kumar followed up regarding your hypertension, osteoarthritis, and kidney stones.")
 
 
 def test_ladder_health_row_reports_reader_rejects_tiers_and_decisions():
