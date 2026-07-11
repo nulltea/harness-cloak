@@ -63,8 +63,9 @@ OUTPUT_KIND = {
 
 DECISION_KINDS = {
     "clinical": (
-        "which specialty should manage a problem, which body-system category the management "
-        "targets, or whether a class of medication or treatment is indicated"
+        "which medical specialist should treat or follow up a problem, which body-system "
+        "category a condition belongs to, or whether a class of medication or treatment is "
+        "indicated"
     ),
     "lexsum": (
         "which area of law governs a claim, likely prevailing party by claim type, or which "
@@ -116,8 +117,9 @@ answer. EACH question must satisfy ALL of:
 (a condition, drug, or procedure named in the {output_kind}) — so that if that fact were \
 replaced by a generic placeholder ("a condition"), the answer could no longer be chosen, while \
 knowing the fact or its category (e.g. "a cardiovascular disease") is enough to choose it. The \
-decision must follow FROM what the fact clinically IS — which specialty manages it, which body \
-system it affects, which class of treatment it calls for, how it routes a referral.
+decision must follow FROM what the fact clinically IS — which medical specialist should treat \
+it, which body system it affects, which class of treatment or diagnosis it calls for, or how \
+it routes a referral.
 2. Do NOT ask for a value written verbatim in the {output_kind} (a dose, a follow-up interval, \
 the literal plan action). Those are readable no matter how the fact is anonymized and do not \
 test whether the fact's meaning survived.
