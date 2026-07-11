@@ -46,7 +46,9 @@ DECISION_CACHE = Path("data/decision_probes.json")
 # pv3: JSON-object output ({"probes": [...]}) enforced via response_format=json_object.
 LADDER_PV = 3
 # pv2: JSON-object output ({"decisions": [...]}) enforced via response_format=json_object.
-DECISION_PV = 2
+# pv3: decisions must turn on a fact's identity/category (placeholder-breakable), not plan
+#      readback or outside-knowledge appropriateness; DECISION_KINDS retargeted to category.
+DECISION_PV = 3
 
 OUTPUT_KIND = {
     "aci": "clinical note",
@@ -61,12 +63,12 @@ OUTPUT_KIND = {
 
 DECISION_KINDS = {
     "clinical": (
-        "referral routing, medication continue/adjust/stop, follow-up interval, "
-        "or appropriateness of a plan element"
+        "which specialty should manage a problem, which body-system category the management "
+        "targets, or whether a class of medication or treatment is indicated"
     ),
     "lexsum": (
-        "likely prevailing party, remedy type, procedural posture, or which court's "
-        "rules govern"
+        "which area of law governs a claim, likely prevailing party by claim type, or which "
+        "category of remedy applies"
     ),
 }
 DECISION_KINDS["aci"] = DECISION_KINDS["mts"] = DECISION_KINDS["clinical"]
@@ -103,17 +105,28 @@ Ladder rungs, exact -> broad:
 
 Reply ONLY with a JSON object: {{"probes": [{{"rung": 0, "q": "...", "a": "<that rung's phrase>"}}, ...]}}"""
 
-DECISION_PROMPT = """You design decision checks that grade whether a {output_kind} supports \
-the decisions its readers must make.
+DECISION_PROMPT = """You design decision checks that test whether a {output_kind} still supports \
+a reader's decision when the specific clinical facts in it may have been replaced by broader \
+categories or hidden.
 
-Below are a document and the {output_kind} written from it. Write up to {k} decision \
-questions that a professional reading ONLY the {output_kind} would need to answer \
-({decision_kinds}). For each question:
-1. the correct answer must be determinable from the {output_kind} alone;
-2. give 3-5 plausible answer options, exactly one correct;
-3. the decision must turn on the substantive content, never on names, dates, or other \
-administrative details;
-4. quote the exact document phrases the decision depends on.
+Below are a document and the {output_kind} written from it. Write up to {k} multiple-choice \
+decision questions ({decision_kinds}) that a professional reading ONLY the {output_kind} must \
+answer. EACH question must satisfy ALL of:
+1. Its correct answer is DETERMINED BY the identity or category of ONE specific clinical fact \
+(a condition, drug, or procedure named in the {output_kind}) — so that if that fact were \
+replaced by a generic placeholder ("a condition"), the answer could no longer be chosen, while \
+knowing the fact or its category (e.g. "a cardiovascular disease") is enough to choose it. The \
+decision must follow FROM what the fact clinically IS — which specialty manages it, which body \
+system it affects, which class of treatment it calls for, how it routes a referral.
+2. Do NOT ask for a value written verbatim in the {output_kind} (a dose, a follow-up interval, \
+the literal plan action). Those are readable no matter how the fact is anonymized and do not \
+test whether the fact's meaning survived.
+3. The correct answer must be SUPPORTED BY the {output_kind}'s content — pickable by a careful \
+reader from what the note states, never requiring outside medical knowledge the note omits.
+4. Give 3-5 options, exactly one correct, all clearly distinct and mutually exclusive; no \
+yes/no questions.
+5. In "depends_on", quote the exact phrase(s) NAMING the specific fact the answer depends on \
+(the condition/drug/procedure), not the plan line that states the answer.
 
 Document:
 {doc}
