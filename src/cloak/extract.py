@@ -232,20 +232,23 @@ def _rule_prepass(out_p: str, R: list[dict], *, semantic: bool) -> tuple[str, di
     residue = []
     ph, gen = _partition_R(R)
 
+    # Remote sometimes echoes placeholders with brackets stripped (bare
+    # HEALTH_CONDITION_2 in prose/note lines). Match bracketed <X> and bare X (word-
+    # bounded, so only R's actual tokens invert -- never a generic UPPERCASE_N pattern)
+    # in ONE pass over the original text: a single alternation, longest form first, so an
+    # inserted surface is never reprocessed by a later placeholder.
+    forms: dict[str, str] = {}
     for token, entries in ph.items():
         surface = _canonical(entries)
-        n = text.count(token)
-        if n:
-            text = text.replace(token, surface)
-            stats["ph_swapped"] += n
-        # Remote sometimes echoes placeholders with brackets stripped (bare
-        # HEALTH_CONDITION_2 in prose/note lines); match that form with word bounds so
-        # only R's actual tokens invert -- never a generic UPPERCASE_N pattern.
-        bare = re.compile(rf"\b{re.escape(token[1:-1])}\b")
-        m = len(bare.findall(text))
-        if m:
-            text = bare.sub(surface, text)
-            stats["ph_swapped"] += m
+        forms[token] = surface        # bracketed <X>
+        forms[token[1:-1]] = surface  # bare X (bracket-stripped echo)
+    if forms:
+        def _piece(f: str) -> str:
+            esc = re.escape(f)
+            return esc if f.startswith("<") else rf"\b{esc}\b"
+        pat = re.compile("|".join(_piece(f) for f in sorted(forms, key=len, reverse=True)))
+        text, n = pat.subn(lambda m: forms[m.group()], text)
+        stats["ph_swapped"] += n
 
     for repl, entries in sorted(gen.items(), key=lambda kv: -len(kv[0])):  # longest first
         # R is injective (substitute.py used-set): one replacement -> one surface; entries

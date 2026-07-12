@@ -36,6 +36,20 @@ def test_placeholder_bare_match_only_from_R_not_generic_pattern():
     assert stats["ph_swapped"] == 1
 
 
+def test_placeholder_inserted_surface_not_reprocessed():
+    # Single-pass guarantee: one replacement's SURFACE contains another's bare token;
+    # the inserted surface must NOT be rewritten by the second replacement.
+    out, stats = ex.invert(
+        "<DRUG_1> then check <DRUG_2>",
+        [{"action": "placeholder", "surface": "take DRUG_2 daily", "replacement": "<DRUG_1>"},
+         {"action": "placeholder", "surface": "aspirin", "replacement": "<DRUG_2>"}],
+    )
+
+    assert out == "take DRUG_2 daily then check aspirin"
+    assert stats["ph_swapped"] == 2
+    assert stats["ph_residue"] == 0
+
+
 def test_detector_pointer_constructs_audit_detector_checkpoint(monkeypatch):
     import cloak.detect as detect
 
