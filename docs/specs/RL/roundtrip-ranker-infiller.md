@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-05
-updated: 2026-07-10
+updated: 2026-07-12
 tags: [rl, round-trip-reward, ranker, infiller, expert-iteration, rloo, probes,
        fact-recall, count-floors, gates, anti-goodhart, spec]
 companion: [docs/plans/2026-07-05-roundtrip-rl-strategy.md,
@@ -46,11 +46,19 @@ literature basis: [round-trip RL strategy plan](../../plans/2026-07-05-roundtrip
 - **Ranker π_rank / Infiller π_fill** — stage-1 per-span action selection over the legal
   lattice menu; stage-2 grammar-constrained rendering of the chosen node (E1+).
 - **Floor-walk** — the rule baseline and behavior-clone teacher: per span the minimum-aset
-  legal level, else generic placeholder (unchanged from the surrogate spec).
+  **non-KEEP** level, else generic placeholder (re-defined 2026-07-12 with the floor
+  retirement below; KEEP would otherwise be the min-aset choice everywhere).
 - **aset / k_T / legal[s|k]** — anonymity-set count, per-type count floors, and the derived
-  legal action set — all unchanged and normative in the
-  [surrogate spec](surrogate-ranker-infiller.md) §Definitions, §3, §4.1. Privacy is
-  **floors-only**; the reward has no privacy term.
+  legal action set (surrogate spec §Definitions, §3, §4.1). **FLOORS RETIRED 2026-07-12:**
+  the K_FLOORS legality mask is gone — junk counts made KEEP (aset 1) and genuine
+  sub-100-count levels illegal, and the floors were context/task-blind. Env floors are inert
+  at 1.0 (plumbing kept), so every action — KEEP, all lattice levels, placeholder — is legal;
+  counts remain policy features and diagnostics, not certificates. The former invariant
+  "privacy is floors-only, the reward has no privacy term" is **repealed**: training is
+  currently utility-only (KEEP-drift is the expected failure mode, priced at eval by the
+  attacker), and privacy pressure returns as a reward term —
+  [leakage-probe reward design options](leakage-probe-reward.md). PERSON/CODE stay
+  placeholder-by-rule, outside the learned loop.
 - **ExIt (expert iteration / ReST^EM)** — sample G rollouts, SFT on the realized-reward
   winners, iterate ([arXiv 2312.06585](https://arxiv.org/abs/2312.06585)).
 - **RLOO** — REINFORCE with the leave-one-out group mean as baseline
@@ -83,7 +91,7 @@ proxy at :8060; family separation across grader/teacher/environment roles):
 | ------------------------------------ | ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | detector                             | spans, once, frozen into the arms artifact                    | GLiNER multidomain fine-tune (`pii_gliner_multidomain` ckpt-2479 @0.3)                                                                                                                                                                                                                                                                                     |
 | lattice + NLI gate                   | generalization candidates, truthfulness-filtered              | WordNet/GeoNames sources + frozen NLI entailment gate; hygiene-audited (perplexity screen) before any run                                                                                                                                                                                                                                                  |
-| `aset_count` + floors k_T            | legality mask; the only privacy knob and operating-point knob | deterministic (`cloak.anonymity`), surrogate spec §3.3-2                                                                                                                                                                                                                                                                                                   |
+| `aset_count` (floors retired)        | counts = policy feature + diagnostic (legality mask retired 2026-07-12; the operating-point knob moves to the future leakage-probe reward's λ) | deterministic (`cloak.anonymity`); floors inert at 1.0; see [leakage-probe-reward.md](leakage-probe-reward.md)                                                                                                                                                                                                                                             |
 | π_rank                               | per-span choice from `legal[s\|k]`                            | ModernBERT-base (~150M) doc encoder + per-span action head, autoregressive over spans; trains on the iGPU in `.venv`; 19-feature vector (§ π_rank — features and how they drive the choice); feature-only MLP retained as capacity-ablation arm                                                                                                                                                                                     |
 | π_fill (E1)                          | grammar-constrained rendering                                 | **TBD — decided at Stage-2 kickoff** (user decision 2026-07-05). Constraints that survive the deferral: torch-side in `.venv` (HF logits-processor grammar masks + LoRA cannot live behind llama-swap), ~1–3B trainable on the iGPU, mature HF/PEFT/TRL support. Candidate at time of writing: Qwen3-1.7B-Instruct                                         |
 | BC teacher                           | π_rank init                                                   | floor-walk                                                                                                                                                                                                                                                                                                                                                 |
@@ -128,6 +136,8 @@ restate the quasi-identifiers, else neither inversion nor utility cost is exerci
 2. Menus: `levels[s] = lattice(s) + [KEEP(s)]`; annotate
    `aset[s,l] = aset_count(l, s.type, s.orig, strict=True)`. Legality derived at use time:
    `legal[s|k] = {l : aset[s,l] ≥ k[s.type]} ∪ {PLACEHOLDER(s.type)}` — never empty.
+   (Floors retired 2026-07-12: k is inert at 1.0, so `legal` = the whole menu including
+   KEEP; the formula stays as the mechanical contract of the plumbing.)
 3. Anchors, 2 cached round trips per doc: `out_hi`, `out_lo` (Definitions).
 4. Probes, 10–20 per doc:
    ```python
