@@ -516,3 +516,43 @@ def test_validated_artifact_meta_contains_reward_pins():
         "built_at",
     }
     assert artifact["meta"]["determinism"] == "workers1"
+
+
+def test_ladder_generation_keeps_only_rung0_and_rung1(monkeypatch, tmp_path):
+    # decided resolution for nested lattices: ONE semantic question pinned at rung 1;
+    # teacher replies at coarser rungs are rejected as bad_rung, and the prompt no longer
+    # shows the coarser rungs at all (no question can select among nested levels anyway)
+    docs = [{"id": "d1", "text": "Patient has hypertension."}]
+    span = {"surface": "hypertension", "type": "health-condition"}
+    monkeypatch.setattr(
+        lp, "span_levels",
+        lambda s: ["artery disease", "vascular disease", "a physical condition"])
+
+    prompts = []
+
+    class FakeTeacher:
+        def generate(self, prompt):
+            prompts.append(prompt)
+            return json.dumps({"probes": [
+                {"rung": 0, "q": "What condition needs daily monitoring?"},
+                {"rung": 1, "q": "What category of condition is being managed?"},
+                {"rung": 2, "q": "What broader kind of condition is present?"},
+            ]})
+
+    monkeypatch.setattr(lp, "_teacher", lambda _m, _b: FakeTeacher())
+
+    rejects = []
+    out = lp.ladder_probes_for_docs(
+        docs, {"d1": [span]}, "clinical", workers=1, model="fake",
+        cache_path=tmp_path / "ladder_probes.json", reject_sink=rejects)
+
+    assert sorted(e["rung"] for e in out["d1"]) == [0, 1]
+    assert [r["gate"] for r in rejects] == ["bad_rung"]
+    assert rejects[0]["rung"] == 2
+    # full ladder still recorded on the entries (acceptance sets need it) ...
+    assert all(e["rungs"] == ["hypertension", "artery disease", "vascular disease",
+                              "a physical condition"] for e in out["d1"])
+    # ... but the teacher only ever sees rung 0 and rung 1
+    assert "artery disease" in prompts[0]
+    assert "vascular disease" not in prompts[0]
+    assert "a physical condition" not in prompts[0]

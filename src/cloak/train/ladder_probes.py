@@ -44,7 +44,11 @@ LADDER_CACHE = Path("data/ladder_probes.json")
 DECISION_CACHE = Path("data/decision_probes.json")
 # pv2: clinical-role grounding, positional/enumeration forbidden.
 # pv3: JSON-object output ({"probes": [...]}) enforced via response_format=json_object.
-LADDER_PV = 3
+# pv4: two questions per span — rung 0 (exact) + rung 1 (finest generalization) — instead of
+#      one per rung. On nested lattices no question selects one level (measured: identical
+#      question repeated across rungs), so per-rung questions were one measurement scored at
+#      L thresholds, and monotone acceptance made coarsening nearly free.
+LADDER_PV = 4
 # pv2: JSON-object output ({"decisions": [...]}) enforced via response_format=json_object.
 # pv3: decisions must turn on a fact's identity/category (placeholder-breakable), not plan
 #      readback or outside-knowledge appropriateness; DECISION_KINDS retargeted to category.
@@ -82,33 +86,35 @@ DECISION_KINDS["aci"] = DECISION_KINDS["mts"] = DECISION_KINDS["clinical"]
 LADDER_PROMPT = """You write probe questions used to grade how well a {output_kind} preserves \
 facts at different levels of detail.
 
-A {output_kind} will be written from the document below. Some facts may appear in it only in \
-a generalized form. For the target fact you are given its generalization ladder: the exact \
-value first, then successively broader truthful descriptions.
+A {output_kind} will be written from the document below. The target fact may appear in it \
+exactly, as the truthful generalization given below, or not at all. Write exactly TWO probe \
+questions:
+- one with "rung": 0, whose best answer is the exact value when the {output_kind} states the \
+fact exactly;
+- one with "rung": 1, asking about the PROPERTY the generalization expresses — its best answer \
+is the generalization phrase, never the specific value.
 
-For EACH rung, write ONE question that:
-1. has exactly that rung's phrase as its best answer when the {output_kind} states the fact \
-at that rung — ask about the PROPERTY the rung expresses, not the specific value;
-2. does not contain the exact value, any finer rung's phrase, or close synonyms of them;
-3. identifies which fact it asks about ONLY through the fact's own clinical role — what it is \
-managed or treated with, its documented status or course, or its clinical consequence. NEVER \
-identify it by the fact itself; by its POSITION or ORDER in a list ("the first/last/third \
+EACH question must satisfy ALL of:
+1. it does not contain the exact value, the generalization phrase, or close synonyms of them;
+2. it identifies which fact it asks about ONLY through the fact's own clinical role — what it \
+is managed or treated with, its documented status or course, or its clinical consequence. \
+NEVER identify it by the fact itself; by its POSITION or ORDER in a list ("the first/last/third \
 condition"); or by ENUMERATING the other facts it appears alongside ("the condition listed \
 with X, Y and Z"). Position and neighbouring facts are reordered or hidden when the answer is \
 graded, and a question answerable by position or by echoing a name does NOT test whether the \
 fact's meaning was preserved — it must be answerable only by understanding this fact;
-4. is a wh- question (what / which / who / where / when / why / how) with a short-phrase \
+3. it is a wh- question (what / which / who / where / when / why / how) with a short-phrase \
 answer; no yes/no questions;
-5. is answerable from the {output_kind} alone, by a reader who never saw the document.
+4. it is answerable from the {output_kind} alone, by a reader who never saw the document.
 
 Document:
 {doc}
 
 Target fact: "{surface}"   (type: {type}; appears in: "{sentence}")
-Ladder rungs, exact -> broad:
-{rungs}
+rung 0 (exact value): {surface}
+rung 1 (finest truthful generalization): {rung1}
 
-Reply ONLY with a JSON object: {{"probes": [{{"rung": 0, "q": "...", "a": "<that rung's phrase>"}}, ...]}}"""
+Reply ONLY with a JSON object: {{"probes": [{{"rung": 0, "q": "..."}}, {{"rung": 1, "q": "..."}}]}}"""
 
 DECISION_PROMPT = """You design decision checks that test whether a {output_kind} still supports \
 a reader's decision when the specific clinical facts in it may have been replaced by broader \
@@ -588,7 +594,7 @@ def ladder_probes_for_docs(
                         surface=s["surface"],
                         type=s.get("type", ""),
                         sentence=s.get("sent") or sentence_of(d["text"], s["surface"]),
-                        rungs="\n".join(f"  {i}: {r}" for i, r in enumerate(rungs)),
+                        rung1=rungs[1],
                     ),
                 }
             )
@@ -630,7 +636,7 @@ def ladder_probes_for_docs(
                 continue
             for row in rows:
                 rung, q = row.get("rung"), (row.get("q") or "").strip()
-                if not (isinstance(rung, int) and 0 <= rung < len(t["rungs"])):
+                if not (isinstance(rung, int) and rung in (0, 1)):
                     _rej(t, rung, q, "bad_rung")
                     continue
                 gold = t["rungs"][rung]
