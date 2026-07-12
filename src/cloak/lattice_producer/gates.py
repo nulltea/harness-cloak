@@ -6,7 +6,6 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from cloak.anonymity import K_FLOORS
 from cloak.lattice import is_type_name_phrase
 from cloak.lattice_producer.vocabulary import CanonicalVocabulary
 from cloak.runtime_types import FORCED_PLACEHOLDER_TYPES, PLACEHOLDER_RE
@@ -16,6 +15,14 @@ from cloak.runtime_types import FORCED_PLACEHOLDER_TYPES, PLACEHOLDER_RE
 # the anchored "pharmaceutical compound") typically score 0.3-0.4 token-Jaccard, since they only
 # share one word out of a small union. 0.8 would never fire on real multi-word labels.
 _VOCABULARY_NEAR_DUPLICATE_THRESHOLD = 0.3
+
+# Producer-local chain-breadth floors. Runtime legality floors were removed; these values
+# remain only to reject lattice chains whose broadest certifying rung is too narrow.
+CHAIN_BREADTH_FLOORS = {
+    "gender": 2.0,
+    "marital-status": 2.0,
+    "sexual-orientation": 2.0,
+}
 
 
 @dataclass
@@ -149,7 +156,7 @@ def gate_candidates(
     # already implied; only the vocabulary and length checks need to run here.
     surface_key = surface.replace(" ", "")
     short_ambiguous_surface = bool(surface_key) and len(surface_key) <= 4 and not (vocabulary and vocabulary.has_exact(surface))
-    floor = float(K_FLOORS.get(str(runtime_type), 100.0))
+    floor = float(CHAIN_BREADTH_FLOORS.get(str(runtime_type), 100.0))
     for candidate in candidates:
         level = str(candidate.get("level", "")).strip()
         record = {**candidate, "item_id": item.get("item_id"), "runtime_type": runtime_type}
@@ -216,18 +223,16 @@ def gate_candidates(
         if grounding_status == "fail-closed":
             diagnostics.append({**record, "reason": (candidate.get("level_grounding") or {}).get("reason", "fail_closed")})
             continue
-        # NOTE: the k-floor is NOT applied here as a per-rung drop. Per anonymity.py, the floor is
-        # an anonymization-time legality test ("legal iff aset >= k_floors[type]"): the release-time
-        # risk walk climbs the lattice and picks the narrowest rung reaching the floor. A
-        # generalization lattice must therefore KEEP its specific sub-floor rungs (e.g. drug ->
-        # "beta blocker", k~30) as granular options; dropping them here would strip the lattice's
-        # granularity. The floor is instead enforced chain-wide below.
+        # NOTE: the producer floor is NOT applied here as a per-rung drop. A generalization
+        # lattice must KEEP its specific sub-floor rungs (e.g. drug -> "beta blocker", k~30)
+        # as granular options; dropping them here would strip the lattice's granularity. The
+        # floor is instead enforced chain-wide below as a lattice-quality gate.
         accepted.append(record)
-    # chain-wide k-floor: keep every truthful rung, but require the chain's BROADEST accepted rung
-    # to reach the floor, so the release-time walk always has at least one legal (k>=floor) target.
-    # A chain whose broadest real rung is still below the floor can't be anonymized safely -> divert
-    # the whole chain (route_after_gate requeues for a broader tier) rather than persist an entry
-    # with no legal generalization. proposal-universe rungs carry provisional counts and are exempt.
+    # chain-wide producer floor: keep every truthful rung, but require the chain's BROADEST
+    # accepted rung to reach the breadth threshold. A chain whose broadest real rung is still
+    # below the floor is diverted (route_after_gate requeues for a broader tier) rather than
+    # persisted as a low-breadth entry. proposal-universe rungs carry provisional counts and
+    # are exempt.
     real_counts = [
         float(row.get("level_count", 1.0))
         for row in accepted

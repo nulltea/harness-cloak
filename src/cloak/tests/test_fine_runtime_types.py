@@ -7,7 +7,7 @@ import pytest
 from cloak.detect import Span
 from cloak.extract import _type_sane, invert
 from cloak.lattice import lattice_for
-from cloak.anonymity import K_FLOORS, aset_count
+from cloak.anonymity import aset_count
 from cloak.probe import MIN_POOL, walk_risk
 from cloak.substitute import substitute
 from cloak.runtime_types import (
@@ -19,6 +19,7 @@ from cloak.runtime_types import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import build_probe_distractors as bpd  # noqa: E402
+import build_ranker_env as bre  # noqa: E402
 import train_ranker as tr  # noqa: E402
 
 
@@ -70,14 +71,26 @@ def test_teacher_cache_is_runtime_type_keyed_and_filtered(monkeypatch, tmp_path)
     assert lat.lattice_for("unknownsurface", "ethnicity") == ["<ETHNICITY_1>"]
 
 
-def test_fine_anonymity_floors_and_fail_closed_counts():
-    missing = sorted(set(RUNTIME_TYPES) - set(K_FLOORS) - set(PLACEHOLDER_ONLY_TYPES))
-    assert missing == []
+def test_ranker_env_floors_are_inert_for_runtime_types():
+    assert bre.inert_runtime_floors() == {t: 1.0 for t in RUNTIME_TYPES}
+
+
+def test_fine_anonymity_fail_closed_counts():
     assert aset_count("thirty-something", "age", "34", strict=True) == 10.0
     assert aset_count("a health condition", "health-condition", "diabetes", strict=True) == 1.0
     assert aset_count("a profession", "profession", "journalist", strict=True) == 1.0
     assert aset_count("a gender", "gender", "female", strict=True) == 1.0
     assert aset_count("sector-ish", "profession", "journalist", strict=True) == 1.0
+
+
+def test_fine_dem_aset_count_no_longer_uses_hand_count_fallback(monkeypatch):
+    import cloak.anonymity as anon
+
+    monkeypatch.setattr(anon, "lookup_count", lambda *args, **kwargs: None)
+    monkeypatch.setattr(anon, "_wn_leaf_count", lambda *args, **kwargs: None)
+    anon.aset_count.cache_clear()
+
+    assert anon.aset_count("medical specialist", "profession", "journalist", strict=True) == 1.0
 
 
 def test_substitute_preserves_fine_type_and_emits_typed_placeholder(monkeypatch):

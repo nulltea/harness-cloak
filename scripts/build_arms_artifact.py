@@ -80,8 +80,8 @@ def action_table(text: str, R: list[dict]) -> dict:
                             "walk_risk": round(walk_risk(sent_f, e["surface"], lvl,
                                                          e["type"]), 4),
                             "p6": round(fill_proximity(lvl, e["surface"]), 4),
-                            # anonymity-set count (spec Phase-0 step 2): the k-floor legality
-                            # mask reads this; without it every level fails the floor -> desert.
+                            # anonymity-set count: retained as a policy feature/diagnostic.
+                            # Runtime k-floor legality was retired to inert env plumbing.
                             "aset": round(aset_count(lvl, e["type"], e["surface"],
                                                      strict=True), 4)})
         actions.append({"fill": None, "mode": "placeholder", "walk_risk": 0.0, "p6": 0.0})

@@ -1,15 +1,15 @@
-"""Anonymity-set counts for lattice levels — structural risk, zero models at inference.
+"""Anonymity-set counts for lattice levels — structural risk diagnostics, zero models at inference.
 
 count = number of candidate values AT THE ORIGINAL'S GRANULARITY consistent with the fill
 (k-anonymity's consistency set transplanted to span substitution; design:
-docs/research/inference-risk-enforcement.md). Per-type floors replace the walk_risk
-tau-mask: legal iff aset >= k_floors[type] (placeholder always legal, keep-original has
-aset 1 -> legal only for user-waived types). Units need only be consistent WITHIN a type —
-floors are per-type, so city-counts and day-windows never compare.
+docs/research/inference-risk-enforcement.md). Counts still feed the log10_aset policy feature
+and diagnostics, but runtime legality floors were removed on 2026-07-12: junk-count legality
+was pruning KEEP (keep-original, aset 1) and many genuine lattice levels with counts 1-50.
+The release legality mask is now permissive; privacy is measured at evaluation time. Future
+privacy pressure belongs in the reward/leakage path (docs/specs/RL/leakage-probe-reward.md).
 
-Fail-closed: a specific-looking but unparseable fill counts 1 (illegal under any floor > 1,
-same conservative direction as the probe's unpooled-type rule). The TYPE_LABEL coarse
-fills are known-generic -> GENERIC, checked first.
+Fail-closed: a specific-looking but unparseable fill counts 1. The TYPE_LABEL coarse fills are
+known-generic -> GENERIC, checked first.
 
 Two modes. strict=True (CERTIFYING — legality, artifact annotation, decode-time checks):
 a parse miss fails closed, never falls through to a broader lookup; in particular the
@@ -28,51 +28,6 @@ from cloak.lattice import CONTINENTS, TYPE_LABEL, _MONTHS, _load_geo, is_type_na
 from cloak.runtime_types import DOMAIN_RUNTIME_TYPES, FINE_DEM_TYPES, PLACEHOLDER_ONLY_TYPES
 
 GENERIC = 1e9
-
-# floors calibrated on the count-vs-attacker shootout (results/lattice_count_shootout.json,
-# gemini referee): measured types at/below ~0.3 attacker hit@5 (DEM 0.333; QUANTITY floor
-# rests on thin cells — see results/lattice_count_shootout.json and the spec's thin-cell
-# caveat); DATETIME=100 excludes
-# the leaky month-level band (10-100 bucket measured 0.769). MISC/OTHER have no shootout
-# items; 100.0 is the default-deny posture for open-vocabulary types (unparseable fills fail
-# closed -> placeholder; keep-original requires an explicit per-type waiver, i.e. the user
-# setting that type's floor to 1).
-K_FLOORS = {"LOC": 100.0, "ORG": 100.0, "DATETIME": 100.0,
-            "DEM": 100.0, "QUANTITY": 100.0, "MISC": 100.0, "OTHER": 100.0,
-            "PERSON": 100.0, "CODE": 100.0,
-            "nationality": 100.0, "ethnicity": 100.0, "religion": 100.0,
-            "profession": 100.0, "age": 100.0, "health-condition": 100.0,
-            "family-role": 100.0, "demographic-other": 100.0,
-            "gender": 2.0, "marital-status": 2.0, "sexual-orientation": 2.0,
-            "drug": 100.0, "medical-procedure": 100.0,
-            "organization-medical-facility": 100.0}
-
-_APPROVED_FINE_COUNTS = {
-    "nationality": {
-        "central european": 1_000.0, "european": 1_000_000.0, "east african": 1_000.0,
-        "african": 1_000_000.0, "north american": 1_000_000.0,
-    },
-    "ethnicity": {
-        "of middle eastern ethnicity": 1_000.0, "of west asian ethnicity": 1_000.0,
-        "of european ethnicity": 1_000.0, "of south asian ethnicity": 1_000.0,
-    },
-    "religion": {"christian": 1_000_000.0, "muslim": 1_000_000.0},
-    "profession": {
-        "medical specialist": 1_000.0, "medical professional": 1_000.0,
-        "healthcare worker": 1_000_000.0, "media worker": 1_000.0,
-        "legal professional": 1_000.0, "education worker": 1_000.0,
-        "technical professional": 1_000.0,
-    },
-    "health-condition": {
-        "endocrine condition": 1_000.0, "chronic condition": 1_000_000.0,
-        "mental health condition": 1_000.0, "respiratory condition": 1_000.0,
-        "infectious disease": 1_000.0, "serious illness": 1_000.0,
-    },
-    "family-role": {
-        "child": 1_000.0, "spouse": 1_000.0, "grandparent": 1_000.0,
-        "parent": 1_000.0, "sibling": 1_000.0,
-    },
-}
 
 _geo_counts_cache = None
 
@@ -238,8 +193,6 @@ def aset_count(fill: str, span_type: str, original: str, strict: bool = False) -
         got = None
     elif span_type in FINE_DEM_TYPES or span_type in DOMAIN_RUNTIME_TYPES:
         got = lookup_count(fill, span_type)
-        if got is None and span_type in FINE_DEM_TYPES:
-            got = _APPROVED_FINE_COUNTS.get(span_type, {}).get(fill.lower().strip())
         if got is None and span_type not in {"demographic-other", *DOMAIN_RUNTIME_TYPES}:
             got = _wn_leaf_count(fill, strict)
     else:  # DEM / ORG / MISC / OTHER — WordNet lattices

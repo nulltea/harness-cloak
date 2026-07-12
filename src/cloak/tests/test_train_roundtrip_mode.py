@@ -25,6 +25,27 @@ def _doc():
             "probes_train": [{"surface": "metformin", "question": "What drug?"}]}
 
 
+def test_inert_floors_make_all_actions_legal_but_bc_skips_keep_original():
+    actions = [
+        {"mode": "level", "fill": "a narrow clinical drug class", "aset": 17.0, "p6": 0.6,
+         "walk_risk": 0.0},
+        {"mode": "level", "fill": "a broad medication", "aset": 250.0, "p6": 0.4,
+         "walk_risk": 0.0},
+        {"mode": "level", "fill": "metformin", "keep": True, "aset": 1.0, "p6": 1.0,
+         "walk_risk": 1.0},
+        {"mode": "placeholder", "fill": "<DRUG_1>", "p6": 0.0, "walk_risk": 0.0},
+    ]
+    raw = [{"surface": "metformin", "type": "drug", "start": 0, "actions": actions}]
+
+    spans, _feats = tr.derive_spans(raw, {"drug": 1.0, "OTHER": 1.0}, "clinical", "cpu")
+    span = spans[0]
+
+    assert span["legal"] == [0, 1, 2, 3]
+    assert span["bc_action"] == 0
+    assert not span["actions"][span["bc_action"]].get("keep")
+    assert tr.floor_walk_choice(spans)["metformin"]["fill"] == "a narrow clinical drug class"
+
+
 def _exit_doc():
     actions = [{"mode": "level", "fill": "a biguanide", "aset": 100.0, "p6": 0.8,
                 "walk_risk": 0.0},

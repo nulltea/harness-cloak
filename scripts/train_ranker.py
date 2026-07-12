@@ -3,8 +3,8 @@
 Implements spec §2 Phase 1 (docs/specs/RL/surrogate-ranker-infiller.md) on the Phase-0
 environment (data/ranker_env.json + the arms artifact):
 
-  per doc, per step: sample G level-assignments inside the per-type count-floor mask
-  (aset >= k_floors[type]; walk_risk is offline-only) ->
+  per doc, per step: sample G level-assignments inside the count-floor plumbing
+  (default k_floors are inert at 1.0; walk_risk is offline-only) ->
   assemble doc_p/R (injectivity via a DYNAMIC sampling mask: claimed fills unsampleable) ->
   r = alpha*(1 - A) + (1-alpha)*u_qa(train-split probes)
   (A = mean fill_proximity over level-mode fills; the action table's cached "p6" IS
@@ -250,9 +250,10 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
 def derive_spans(raw_spans, floors, corpus, device):
     """Legal set + floor-walk BC teacher + features from per-type count floors.
     legal = placeholder ∪ {levels with aset >= floor[type]} (walk_risk is offline-only now).
-    bc_action = the legal level minimizing (aset, index) — the most specific legal level, by
-    min aset not list order (actions["aset"] is not always sorted); placeholder fallback when
-    no level is legal. Every span keeps a placeholder so legal is never empty."""
+    bc_action = the legal NON-KEEP level minimizing (aset, index) — the most specific
+    non-original level, by min aset not list order (actions["aset"] is not always sorted);
+    placeholder fallback when no non-KEEP level is legal. Every span keeps a placeholder so
+    legal is never empty."""
     spans, feats = [], []
     for s in raw_spans:
         s = dict(s)
@@ -262,7 +263,8 @@ def derive_spans(raw_spans, floors, corpus, device):
                       if a["mode"] == "placeholder" or a.get("aset", 0) >= k]
         ph_idx = next(i for i, a in enumerate(s["actions"]) if a["mode"] == "placeholder")
         s["bc_action"] = min(((a.get("aset", 0), i) for i, a in enumerate(s["actions"])
-                              if a["mode"] == "level" and a.get("aset", 0) >= k),
+                              if a["mode"] == "level" and not a.get("keep")
+                              and a.get("aset", 0) >= k),
                              default=(None, ph_idx))[1]
         spans.append(s)
         feats.append(action_features(s, corpus, k).to(device))
@@ -645,8 +647,7 @@ def main():
     ap.add_argument("--alphas", default="0.3,0.5,0.7")
     ap.add_argument("--floors", default=None,
                     help="override per-type count floors, e.g. 'MISC=1,LOC=200' "
-                         "(floor 1 = waiver, legalizes keep-original for that type; "
-                         "default: env k_floors, all types 100)")
+                         "(default: env k_floors, all runtime types 1.0/inert)")
     ap.add_argument("--randomize-floors", action="store_true",
                     help="per-episode log-uniform floor k_T in [k_T/10, 10*k_T], "
                          "log-uniform centered on the default, per type; the "

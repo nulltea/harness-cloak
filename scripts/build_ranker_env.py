@@ -2,8 +2,8 @@
 
 Implements spec §2 Phase 0a/0b (docs/specs/RL/surrogate-ranker-infiller.md): per decision
 span — the action table (lattice levels ∪ generic placeholder) with precomputed P4 walk_risk
-and P6 fill-proximity per action, the τ-legal mask, and the behavior-clone label (the τ-walk's
-own choice); per document — QA probes with a persisted, seeded train/held-out split.
+and P6 fill-proximity per action, inert k-floor plumbing, and the behavior-clone label; per
+document — QA probes with a persisted, seeded train/held-out split.
 
 Consumes the arms artifact (detection is process-nondeterministic and walk_risk depends on the
 pools snapshot; spec §3.3-5) — spans, NLI-gated lattices, per-action risks/proximities, and the
@@ -22,14 +22,19 @@ from pathlib import Path
 
 from build_arms_artifact import ARTIFACT, CORPORA, load_artifact
 
-from cloak.anonymity import K_FLOORS
 from cloak.corpora import load_task_docs
+from cloak.runtime_types import RUNTIME_TYPES
 from cloak.train.probes import probes_for_docs
 
 OUT = Path("data/ranker_env.json")
 TAU = 0.02
 HELD_OUT_FRAC = 0.3   # per-doc probe split; n==1 -> train (no held-out; documented)
 SPLIT_SEED = 0
+
+
+def inert_runtime_floors() -> dict[str, float]:
+    """Retired runtime legality floors, kept as all-ones plumbing pending grounded counts."""
+    return {t: 1.0 for t in RUNTIME_TYPES}
 
 
 def main():
@@ -50,7 +55,8 @@ def main():
     t0 = time.time()
     art = load_artifact(args.arms)
     env = {"tau": TAU,                    # legacy walk_risk mask — provenance only
-           "k_floors": K_FLOORS,          # per-type anonymity-set count floors (the knob)
+           # Floors retired to 1.0 pending grounded counts; downstream plumbing stays inert.
+           "k_floors": inert_runtime_floors(),
            "risk_measure": "aset (anonymity-set count); walk_risk retained offline-only",
            "split_seed": SPLIT_SEED, "held_out_frac": HELD_OUT_FRAC,
            "probe_models": {"walk_risk": "EleutherAI/pythia-410m (contrastive re-id)",

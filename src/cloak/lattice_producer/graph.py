@@ -13,14 +13,13 @@ from typing import Any, Literal
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command, interrupt
 
-from cloak.anonymity import K_FLOORS
 from cloak.lattice import bucket_date, bucket_quantity, geonames_chain
 from cloak.lattice_profiles import lookup_levels
 from cloak.lattice_producer.coherence import normalize_coherence
 from cloak.lattice_producer.counts import compile_level_counts
 from cloak.lattice_producer.coverage import write_category_coverage
 from cloak.lattice_producer.entity_merge import apply_entity_merge
-from cloak.lattice_producer.gates import gate_candidates
+from cloak.lattice_producer.gates import CHAIN_BREADTH_FLOORS, gate_candidates
 from cloak.lattice_producer.io import append_jsonl_unique, read_jsonl
 from cloak.lattice_producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
 from cloak.lattice_producer.propose import ensure_local_base_url, extract_candidate_levels, propose_with_llama_swap
@@ -279,7 +278,7 @@ def merge_anchor_and_model(anchors: list[dict[str, Any]], model_cands: list[dict
 
 
 def _chain_sufficient(candidates: list[dict[str, Any]], runtime_type: str) -> bool:
-    floor = float(K_FLOORS.get(runtime_type, 100.0))
+    floor = float(CHAIN_BREADTH_FLOORS.get(runtime_type, 100.0))
     sizes = [len(candidate["member_set"]) for candidate in candidates if candidate.get("member_set")]
     return len(candidates) >= 2 and bool(sizes) and max(sizes) >= floor
 
