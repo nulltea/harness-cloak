@@ -89,24 +89,22 @@ def test_placeholder_fill_gets_echo_only_when_semantic_tier_not_entailed(monkeyp
 def test_carrier_combines_available_components_unweighted(monkeypatch):
     stub = _StubClient(["OUT_P: patient has <CONDITION_1>.",
                         "OUT_P: patient has <CONDITION_1>."])
-    decision_prompts = []
+    decision_reads = []
     shuffle_seed_keys = []
 
     def fake_read(questions, context, refresh=False):
-        out = []
-        for q in questions:
-            if q.startswith("What exact"):
-                out.append("hypothyroidism")
-            elif "Options:" in q:
-                decision_prompts.append(q)
-                out.append("route to endocrinology" if len(decision_prompts) == 1 else "primary care")
-            else:
-                out.append("")
-        return out
+        return ["hypothyroidism" if q.startswith("What exact") else "" for q in questions]
+
+    def fake_read_mc(questions, context, refresh=False):
+        # ONE batched call carries both decision prompts -> answer per-question by content
+        decision_reads.extend((q, context) for q in questions)
+        return ["route to endocrinology" if "route" in q else "primary care"
+                for q in questions]
 
     monkeypatch.setattr(rt, "_remote", lambda: stub)
     monkeypatch.setattr(rt, "invert", lambda out_p, R: ("OUT_FINAL: hypothyroidism.", None))
     monkeypatch.setattr(rt, "_read_batch", fake_read)
+    monkeypatch.setattr(rt, "_read_mc_batch", fake_read_mc)
     monkeypatch.setattr(
         rt,
         "mc_shuffle",
@@ -129,26 +127,25 @@ def test_carrier_combines_available_components_unweighted(monkeypatch):
     assert res["recall"] == pytest.approx((0.5 + 0.5 + 1.0) / 3)
     assert len(shuffle_seed_keys) == 2
     assert shuffle_seed_keys[0] != shuffle_seed_keys[1]
-    assert all("Options:" in p for p in decision_prompts)
+    # decisions must read the PRE-inversion output: invert() restores echoed placeholders
+    # into out_final, so out_final cannot discriminate placeholder-vs-preserve
+    assert all(ctx.startswith("OUT_P") for _q, ctx in decision_reads)
+    assert all("Options:" in q for q, _ctx in decision_reads)
 
 
 def test_main_reward_scores_span_free_decisions(monkeypatch):
     stub = _StubClient(["OUT_P: patient has <CONDITION_1>."])
     decision_prompts = []
 
-    def fake_read(questions, context, refresh=False):
-        out = []
-        for q in questions:
-            if "Options:" in q:
-                decision_prompts.append(q)
-                out.append("route to endocrinology" if "route" in q else "routine")
-            else:
-                out.append("")
-        return out
+    def fake_read_mc(questions, context, refresh=False):
+        decision_prompts.extend(questions)
+        return ["route to endocrinology" if "route" in q else "routine" for q in questions]
 
     monkeypatch.setattr(rt, "_remote", lambda: stub)
     monkeypatch.setattr(rt, "invert", lambda out_p, R: ("OUT_FINAL", None))
-    monkeypatch.setattr(rt, "_read_batch", fake_read)
+    monkeypatch.setattr(rt, "_read_batch",
+                        lambda questions, context, refresh=False: [""] * len(questions))
+    monkeypatch.setattr(rt, "_read_mc_batch", fake_read_mc)
 
     decisions = [
         {"q": "Which route?", "options": ["primary care", "route to endocrinology"],
@@ -164,6 +161,7 @@ def test_main_reward_scores_span_free_decisions(monkeypatch):
     assert res["decision_score"] == pytest.approx(1.0)
     assert res["recall"] == pytest.approx(1.0)
     assert len(decision_prompts) == 2
+    assert all("Options:" in p for p in decision_prompts)
 
 
 def test_schema_component_requires_flag_and_out_hi(monkeypatch):
@@ -206,9 +204,14 @@ def test_reader_refresh_reaches_echo_semantic_and_decision_channels(monkeypatch)
         return ["hypothyroidism" if "exact" in q else "an endocrine condition"
                 for q in questions]
 
+    def fake_read_mc(questions, context, refresh=False):
+        refreshes.extend(refresh for _ in questions)
+        return ["endocrinology"] * len(questions)
+
     monkeypatch.setattr(rt, "_remote", lambda: stub)
     monkeypatch.setattr(rt, "invert", lambda out_p, R: ("OUT_FINAL: hypothyroidism.", None))
     monkeypatch.setattr(rt, "_read_batch", fake_read)
+    monkeypatch.setattr(rt, "_read_mc_batch", fake_read_mc)
 
     rt.roundtrip_batch([
         _job(decisions=[{"q": "Which route?", "options": ["endocrinology", "primary care"],

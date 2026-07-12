@@ -17,8 +17,9 @@ import os
 from cloak.extract import invert
 from cloak.tasks import SCHEMA_TEMPLATE, TASK_TEMPLATE
 from cloak.train.ladder_probes import entail_score, mc_shuffle
-from cloak.train.reward import (_max_by_fact, _read_batch, canon, fact_f1s, fact_score,
-                                mc_score, W_EXACT, W_SEM)
+from cloak.train.reward import (_max_by_fact, _read_batch, _read_mc_batch, canon,
+                                decision_prompt, fact_f1s, fact_score, mc_score,
+                                W_EXACT, W_SEM)
 from cloak.train.schema_task import schema_field_score
 
 RT_MODEL = "gemma 4 (E4B)"   # THE pin (spec components table); changing it re-gates.
@@ -104,22 +105,23 @@ def _score_ladder(ladder: list[dict], out_final: str, out_p: str,
     return parts, echo_f1s
 
 
-def _decision_prompt(q: str, options: list[str]) -> str:
-    return q + "\nOptions:\n" + "\n".join(f"- {o}" for o in options)
-
-
-def _score_decisions(decisions: list[dict], out_final: str, refresh: bool) -> float | None:
+def _score_decisions(decisions: list[dict], out_p: str, refresh: bool) -> float | None:
+    """Decision channel reads OUT_P (pre-inversion), like the semantic rungs: invert()
+    restores echoed placeholders into out_final, so a placeholder-everything policy would
+    still earn decision credit there whenever the placeholder echoes. On out_p a
+    placeholdered fact is a literal '<TYPE_N>' token and the decision breaks, as the tier
+    intends."""
     rows = []
     for i, entry in enumerate(_kept(decisions)):
         q, options, gold = entry.get("q"), entry.get("options") or [], entry.get("gold")
         if not q or not options or gold is None:
             continue
-        shuffled = mc_shuffle(options, f"{q}|{i}|{out_final}")
+        shuffled = mc_shuffle(options, f"{q}|{i}|{out_p}")
         rows.append((q, shuffled, gold))
     if not rows:
         return None
-    answers = _read_batch([_decision_prompt(q, opts) for q, opts, _ in rows],
-                          out_final, refresh=refresh)
+    answers = _read_mc_batch([decision_prompt(q, opts) for q, opts, _ in rows],
+                             out_p, refresh=refresh)
     scores = [mc_score(answer, gold, opts) for answer, (_q, opts, gold) in zip(answers, rows)]
     return sum(scores) / len(scores)
 
@@ -179,7 +181,7 @@ def roundtrip_batch(
             if span_parts:
                 span_score = sum(span_parts) / len(span_parts)
                 components.append(span_score)
-            decision_score = _score_decisions(j.get("decisions") or [], out_final,
+            decision_score = _score_decisions(j.get("decisions") or [], op,
                                               reader_refresh)
             if decision_score is not None:
                 components.append(decision_score)
