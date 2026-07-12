@@ -233,10 +233,19 @@ def _rule_prepass(out_p: str, R: list[dict], *, semantic: bool) -> tuple[str, di
     ph, gen = _partition_R(R)
 
     for token, entries in ph.items():
+        surface = _canonical(entries)
         n = text.count(token)
         if n:
-            text = text.replace(token, _canonical(entries))
+            text = text.replace(token, surface)
             stats["ph_swapped"] += n
+        # Remote sometimes echoes placeholders with brackets stripped (bare
+        # HEALTH_CONDITION_2 in prose/note lines); match that form with word bounds so
+        # only R's actual tokens invert -- never a generic UPPERCASE_N pattern.
+        bare = re.compile(rf"\b{re.escape(token[1:-1])}\b")
+        m = len(bare.findall(text))
+        if m:
+            text = bare.sub(surface, text)
+            stats["ph_swapped"] += m
 
     for repl, entries in sorted(gen.items(), key=lambda kv: -len(kv[0])):  # longest first
         # R is injective (substitute.py used-set): one replacement -> one surface; entries

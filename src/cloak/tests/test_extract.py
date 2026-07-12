@@ -1,6 +1,41 @@
 import cloak.extract as ex
 
 
+def test_placeholder_bare_bracket_stripped_is_restored():
+    # Remote sometimes echoes placeholders with the angle brackets stripped.
+    out, stats = ex.invert(
+        "acute exacerbation of HEALTH_CONDITION_2",
+        [{"action": "placeholder", "surface": "arthritis", "replacement": "<HEALTH_CONDITION_2>"}],
+    )
+
+    assert out == "acute exacerbation of arthritis"
+    assert stats["ph_swapped"] == 1
+    assert stats["ph_residue"] == 0
+
+
+def test_placeholder_bracketed_form_still_restored():
+    out, stats = ex.invert(
+        "acute exacerbation of <HEALTH_CONDITION_2>",
+        [{"action": "placeholder", "surface": "arthritis", "replacement": "<HEALTH_CONDITION_2>"}],
+    )
+
+    assert out == "acute exacerbation of arthritis"
+    assert stats["ph_swapped"] == 1
+    assert stats["ph_residue"] == 0
+
+
+def test_placeholder_bare_match_only_from_R_not_generic_pattern():
+    # CT_SCAN_1 shapes like a token but is not in R -> untouched; bare CONDITION word must
+    # not match either. Only tokens derived from R's replacements may match.
+    out, stats = ex.invert(
+        "Referral to CT_SCAN_1 and the CONDITION noted with HEALTH_CONDITION_2.",
+        [{"action": "placeholder", "surface": "arthritis", "replacement": "<HEALTH_CONDITION_2>"}],
+    )
+
+    assert out == "Referral to CT_SCAN_1 and the CONDITION noted with arthritis."
+    assert stats["ph_swapped"] == 1
+
+
 def test_detector_pointer_constructs_audit_detector_checkpoint(monkeypatch):
     import cloak.detect as detect
 
