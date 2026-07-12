@@ -255,8 +255,11 @@ def build_ladder(args):
 
         ladders = lp.ladder_probes_for_docs(rows, spans_of, corpus, workers=args.workers,
                                             model=teacher_model, base_url=teacher_base_url)
-        decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers,
-                                                model=teacher_model, base_url=teacher_base_url)
+        decisions = lp.decision_probes_for_docs(
+            rows, out_hi_of, corpus, workers=args.workers,
+            model=teacher_model, base_url=teacher_base_url,
+            lattice_surfaces_of={d["id"]: [s["surface"] for s in spans_of.get(d["id"], [])]
+                                 for d in rows})
         stats = {"docs": 0, "spans": 0, "rung_candidates": 0, "rung_kept": 0,
                  "decisions_kept": 0}
         for d in rows:
@@ -496,9 +499,12 @@ def build_ladder_detected(args):
                                             model=teacher_model, base_url=teacher_base_url,
                                             all_surfaces_of=all_surfaces_of,
                                             reject_sink=gen_rejects, gen_sink=ladder_raw)
-        decisions = lp.decision_probes_for_docs(rows, out_hi_of, corpus, workers=args.workers,
-                                                model=teacher_model, base_url=teacher_base_url,
-                                                gen_sink=decision_raw)
+        decisions = lp.decision_probes_for_docs(
+            rows, out_hi_of, corpus, workers=args.workers,
+            model=teacher_model, base_url=teacher_base_url,
+            lattice_surfaces_of={d["id"]: [s["surface"] for s in spans_of.get(d["id"], [])]
+                                 for d in rows},
+            gen_sink=decision_raw)
         # record every generation (raw teacher replies + the anchors they were graded against)
         for d in rows:
             if d["id"] in anchor:

@@ -48,7 +48,11 @@ LADDER_PV = 3
 # pv2: JSON-object output ({"decisions": [...]}) enforced via response_format=json_object.
 # pv3: decisions must turn on a fact's identity/category (placeholder-breakable), not plan
 #      readback or outside-knowledge appropriateness; DECISION_KINDS retargeted to category.
-DECISION_PV = 3
+# pv4: the question must NOT name the target fact (world-knowledge-trivia shape measured in
+#      the 2026-07-12 super sweep: every decision named its fact and asked a generic
+#      property); identify the situation via documented circumstances. Enforced by
+#      lint_decision at generation time.
+DECISION_PV = 4
 
 OUTPUT_KIND = {
     "aci": "clinical note",
@@ -114,20 +118,25 @@ Below are a document and the {output_kind} written from it. Write up to {k} mult
 decision questions ({decision_kinds}) that a professional reading ONLY the {output_kind} must \
 answer. EACH question must satisfy ALL of:
 1. Its correct answer is DETERMINED BY the identity or category of ONE specific clinical fact \
-(a condition, drug, or procedure named in the {output_kind}) — so that if that fact were \
-replaced by a generic placeholder ("a condition"), the answer could no longer be chosen, while \
-knowing the fact or its category (e.g. "a cardiovascular disease") is enough to choose it. The \
-decision must follow FROM what the fact clinically IS — which medical specialist should treat \
-it, which body system it affects, which class of treatment or diagnosis it calls for, or how \
-it routes a referral.
-2. Do NOT ask for a value written verbatim in the {output_kind} (a dose, a follow-up interval, \
+(a condition, drug, or procedure in the {output_kind}) — so that if that fact were replaced by \
+a generic placeholder ("a condition"), the answer could no longer be chosen, while knowing the \
+fact or its category (e.g. "a cardiovascular disease") is enough to choose it. The decision \
+must follow FROM what the fact clinically IS — which medical specialist should treat it, which \
+body system it affects, which class of treatment or diagnosis it calls for, or how it routes a \
+referral.
+2. The question itself must NOT name that fact or a close synonym of it. Naming the fact and \
+asking one of its generic properties is world-knowledge trivia, answerable without the \
+{output_kind}. Identify the situation through the patient's OTHER documented circumstances — \
+the presenting complaint, the documented course, what it is managed or treated with — so the \
+question is unanswerable if the fact's meaning was lost.
+3. Do NOT ask for a value written verbatim in the {output_kind} (a dose, a follow-up interval, \
 the literal plan action). Those are readable no matter how the fact is anonymized and do not \
 test whether the fact's meaning survived.
-3. The correct answer must be SUPPORTED BY the {output_kind}'s content — pickable by a careful \
+4. The correct answer must be SUPPORTED BY the {output_kind}'s content — pickable by a careful \
 reader from what the note states, never requiring outside medical knowledge the note omits.
-4. Give 3-5 options, exactly one correct, all clearly distinct and mutually exclusive; no \
+5. Give 3-5 options, exactly one correct, all clearly distinct and mutually exclusive; no \
 yes/no questions.
-5. In "depends_on", quote the exact phrase(s) NAMING the specific fact the answer depends on \
+6. In "depends_on", quote the exact phrase(s) NAMING the specific fact the answer depends on \
 (the condition/drug/procedure), not the plan line that states the answer.
 
 Document:
@@ -244,6 +253,18 @@ def locator_lint(q, span_surface, other_surfaces):
         if st and st <= qt:
             return False
     return True
+
+
+def lint_decision(q, lattice_surfaces):
+    """Reject decision questions that NAME a lattice fact (the world-knowledge-trivia shape:
+    'Which body system does a mammogram evaluate?'). Such a question is answerable without the
+    note, so it never tests whether the fact's meaning survived; the prompt (pv4) forbids it,
+    this lint enforces it. ponytail: surfaces only, not profile aliases — extend to aliases if
+    trivia re-slips through via synonyms."""
+    qt = _tokens(q or "")
+    return not any(
+        st <= qt for s in lattice_surfaces or [] if (st := _tokens(s or ""))
+    )
 
 
 def validate_ladder(
@@ -661,11 +682,15 @@ def decision_probes_for_docs(
     model: str = TEACHER_MODEL,
     base_url: str = LOCAL_BASE_URL,
     cache_path: Path = DECISION_CACHE,
+    lattice_surfaces_of: dict | None = None,
     gen_sink: list | None = None,
 ) -> dict:
     """docs: corpora rows; out_hi_of: doc_id -> ceiling output. One teacher call per doc.
     Structural validation only (gold in 3-5 options, question form); reader-side ceiling/floor
-    validation happens at probe-build time, not here."""
+    validation happens at probe-build time, not here.
+
+    lattice_surfaces_of: doc_id -> detected lattice surfaces; questions naming one are dropped
+    by lint_decision."""
     from cloak.concurrent import pmap
 
     if corpus not in DECISION_KINDS:
@@ -717,6 +742,7 @@ def decision_probes_for_docs(
                     and isinstance(opts, list)
                     and 3 <= len(opts) <= 5
                     and gold in opts
+                    and lint_decision(q, (lattice_surfaces_of or {}).get(d["id"], []))
                 ):
                     kept.append(
                         {
@@ -789,6 +815,9 @@ if __name__ == "__main__":
     assert lint_rung(
         "What kind of ongoing health issue does the patient have?", rungs, 2
     )
+    assert not lint_decision("Which body system does a mammogram evaluate?", ["mammogram"])
+    assert lint_decision("Which specialist should follow up the screened condition?",
+                         ["mammogram"])
 
     class _Boom:
         def generate(self, _p):

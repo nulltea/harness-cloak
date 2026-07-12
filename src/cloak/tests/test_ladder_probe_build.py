@@ -440,6 +440,52 @@ def test_ladder_health_row_reports_reader_rejects_tiers_and_decisions():
     assert row["decisions_kept_per_doc"] == 1.5
 
 
+def test_lint_decision_rejects_questions_naming_a_lattice_fact():
+    from cloak.train.ladder_probes import lint_decision
+
+    surfaces = ["mammogram", "congestive heart failure"]
+    # world-knowledge trivia shape: names the fact, asks a generic property of it
+    assert not lint_decision("Which body system does a mammogram primarily evaluate?",
+                             surfaces)
+    assert not lint_decision(
+        "Which specialist should manage the congestive heart failure noted in the plan?",
+        surfaces)
+    # circumstance-grounded question that names no fact passes
+    assert lint_decision(
+        "Which specialist should follow up the condition managed with daily medication?",
+        surfaces)
+    assert lint_decision("Which route is supported?", [])
+
+
+def test_decision_probes_lint_drops_fact_naming_questions(monkeypatch, tmp_path):
+    docs = [{"id": "d1", "text": "Patient has hypothyroidism, treated with Synthroid."}]
+    reply = json.dumps({"decisions": [
+        {"q": "Which body system does hypothyroidism affect?",
+         "options": ["Endocrine", "Cardiac", "Renal"], "gold": "Endocrine",
+         "depends_on": ["hypothyroidism"]},
+        {"q": "Which specialist should follow up the condition managed with daily medication?",
+         "options": ["Endocrinologist", "Cardiologist", "Nephrologist"],
+         "gold": "Endocrinologist", "depends_on": ["hypothyroidism"]},
+    ]})
+
+    class FakeTeacher:
+        def generate(self, _prompt):
+            return reply
+
+    monkeypatch.setattr(lp, "_teacher", lambda _m, _b: FakeTeacher())
+
+    out = lp.decision_probes_for_docs(
+        docs, {"d1": "CEILING NOTE"}, "clinical", workers=1, model="fake",
+        cache_path=tmp_path / "decision_probes.json",
+        lattice_surfaces_of={"d1": ["hypothyroidism", "Synthroid"]},
+    )
+
+    kept_qs = [e["q"] for e in out["d1"]]
+    assert kept_qs == [
+        "Which specialist should follow up the condition managed with daily medication?"
+    ]
+
+
 def test_validated_artifact_meta_contains_reward_pins():
     helper = getattr(build_probes, "validated_artifact", None)
     assert callable(helper)
