@@ -1,12 +1,14 @@
 ---
 type: reference
-status: current
+status: stale
 created: 2026-07-12
 updated: 2026-07-12
 tags: [rl, reward-design, privacy, anonymity-counts, lambda, pareto, operating-point, spec]
 companion: [docs/specs/RL/leakage-probe-reward.md,
             docs/specs/RL/roundtrip-ranker-infiller.md,
             docs/issues/2026-07-08-rl-env-and-lattice-count-issue-register.md]
+superseded_by: docs/specs/RL/interactive-ranker-v2.md
+archive_reason: Superseded by the full interactive-ranker v2 redesign; its convex-lambda decision is retired.
 ---
 
 # Count-maximization privacy reward — design (in progress)
@@ -17,8 +19,9 @@ retirement, privacy pressure re-enters training as a reward term that pays the r
 choosing higher-anonymity-count actions, so it learns to balance utility against privacy
 instead of having low-count actions masked away.
 
-**Status: brainstorm in progress.** Decided forks are marked DECIDED with the alternatives
-recorded; open forks listed at the end.
+**Status: superseded.** This draft records an earlier convex-lambda design. The normative
+replacement is [interactive ranker v2](interactive-ranker-v2.md), which uses additive
+count shaping with distinct utility and count credit paths.
 
 ## Definitions
 

@@ -40,8 +40,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    if args.workers != 1:
-        raise SystemExit("--workers > 1 is intentionally unsupported until a saturation probe justifies it")
+    # saturation probe (2026-07-10): model-bound items are decode-latency bound (median 44s at
+    # ~60 t/s), so N prefetched proposals multiply throughput; N<=8 stays under free-tier req/min.
+    if not 1 <= args.workers <= 8:
+        raise SystemExit("--workers must be between 1 and 8")
     out_path = Path(args.out)
     proposed_root = (Path.cwd() / PROPOSED_ROOT).resolve()
     resolved_out = (Path.cwd() / out_path).resolve() if not out_path.is_absolute() else out_path.resolve()
@@ -64,6 +66,7 @@ def main() -> int:
         review_decision=args.review_decision,
         allow_canonical_overwrite=args.allow_canonical_overwrite,
         categories=args.category,
+        workers=args.workers,
     )
     print(
         "status={status} accepted={accepted} rejected={rejected} diagnostics={diagnostics} proposed={proposed}".format(

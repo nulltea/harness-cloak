@@ -32347,8 +32347,6 @@
           "high blood pressure",
           "elevated blood pressure",
           "blood pressure problems",
-          "low blood pressure",
-          "hypotension",
           "blood pressure disorder",
           "bp issues",
           "arterial hypertension",
@@ -32358,6 +32356,62 @@
           "vascular hypertensive disorder",
           "high bp",
           "hypertensive disorder"
+        ],
+        "count": 130.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "artery disease": 130.0,
+          "cardiovascular system disease": 627.0,
+          "disease of anatomical entity": 9162.0,
+          "vascular disease": 327.0
+        },
+        "level_grounding": {
+          "artery disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0050828",
+            "selector": "doid.is_a_descendants(DOID:0050828)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "cardiovascular system disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:1287",
+            "selector": "doid.is_a_descendants(DOID:1287)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "disease of anatomical entity": {
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "vascular disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:178",
+            "selector": "doid.is_a_descendants(DOID:178)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "artery disease",
+          "vascular disease",
+          "cardiovascular system disease",
+          "disease of anatomical entity"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:b p h",
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:blood pressure problems",
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:high blood pressure",
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:hypertension"
+        ]
+      },
+      "hypotension": {
+        "aliases": [
+          "b p h",
+          "blood pressure problems",
+          "low blood pressure",
+          "hypotension",
+          "blood pressure disorder",
+          "bp issues"
         ],
         "count": 130.0,
         "entry_origin": "observed-surface",
