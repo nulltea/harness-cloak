@@ -376,8 +376,10 @@ def _detect_docs(docs, model, threshold, max_words=320):
     `lattice` spans resolve through the shared retrieve-then-verify matcher
     (cloak.profile_match.match_spans_batch - same machinery as the substitutor) and are
     deduped per (runtime_type, matched canonical entry), so co-referent surfaces collapse to
-    one span per document; matcher abstain drops the span (as a no-profile span is dropped
-    today). `placeholder`/`quasi` spans are deduped per (surface, type). GPU (GLiNER)."""
+    one span per document; matcher-abstained and negation/screening-filtered lattice spans
+    are DEMOTED to placeholder role (no probes, but the floor still hides them — deleting
+    them leaked their surfaces to the remote). `placeholder`/`quasi` spans are deduped per
+    (surface, type). GPU (GLiNER)."""
     import torch
     from gliner import GLiNER
 
@@ -400,9 +402,13 @@ def _detect_docs(docs, model, threshold, max_words=320):
                     continue
                 seen.add(key)
                 sent = sentence_of(d["text"], surface)
-                # a lattice fact mentioned only under negation/screening is not a probe target
+                # a lattice fact mentioned only under negation/screening is not a probe
+                # target — but it IS detected-sensitive, so DEMOTE to placeholder role
+                # instead of deleting: the floor hides every span in this list, and
+                # deletion leaked the surface to the remote verbatim (measured:
+                # aci/D2N002 synthroid, first mention inside a dialogue question)
                 if role == "lattice" and _negated_or_screening(sent):
-                    continue
+                    role = "placeholder"
                 cands.append({"surface": surface, "type": rtype, "role": role, "sent": sent})
         lattice_cands = [c for c in cands if c["role"] == "lattice"]
         matches = match_spans_batch(
@@ -414,7 +420,10 @@ def _detect_docs(docs, model, threshold, max_words=320):
                 continue
             m = matches.get(span_key(c["surface"], c["type"]))
             if m is None:
-                continue  # abstain: not a probe span, drop (current no-profile behavior)
+                # abstain: no profile -> no probes, but still detected-sensitive; demote
+                # to placeholder role so the floor hides it (deletion leaked it verbatim)
+                spans.append({**c, "role": "placeholder"})
+                continue
             entry_key = (c["type"], m.entry)
             if entry_key in seen_entries:
                 continue  # co-referent duplicate within this document
