@@ -1,8 +1,9 @@
 """Ladder + decision probe generation (training-task-env spec, Probe generation section).
 
-Ladder probes: per lattice-bearing span, one question per rung (rung 0 = the exact surface,
-rung l = the l-th lattice level). Gold at rung l is that rung's phrase; scoring accepts any
-finer answer via the acceptance set (entail_score) — deterministic, no NLI on the reward path.
+Ladder probes: per lattice-bearing span, TWO questions (pv4) — rung 0 (the exact surface,
+echo channel) and rung 1 (the finest truthful generalization, semantic channel). Gold at rung
+l is that rung's phrase; scoring accepts any finer answer via the acceptance set
+(entail_score, binary) — deterministic, no NLI on the reward path.
 Decision probes: per doc (clinical/lexsum), multiple-choice questions a consumer of the output
 must answer, gold recovered from the ceiling output (ceiling agreement).
 
