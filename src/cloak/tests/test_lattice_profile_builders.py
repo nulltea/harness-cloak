@@ -301,14 +301,17 @@ def test_cldr_territories_to_nationality_rows(tmp_path):
 
     rows = rows_from_cldr_territories(src, containment)
 
-    row = next(r for r in rows if r.surface == "germany")
+    row = next(r for r in rows if r.surface == "german")
     assert row.runtime_type == "nationality"
+    assert "germany" in row.aliases
+    assert "from germany" in row.aliases
+    assert "citizen of germany" in row.aliases
     assert "federal republic of germany" in row.aliases
     assert row.levels == ["western european nationality", "european nationality"]
     assert row.source_ids == ["cldr:DE"]
 
 
-def test_cldr_territories_include_common_demonym_aliases(tmp_path):
+def test_cldr_territories_use_demonym_as_surface(tmp_path):
     src = tmp_path / "territories.json"
     src.write_text(json.dumps({
         "main": {"en": {"localeDisplayNames": {"territories": {
@@ -322,8 +325,10 @@ def test_cldr_territories_include_common_demonym_aliases(tmp_path):
     rows = rows_from_cldr_territories(src, containment)
     by_surface = {r.surface: r for r in rows}
 
-    assert "german" in by_surface["germany"].aliases
-    assert "french" in by_surface["france"].aliases
+    # surface is the demonym; country name and "from/citizen of X" phrasings are aliases
+    assert "germany" not in by_surface and "france" not in by_surface
+    assert set(by_surface["german"].aliases) >= {"germany", "from germany", "citizen of germany"}
+    assert set(by_surface["french"].aliases) >= {"france", "from france", "citizen of france"}
 
 
 def test_cldr_territory_parent_prefers_geographic_region_over_later_grouping(tmp_path):
@@ -343,7 +348,7 @@ def test_cldr_territory_parent_prefers_geographic_region_over_later_grouping(tmp
 
     rows = rows_from_cldr_territories(src, containment)
 
-    assert next(r for r in rows if r.surface == "germany").levels == ["european nationality"]
+    assert next(r for r in rows if r.surface == "german").levels == ["european nationality"]
 
 
 def test_wikidata_sparql_xml_to_demographic_rows(tmp_path):
@@ -682,7 +687,7 @@ def test_collect_rows_uses_downloaded_raw_source_layout(tmp_path):
 
     assert "criminal lawyer" in surfaces
     assert "defense attorney" in surfaces
-    assert "germany" in surfaces
+    assert "german" in surfaces
     assert "judaism" in surfaces
     assert "glucophage" in surfaces
     assert "metformin hydrochloride" in surfaces

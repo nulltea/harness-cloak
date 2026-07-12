@@ -379,7 +379,7 @@
         },
         "levels": [
           "a country in asia",
-          "a city in quind\u00edo department",
+          "a city in quindío department",
           "a city in colombia",
           "a city in south america"
         ],
@@ -982,7 +982,7 @@
           "geonames-country:BT"
         ]
       },
-      "bogot\u00e1": {
+      "bogotá": {
         "aliases": [
           "bagata",
           "beageatta",
@@ -1677,7 +1677,7 @@
         },
         "levels": [
           "a country in asia",
-          "a city in nuevo le\u00f3n",
+          "a city in nuevo león",
           "a city in mexico",
           "a city in north america"
         ],
@@ -5305,7 +5305,7 @@
         },
         "levels": [
           "a country in europe",
-          "a city in para\u00edba",
+          "a city in paraíba",
           "a city in brazil",
           "a city in south america"
         ],
@@ -6777,7 +6777,7 @@
         },
         "levels": [
           "a country in north america",
-          "a city in caquet\u00e1",
+          "a city in caquetá",
           "a city in colombia",
           "a city in south america"
         ],
@@ -8265,7 +8265,7 @@
           "geonames-country:SY"
         ]
       },
-      "s\u00e3o paulo": {
+      "são paulo": {
         "aliases": [
           "cavo pavulo",
           "sa'o pa'ulo",
@@ -9075,7 +9075,7 @@
         },
         "levels": [
           "a country in south america",
-          "a city in ciego de \u00e1vila province",
+          "a city in ciego de ávila province",
           "a city in cuba",
           "a city in north america"
         ],
@@ -9256,7 +9256,7 @@
           "geonames:1790842"
         ]
       },
-      "xi\u2019an": {
+      "xi’an": {
         "aliases": [
           "ch'ang-an",
           "ch'ang-an-hsien",
@@ -11728,7 +11728,7 @@
         "level_counts": {
           "medication": 10999.97,
           "ocular hypotensive agent": 80.0,
-          "prostaglandin F2\u03b1 analog": 1.0
+          "prostaglandin F2α analog": 1.0
         },
         "level_grounding": {
           "medication": {
@@ -11747,9 +11747,9 @@
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "prostaglandin F2\u03b1 analog": {
+          "prostaglandin F2α analog": {
             "count_basis": "corpus-membership",
-            "count_evidence": "'prostaglandin F2\u03b1 analog' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_evidence": "'prostaglandin F2α analog' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
             "member_set_ref": null,
             "selector": "ATC code S01EE (prostaglandin analogues)",
             "source_family": "model-proposed",
@@ -11757,7 +11757,7 @@
           }
         },
         "levels": [
-          "prostaglandin F2\u03b1 analog",
+          "prostaglandin F2α analog",
           "ocular hypotensive agent",
           "medication"
         ],
@@ -22872,11 +22872,11 @@
           "alpha-gal allergy",
           "delayed anaphylaxis to red meat",
           "galactose-alpha-1,3-galactose allergy",
-          "galactose-\u03b1-1,3-galactose allergy",
+          "galactose-α-1,3-galactose allergy",
           "mammalian meat allergy",
           "red meat allergy",
-          "\u03b1-gal allergy",
-          "\u03b1-gal syndrome",
+          "α-gal allergy",
+          "α-gal syndrome",
           "tick-induced hypersensitivity"
         ],
         "count": 176.0,
@@ -26081,7 +26081,7 @@
             "count_basis": "corpus-membership",
             "count_evidence": "'vertebral column disorder' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
             "member_set_ref": null,
-            "selector": "ICD\u201110 chapter group",
+            "selector": "ICD‑10 chapter group",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
@@ -31949,7 +31949,7 @@
           "hjcd",
           "phid",
           "pigmented hypertrichosis with insulin-dependent diabetes mellitus",
-          "rosai\u2013dorfman disease",
+          "rosai–dorfman disease",
           "shml",
           "sinus histiocytosis and massive lymphadenopathy",
           "slc29a3-related histiocytosis",
@@ -41412,8 +41412,12 @@
       }
     },
     "nationality": {
-      "afghanistan": {
-        "aliases": [],
+      "afghan": {
+        "aliases": [
+          "afghanistan",
+          "citizen of afghanistan",
+          "from afghanistan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41442,8 +41446,12 @@
           "cldr:AF"
         ]
       },
-      "albania": {
-        "aliases": [],
+      "albanian": {
+        "aliases": [
+          "albania",
+          "citizen of albania",
+          "from albania"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41472,8 +41480,12 @@
           "cldr:AL"
         ]
       },
-      "algeria": {
-        "aliases": [],
+      "algerian": {
+        "aliases": [
+          "algeria",
+          "citizen of algeria",
+          "from algeria"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41502,8 +41514,66 @@
           "cldr:DZ"
         ]
       },
-      "american samoa": {
-        "aliases": [],
+      "american": {
+        "aliases": [
+          "citizen of united states",
+          "from united states",
+          "merica",
+          "murica",
+          "the states",
+          "the u.s.",
+          "the u.s. of a",
+          "the u.s. of america",
+          "the u.s.a.",
+          "the united states",
+          "the united states of america",
+          "the us",
+          "the us of a",
+          "the us of america",
+          "the usa",
+          "u. s.",
+          "u. s. a.",
+          "u.s. of america",
+          "united states",
+          "us",
+          "us of a",
+          "us of america"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "american nationality": 57.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "american nationality": {
+            "member_set_ref": "cldr-m49:american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "north american nationality",
+          "american nationality"
+        ],
+        "source_ids": [
+          "cldr:US",
+          "wikidata:Q30"
+        ]
+      },
+      "american samoan": {
+        "aliases": [
+          "american samoa",
+          "citizen of american samoa",
+          "from american samoa"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41524,8 +41594,12 @@
           "cldr:AS"
         ]
       },
-      "andorra": {
-        "aliases": [],
+      "andorran": {
+        "aliases": [
+          "andorra",
+          "citizen of andorra",
+          "from andorra"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41554,8 +41628,12 @@
           "cldr:AD"
         ]
       },
-      "angola": {
-        "aliases": [],
+      "angolan": {
+        "aliases": [
+          "angola",
+          "citizen of angola",
+          "from angola"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41584,8 +41662,12 @@
           "cldr:AO"
         ]
       },
-      "anguilla": {
-        "aliases": [],
+      "anguillian": {
+        "aliases": [
+          "anguilla",
+          "citizen of anguilla",
+          "from anguilla"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41614,8 +41696,12 @@
           "cldr:AI"
         ]
       },
-      "antarctica": {
-        "aliases": [],
+      "antarctican": {
+        "aliases": [
+          "antarctica",
+          "citizen of antarctica",
+          "from antarctica"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41636,8 +41722,12 @@
           "cldr:AQ"
         ]
       },
-      "antigua & barbuda": {
-        "aliases": [],
+      "antiguan": {
+        "aliases": [
+          "antigua & barbuda",
+          "citizen of antigua & barbuda",
+          "from antigua & barbuda"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41666,10 +41756,12 @@
           "cldr:AG"
         ]
       },
-      "argentina": {
+      "argentine": {
         "aliases": [
-          "argentine",
-          "argentinian"
+          "argentina",
+          "argentinian",
+          "citizen of argentina",
+          "from argentina"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -41699,8 +41791,12 @@
           "cldr:AR"
         ]
       },
-      "armenia": {
-        "aliases": [],
+      "armenian": {
+        "aliases": [
+          "armenia",
+          "citizen of armenia",
+          "from armenia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41729,8 +41825,12 @@
           "cldr:AM"
         ]
       },
-      "aruba": {
-        "aliases": [],
+      "aruban": {
+        "aliases": [
+          "aruba",
+          "citizen of aruba",
+          "from aruba"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41760,7 +41860,10 @@
         ]
       },
       "ascension island": {
-        "aliases": [],
+        "aliases": [
+          "citizen of ascension island",
+          "from ascension island"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41781,9 +41884,11 @@
           "cldr:AC"
         ]
       },
-      "australia": {
+      "australian": {
         "aliases": [
-          "australian"
+          "australia",
+          "citizen of australia",
+          "from australia"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -41805,8 +41910,12 @@
           "cldr:AU"
         ]
       },
-      "austria": {
-        "aliases": [],
+      "austrian": {
+        "aliases": [
+          "austria",
+          "citizen of austria",
+          "from austria"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41835,8 +41944,12 @@
           "cldr:AT"
         ]
       },
-      "azerbaijan": {
-        "aliases": [],
+      "azerbaijani": {
+        "aliases": [
+          "azerbaijan",
+          "citizen of azerbaijan",
+          "from azerbaijan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41865,8 +41978,12 @@
           "cldr:AZ"
         ]
       },
-      "bahamas": {
-        "aliases": [],
+      "bahamian": {
+        "aliases": [
+          "bahamas",
+          "citizen of bahamas",
+          "from bahamas"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41895,8 +42012,12 @@
           "cldr:BS"
         ]
       },
-      "bahrain": {
-        "aliases": [],
+      "bahraini": {
+        "aliases": [
+          "bahrain",
+          "citizen of bahrain",
+          "from bahrain"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41925,8 +42046,12 @@
           "cldr:BH"
         ]
       },
-      "bangladesh": {
-        "aliases": [],
+      "bangladeshi": {
+        "aliases": [
+          "bangladesh",
+          "citizen of bangladesh",
+          "from bangladesh"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41955,8 +42080,12 @@
           "cldr:BD"
         ]
       },
-      "barbados": {
-        "aliases": [],
+      "barbadian": {
+        "aliases": [
+          "barbados",
+          "citizen of barbados",
+          "from barbados"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -41985,8 +42114,12 @@
           "cldr:BB"
         ]
       },
-      "belarus": {
-        "aliases": [],
+      "belarusian": {
+        "aliases": [
+          "belarus",
+          "citizen of belarus",
+          "from belarus"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42015,8 +42148,12 @@
           "cldr:BY"
         ]
       },
-      "belgium": {
-        "aliases": [],
+      "belgian": {
+        "aliases": [
+          "belgium",
+          "citizen of belgium",
+          "from belgium"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42045,8 +42182,12 @@
           "cldr:BE"
         ]
       },
-      "belize": {
-        "aliases": [],
+      "belizean": {
+        "aliases": [
+          "belize",
+          "citizen of belize",
+          "from belize"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42075,8 +42216,12 @@
           "cldr:BZ"
         ]
       },
-      "benin": {
-        "aliases": [],
+      "beninese": {
+        "aliases": [
+          "benin",
+          "citizen of benin",
+          "from benin"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42097,8 +42242,12 @@
           "cldr:BJ"
         ]
       },
-      "bermuda": {
-        "aliases": [],
+      "bermudian": {
+        "aliases": [
+          "bermuda",
+          "citizen of bermuda",
+          "from bermuda"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42119,8 +42268,12 @@
           "cldr:BM"
         ]
       },
-      "bhutan": {
-        "aliases": [],
+      "bhutanese": {
+        "aliases": [
+          "bhutan",
+          "citizen of bhutan",
+          "from bhutan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42149,8 +42302,12 @@
           "cldr:BT"
         ]
       },
-      "bolivia": {
-        "aliases": [],
+      "bolivian": {
+        "aliases": [
+          "bolivia",
+          "citizen of bolivia",
+          "from bolivia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42179,9 +42336,12 @@
           "cldr:BO"
         ]
       },
-      "bosnia & herzegovina": {
+      "bosnian": {
         "aliases": [
-          "bosnia"
+          "bosnia",
+          "bosnia & herzegovina",
+          "citizen of bosnia & herzegovina",
+          "from bosnia & herzegovina"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42211,38 +42371,11 @@
           "cldr:BA"
         ]
       },
-      "botswana": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0,
-          "southern african nationality": 5.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southern african nationality": {
-            "member_set_ref": "cldr-m49:southern african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southern african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southern african nationality",
-          "african nationality"
-        ],
-        "source_ids": [
-          "cldr:BW"
-        ]
-      },
       "bouvet island": {
-        "aliases": [],
+        "aliases": [
+          "citizen of bouvet island",
+          "from bouvet island"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42271,9 +42404,11 @@
           "cldr:BV"
         ]
       },
-      "brazil": {
+      "brazilian": {
         "aliases": [
-          "brazilian"
+          "brazil",
+          "citizen of brazil",
+          "from brazil"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42303,38 +42438,56 @@
           "cldr:BR"
         ]
       },
-      "british virgin islands": {
-        "aliases": [],
+      "british": {
+        "aliases": [
+          "citizen of united kingdom",
+          "from united kingdom",
+          "g b",
+          "great britain",
+          "great britain and northern ireland",
+          "the uk",
+          "the united kingdom",
+          "the united kingdom of great britain and northern ireland",
+          "u k",
+          "uk",
+          "united kingdom",
+          "united kingdom of great britain and northern ireland"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
+          "european nationality": 53.0,
+          "northern european nationality": 17.0
         },
         "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+          "european nationality": {
+            "member_set_ref": "cldr-m49:european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
             "source_family": "cldr-m49",
             "status": "certifying"
           },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+          "northern european nationality": {
+            "member_set_ref": "cldr-m49:northern european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'northern european nationality'",
             "source_family": "cldr-m49",
             "status": "certifying"
           }
         },
         "levels": [
-          "caribbean nationality",
-          "north american nationality"
+          "northern european nationality",
+          "european nationality"
         ],
         "source_ids": [
-          "cldr:VG"
+          "cldr:GB",
+          "wikidata:Q145"
         ]
       },
-      "brunei": {
-        "aliases": [],
+      "bruneian": {
+        "aliases": [
+          "brunei",
+          "citizen of brunei",
+          "from brunei"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42363,8 +42516,12 @@
           "cldr:BN"
         ]
       },
-      "bulgaria": {
-        "aliases": [],
+      "bulgarian": {
+        "aliases": [
+          "bulgaria",
+          "citizen of bulgaria",
+          "from bulgaria"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42393,8 +42550,12 @@
           "cldr:BG"
         ]
       },
-      "burkina faso": {
-        "aliases": [],
+      "burkinabe": {
+        "aliases": [
+          "burkina faso",
+          "citizen of burkina faso",
+          "from burkina faso"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42415,8 +42576,47 @@
           "cldr:BF"
         ]
       },
-      "burundi": {
-        "aliases": [],
+      "burmese": {
+        "aliases": [
+          "citizen of myanmar (burma)",
+          "from myanmar (burma)",
+          "myanmar",
+          "myanmar (burma)"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "southeast asian nationality": 11.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southeast asian nationality": {
+            "member_set_ref": "cldr-m49:southeast asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southeast asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:MM"
+        ]
+      },
+      "burundian": {
+        "aliases": [
+          "burundi",
+          "citizen of burundi",
+          "from burundi"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42445,8 +42645,12 @@
           "cldr:BI"
         ]
       },
-      "cambodia": {
-        "aliases": [],
+      "cambodian": {
+        "aliases": [
+          "cambodia",
+          "citizen of cambodia",
+          "from cambodia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42475,8 +42679,12 @@
           "cldr:KH"
         ]
       },
-      "cameroon": {
-        "aliases": [],
+      "cameroonian": {
+        "aliases": [
+          "cameroon",
+          "citizen of cameroon",
+          "from cameroon"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42505,9 +42713,11 @@
           "cldr:CM"
         ]
       },
-      "canada": {
+      "canadian": {
         "aliases": [
-          "canadian"
+          "canada",
+          "citizen of canada",
+          "from canada"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42530,7 +42740,10 @@
         ]
       },
       "canary islands": {
-        "aliases": [],
+        "aliases": [
+          "citizen of canary islands",
+          "from canary islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42559,9 +42772,12 @@
           "cldr:IC"
         ]
       },
-      "cape verde": {
+      "cape verdian": {
         "aliases": [
-          "cabo verde"
+          "cabo verde",
+          "cape verde",
+          "citizen of cape verde",
+          "from cape verde"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42584,7 +42800,10 @@
         ]
       },
       "caribbean netherlands": {
-        "aliases": [],
+        "aliases": [
+          "citizen of caribbean netherlands",
+          "from caribbean netherlands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42613,8 +42832,12 @@
           "cldr:BQ"
         ]
       },
-      "cayman islands": {
-        "aliases": [],
+      "caymanian": {
+        "aliases": [
+          "cayman islands",
+          "citizen of cayman islands",
+          "from cayman islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42643,8 +42866,12 @@
           "cldr:KY"
         ]
       },
-      "central african republic": {
-        "aliases": [],
+      "central african": {
+        "aliases": [
+          "central african republic",
+          "citizen of central african republic",
+          "from central african republic"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42674,7 +42901,10 @@
         ]
       },
       "ceuta & melilla": {
-        "aliases": [],
+        "aliases": [
+          "citizen of ceuta & melilla",
+          "from ceuta & melilla"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42703,8 +42933,12 @@
           "cldr:EA"
         ]
       },
-      "chad": {
-        "aliases": [],
+      "chadian": {
+        "aliases": [
+          "chad",
+          "citizen of chad",
+          "from chad"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42733,8 +42967,12 @@
           "cldr:TD"
         ]
       },
-      "chile": {
-        "aliases": [],
+      "chilean": {
+        "aliases": [
+          "chile",
+          "citizen of chile",
+          "from chile"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42763,9 +43001,11 @@
           "cldr:CL"
         ]
       },
-      "china": {
+      "chinese": {
         "aliases": [
-          "chinese"
+          "china",
+          "citizen of china",
+          "from china"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42795,8 +43035,12 @@
           "cldr:CN"
         ]
       },
-      "christmas island": {
-        "aliases": [],
+      "christmas islander": {
+        "aliases": [
+          "christmas island",
+          "citizen of christmas island",
+          "from christmas island"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42818,7 +43062,10 @@
         ]
       },
       "clipperton island": {
-        "aliases": [],
+        "aliases": [
+          "citizen of clipperton island",
+          "from clipperton island"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42839,9 +43086,12 @@
           "cldr:CP"
         ]
       },
-      "cocos (keeling) islands": {
+      "cocos islander": {
         "aliases": [
-          "cocos islands"
+          "citizen of cocos (keeling) islands",
+          "cocos (keeling) islands",
+          "cocos islands",
+          "from cocos (keeling) islands"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42863,8 +43113,12 @@
           "cldr:CC"
         ]
       },
-      "colombia": {
-        "aliases": [],
+      "colombian": {
+        "aliases": [
+          "citizen of colombia",
+          "colombia",
+          "from colombia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42893,8 +43147,12 @@
           "cldr:CO"
         ]
       },
-      "comoros": {
-        "aliases": [],
+      "comoran": {
+        "aliases": [
+          "citizen of comoros",
+          "comoros",
+          "from comoros"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -42925,7 +43183,9 @@
       },
       "congo - brazzaville": {
         "aliases": [
-          "congo (republic)"
+          "citizen of congo - brazzaville",
+          "congo (republic)",
+          "from congo - brazzaville"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42957,7 +43217,9 @@
       },
       "congo - kinshasa": {
         "aliases": [
-          "congo (drc)"
+          "citizen of congo - kinshasa",
+          "congo (drc)",
+          "from congo - kinshasa"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -42987,8 +43249,12 @@
           "cldr:CD"
         ]
       },
-      "cook islands": {
-        "aliases": [],
+      "cook islander": {
+        "aliases": [
+          "citizen of cook islands",
+          "cook islands",
+          "from cook islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43009,8 +43275,12 @@
           "cldr:CK"
         ]
       },
-      "costa rica": {
-        "aliases": [],
+      "costa rican": {
+        "aliases": [
+          "citizen of costa rica",
+          "costa rica",
+          "from costa rica"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43039,8 +43309,12 @@
           "cldr:CR"
         ]
       },
-      "croatia": {
-        "aliases": [],
+      "croatian": {
+        "aliases": [
+          "citizen of croatia",
+          "croatia",
+          "from croatia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43069,8 +43343,12 @@
           "cldr:HR"
         ]
       },
-      "cuba": {
-        "aliases": [],
+      "cuban": {
+        "aliases": [
+          "citizen of cuba",
+          "cuba",
+          "from cuba"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43099,8 +43377,12 @@
           "cldr:CU"
         ]
       },
-      "cura\u00e7ao": {
-        "aliases": [],
+      "curaçaoan": {
+        "aliases": [
+          "citizen of curaçao",
+          "curaçao",
+          "from curaçao"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43129,8 +43411,12 @@
           "cldr:CW"
         ]
       },
-      "cyprus": {
-        "aliases": [],
+      "cypriot": {
+        "aliases": [
+          "citizen of cyprus",
+          "cyprus",
+          "from cyprus"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43159,9 +43445,12 @@
           "cldr:CY"
         ]
       },
-      "czechia": {
+      "czech": {
         "aliases": [
-          "czech republic"
+          "citizen of czechia",
+          "czech republic",
+          "czechia",
+          "from czechia"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -43191,8 +43480,12 @@
           "cldr:CZ"
         ]
       },
-      "denmark": {
-        "aliases": [],
+      "danish": {
+        "aliases": [
+          "citizen of denmark",
+          "denmark",
+          "from denmark"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43222,7 +43515,10 @@
         ]
       },
       "diego garcia": {
-        "aliases": [],
+        "aliases": [
+          "citizen of diego garcia",
+          "from diego garcia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43244,7 +43540,10 @@
         ]
       },
       "djibouti": {
-        "aliases": [],
+        "aliases": [
+          "citizen of djibouti",
+          "from djibouti"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43274,7 +43573,10 @@
         ]
       },
       "dominica": {
-        "aliases": [],
+        "aliases": [
+          "citizen of dominica",
+          "from dominica"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43304,7 +43606,10 @@
         ]
       },
       "dominican republic": {
-        "aliases": [],
+        "aliases": [
+          "citizen of dominican republic",
+          "from dominican republic"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43333,8 +43638,81 @@
           "cldr:DO"
         ]
       },
-      "ecuador": {
-        "aliases": [],
+      "dutch": {
+        "aliases": [
+          "citizen of netherlands",
+          "from netherlands",
+          "netherlands"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "european nationality": 53.0,
+          "western european nationality": 9.0
+        },
+        "level_grounding": {
+          "european nationality": {
+            "member_set_ref": "cldr-m49:european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "western european nationality": {
+            "member_set_ref": "cldr-m49:western european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'western european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "western european nationality",
+          "european nationality"
+        ],
+        "source_ids": [
+          "cldr:NL"
+        ]
+      },
+      "east timorese": {
+        "aliases": [
+          "citizen of timor-leste",
+          "east timor",
+          "from timor-leste",
+          "timor-leste"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "southeast asian nationality": 11.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southeast asian nationality": {
+            "member_set_ref": "cldr-m49:southeast asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southeast asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:TL"
+        ]
+      },
+      "ecuadorean": {
+        "aliases": [
+          "citizen of ecuador",
+          "ecuador",
+          "from ecuador"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43363,8 +43741,12 @@
           "cldr:EC"
         ]
       },
-      "egypt": {
-        "aliases": [],
+      "egyptian": {
+        "aliases": [
+          "citizen of egypt",
+          "egypt",
+          "from egypt"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43393,38 +43775,12 @@
           "cldr:EG"
         ]
       },
-      "el salvador": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "central american nationality": 8.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "central american nationality": {
-            "member_set_ref": "cldr-m49:central american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'central american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "central american nationality",
-          "north american nationality"
+      "equatorial guinean": {
+        "aliases": [
+          "citizen of equatorial guinea",
+          "equatorial guinea",
+          "from equatorial guinea"
         ],
-        "source_ids": [
-          "cldr:SV"
-        ]
-      },
-      "equatorial guinea": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43453,8 +43809,12 @@
           "cldr:GQ"
         ]
       },
-      "eritrea": {
-        "aliases": [],
+      "eritrean": {
+        "aliases": [
+          "citizen of eritrea",
+          "eritrea",
+          "from eritrea"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43483,8 +43843,12 @@
           "cldr:ER"
         ]
       },
-      "estonia": {
-        "aliases": [],
+      "estonian": {
+        "aliases": [
+          "citizen of estonia",
+          "estonia",
+          "from estonia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43513,40 +43877,12 @@
           "cldr:EE"
         ]
       },
-      "eswatini": {
+      "ethiopian": {
         "aliases": [
-          "swaziland"
+          "citizen of ethiopia",
+          "ethiopia",
+          "from ethiopia"
         ],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0,
-          "southern african nationality": 5.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southern african nationality": {
-            "member_set_ref": "cldr-m49:southern african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southern african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southern african nationality",
-          "african nationality"
-        ],
-        "source_ids": [
-          "cldr:SZ"
-        ]
-      },
-      "ethiopia": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43575,9 +43911,12 @@
           "cldr:ET"
         ]
       },
-      "falkland islands": {
+      "falkland islander": {
         "aliases": [
-          "falkland islands (islas malvinas)"
+          "citizen of falkland islands",
+          "falkland islands",
+          "falkland islands (islas malvinas)",
+          "from falkland islands"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -43607,8 +43946,12 @@
           "cldr:FK"
         ]
       },
-      "faroe islands": {
-        "aliases": [],
+      "faroese": {
+        "aliases": [
+          "citizen of faroe islands",
+          "faroe islands",
+          "from faroe islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43637,8 +43980,12 @@
           "cldr:FO"
         ]
       },
-      "fiji": {
-        "aliases": [],
+      "fijian": {
+        "aliases": [
+          "citizen of fiji",
+          "fiji",
+          "from fiji"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43659,8 +44006,46 @@
           "cldr:FJ"
         ]
       },
-      "finland": {
-        "aliases": [],
+      "filipino": {
+        "aliases": [
+          "citizen of philippines",
+          "from philippines",
+          "philippines"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "southeast asian nationality": 11.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southeast asian nationality": {
+            "member_set_ref": "cldr-m49:southeast asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southeast asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:PH"
+        ]
+      },
+      "finnish": {
+        "aliases": [
+          "citizen of finland",
+          "finland",
+          "from finland"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43689,10 +44074,12 @@
           "cldr:FI"
         ]
       },
-      "france": {
+      "french": {
         "aliases": [
-          "french",
-          "french republic"
+          "citizen of france",
+          "france",
+          "french republic",
+          "from france"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -43723,38 +44110,12 @@
           "wikidata:Q142"
         ]
       },
-      "french guiana": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "american nationality": 57.0,
-          "south american nationality": 16.0
-        },
-        "level_grounding": {
-          "american nationality": {
-            "member_set_ref": "cldr-m49:american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "south american nationality": {
-            "member_set_ref": "cldr-m49:south american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'south american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "south american nationality",
-          "american nationality"
+      "french polynesian": {
+        "aliases": [
+          "citizen of french polynesia",
+          "french polynesia",
+          "from french polynesia"
         ],
-        "source_ids": [
-          "cldr:GF"
-        ]
-      },
-      "french polynesia": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43776,7 +44137,10 @@
         ]
       },
       "french southern territories": {
-        "aliases": [],
+        "aliases": [
+          "citizen of french southern territories",
+          "from french southern territories"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43805,8 +44169,12 @@
           "cldr:TF"
         ]
       },
-      "gabon": {
-        "aliases": [],
+      "gabonese": {
+        "aliases": [
+          "citizen of gabon",
+          "from gabon",
+          "gabon"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43835,8 +44203,12 @@
           "cldr:GA"
         ]
       },
-      "gambia": {
-        "aliases": [],
+      "gambian": {
+        "aliases": [
+          "citizen of gambia",
+          "from gambia",
+          "gambia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43857,8 +44229,12 @@
           "cldr:GM"
         ]
       },
-      "georgia": {
-        "aliases": [],
+      "georgian": {
+        "aliases": [
+          "citizen of georgia",
+          "from georgia",
+          "georgia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43887,10 +44263,12 @@
           "cldr:GE"
         ]
       },
-      "germany": {
+      "german": {
         "aliases": [
+          "citizen of germany",
           "federal republic of germany",
-          "german"
+          "from germany",
+          "germany"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -43921,8 +44299,12 @@
           "wikidata:Q183"
         ]
       },
-      "ghana": {
-        "aliases": [],
+      "ghanaian": {
+        "aliases": [
+          "citizen of ghana",
+          "from ghana",
+          "ghana"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43944,7 +44326,10 @@
         ]
       },
       "gibraltar": {
-        "aliases": [],
+        "aliases": [
+          "citizen of gibraltar",
+          "from gibraltar"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -43973,8 +44358,12 @@
           "cldr:GI"
         ]
       },
-      "greece": {
-        "aliases": [],
+      "greek": {
+        "aliases": [
+          "citizen of greece",
+          "from greece",
+          "greece"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44003,8 +44392,12 @@
           "cldr:GR"
         ]
       },
-      "greenland": {
-        "aliases": [],
+      "greenlandic": {
+        "aliases": [
+          "citizen of greenland",
+          "from greenland",
+          "greenland"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44025,8 +44418,12 @@
           "cldr:GL"
         ]
       },
-      "grenada": {
-        "aliases": [],
+      "grenadian": {
+        "aliases": [
+          "citizen of grenada",
+          "from grenada",
+          "grenada"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44055,8 +44452,12 @@
           "cldr:GD"
         ]
       },
-      "guadeloupe": {
-        "aliases": [],
+      "guadeloupian": {
+        "aliases": [
+          "citizen of guadeloupe",
+          "from guadeloupe",
+          "guadeloupe"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44085,8 +44486,12 @@
           "cldr:GP"
         ]
       },
-      "guam": {
-        "aliases": [],
+      "guamanian": {
+        "aliases": [
+          "citizen of guam",
+          "from guam",
+          "guam"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44107,8 +44512,12 @@
           "cldr:GU"
         ]
       },
-      "guatemala": {
-        "aliases": [],
+      "guatemalan": {
+        "aliases": [
+          "citizen of guatemala",
+          "from guatemala",
+          "guatemala"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44138,7 +44547,10 @@
         ]
       },
       "guernsey": {
-        "aliases": [],
+        "aliases": [
+          "citizen of guernsey",
+          "from guernsey"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44167,30 +44579,46 @@
           "cldr:GG"
         ]
       },
-      "guinea": {
-        "aliases": [],
+      "guianan": {
+        "aliases": [
+          "citizen of french guiana",
+          "french guiana",
+          "from french guiana"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "african nationality": 62.0
+          "american nationality": 57.0,
+          "south american nationality": 16.0
         },
         "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+          "american nationality": {
+            "member_set_ref": "cldr-m49:american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "south american nationality": {
+            "member_set_ref": "cldr-m49:south american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'south american nationality'",
             "source_family": "cldr-m49",
             "status": "certifying"
           }
         },
         "levels": [
-          "african nationality"
+          "south american nationality",
+          "american nationality"
         ],
         "source_ids": [
-          "cldr:GN"
+          "cldr:GF"
         ]
       },
-      "guinea-bissau": {
-        "aliases": [],
+      "guinea-bissauan": {
+        "aliases": [
+          "citizen of guinea-bissau",
+          "from guinea-bissau",
+          "guinea-bissau"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44211,8 +44639,38 @@
           "cldr:GW"
         ]
       },
-      "guyana": {
-        "aliases": [],
+      "guinean": {
+        "aliases": [
+          "citizen of guinea",
+          "from guinea",
+          "guinea"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:GN"
+        ]
+      },
+      "guyanese": {
+        "aliases": [
+          "citizen of guyana",
+          "from guyana",
+          "guyana"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44241,8 +44699,12 @@
           "cldr:GY"
         ]
       },
-      "haiti": {
-        "aliases": [],
+      "haitian": {
+        "aliases": [
+          "citizen of haiti",
+          "from haiti",
+          "haiti"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44271,8 +44733,12 @@
           "cldr:HT"
         ]
       },
-      "heard & mcdonald islands": {
-        "aliases": [],
+      "heard and mcdonald islander": {
+        "aliases": [
+          "citizen of heard & mcdonald islands",
+          "from heard & mcdonald islands",
+          "heard & mcdonald islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44293,8 +44759,12 @@
           "cldr:HM"
         ]
       },
-      "honduras": {
-        "aliases": [],
+      "honduran": {
+        "aliases": [
+          "citizen of honduras",
+          "from honduras",
+          "honduras"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44323,8 +44793,12 @@
           "cldr:HN"
         ]
       },
-      "hungary": {
-        "aliases": [],
+      "hungarian": {
+        "aliases": [
+          "citizen of hungary",
+          "from hungary",
+          "hungary"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44353,8 +44827,38 @@
           "cldr:HU"
         ]
       },
-      "iceland": {
-        "aliases": [],
+      "i-kiribati": {
+        "aliases": [
+          "citizen of kiribati",
+          "from kiribati",
+          "kiribati"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "oceanian nationality": 30.0
+        },
+        "level_grounding": {
+          "oceanian nationality": {
+            "member_set_ref": "cldr-m49:oceanian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "oceanian nationality"
+        ],
+        "source_ids": [
+          "cldr:KI"
+        ]
+      },
+      "icelander": {
+        "aliases": [
+          "citizen of iceland",
+          "from iceland",
+          "iceland"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44383,9 +44887,11 @@
           "cldr:IS"
         ]
       },
-      "india": {
+      "indian": {
         "aliases": [
-          "indian"
+          "citizen of india",
+          "from india",
+          "india"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -44415,8 +44921,12 @@
           "cldr:IN"
         ]
       },
-      "indonesia": {
-        "aliases": [],
+      "indonesian": {
+        "aliases": [
+          "citizen of indonesia",
+          "from indonesia",
+          "indonesia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44445,8 +44955,12 @@
           "cldr:ID"
         ]
       },
-      "iran": {
-        "aliases": [],
+      "iranian": {
+        "aliases": [
+          "citizen of iran",
+          "from iran",
+          "iran"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44475,8 +44989,12 @@
           "cldr:IR"
         ]
       },
-      "iraq": {
-        "aliases": [],
+      "iraqi": {
+        "aliases": [
+          "citizen of iraq",
+          "from iraq",
+          "iraq"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44505,8 +45023,12 @@
           "cldr:IQ"
         ]
       },
-      "ireland": {
-        "aliases": [],
+      "irish": {
+        "aliases": [
+          "citizen of ireland",
+          "from ireland",
+          "ireland"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44535,38 +45057,12 @@
           "cldr:IE"
         ]
       },
-      "isle of man": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "european nationality": 53.0,
-          "northern european nationality": 17.0
-        },
-        "level_grounding": {
-          "european nationality": {
-            "member_set_ref": "cldr-m49:european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "northern european nationality": {
-            "member_set_ref": "cldr-m49:northern european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'northern european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "northern european nationality",
-          "european nationality"
+      "israeli": {
+        "aliases": [
+          "citizen of israel",
+          "from israel",
+          "israel"
         ],
-        "source_ids": [
-          "cldr:IM"
-        ]
-      },
-      "israel": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44595,10 +45091,12 @@
           "cldr:IL"
         ]
       },
-      "italy": {
+      "italian": {
         "aliases": [
-          "italian",
+          "citizen of italy",
+          "from italy",
           "italian republic",
+          "italy",
           "republic of italy"
         ],
         "count": 1000.0,
@@ -44630,8 +45128,12 @@
           "wikidata:Q38"
         ]
       },
-      "jamaica": {
-        "aliases": [],
+      "jamaican": {
+        "aliases": [
+          "citizen of jamaica",
+          "from jamaica",
+          "jamaica"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44660,9 +45162,11 @@
           "cldr:JM"
         ]
       },
-      "japan": {
+      "japanese": {
         "aliases": [
-          "japanese"
+          "citizen of japan",
+          "from japan",
+          "japan"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -44693,7 +45197,10 @@
         ]
       },
       "jersey": {
-        "aliases": [],
+        "aliases": [
+          "citizen of jersey",
+          "from jersey"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44722,8 +45229,12 @@
           "cldr:JE"
         ]
       },
-      "jordan": {
-        "aliases": [],
+      "jordanian": {
+        "aliases": [
+          "citizen of jordan",
+          "from jordan",
+          "jordan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44752,8 +45263,12 @@
           "cldr:JO"
         ]
       },
-      "kazakhstan": {
-        "aliases": [],
+      "kazakhstani": {
+        "aliases": [
+          "citizen of kazakhstan",
+          "from kazakhstan",
+          "kazakhstan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44782,9 +45297,12 @@
           "cldr:KZ"
         ]
       },
-      "kenya": {
+      "kenyan": {
         "aliases": [
+          "citizen of kenya",
+          "from kenya",
           "ke",
+          "kenya",
           "republic of kenya"
         ],
         "count": 1000.0,
@@ -44824,90 +45342,12 @@
           "wikidata:Q114"
         ]
       },
-      "kiribati": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "oceanian nationality": 30.0
-        },
-        "level_grounding": {
-          "oceanian nationality": {
-            "member_set_ref": "cldr-m49:oceanian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "oceanian nationality"
+      "kirghiz": {
+        "aliases": [
+          "citizen of kyrgyzstan",
+          "from kyrgyzstan",
+          "kyrgyzstan"
         ],
-        "source_ids": [
-          "cldr:KI"
-        ]
-      },
-      "kosovo": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "european nationality": 53.0,
-          "southern european nationality": 17.0
-        },
-        "level_grounding": {
-          "european nationality": {
-            "member_set_ref": "cldr-m49:european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southern european nationality": {
-            "member_set_ref": "cldr-m49:southern european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southern european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southern european nationality",
-          "european nationality"
-        ],
-        "source_ids": [
-          "cldr:XK"
-        ]
-      },
-      "kuwait": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "western asian nationality": 18.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "western asian nationality": {
-            "member_set_ref": "cldr-m49:western asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'western asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "western asian nationality",
-          "asian nationality"
-        ],
-        "source_ids": [
-          "cldr:KW"
-        ]
-      },
-      "kyrgyzstan": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44936,8 +45376,114 @@
           "cldr:KG"
         ]
       },
-      "laos": {
-        "aliases": [],
+      "kittitian": {
+        "aliases": [
+          "citizen of st. kitts & nevis",
+          "from st. kitts & nevis",
+          "st. kitts & nevis"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:KN"
+        ]
+      },
+      "kosovar": {
+        "aliases": [
+          "citizen of kosovo",
+          "from kosovo",
+          "kosovo"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "european nationality": 53.0,
+          "southern european nationality": 17.0
+        },
+        "level_grounding": {
+          "european nationality": {
+            "member_set_ref": "cldr-m49:european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southern european nationality": {
+            "member_set_ref": "cldr-m49:southern european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southern european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southern european nationality",
+          "european nationality"
+        ],
+        "source_ids": [
+          "cldr:XK"
+        ]
+      },
+      "kuwaiti": {
+        "aliases": [
+          "citizen of kuwait",
+          "from kuwait",
+          "kuwait"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "western asian nationality": 18.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "western asian nationality": {
+            "member_set_ref": "cldr-m49:western asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'western asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "western asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:KW"
+        ]
+      },
+      "laotian": {
+        "aliases": [
+          "citizen of laos",
+          "from laos",
+          "laos"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44966,8 +45512,12 @@
           "cldr:LA"
         ]
       },
-      "latvia": {
-        "aliases": [],
+      "latvian": {
+        "aliases": [
+          "citizen of latvia",
+          "from latvia",
+          "latvia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -44996,8 +45546,12 @@
           "cldr:LV"
         ]
       },
-      "lebanon": {
-        "aliases": [],
+      "lebanese": {
+        "aliases": [
+          "citizen of lebanon",
+          "from lebanon",
+          "lebanon"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45026,38 +45580,12 @@
           "cldr:LB"
         ]
       },
-      "lesotho": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0,
-          "southern african nationality": 5.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southern african nationality": {
-            "member_set_ref": "cldr-m49:southern african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southern african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southern african nationality",
-          "african nationality"
+      "liberian": {
+        "aliases": [
+          "citizen of liberia",
+          "from liberia",
+          "liberia"
         ],
-        "source_ids": [
-          "cldr:LS"
-        ]
-      },
-      "liberia": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45078,8 +45606,12 @@
           "cldr:LR"
         ]
       },
-      "libya": {
-        "aliases": [],
+      "libyan": {
+        "aliases": [
+          "citizen of libya",
+          "from libya",
+          "libya"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45108,8 +45640,12 @@
           "cldr:LY"
         ]
       },
-      "liechtenstein": {
-        "aliases": [],
+      "liechtensteiner": {
+        "aliases": [
+          "citizen of liechtenstein",
+          "from liechtenstein",
+          "liechtenstein"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45138,8 +45674,12 @@
           "cldr:LI"
         ]
       },
-      "lithuania": {
-        "aliases": [],
+      "lithuanian": {
+        "aliases": [
+          "citizen of lithuania",
+          "from lithuania",
+          "lithuania"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45168,8 +45708,12 @@
           "cldr:LT"
         ]
       },
-      "luxembourg": {
-        "aliases": [],
+      "luxembourger": {
+        "aliases": [
+          "citizen of luxembourg",
+          "from luxembourg",
+          "luxembourg"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45198,9 +45742,12 @@
           "cldr:LU"
         ]
       },
-      "macao sar china": {
+      "macanese": {
         "aliases": [
-          "macao"
+          "citizen of macao sar china",
+          "from macao sar china",
+          "macao",
+          "macao sar china"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -45230,150 +45777,12 @@
           "cldr:MO"
         ]
       },
-      "madagascar": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0,
-          "eastern african nationality": 22.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "eastern african nationality": {
-            "member_set_ref": "cldr-m49:eastern african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'eastern african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "eastern african nationality",
-          "african nationality"
+      "macedonian": {
+        "aliases": [
+          "citizen of north macedonia",
+          "from north macedonia",
+          "north macedonia"
         ],
-        "source_ids": [
-          "cldr:MG"
-        ]
-      },
-      "malawi": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0,
-          "eastern african nationality": 22.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "eastern african nationality": {
-            "member_set_ref": "cldr-m49:eastern african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'eastern african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "eastern african nationality",
-          "african nationality"
-        ],
-        "source_ids": [
-          "cldr:MW"
-        ]
-      },
-      "malaysia": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "southeast asian nationality": 11.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southeast asian nationality": {
-            "member_set_ref": "cldr-m49:southeast asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southeast asian nationality",
-          "asian nationality"
-        ],
-        "source_ids": [
-          "cldr:MY"
-        ]
-      },
-      "maldives": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "southern asian nationality": 9.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southern asian nationality": {
-            "member_set_ref": "cldr-m49:southern asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southern asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southern asian nationality",
-          "asian nationality"
-        ],
-        "source_ids": [
-          "cldr:MV"
-        ]
-      },
-      "mali": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "african nationality"
-        ],
-        "source_ids": [
-          "cldr:ML"
-        ]
-      },
-      "malta": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45399,115 +45808,15 @@
           "european nationality"
         ],
         "source_ids": [
-          "cldr:MT"
+          "cldr:MK"
         ]
       },
-      "marshall islands": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "oceanian nationality": 30.0
-        },
-        "level_grounding": {
-          "oceanian nationality": {
-            "member_set_ref": "cldr-m49:oceanian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "oceanian nationality"
+      "mahoran": {
+        "aliases": [
+          "citizen of mayotte",
+          "from mayotte",
+          "mayotte"
         ],
-        "source_ids": [
-          "cldr:MH"
-        ]
-      },
-      "martinique": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "caribbean nationality",
-          "north american nationality"
-        ],
-        "source_ids": [
-          "cldr:MQ"
-        ]
-      },
-      "mauritania": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "african nationality"
-        ],
-        "source_ids": [
-          "cldr:MR"
-        ]
-      },
-      "mauritius": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0,
-          "eastern african nationality": 22.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "eastern african nationality": {
-            "member_set_ref": "cldr-m49:eastern african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'eastern african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "eastern african nationality",
-          "african nationality"
-        ],
-        "source_ids": [
-          "cldr:MU"
-        ]
-      },
-      "mayotte": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45536,9 +45845,361 @@
           "cldr:YT"
         ]
       },
-      "mexico": {
+      "malagasy": {
         "aliases": [
-          "mexican"
+          "citizen of madagascar",
+          "from madagascar",
+          "madagascar"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0,
+          "eastern african nationality": 22.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "eastern african nationality": {
+            "member_set_ref": "cldr-m49:eastern african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'eastern african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "eastern african nationality",
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:MG"
+        ]
+      },
+      "malawian": {
+        "aliases": [
+          "citizen of malawi",
+          "from malawi",
+          "malawi"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0,
+          "eastern african nationality": 22.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "eastern african nationality": {
+            "member_set_ref": "cldr-m49:eastern african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'eastern african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "eastern african nationality",
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:MW"
+        ]
+      },
+      "malaysian": {
+        "aliases": [
+          "citizen of malaysia",
+          "from malaysia",
+          "malaysia"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "southeast asian nationality": 11.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southeast asian nationality": {
+            "member_set_ref": "cldr-m49:southeast asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southeast asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:MY"
+        ]
+      },
+      "maldivan": {
+        "aliases": [
+          "citizen of maldives",
+          "from maldives",
+          "maldives"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "southern asian nationality": 9.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southern asian nationality": {
+            "member_set_ref": "cldr-m49:southern asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southern asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southern asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:MV"
+        ]
+      },
+      "malian": {
+        "aliases": [
+          "citizen of mali",
+          "from mali",
+          "mali"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:ML"
+        ]
+      },
+      "maltese": {
+        "aliases": [
+          "citizen of malta",
+          "from malta",
+          "malta"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "european nationality": 53.0,
+          "southern european nationality": 17.0
+        },
+        "level_grounding": {
+          "european nationality": {
+            "member_set_ref": "cldr-m49:european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southern european nationality": {
+            "member_set_ref": "cldr-m49:southern european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southern european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southern european nationality",
+          "european nationality"
+        ],
+        "source_ids": [
+          "cldr:MT"
+        ]
+      },
+      "manx": {
+        "aliases": [
+          "citizen of isle of man",
+          "from isle of man",
+          "isle of man"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "european nationality": 53.0,
+          "northern european nationality": 17.0
+        },
+        "level_grounding": {
+          "european nationality": {
+            "member_set_ref": "cldr-m49:european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "northern european nationality": {
+            "member_set_ref": "cldr-m49:northern european nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'northern european nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "northern european nationality",
+          "european nationality"
+        ],
+        "source_ids": [
+          "cldr:IM"
+        ]
+      },
+      "marshallese": {
+        "aliases": [
+          "citizen of marshall islands",
+          "from marshall islands",
+          "marshall islands"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "oceanian nationality": 30.0
+        },
+        "level_grounding": {
+          "oceanian nationality": {
+            "member_set_ref": "cldr-m49:oceanian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "oceanian nationality"
+        ],
+        "source_ids": [
+          "cldr:MH"
+        ]
+      },
+      "martinican": {
+        "aliases": [
+          "citizen of martinique",
+          "from martinique",
+          "martinique"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:MQ"
+        ]
+      },
+      "mauritanian": {
+        "aliases": [
+          "citizen of mauritania",
+          "from mauritania",
+          "mauritania"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:MR"
+        ]
+      },
+      "mauritian": {
+        "aliases": [
+          "citizen of mauritius",
+          "from mauritius",
+          "mauritius"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0,
+          "eastern african nationality": 22.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "eastern african nationality": {
+            "member_set_ref": "cldr-m49:eastern african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'eastern african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "eastern african nationality",
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:MU"
+        ]
+      },
+      "mexican": {
+        "aliases": [
+          "citizen of mexico",
+          "from mexico",
+          "mexico"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -45568,8 +46229,12 @@
           "cldr:MX"
         ]
       },
-      "micronesia": {
-        "aliases": [],
+      "micronesian": {
+        "aliases": [
+          "citizen of micronesia",
+          "from micronesia",
+          "micronesia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45590,8 +46255,12 @@
           "cldr:FM"
         ]
       },
-      "moldova": {
-        "aliases": [],
+      "moldovan": {
+        "aliases": [
+          "citizen of moldova",
+          "from moldova",
+          "moldova"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45620,8 +46289,12 @@
           "cldr:MD"
         ]
       },
-      "monaco": {
-        "aliases": [],
+      "monegasque": {
+        "aliases": [
+          "citizen of monaco",
+          "from monaco",
+          "monaco"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45650,8 +46323,12 @@
           "cldr:MC"
         ]
       },
-      "mongolia": {
-        "aliases": [],
+      "mongolian": {
+        "aliases": [
+          "citizen of mongolia",
+          "from mongolia",
+          "mongolia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45680,8 +46357,12 @@
           "cldr:MN"
         ]
       },
-      "montenegro": {
-        "aliases": [],
+      "montenegrin": {
+        "aliases": [
+          "citizen of montenegro",
+          "from montenegro",
+          "montenegro"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45710,8 +46391,12 @@
           "cldr:ME"
         ]
       },
-      "montserrat": {
-        "aliases": [],
+      "montserratian": {
+        "aliases": [
+          "citizen of montserrat",
+          "from montserrat",
+          "montserrat"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45740,8 +46425,12 @@
           "cldr:MS"
         ]
       },
-      "morocco": {
-        "aliases": [],
+      "moroccan": {
+        "aliases": [
+          "citizen of morocco",
+          "from morocco",
+          "morocco"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45770,8 +46459,80 @@
           "cldr:MA"
         ]
       },
-      "mozambique": {
-        "aliases": [],
+      "mosotho": {
+        "aliases": [
+          "citizen of lesotho",
+          "from lesotho",
+          "lesotho"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0,
+          "southern african nationality": 5.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southern african nationality": {
+            "member_set_ref": "cldr-m49:southern african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southern african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southern african nationality",
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:LS"
+        ]
+      },
+      "motswana": {
+        "aliases": [
+          "botswana",
+          "citizen of botswana",
+          "from botswana"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0,
+          "southern african nationality": 5.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southern african nationality": {
+            "member_set_ref": "cldr-m49:southern african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southern african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southern african nationality",
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:BW"
+        ]
+      },
+      "mozambican": {
+        "aliases": [
+          "citizen of mozambique",
+          "from mozambique",
+          "mozambique"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45800,40 +46561,12 @@
           "cldr:MZ"
         ]
       },
-      "myanmar (burma)": {
+      "namibian": {
         "aliases": [
-          "myanmar"
+          "citizen of namibia",
+          "from namibia",
+          "namibia"
         ],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "southeast asian nationality": 11.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southeast asian nationality": {
-            "member_set_ref": "cldr-m49:southeast asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southeast asian nationality",
-          "asian nationality"
-        ],
-        "source_ids": [
-          "cldr:MM"
-        ]
-      },
-      "namibia": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45862,8 +46595,12 @@
           "cldr:NA"
         ]
       },
-      "nauru": {
-        "aliases": [],
+      "nauruan": {
+        "aliases": [
+          "citizen of nauru",
+          "from nauru",
+          "nauru"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45884,8 +46621,12 @@
           "cldr:NR"
         ]
       },
-      "nepal": {
-        "aliases": [],
+      "nepalese": {
+        "aliases": [
+          "citizen of nepal",
+          "from nepal",
+          "nepal"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45914,40 +46655,12 @@
           "cldr:NP"
         ]
       },
-      "netherlands": {
+      "new caledonian": {
         "aliases": [
-          "dutch"
+          "citizen of new caledonia",
+          "from new caledonia",
+          "new caledonia"
         ],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "european nationality": 53.0,
-          "western european nationality": 9.0
-        },
-        "level_grounding": {
-          "european nationality": {
-            "member_set_ref": "cldr-m49:european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "western european nationality": {
-            "member_set_ref": "cldr-m49:western european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'western european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "western european nationality",
-          "european nationality"
-        ],
-        "source_ids": [
-          "cldr:NL"
-        ]
-      },
-      "new caledonia": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -45968,9 +46681,12 @@
           "cldr:NC"
         ]
       },
-      "new zealand": {
+      "new zealander": {
         "aliases": [
-          "aotearoa new zealand"
+          "aotearoa new zealand",
+          "citizen of new zealand",
+          "from new zealand",
+          "new zealand"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -45992,8 +46708,38 @@
           "cldr:NZ"
         ]
       },
-      "nicaragua": {
-        "aliases": [],
+      "ni-vanuatu": {
+        "aliases": [
+          "citizen of vanuatu",
+          "from vanuatu",
+          "vanuatu"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "oceanian nationality": 30.0
+        },
+        "level_grounding": {
+          "oceanian nationality": {
+            "member_set_ref": "cldr-m49:oceanian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "oceanian nationality"
+        ],
+        "source_ids": [
+          "cldr:VU"
+        ]
+      },
+      "nicaraguan": {
+        "aliases": [
+          "citizen of nicaragua",
+          "from nicaragua",
+          "nicaragua"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46022,30 +46768,12 @@
           "cldr:NI"
         ]
       },
-      "niger": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "african nationality"
+      "nigerian": {
+        "aliases": [
+          "citizen of nigeria",
+          "from nigeria",
+          "nigeria"
         ],
-        "source_ids": [
-          "cldr:NE"
-        ]
-      },
-      "nigeria": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46066,8 +46794,38 @@
           "cldr:NG"
         ]
       },
-      "niue": {
-        "aliases": [],
+      "nigerien": {
+        "aliases": [
+          "citizen of niger",
+          "from niger",
+          "niger"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:NE"
+        ]
+      },
+      "niuean": {
+        "aliases": [
+          "citizen of niue",
+          "from niue",
+          "niue"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46088,8 +46846,12 @@
           "cldr:NU"
         ]
       },
-      "norfolk island": {
-        "aliases": [],
+      "norfolk islander": {
+        "aliases": [
+          "citizen of norfolk island",
+          "from norfolk island",
+          "norfolk island"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46110,8 +46872,12 @@
           "cldr:NF"
         ]
       },
-      "north korea": {
-        "aliases": [],
+      "north korean": {
+        "aliases": [
+          "citizen of north korea",
+          "from north korea",
+          "north korea"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46140,38 +46906,11 @@
           "cldr:KP"
         ]
       },
-      "north macedonia": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "european nationality": 53.0,
-          "southern european nationality": 17.0
-        },
-        "level_grounding": {
-          "european nationality": {
-            "member_set_ref": "cldr-m49:european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southern european nationality": {
-            "member_set_ref": "cldr-m49:southern european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southern european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southern european nationality",
-          "european nationality"
-        ],
-        "source_ids": [
-          "cldr:MK"
-        ]
-      },
       "northern mariana islands": {
-        "aliases": [],
+        "aliases": [
+          "citizen of northern mariana islands",
+          "from northern mariana islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46192,8 +46931,12 @@
           "cldr:MP"
         ]
       },
-      "norway": {
-        "aliases": [],
+      "norwegian": {
+        "aliases": [
+          "citizen of norway",
+          "from norway",
+          "norway"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46222,8 +46965,12 @@
           "cldr:NO"
         ]
       },
-      "oman": {
-        "aliases": [],
+      "omani": {
+        "aliases": [
+          "citizen of oman",
+          "from oman",
+          "oman"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46253,7 +47000,10 @@
         ]
       },
       "outlying oceania": {
-        "aliases": [],
+        "aliases": [
+          "citizen of outlying oceania",
+          "from outlying oceania"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46274,8 +47024,12 @@
           "cldr:QO"
         ]
       },
-      "pakistan": {
-        "aliases": [],
+      "pakistani": {
+        "aliases": [
+          "citizen of pakistan",
+          "from pakistan",
+          "pakistan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46304,8 +47058,12 @@
           "cldr:PK"
         ]
       },
-      "palau": {
-        "aliases": [],
+      "palauan": {
+        "aliases": [
+          "citizen of palau",
+          "from palau",
+          "palau"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46326,9 +47084,12 @@
           "cldr:PW"
         ]
       },
-      "palestinian territories": {
+      "palestinian": {
         "aliases": [
-          "palestine"
+          "citizen of palestinian territories",
+          "from palestinian territories",
+          "palestine",
+          "palestinian territories"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -46358,8 +47119,12 @@
           "cldr:PS"
         ]
       },
-      "panama": {
-        "aliases": [],
+      "panamanian": {
+        "aliases": [
+          "citizen of panama",
+          "from panama",
+          "panama"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46388,8 +47153,12 @@
           "cldr:PA"
         ]
       },
-      "papua new guinea": {
-        "aliases": [],
+      "papua new guinean": {
+        "aliases": [
+          "citizen of papua new guinea",
+          "from papua new guinea",
+          "papua new guinea"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46410,8 +47179,12 @@
           "cldr:PG"
         ]
       },
-      "paraguay": {
-        "aliases": [],
+      "paraguayan": {
+        "aliases": [
+          "citizen of paraguay",
+          "from paraguay",
+          "paraguay"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46440,8 +47213,12 @@
           "cldr:PY"
         ]
       },
-      "peru": {
-        "aliases": [],
+      "peruvian": {
+        "aliases": [
+          "citizen of peru",
+          "from peru",
+          "peru"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46470,39 +47247,12 @@
           "cldr:PE"
         ]
       },
-      "philippines": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "southeast asian nationality": 11.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southeast asian nationality": {
-            "member_set_ref": "cldr-m49:southeast asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southeast asian nationality",
-          "asian nationality"
-        ],
-        "source_ids": [
-          "cldr:PH"
-        ]
-      },
-      "pitcairn islands": {
+      "pitcairn islander": {
         "aliases": [
-          "pitcairn"
+          "citizen of pitcairn islands",
+          "from pitcairn islands",
+          "pitcairn",
+          "pitcairn islands"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -46524,8 +47274,12 @@
           "cldr:PN"
         ]
       },
-      "poland": {
-        "aliases": [],
+      "polish": {
+        "aliases": [
+          "citizen of poland",
+          "from poland",
+          "poland"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46554,8 +47308,12 @@
           "cldr:PL"
         ]
       },
-      "portugal": {
-        "aliases": [],
+      "portuguese": {
+        "aliases": [
+          "citizen of portugal",
+          "from portugal",
+          "portugal"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46584,8 +47342,12 @@
           "cldr:PT"
         ]
       },
-      "puerto rico": {
-        "aliases": [],
+      "puerto rican": {
+        "aliases": [
+          "citizen of puerto rico",
+          "from puerto rico",
+          "puerto rico"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46614,8 +47376,12 @@
           "cldr:PR"
         ]
       },
-      "qatar": {
-        "aliases": [],
+      "qatari": {
+        "aliases": [
+          "citizen of qatar",
+          "from qatar",
+          "qatar"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46644,8 +47410,12 @@
           "cldr:QA"
         ]
       },
-      "romania": {
-        "aliases": [],
+      "romanian": {
+        "aliases": [
+          "citizen of romania",
+          "from romania",
+          "romania"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46674,9 +47444,11 @@
           "cldr:RO"
         ]
       },
-      "russia": {
+      "russian": {
         "aliases": [
-          "russian"
+          "citizen of russia",
+          "from russia",
+          "russia"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -46706,8 +47478,12 @@
           "cldr:RU"
         ]
       },
-      "rwanda": {
-        "aliases": [],
+      "rwandan": {
+        "aliases": [
+          "citizen of rwanda",
+          "from rwanda",
+          "rwanda"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46736,8 +47512,12 @@
           "cldr:RW"
         ]
       },
-      "r\u00e9union": {
-        "aliases": [],
+      "réunionese": {
+        "aliases": [
+          "citizen of réunion",
+          "from réunion",
+          "réunion"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46766,30 +47546,268 @@
           "cldr:RE"
         ]
       },
-      "samoa": {
-        "aliases": [],
+      "sahrawi": {
+        "aliases": [
+          "citizen of western sahara",
+          "from western sahara",
+          "western sahara"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "oceanian nationality": 30.0
+          "african nationality": 62.0,
+          "northern african nationality": 9.0
         },
         "level_grounding": {
-          "oceanian nationality": {
-            "member_set_ref": "cldr-m49:oceanian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "northern african nationality": {
+            "member_set_ref": "cldr-m49:northern african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'northern african nationality'",
             "source_family": "cldr-m49",
             "status": "certifying"
           }
         },
         "levels": [
-          "oceanian nationality"
+          "northern african nationality",
+          "african nationality"
         ],
         "source_ids": [
-          "cldr:WS"
+          "cldr:EH"
         ]
       },
-      "san marino": {
-        "aliases": [],
+      "saint barthélemy islander": {
+        "aliases": [
+          "citizen of st. barthélemy",
+          "from st. barthélemy",
+          "st. barthélemy"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:BL"
+        ]
+      },
+      "saint helenian": {
+        "aliases": [
+          "citizen of st. helena",
+          "from st. helena",
+          "st. helena"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:SH"
+        ]
+      },
+      "saint lucian": {
+        "aliases": [
+          "citizen of st. lucia",
+          "from st. lucia",
+          "st. lucia"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:LC"
+        ]
+      },
+      "saint martin islander": {
+        "aliases": [
+          "citizen of st. martin",
+          "from st. martin",
+          "st. martin"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:MF"
+        ]
+      },
+      "saint vincentian": {
+        "aliases": [
+          "citizen of st. vincent & grenadines",
+          "from st. vincent & grenadines",
+          "st. vincent & grenadines"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:VC"
+        ]
+      },
+      "saint-pierrais": {
+        "aliases": [
+          "citizen of st. pierre & miquelon",
+          "from st. pierre & miquelon",
+          "st. pierre & miquelon"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:PM"
+        ]
+      },
+      "salvadoran": {
+        "aliases": [
+          "citizen of el salvador",
+          "el salvador",
+          "from el salvador"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "central american nationality": 8.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "central american nationality": {
+            "member_set_ref": "cldr-m49:central american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'central american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "central american nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:SV"
+        ]
+      },
+      "sammarinese": {
+        "aliases": [
+          "citizen of san marino",
+          "from san marino",
+          "san marino"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46818,8 +47836,37 @@
           "cldr:SM"
         ]
       },
+      "samoan": {
+        "aliases": [
+          "citizen of samoa",
+          "from samoa",
+          "samoa"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "oceanian nationality": 30.0
+        },
+        "level_grounding": {
+          "oceanian nationality": {
+            "member_set_ref": "cldr-m49:oceanian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "oceanian nationality"
+        ],
+        "source_ids": [
+          "cldr:WS"
+        ]
+      },
       "sark": {
-        "aliases": [],
+        "aliases": [
+          "citizen of sark",
+          "from sark"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46848,8 +47895,12 @@
           "cldr:CQ"
         ]
       },
-      "saudi arabia": {
-        "aliases": [],
+      "saudi arabian": {
+        "aliases": [
+          "citizen of saudi arabia",
+          "from saudi arabia",
+          "saudi arabia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46878,8 +47929,12 @@
           "cldr:SA"
         ]
       },
-      "senegal": {
-        "aliases": [],
+      "senegalese": {
+        "aliases": [
+          "citizen of senegal",
+          "from senegal",
+          "senegal"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46900,8 +47955,12 @@
           "cldr:SN"
         ]
       },
-      "serbia": {
-        "aliases": [],
+      "serbian": {
+        "aliases": [
+          "citizen of serbia",
+          "from serbia",
+          "serbia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46930,8 +47989,12 @@
           "cldr:RS"
         ]
       },
-      "seychelles": {
-        "aliases": [],
+      "seychellois": {
+        "aliases": [
+          "citizen of seychelles",
+          "from seychelles",
+          "seychelles"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46960,8 +48023,12 @@
           "cldr:SC"
         ]
       },
-      "sierra leone": {
-        "aliases": [],
+      "sierra leonean": {
+        "aliases": [
+          "citizen of sierra leone",
+          "from sierra leone",
+          "sierra leone"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -46982,8 +48049,12 @@
           "cldr:SL"
         ]
       },
-      "singapore": {
-        "aliases": [],
+      "singaporean": {
+        "aliases": [
+          "citizen of singapore",
+          "from singapore",
+          "singapore"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47012,38 +48083,12 @@
           "cldr:SG"
         ]
       },
-      "sint maarten": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "caribbean nationality",
-          "north american nationality"
+      "slovak": {
+        "aliases": [
+          "citizen of slovakia",
+          "from slovakia",
+          "slovakia"
         ],
-        "source_ids": [
-          "cldr:SX"
-        ]
-      },
-      "slovakia": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47072,8 +48117,12 @@
           "cldr:SK"
         ]
       },
-      "slovenia": {
-        "aliases": [],
+      "slovene": {
+        "aliases": [
+          "citizen of slovenia",
+          "from slovenia",
+          "slovenia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47102,8 +48151,12 @@
           "cldr:SI"
         ]
       },
-      "solomon islands": {
-        "aliases": [],
+      "solomon islander": {
+        "aliases": [
+          "citizen of solomon islands",
+          "from solomon islands",
+          "solomon islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47124,8 +48177,12 @@
           "cldr:SB"
         ]
       },
-      "somalia": {
-        "aliases": [],
+      "somali": {
+        "aliases": [
+          "citizen of somalia",
+          "from somalia",
+          "somalia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47154,8 +48211,12 @@
           "cldr:SO"
         ]
       },
-      "south africa": {
-        "aliases": [],
+      "south african": {
+        "aliases": [
+          "citizen of south africa",
+          "from south africa",
+          "south africa"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47184,8 +48245,12 @@
           "cldr:ZA"
         ]
       },
-      "south korea": {
-        "aliases": [],
+      "south korean": {
+        "aliases": [
+          "citizen of south korea",
+          "from south korea",
+          "south korea"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47214,8 +48279,12 @@
           "cldr:KR"
         ]
       },
-      "south sudan": {
-        "aliases": [],
+      "south sudanese": {
+        "aliases": [
+          "citizen of south sudan",
+          "from south sudan",
+          "south sudan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47244,9 +48313,11 @@
           "cldr:SS"
         ]
       },
-      "spain": {
+      "spanish": {
         "aliases": [
-          "spanish"
+          "citizen of spain",
+          "from spain",
+          "spain"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -47276,8 +48347,12 @@
           "cldr:ES"
         ]
       },
-      "sri lanka": {
-        "aliases": [],
+      "sri lankan": {
+        "aliases": [
+          "citizen of sri lanka",
+          "from sri lanka",
+          "sri lanka"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47306,8 +48381,12 @@
           "cldr:LK"
         ]
       },
-      "st. barth\u00e9lemy": {
-        "aliases": [],
+      "st. maartener": {
+        "aliases": [
+          "citizen of sint maarten",
+          "from sint maarten",
+          "sint maarten"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47333,175 +48412,15 @@
           "north american nationality"
         ],
         "source_ids": [
-          "cldr:BL"
+          "cldr:SX"
         ]
       },
-      "st. helena": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "african nationality"
+      "sudanese": {
+        "aliases": [
+          "citizen of sudan",
+          "from sudan",
+          "sudan"
         ],
-        "source_ids": [
-          "cldr:SH"
-        ]
-      },
-      "st. kitts & nevis": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "caribbean nationality",
-          "north american nationality"
-        ],
-        "source_ids": [
-          "cldr:KN"
-        ]
-      },
-      "st. lucia": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "caribbean nationality",
-          "north american nationality"
-        ],
-        "source_ids": [
-          "cldr:LC"
-        ]
-      },
-      "st. martin": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "caribbean nationality",
-          "north american nationality"
-        ],
-        "source_ids": [
-          "cldr:MF"
-        ]
-      },
-      "st. pierre & miquelon": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "north american nationality"
-        ],
-        "source_ids": [
-          "cldr:PM"
-        ]
-      },
-      "st. vincent & grenadines": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "caribbean nationality",
-          "north american nationality"
-        ],
-        "source_ids": [
-          "cldr:VC"
-        ]
-      },
-      "sudan": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47530,8 +48449,12 @@
           "cldr:SD"
         ]
       },
-      "suriname": {
-        "aliases": [],
+      "surinamer": {
+        "aliases": [
+          "citizen of suriname",
+          "from suriname",
+          "suriname"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47561,7 +48484,10 @@
         ]
       },
       "svalbard & jan mayen": {
-        "aliases": [],
+        "aliases": [
+          "citizen of svalbard & jan mayen",
+          "from svalbard & jan mayen"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47590,8 +48516,47 @@
           "cldr:SJ"
         ]
       },
-      "sweden": {
-        "aliases": [],
+      "swazi": {
+        "aliases": [
+          "citizen of eswatini",
+          "eswatini",
+          "from eswatini",
+          "swaziland"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "african nationality": 62.0,
+          "southern african nationality": 5.0
+        },
+        "level_grounding": {
+          "african nationality": {
+            "member_set_ref": "cldr-m49:african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "southern african nationality": {
+            "member_set_ref": "cldr-m49:southern african nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'southern african nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "southern african nationality",
+          "african nationality"
+        ],
+        "source_ids": [
+          "cldr:SZ"
+        ]
+      },
+      "swedish": {
+        "aliases": [
+          "citizen of sweden",
+          "from sweden",
+          "sweden"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47620,8 +48585,12 @@
           "cldr:SE"
         ]
       },
-      "switzerland": {
-        "aliases": [],
+      "swiss": {
+        "aliases": [
+          "citizen of switzerland",
+          "from switzerland",
+          "switzerland"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47650,8 +48619,12 @@
           "cldr:CH"
         ]
       },
-      "syria": {
-        "aliases": [],
+      "syrian": {
+        "aliases": [
+          "citizen of syria",
+          "from syria",
+          "syria"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47680,38 +48653,12 @@
           "cldr:SY"
         ]
       },
-      "taiwan": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "eastern asian nationality": 8.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "eastern asian nationality": {
-            "member_set_ref": "cldr-m49:eastern asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'eastern asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "eastern asian nationality",
-          "asian nationality"
+      "tadzhik": {
+        "aliases": [
+          "citizen of tajikistan",
+          "from tajikistan",
+          "tajikistan"
         ],
-        "source_ids": [
-          "cldr:TW"
-        ]
-      },
-      "tajikistan": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47740,8 +48687,46 @@
           "cldr:TJ"
         ]
       },
-      "tanzania": {
-        "aliases": [],
+      "taiwanese": {
+        "aliases": [
+          "citizen of taiwan",
+          "from taiwan",
+          "taiwan"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "eastern asian nationality": 8.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "eastern asian nationality": {
+            "member_set_ref": "cldr-m49:eastern asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'eastern asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "eastern asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:TW"
+        ]
+      },
+      "tanzanian": {
+        "aliases": [
+          "citizen of tanzania",
+          "from tanzania",
+          "tanzania"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47770,8 +48755,12 @@
           "cldr:TZ"
         ]
       },
-      "thailand": {
-        "aliases": [],
+      "thai": {
+        "aliases": [
+          "citizen of thailand",
+          "from thailand",
+          "thailand"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47800,40 +48789,12 @@
           "cldr:TH"
         ]
       },
-      "timor-leste": {
+      "togolese": {
         "aliases": [
-          "east timor"
+          "citizen of togo",
+          "from togo",
+          "togo"
         ],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "southeast asian nationality": 11.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "southeast asian nationality": {
-            "member_set_ref": "cldr-m49:southeast asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'southeast asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "southeast asian nationality",
-          "asian nationality"
-        ],
-        "source_ids": [
-          "cldr:TL"
-        ]
-      },
-      "togo": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47854,8 +48815,12 @@
           "cldr:TG"
         ]
       },
-      "tokelau": {
-        "aliases": [],
+      "tokelauan": {
+        "aliases": [
+          "citizen of tokelau",
+          "from tokelau",
+          "tokelau"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47876,8 +48841,12 @@
           "cldr:TK"
         ]
       },
-      "tonga": {
-        "aliases": [],
+      "tongan": {
+        "aliases": [
+          "citizen of tonga",
+          "from tonga",
+          "tonga"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47898,8 +48867,12 @@
           "cldr:TO"
         ]
       },
-      "trinidad & tobago": {
-        "aliases": [],
+      "trinidadian": {
+        "aliases": [
+          "citizen of trinidad & tobago",
+          "from trinidad & tobago",
+          "trinidad & tobago"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47929,7 +48902,10 @@
         ]
       },
       "tristan da cunha": {
-        "aliases": [],
+        "aliases": [
+          "citizen of tristan da cunha",
+          "from tristan da cunha"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47950,8 +48926,12 @@
           "cldr:TA"
         ]
       },
-      "tunisia": {
-        "aliases": [],
+      "tunisian": {
+        "aliases": [
+          "citizen of tunisia",
+          "from tunisia",
+          "tunisia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -47980,91 +48960,12 @@
           "cldr:TN"
         ]
       },
-      "turkmenistan": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "asian nationality": 51.0,
-          "central asian nationality": 5.0
-        },
-        "level_grounding": {
-          "asian nationality": {
-            "member_set_ref": "cldr-m49:asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "central asian nationality": {
-            "member_set_ref": "cldr-m49:central asian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'central asian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "central asian nationality",
-          "asian nationality"
-        ],
-        "source_ids": [
-          "cldr:TM"
-        ]
-      },
-      "turks & caicos islands": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "caribbean nationality": 28.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "caribbean nationality": {
-            "member_set_ref": "cldr-m49:caribbean nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "caribbean nationality",
-          "north american nationality"
-        ],
-        "source_ids": [
-          "cldr:TC"
-        ]
-      },
-      "tuvalu": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "oceanian nationality": 30.0
-        },
-        "level_grounding": {
-          "oceanian nationality": {
-            "member_set_ref": "cldr-m49:oceanian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "oceanian nationality"
-        ],
-        "source_ids": [
-          "cldr:TV"
-        ]
-      },
-      "t\u00fcrkiye": {
+      "turkish": {
         "aliases": [
-          "turkey"
+          "citizen of türkiye",
+          "from türkiye",
+          "turkey",
+          "türkiye"
         ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
@@ -48094,8 +48995,106 @@
           "cldr:TR"
         ]
       },
-      "uganda": {
-        "aliases": [],
+      "turkmen": {
+        "aliases": [
+          "citizen of turkmenistan",
+          "from turkmenistan",
+          "turkmenistan"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asian nationality": 51.0,
+          "central asian nationality": 5.0
+        },
+        "level_grounding": {
+          "asian nationality": {
+            "member_set_ref": "cldr-m49:asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "central asian nationality": {
+            "member_set_ref": "cldr-m49:central asian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'central asian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "central asian nationality",
+          "asian nationality"
+        ],
+        "source_ids": [
+          "cldr:TM"
+        ]
+      },
+      "turks and caicos islander": {
+        "aliases": [
+          "citizen of turks & caicos islands",
+          "from turks & caicos islands",
+          "turks & caicos islands"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:TC"
+        ]
+      },
+      "tuvaluan": {
+        "aliases": [
+          "citizen of tuvalu",
+          "from tuvalu",
+          "tuvalu"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "oceanian nationality": 30.0
+        },
+        "level_grounding": {
+          "oceanian nationality": {
+            "member_set_ref": "cldr-m49:oceanian nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "oceanian nationality"
+        ],
+        "source_ids": [
+          "cldr:TV"
+        ]
+      },
+      "ugandan": {
+        "aliases": [
+          "citizen of uganda",
+          "from uganda",
+          "uganda"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48124,8 +49123,12 @@
           "cldr:UG"
         ]
       },
-      "ukraine": {
-        "aliases": [],
+      "ukrainian": {
+        "aliases": [
+          "citizen of ukraine",
+          "from ukraine",
+          "ukraine"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48154,102 +49157,12 @@
           "cldr:UA"
         ]
       },
-      "united kingdom": {
+      "uruguayan": {
         "aliases": [
-          "british",
-          "g b",
-          "great britain",
-          "great britain and northern ireland",
-          "the uk",
-          "the united kingdom",
-          "the united kingdom of great britain and northern ireland",
-          "u k",
-          "uk",
-          "united kingdom of great britain and northern ireland"
+          "citizen of uruguay",
+          "from uruguay",
+          "uruguay"
         ],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "european nationality": 53.0,
-          "northern european nationality": 17.0
-        },
-        "level_grounding": {
-          "european nationality": {
-            "member_set_ref": "cldr-m49:european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "northern european nationality": {
-            "member_set_ref": "cldr-m49:northern european nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'northern european nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "northern european nationality",
-          "european nationality"
-        ],
-        "source_ids": [
-          "cldr:GB",
-          "wikidata:Q145"
-        ]
-      },
-      "united states": {
-        "aliases": [
-          "american",
-          "merica",
-          "murica",
-          "the states",
-          "the u.s.",
-          "the u.s. of a",
-          "the u.s. of america",
-          "the u.s.a.",
-          "the united states",
-          "the united states of america",
-          "the us",
-          "the us of a",
-          "the us of america",
-          "the usa",
-          "u. s.",
-          "u. s. a.",
-          "u.s. of america",
-          "us",
-          "us of a",
-          "us of america"
-        ],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "american nationality": 57.0,
-          "north american nationality": 41.0
-        },
-        "level_grounding": {
-          "american nationality": {
-            "member_set_ref": "cldr-m49:american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "north american nationality": {
-            "member_set_ref": "cldr-m49:north american nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "north american nationality",
-          "american nationality"
-        ],
-        "source_ids": [
-          "cldr:US",
-          "wikidata:Q30"
-        ]
-      },
-      "uruguay": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48278,8 +49191,12 @@
           "cldr:UY"
         ]
       },
-      "uzbekistan": {
-        "aliases": [],
+      "uzbekistani": {
+        "aliases": [
+          "citizen of uzbekistan",
+          "from uzbekistan",
+          "uzbekistan"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48308,30 +49225,12 @@
           "cldr:UZ"
         ]
       },
-      "vanuatu": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "oceanian nationality": 30.0
-        },
-        "level_grounding": {
-          "oceanian nationality": {
-            "member_set_ref": "cldr-m49:oceanian nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'oceanian nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "oceanian nationality"
+      "vatican": {
+        "aliases": [
+          "citizen of vatican city",
+          "from vatican city",
+          "vatican city"
         ],
-        "source_ids": [
-          "cldr:VU"
-        ]
-      },
-      "vatican city": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48360,8 +49259,12 @@
           "cldr:VA"
         ]
       },
-      "venezuela": {
-        "aliases": [],
+      "venezuelan": {
+        "aliases": [
+          "citizen of venezuela",
+          "from venezuela",
+          "venezuela"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48390,8 +49293,12 @@
           "cldr:VE"
         ]
       },
-      "vietnam": {
-        "aliases": [],
+      "vietnamese": {
+        "aliases": [
+          "citizen of vietnam",
+          "from vietnam",
+          "vietnam"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48420,8 +49327,46 @@
           "cldr:VN"
         ]
       },
-      "wallis & futuna": {
-        "aliases": [],
+      "virgin islander": {
+        "aliases": [
+          "british virgin islands",
+          "citizen of british virgin islands",
+          "from british virgin islands"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "caribbean nationality": 28.0,
+          "north american nationality": 41.0
+        },
+        "level_grounding": {
+          "caribbean nationality": {
+            "member_set_ref": "cldr-m49:caribbean nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'caribbean nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          },
+          "north american nationality": {
+            "member_set_ref": "cldr-m49:north american nationality",
+            "selector": "CLDR M49 territoryContainment: countries under 'north american nationality'",
+            "source_family": "cldr-m49",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "caribbean nationality",
+          "north american nationality"
+        ],
+        "source_ids": [
+          "cldr:VG"
+        ]
+      },
+      "wallis and futuna islander": {
+        "aliases": [
+          "citizen of wallis & futuna",
+          "from wallis & futuna",
+          "wallis & futuna"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48442,38 +49387,12 @@
           "cldr:WF"
         ]
       },
-      "western sahara": {
-        "aliases": [],
-        "count": 1000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "african nationality": 62.0,
-          "northern african nationality": 9.0
-        },
-        "level_grounding": {
-          "african nationality": {
-            "member_set_ref": "cldr-m49:african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          },
-          "northern african nationality": {
-            "member_set_ref": "cldr-m49:northern african nationality",
-            "selector": "CLDR M49 territoryContainment: countries under 'northern african nationality'",
-            "source_family": "cldr-m49",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "northern african nationality",
-          "african nationality"
+      "yemeni": {
+        "aliases": [
+          "citizen of yemen",
+          "from yemen",
+          "yemen"
         ],
-        "source_ids": [
-          "cldr:EH"
-        ]
-      },
-      "yemen": {
-        "aliases": [],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48502,8 +49421,12 @@
           "cldr:YE"
         ]
       },
-      "zambia": {
-        "aliases": [],
+      "zambian": {
+        "aliases": [
+          "citizen of zambia",
+          "from zambia",
+          "zambia"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48532,8 +49455,12 @@
           "cldr:ZM"
         ]
       },
-      "zimbabwe": {
-        "aliases": [],
+      "zimbabwean": {
+        "aliases": [
+          "citizen of zimbabwe",
+          "from zimbabwe",
+          "zimbabwe"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -48562,8 +49489,12 @@
           "cldr:ZW"
         ]
       },
-      "\u00e5land islands": {
-        "aliases": [],
+      "ålandish": {
+        "aliases": [
+          "citizen of åland islands",
+          "from åland islands",
+          "åland islands"
+        ],
         "count": 1000.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -62804,7 +63735,7 @@
       },
       "islam": {
         "aliases": [
-          "al-\u2019isl\u0101m",
+          "al-’islām",
           "islamic religion",
           "mohammedanism",
           "muslim religion",
@@ -63289,7 +64220,7 @@
       },
       "protestantism": {
         "aliases": [
-          "a\u0219a-numita religie reformat\u0103",
+          "așa-numita religie reformată",
           "christian protestantism",
           "protestant",
           "protestant christianity",
