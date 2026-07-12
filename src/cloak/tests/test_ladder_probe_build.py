@@ -278,14 +278,42 @@ def test_validate_decisions_tags_spans_from_depends_on_canon_substring():
         lambda _q, _opts: None,
     )
 
-    assert [e["id"] for e in kept] == ["d1", "d3"]
+    assert [e["id"] for e in kept] == ["d1"]
     assert kept[0]["span_ids"] == ["s-condition", "s-drug"]
-    assert kept[1]["span_ids"] == []
     assert {r["id"]: r["verdict"] for r in rows} == {
         "d1": "kept",
-        "d2": "ceiling",
-        "d3": "kept",
+        "d2": "unlinked",
+        "d3": "unlinked",
     }
+    assert rows[1]["hi_pick"] is None and rows[1]["lo_pick"] is None
+
+
+def test_validate_decisions_hi_and_lo_read_the_same_option_order():
+    # hi/lo shuffles differed by seed suffix, so keep/floor verdicts carried option-order
+    # noise on the positional-bias-prone small reader (measured: the one kept decision of
+    # the 2026-07-12 super sweep survived only via a floor mis-pick under a different order)
+    seen = {}
+    entry = {
+        "id": "d1",
+        "q": "Which route is supported?",
+        "options": ["primary care", "endocrinology", "cardiology", "neurology"],
+        "gold": "endocrinology",
+        "depends_on": ["hypothyroidism"],
+        "detected_spans": [{"id": "s0", "surface": "hypothyroidism"}],
+    }
+
+    def hi(q, options):
+        seen["hi"] = list(options)
+        return "endocrinology"
+
+    def lo(q, options):
+        seen["lo"] = list(options)
+        return "primary care"
+
+    kept, rows = validate_decisions([entry], hi, lo)
+
+    assert seen["hi"] == seen["lo"]
+    assert rows[0]["verdict"] == "kept"
 
 
 def test_validated_rung0_cache_entries_prevent_reteaching(monkeypatch, tmp_path):

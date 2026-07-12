@@ -189,17 +189,10 @@ def _reader_for_context(context):
 
 
 def _reader_mc_for_context(context):
-    from cloak.train.reward import _read_batch, canon
+    from cloak.train.reward import _mc_pick, _read_mc_batch, decision_prompt
 
     def read(q, options):
-        prompt = q + "\nOptions:\n" + "\n".join(f"- {o}" for o in options)
-        answer = _read_batch([prompt], context)[0]
-        answer_c = canon(answer)
-        for option in options:
-            option_c = canon(option)
-            if option_c and (option_c in answer_c or answer_c in option_c):
-                return option
-        return None
+        return _mc_pick(_read_mc_batch([decision_prompt(q, options)], context)[0], options)
     return read
 
 
@@ -293,8 +286,8 @@ def build_ladder(args):
             ]
             kept_decisions, decision_rows = lp.validate_decisions(
                 decision_entries,
-                _reader_mc_for_context(anchor[doc_id]["hi"]["out_final"]),
-                _reader_mc_for_context(anchor[doc_id]["lo"]["out_final"]),
+                _reader_mc_for_context(anchor[doc_id]["hi"]["out_p"]),
+                _reader_mc_for_context(anchor[doc_id]["lo"]["out_p"]),
             )
             decision_out[doc_id] = _validated_entries(
                 [{k: v for k, v in e.items() if k != "detected_spans"}
@@ -538,8 +531,8 @@ def build_ladder_detected(args):
                                 for e in decisions.get(doc_id, [])]
             kept_decisions, decision_rows = lp.validate_decisions(
                 decision_entries,
-                _reader_mc_for_context(anchor[doc_id]["hi"]["out_final"]),
-                _reader_mc_for_context(anchor[doc_id]["lo"]["out_final"]),
+                _reader_mc_for_context(anchor[doc_id]["hi"]["out_p"]),
+                _reader_mc_for_context(anchor[doc_id]["lo"]["out_p"]),
             )
             decision_out[doc_id] = _validated_entries(
                 [{k: v for k, v in e.items() if k != "detected_spans"} for e in decision_entries],

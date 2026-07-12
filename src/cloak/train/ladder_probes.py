@@ -316,32 +316,44 @@ def _decision_span_ids(entry):
 
 
 def validate_decisions(entries, reader_mc_hi, reader_mc_lo):
-    """Validate multiple-choice decision probes with injected pinned readers."""
+    """Validate multiple-choice decision probes with injected pinned readers.
+
+    Readers must read the PRE-inversion anchors (out_p): invert() restores echoed
+    placeholders into out_final, so out_final cannot discriminate placeholder-vs-preserve
+    (measured 2026-07-12: floor out_final had all fact names restored -> 6/7 floor-rejects).
+    Both readers get the SAME shuffled option order — differing orders let the small
+    reader's positional bias masquerade as a context effect. A decision whose depends_on
+    matches no detected span is rejected 'unlinked': it cannot be credited to a span and
+    cannot break under placeholdering, so it carries no training signal."""
     kept, rows = [], []
     for idx, e in enumerate(entries):
         q = e.get("q", "")
         gold = e.get("gold")
-        hi_options = mc_shuffle(e.get("options") or [], f"{q}|{idx}|hi")
-        lo_options = mc_shuffle(e.get("options") or [], f"{q}|{idx}|lo")
-        hi_pick = reader_mc_hi(q, hi_options)
-        lo_pick = reader_mc_lo(q, lo_options)
-        if hi_pick != gold:
-            verdict = "ceiling"
-        elif lo_pick == gold:
-            verdict = "floor"
+        span_ids = _decision_span_ids(e)
+        hi_pick = lo_pick = None
+        if not span_ids:
+            verdict = "unlinked"
         else:
-            verdict = "kept"
+            options = mc_shuffle(e.get("options") or [], f"{q}|{idx}")
+            hi_pick = reader_mc_hi(q, options)
+            lo_pick = reader_mc_lo(q, options)
+            if hi_pick != gold:
+                verdict = "ceiling"
+            elif lo_pick == gold:
+                verdict = "floor"
+            else:
+                verdict = "kept"
         row = {
             "id": e.get("id") or q,
             "q": q,
             "gold": gold,
             "hi_pick": hi_pick,
             "lo_pick": lo_pick,
-            "span_ids": _decision_span_ids(e),
+            "span_ids": span_ids,
             "verdict": verdict,
         }
         rows.append(row)
-        out = {**e, "span_ids": _decision_span_ids(e), "validation": row}
+        out = {**e, "span_ids": span_ids, "validation": row}
         if verdict == "kept":
             kept.append(out)
     return kept, rows
