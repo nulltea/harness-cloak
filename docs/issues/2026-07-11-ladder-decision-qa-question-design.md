@@ -253,4 +253,42 @@ Cross-refs: Issue 1 (decisions), Issue 3 (require-the-fact redesign), `training-
 
 ---
 
+### 5. Screening/abstain span deletion leaked surfaces into the floor anchor (deletion FIXED; polarity-annotation redesign OPEN)
+
+**What happened (found 2026-07-12, investigating the pv4 sweep's OUT_LO_P for aci/D2N002).**
+Raw GLiNER recall was fine (synthroid 0.989, tylenol 0.938, kidney transplant 0.952 under the
+exact build settings) — but `_detect_docs`' post-filters *deleted* the spans: synthroid via the
+negation/screening filter (its first mention is the dialogue question "how are you doing with
+the synthroid?"), tylenol + kidney transplant via matcher abstain (stale embindex → exact-only;
+plus a label→type routing mismatch: GLiNER says `medical process`, the profile entry lives
+under `health-condition`). Deletion removed them from the **floor anonymization**, so the
+all-placeholder anchor sent those surfaces to the remote verbatim — corrupting floor verdicts
+(some "context-leak" floor-rejects were actually this) and letting the remote re-infer hidden
+facts (it reconstructed a thyroid condition from the surviving drug — wrongly, as
+HYPERthyroidism).
+
+**Fixed (commit 30e9564): demote, don't delete.** Screened/abstained lattice detections keep
+placeholder role — no probes, but hidden at the floor and present in the env span set. This
+also decouples the two things deletion had conflated: probe *eligibility* vs floor *hiding*.
+
+**OPEN — screening filter becomes polarity annotation (next teacher-prompt redesign session,
+with Issues 3–4).** Demotion leaves denied/screened facts probe-less → utility-silent in RL →
+a count-rewarding privacy term pushes them unopposed to placeholder, destroying pertinent
+negatives ("denies chest pain" is clinically load-bearing). Direction decided in the
+2026-07-12 coverage analysis: keep the interrogative/denial detection but attach it to the
+span as a status flag (`active / denied / screened`) and pass it to the teacher, which writes
+status-faithful questions ("Which symptom did the patient deny on review of systems?" gold:
+the symptom). This removes the fabricated-premise failure the filter was built for (the
+teacher is no longer misinformed) AND gives pertinent negatives real utility signal. Belongs
+to the same redesign as attribute-absent grounding: both are "stop hiding ground truth about
+the note from the teacher." Companion analysis: admission≠probing decoupling, class-stratified
+probe sampling under the per-rollout reader budget, per-span coverage metadata in the artifact
+(reward-side notes: `docs/dev/logs/2026-07-12-qa-reward-codesign-notes.md`).
+
+Related repairs still pending: rebuild the stale `lattice_profiles.embindex.npz` (exact-only
+matching amplified abstains in the pv4 sweep), and the `medical process`↔`health-condition`
+type-routing mismatch for facts like transplant status.
+
+---
+
 _Further issues to be appended below as we work through them._
