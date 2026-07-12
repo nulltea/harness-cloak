@@ -82,42 +82,55 @@ def test_validate_ladder_keeps_only_ceiling_pass_floor_fail_rungs():
     }
 
 
-def test_validate_ladder_threshold_boundaries_are_inclusive_for_hi_strict_for_lo():
+def test_entail_score_is_binary_no_shared_head_noun_credit():
+    from cloak.train.ladder_probes import entail_score
+
+    rungs = ["hypertension", "artery disease", "vascular disease"]
+    # sibling category sharing only the head noun 'disease' must score 0, not F1 0.5
+    assert entail_score("vascular disease", rungs, 1) == 0.0
+    # finer-than-gold answer containing the gold's content tokens is a full hit
+    assert entail_score("coronary artery disease", rungs, 1) == 1.0
+    # article difference must not break containment
+    assert entail_score("cardiovascular disease",
+                        ["heart failure", "a cardiovascular disease"], 1) == 1.0
+    # acronym path survives (fact_score exact hit)
+    assert entail_score("CHF", ["congestive heart failure"], 0) == 1.0
+
+
+def test_validate_ladder_partial_token_answers_reject_not_partial_score():
     entries = [
         {
-            "id": "hi-boundary",
+            "id": "partial-hi",
             "surface": "alpha beta gamma",
             "rungs": ["alpha beta gamma"],
             "rung": 0,
             "q": "What is the first boundary fact?",
         },
         {
-            "id": "lo-boundary",
+            "id": "partial-lo",
             "surface": "delta epsilon zeta",
             "rungs": ["delta epsilon zeta"],
             "rung": 0,
             "q": "What is the second boundary fact?",
         },
     ]
-
     hi = {
-        entries[0]["q"]: "alpha",
-        entries[1]["q"]: "delta epsilon zeta",
+        entries[0]["q"]: "alpha",                    # one shared token -> 0.0 -> ceiling
+        entries[1]["q"]: "delta epsilon zeta noted",  # containment -> 1.0
     }
     lo = {
         entries[0]["q"]: "",
-        entries[1]["q"]: "delta",
+        entries[1]["q"]: "delta",                    # one shared token -> 0.0 -> NOT floor
     }
 
     kept, rows = validate_ladder(entries, hi.get, hi.get, lo.get, lo.get, th=0.5)
 
-    assert [e["id"] for e in kept] == ["hi-boundary"]
+    assert [e["id"] for e in kept] == ["partial-lo"]
     assert {r["id"]: r["verdict"] for r in rows} == {
-        "hi-boundary": "kept",
-        "lo-boundary": "floor",
+        "partial-hi": "ceiling",
+        "partial-lo": "kept",
     }
-    assert {r["id"]: r["hi_score"] for r in rows}["hi-boundary"] == 0.5
-    assert {r["id"]: r["lo_score"] for r in rows}["lo-boundary"] == 0.5
+    assert all(r["hi_score"] in (0.0, 1.0) and r["lo_score"] in (0.0, 1.0) for r in rows)
 
 
 def test_validate_ladder_semantic_rungs_use_pre_inversion_floor():

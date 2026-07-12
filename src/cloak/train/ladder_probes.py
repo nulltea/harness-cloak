@@ -193,12 +193,24 @@ def span_levels(span: dict) -> list[str]:
     return [a["fill"] for a in acts]
 
 
+def _category_hit(answer: str, gold: str) -> float:
+    """Binary semantic-tier match: fact_score full hit (exact/containment/acronym) or content-
+    token containment with articles/stopwords stripped. NO token-F1 partial credit — sibling
+    categories share head nouns ('vascular disease' vs 'artery disease' both carry 'disease',
+    F1 0.5 = exactly TH), which blurs the rung cutoff the specificity gradient depends on."""
+    if fact_score(answer, gold) == 1.0:
+        return 1.0
+    gold_t = _tokens(gold)
+    return 1.0 if gold_t and gold_t <= _tokens(answer) else 0.0
+
+
 def entail_score(answer: str, rungs: list[str], rung: int, aliases=()) -> float:
-    """Acceptance-set scoring: an answer at or finer than the rung counts. `aliases` are
-    surface-equivalent strings (the matched canonical + its profile aliases); they are the
-    finest tier, so they satisfy every rung — folding them in accepts synonym answers the
-    note may use (HTN vs hypertension) that the exact surface alone would miss."""
-    return max(fact_score(answer, a) for a in [*rungs[: rung + 1], *aliases])
+    """Acceptance-set scoring: an answer at or finer than the rung counts (binary, via
+    _category_hit). `aliases` are surface-equivalent strings (the matched canonical + its
+    profile aliases); they are the finest tier, so they satisfy every rung — folding them in
+    accepts synonym answers the note may use (HTN vs hypertension) that the exact surface
+    alone would miss."""
+    return max(_category_hit(answer, a) for a in [*rungs[: rung + 1], *aliases])
 
 
 def lint_rung(q: str, rungs: list[str], rung: int) -> bool:
@@ -748,6 +760,9 @@ if __name__ == "__main__":
     assert (
         entail_score("HTN", ["hypertension"], 0, ["htn", "high bp"]) == 1.0
     )  # +aliases: hit
+    # binary semantic match: sibling category sharing a head noun scores 0, never F1 0.5
+    assert entail_score("vascular disease", ["hypertension", "artery disease"], 1) == 0.0
+    assert entail_score("coronary artery disease", ["hypertension", "artery disease"], 1) == 1.0
     # lint: generic token shared with own gold is fine; finer-rung distinctive token leaks
     assert lint_rung(
         "What body-system category of condition is managed with medication?", rungs, 1
