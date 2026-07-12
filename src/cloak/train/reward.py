@@ -28,6 +28,10 @@ QA_BASE_URL = "http://localhost:8060/v1"
 QA_PROMPT = ("Answer the question using ONLY the note below. Reply with the shortest exact "
              "answer copied from the note (a name, value, number, or phrase). If the note does "
              "not contain the answer, reply exactly: NONE.\n\nNote:\n{ctx}\n\nQuestion: {q}\nAnswer:")
+MC_PROMPT = ("Read the note, then answer the multiple-choice question. Choose the single best "
+             "option supported by the note; the correct option's text may not appear verbatim "
+             "in the note. Reply with the exact text of the chosen option and nothing else."
+             "\n\nNote:\n{ctx}\n\n{q}\nAnswer:")
 W_EXACT = 0.5
 W_SEM = 0.5
 # u_gold scorer LM (spec §5.1): pinned + frozen for the whole gate->train->eval cycle.
@@ -61,7 +65,8 @@ def _parse(raw: str) -> str:
     return "" if a.upper().strip(".:` ") == "NONE" else a
 
 
-def _read_batch(questions: list[str], context: str, refresh: bool = False) -> list[str]:
+def _read_with(template: str, questions: list[str], context: str,
+               refresh: bool = False) -> list[str]:
     """Grounded QA over ONE context via the served reader, issued SERIALLY (workers=1) so the
     questions hit one llama.cpp slot in sequence and its prompt-cache reuses the shared note-
     prefix KV (measured ~6.6x faster than fanning them across slots, which re-prefills the
@@ -71,8 +76,25 @@ def _read_batch(questions: list[str], context: str, refresh: bool = False) -> li
     if not questions:
         return []
     client = _qa_client()
-    return [_parse(client.generate(QA_PROMPT.format(ctx=context, q=q), refresh=refresh))
+    return [_parse(client.generate(template.format(ctx=context, q=q), refresh=refresh))
             for q in questions]
+
+
+def _read_batch(questions: list[str], context: str, refresh: bool = False) -> list[str]:
+    """Extractive short-answer reads (QA_PROMPT): the fact-recall channels."""
+    return _read_with(QA_PROMPT, questions, context, refresh)
+
+
+def _read_mc_batch(questions: list[str], context: str, refresh: bool = False) -> list[str]:
+    """Multiple-choice reads (MC_PROMPT). Decisions' gold options are often not verbatim in
+    the note; the extractive QA_PROMPT instructs 'copied from the note'/NONE and so
+    ceiling-rejects exactly the note-dependent decisions the tier is for."""
+    return _read_with(MC_PROMPT, questions, context, refresh)
+
+
+def decision_prompt(q: str, options: list[str]) -> str:
+    """Render an MC decision question + options block (the {q} slot of MC_PROMPT)."""
+    return q + "\nOptions:\n" + "\n".join(f"- {o}" for o in options)
 
 
 def _qa_answer(question: str, context: str) -> str:
