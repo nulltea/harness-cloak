@@ -4,6 +4,7 @@ import pytest
 
 import cloak.train.roundtrip as roundtrip
 import cloak.train.qa_builder as qa_builder
+from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
     AciTaskAdapter,
     BatchedContextReader,
@@ -2292,6 +2293,102 @@ def _aci_delivered_environment():
             for _, decision_id, _, _ in occurrences
         ],
     }
+
+
+def _real_d2n002_frozen_environment():
+    """Minimal frozen subset of the corrected D2N002 decisions and occurrences."""
+    entries = [
+        ("o-kidney", "d-kidney", "kidney transplant", "health-condition",
+         "solid organ transplant", 315),
+        ("o-arthritis", "d-arthritis", "arthritis", "health-condition",
+         "musculoskeletal condition", 6072),
+        ("o-hypothyroid", "d-hypothyroid", "hypothyroidism", "health-condition",
+         "thyroid condition", 335),
+        ("o-ultram", "d-ultram", "ultram", "drug", "opioid analgesic", 5381),
+        ("o-autoimmune", "d-autoimmune", "autoimmune panel", "medical-procedure",
+         "diagnostic panel", 5504),
+        ("o-synthroid", "d-synthroid", "synthroid", "drug", "thyroid medication", 5899),
+        ("o-thyroid", "d-thyroid", "thyroid panel", "medical-procedure",
+         "thyroid testing", 6019),
+    ]
+    return {
+        "occurrences": [
+            {
+                "occurrence_id": occurrence_id,
+                "decision_id": decision_id,
+                "surface": surface,
+                "runtime_type": runtime_type,
+                "controlled": True,
+                "start": start,
+                "end": start + len(surface),
+            }
+            for occurrence_id, decision_id, surface, runtime_type, _, start in entries
+        ],
+        "decisions": [
+            {
+                "decision_id": decision_id,
+                "runtime_type": runtime_type,
+                "controlled": True,
+                "actions": [
+                    {
+                        "action_id": f"{decision_id}-general",
+                        "mode": "level",
+                        "legal": True,
+                        "entails": [property_level],
+                    },
+                    {
+                        "action_id": f"{decision_id}-keep",
+                        "mode": "keep",
+                        "legal": True,
+                        "entails": [surface],
+                    },
+                    {
+                        "action_id": f"{decision_id}-placeholder",
+                        "mode": "placeholder",
+                        "legal": True,
+                        "entails": [],
+                    },
+                ],
+            }
+            for _, decision_id, surface, runtime_type, property_level, _ in entries
+        ],
+    }
+
+
+def test_real_aci_d2n002_compiles_labeled_blocks_and_dialogue_cues():
+    row = next(item for item in load_task_docs("aci") if item["id"] == "aci/D2N002")
+    candidates = AciTaskAdapter({row["id"]: row["gold_ref"]}).deterministic_candidates(
+        row["id"], row["text"], _real_d2n002_frozen_environment()
+    )
+    accepted = [candidate for candidate in candidates if candidate.get("status") != "rejected"]
+    subtypes = {candidate["subtype"] for candidate in accepted}
+
+    assert {"structure", "content", "field", "exact_relation"} <= subtypes
+    semantic = [candidate for candidate in accepted if candidate["subtype"] == "semantic_property"]
+    assert len(semantic) >= 3
+    assert {candidate["evidence"]["role_cue"] for candidate in semantic} >= {
+        "past medical history", "problem", "prescribed",
+    }
+    assert {
+        (
+            candidate["scoring_contract"]["condition"],
+            candidate["scoring_contract"]["treatment"],
+            candidate["scoring_contract"]["test"],
+        )
+        for candidate in accepted if candidate["subtype"] == "exact_relation"
+    } == {
+        (
+            "Arthritis",
+            "Initiate Ultram 50 mg every 6 hours as needed.",
+            "We will order an autoimmune panel for further evaluation.",
+        ),
+        (
+            "Hypothyroidism",
+            "Continue Synthroid.",
+            "We will order a thyroid panel.",
+        ),
+    }
+    assert any(candidate["subtype"] != "content" for candidate in accepted)
 
 
 def test_aci_delivered_candidates_compile_reference_backed_groups_with_capped_structure():

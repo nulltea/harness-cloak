@@ -124,10 +124,21 @@ ACI_REQUIRED_SECTIONS = (
     "ASSESSMENT",
     "PLAN",
 )
+ACI_COMBINED_ASSESSMENT_PLAN = "ASSESSMENT AND PLAN"
 _ACI_HEADING_PATTERN = re.compile(
     r"^\s*(?P<heading>[A-Z][A-Z /&-]*[A-Z])\s*(?::\s*(?P<content>.*))?$"
 )
 _ACI_ROW_DELIMITER = re.compile(r"\s+(?:—|–|-)\s+")
+_ACI_CONDITION_ENTRY_PATTERN = re.compile(r"^(?P<condition>[^:]+?)\.\s*$")
+_ACI_LABELED_FIELD_PATTERN = re.compile(
+    r"^(?:[•*\-]\s*)?(?P<label>Medical Reasoning|Additional Testing|Medical Treatment)"
+    r"\s*:\s*(?P<value>.+?)\s*$",
+    re.IGNORECASE,
+)
+_ACI_LABELED_PLAN_FIELDS = {
+    "additional testing": "test",
+    "medical treatment": "treatment",
+}
 
 
 class OpenRouterRelationTeacher:
@@ -242,7 +253,7 @@ class AciTaskAdapter:
                 (
                     "prescribed",
                     r"\b(?:prescribe|prescribes|prescribed)\s+"
-                    r"(?:(?:a|an|the)\s+)?{surface}",
+                    r"(?:(?:a|an|the|some)\s+)?{surface}",
                 ),
                 (
                     "prescribed",
@@ -264,11 +275,17 @@ class AciTaskAdapter:
                 "medical condition",
             }),
             "role_patterns": (
+                (
+                    "past medical history",
+                    r"\bpast\s+medical\s+history\b[^.!?\n]{{0,160}}?{surface}",
+                ),
                 ("history", r"\bhistory\s+of\s+{surface}"),
                 ("diagnosis", r"\bdiagnosis\s+of\s+{surface}"),
                 ("diagnosed", r"\bdiagnosed\s+with\s+{surface}"),
                 ("presentation", r"\b(?:presents|presented)\s+with\s+{surface}"),
                 ("complaint", r"\bcomplaints?\s+of\s+{surface}"),
+                ("problem", r"\bproblem\b[^.!?\n]{{0,80}}?{surface}"),
+                ("in terms of", r"\bin\s+terms\s+of\s+(?:your\s+)?{surface}"),
             ),
             "question": (
                 'What specific condition category is documented in the diagnosis, history, '
@@ -654,6 +671,8 @@ class AciTaskAdapter:
             if canon(row["condition"]) in duplicated_conditions:
                 continue
             for field in ("category", "status"):
+                if not row.get(field):
+                    continue
                 candidates.append({
                     "family": "delivered",
                     "scope": "global",
@@ -673,8 +692,8 @@ class AciTaskAdapter:
         required_sections = list(ACI_REQUIRED_SECTIONS)
         if (
             all(parsed_reference["sections"].get(section) for section in required_sections)
-            and parsed_reference["assessment_shape"]["kind"] in {"rows", "none"}
-            and parsed_reference["plan_shape"]["kind"] in {"rows", "none"}
+            and parsed_reference["assessment_shape"]["kind"] in {"rows", "labeled_rows", "none"}
+            and parsed_reference["plan_shape"]["kind"] in {"rows", "labeled_rows", "none"}
         ):
             candidates.append({
                 "family": "delivered",
@@ -697,19 +716,27 @@ class AciTaskAdapter:
             if canon(row["condition"]) in duplicated_conditions:
                 continue
             values = (row["condition"], row["treatment"], row["test"])
-            relation_occurrences = [
-                occurrences_by_surface.get(canon(value), []) for value in values
-            ]
-            occurrence_ids = [
-                str(rows[0]["occurrence_id"])
-                for rows in relation_occurrences if len(rows) == 1
-            ]
-            linked = len(occurrence_ids) == len(values)
+            if "evidence" in row:
+                occurrence_ids = _exact_labeled_field_occurrence_ids(
+                    values, occurrences_by_surface
+                )
+                if occurrence_ids is None:
+                    continue
+                scope = "linked"
+            else:
+                relation_occurrences = [
+                    occurrences_by_surface.get(canon(value), []) for value in values
+                ]
+                occurrence_ids = [
+                    str(rows[0]["occurrence_id"])
+                    for rows in relation_occurrences if len(rows) == 1
+                ]
+                scope = "linked" if len(occurrence_ids) == len(values) else "global"
             candidates.append({
                 "family": "delivered",
-                "scope": "linked" if linked else "global",
+                "scope": scope,
                 "subtype": "exact_relation",
-                "occurrence_ids": occurrence_ids if linked else [],
+                "occurrence_ids": occurrence_ids if scope == "linked" else [],
                 "group_id": "relation:" + ":".join(canon(value) for value in values),
                 "scoring_contract": {
                     "kind": "exact_relation",
@@ -718,7 +745,10 @@ class AciTaskAdapter:
                     "treatment": row["treatment"],
                     "test": row["test"],
                 },
-                "evidence": {"authority": "human_reference"},
+                "evidence": {
+                    "authority": "human_reference",
+                    **({"reference_spans": dict(row["evidence"])} if "evidence" in row else {}),
+                },
             })
         for source_relation in _deterministic_source_relations(
             document, environment_document, self.relation_contract
@@ -1031,21 +1061,46 @@ def _exact_occurrence_span(document: str, occurrence: Mapping) -> list[int] | No
 
 
 def _parse_aci_note(text: str) -> dict:
-    """Parse only the fixed ACI headings and unambiguous assessment/plan triples."""
+    """Parse compact ACI rows and real combined assessment/plan bullet blocks."""
     sections: dict[str, list[str]] = {}
-    current_section = None
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
+    section_spans: dict[str, list[list[int]]] = {}
+    current_sections: tuple[str, ...] = ()
+    combined_assessment_plan = False
+    offset = 0
+    for raw_line in text.splitlines(keepends=True):
+        raw = raw_line.rstrip("\r\n")
+        line = raw.strip()
         heading = _ACI_HEADING_PATTERN.match(line)
         heading_name = heading.group("heading").strip() if heading else ""
         if heading_name in ACI_REQUIRED_SECTIONS:
-            current_section = heading_name
-            sections[current_section] = []
+            current_sections = (heading_name,)
+            sections[heading_name] = []
+            section_spans[heading_name] = []
             content = heading.group("content")
             if content and content.strip():
-                sections[current_section].append(content.strip())
-        elif line and current_section is not None:
-            sections[current_section].append(line)
+                value = content.strip()
+                start = offset + raw.find(value)
+                sections[heading_name].append(value)
+                section_spans[heading_name].append([start, start + len(value)])
+        elif heading_name == ACI_COMBINED_ASSESSMENT_PLAN:
+            combined_assessment_plan = True
+            current_sections = ("ASSESSMENT", "PLAN")
+            for section in current_sections:
+                sections[section] = []
+                section_spans[section] = []
+            content = heading.group("content")
+            if content and content.strip():
+                value = content.strip()
+                start = offset + raw.find(value)
+                for section in current_sections:
+                    sections[section].append(value)
+                    section_spans[section].append([start, start + len(value)])
+        elif line and current_sections:
+            start = offset + len(raw) - len(raw.lstrip())
+            for section in current_sections:
+                sections[section].append(line)
+                section_spans[section].append([start, start + len(line)])
+        offset += len(raw_line)
 
     demographic_match = re.search(
         r"\b(\d{1,3}-year-old)\s+(male|female)\b", text, re.IGNORECASE
@@ -1063,20 +1118,31 @@ def _parse_aci_note(text: str) -> dict:
     )
     assessment_lines = sections.get("ASSESSMENT", [])
     plan_lines = sections.get("PLAN", [])
-    assessment_rows = _parse_aci_rows(
-        assessment_lines, ("condition", "category", "status")
-    )
-    plan_rows = _parse_aci_rows(
-        plan_lines, ("condition", "treatment", "test")
-    )
+    if combined_assessment_plan:
+        labeled_rows = _parse_aci_combined_rows(
+            assessment_lines, section_spans.get("ASSESSMENT", [])
+        )
+        assessment_rows = [{"condition": row["condition"]} for row in labeled_rows]
+        plan_rows = labeled_rows
+        assessment_shape = _aci_labeled_section_shape(assessment_rows)
+        plan_shape = _aci_labeled_section_shape(plan_rows)
+    else:
+        assessment_rows = _parse_aci_rows(
+            assessment_lines, ("condition", "category", "status")
+        )
+        plan_rows = _parse_aci_rows(
+            plan_lines, ("condition", "treatment", "test")
+        )
+        assessment_shape = _aci_section_shape(assessment_lines, assessment_rows)
+        plan_shape = _aci_section_shape(plan_lines, plan_rows)
     return {
         "sections": sections,
         "demographic": demographic,
         "demographic_evidence": demographic_evidence,
         "assessment_rows": assessment_rows,
-        "assessment_shape": _aci_section_shape(assessment_lines, assessment_rows),
+        "assessment_shape": assessment_shape,
         "plan_rows": plan_rows,
-        "plan_shape": _aci_section_shape(plan_lines, plan_rows),
+        "plan_shape": plan_shape,
     }
 
 
@@ -1089,12 +1155,89 @@ def _parse_aci_rows(lines: Sequence[str], fields: Sequence[str]) -> list[dict]:
     return rows
 
 
+def _parse_aci_combined_rows(
+    lines: Sequence[str], spans: Sequence[Sequence[int]],
+) -> list[dict]:
+    rows = []
+    current = None
+    for index, line in enumerate(lines):
+        field_match = _ACI_LABELED_FIELD_PATTERN.match(line)
+        if field_match is not None and current is not None:
+            field = _ACI_LABELED_PLAN_FIELDS.get(canon(field_match.group("label")))
+            if field is not None:
+                value = field_match.group("value")
+                if current.get(field) is not None:
+                    current[field] = None
+                    current["evidence"].pop(field, None)
+                else:
+                    span = spans[index]
+                    value_start = span[0] + field_match.start("value")
+                    current[field] = value
+                    current["evidence"][field] = [
+                        value_start, value_start + len(value),
+                    ]
+            continue
+        condition_match = _ACI_CONDITION_ENTRY_PATTERN.match(line)
+        if condition_match is None:
+            continue
+        next_match = next(
+            (
+                _ACI_LABELED_FIELD_PATTERN.match(next_line)
+                for next_line in lines[index + 1:]
+                if next_line
+            ),
+            None,
+        )
+        if next_match is None:
+            continue
+        if current is not None:
+            rows.append(current)
+        condition = condition_match.group("condition")
+        span = spans[index]
+        condition_start = span[0] + condition_match.start("condition")
+        current = {
+            "condition": condition,
+            "treatment": None,
+            "test": None,
+            "evidence": {
+                "condition": [condition_start, condition_start + len(condition)],
+            },
+        }
+    if current is not None:
+        rows.append(current)
+    return rows
+
+
 def _aci_section_shape(lines: Sequence[str], rows: Sequence[Mapping]) -> dict:
     if len(lines) == 1 and canon(lines[0]) == "none":
         return {"kind": "none", "count": 0}
     if lines and len(rows) == len(lines):
         return {"kind": "rows", "count": len(rows)}
     return {"kind": "invalid", "count": len(rows)}
+
+
+def _aci_labeled_section_shape(rows: Sequence[Mapping]) -> dict:
+    if rows:
+        return {"kind": "labeled_rows", "count": len(rows)}
+    return {"kind": "invalid", "count": 0}
+
+
+def _exact_labeled_field_occurrence_ids(
+    values: Sequence[str],
+    occurrences_by_surface: Mapping[str, Sequence[Mapping]],
+) -> list[str] | None:
+    occurrence_ids = []
+    for value in values:
+        matches = []
+        for surface, occurrences in occurrences_by_surface.items():
+            if _contains(value, surface):
+                if len(occurrences) != 1:
+                    return None
+                matches.append(occurrences[0])
+        if len(matches) != 1:
+            return None
+        occurrence_ids.append(str(matches[0]["occurrence_id"]))
+    return occurrence_ids
 
 
 def _duplicated_aci_conditions(rows: Sequence[Mapping]) -> set[str]:
@@ -2786,7 +2929,7 @@ def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: 
             observed = parsed_output[f"{section}_shape"]
             if (
                 not isinstance(expected, Mapping)
-                or expected.get("kind") not in {"rows", "none"}
+                or expected.get("kind") not in {"rows", "labeled_rows", "none"}
                 or isinstance(expected.get("count"), bool)
                 or not isinstance(expected.get("count"), int)
                 or expected["count"] < 0
