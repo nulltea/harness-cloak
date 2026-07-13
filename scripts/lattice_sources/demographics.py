@@ -337,14 +337,19 @@ def rows_from_cldr_territories(path_or_obj, containment: dict) -> list[ProfileRo
             continue
         # Surface is the demonym ("albanian"); the country name and "from/citizen of X" phrasings
         # become aliases. Territories without a demonym (uninhabited/subnational, and collision
-        # losers) keep the country name as surface.
-        surface = NATIONALITY_DEMONYMS.get(code, country)
+        # losers) keep the country name as surface. A demonym that is a substring of its own level
+        # ("american" in "american nationality") would leak the surface, so fall back to the
+        # country name and keep the demonym as an alias.
+        demonym = NATIONALITY_DEMONYMS.get(code)
+        surface = demonym or country
+        if surface and any(surface in lvl for lvl in levels):
+            surface = country
         rows.append(ProfileRow(
             runtime_type="nationality",
             surface=surface,
             aliases=sorted({
                 a
-                for a in [country, f"from {country}", f"citizen of {country}", *aliases.get(code, [])]
+                for a in [country, demonym, f"from {country}", f"citizen of {country}", *aliases.get(code, [])]
                 if a and a != surface
             }),
             levels=levels,

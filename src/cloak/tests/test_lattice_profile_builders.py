@@ -331,6 +331,26 @@ def test_cldr_territories_use_demonym_as_surface(tmp_path):
     assert set(by_surface["french"].aliases) >= {"france", "from france", "citizen of france"}
 
 
+def test_cldr_demonym_substring_of_level_falls_back_to_country_name(tmp_path):
+    # "american" is a substring of its level "american nationality" -- using it as the surface
+    # would leak the original into the generalization, so the country name is kept instead.
+    src = tmp_path / "territories.json"
+    src.write_text(json.dumps({
+        "main": {"en": {"localeDisplayNames": {"territories": {
+            "019": "Americas",
+            "021": "Northern America",
+            "US": "United States",
+        }}}}
+    }))
+    containment = {"019": {"_contains": ["021"]}, "021": {"_contains": ["US"]}}
+
+    rows = rows_from_cldr_territories(src, containment)
+    by_surface = {r.surface: r for r in rows}
+
+    assert "american" not in by_surface
+    assert "american" in by_surface["united states"].aliases
+
+
 def test_cldr_territory_parent_prefers_geographic_region_over_later_grouping(tmp_path):
     src = tmp_path / "territories.json"
     src.write_text(json.dumps({

@@ -73,13 +73,13 @@ def _country_rows(countries: dict[str, dict]) -> list[ProfileRow]:
             aliases=[norm(a) for a in aliases if norm(a) and norm(a) != surface],
             levels=[level],
             source_ids=[f"geonames-country:{country['iso2']}"],
-            count=max(float(country["population"]), 1.0),
+            count=1.0,  # one location; k-anon sizing lives in level_counts, not here
         ))
     return rows
 
 
 def _city_rows(path: Path, countries: dict[str, dict], admin1: dict[str, str]) -> list[ProfileRow]:
-    rows_by_surface = {}
+    rows_by_surface = {}  # surface -> (population, row); population is only a dedup tiebreak
     for line in path.read_text(encoding="utf-8").splitlines():
         f = line.rstrip("\n").split("\t")
         if len(f) < 19:
@@ -113,12 +113,12 @@ def _city_rows(path: Path, countries: dict[str, dict], admin1: dict[str, str]) -
             aliases=sorted(aliases),
             levels=levels,
             source_ids=[f"geonames:{geoname_id}"],
-            count=max(float(population), 1.0),
+            count=1.0,  # one location; k-anon sizing lives in level_counts, not here
         )
         cur = rows_by_surface.get(surface)
-        if cur is None or row.count > cur.count:
-            rows_by_surface[surface] = row
-    return list(rows_by_surface.values())
+        if cur is None or population > cur[0]:
+            rows_by_surface[surface] = (population, row)
+    return [row for _, row in rows_by_surface.values()]
 
 
 def _reviewable_alias(alias: str) -> str:
