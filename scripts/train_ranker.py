@@ -40,7 +40,9 @@ from build_arms_artifact import load_artifact
 from cloak.corpora import load_task_docs
 from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
-from cloak.train.reward import fact_f1s, stage1_reward, u_qa
+from cloak.train.reward import canon, fact_f1s, stage1_reward, u_qa
+from cloak.train.qa_builder import frozen_occurrences_from_arms, freeze_ranker_environment
+from cloak.train.utility_credit import provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
@@ -62,8 +64,10 @@ _DEFAULT_DECISIONS = object()
 
 def _roundtrip_job(doc, doc_p, R, *, decisions=_DEFAULT_DECISIONS):
     """Build a roundtrip_batch job, preserving the legacy schema unless carrier fields exist."""
-    job = {"corpus": doc["corpus"], "doc_p": doc_p, "R": R,
+    job = {"doc_id": doc["id"], "corpus": doc["corpus"], "doc_p": doc_p, "R": R,
            "probes": doc["probes_train"]}
+    if "utility_artifact" in doc:
+        job["utility_artifact"] = doc["utility_artifact"]
     for key in ("ladder", "decisions", "out_hi", "schema"):
         if key == "decisions" and decisions is not _DEFAULT_DECISIONS:
             job[key] = decisions
@@ -106,6 +110,38 @@ def _artifact_out_hi(*payloads):
         if isinstance(payload, dict) and payload.get("out_hi"):
             return payload["out_hi"]
     return None
+
+
+def attach_utility_artifact(docs, artifact):
+    """Attach one frozen v2 artifact without applying legacy probe-count filtering."""
+    artifact_docs = artifact.get("documents", {})
+    attached = []
+    for doc in docs:
+        state = artifact_docs.get(doc["id"])
+        if not state or state.get("measurement_state") in {"unsupported", "build_failed"}:
+            continue
+        assertion_ids = state.get("assertion_ids") or []
+        if not assertion_ids:
+            continue
+        decision_ids_by_key = {
+            (str(row.get("runtime_type")), str(row.get("canonical_key"))):
+                str(row["decision_id"])
+            for row in state.get("decision_keys", [])
+        }
+        utility_decision_ids = []
+        for span in doc["spans"]:
+            key = (str(span.get("type")), canon(str(span.get("surface", ""))))
+            decision_id = decision_ids_by_key.get(key)
+            if decision_id is None:
+                raise ValueError(
+                    f"utility artifact has no decision identity for {doc['id']} span {key}"
+                )
+            utility_decision_ids.append(decision_id)
+        next_doc = dict(doc)
+        next_doc["utility_artifact"] = artifact
+        next_doc["utility_decision_ids"] = utility_decision_ids
+        attached.append(next_doc)
+    return attached
 
 
 # ---------- assembly (rollout -> doc_p, R) ----------
@@ -406,11 +442,27 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             rt = torch.tensor([r["recall"] or 0.0 for r in res])
             ep["r"].append(rt.mean().item())
             ep["ph"].append(sum(ph_l) / G)
-            if rt.max() == rt.min():                      # DAPO tie filter
-                ep["ties_skipped"] += 1
-                continue
-            adv = rloo_advantage(rt)
-            pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
+            if doc.get("utility_artifact") is not None:
+                structured_advantages = provisional_advantages(
+                    [row["component_scores"] for row in res],
+                    doc["utility_artifact"],
+                    doc_id=doc["id"],
+                )
+                if not any(value != 0.0 for row in structured_advantages
+                           for value in row.values()):
+                    ep["ties_skipped"] += 1
+                    continue
+                pg = -sum(
+                    structured_advantages[rollout_index][decision_id] * log_prob
+                    for rollout_index, logps in enumerate(logps_l)
+                    for decision_id, log_prob in zip(doc["utility_decision_ids"], logps)
+                ) / G
+            else:
+                if rt.max() == rt.min():                  # DAPO tie filter
+                    ep["ties_skipped"] += 1
+                    continue
+                adv = rloo_advantage(rt)
+                pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
             # entropy over the DYNAMIC masks each rollout actually sampled from (not the
             # static floor-legal sets), mean over spans and rollouts
             ent, n_ent = 0.0, 0
@@ -642,6 +694,57 @@ def enforce_support_gate(force_ungated: bool, probes_path: str, env_path: str):
         "scripts/spikes/roundtrip_support_scan.py until it PASSes (or --force-ungated)")
 
 
+def enforce_utility_artifact_gate(artifact, environment):
+    """Validate QA-builder v2 artifact invariants required before training."""
+    if artifact.get("artifact_version") != "utility-assertions-v1":
+        raise SystemExit("unsupported utility artifact version")
+    if artifact.get("environment_hash") != environment.get("environment_hash"):
+        live_documents = environment.get("documents", {})
+        for doc_id, state in artifact.get("documents", {}).items():
+            live_hash = live_documents.get(doc_id, {}).get("environment_document_hash")
+            if not live_hash or state.get("environment_document_hash") != live_hash:
+                raise SystemExit(
+                    f"utility artifact environment_hash/document {doc_id} "
+                    "does not match ranker environment"
+                )
+    if not artifact.get("gate_manifest_hash"):
+        raise SystemExit("utility artifact is missing gate_manifest_hash")
+    assertions = artifact.get("assertions", {})
+    for doc_id, state in artifact.get("documents", {}).items():
+        if float(state.get("utility_weight_denominator", 0.0)) <= 0:
+            raise SystemExit(f"utility artifact document {doc_id} has invalid denominator")
+        missing = [value for value in state.get("assertion_ids", []) if value not in assertions]
+        if missing:
+            raise SystemExit(
+                f"utility artifact document {doc_id} has missing assertions: {missing}"
+            )
+        for assertion_id in state.get("assertion_ids", []):
+            assertion = assertions[assertion_id]
+            if assertion.get("assertion_id") != assertion_id:
+                raise SystemExit(
+                    f"utility artifact assertion {assertion_id} has an unstable row id"
+                )
+            if assertion.get("doc_id") != doc_id:
+                raise SystemExit(
+                    f"utility artifact assertion {assertion_id} belongs to document "
+                    f"{assertion.get('doc_id')!r}, not {doc_id!r}"
+                )
+            occurrence_ids = assertion.get("occurrence_ids") or []
+            scope = assertion.get("scope")
+            if scope == "global" and occurrence_ids:
+                raise SystemExit(
+                    f"utility artifact global assertion {assertion_id} has occurrence links"
+                )
+            if scope == "linked" and not occurrence_ids:
+                raise SystemExit(
+                    f"utility artifact linked assertion {assertion_id} has no occurrence links"
+                )
+            if scope not in {"linked", "global"}:
+                raise SystemExit(
+                    f"utility artifact assertion {assertion_id} has invalid scope {scope!r}"
+                )
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--alphas", default="0.3,0.5,0.7")
@@ -682,6 +785,8 @@ def main():
                     help="optional ladder probe artifact for two-channel roundtrip reward")
     ap.add_argument("--decision-probes", default=None,
                     help="optional decision probe artifact for two-channel roundtrip reward")
+    ap.add_argument("--utility-artifact", default=None,
+                    help="QA-builder v2 utility artifact; replaces legacy probe filtering")
     ap.add_argument("--adv", choices=["group", "rloo"], default=None,
                     help="advantage baseline (default: group for surrogate, rloo for roundtrip)")
     ap.add_argument("--entropy-coef", type=float, default=None,
@@ -760,64 +865,81 @@ def main():
                          "raw_spans": d["spans"], "spans": spans, "feats": feats,
                          "probes_train": d["probes"]["train"]})
     if roundtrip:
-        # reward uses the validated train-split probes; docs with < 3 distinct facts are
-        # excluded from the RL reward (global constraint), never silently kept.
-        from cloak.train.reward import canon
-        from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
-        probes_art = json.loads(Path(args.probes).read_text())
-        meta = probes_art.get("meta", {})
-        if meta.get("rt_model") != RT_MODEL:
-            raise SystemExit(
-                f"probe artifact {args.probes} was built for rt_model="
-                f"{meta.get('rt_model')!r} but the reward model is {RT_MODEL!r}; changing the "
-                "reward model re-gates — rebuild probes (scripts/build_probes.py) and re-run "
-                "the support scan before training")
-        if "rt_base_url" not in meta or "th" not in meta:
-            raise SystemExit(
-                f"probe artifact {args.probes} is missing provenance meta "
-                f"(rt_base_url/th); rebuild probes (scripts/build_probes.py)")
-        if meta.get("rt_base_url") != RT_BASE_URL:
-            raise SystemExit(
-                f"probe artifact {args.probes} was built against rt_base_url="
-                f"{meta.get('rt_base_url')!r} but the reward endpoint is {RT_BASE_URL!r}; the "
-                "endpoint is part of the reward pin — rebuild probes and re-run the support scan")
-        print(f"probe artifact {args.probes}: teacher={meta.get('teacher')!r} "
-              f"th={meta.get('th')} rt_model={meta.get('rt_model')!r}", flush=True)
-        probes_all = probes_art["docs"]
-        ladder_all = _artifact_docs(args.ladder_probes)
-        decision_all = _artifact_docs(args.decision_probes)
-        kept = []
-        for doc in docs:
-            probes_doc = probes_all.get(doc["id"], {})
-            ladder_doc = ladder_all.get(doc["id"])
-            decision_doc = decision_all.get(doc["id"])
-            doc["probes_train"] = probes_doc.get("train", [])
-            doc["probes_heldout"] = probes_doc.get("heldout", [])
+        if args.utility_artifact is not None:
+            utility_artifact = json.loads(Path(args.utility_artifact).read_text())
+            enforce_utility_artifact_gate(
+                utility_artifact,
+                freeze_ranker_environment(
+                    env,
+                    occurrences_by_document=frozen_occurrences_from_arms(art),
+                ),
+            )
+            attached = attach_utility_artifact(docs, utility_artifact)
+            print(
+                f"utility artifact ({args.utility_artifact}): kept {len(attached)}/{len(docs)} "
+                "docs with measured utility",
+                flush=True,
+            )
+            docs = attached
+        else:
+            # reward uses the validated train-split probes; docs with < 3 distinct facts are
+            # excluded from the legacy RL reward.
+            from cloak.train.reward import canon
+            from cloak.train.roundtrip import RT_BASE_URL, RT_MODEL
+            probes_art = json.loads(Path(args.probes).read_text())
+            meta = probes_art.get("meta", {})
+            if meta.get("rt_model") != RT_MODEL:
+                raise SystemExit(
+                    f"probe artifact {args.probes} was built for rt_model="
+                    f"{meta.get('rt_model')!r} but the reward model is {RT_MODEL!r}; changing the "
+                    "reward model re-gates — rebuild probes (scripts/build_probes.py) and re-run "
+                    "the support scan before training")
+            if "rt_base_url" not in meta or "th" not in meta:
+                raise SystemExit(
+                    f"probe artifact {args.probes} is missing provenance meta "
+                    f"(rt_base_url/th); rebuild probes (scripts/build_probes.py)")
+            if meta.get("rt_base_url") != RT_BASE_URL:
+                raise SystemExit(
+                    f"probe artifact {args.probes} was built against rt_base_url="
+                    f"{meta.get('rt_base_url')!r} but the reward endpoint is {RT_BASE_URL!r}; the "
+                    "endpoint is part of the reward pin — rebuild probes and re-run the support scan")
+            print(f"probe artifact {args.probes}: teacher={meta.get('teacher')!r} "
+                  f"th={meta.get('th')} rt_model={meta.get('rt_model')!r}", flush=True)
+            probes_all = probes_art["docs"]
+            ladder_all = _artifact_docs(args.ladder_probes)
+            decision_all = _artifact_docs(args.decision_probes)
+            kept = []
+            for doc in docs:
+                probes_doc = probes_all.get(doc["id"], {})
+                ladder_doc = ladder_all.get(doc["id"])
+                decision_doc = decision_all.get(doc["id"])
+                doc["probes_train"] = probes_doc.get("train", [])
+                doc["probes_heldout"] = probes_doc.get("heldout", [])
+                if args.ladder_probes is not None:
+                    doc["ladder"] = _artifact_entries(ladder_doc)
+                if args.decision_probes is not None:
+                    doc["decisions"] = _artifact_entries(decision_doc)
+                if args.ladder_probes is not None or args.decision_probes is not None:
+                    out_hi = _artifact_out_hi(probes_doc, ladder_doc, decision_doc)
+                    if out_hi is not None:
+                        doc["out_hi"] = out_hi
+                    if doc["corpus"] in SCHEMA_CORPORA:
+                        doc["schema"] = True
+                if len({canon(p["surface"]) for p in doc["probes_train"]}) >= 3:
+                    kept.append(doc)
+            print(f"roundtrip probes ({args.probes}): kept {len(kept)}/{len(docs)} docs, "
+                  f"dropped {len(docs) - len(kept)} with < 3 distinct train facts", flush=True)
             if args.ladder_probes is not None:
-                doc["ladder"] = _artifact_entries(ladder_doc)
+                n_ladder = sum(len(d.get("ladder", [])) for d in kept)
+                print(f"ladder probes ({args.ladder_probes}): attached {n_ladder} kept rungs",
+                      flush=True)
             if args.decision_probes is not None:
-                doc["decisions"] = _artifact_entries(decision_doc)
-            if args.ladder_probes is not None or args.decision_probes is not None:
-                out_hi = _artifact_out_hi(probes_doc, ladder_doc, decision_doc)
-                if out_hi is not None:
-                    doc["out_hi"] = out_hi
-                if doc["corpus"] in SCHEMA_CORPORA:
-                    doc["schema"] = True
-            if len({canon(p["surface"]) for p in doc["probes_train"]}) >= 3:
-                kept.append(doc)
-        print(f"roundtrip probes ({args.probes}): kept {len(kept)}/{len(docs)} docs, "
-              f"dropped {len(docs) - len(kept)} with < 3 distinct train facts", flush=True)
-        if args.ladder_probes is not None:
-            n_ladder = sum(len(d.get("ladder", [])) for d in kept)
-            print(f"ladder probes ({args.ladder_probes}): attached {n_ladder} kept rungs",
-                  flush=True)
-        if args.decision_probes is not None:
-            n_decisions = sum(len(d.get("decisions", [])) for d in kept)
-            n_out_hi = sum("out_hi" in d for d in kept)
-            print(f"decision probes ({args.decision_probes}): attached {n_decisions} "
-                  f"decisions; out_hi available for {n_out_hi}/{len(kept)} docs",
-                  flush=True)
-        docs = kept
+                n_decisions = sum(len(d.get("decisions", [])) for d in kept)
+                n_out_hi = sum("out_hi" in d for d in kept)
+                print(f"decision probes ({args.decision_probes}): attached {n_decisions} "
+                      f"decisions; out_hi available for {n_out_hi}/{len(kept)} docs",
+                      flush=True)
+            docs = kept
     if args.smoke:
         docs, args.epochs, args.G = docs[:2], 2, 4
 
@@ -876,7 +998,8 @@ def main():
               "static teacher trajectory (accepted mismatch, masked in rollouts)", flush=True)
 
     if roundtrip:
-        enforce_support_gate(args.force_ungated, args.probes, args.env)
+        if args.utility_artifact is None:
+            enforce_support_gate(args.force_ungated, args.probes, args.env)
         from cloak.train.roundtrip import RT_MODEL
         t0 = time.time()
         torch.manual_seed(args.seed)
@@ -893,6 +1016,7 @@ def main():
                "randomize_floors": False, "G": args.G, "epochs": args.epochs,
                "n_exit_rounds": args.exit_rounds, "exit_epochs": args.exit_epochs,
                "cf_frac": args.cf_frac,
+               "utility_artifact": args.utility_artifact,
                "ladder_probes": args.ladder_probes,
                "decision_probes": args.decision_probes,
                "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,

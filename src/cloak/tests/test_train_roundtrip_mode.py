@@ -306,3 +306,143 @@ def test_counterfactual_terms_excludes_span_free_decisions(monkeypatch):
     assert term.item() == pytest.approx(0.0)
     assert len(captured) == 2
     assert all(job["decisions"] == [doc["decisions"][0]] for job in captured)
+
+
+def test_utility_artifact_keeps_measured_documents_without_legacy_probe_threshold():
+    docs = [_doc(), {**_doc(), "id": "missing"}]
+    docs[0]["probes_train"] = []
+    artifact = {
+        "documents": {
+            "d0": {
+                "measurement_state": "partial",
+                "assertion_ids": ["a1"],
+                "utility_weight_denominator": 1.0,
+                "decision_keys": [{
+                    "decision_id": "dec1", "runtime_type": "QUANTITY",
+                    "canonical_key": "metformin",
+                }],
+            }
+        },
+        "assertions": {"a1": {"assertion_id": "a1", "doc_id": "d0",
+                                "scope": "global", "occurrence_ids": []}},
+    }
+
+    attached = tr.attach_utility_artifact(docs, artifact)
+
+    assert [doc["id"] for doc in attached] == ["d0"]
+    assert attached[0]["utility_artifact"] is artifact
+    assert attached[0]["utility_decision_ids"] == ["dec1"]
+    job = tr._roundtrip_job(attached[0], "generalized", [])
+    assert job["doc_id"] == "d0"
+    assert job["utility_artifact"] is artifact
+
+
+def test_utility_artifact_gate_checks_environment_and_denominator():
+    artifact = {
+        "artifact_version": "utility-assertions-v1",
+        "environment_hash": "env-v1",
+        "gate_manifest_hash": "gate-v1",
+        "documents": {"d0": {"utility_weight_denominator": 1.0, "assertion_ids": ["a1"]}},
+        "assertions": {"a1": {"assertion_id": "a1", "doc_id": "d0",
+                                "scope": "global", "occurrence_ids": []}},
+    }
+
+    tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+    with pytest.raises(SystemExit, match="environment_hash"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "other"})
+
+
+def test_utility_artifact_gate_accepts_subset_when_document_hash_matches():
+    artifact = {
+        "artifact_version": "utility-assertions-v1",
+        "environment_hash": "subset-env",
+        "gate_manifest_hash": "gate-v1",
+        "documents": {"d0": {
+            "environment_document_hash": "doc-v1",
+            "utility_weight_denominator": 1.0,
+            "assertion_ids": ["a1"],
+        }},
+        "assertions": {"a1": {"assertion_id": "a1", "doc_id": "d0",
+                                "scope": "global", "occurrence_ids": []}},
+    }
+    full_environment = {
+        "environment_hash": "full-env",
+        "documents": {
+            "d0": {"environment_document_hash": "doc-v1"},
+            "d1": {"environment_document_hash": "doc-v2"},
+        },
+    }
+
+    tr.enforce_utility_artifact_gate(artifact, full_environment)
+
+    full_environment["documents"]["d0"]["environment_document_hash"] = "changed"
+    with pytest.raises(SystemExit, match="document d0"):
+        tr.enforce_utility_artifact_gate(artifact, full_environment)
+
+
+def test_train_roundtrip_uses_component_credit_when_scalar_utilities_tie(monkeypatch):
+    doc = _doc()
+    artifact = {
+        "documents": {"d0": {
+            "utility_weight_denominator": 1.0,
+            "controlled_decision_ids": ["dec1"],
+            "occurrence_to_decision": {"o1": "dec1"},
+        }},
+        "assertions": {"a1": {
+            "assertion_id": "a1", "doc_id": "d0", "scope": "linked",
+            "occurrence_ids": ["o1"], "weight": 1.0,
+        }},
+    }
+    doc["utility_artifact"] = artifact
+    doc["utility_decision_ids"] = ["dec1"]
+    actions = iter([0, 1])
+
+    def sample(doc, span_rows, feats, policy, greedy=False):
+        action_index = next(actions)
+        choice = {"metformin": span_rows[0]["actions"][action_index]}
+        log_prob = policy.log_probs(feats[0], [0, 1])[action_index]
+        doc_p, replacements = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
+        return choice, [log_prob], float(action_index == 1), doc_p, replacements, [[0, 1]]
+
+    def tied_scalar_roundtrip(jobs, workers=1):
+        return [{
+            "recall": 0.5,
+            "component_scores": {"a1": float("biguanide" in job["doc_p"].lower())},
+            "out_p": "", "out_final": "", "f1s": [],
+        } for job in jobs]
+
+    monkeypatch.setattr(tr, "sample_rollout", sample)
+    monkeypatch.setattr(tr, "roundtrip_batch", tied_scalar_roundtrip)
+
+    rows = tr.train_roundtrip(
+        [doc], tr.RankerPolicy(), G=2, epochs=1, lr=0.01,
+        entropy_coef=0.0, kl_coef=0.0, ref=None,
+        rt_workers=1, seed=0,
+    )
+
+    assert rows[0]["ties_skipped"] == 0
+
+
+@pytest.mark.parametrize(
+    ("assertion", "message"),
+    [
+        ({"assertion_id": "a1", "doc_id": "other", "scope": "global",
+          "occurrence_ids": []}, "belongs to document"),
+        ({"assertion_id": "a1", "doc_id": "d0", "scope": "global",
+          "occurrence_ids": ["o1"]}, "global assertion"),
+        ({"assertion_id": "a1", "doc_id": "d0", "scope": "linked",
+          "occurrence_ids": []}, "linked assertion"),
+    ],
+)
+def test_utility_artifact_gate_rejects_scope_and_document_link_mismatches(assertion, message):
+    artifact = {
+        "artifact_version": "utility-assertions-v1",
+        "environment_hash": "env-v1",
+        "gate_manifest_hash": "gate-v1",
+        "documents": {"d0": {"utility_weight_denominator": 1.0, "assertion_ids": ["a1"]}},
+        "assertions": {"a1": assertion},
+    }
+
+    with pytest.raises(SystemExit, match=message):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
