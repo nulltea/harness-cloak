@@ -80,6 +80,13 @@ ACI_RELATION_CONTRACT = {
     },
 }
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
+ACI_REQUIRED_SECTIONS = (
+    "HISTORY OF PRESENT ILLNESS",
+    "ASSESSMENT",
+    "PLAN",
+)
+_ACI_HEADING_PATTERN = re.compile(r"^\s*([A-Z][A-Z /&-]*[A-Z])\s*:?\s*$")
+_ACI_ROW_DELIMITER = re.compile(r"\s+(?:—|–|-)\s+")
 
 
 class OpenRouterRelationTeacher:
@@ -176,14 +183,31 @@ class AciTaskAdapter:
         document: str,
         environment_document: Mapping,
     ) -> list[dict]:
-        reference = self._references[doc_id]
+        return self.delivered_candidates(
+            doc_id, document, self._references[doc_id], environment_document
+        )
+
+    def delivered_candidates(
+        self,
+        doc_id: str,
+        document: str,
+        reference: str,
+        environment_document: Mapping,
+    ) -> list[dict]:
+        """Compile reference-backed ACI delivered assertions without clinical inference."""
+        del doc_id, document
         candidates = []
+        parsed_reference = _parse_aci_note(reference)
         occurrences_by_decision: dict[str, list[Mapping]] = defaultdict(list)
+        occurrences_by_surface: dict[str, list[Mapping]] = defaultdict(list)
         for occurrence in environment_document.get("occurrences", []):
             decision_id = occurrence.get("decision_id")
             if decision_id is None or not occurrence.get("controlled", True):
                 continue
             occurrences_by_decision[str(decision_id)].append(occurrence)
+            occurrences_by_surface[canon(str(occurrence.get("surface", "")))].append(
+                occurrence
+            )
         for decision_id, occurrences in occurrences_by_decision.items():
             surface = str(occurrences[0].get("surface", ""))
             if not surface or not _contains(reference, surface):
@@ -198,21 +222,83 @@ class AciTaskAdapter:
                 "evidence": {"authority": "human_reference"},
             })
 
-        demographic = re.search(
-            r"\b(\d{1,3}-year-old)\s+(male|female)\b", document, re.IGNORECASE
-        )
-        if demographic:
-            for name, value in zip(("age", "sex"), demographic.groups()):
-                if _contains(reference, value):
-                    candidates.append({
-                        "family": "delivered",
-                        "scope": "global",
-                        "subtype": "field",
-                        "occurrence_ids": [],
-                        "group_id": f"demographic:{name}",
-                        "scoring_contract": {"kind": "contains", "value": value},
-                        "evidence": {"authority": "human_reference"},
-                    })
+        for name, value in parsed_reference["demographic"].items():
+            candidates.append({
+                "family": "delivered",
+                "scope": "global",
+                "subtype": "field",
+                "occurrence_ids": [],
+                "group_id": f"field:demographic:{name}",
+                "scoring_contract": {
+                    "kind": "field_value",
+                    "section": "DEMOGRAPHIC",
+                    "field": name,
+                    "value": value,
+                },
+                "evidence": {"authority": "human_reference"},
+            })
+
+        for row in parsed_reference["assessment_rows"]:
+            for field in ("category", "status"):
+                candidates.append({
+                    "family": "delivered",
+                    "scope": "global",
+                    "subtype": "field",
+                    "occurrence_ids": [],
+                    "group_id": f"field:assessment:{canon(row['condition'])}:{field}",
+                    "scoring_contract": {
+                        "kind": "field_value",
+                        "section": "ASSESSMENT",
+                        "row": row["condition"],
+                        "field": field,
+                        "value": row[field],
+                    },
+                    "evidence": {"authority": "human_reference"},
+                })
+
+        required_sections = [
+            section for section in ACI_REQUIRED_SECTIONS
+            if parsed_reference["sections"].get(section)
+        ]
+        if required_sections:
+            candidates.append({
+                "family": "delivered",
+                "scope": "global",
+                "subtype": "structure",
+                "occurrence_ids": [],
+                "group_id": "structure:required_sections",
+                "scoring_contract": {
+                    "kind": "required_sections",
+                    "sections": required_sections,
+                },
+                "evidence": {"authority": "human_reference"},
+            })
+
+        for row in parsed_reference["plan_rows"]:
+            values = (row["condition"], row["treatment"], row["test"])
+            relation_occurrences = [
+                occurrences_by_surface.get(canon(value), []) for value in values
+            ]
+            occurrence_ids = [
+                str(rows[0]["occurrence_id"])
+                for rows in relation_occurrences if len(rows) == 1
+            ]
+            linked = len(occurrence_ids) == len(values)
+            candidates.append({
+                "family": "delivered",
+                "scope": "linked" if linked else "global",
+                "subtype": "exact_relation",
+                "occurrence_ids": occurrence_ids if linked else [],
+                "group_id": "relation:" + ":".join(canon(value) for value in values),
+                "scoring_contract": {
+                    "kind": "exact_relation",
+                    "section": "PLAN",
+                    "condition": row["condition"],
+                    "treatment": row["treatment"],
+                    "test": row["test"],
+                },
+                "evidence": {"authority": "human_reference"},
+            })
         return candidates
 
     def compile_relations(
@@ -235,6 +321,48 @@ def _stable_hash(value) -> str:
 
 def _contains(text: str, value: str) -> bool:
     return bool(re.search(rf"(?<!\w){re.escape(canon(value))}(?!\w)", canon(text)))
+
+
+def _parse_aci_note(text: str) -> dict:
+    """Parse only the fixed ACI headings and unambiguous assessment/plan triples."""
+    sections: dict[str, list[str]] = {}
+    current_section = None
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        heading = _ACI_HEADING_PATTERN.match(line)
+        heading_name = heading.group(1).strip() if heading else ""
+        if heading_name in ACI_REQUIRED_SECTIONS:
+            current_section = heading_name
+            sections[current_section] = []
+        elif line and current_section is not None:
+            sections[current_section].append(line)
+
+    demographic_match = re.search(
+        r"\b(\d{1,3}-year-old)\s+(male|female)\b", text, re.IGNORECASE
+    )
+    demographic = (
+        {"age": demographic_match.group(1), "sex": demographic_match.group(2)}
+        if demographic_match else {}
+    )
+    return {
+        "sections": sections,
+        "demographic": demographic,
+        "assessment_rows": _parse_aci_rows(
+            sections.get("ASSESSMENT", []), ("condition", "category", "status")
+        ),
+        "plan_rows": _parse_aci_rows(
+            sections.get("PLAN", []), ("condition", "treatment", "test")
+        ),
+    }
+
+
+def _parse_aci_rows(lines: Sequence[str], fields: Sequence[str]) -> list[dict]:
+    rows = []
+    for line in lines:
+        values = [value.strip() for value in _ACI_ROW_DELIMITER.split(line) if value.strip()]
+        if len(values) == len(fields):
+            rows.append(dict(zip(fields, values)))
+    return rows
 
 
 def _relation_argument_types_are_legal(
@@ -487,8 +615,12 @@ def compile_relational_assertions(
 def assign_static_weights(
     assertions: Sequence[Mapping],
     family_budgets: Mapping[str, float],
+    *,
+    structural_cap: float | None = None,
 ) -> tuple[list[dict], dict]:
     """Assign family -> group -> assertion weights with a fixed family denominator."""
+    if structural_cap is not None and not 0.0 <= float(structural_cap) <= 1.0:
+        raise ValueError("structural_cap must be between zero and one")
     groups: dict[str, dict[str, list[Mapping]]] = defaultdict(lambda: defaultdict(list))
     for assertion in assertions:
         family = str(assertion["family"])
@@ -498,9 +630,33 @@ def assign_static_weights(
 
     weights: dict[str, float] = {}
     for family, family_groups in groups.items():
-        group_budget = float(family_budgets[family]) / len(family_groups)
-        for rows in family_groups.values():
-            assertion_weight = group_budget / len(rows)
+        family_budget = float(family_budgets[family])
+        structural_groups = {
+            group_id for group_id, rows in family_groups.items()
+            if family == "delivered" and any(row.get("subtype") == "structure" for row in rows)
+        }
+        semantic_groups = set(family_groups) - structural_groups
+        if structural_groups and structural_cap is not None:
+            structural_budget = min(
+                family_budget * float(structural_cap),
+                family_budget * len(structural_groups) / len(family_groups),
+            )
+            group_budgets = {
+                group_id: structural_budget / len(structural_groups)
+                for group_id in structural_groups
+            }
+            if semantic_groups:
+                group_budgets.update({
+                    group_id: (family_budget - structural_budget) / len(semantic_groups)
+                    for group_id in semantic_groups
+                })
+        else:
+            group_budgets = {
+                group_id: family_budget / len(family_groups)
+                for group_id in family_groups
+            }
+        for group_id, rows in family_groups.items():
+            assertion_weight = group_budgets[group_id] / len(rows)
             for row in rows:
                 weights[str(row["assertion_id"])] = assertion_weight
 
@@ -521,6 +677,7 @@ def package_utility_artifact(
     candidates_by_document: Mapping[str, Sequence[Mapping]],
     *,
     family_budgets: Mapping[str, float],
+    structural_cap: float | None = None,
     pins: Mapping,
 ) -> dict:
     """Compile validated candidates into one deterministic, link-checked utility artifact."""
@@ -597,7 +754,9 @@ def package_utility_artifact(
             compiled.append(row)
             compiled_ids.add(assertion_id)
 
-        weighted, weight_state = assign_static_weights(compiled, family_budgets)
+        weighted, weight_state = assign_static_weights(
+            compiled, family_budgets, structural_cap=structural_cap
+        )
         for row in weighted:
             assertions[row["assertion_id"]] = row
         missing_families = weight_state["missing_family_budgets"]
@@ -630,6 +789,7 @@ def package_utility_artifact(
         "environment_hash": frozen_environment.get("environment_hash"),
         **dict(pins),
         "family_budgets": dict(family_budgets),
+        "structural_cap": structural_cap,
         "documents": documents,
         "assertions": assertions,
         "rejections": {"summary_by_reason": {}},
@@ -876,6 +1036,7 @@ def build_utility_artifact(
         frozen_environment,
         candidates_by_document,
         family_budgets=family_budgets,
+        structural_cap=threshold_manifest.get("structural_cap"),
         pins={**dict(pins), "threshold_manifest": dict(threshold_manifest)},
     )
     artifact["rejections"] = {"summary_by_reason": dict(rejection_counts)}
@@ -1027,6 +1188,48 @@ def validate_context_assertions(
     return accepted, evidence
 
 
+def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: Mapping) -> float:
+    kind = contract.get("kind")
+    if kind == "contains":
+        return fact_score(out_final, str(contract.get("value", "")))
+    if kind == "required_sections":
+        sections = [str(section) for section in contract.get("sections") or []]
+        return float(bool(sections) and all(
+            parsed_output["sections"].get(section) for section in sections
+        ))
+    if kind == "field_value":
+        section = str(contract.get("section", ""))
+        field = str(contract.get("field", ""))
+        expected = canon(str(contract.get("value", "")))
+        if section == "DEMOGRAPHIC":
+            observed = parsed_output["demographic"].get(field)
+            return float(observed is not None and canon(observed) == expected)
+        if section == "ASSESSMENT":
+            row_key = canon(str(contract.get("row", "")))
+            matches = [
+                row for row in parsed_output["assessment_rows"]
+                if canon(row["condition"]) == row_key
+            ]
+            return float(
+                len(matches) == 1
+                and field in {"category", "status"}
+                and canon(matches[0][field]) == expected
+            )
+        return 0.0
+    if kind == "exact_relation":
+        expected = {
+            field: canon(str(contract.get(field, "")))
+            for field in ("condition", "treatment", "test")
+        }
+        if not all(expected.values()) or contract.get("section") != "PLAN":
+            return 0.0
+        return float(any(
+            all(canon(row[field]) == value for field, value in expected.items())
+            for row in parsed_output["plan_rows"]
+        ))
+    raise ValueError(f"unsupported delivered scoring contract: {contract}")
+
+
 def score_utility(
     artifact: Mapping,
     doc_id: str,
@@ -1053,14 +1256,14 @@ def score_utility(
         scores[str(row["assertion_id"])] = _answer_score(
             answer, list(row.get("accepted_values") or [])
         )
+    parsed_output = _parse_aci_note(out_final)
     for row in assertions:
         if row.get("family") != "delivered":
             continue
         contract = row.get("scoring_contract") or {}
-        if contract.get("kind") != "contains":
-            raise ValueError(f"unsupported delivered scoring contract: {contract}")
-        expected = str(contract.get("value", ""))
-        scores[str(row["assertion_id"])] = fact_score(out_final, expected)
+        scores[str(row["assertion_id"])] = _score_delivered_contract(
+            contract, out_final, parsed_output
+        )
 
     numerator = sum(float(row["weight"]) * scores[str(row["assertion_id"])]
                     for row in assertions)

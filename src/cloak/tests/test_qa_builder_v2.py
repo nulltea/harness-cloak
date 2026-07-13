@@ -776,6 +776,133 @@ def test_package_rejects_dangling_occurrence_decision_links():
             {"d1": [{
                 "family": "delivered", "scope": "linked", "subtype": "content",
                 "occurrence_ids": ["o1"], "group_id": "condition:1",
+def _aci_delivered_environment():
+    occurrences = [
+        ("o-condition", "d-condition", "hypothyroidism", "health-condition"),
+        ("o-treatment", "d-treatment", "Synthroid", "drug"),
+        ("o-test", "d-test", "thyroid labs", "medical-procedure"),
+    ]
+    return {
+        "occurrences": [
+            {
+                "occurrence_id": occurrence_id,
+                "decision_id": decision_id,
+                "surface": surface,
+                "runtime_type": runtime_type,
+            }
+            for occurrence_id, decision_id, surface, runtime_type in occurrences
+        ],
+        "decisions": [
+            {"decision_id": decision_id, "controlled": True}
+            for _, decision_id, _, _ in occurrences
+        ],
+    }
+
+
+def test_aci_delivered_candidates_compile_reference_backed_groups_with_capped_structure():
+    reference = """HISTORY OF PRESENT ILLNESS
+62-year-old male with hypothyroidism.
+ASSESSMENT
+Hypothyroidism — Endocrine — Stable
+PLAN
+Hypothyroidism — Synthroid — thyroid labs
+"""
+    adapter = AciTaskAdapter({"aci/D2N002": reference})
+    candidates = adapter.delivered_candidates(
+        "aci/D2N002",
+        "A ceiling output with no authoritative facts.",
+        reference,
+        _aci_delivered_environment(),
+    )
+
+    contracts = {row["scoring_contract"]["kind"] for row in candidates}
+    assert contracts == {"contains", "field_value", "required_sections", "exact_relation"}
+    assert {row["subtype"] for row in candidates} == {
+        "content", "field", "structure", "exact_relation",
+    }
+    structure = next(row for row in candidates if row["subtype"] == "structure")
+    assert structure["group_id"] == "structure:required_sections"
+    assert structure["scoring_contract"] == {
+        "kind": "required_sections",
+        "sections": ["HISTORY OF PRESENT ILLNESS", "ASSESSMENT", "PLAN"],
+    }
+    assert "fields" not in structure["scoring_contract"]
+
+    artifact = package_utility_artifact(
+        {"environment_hash": "env", "documents": {"aci/D2N002": _aci_delivered_environment()}},
+        {"aci/D2N002": candidates},
+        family_budgets={"context": 0.6, "delivered": 0.4},
+        structural_cap=0.1,
+        pins={},
+    )
+    structural_weight = sum(
+        row["weight"] for row in artifact["assertions"].values()
+        if row["subtype"] == "structure"
+    )
+    assert structural_weight == pytest.approx(0.04)
+    assert sum(row["weight"] for row in artifact["assertions"].values()) == pytest.approx(0.4)
+
+
+def test_score_utility_evaluates_every_deterministic_delivered_contract():
+    artifact = {
+        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "assertions": {
+            "content": {
+                "assertion_id": "content", "doc_id": "d1", "family": "delivered",
+                "weight": 0.25,
+                "scoring_contract": {"kind": "contains", "value": "hypothyroidism"},
+            },
+            "field": {
+                "assertion_id": "field", "doc_id": "d1", "family": "delivered",
+                "weight": 0.25,
+                "scoring_contract": {
+                    "kind": "field_value", "section": "ASSESSMENT",
+                    "row": "hypothyroidism", "field": "status", "value": "stable",
+                },
+            },
+            "structure": {
+                "assertion_id": "structure", "doc_id": "d1", "family": "delivered",
+                "weight": 0.25,
+                "scoring_contract": {
+                    "kind": "required_sections",
+                    "sections": ["HISTORY OF PRESENT ILLNESS", "ASSESSMENT", "PLAN"],
+                },
+            },
+            "relation": {
+                "assertion_id": "relation", "doc_id": "d1", "family": "delivered",
+                "weight": 0.25,
+                "scoring_contract": {
+                    "kind": "exact_relation", "section": "PLAN",
+                    "condition": "hypothyroidism", "treatment": "Synthroid",
+                    "test": "thyroid labs",
+                },
+            },
+        },
+    }
+    delivered = """HISTORY OF PRESENT ILLNESS
+62-year-old male with hypothyroidism.
+ASSESSMENT
+Hypothyroidism — Endocrine — Stable
+PLAN
+Hypothyroidism — Synthroid — thyroid labs
+"""
+
+    result = score_utility(
+        artifact,
+        "d1",
+        doc_p="unused",
+        out_final=delivered,
+        reader=lambda questions, context: pytest.fail("reader must not be called"),
+    )
+
+    assert result == {
+        "component_scores": {
+            "content": 1.0, "field": 1.0, "relation": 1.0, "structure": 1.0,
+        },
+        "utility": 1.0,
+    }
+
+
                 "scoring_contract": {"kind": "contains", "value": "condition"},
             }]},
             family_budgets={"context": 0.6, "delivered": 0.4},
