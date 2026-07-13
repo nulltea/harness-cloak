@@ -256,15 +256,14 @@ def normalize_threshold_manifest(value: Mapping) -> dict:
     normalized = dict(value)
     normalized["family_budgets"] = normalize_family_budgets(value.get("family_budgets"))
     normalized["cost_budgets"] = normalize_cost_budgets(value.get("cost_budgets"))
+    for field in ("reader_stability_repetitions", "reader_option_permutations"):
+        count = value.get(field, 1)
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise ValueError(f"{field} must be an integer")
+        normalized[field] = count
     try:
         normalized["min_context_assertions"] = int(value.get("min_context_assertions", 0))
         normalized["reader_threshold"] = float(value.get("reader_threshold", 1.0))
-        normalized["reader_stability_repetitions"] = int(
-            value.get("reader_stability_repetitions", 1)
-        )
-        normalized["reader_option_permutations"] = int(
-            value.get("reader_option_permutations", 1)
-        )
         normalized["reader_stability_threshold"] = float(
             value.get("reader_stability_threshold", 1.0)
         )
@@ -504,10 +503,12 @@ def _text_leaks_values(texts: Sequence[str], values: Sequence[str]) -> bool:
     for value in values:
         phrase = _canonical_leakage_phrase(str(value))
         meaningful = _meaningful_leakage_tokens(str(value))
-        phrase_tokens = {token for token in phrase.split() if len(token) >= 4}
-        if not phrase or not phrase_tokens:
+        if not phrase:
             continue
-        if any(f" {phrase} " in f" {text} " for text in canonical_texts):
+        if (
+            len(phrase.replace(" ", "")) > 1
+            and any(f" {phrase} " in f" {text} " for text in canonical_texts)
+        ):
             return True
         if meaningful & text_tokens:
             return True
@@ -1327,10 +1328,27 @@ def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str
     options = [str(option) for option in assertion.get("options") or []]
     if not options:
         return question
+    semantic_identity = {
+        "family": str(assertion.get("family", "")),
+        "scope": str(assertion.get("scope", "")),
+        "subtype": str(assertion.get("subtype", "")),
+        "relation": str(assertion.get("relation", "")),
+        "occurrence_ids": [str(value) for value in assertion.get("occurrence_ids") or []],
+        "group_id": str(assertion.get("group_id", "")),
+        "question": question,
+        "options": sorted(options),
+        "accepted_values": sorted(
+            str(value) for value in assertion.get("accepted_values") or []
+        ),
+        "decision_requirements": {
+            str(key): str(value)
+            for key, value in dict(assertion.get("decision_requirements") or {}).items()
+        },
+    }
     ordered = sorted(
         options,
         key=lambda option: _stable_hash({
-            "assertion_id": str(assertion.get("assertion_id", "")),
+            "assertion_semantics": semantic_identity,
             "option": option,
         }),
     )
@@ -1475,10 +1493,4 @@ def score_utility(
         expected = str(contract.get("value", ""))
         scores[str(row["assertion_id"])] = fact_score(out_final, expected)
 
-    numerator = sum(float(row["weight"]) * scores[str(row["assertion_id"])]
-                    for row in assertions)
-    denominator = float(
-        artifact["documents"][doc_id]["utility_weight_denominator"]
-    )
-    utility = numerator / denominator if denominator else 0.0
-    return {"component_scores": scores, "utility": utility}
+    return {"component_scores": scores}

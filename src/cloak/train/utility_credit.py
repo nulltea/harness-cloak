@@ -30,6 +30,35 @@ def _weighted_scores(
         raise ValueError(f"utility component vector lacks assertion {exc.args[0]!r}") from exc
 
 
+def document_utility(
+    component_scores: Mapping[str, float],
+    artifact: Mapping,
+    *,
+    doc_id: str,
+) -> float:
+    """Aggregate one builder-owned component vector with ranker-owned document weights."""
+    if doc_id not in artifact.get("documents", {}):
+        raise ValueError(f"utility artifact lacks document {doc_id!r}")
+    document = artifact["documents"][doc_id]
+    assertion_ids = document.get("assertion_ids")
+    accepted = {
+        str(assertion_id): row
+        for assertion_id, row in artifact.get("assertions", {}).items()
+        if row.get("doc_id") == doc_id and row.get("status", "accepted") == "accepted"
+        and (assertion_ids is None or assertion_id in assertion_ids)
+    }
+    denominator = float(document["utility_weight_denominator"])
+    if denominator == 0.0:
+        return 0.0
+    weights = {
+        assertion_id: float(row["weight"])
+        for assertion_id, row in accepted.items()
+    }
+    return _weighted_scores(
+        [component_scores], set(accepted), weights, denominator
+    )[0]
+
+
 def provisional_advantages(
     component_vectors: Sequence[Mapping[str, float]],
     artifact: Mapping,

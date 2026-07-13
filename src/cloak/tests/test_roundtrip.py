@@ -1,4 +1,6 @@
 """Round-trip reward wiring — offline (LLM + reader monkeypatched)."""
+import pytest
+
 import cloak.train.roundtrip as rt
 
 
@@ -93,6 +95,44 @@ def test_roundtrip_batch_no_probes_gives_none(monkeypatch):
     res = rt.roundtrip_batch([{"corpus": "enron", "doc_p": "x", "R": [], "probes": []}],
                              workers=1)
     assert res[0]["recall"] is None and res[0]["f1s"] == []
+
+
+def test_utility_artifact_roundtrip_aggregates_builder_components(monkeypatch):
+    monkeypatch.setattr(rt, "_remote", lambda: _StubClient(["remote output"]))
+    monkeypatch.setattr(rt, "invert", lambda out_p, replacements: ("final output", None))
+    monkeypatch.setattr(
+        rt,
+        "score_utility",
+        lambda *args, **kwargs: {"component_scores": {"context": 0.5, "delivered": 1.0}},
+    )
+    artifact = {
+        "documents": {"d1": {
+            "assertion_ids": ["context", "delivered"],
+            "utility_weight_denominator": 1.0,
+        }},
+        "assertions": {
+            "context": {
+                "assertion_id": "context", "doc_id": "d1", "status": "accepted",
+                "weight": 0.6,
+            },
+            "delivered": {
+                "assertion_id": "delivered", "doc_id": "d1", "status": "accepted",
+                "weight": 0.4,
+            },
+        },
+    }
+
+    result = rt.roundtrip_batch([{
+        "corpus": "clinical",
+        "doc_id": "d1",
+        "doc_p": "generalized",
+        "R": [],
+        "probes": [],
+        "utility_artifact": artifact,
+    }], workers=1)[0]
+
+    assert result["component_scores"] == {"context": 0.5, "delivered": 1.0}
+    assert result["recall"] == pytest.approx(0.7)
 
 
 def test_fact_recall_is_per_fact_max_mean_over_facts(monkeypatch):

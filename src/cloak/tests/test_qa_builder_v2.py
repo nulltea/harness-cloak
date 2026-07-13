@@ -13,6 +13,7 @@ from cloak.train.qa_builder import (
     build_joint_representative_anchor,
     compile_relational_assertions,
     freeze_ranker_environment,
+    normalize_threshold_manifest,
     package_utility_artifact,
     relation_teacher_prompt,
     score_utility,
@@ -30,6 +31,24 @@ COST_BUDGETS = {
         "context_reader_batches_per_selected_pair": 1,
     },
 }
+
+
+@pytest.mark.parametrize("field", [
+    "reader_stability_repetitions",
+    "reader_option_permutations",
+])
+@pytest.mark.parametrize("value", [True, 1.0, "1"])
+def test_threshold_manifest_requires_integer_reader_counts(field, value):
+    manifest = {
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "cost_budgets": COST_BUDGETS,
+        "reader_stability_repetitions": 1,
+        "reader_option_permutations": 1,
+    }
+    manifest[field] = value
+
+    with pytest.raises(ValueError, match="reader.*integer"):
+        normalize_threshold_manifest(manifest)
 
 
 def test_static_weights_keep_family_budgets_and_fixed_denominator():
@@ -461,7 +480,7 @@ def test_runtime_scores_context_assertions_in_one_reader_batch():
 
     assert len(calls) == 1
     assert result["component_scores"] == {"c1": 1.0, "c2": 1.0, "d1": 1.0}
-    assert result["utility"] == pytest.approx(1.0)
+    assert set(result) == {"component_scores"}
 
 
 def test_runtime_renders_option_questions_like_validation_permutation_zero():
@@ -490,6 +509,52 @@ def test_runtime_renders_option_questions_like_validation_permutation_zero():
 
     assert calls == [[qa_builder._permuted_reader_question(assertion, 0)]]
     assert result["component_scores"] == {"c1": 1.0}
+
+
+def test_packaged_runtime_option_order_matches_prepackaging_validation():
+    candidate = {
+        "family": "context",
+        "scope": "global",
+        "subtype": "semantic_property",
+        "occurrence_ids": [],
+        "group_id": "condition:category",
+        "question": "Which category is documented?",
+        "options": ["respiratory", "endocrine", "musculoskeletal"],
+        "accepted_values": ["endocrine"],
+    }
+    validation_questions = []
+
+    def validation_reader(questions, context):
+        validation_questions.extend(questions)
+        return ["NONE" if context == "placeholder" else "endocrine"]
+
+    accepted, _evidence = validate_context_assertions(
+        [candidate],
+        original_context="original",
+        representative_context="representative",
+        placeholder_context="placeholder",
+        reader=validation_reader,
+    )
+    artifact = package_utility_artifact(
+        {
+            "environment_hash": "env-v1",
+            "documents": {"d1": {"occurrences": [], "decisions": []}},
+        },
+        {"d1": accepted},
+        family_budgets={"context": 0.6, "delivered": 0.4},
+        pins={},
+    )
+    runtime_questions = []
+
+    score_utility(
+        artifact,
+        "d1",
+        doc_p="representative",
+        out_final="unused",
+        reader=lambda questions, context: runtime_questions.extend(questions) or ["endocrine"],
+    )
+
+    assert runtime_questions == [validation_questions[0]]
 
 
 def test_batched_context_reader_uses_one_model_request_for_all_questions():
@@ -558,13 +623,24 @@ def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
 
     def fake_score(artifact, doc_id, *, doc_p, out_final, reader, reader_refresh=False):
         calls.append((artifact, doc_id, doc_p, out_final, reader, reader_refresh))
-        return {"component_scores": {"c1": 0.75}, "utility": 0.75}
+        return {"component_scores": {"c1": 0.75}}
 
     monkeypatch.setattr(roundtrip, "_remote", lambda: Remote())
     monkeypatch.setattr(roundtrip, "invert", lambda out_p, R: ("DELIVERED OUT_FINAL", None))
     monkeypatch.setattr(roundtrip, "score_utility", fake_score, raising=False)
 
-    artifact = {"documents": {"d1": {}}, "assertions": {}}
+    artifact = {
+        "documents": {"d1": {
+            "assertion_ids": ["c1"],
+            "utility_weight_denominator": 1.0,
+        }},
+        "assertions": {"c1": {
+            "assertion_id": "c1",
+            "doc_id": "d1",
+            "status": "accepted",
+            "weight": 1.0,
+        }},
+    }
     result = roundtrip.roundtrip_batch([{
         "corpus": "clinical",
         "doc_id": "d1",
@@ -1365,6 +1441,27 @@ def test_relational_compiler_ignores_one_character_protected_tokens():
     assert len(accepted) == 1
 
 
+def test_relational_compiler_rejects_exact_short_protected_phrase():
+    source, proposal = _valid_relation_proposal()
+    environment = copy.deepcopy(_relation_environment())
+    environment["occurrences"].append({
+        "occurrence_id": "o-hiv",
+        "decision_id": None,
+        "surface": "HIV",
+        "aliases": [],
+        "runtime_type": "health-condition",
+        "controlled": False,
+    })
+    proposal["question"] = "Which treatment category is used for HIV?"
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, environment, [proposal]
+    )
+
+    assert accepted == []
+    assert rejected == [{"proposal_index": 0, "reason": "protected_locator"}]
+
+
 def test_delivered_only_scoring_is_deterministic_without_reader_call():
     artifact = {
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
@@ -1385,7 +1482,7 @@ def test_delivered_only_scoring_is_deterministic_without_reader_call():
         reader=lambda questions, context: pytest.fail("reader must not be called"),
     )
 
-    assert result == {"component_scores": {"d1": 1.0}, "utility": 1.0}
+    assert result == {"component_scores": {"d1": 1.0}}
 
 
 def test_runtime_component_scores_follow_stable_assertion_id_order():

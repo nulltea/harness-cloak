@@ -1,5 +1,6 @@
 import pytest
 
+import cloak.train.utility_credit as utility_credit
 from cloak.train.utility_credit import provisional_advantages
 
 
@@ -38,6 +39,27 @@ def _advantages(vectors, artifact):
         artifact["documents"]["d1"]["occurrence_to_decision"],
         doc_id="d1",
     )
+
+
+def test_document_utility_owns_weighted_component_aggregation():
+    artifact = _artifact()
+
+    utility = utility_credit.document_utility(
+        {"linked1": 1.0, "linked12": 0.5, "global": 0.2},
+        artifact,
+        doc_id="d1",
+    )
+
+    assert utility == pytest.approx(0.5)
+
+
+def test_document_utility_rejects_missing_component_scores():
+    with pytest.raises(ValueError, match="lacks assertion 'global'"):
+        utility_credit.document_utility(
+            {"linked1": 1.0, "linked12": 0.5},
+            _artifact(),
+            doc_id="d1",
+        )
 
 
 def test_provisional_credit_routes_linked_global_and_uncovered_decisions():

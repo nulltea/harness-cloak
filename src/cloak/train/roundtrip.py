@@ -22,6 +22,7 @@ from cloak.train.reward import (_max_by_fact, _read_batch, _read_mc_batch, canon
                                 decision_prompt, fact_f1s, fact_score, mc_score,
                                 W_EXACT, W_SEM)
 from cloak.train.schema_task import schema_field_score
+from cloak.train.utility_credit import document_utility
 
 RT_MODEL = "gemma 4 (E4B)"   # THE pin (spec components table); changing it re-gates.
 RT_BASE_URL = "http://localhost:8060/v1"   # THE endpoint pin; part of the reward pin.
@@ -183,12 +184,17 @@ def roundtrip_batch(
                 reader=read_context_batch,
                 reader_refresh=reader_refresh,
             )
+            component_scores = scored["component_scores"]
             result = {
                 "out_p": op,
                 "out_final": out_final,
                 "f1s": [],
-                "recall": scored["utility"],
-                "component_scores": scored["component_scores"],
+                "recall": document_utility(
+                    component_scores,
+                    j["utility_artifact"],
+                    doc_id=j["doc_id"],
+                ),
+                "component_scores": component_scores,
             }
             if extractor_version is not None:
                 result["extractor_version"] = extractor_version
