@@ -10,6 +10,28 @@ from collections.abc import Callable, Mapping, Sequence
 
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
+CONTEXT_READER_PIN_VERSION = "qa-context-reader-v1"
+CONTEXT_READER_PROMPT_VERSION = "qa-context-batch-prompt-v1"
+CONTEXT_READER_RESPONSE_SCHEMA_VERSION = "qa-context-answers-v1"
+CONTEXT_READER_MAX_TOKENS = 512
+CONTEXT_READER_PROMPT = (
+    "Answer every question using the document. Preserve semantic category and "
+    "function distinctions stated or entailed by the document. If an answer is not "
+    "supported, use NONE. Return only a JSON object with an answers array in the "
+    "same order as the questions.\n\n"
+    "DOCUMENT:\n{context}\n\nQUESTIONS:\n{questions_json}"
+)
+CONTEXT_READER_RESPONSE_SCHEMA = {
+    "type": "object",
+    "required": ["answers"],
+    "properties": {
+        "answers": {"type": "array", "items": {"type": "string"}},
+    },
+    "additionalProperties": False,
+}
+CONTEXT_READER_RESPONSE_FORMAT = {"type": "json_object"}
+CONTEXT_READER_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
+
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
 RELATION_ONTOLOGY = (
@@ -82,6 +104,59 @@ ACI_RELATION_CONTRACT = {
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
 
 
+def context_reader_pin() -> dict:
+    """Return the complete live identity of the artifact context reader."""
+    return {
+        "pin_version": CONTEXT_READER_PIN_VERSION,
+        "model": QA_MODEL,
+        "base_url": QA_BASE_URL,
+        "prompt": {
+            "version": CONTEXT_READER_PROMPT_VERSION,
+            "sha256": _stable_hash(CONTEXT_READER_PROMPT),
+        },
+        "response_schema": {
+            "version": CONTEXT_READER_RESPONSE_SCHEMA_VERSION,
+            "schema": json.loads(json.dumps(CONTEXT_READER_RESPONSE_SCHEMA)),
+        },
+        "decoding": {
+            "temperature": 0.0,
+            "max_tokens": CONTEXT_READER_MAX_TOKENS,
+            "enable_thinking": False,
+            "response_format": dict(CONTEXT_READER_RESPONSE_FORMAT),
+        },
+    }
+
+
+_COST_BUDGET_FIELDS = {
+    "base": (
+        "remote_round_trips_per_rollout",
+        "context_reader_batches_per_rollout",
+    ),
+    "counterfactual": (
+        "remote_round_trips_per_selected_pair",
+        "context_reader_batches_per_selected_pair",
+    ),
+}
+
+
+def normalize_cost_budgets(value: Mapping) -> dict:
+    """Validate and freeze the manifest-owned QA call budgets."""
+    if not isinstance(value, Mapping) or set(value) != set(_COST_BUDGET_FIELDS):
+        raise ValueError("cost budgets require base and counterfactual sections")
+    normalized = {}
+    for section, fields in _COST_BUDGET_FIELDS.items():
+        row = value.get(section)
+        if not isinstance(row, Mapping) or set(row) != set(fields):
+            raise ValueError(f"cost budgets have invalid {section} fields")
+        normalized[section] = {}
+        for field in fields:
+            amount = row[field]
+            if isinstance(amount, bool) or not isinstance(amount, int) or amount < 0:
+                raise ValueError(f"cost budget {section}.{field} must be a nonnegative integer")
+            normalized[section][field] = amount
+    return normalized
+
+
 class OpenRouterRelationTeacher:
     """Optional cached JSON relation proposer pinned to Nemotron on OpenRouter."""
 
@@ -126,39 +201,53 @@ class BatchedContextReader:
                 base_url=QA_BASE_URL,
                 api_key="x",
                 temperature=0.0,
-                max_tokens=512,
-                response_format={"type": "json_object"},
-                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+                max_tokens=CONTEXT_READER_MAX_TOKENS,
+                response_format=CONTEXT_READER_RESPONSE_FORMAT,
+                extra_body=CONTEXT_READER_EXTRA_BODY,
             )
         self._client = client
 
-    def __call__(self, questions: list[str], context: str) -> list[str]:
-        if not questions:
-            return []
-        prompt = (
-            "Answer every question using the document. Preserve semantic category and "
-            "function distinctions stated or entailed by the document. If an answer is not "
-            "supported, use NONE. Return only a JSON object with an answers array in the "
-            "same order as the questions.\n\n"
-            f"DOCUMENT:\n{context}\n\n"
-            f"QUESTIONS:\n{json.dumps(questions, indent=2)}"
-        )
-        payload = json.loads(self._client.generate(prompt))
-        answers = payload.get("answers") if isinstance(payload, dict) else None
-        if not isinstance(answers, list) or len(answers) != len(questions):
-            raise ValueError("context reader returned the wrong number of answers")
-        return ["" if str(answer).strip().upper() == "NONE" else str(answer).strip()
-                for answer in answers]
+    def __call__(
+        self,
+        questions: list[str],
+        context: str,
+        *,
+        refresh: bool = False,
+    ) -> list[str]:
+        return _read_batch(self._client, questions, context, refresh=refresh)
 
 
-_batched_context_reader = None
+def _read_batch(client, questions: list[str], context: str, *, refresh: bool) -> list[str]:
+    """Issue the single pinned context-reader request for one document."""
+    if not questions:
+        return []
+    prompt = CONTEXT_READER_PROMPT.format(
+        context=context,
+        questions_json=json.dumps(questions, indent=2),
+    )
+    payload = json.loads(client.generate(prompt, refresh=refresh))
+    answers = payload.get("answers") if isinstance(payload, dict) else None
+    if not isinstance(answers, list) or len(answers) != len(questions):
+        raise ValueError("context reader returned the wrong number of answers")
+    if any(not isinstance(answer, str) for answer in answers):
+        raise ValueError("context reader answers must be strings")
+    return ["" if answer.strip().upper() == "NONE" else answer.strip()
+            for answer in answers]
 
 
-def read_context_batch(questions: list[str], context: str) -> list[str]:
+def read_context_batch(
+    questions: list[str],
+    context: str,
+    *,
+    refresh: bool = False,
+) -> list[str]:
     global _batched_context_reader
     if _batched_context_reader is None:
         _batched_context_reader = BatchedContextReader()
-    return _batched_context_reader(questions, context)
+    return _batched_context_reader(questions, context, refresh=refresh)
+
+
+_batched_context_reader = None
 
 
 class AciTaskAdapter:
@@ -691,8 +780,8 @@ def freeze_ranker_environment(
                     "runtime_type": runtime_type,
                     "canonical_surface": decision_key[1],
                 })
-                actions = []
-                action_ids = set()
+                normalized_actions = []
+                hierarchy = []
                 for action in span.get("actions", []):
                     mode = (
                         "keep" if action.get("keep") else
@@ -700,12 +789,25 @@ def freeze_ranker_environment(
                         "level"
                     )
                     fill = action.get("fill")
+                    normalized_actions.append((dict(action), mode, fill))
+                    if mode == "level" and fill:
+                        hierarchy.append(canon(str(fill)))
+                hierarchy_positions = {
+                    canon(str(fill)): index
+                    for index, (_action, mode, fill) in enumerate(
+                        row for row in normalized_actions if row[1] == "level" and row[2]
+                    )
+                }
+                actions = []
+                action_ids = set()
+                for action, mode, fill in normalized_actions:
                     action_semantics = {
                         **dict(action),
                         "mode": mode,
                         "fill": fill,
                     }
                     action_semantics.pop("action_id", None)
+                    action_semantics.pop("entails", None)
                     action_id = _stable_hash({
                         "decision_id": decision_id,
                         "action": action_semantics,
@@ -713,12 +815,18 @@ def freeze_ranker_environment(
                     if action_id in action_ids:
                         raise ValueError(f"duplicate action semantics for decision {decision_id}")
                     action_ids.add(action_id)
+                    if mode == "placeholder" or not fill:
+                        entails = []
+                    elif mode == "keep":
+                        entails = list(dict.fromkeys([canon(surface), *hierarchy]))
+                    else:
+                        entails = hierarchy[hierarchy_positions[canon(str(fill))]:]
                     actions.append({
                         **dict(action),
                         "action_id": action_id,
                         "mode": mode,
                         "legal": True,
-                        "entails": [canon(str(fill))] if fill and mode != "placeholder" else [],
+                        "entails": entails,
                     })
                 action_menu_hash = _stable_hash(actions)
                 previous = decisions_by_key.get(decision_key)
@@ -805,6 +913,7 @@ def build_utility_artifact(
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation."""
     family_budgets = threshold_manifest["family_budgets"]
+    cost_budgets = normalize_cost_budgets(threshold_manifest.get("cost_budgets"))
     min_context = int(threshold_manifest.get("min_context_assertions", 0))
     reader_threshold = float(threshold_manifest.get("reader_threshold", 1.0))
     stability_repetitions = int(threshold_manifest.get("reader_stability_repetitions", 1))
@@ -813,6 +922,7 @@ def build_utility_artifact(
     frozen_threshold_manifest = {
         **dict(threshold_manifest),
         "family_budgets": dict(family_budgets),
+        "cost_budgets": cost_budgets,
         "reader_threshold": reader_threshold,
         "reader_stability_repetitions": stability_repetitions,
         "reader_option_permutations": option_permutations,
@@ -918,8 +1028,13 @@ def build_utility_artifact(
         frozen_environment,
         candidates_by_document,
         family_budgets=family_budgets,
-        pins={**dict(pins), "threshold_manifest": frozen_threshold_manifest},
+        pins={
+            **dict(pins),
+            "reader_pin": context_reader_pin(),
+            "threshold_manifest": frozen_threshold_manifest,
+        },
     )
+    artifact["cost_budgets"] = cost_budgets
     artifact["rejections"] = {"summary_by_reason": dict(rejection_counts)}
     artifact["artifact_hash"] = _stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
@@ -1087,6 +1202,7 @@ def score_utility(
     doc_p: str,
     out_final: str,
     reader: Callable[[list[str], str], Sequence[str]],
+    reader_refresh: bool = False,
 ) -> dict:
     """Score one document with one context-reader batch and deterministic delivered checks."""
     assertions = [
@@ -1096,7 +1212,9 @@ def score_utility(
     assertions.sort(key=lambda row: str(row["assertion_id"]))
     context_rows = [row for row in assertions if row.get("family") == "context"]
     context_answers = list(reader(
-        [str(row["question"]) for row in context_rows], doc_p
+        [str(row["question"]) for row in context_rows],
+        doc_p,
+        **({"refresh": True} if reader_refresh else {}),
     )) if context_rows else []
     if len(context_answers) != len(context_rows):
         raise ValueError("reader returned the wrong number of answers")

@@ -18,6 +18,18 @@ from cloak.train.qa_builder import (
 )
 
 
+COST_BUDGETS = {
+    "base": {
+        "remote_round_trips_per_rollout": 1,
+        "context_reader_batches_per_rollout": 1,
+    },
+    "counterfactual": {
+        "remote_round_trips_per_selected_pair": 1,
+        "context_reader_batches_per_selected_pair": 1,
+    },
+}
+
+
 def test_static_weights_keep_family_budgets_and_fixed_denominator():
     assertions = [
         {"assertion_id": "c1", "family": "context", "group_id": "condition:hypothyroid"},
@@ -118,6 +130,48 @@ def test_joint_anchor_rejects_missing_entailing_action():
 
     with pytest.raises(ValueError, match="no legal generalization"):
         build_joint_representative_anchor(assertion, decisions)
+
+
+def test_freeze_preserves_lattice_entailment_closure_for_representative_anchors():
+    frozen = freeze_ranker_environment({
+        "corpora": {"clinical": {"d1": {"spans": [{
+            "surface": "lisinopril",
+            "type": "drug",
+            "start": 0,
+            "end": 10,
+            "actions": [
+                {"fill": "an ACE inhibitor", "mode": "level"},
+                {"fill": "an antihypertensive", "mode": "level"},
+                {"fill": "a medicine", "mode": "level"},
+                {"fill": "lisinopril", "mode": "level", "keep": True},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }]}}},
+    })
+    decision = frozen["documents"]["d1"]["decisions"][0]
+    actions = {row["fill"]: row for row in decision["actions"]}
+
+    assert actions["an ACE inhibitor"]["entails"] == [
+        "an ace inhibitor", "an antihypertensive", "a medicine",
+    ]
+    assert actions["an antihypertensive"]["entails"] == [
+        "an antihypertensive", "a medicine",
+    ]
+    assert actions["a medicine"]["entails"] == ["a medicine"]
+    assert "an ace inhibitor" not in actions["a medicine"]["entails"]
+
+    decision_id = decision["decision_id"]
+    broad = build_joint_representative_anchor(
+        {"decision_requirements": {decision_id: "a medicine"}}, [decision]
+    )
+    narrow = build_joint_representative_anchor(
+        {"decision_requirements": {decision_id: "an ACE inhibitor"}}, [decision]
+    )
+
+    assert broad["action_vector"] == {decision_id: actions["a medicine"]["action_id"]}
+    assert narrow["action_vector"] == {
+        decision_id: actions["an ACE inhibitor"]["action_id"]
+    }
 
 
 def test_context_validation_requires_original_and_generalization_but_not_placeholder():
@@ -230,6 +284,7 @@ def test_builder_records_unstable_context_reader_without_accepting_assertion():
         {"d1": "original"},
         threshold_manifest={
             "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "cost_budgets": COST_BUDGETS,
             "reader_stability_repetitions": 2,
             "reader_option_permutations": 1,
             "reader_stability_threshold": 1.0,
@@ -282,7 +337,7 @@ def test_batched_context_reader_uses_one_model_request_for_all_questions():
         def __init__(self):
             self.prompts = []
 
-        def generate(self, prompt):
+        def generate(self, prompt, *, refresh=False):
             self.prompts.append(prompt)
             return '{"answers":["endocrine condition","thyroid medication"]}'
 
@@ -297,6 +352,43 @@ def test_batched_context_reader_uses_one_model_request_for_all_questions():
     assert "What treatment category?" in client.prompts[0]
 
 
+def test_context_reader_pin_covers_live_prompt_schema_endpoint_and_decoding():
+    pin = qa_builder.context_reader_pin()
+
+    assert pin["pin_version"] == "qa-context-reader-v1"
+    assert pin["model"] == qa_builder.QA_MODEL
+    assert pin["base_url"] == qa_builder.QA_BASE_URL
+    assert pin["prompt"]["version"]
+    assert pin["prompt"]["sha256"].startswith("sha256:")
+    assert pin["response_schema"]["version"]
+    assert pin["response_schema"]["schema"] == {
+        "type": "object",
+        "required": ["answers"],
+        "properties": {"answers": {"type": "array", "items": {"type": "string"}}},
+        "additionalProperties": False,
+    }
+    assert pin["decoding"] == {
+        "temperature": 0.0,
+        "max_tokens": 512,
+        "enable_thinking": False,
+        "response_format": {"type": "json_object"},
+    }
+
+
+def test_batched_context_reader_refresh_reaches_generate():
+    calls = []
+
+    class Client:
+        def generate(self, prompt, *, refresh=False):
+            calls.append(refresh)
+            return '{"answers":["endocrine"]}'
+
+    reader = BatchedContextReader(client=Client())
+
+    assert reader(["What category?"], "note", refresh=True) == ["endocrine"]
+    assert calls == [True]
+
+
 def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
     class Remote:
         def generate(self, prompt):
@@ -304,8 +396,8 @@ def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
 
     calls = []
 
-    def fake_score(artifact, doc_id, *, doc_p, out_final, reader):
-        calls.append((artifact, doc_id, doc_p, out_final, reader))
+    def fake_score(artifact, doc_id, *, doc_p, out_final, reader, reader_refresh=False):
+        calls.append((artifact, doc_id, doc_p, out_final, reader, reader_refresh))
         return {"component_scores": {"c1": 0.75}, "utility": 0.75}
 
     monkeypatch.setattr(roundtrip, "_remote", lambda: Remote())
@@ -320,11 +412,12 @@ def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
         "R": [],
         "probes": [],
         "utility_artifact": artifact,
-    }], workers=1)[0]
+    }], workers=1, reader_refresh=True)[0]
 
     assert result["recall"] == pytest.approx(0.75)
     assert result["component_scores"] == {"c1": 0.75}
     assert calls[0][1:4] == ("d1", "ROLLOUT DOC_P", "DELIVERED OUT_FINAL")
+    assert calls[0][-1] is True
 
 
 def test_compile_artifact_assigns_stable_ids_weights_and_uncovered_decisions():
@@ -537,6 +630,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
         {"d1": "original"},
         threshold_manifest={
             "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "cost_budgets": COST_BUDGETS,
             "min_context_assertions": 1,
             "reader_threshold": 1.0,
         },
@@ -561,6 +655,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     }
     assert artifact["threshold_manifest"] == {
         "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "cost_budgets": COST_BUDGETS,
         "min_context_assertions": 1,
         "reader_threshold": 1.0,
         "reader_stability_repetitions": 1,
@@ -940,6 +1035,7 @@ def test_teacher_abstention_records_missing_context_without_retry():
         {"d1": "hypothyroidism"},
         threshold_manifest={
             "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "cost_budgets": COST_BUDGETS,
             "min_context_assertions": 1,
         },
         pins={"gate_manifest_hash": "gate-v1"},

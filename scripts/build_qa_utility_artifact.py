@@ -11,8 +11,10 @@ from cloak.train.qa_builder import (
     AciTaskAdapter,
     OpenRouterRelationTeacher,
     build_utility_artifact,
+    context_reader_pin,
     frozen_occurrences_from_arms,
     freeze_ranker_environment,
+    normalize_cost_budgets,
     read_context_batch,
 )
 from cloak.train.reward import canon
@@ -101,6 +103,10 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
     family_budgets = manifest.get("family_budgets")
     if not isinstance(family_budgets, dict) or set(family_budgets) != {"context", "delivered"}:
         raise SystemExit("threshold manifest requires context and delivered family_budgets")
+    try:
+        manifest["cost_budgets"] = normalize_cost_budgets(manifest.get("cost_budgets"))
+    except ValueError as error:
+        raise SystemExit(f"threshold manifest requires frozen cost budgets: {error}") from None
 
     rows = _source_rows(args.corpus, args.doc_id)
     if any(not doc_id.startswith("aci/") for doc_id in rows):
@@ -118,6 +124,7 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         "gate_manifest_hash": _hash(manifest),
         "task_pin": AciTaskAdapter.task_pin,
         "builder_pin": "qa-builder-v2-assertion-compiler-v1",
+        "reader_pin": context_reader_pin(),
         "teacher_pin": ({
             "provider": "openrouter",
             "model": "nvidia/nemotron-3-super-120b-a12b:free",
@@ -158,6 +165,10 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     artifact = build_from_files(args)
+    report = qa_utility_preflight_report(
+        artifact,
+        {"environment_hash": artifact["environment_hash"]},
+    )
     output = Path(args.out)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(artifact, indent=1))
@@ -166,10 +177,6 @@ def main(argv=None):
         f"assertions={len(artifact['assertions'])} "
         f"rejections={sum(artifact['rejections']['summary_by_reason'].values())}",
         flush=True,
-    )
-    report = qa_utility_preflight_report(
-        artifact,
-        {"environment_hash": artifact["environment_hash"]},
     )
     print(
         "qa preflight: " + json.dumps(report, sort_keys=True, separators=(",", ":")),

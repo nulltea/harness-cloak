@@ -1,16 +1,29 @@
 """Round-trip trainer mode — offline: roundtrip_batch monkeypatched with a deterministic
 fake that rewards keeping level fills (so RLOO has a real gradient direction)."""
 import json
+import math
 import sys
 from pathlib import Path
 
 import pytest
 import torch
 
-from cloak.train.qa_builder import _stable_hash
+from cloak.train.qa_builder import _stable_hash, context_reader_pin
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import train_ranker as tr  # noqa: E402
+
+
+_COST_BUDGETS = {
+    "base": {
+        "remote_round_trips_per_rollout": 1,
+        "context_reader_batches_per_rollout": 1,
+    },
+    "counterfactual": {
+        "remote_round_trips_per_selected_pair": 1,
+        "context_reader_batches_per_selected_pair": 1,
+    },
+}
 
 
 def _sealed_utility_artifact(assertion=None):
@@ -28,22 +41,33 @@ def _sealed_utility_artifact(assertion=None):
         "reader_stability_repetitions": 1,
         "reader_option_permutations": 1,
         "reader_stability_threshold": 1.0,
+        "cost_budgets": _COST_BUDGETS,
     }
     artifact = {
         "artifact_version": "utility-assertions-v1",
         "environment_hash": "env-v1",
         "task_pin": "task-v1",
         "builder_pin": "builder-v1",
-        "reader_pin": "reader-v1",
+        "reader_pin": context_reader_pin(),
         "gate_manifest_hash": "gate-v1",
         "threshold_manifest": threshold_manifest,
+        "cost_budgets": _COST_BUDGETS,
         "family_budgets": {family: 1.0},
         "documents": {"d0": {"utility_weight_denominator": 1.0,
+                                "measurement_state": "measured",
                                 "present_family_budgets": [family],
                                 "missing_family_budgets": [],
+                                "weight_groups": {
+                                    family: {assertion["group_id"]: {
+                                        "assertion_ids": ["a1"], "weight": 1.0,
+                                    }},
+                                },
                                 "assertion_ids": ["a1"],
                                 "controlled_decision_ids": ["dec1"],
-                                "occurrence_to_decision": {"o1": "dec1"}}},
+                                "occurrence_to_decision": {"o1": "dec1"},
+                                "uncovered_decision_ids": (
+                                    [] if assertion.get("scope") == "linked" else ["dec1"]
+                                )}},
         "assertions": {"a1": assertion},
     }
     artifact["artifact_hash"] = _stable_hash(artifact)
@@ -145,14 +169,18 @@ def _verified_context_artifact():
         "reader_stability_repetitions": 1,
         "reader_option_permutations": 1,
         "reader_stability_threshold": 1.0,
+        "cost_budgets": _COST_BUDGETS,
     }
     return _seal_artifact({
         "artifact_version": "utility-assertions-v1", "environment_hash": "env-v1",
-        "task_pin": "task-v1", "builder_pin": "builder-v1", "reader_pin": "reader-v1",
+        "task_pin": "task-v1", "builder_pin": "builder-v1",
+        "reader_pin": context_reader_pin(),
         "gate_manifest_hash": "gate-v1", "threshold_manifest": threshold_manifest,
+        "cost_budgets": _COST_BUDGETS,
         "family_budgets": {"context": 0.6, "delivered": 0.4},
         "documents": {"d0": {
             "utility_weight_denominator": 1.0,
+            "measurement_state": "measured",
             "present_family_budgets": ["context", "delivered"],
             "missing_family_budgets": [],
             "weight_groups": {
@@ -172,6 +200,7 @@ def _verified_context_artifact():
                 {"decision_id": "dec2", "runtime_type": "DRUG",
                  "canonical_key": "synthroid"},
             ],
+            "uncovered_decision_ids": ["dec2"],
         }},
         "assertions": {"a-context": context, "a-delivered": delivered},
     })
@@ -211,6 +240,23 @@ def test_inert_floors_make_all_actions_legal_but_bc_skips_keep_original():
     assert span["bc_action"] == 0
     assert not span["actions"][span["bc_action"]].get("keep")
     assert tr.floor_walk_choice(spans)["metformin"]["fill"] == "a narrow clinical drug class"
+
+
+def test_artifact_cf_frac_is_rejected_before_training_initialization(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [
+        "train_ranker.py",
+        "--reward", "roundtrip",
+        "--utility-artifact", "utility.json",
+        "--cf-frac", "0.1",
+    ])
+    monkeypatch.setattr(
+        tr.torch,
+        "manual_seed",
+        lambda seed: pytest.fail("training initialization must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="--cf-frac.*--utility-artifact"):
+        tr.main()
 
 
 def _exit_doc():
@@ -677,12 +723,125 @@ def test_utility_reward_cache_reuses_full_result_and_reloads(tmp_path):
 
     assert cache.lookup(**inputs) is None
     cache.store(**inputs, result=result)
-    assert cache.lookup(**inputs) == result
+    stored = cache.lookup(**inputs)
+    assert stored == {
+        **result,
+        "result_version": "utility-roundtrip-result-v1",
+        "status": "complete",
+    }
     assert cache.hits == 1
     assert cache.misses == 1
 
     reloaded = tr.UtilityRewardCache(cache_path)
-    assert reloaded.lookup(**inputs) == result
+    assert reloaded.lookup(**inputs) == stored
+
+
+@pytest.mark.parametrize(
+    ("field", "tampered"),
+    [
+        ("out_p", "tampered remote output"),
+        ("out_final", "tampered delivered output"),
+        ("component_scores", {"a1": 0.0, "a2": 0.5}),
+        ("recall", 0.25),
+        ("status", "partial"),
+        ("result_version", "other-version"),
+    ],
+)
+def test_utility_reward_cache_fails_closed_on_result_tampering(tmp_path, field, tampered):
+    cache_path = tmp_path / "utility-reward-cache.json"
+    inputs = {
+        "doc_id": "d0",
+        "action_vector": {"dec1": "general-1"},
+        "doc_p": "generalized document",
+        "artifact_hash": "artifact-v1",
+        "scorer_pin": {"reader": "reader-v1", "remote": "remote-v1"},
+    }
+    cache = tr.UtilityRewardCache(cache_path)
+    cache.store(**inputs, result={
+        "out_p": "remote output",
+        "out_final": "delivered output",
+        "recall": 0.75,
+        "component_scores": {"a1": 1.0, "a2": 0.5},
+        "f1s": [],
+    })
+    payload = json.loads(cache_path.read_text())
+    entry = next(iter(payload["entries"].values()))
+    entry["result"][field] = tampered
+    cache_path.write_text(json.dumps(payload))
+
+    with pytest.raises(ValueError, match="invalid utility reward cache"):
+        tr.UtilityRewardCache(cache_path)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("recall", math.nan),
+        ("recall", -0.01),
+        ("recall", 1.01),
+        ("component_scores", {"a1": math.inf}),
+        ("component_scores", {"a1": -0.01}),
+        ("component_scores", {"a1": 1.01}),
+    ],
+)
+def test_utility_reward_cache_rejects_invalid_scores(tmp_path, field, value):
+    result = {
+        "out_p": "remote output",
+        "out_final": "delivered output",
+        "recall": 0.75,
+        "component_scores": {"a1": 1.0},
+        "f1s": [],
+    }
+    result[field] = value
+    cache = tr.UtilityRewardCache(tmp_path / "utility-reward-cache.json")
+
+    with pytest.raises(ValueError, match="complete round-trip result"):
+        cache.store(
+            doc_id="d0",
+            action_vector={"dec1": "general-1"},
+            doc_p="generalized document",
+            artifact_hash="artifact-v1",
+            scorer_pin={"reader": "reader-v1"},
+            result=result,
+        )
+
+
+def test_cached_utility_roundtrips_persists_once_per_dispatched_batch(tmp_path, monkeypatch):
+    cache = tr.UtilityRewardCache(tmp_path / "utility-reward-cache.json")
+    persist_calls = []
+    original_persist = cache._persist
+
+    def counted_persist():
+        persist_calls.append(True)
+        original_persist()
+
+    def fake_roundtrip(jobs, workers=1):
+        return [{
+            "out_p": f"remote {index}",
+            "out_final": f"delivered {index}",
+            "recall": 0.5,
+            "component_scores": {"a1": 0.5},
+            "f1s": [],
+        } for index, _job in enumerate(jobs)]
+
+    monkeypatch.setattr(cache, "_persist", counted_persist)
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip)
+    inputs = [{
+        "doc_id": f"d{index}",
+        "action_vector": {"dec1": f"action-{index}"},
+        "doc_p": f"document {index}",
+        "artifact_hash": "artifact-v1",
+        "scorer_pin": {"reader": "reader-v1"},
+    } for index in range(2)]
+
+    results = tr.cached_utility_roundtrips(
+        [{"doc_p": row["doc_p"]} for row in inputs], inputs, cache, workers=2
+    )
+
+    assert len(results) == 2
+    assert persist_calls == [True]
+    assert cache.hits == 0
+    assert cache.misses == 2
 
 
 def test_utility_reward_cache_rejects_changed_reward_identity(tmp_path):
@@ -714,7 +873,8 @@ def test_utility_reward_cache_rejects_changed_reward_identity(tmp_path):
         **inputs,
         out_final="other delivered output",
     )
-    assert cache.lookup(**inputs) is None
+    with pytest.raises(ValueError, match="storage identity"):
+        cache.lookup(**inputs)
 
 
 def test_train_roundtrip_reuses_identical_artifact_rollout_cache(tmp_path, monkeypatch):
@@ -804,6 +964,82 @@ def test_utility_artifact_gate_rejects_unmeasured_documents(measurement_state):
 
     with pytest.raises(SystemExit, match="measurement_state"):
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_artifact_gate_rejects_unknown_measurement_state():
+    artifact = _sealed_utility_artifact()
+    artifact["documents"]["d0"]["measurement_state"] = "mystery"
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="measurement_state"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_artifact_gate_requires_frozen_cost_budgets():
+    artifact = _sealed_utility_artifact()
+    artifact["threshold_manifest"].pop("cost_budgets", None)
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="cost budgets"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_artifact_gate_requires_weight_groups():
+    artifact = _sealed_utility_artifact()
+    artifact["documents"]["d0"].pop("weight_groups", None)
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="group weight metadata"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_artifact_gate_recomputes_uncovered_decisions():
+    artifact = _verified_context_artifact()
+    artifact["documents"]["d0"]["uncovered_decision_ids"] = []
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="uncovered decisions"):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
+def test_utility_artifact_gate_uses_authoritative_controlled_decision_order():
+    artifact = _verified_context_artifact()
+    state = artifact["documents"]["d0"]
+    state["controlled_decision_ids"] = ["dec2", "dec1"]
+    state["uncovered_decision_ids"] = ["dec2"]
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="controlled decision IDs"):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
+def test_utility_artifact_gate_rejects_live_reader_pin_mismatch():
+    artifact = _sealed_utility_artifact()
+    artifact["reader_pin"] = {"model": "wrong-reader"}
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="live reader pin"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_qa_preflight_recomputes_counts_and_enforces_call_budgets():
+    artifact = _verified_context_artifact()
+    state = artifact["documents"]["d0"]
+    state["accepted_assertion_count"] = 999
+    state["context_reader_batches_per_rollout"] = 0
+    _seal_artifact(artifact)
+
+    report = tr.qa_utility_preflight_report(artifact, _frozen_anchor_environment())
+
+    assert report["documents"]["d0"]["accepted_assertion_count"] == 2
+    assert report["documents"]["d0"]["context_reader_batches_per_rollout"] == 1
+
+    artifact["threshold_manifest"]["cost_budgets"]["base"][
+        "context_reader_batches_per_rollout"
+    ] = 0
+    _seal_artifact(artifact)
+    with pytest.raises(SystemExit, match="cost budget"):
+        tr.qa_utility_preflight_report(artifact, _frozen_anchor_environment())
 
 
 def test_utility_artifact_gate_rejects_document_without_accepted_assertions():

@@ -181,6 +181,7 @@ def roundtrip_batch(
                 doc_p=j["doc_p"],
                 out_final=out_final,
                 reader=read_context_batch,
+                reader_refresh=reader_refresh,
             )
             result = {
                 "out_p": op,

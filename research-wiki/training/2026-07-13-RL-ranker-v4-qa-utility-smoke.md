@@ -35,16 +35,23 @@ No optimizer, policy sampling, remote generation, extraction, reader inference, 
 or counterfactual was launched. Relation escalation remained disabled because
 `--relation-teacher` was omitted.
 
+The implemented scope exercised here is QA artifact construction/scoring/gating. Elsewhere in the
+same code slice, ranker training has provisional structured credit and a tested-pair substitution
+hook only. There is no artifact-mode counterfactual scheduler/executor, lambda conditioning or
+selection, or count-objective training implementation or claim.
+
 The exact smoke invocation was:
 
 ```bash
-PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_qa_utility_artifact.py --env data/ranker_env.json --arms data/task_arms_tau0.02.json --corpus clinical --doc-id aci/D2N002 --threshold-manifest /tmp/qa-utility-smoke.ntglhB/manifest.json --out /tmp/qa-utility-smoke.ntglhB/aci-D2N002.utility.json
+PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_qa_utility_artifact.py --env data/ranker_env.json --arms data/task_arms_tau0.02.json --corpus clinical --doc-id aci/D2N002 --threshold-manifest /tmp/qa-utility-final-fix.FNHSoM/manifest.json --out /tmp/qa-utility-final-fix.FNHSoM/aci-D2N002.utility.json
 ```
 
 The temporary manifest contained `family_budgets={context: 0.6, delivered: 0.4}`,
-`min_context_assertions=0`, `task_pin=aci-v1`, and `reader_pin=reader-v1`. The worktree used
-temporary symlinks to the host `.venv` and read-only clinical corpus, both removed immediately
-after the command.
+`min_context_assertions=0`, `task_pin=aci-v1`, and frozen base/counterfactual call budgets of one
+remote round trip plus at most one context-reader batch per rollout or selected pair. The builder
+persisted the canonical live reader pin rather than accepting a manifest-supplied alias. The
+worktree used temporary symlinks to the host `.venv` and read-only clinical corpus, both removed
+immediately after the command.
 
 ## Selection & operating point
 
@@ -62,14 +69,17 @@ criterion for full RL, realized privacy, attacker resistance, or utility variati
 
 ## Results
 
-The smoke completed in **0.97 s** and printed:
+The smoke completed in **0.96 s** and printed:
 
 ```text
-wrote /tmp/qa-utility-smoke.ntglhB/aci-D2N002.utility.json: docs=1 assertions=13 rejections=0
+wrote /tmp/qa-utility-final-fix.FNHSoM/aci-D2N002.utility.json: docs=1 assertions=13 rejections=0
 ```
 
-- Artifact hash: `sha256:39e0851d54d5d56c47058b450dd65be47c1567bd71cd1ca1e20b5af8e8f3acb6`.
-- Environment hash: `sha256:6e6215078568f3bf2b28f93442d8d0cd23b7470e00cdf0e0a23a8a17100f9610`.
+- Artifact hash: `sha256:57b6934ff83310d3a5710150d55c0e566289fb109c1e4e6e275ee649182daba3`.
+- Environment hash: `sha256:f09c36723681014c7e6f94725b2c3f61bfe3ab98bb074f585a4c870943fa900f`.
+- Reader pin: `Qwen3.5-0.8B` at `http://localhost:8060/v1`, batched prompt
+  `qa-context-batch-prompt-v1`, response schema `qa-context-answers-v1`, temperature `0`,
+  `max_tokens=512`, non-thinking JSON-object decoding.
 - Measurement state: `partial`; accepted assertions: **13** total (**0 context**, **13 delivered**).
 - Missing family: `context`; rejection summary: `{}`. The smoke therefore does not establish
   context-assertion support or context/delivered utility variation.
@@ -79,10 +89,12 @@ wrote /tmp/qa-utility-smoke.ntglhB/aci-D2N002.utility.json: docs=1 assertions=13
   this document; counterfactual `1` extra remote round trip/selected pair and `0` context-reader
   batches. `executed_remote_calls=0`.
 
-The gate and cache tests also reject exact environment-hash mismatches, unsupported and
-build-failed document states, empty accepted assertion sets, invalid fixed denominators, and
-dangling links. The cache identity changes for document ID, complete action vector, `doc_p`,
-`out_final`, artifact hash, and scorer pin.
+The gate and cache tests also reject exact environment-hash or live-reader-pin mismatches,
+unknown/unsupported/build-failed measurement states, missing cost/group metadata, forged family
+or uncovered-decision summaries, empty accepted assertion sets, invalid fixed denominators, and
+dangling links. Cache v2 fail-closes on complete-result hash or field tampering and validates
+finite range-bounded component scores and recall; one dispatched miss batch persists atomically
+once.
 
 ## Ablations
 
@@ -91,7 +103,7 @@ training, counterfactual scheduler, privacy attack, or utility ablation ran.
 
 ## Cost
 
-Wall time was **0.97 s**. The artifact build made **zero external or paid calls**. The reported
+Wall time was **0.96 s**. The artifact build made **zero external or paid calls**. The reported
 base/counterfactual figures are pinned call-surface counts, not measured remote throughput or a
 ranker-v2 scheduler allocation.
 
@@ -111,8 +123,8 @@ ranker-v2 scheduler allocation.
 - Tests: `src/cloak/tests/test_train_roundtrip_mode.py`,
   `src/cloak/tests/test_build_qa_utility_artifact_cli.py`.
 - Frozen inputs: `data/ranker_env.json`, `data/task_arms_tau0.02.json`.
-- Transient smoke artifact and manifest: `/tmp/qa-utility-smoke.ntglhB/` (removed after the
-  run; no durable experiment artifact was produced).
+- Transient smoke artifact, manifest, stdout, and timing: `/tmp/qa-utility-final-fix.FNHSoM/`
+  (not a durable experiment artifact; left for local review and eventual system cleanup).
 - Predecessor: [RL-ranker v3 round-trip pilot](2026-07-06-RL-ranker-v3-roundtrip-pilot.md).
 - Successor: none recorded; any full ranker-v4 run must receive a new record rather than
   overwriting this smoke.

@@ -12,6 +12,12 @@ companion: [docs/specs/qa-builder-v2.md,
 
 # QA builder v2 — design decision log
 
+**Implementation boundary (2026-07-13).** The repository implements frozen QA artifacts and
+scoring, provisional structured credit, complete-result caching, and the tested-pair substitution
+hook. It does not implement artifact-mode counterfactual scheduling/execution, lambda
+conditioning or selection, or count-objective training. The decisions below that describe those
+surfaces remain normative future design.
+
 This log records consequential design forks for QA builder v2. The companion specification is
 normative; this document preserves accepted options, alternatives, and the reasoning that fixes
 each choice. Undecided forks remain outside this log until the user selects an option.
@@ -187,8 +193,8 @@ the reader fails it. Store the complete vector/hash and supported property level
 
 Do not create one question or call per rung. The gate establishes generalization over
 placeholder for utility. QA does not reward generalization over KEEP inside the supported band;
-ranker-v2's exact count objective supplies pressure toward the coarsest semantically viable
-action.
+the ranker-v2 design assigns an exact count objective to pressure toward the coarsest semantically
+viable action. That count-training path is not implemented in the current slice.
 
 **Rejected alternatives.** Validate only original versus placeholder; validate every rung;
 require sampled rollout actions during build. The first proves only KEEP-over-placeholder
@@ -208,11 +214,12 @@ excessive call counts behind hardware-dependent timing.
 
 ## Direct doc_p scoring remains inside complete counterfactual evaluation
 
-**Decision.** A one-decision counterfactual regenerates changed `doc_p`, runs the complete pinned
+**Future decision.** A one-decision counterfactual regenerates changed `doc_p`, runs the complete pinned
 remote task and extraction path to produce `out_final`, and rescores the full weighted vector of
 context and delivered assertions. Batched direct-`doc_p` scoring is only an efficiency
 optimization and cannot bypass the remote round trip. The measured pair is bounded local
-contextual evidence, not independent causal attribution.
+contextual evidence, not independent causal attribution. The current code accepts an
+already-measured pair term at the substitution hook but does not schedule or execute this path.
 
 **Rejected alternative.** Recompute only directly linked `doc_p` assertions. That would miss
 changes to delivered output and other assertions and would not measure the complete utility

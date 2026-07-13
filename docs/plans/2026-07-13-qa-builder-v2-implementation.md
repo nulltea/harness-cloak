@@ -15,6 +15,11 @@ companion: [docs/specs/qa-builder-v2.md,
 
 **Goal:** Implement the frozen QA-builder v2 artifact, batched two-channel scoring, and ranker-v2 structured utility-credit seam without external model calls.
 
+**Delivered scope:** QA artifact construction/scoring/gates, provisional structured credit,
+complete-result caching, and the tested-pair substitution hook. No artifact-mode counterfactual
+scheduler/executor, lambda conditioning or selection, or count-objective training is delivered by
+this plan's implementation commits.
+
 **Architecture:** `cloak.train.qa_builder` owns frozen identities, deterministic assertion compilation, optional relation proposals, validation, weighting, and runtime component scoring. `roundtrip.py` returns the stable component vector. `train_ranker.py` consumes that vector through linked/global/fallback routing; it does not collapse v2 artifacts into legacy scalar trajectory credit.
 
 **Tech Stack:** Python 3, PyTorch, pytest, existing `cloak` ranker/reward/round-trip modules.

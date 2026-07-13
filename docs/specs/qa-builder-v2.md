@@ -17,6 +17,12 @@ companion: [docs/specs/RL/interactive-ranker-v2.md,
 **Status: normative design with an implemented ACI builder/scorer; empirical gates remain
 uncertified until the preregistered smoke and support runs complete.**
 
+**Implemented scope as of 2026-07-13:** frozen QA artifacts and scoring, provisional structured
+credit, complete-result reward caching, and the tested-pair substitution hook. The artifact-mode
+counterfactual scheduler/executor, lambda conditioning or selection, and count-objective training
+are not implemented. Design requirements for those surfaces remain future work, not current
+training claims.
+
 QA builder v2 produces a small, frozen set of utility assertions that reward truthful
 generalization when it preserves useful context that a generic placeholder destroys. It also
 measures the quality of the final delivered output. QA is a utility instrument, never a privacy
@@ -239,8 +245,9 @@ avoids combinatorial anchors and requires no question or model call per rung.
 
 This gate establishes that truthful generalization retains more measured utility than
 placeholder. It does not make QA reward generalization over KEEP inside the supported semantic
-band. Ranker-v2's exact local count objective supplies pressure away from KEEP and toward the
-coarsest semantically viable action. This division of labor is intentional.
+band. The ranker-v2 design assigns that role to an exact local count objective, but
+count-objective training is not implemented in this slice. This division of responsibilities is
+intentional.
 
 Semantic accepted answers come from the frozen lattice or adapter ontology. Contextual gold and
 dependencies come from accepted compiled relations. Do not generate one question per lattice
@@ -304,11 +311,15 @@ reader_pin: {...}
 gate_manifest_hash: sha256:...
 threshold_manifest:
   family_budgets: {context: 0.6, delivered: 0.4}
+  cost_budgets:
+    base: {remote_round_trips_per_rollout: ..., context_reader_batches_per_rollout: ...}
+    counterfactual: {remote_round_trips_per_selected_pair: ..., context_reader_batches_per_selected_pair: ...}
   reader_threshold: 1.0
   reader_stability_repetitions: 1
   reader_option_permutations: 1
   reader_stability_threshold: 1.0
 family_budgets: {context: 0.6, delivered: 0.4}
+cost_budgets: <exact frozen copy of threshold_manifest.cost_budgets>
 documents:
   aci/D2N002:
     measurement_state: measured | partial | unsupported | build_failed
@@ -380,14 +391,19 @@ unrelated decisions must use KEEP. The gate independently checks the canonical v
 Family weights remain fixed even when a family is absent. The gate requires the document
 denominator to equal the frozen family-budget sum, present/missing families to partition the
 manifest families, accepted weights to exhaust each present family budget (and no missing budget),
-and emitted group allocations to agree with the derived family/group split.
+and emitted group allocations to agree with the derived family/group split. It also rejects an
+unknown measurement state, requires group metadata and exact frozen cost budgets, derives
+uncovered decisions and family/count summaries from accepted assertions plus the frozen
+environment, and compares the recomputed call surface with the manifest-owned budgets.
 
 Other checks remain adapter-specific diagnostics until a measured failure justifies promoting
 them to a gate.
 
-Do not run builder-time model counterfactuals by default. Ranker-time one-decision pairs provide
-bounded local contextual evidence on actual rollout states. A small report-only audit sample may
-be added only if link disagreement becomes a measured problem.
+Do not run builder-time model counterfactuals by default. When the artifact-mode scheduler and
+executor are implemented, ranker-time one-decision pairs can provide bounded local contextual
+evidence on actual rollout states. The current implementation contains only the substitution hook
+for already-measured pair terms. A small report-only audit sample may be added only if link
+disagreement becomes a measured problem.
 
 Use a compact rejection taxonomy:
 

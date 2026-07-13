@@ -45,8 +45,10 @@ from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
 from cloak.train.reward import canon, fact_f1s, stage1_reward, u_qa
 from cloak.train.qa_builder import (coarsest_entailing_legal_action,
+                                    context_reader_pin,
                                     frozen_occurrences_from_arms,
-                                    freeze_ranker_environment)
+                                    freeze_ranker_environment,
+                                    normalize_cost_budgets)
 from cloak.train.utility_credit import provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
@@ -876,28 +878,35 @@ def utility_rollout_cache_identity(
     doc_id,
     action_vector,
     doc_p,
-    out_final,
+    out_final=None,
     artifact_hash,
     scorer_pin,
+    result_hash=None,
 ):
     """Return the cache identity for one complete QA utility measurement."""
-    return _utility_hash({
+    identity = {
         "doc_id": str(doc_id),
         "action_vector": {
             str(decision_id): str(action_id)
             for decision_id, action_id in action_vector.items()
         },
         "doc_p": str(doc_p),
-        "out_final": str(out_final),
         "artifact_hash": str(artifact_hash),
         "scorer_pin": scorer_pin,
-    })
+    }
+    if result_hash is not None:
+        identity["result_hash"] = str(result_hash)
+    else:
+        identity["out_final"] = None if out_final is None else str(out_final)
+    return _utility_hash(identity)
 
 
 class UtilityRewardCache:
     """One content-addressed JSON cache for complete artifact-backed QA reward results."""
 
-    _VERSION = 1
+    _VERSION = 2
+    _RESULT_VERSION = "utility-roundtrip-result-v1"
+    _RESULT_STATUS = "complete"
 
     def __init__(self, path):
         self.path = Path(path)
@@ -912,9 +921,13 @@ class UtilityRewardCache:
             payload = json.loads(self.path.read_text())
             if payload.get("version") != self._VERSION or not isinstance(payload.get("entries"), dict):
                 raise ValueError("invalid cache schema")
+            entries = {
+                str(request_identity): self._validate_entry(str(request_identity), entry)
+                for request_identity, entry in payload["entries"].items()
+            }
         except (OSError, ValueError, json.JSONDecodeError) as error:
             raise ValueError(f"invalid utility reward cache {self.path}: {error}") from error
-        return payload["entries"]
+        return entries
 
     @staticmethod
     def _request_identity(**inputs):
@@ -926,34 +939,99 @@ class UtilityRewardCache:
     def lookup(self, **inputs):
         request_identity = self._request_identity(**inputs)
         entry = self.entries.get(request_identity)
-        if not isinstance(entry, dict) or not isinstance(entry.get("result"), dict):
+        if entry is None:
             self.misses += 1
             return None
-        result = entry["result"]
-        if "out_final" not in result:
-            self.misses += 1
-            return None
-        storage_identity = utility_rollout_cache_identity(
-            **inputs, out_final=result["out_final"]
-        )
-        if entry.get("storage_identity") != storage_identity:
-            self.misses += 1
-            return None
+        entry = self._validate_entry(request_identity, entry)
         self.hits += 1
-        return json.loads(json.dumps(result, sort_keys=True))
+        return json.loads(json.dumps(entry["result"], sort_keys=True))
 
     def store(self, *, result, **inputs):
-        if not isinstance(result, Mapping) or "out_final" not in result:
+        return self.store_many([(inputs, result)])[0]
+
+    def store_many(self, items):
+        """Validate a dispatched miss batch, then atomically persist it once."""
+        staged = {}
+        stored_results = []
+        for inputs, result in items:
+            request_identity = self._request_identity(**inputs)
+            stored_result = self._canonical_result(result)
+            result_hash = _utility_hash(stored_result)
+            entry = {
+                "request_identity": request_identity,
+                "result_hash": result_hash,
+                "storage_identity": _utility_hash({
+                    "request_identity": request_identity,
+                    "result_hash": result_hash,
+                }),
+                "result": stored_result,
+            }
+            staged[request_identity] = self._validate_entry(request_identity, entry)
+            stored_results.append(json.loads(json.dumps(stored_result, sort_keys=True)))
+        if staged:
+            self.entries.update(staged)
+            self._persist()
+        return stored_results
+
+    @classmethod
+    def _canonical_result(cls, result):
+        if not isinstance(result, Mapping):
             raise ValueError("utility reward cache requires a complete round-trip result")
-        request_identity = self._request_identity(**inputs)
-        stored_result = json.loads(json.dumps(dict(result), sort_keys=True))
-        self.entries[request_identity] = {
-            "storage_identity": utility_rollout_cache_identity(
-                **inputs, out_final=stored_result["out_final"]
-            ),
-            "result": stored_result,
+        stored = dict(result)
+        stored.setdefault("result_version", cls._RESULT_VERSION)
+        stored.setdefault("status", cls._RESULT_STATUS)
+        required = {
+            "result_version", "status", "out_p", "out_final", "component_scores", "recall",
         }
-        self._persist()
+        if not required <= set(stored):
+            raise ValueError("utility reward cache requires a complete round-trip result")
+        if (
+            stored["result_version"] != cls._RESULT_VERSION
+            or stored["status"] != cls._RESULT_STATUS
+            or not isinstance(stored["out_p"], str)
+            or not isinstance(stored["out_final"], str)
+            or not isinstance(stored["component_scores"], Mapping)
+            or not stored["component_scores"]
+        ):
+            raise ValueError("utility reward cache requires a complete round-trip result")
+        if not cls._valid_score(stored["recall"]):
+            raise ValueError("utility reward cache requires a complete round-trip result")
+        for assertion_id, score in stored["component_scores"].items():
+            if not isinstance(assertion_id, str) or not assertion_id or not cls._valid_score(score):
+                raise ValueError("utility reward cache requires a complete round-trip result")
+        return json.loads(json.dumps(stored, sort_keys=True, allow_nan=False))
+
+    @staticmethod
+    def _valid_score(value):
+        return (
+            not isinstance(value, bool)
+            and isinstance(value, (int, float))
+            and math.isfinite(float(value))
+            and 0.0 <= float(value) <= 1.0
+        )
+
+    @classmethod
+    def _validate_entry(cls, request_identity, entry):
+        if not isinstance(entry, Mapping):
+            raise ValueError("invalid cache entry")
+        if entry.get("request_identity") != request_identity:
+            raise ValueError("cache request identity mismatch")
+        result = cls._canonical_result(entry.get("result"))
+        result_hash = _utility_hash(result)
+        if entry.get("result_hash") != result_hash:
+            raise ValueError("cache result hash mismatch")
+        expected_storage_identity = _utility_hash({
+            "request_identity": request_identity,
+            "result_hash": result_hash,
+        })
+        if entry.get("storage_identity") != expected_storage_identity:
+            raise ValueError("cache storage identity mismatch")
+        return {
+            "request_identity": request_identity,
+            "result_hash": result_hash,
+            "storage_identity": expected_storage_identity,
+            "result": result,
+        }
 
     def _persist(self):
         self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -1027,8 +1105,11 @@ def cached_utility_roundtrips(jobs, cache_inputs, cache, *, workers):
         else:
             results[index] = cached
     if misses:
-        for inputs, result in zip(miss_inputs, roundtrip_batch(misses, workers=workers)):
-            cache.store(**inputs, result=result)
+        dispatched = roundtrip_batch(misses, workers=workers)
+        if len(dispatched) != len(misses):
+            raise ValueError("round-trip result batch does not match dispatched misses")
+        stored_results = cache.store_many(list(zip(miss_inputs, dispatched)))
+        for inputs, result in zip(miss_inputs, stored_results):
             request_identity = cache.request_identity(**inputs)
             for index in pending[request_identity]["indices"]:
                 results[index] = result
@@ -1098,12 +1179,20 @@ def _frozen_utility_manifest(artifact):
         or not 0.0 < stability_threshold <= 1.0
     ):
         raise SystemExit("utility artifact has invalid frozen reader thresholds")
+    try:
+        cost_budgets = normalize_cost_budgets(manifest.get("cost_budgets"))
+        artifact_cost_budgets = normalize_cost_budgets(artifact.get("cost_budgets"))
+    except ValueError as error:
+        raise SystemExit(f"utility artifact is missing or has invalid frozen cost budgets: {error}") \
+            from None
+    if artifact_cost_budgets != cost_budgets:
+        raise SystemExit("utility artifact has inconsistent frozen cost budgets")
     return normalized_budgets, {
         "reader_threshold": reader_threshold,
         "repetitions": repetitions,
         "option_permutations": option_permutations,
         "stability_threshold": stability_threshold,
-    }
+    }, cost_budgets
 
 
 def _verify_context_anchor(assertion_id, assertion, live_document, occurrence_ids):
@@ -1320,7 +1409,7 @@ def _verify_document_weights(doc_id, state, rows, family_budgets):
             if any(not _utility_close(row["weight"], expected_assertion_weight) for row in rows):
                 raise SystemExit(f"utility artifact document {doc_id} has invalid assertion weight")
     if "weight_groups" not in state:
-        return
+        raise SystemExit(f"utility artifact document {doc_id} lacks group weight metadata")
     recorded_groups = state["weight_groups"]
     if not isinstance(recorded_groups, dict) or set(recorded_groups) != set(grouped):
         raise SystemExit(f"utility artifact document {doc_id} has invalid group weight metadata")
@@ -1339,6 +1428,27 @@ def _verify_document_weights(doc_id, state, rows, family_budgets):
                 raise SystemExit(f"utility artifact document {doc_id} has invalid group weight")
 
 
+def _verify_call_budget(doc_id, context_count, cost_budgets):
+    actual = {
+        "base": {
+            "remote_round_trips_per_rollout": 1,
+            "context_reader_batches_per_rollout": int(context_count > 0),
+        },
+        "counterfactual": {
+            "remote_round_trips_per_selected_pair": 1,
+            "context_reader_batches_per_selected_pair": int(context_count > 0),
+        },
+    }
+    for section, fields in actual.items():
+        for field, amount in fields.items():
+            if amount > cost_budgets[section][field]:
+                raise SystemExit(
+                    f"utility artifact document {doc_id} exceeds frozen cost budget "
+                    f"{section}.{field}"
+                )
+    return actual
+
+
 def enforce_utility_artifact_gate(artifact, environment):
     """Recompute frozen QA-builder v2 guarantees before training."""
     if artifact.get("artifact_version") != "utility-assertions-v1":
@@ -1350,7 +1460,9 @@ def enforce_utility_artifact_gate(artifact, environment):
         key: value for key, value in artifact.items() if key != "artifact_hash"
     }):
         raise SystemExit("utility artifact artifact_hash does not match its contents")
-    family_budgets, thresholds = _frozen_utility_manifest(artifact)
+    if artifact.get("reader_pin") != context_reader_pin():
+        raise SystemExit("utility artifact reader_pin does not match the exact live reader pin")
+    family_budgets, thresholds, cost_budgets = _frozen_utility_manifest(artifact)
     if artifact.get("environment_hash") != environment.get("environment_hash"):
         raise SystemExit("utility artifact environment_hash does not match ranker environment")
     artifact_documents = artifact.get("documents")
@@ -1365,10 +1477,16 @@ def enforce_utility_artifact_gate(artifact, environment):
     assertions = artifact.get("assertions", {})
     referenced_assertion_ids = set()
     for doc_id, state in artifact_documents.items():
-        if state.get("measurement_state") in {"unsupported", "build_failed"}:
+        measurement_state = state.get("measurement_state")
+        if measurement_state not in {"measured", "partial", "unsupported", "build_failed"}:
+            raise SystemExit(
+                f"utility artifact document {doc_id} has invalid measurement_state "
+                f"{measurement_state!r}"
+            )
+        if measurement_state in {"unsupported", "build_failed"}:
             raise SystemExit(
                 f"utility artifact document {doc_id} has unusable measurement_state "
-                f"{state['measurement_state']!r}"
+                f"{measurement_state!r}"
             )
         assertion_ids = state.get("assertion_ids", [])
         if len(assertion_ids) != len(set(assertion_ids)):
@@ -1396,10 +1514,15 @@ def enforce_utility_artifact_gate(artifact, environment):
             decision_id for decision_id, row in live_decisions.items()
             if row.get("controlled", True)
         }
+        live_controlled_order = [
+            str(row["decision_id"])
+            for row in live_document.get("decisions", [])
+            if row.get("controlled", True)
+        ]
         artifact_controlled_ids = [str(value) for value in state.get("controlled_decision_ids", [])]
         if len(artifact_controlled_ids) != len(set(artifact_controlled_ids)):
             raise SystemExit(f"utility artifact document {doc_id} repeats controlled decision IDs")
-        if has_frozen_identities and set(artifact_controlled_ids) != live_controlled_ids:
+        if has_frozen_identities and artifact_controlled_ids != live_controlled_order:
             raise SystemExit(
                 f"utility artifact document {doc_id} controlled decision IDs do not match "
                 "the frozen environment"
@@ -1519,6 +1642,39 @@ def enforce_utility_artifact_gate(artifact, environment):
             _verify_context_anchor(assertion_id, assertion, live_document, occurrence_ids)
             _verify_context_validation(assertion_id, assertion, thresholds)
         _verify_document_weights(doc_id, state, rows, family_budgets)
+        expected_measurement_state = (
+            "partial" if state["missing_family_budgets"] else "measured"
+        )
+        if measurement_state != expected_measurement_state:
+            raise SystemExit(
+                f"utility artifact document {doc_id} has inconsistent measurement_state"
+            )
+        authoritative_links = (
+            live_occurrence_to_decision
+            if has_frozen_identities else artifact_occurrence_to_decision
+        )
+        linked_decisions = {
+            authoritative_links[occurrence_id]
+            for row in rows
+            if row.get("scope") == "linked"
+            for occurrence_id in [str(value) for value in row.get("occurrence_ids") or []]
+            if occurrence_id in authoritative_links
+        }
+        expected_uncovered = [
+            decision_id for decision_id in artifact_controlled_ids
+            if decision_id not in linked_decisions
+        ]
+        recorded_uncovered = state.get("uncovered_decision_ids")
+        if (
+            not isinstance(recorded_uncovered, list)
+            or len(recorded_uncovered) != len(set(recorded_uncovered))
+            or recorded_uncovered != expected_uncovered
+        ):
+            raise SystemExit(
+                f"utility artifact document {doc_id} has inconsistent uncovered decisions"
+            )
+        context_count = sum(row.get("family") == "context" for row in rows)
+        _verify_call_budget(doc_id, context_count, cost_budgets)
     unassigned = sorted(set(assertions) - referenced_assertion_ids)
     if unassigned:
         raise SystemExit(f"utility artifact has unassigned assertions: {unassigned}")
@@ -1527,6 +1683,7 @@ def enforce_utility_artifact_gate(artifact, environment):
 def qa_utility_preflight_report(artifact, environment):
     """Validate QA-local readiness and describe its fixed call surface without running it."""
     enforce_utility_artifact_gate(artifact, environment)
+    _family_budgets, _thresholds, cost_budgets = _frozen_utility_manifest(artifact)
     assertions = artifact["assertions"]
     documents = {}
     total_context = total_delivered = total_uncovered = 0
@@ -1536,7 +1693,19 @@ def qa_utility_preflight_report(artifact, environment):
         delivered_count = sum(row.get("family") == "delivered" for row in rows)
         total_context += context_count
         total_delivered += delivered_count
-        uncovered = list(state.get("uncovered_decision_ids", []))
+        occurrence_to_decision = {
+            str(occurrence_id): str(decision_id)
+            for occurrence_id, decision_id in state["occurrence_to_decision"].items()
+        }
+        linked_decisions = {
+            occurrence_to_decision[occurrence_id]
+            for row in rows if row.get("scope") == "linked"
+            for occurrence_id in [str(value) for value in row.get("occurrence_ids") or []]
+        }
+        uncovered = [
+            str(decision_id) for decision_id in state["controlled_decision_ids"]
+            if str(decision_id) not in linked_decisions
+        ]
         total_uncovered += len(uncovered)
         documents[doc_id] = {
             "measurement_state": state.get("measurement_state", "measured"),
@@ -1575,6 +1744,7 @@ def qa_utility_preflight_report(artifact, environment):
                 },
             },
         },
+        "cost_budgets": cost_budgets,
         "executed_remote_calls": 0,
     }
 
@@ -1650,6 +1820,11 @@ def main():
     if args.cf_frac > 0:
         assert args.reward == "roundtrip", \
             "counterfactual credit (--cf-frac) requires --reward roundtrip"
+    if args.utility_artifact is not None and args.cf_frac != 0.0:
+        raise SystemExit(
+            "--cf-frac with --utility-artifact is not implemented; artifact mode currently "
+            "supports provisional structured credit and the tested-pair substitution hook only"
+        )
     roundtrip = args.reward == "roundtrip"
     if roundtrip and roundtrip_batch is None:
         raise SystemExit("roundtrip reward requires cloak.train.roundtrip (import failed)")

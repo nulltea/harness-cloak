@@ -10,7 +10,17 @@ def test_build_qa_utility_artifact_cli(tmp_path):
         "family_budgets": {"context": 0.6, "delivered": 0.4},
         "min_context_assertions": 0,
         "task_pin": "aci-v1",
-        "reader_pin": "reader-v1",
+        "reader_pin": "must-not-override-live-reader",
+        "cost_budgets": {
+            "base": {
+                "remote_round_trips_per_rollout": 1,
+                "context_reader_batches_per_rollout": 1,
+            },
+            "counterfactual": {
+                "remote_round_trips_per_selected_pair": 1,
+                "context_reader_batches_per_selected_pair": 1,
+            },
+        },
     }))
 
     result = subprocess.run(
@@ -29,6 +39,18 @@ def test_build_qa_utility_artifact_cli(tmp_path):
     artifact = json.loads(out_path.read_text())
     assert artifact["artifact_version"] == "utility-assertions-v1"
     assert artifact["gate_manifest_hash"].startswith("sha256:")
+    assert artifact["reader_pin"]["pin_version"] == "qa-context-reader-v1"
+    assert artifact["cost_budgets"] == artifact["threshold_manifest"]["cost_budgets"]
+    assert artifact["threshold_manifest"]["cost_budgets"] == {
+        "base": {
+            "remote_round_trips_per_rollout": 1,
+            "context_reader_batches_per_rollout": 1,
+        },
+        "counterfactual": {
+            "remote_round_trips_per_selected_pair": 1,
+            "context_reader_batches_per_selected_pair": 1,
+        },
+    }
     assert list(artifact["documents"]) == ["aci/D2N002"]
     assert artifact["documents"]["aci/D2N002"]["missing_family_budgets"] == ["context"]
     assert any(
