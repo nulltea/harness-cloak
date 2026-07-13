@@ -889,6 +889,99 @@ def test_semantic_property_records_not_generated_without_task_role_cue():
     assert records[0]["detail_reason"] == "no_task_role_cue"
 
 
+@pytest.mark.parametrize(("runtime_type", "surface", "property_level", "document"), [
+    ("drug", "Aspirin", "a drug,", "The patient takes Aspirin daily."),
+    (
+        "health-condition", "asthma", "(an illness)",
+        "The patient has a history of asthma.",
+    ),
+    (
+        "medical-procedure", "CBC", "a test!",
+        "The clinician ordered CBC.",
+    ),
+    ("LOC", "Berlin", "the place.", "The clinic is located in Berlin."),
+])
+def test_semantic_property_rejects_article_bearing_placeholder_meaning(
+    runtime_type, surface, property_level, document,
+):
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "o-target",
+            "decision_id": "d-target",
+            "surface": surface,
+            "runtime_type": runtime_type,
+        }],
+        "decisions": [{
+            "decision_id": "d-target",
+            "runtime_type": runtime_type,
+            "actions": [
+                {"action_id": "generic", "mode": "level", "entails": [property_level]},
+                {"action_id": "keep", "mode": "keep", "entails": [surface]},
+                {"action_id": "placeholder", "mode": "placeholder", "entails": []},
+            ],
+        }],
+    }
+
+    records = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/article-generic", document, environment
+    )
+
+    assert len(records) == 1
+    assert records[0]["status"] == "rejected"
+    assert records[0]["reason"] == "not_generated"
+    assert records[0]["detail_reason"] == "placeholder_type_only"
+
+
+def test_semantic_property_requires_role_cue_attached_to_target_occurrence():
+    environment = _semantic_property_environment()
+    environment["decisions"][0]["actions"] = [
+        row for row in environment["decisions"][0]["actions"]
+        if row["action_id"] in {"opioid", "keep", "placeholder"}
+    ]
+
+    records = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002",
+        "The patient takes aspirin and mentions Synthroid.",
+        environment,
+    )
+
+    assert len(records) == 1
+    assert records[0]["status"] == "rejected"
+    assert records[0]["reason"] == "not_generated"
+    assert records[0]["detail_reason"] == "no_task_role_cue"
+
+
+def test_semantic_property_records_unsupported_runtime_type_attempt():
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "o-custom",
+            "decision_id": "d-custom",
+            "surface": "SecretValue",
+            "runtime_type": "custom-sensitive-type",
+        }],
+        "decisions": [{
+            "decision_id": "d-custom",
+            "runtime_type": "custom-sensitive-type",
+            "actions": [
+                {"action_id": "specific", "mode": "level", "entails": ["special category"]},
+                {"action_id": "keep", "mode": "keep", "entails": ["SecretValue"]},
+                {"action_id": "placeholder", "mode": "placeholder", "entails": []},
+            ],
+        }],
+    }
+
+    records = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/custom", "SecretValue appears in the record.", environment
+    )
+
+    assert len(records) == 1
+    assert records[0]["status"] == "rejected"
+    assert records[0]["reason"] == "not_generated"
+    assert records[0]["detail_reason"] == "unsupported_runtime_type"
+    assert records[0]["doc_id"] == "aci/custom"
+    assert records[0]["attempt_hash"].startswith("sha256:")
+
+
 def test_relation_prompt_exposes_only_closed_ids_properties_and_source():
     prompt = relation_teacher_prompt(
         "aci/D2N002",
@@ -1024,6 +1117,31 @@ def test_relational_compiler_rejects_cross_sentence_false_link(source):
     assert rejected[0]["detail_reason"] == "invalid_evidence"
 
 
+def test_relational_compiler_rejects_extra_entity_inside_connector():
+    source = "Hypothyroidism and diabetes is treated with Synthroid."
+    proposal = {
+        "subtype": "contextual_relation",
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "o-drug"],
+        "support_properties": {
+            "o-condition": "an endocrine condition",
+            "o-drug": "a thyroid medication",
+        },
+        "answer_occurrence_id": "o-drug",
+        "answer_property": "a thyroid medication",
+        "question": "What treatment category is used for the endocrine condition?",
+        "evidence_quote": source,
+    }
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, _relation_environment(), [proposal]
+    )
+
+    assert accepted == []
+    assert rejected[0]["reason"] == "invalid"
+    assert rejected[0]["detail_reason"] == "invalid_evidence"
+
+
 def test_relational_compiler_rejects_answer_modifier_and_alias_leakage():
     source = "Hypothyroidism is treated with Synthroid."
     environment = _relation_environment()
@@ -1055,6 +1173,34 @@ def test_relational_compiler_rejects_answer_modifier_and_alias_leakage():
 
     assert answer_rejection[0]["detail_reason"] == "answer_leakage"
     assert alias_rejection[0]["detail_reason"] == "protected_locator"
+
+
+@pytest.mark.parametrize("alias", ["Li", "UK", "AF"])
+def test_relational_compiler_rejects_short_protected_alias_leakage(alias):
+    source = "Hypothyroidism is treated with Synthroid."
+    environment = _relation_environment()
+    environment["occurrences"][1]["aliases"] = [alias]
+    proposal = {
+        "subtype": "contextual_relation",
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "o-drug"],
+        "support_properties": {
+            "o-condition": "an endocrine condition",
+            "o-drug": "a thyroid medication",
+        },
+        "answer_occurrence_id": "o-drug",
+        "answer_property": "a thyroid medication",
+        "question": f"Which {alias} treatment is used for the endocrine condition?",
+        "evidence_quote": source,
+    }
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, environment, [proposal]
+    )
+
+    assert accepted == []
+    assert rejected[0]["reason"] == "leakage"
+    assert rejected[0]["detail_reason"] == "protected_locator"
 
 
 def test_relational_compiler_rejects_non_contextual_proposed_subtype():
@@ -1221,7 +1367,7 @@ def test_aci_adapter_builds_delivered_facts_only_from_authoritative_reference():
         environment,
     )
 
-    delivered = [row for row in candidates if row["family"] == "delivered"]
+    delivered = [row for row in candidates if row.get("family") == "delivered"]
     assert {row["scoring_contract"]["value"] for row in delivered} == {
         "62-year-old", "male", "hypothyroidism", "Synthroid"
     }

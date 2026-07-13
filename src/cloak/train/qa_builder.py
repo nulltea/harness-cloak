@@ -54,30 +54,49 @@ ACI_RELATION_CONTRACT = {
     "treated_with": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["treated_with"],
         "cues": ("treated with",),
+        "connector_patterns": (
+            r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
+            r"treated\s+with\s+",
+        ),
     },
     "monitored_by": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["monitored_by"],
         "cues": ("monitored by",),
+        "connector_patterns": (
+            r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
+            r"monitored\s+by\s+",
+        ),
     },
     "contraindicated_because_of": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["contraindicated_because_of"],
         "cues": ("contraindicated because of",),
+        "connector_patterns": (
+            r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
+            r"contraindicated\s+because\s+of\s+",
+        ),
     },
     "causes_or_explains": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["causes_or_explains"],
         "cues": ("causes", "explains"),
+        "connector_patterns": (r"\s+(?:causes|explains)\s+",),
     },
     "referred_to": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["referred_to"],
         "cues": ("referred to",),
+        "connector_patterns": (
+            r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
+            r"referred\s+to\s+",
+        ),
     },
     "has_status": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["has_status"],
         "cues": ("has status", "status is"),
+        "connector_patterns": (r"\s+(?:has\s+status|status\s+is)\s+",),
     },
     "has_category": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["has_category"],
         "cues": ("has category", "category is"),
+        "connector_patterns": (r"\s+(?:has\s+category|category\s+is)\s+",),
     },
 }
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
@@ -179,9 +198,21 @@ class AciTaskAdapter:
     semantic_type_contract = {
         "drug": {
             "placeholder_labels": frozenset({"drug", "medication", "treatment"}),
-            "role_cues": (
-                "prescribed", "prescribes", "prescribe", "taking", "takes", "take",
-                "treated", "treats", "treat",
+            "role_patterns": (
+                ("taking", r"\b(?:take|takes|taking)\s+(?:(?:a|an|the)\s+)?{surface}"),
+                (
+                    "prescribed",
+                    r"\b(?:prescribe|prescribes|prescribed)\s+"
+                    r"(?:(?:a|an|the)\s+)?{surface}",
+                ),
+                (
+                    "prescribed",
+                    r"{surface}\s+(?:(?:is|was|are|were)\s+)?prescribed\b",
+                ),
+                (
+                    "treated with",
+                    r"\b(?:is|was|are|were)?\s*treated\s+with\s+{surface}",
+                ),
             ),
             "question": (
                 'What specific treatment category is the patient taking or prescribed in '
@@ -190,11 +221,15 @@ class AciTaskAdapter:
         },
         "health condition": {
             "placeholder_labels": frozenset({
-                "health condition", "condition", "disease", "medical condition",
+                "health condition", "condition", "disease", "illness",
+                "medical condition",
             }),
-            "role_cues": (
-                "diagnosis", "diagnosed", "history", "presents", "presented",
-                "complaint", "complaints",
+            "role_patterns": (
+                ("history", r"\bhistory\s+of\s+{surface}"),
+                ("diagnosis", r"\bdiagnosis\s+of\s+{surface}"),
+                ("diagnosed", r"\bdiagnosed\s+with\s+{surface}"),
+                ("presentation", r"\b(?:presents|presented)\s+with\s+{surface}"),
+                ("complaint", r"\bcomplaints?\s+of\s+{surface}"),
             ),
             "question": (
                 'What specific condition category is documented in the diagnosis, history, '
@@ -203,7 +238,10 @@ class AciTaskAdapter:
         },
         "medical procedure": {
             "placeholder_labels": frozenset({"medical procedure", "procedure", "test"}),
-            "role_cues": ("ordered", "orders", "order", "test", "tests", "panel", "panels"),
+            "role_patterns": (
+                ("ordered", r"\border(?:s|ed|ing)?\s+{surface}"),
+                ("test", r"\b(?:test|panel)\s+(?:for\s+)?{surface}"),
+            ),
             "question": (
                 'What specific procedure or test category is ordered in this context: '
                 '"{locator}"?'
@@ -211,9 +249,10 @@ class AciTaskAdapter:
         },
         "loc": {
             "placeholder_labels": frozenset({"loc", "location", "place"}),
-            "role_cues": (
-                "located", "location", "address", "addresses", "travel", "traveled",
-                "travels", "traveling",
+            "role_patterns": (
+                ("located", r"\blocated\s+in\s+{surface}"),
+                ("address", r"\baddress(?:\s+is|\s+at)?\s+{surface}"),
+                ("travel", r"\btravel(?:s|ed|ing)?\s+to\s+{surface}"),
             ),
             "question": (
                 'What specific location category is referenced by the location, address, or '
@@ -278,14 +317,42 @@ class AciTaskAdapter:
                     if property_level not in supporting_actions:
                         properties.append(property_level)
                     supporting_actions[property_level].append(str(action["action_id"]))
-            if not properties or type_contract is None:
+            if not properties:
+                continue
+
+            if type_contract is None:
+                for property_level in properties:
+                    attempt = {
+                        "doc_id": doc_id,
+                        "decision_id": decision_id,
+                        "runtime_type": runtime_type,
+                        "occurrence_ids": occurrence_ids,
+                        "property_hash": _stable_hash(property_level),
+                        "definition_version": "aci-semantic-property-v1",
+                    }
+                    records.append(_rejection_record(
+                        reason="not_generated",
+                        detail_reason="unsupported_runtime_type",
+                        attempt=attempt,
+                        evidence={
+                            "source": "deterministic_template",
+                            "decision_id": decision_id,
+                            "runtime_type": runtime_type,
+                            "occurrence_ids": occurrence_ids,
+                            "property_hash": _stable_hash(property_level),
+                            "supporting_action_hashes": [
+                                _stable_hash(action_id)
+                                for action_id in supporting_actions[property_level]
+                            ],
+                        },
+                    ))
                 continue
 
             locator, role_cue, locator_rejection = _task_role_context_locator(
                 document,
                 occurrences,
                 protected_terms=[*protected_terms, *properties],
-                role_cues=type_contract["role_cues"],
+                role_patterns=type_contract["role_patterns"],
             )
             for property_level in properties:
                 attempt = {
@@ -296,7 +363,10 @@ class AciTaskAdapter:
                     "property_hash": _stable_hash(property_level),
                     "definition_version": "aci-semantic-property-v1",
                 }
-                if _semantic_label(property_level) in type_contract["placeholder_labels"]:
+                if (
+                    _semantic_property_label(property_level)
+                    in type_contract["placeholder_labels"]
+                ):
                     records.append(_rejection_record(
                         reason="not_generated",
                         detail_reason="placeholder_type_only",
@@ -570,6 +640,13 @@ def _semantic_label(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", canon(value)))
 
 
+def _semantic_property_label(value: str) -> str:
+    tokens = _semantic_label(value).split()
+    while tokens and tokens[0] in {"a", "an", "the"}:
+        tokens.pop(0)
+    return " ".join(tokens)
+
+
 _LEAKAGE_STOPWORDS = frozenset({
     "a", "an", "and", "are", "as", "at", "be", "being", "by", "did", "does",
     "for", "from", "how", "in", "is", "it", "of", "on", "or", "that", "the",
@@ -608,6 +685,8 @@ def _question_leaks_answer(question: str, answer: str, runtime_type: str) -> boo
 
 
 def _question_leaks_protected_term(question: str, protected_terms: Sequence[str]) -> bool:
+    if any(_contains(question, term) for term in protected_terms if term):
+        return True
     question_tokens = _meaningful_tokens(question)
     return any(_meaningful_tokens(term) & question_tokens for term in protected_terms)
 
@@ -636,19 +715,25 @@ def _task_role_context_locator(
     occurrences: Sequence[Mapping],
     *,
     protected_terms: Sequence[str],
-    role_cues: Sequence[str],
+    role_patterns: Sequence[tuple[str, str]],
 ) -> tuple[str | None, str | None, str]:
-    positions = []
+    targets = []
     for occurrence in occurrences:
-        surface = str(occurrence.get("surface", ""))
+        surface = str(occurrence.get("surface", "")).strip()
         start = occurrence.get("start")
-        if isinstance(start, int) and 0 <= start < len(document):
-            positions.append(start)
+        if surface and isinstance(start, int) and 0 <= start < len(document):
+            targets.append((start, surface))
             continue
-        position = document.casefold().find(surface.casefold()) if surface else -1
-        if position >= 0:
-            positions.append(position)
-    if not positions:
+        if surface:
+            targets.extend(
+                (match.start(), surface)
+                for match in re.finditer(
+                    rf"(?<!\w){re.escape(surface)}(?!\w)",
+                    document,
+                    flags=re.IGNORECASE,
+                )
+            )
+    if not targets:
         return None, None, "no_safe_contextual_locator"
     locator = None
     matched_cue = None
@@ -656,16 +741,21 @@ def _task_role_context_locator(
     protected_tokens = {
         token for term in protected_terms for token in _meaningful_tokens(term)
     }
-    for position in sorted(set(positions)):
+    for position, surface in sorted(set(targets)):
         sentence = _sentence_at(document, position)
         sentence_tokens = _meaningful_tokens(sentence)
         if not sentence_tokens - protected_tokens:
             continue
         has_surviving_context = True
-        matched_cue = next(
-            (cue for cue in role_cues if _semantic_label(cue) in sentence_tokens),
-            None,
-        )
+        escaped_surface = rf"(?<!\w){re.escape(surface)}(?!\w)"
+        matched_cue = next((
+            cue for cue, pattern in role_patterns
+            if re.search(
+                pattern.format(surface=escaped_surface),
+                sentence,
+                flags=re.IGNORECASE,
+            )
+        ), None)
         if matched_cue is not None:
             locator = sentence
             break
@@ -846,7 +936,11 @@ def _relation_clause_connects_arguments(
     if positions != sorted(positions):
         return False
     connector_text = canonical_clause[positions[0][1]:positions[-1][0]]
-    return any(cue in connector_text for cue in relation_contract[relation]["cues"])
+    connector_patterns = relation_contract[relation].get("connector_patterns", ())
+    return any(
+        re.fullmatch(pattern, connector_text) is not None
+        for pattern in connector_patterns
+    )
 
 
 def _proposal_polarity_matches_frozen_occurrences(
@@ -878,8 +972,9 @@ def _source_contains_relation_contradiction(
     for sentence in re.split(r"(?<=[.!?])\s+", document):
         if not _NEGATION_PATTERN.search(canon(sentence)):
             continue
+        affirmative_form = _NEGATION_PATTERN.sub("", sentence)
         if _relation_evidence_connects_arguments(
-            relation, sentence, occurrence_ids, occurrences, relation_contract
+            relation, affirmative_form, occurrence_ids, occurrences, relation_contract
         ):
             return True
     return False
