@@ -84,6 +84,8 @@ def _frozen_anchor_environment():
                     "actions": [
                         {"action_id": "keep-1", "mode": "keep", "legal": True,
                          "entails": ["exact"]},
+                        {"action_id": "fine-1", "mode": "level", "legal": True,
+                         "entails": ["endocrine"]},
                         {"action_id": "general-1", "mode": "level", "legal": True,
                          "entails": ["endocrine"]},
                         {"action_id": "placeholder-1", "mode": "placeholder", "legal": True,
@@ -682,6 +684,17 @@ def test_utility_artifact_gate_recomputes_forged_validation_evidence():
     _seal_artifact(artifact)
 
     with pytest.raises(SystemExit, match="recomputed validation"):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
+def test_utility_artifact_gate_rejects_finer_entailing_joint_anchor():
+    artifact = _verified_context_artifact()
+    support = artifact["assertions"]["a-context"]["expected_action_support"]
+    support["joint_anchor_action_vector"]["dec1"] = "fine-1"
+    support["joint_anchor_hash"] = _stable_hash(support["joint_anchor_action_vector"])
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="coarsest entailing action"):
         tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
 
 

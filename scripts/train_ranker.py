@@ -42,7 +42,9 @@ from cloak.corpora import load_task_docs
 from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
 from cloak.train.reward import canon, fact_f1s, stage1_reward, u_qa
-from cloak.train.qa_builder import frozen_occurrences_from_arms, freeze_ranker_environment
+from cloak.train.qa_builder import (coarsest_entailing_legal_action,
+                                    frozen_occurrences_from_arms,
+                                    freeze_ranker_environment)
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
@@ -792,12 +794,23 @@ def _verify_context_anchor(assertion_id, assertion, live_document, occurrence_id
                     f"utility artifact context assertion {assertion_id} must keep unrelated decision"
                 )
             continue
-        expected_property = canon(str(property_levels[decision_id]))
-        entailed = {canon(str(value)) for value in action.get("entails", [])}
-        if mode in {"keep", "placeholder"} or expected_property not in entailed:
+        if mode in {"keep", "placeholder"}:
             raise SystemExit(
                 f"utility artifact context assertion {assertion_id} requires a non-placeholder "
                 "generalization with matching property support"
+            )
+        expected_action = coarsest_entailing_legal_action(
+            decision, property_levels[decision_id]
+        )
+        if expected_action is None:
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} requires a non-placeholder "
+                "generalization with matching property support"
+            )
+        if str(action["action_id"]) != str(expected_action["action_id"]):
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} must select the coarsest "
+                "entailing action"
             )
 
 

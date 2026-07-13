@@ -911,6 +911,21 @@ def build_utility_artifact(
     return artifact
 
 
+def coarsest_entailing_legal_action(
+    decision: Mapping,
+    property_level: str,
+) -> Mapping | None:
+    """Return the last legal non-KEEP action entailing a required property."""
+    expected_property = canon(str(property_level))
+    candidates = [
+        action for action in decision.get("actions", [])
+        if action.get("legal", True)
+        and action.get("mode") not in {"keep", "placeholder"}
+        and expected_property in {canon(str(value)) for value in action.get("entails", [])}
+    ]
+    return candidates[-1] if candidates else None
+
+
 def build_joint_representative_anchor(
     assertion: Mapping,
     decisions: Sequence[Mapping],
@@ -925,16 +940,12 @@ def build_joint_representative_anchor(
         actions = [action for action in decision.get("actions", []) if action.get("legal", True)]
         if decision_id in requirements:
             property_level = requirements[decision_id]
-            candidates = [
-                action for action in actions
-                if action.get("mode") not in {"keep", "placeholder"}
-                and property_level in (action.get("entails") or [])
-            ]
-            if not candidates:
+            action = coarsest_entailing_legal_action(decision, property_level)
+            if action is None:
                 raise ValueError(
                     f"no legal generalization for decision {decision_id} entails {property_level}"
                 )
-            action_vector[decision_id] = str(candidates[-1]["action_id"])
+            action_vector[decision_id] = str(action["action_id"])
         else:
             keep = next((action for action in actions if action.get("mode") == "keep"), None)
             if keep is None:
