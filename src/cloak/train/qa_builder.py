@@ -49,6 +49,37 @@ _RELATION_ARGUMENT_CLASSES = {
     "has_status": (("condition", "symptom", "treatment", "procedure"), ("status",)),
     "has_category": (("condition", "symptom", "treatment", "procedure"), ("category",)),
 }
+ACI_RELATION_CONTRACT = {
+    "treated_with": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["treated_with"],
+        "cues": ("treated with",),
+    },
+    "monitored_by": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["monitored_by"],
+        "cues": ("monitored by",),
+    },
+    "contraindicated_because_of": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["contraindicated_because_of"],
+        "cues": ("contraindicated because of",),
+    },
+    "causes_or_explains": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["causes_or_explains"],
+        "cues": ("causes", "explains"),
+    },
+    "referred_to": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["referred_to"],
+        "cues": ("referred to",),
+    },
+    "has_status": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["has_status"],
+        "cues": ("has status", "status is"),
+    },
+    "has_category": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["has_category"],
+        "cues": ("has category", "category is"),
+    },
+}
+_NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
 
 
 class OpenRouterRelationTeacher:
@@ -134,6 +165,7 @@ class AciTaskAdapter:
     """Authoritative deterministic ACI delivered facts and relation compilation."""
 
     task_pin = "aci-utility-v1"
+    relation_contract = ACI_RELATION_CONTRACT
 
     def __init__(self, references: Mapping[str, str]):
         self._references = dict(references)
@@ -191,7 +223,8 @@ class AciTaskAdapter:
         proposals: Sequence[Mapping],
     ) -> tuple[list[dict], list[dict]]:
         return compile_relational_assertions(
-            doc_id, document, environment_document, proposals
+            doc_id, document, environment_document, proposals,
+            relation_contract=self.relation_contract,
         )
 
 
@@ -208,8 +241,9 @@ def _relation_argument_types_are_legal(
     relation: str,
     occurrence_ids: Sequence[str],
     occurrences: Mapping[str, Mapping],
+    relation_contract: Mapping[str, Mapping],
 ) -> bool:
-    allowed = _RELATION_ARGUMENT_CLASSES[relation]
+    allowed = relation_contract[relation]["argument_classes"]
     if len(occurrence_ids) != len(allowed):
         return False
     actual = [
@@ -218,6 +252,63 @@ def _relation_argument_types_are_legal(
     ]
     return all(type_class in permitted
                for type_class, permitted in zip(actual, allowed))
+
+
+def _relation_evidence_connects_arguments(
+    relation: str,
+    quote: str,
+    occurrence_ids: Sequence[str],
+    occurrences: Mapping[str, Mapping],
+    relation_contract: Mapping[str, Mapping],
+) -> bool:
+    canonical_quote = canon(quote)
+    positions = []
+    for occurrence_id in occurrence_ids:
+        surface = canon(str(occurrences[occurrence_id].get("surface", "")))
+        match = re.search(rf"(?<!\w){re.escape(surface)}(?!\w)", canonical_quote)
+        if match is None:
+            return False
+        positions.append((match.start(), match.end()))
+    if positions != sorted(positions):
+        return False
+    connector_text = canonical_quote[positions[0][1]:positions[-1][0]]
+    return any(cue in connector_text for cue in relation_contract[relation]["cues"])
+
+
+def _proposal_polarity_matches_frozen_occurrences(
+    proposal: Mapping,
+    occurrence_ids: Sequence[str],
+    occurrences: Mapping[str, Mapping],
+) -> bool:
+    declared = proposal.get("argument_polarities")
+    if declared is None:
+        return True
+    declared_by_occurrence = {
+        str(occurrence_id): canon(str(polarity))
+        for occurrence_id, polarity in dict(declared).items()
+    }
+    frozen_by_occurrence = {
+        occurrence_id: canon(str(occurrences[occurrence_id].get("polarity", "unknown")))
+        for occurrence_id in occurrence_ids
+    }
+    return declared_by_occurrence == frozen_by_occurrence
+
+
+def _source_contains_relation_contradiction(
+    relation: str,
+    document: str,
+    occurrence_ids: Sequence[str],
+    occurrences: Mapping[str, Mapping],
+    relation_contract: Mapping[str, Mapping],
+) -> bool:
+    for sentence in re.split(r"(?<=[.!?])\s+", document):
+        if not _NEGATION_PATTERN.search(canon(sentence)):
+            continue
+        if _relation_evidence_connects_arguments(
+            relation, sentence, occurrence_ids, occurrences, relation_contract
+        ):
+            return True
+    return False
 
 
 def relation_teacher_prompt(
@@ -275,6 +366,8 @@ def compile_relational_assertions(
     document: str,
     environment_document: Mapping,
     proposals: Sequence[Mapping],
+    *,
+    relation_contract: Mapping[str, Mapping] = ACI_RELATION_CONTRACT,
 ) -> tuple[list[dict], list[dict]]:
     """Compile bounded teacher proposals into frozen, evidence-checked assertions."""
     occurrences = {
@@ -304,7 +397,7 @@ def compile_relational_assertions(
             rejected.append({"proposal_index": index, "reason": reason})
 
         relation = str(proposal.get("relation", ""))
-        if relation not in RELATION_ONTOLOGY:
+        if relation not in relation_contract:
             reject("invalid_relation")
             continue
         occurrence_ids = [str(value) for value in proposal.get(
@@ -316,7 +409,9 @@ def compile_relational_assertions(
         if any(occurrence_id not in occurrences for occurrence_id in occurrence_ids):
             reject("invalid_arguments")
             continue
-        if not _relation_argument_types_are_legal(relation, occurrence_ids, occurrences):
+        if not _relation_argument_types_are_legal(
+            relation, occurrence_ids, occurrences, relation_contract
+        ):
             reject("invalid_argument_types")
             continue
         quote = str(proposal.get("evidence_quote", ""))
@@ -325,6 +420,21 @@ def compile_relational_assertions(
             for occurrence_id in occurrence_ids
         ):
             reject("invalid_evidence")
+            continue
+        if not _relation_evidence_connects_arguments(
+            relation, quote, occurrence_ids, occurrences, relation_contract
+        ):
+            reject("invalid_evidence")
+            continue
+        if not _proposal_polarity_matches_frozen_occurrences(
+            proposal, occurrence_ids, occurrences
+        ):
+            reject("invalid_polarity")
+            continue
+        if _source_contains_relation_contradiction(
+            relation, document, occurrence_ids, occurrences, relation_contract
+        ):
+            reject("source_contradiction")
             continue
         support = {
             str(key): canon(str(value))
@@ -663,6 +773,9 @@ def build_utility_artifact(
     family_budgets = threshold_manifest["family_budgets"]
     min_context = int(threshold_manifest.get("min_context_assertions", 0))
     reader_threshold = float(threshold_manifest.get("reader_threshold", 1.0))
+    stability_repetitions = int(threshold_manifest.get("reader_stability_repetitions", 1))
+    option_permutations = int(threshold_manifest.get("reader_option_permutations", 1))
+    stability_threshold = float(threshold_manifest.get("reader_stability_threshold", 1.0))
     candidates_by_document: dict[str, list[dict]] = {}
     rejection_counts: dict[str, int] = defaultdict(int)
 
@@ -727,24 +840,30 @@ def build_utility_artifact(
                     placeholder_context=placeholder_context,
                     reader=reader,
                     threshold=reader_threshold,
+                    stability_repetitions=stability_repetitions,
+                    option_permutations=option_permutations,
+                    stability_threshold=stability_threshold,
                 )
             except Exception:
                 rejection_counts["infrastructure_failed"] += 1
                 continue
             evidence_row = next(iter(validation_evidence.values()))
             if not validated:
-                reason = (
-                    "floor_answerable"
-                    if evidence_row["scores"]["placeholder"] >= reader_threshold
-                    else "unsupported"
-                )
+                if evidence_row["verdict"] == "unstable":
+                    reason = "unstable"
+                else:
+                    reason = (
+                        "floor_answerable"
+                        if evidence_row["scores"]["placeholder"] >= reader_threshold
+                        else "unsupported"
+                    )
                 rejection_counts[reason] += 1
                 continue
             row = dict(candidate)
             row["expected_action_support"] = {
                 "joint_anchor_action_vector": anchor["action_vector"],
                 "joint_anchor_hash": anchor["action_vector_hash"],
-                "property_levels": dict(candidate.get("decision_requirements") or {}),
+                "property_level": dict(candidate.get("decision_requirements") or {}),
             }
             row["evidence"] = {
                 **dict(row.get("evidence") or {}),
@@ -811,6 +930,23 @@ def _answer_score(answer: str, accepted_values: Sequence[str]) -> float:
     return max(fact_score(answer, value) for value in accepted_values)
 
 
+def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str:
+    question = str(assertion["question"])
+    options = [str(option) for option in assertion.get("options") or []]
+    if not options:
+        return question
+    ordered = sorted(
+        options,
+        key=lambda option: _stable_hash({
+            "assertion_id": str(assertion.get("assertion_id", "")),
+            "option": option,
+        }),
+    )
+    shift = permutation_index % len(ordered)
+    permutation = ordered[shift:] + ordered[:shift]
+    return f"{question}\nOptions: {' | '.join(permutation)}"
+
+
 def validate_context_assertions(
     assertions: Sequence[Mapping],
     *,
@@ -819,37 +955,73 @@ def validate_context_assertions(
     placeholder_context: str,
     reader: Callable[[list[str], str], Sequence[str]],
     threshold: float = 1.0,
+    stability_repetitions: int = 1,
+    option_permutations: int = 1,
+    stability_threshold: float = 1.0,
 ) -> tuple[list[dict], dict[str, dict]]:
-    """Apply original pass + joint-generalization pass + placeholder fail in three batches."""
+    """Apply frozen repeated original/generalization/placeholder reader checks."""
     rows = [row for row in assertions if row.get("family") == "context"]
-    questions = [str(row["question"]) for row in rows]
-    original_answers = list(reader(questions, original_context))
-    representative_answers = list(reader(questions, representative_context))
-    placeholder_answers = list(reader(questions, placeholder_context))
-    if not all(len(answers) == len(rows) for answers in (
-        original_answers, representative_answers, placeholder_answers
-    )):
-        raise ValueError("reader returned the wrong number of answers")
+    if stability_repetitions < 1 or option_permutations < 1:
+        raise ValueError("reader stability repetitions and option permutations must be positive")
+    if not 0.0 < stability_threshold <= 1.0:
+        raise ValueError("reader stability threshold must be in (0, 1]")
+
+    trials_by_assertion: dict[str, list[dict]] = defaultdict(list)
+    for repetition in range(stability_repetitions):
+        for permutation_index in range(option_permutations):
+            questions = [
+                _permuted_reader_question(row, permutation_index) for row in rows
+            ]
+            original_answers = list(reader(questions, original_context))
+            representative_answers = list(reader(questions, representative_context))
+            placeholder_answers = list(reader(questions, placeholder_context))
+            if not all(len(answers) == len(rows) for answers in (
+                original_answers, representative_answers, placeholder_answers
+            )):
+                raise ValueError("reader returned the wrong number of answers")
+            for row, original, representative, placeholder in zip(
+                rows, original_answers, representative_answers, placeholder_answers
+            ):
+                values = list(row.get("accepted_values") or [])
+                scores = {
+                    "original": _answer_score(original, values),
+                    "representative": _answer_score(representative, values),
+                    "placeholder": _answer_score(placeholder, values),
+                }
+                assertion_id = str(row.get("assertion_id") or _stable_hash(dict(row)))
+                trials_by_assertion[assertion_id].append({
+                    "repetition": repetition,
+                    "permutation_index": permutation_index,
+                    "scores": scores,
+                    "passed": (
+                        scores["original"] >= threshold
+                        and scores["representative"] >= threshold
+                        and scores["placeholder"] < threshold
+                    ),
+                })
 
     accepted, evidence = [], {}
-    for row, original, representative, placeholder in zip(
-        rows, original_answers, representative_answers, placeholder_answers
-    ):
-        values = list(row.get("accepted_values") or [])
-        scores = {
-            "original": _answer_score(original, values),
-            "representative": _answer_score(representative, values),
-            "placeholder": _answer_score(placeholder, values),
-        }
-        verdict = (
-            "accepted"
-            if scores["original"] >= threshold
-            and scores["representative"] >= threshold
-            and scores["placeholder"] < threshold
-            else "unsupported"
-        )
+    for row in rows:
         assertion_id = str(row.get("assertion_id") or _stable_hash(dict(row)))
-        evidence[assertion_id] = {"scores": scores, "verdict": verdict}
+        trials = trials_by_assertion[assertion_id]
+        passing_fraction = sum(trial["passed"] for trial in trials) / len(trials)
+        if passing_fraction >= stability_threshold:
+            verdict = "accepted"
+        elif any(trial["passed"] for trial in trials):
+            verdict = "unstable"
+        else:
+            verdict = "unsupported"
+        evidence[assertion_id] = {
+            "scores": trials[0]["scores"],
+            "verdict": verdict,
+            "stability": {
+                "repetitions": stability_repetitions,
+                "option_permutations": option_permutations,
+                "threshold": stability_threshold,
+                "passing_fraction": passing_fraction,
+                "trials": trials,
+            },
+        }
         if verdict == "accepted":
             accepted.append(dict(row))
     return accepted, evidence

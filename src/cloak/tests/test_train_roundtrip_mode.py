@@ -6,8 +6,49 @@ from pathlib import Path
 import pytest
 import torch
 
+from cloak.train.qa_builder import _stable_hash
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import train_ranker as tr  # noqa: E402
+
+
+def _sealed_utility_artifact(assertion=None):
+    assertion = assertion or {
+        "assertion_id": "a1", "doc_id": "d0", "family": "delivered",
+        "scope": "global", "occurrence_ids": [], "weight": 1.0,
+    }
+    artifact = {
+        "artifact_version": "utility-assertions-v1",
+        "environment_hash": "env-v1",
+        "task_pin": "task-v1",
+        "builder_pin": "builder-v1",
+        "reader_pin": "reader-v1",
+        "gate_manifest_hash": "gate-v1",
+        "documents": {"d0": {"utility_weight_denominator": 1.0,
+                                "assertion_ids": ["a1"]}},
+        "assertions": {"a1": assertion},
+    }
+    artifact["artifact_hash"] = _stable_hash(artifact)
+    return artifact
+
+
+def _accepted_context_assertion(status="accepted"):
+    vector = {"dec1": "general"}
+    return {
+        "assertion_id": "a1", "doc_id": "d0", "family": "context",
+        "scope": "linked", "occurrence_ids": ["o1"], "weight": 1.0,
+        "status": status,
+        "expected_action_support": {
+            "joint_anchor_action_vector": vector,
+            "joint_anchor_hash": _stable_hash(vector),
+            "property_level": {"dec1": "endocrine"},
+        },
+        "evidence": {"validation": {
+            "verdict": "accepted",
+            "scores": {"original": 1.0, "representative": 1.0, "placeholder": 0.0},
+            "stability": {"threshold": 1.0, "passing_fraction": 1.0},
+        }},
+    }
 
 
 def _doc():
@@ -317,10 +358,6 @@ def test_utility_artifact_keeps_measured_documents_without_legacy_probe_threshol
                 "measurement_state": "partial",
                 "assertion_ids": ["a1"],
                 "utility_weight_denominator": 1.0,
-                "decision_keys": [{
-                    "decision_id": "dec1", "runtime_type": "QUANTITY",
-                    "canonical_key": "metformin",
-                }],
             }
         },
         "assertions": {"a1": {"assertion_id": "a1", "doc_id": "d0",
@@ -331,21 +368,14 @@ def test_utility_artifact_keeps_measured_documents_without_legacy_probe_threshol
 
     assert [doc["id"] for doc in attached] == ["d0"]
     assert attached[0]["utility_artifact"] is artifact
-    assert attached[0]["utility_decision_ids"] == ["dec1"]
+    assert "utility_decision_ids" not in attached[0]
     job = tr._roundtrip_job(attached[0], "generalized", [])
     assert job["doc_id"] == "d0"
     assert job["utility_artifact"] is artifact
 
 
 def test_utility_artifact_gate_checks_environment_and_denominator():
-    artifact = {
-        "artifact_version": "utility-assertions-v1",
-        "environment_hash": "env-v1",
-        "gate_manifest_hash": "gate-v1",
-        "documents": {"d0": {"utility_weight_denominator": 1.0, "assertion_ids": ["a1"]}},
-        "assertions": {"a1": {"assertion_id": "a1", "doc_id": "d0",
-                                "scope": "global", "occurrence_ids": []}},
-    }
+    artifact = _sealed_utility_artifact()
 
     tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
 
@@ -354,18 +384,12 @@ def test_utility_artifact_gate_checks_environment_and_denominator():
 
 
 def test_utility_artifact_gate_accepts_subset_when_document_hash_matches():
-    artifact = {
-        "artifact_version": "utility-assertions-v1",
-        "environment_hash": "subset-env",
-        "gate_manifest_hash": "gate-v1",
-        "documents": {"d0": {
-            "environment_document_hash": "doc-v1",
-            "utility_weight_denominator": 1.0,
-            "assertion_ids": ["a1"],
-        }},
-        "assertions": {"a1": {"assertion_id": "a1", "doc_id": "d0",
-                                "scope": "global", "occurrence_ids": []}},
-    }
+    artifact = _sealed_utility_artifact()
+    artifact["environment_hash"] = "subset-env"
+    artifact["documents"]["d0"]["environment_document_hash"] = "doc-v1"
+    artifact["artifact_hash"] = _stable_hash({
+        key: value for key, value in artifact.items() if key != "artifact_hash"
+    })
     full_environment = {
         "environment_hash": "full-env",
         "documents": {
@@ -381,7 +405,7 @@ def test_utility_artifact_gate_accepts_subset_when_document_hash_matches():
         tr.enforce_utility_artifact_gate(artifact, full_environment)
 
 
-def test_train_roundtrip_uses_component_credit_when_scalar_utilities_tie(monkeypatch):
+def test_train_roundtrip_uses_scalar_utility_when_artifact_components_vary(monkeypatch):
     doc = _doc()
     artifact = {
         "documents": {"d0": {
@@ -395,7 +419,6 @@ def test_train_roundtrip_uses_component_credit_when_scalar_utilities_tie(monkeyp
         }},
     }
     doc["utility_artifact"] = artifact
-    doc["utility_decision_ids"] = ["dec1"]
     actions = iter([0, 1])
 
     def sample(doc, span_rows, feats, policy, greedy=False):
@@ -421,7 +444,7 @@ def test_train_roundtrip_uses_component_credit_when_scalar_utilities_tie(monkeyp
         rt_workers=1, seed=0,
     )
 
-    assert rows[0]["ties_skipped"] == 0
+    assert rows[0]["ties_skipped"] == 1
 
 
 @pytest.mark.parametrize(
@@ -436,13 +459,74 @@ def test_train_roundtrip_uses_component_credit_when_scalar_utilities_tie(monkeyp
     ],
 )
 def test_utility_artifact_gate_rejects_scope_and_document_link_mismatches(assertion, message):
-    artifact = {
-        "artifact_version": "utility-assertions-v1",
-        "environment_hash": "env-v1",
-        "gate_manifest_hash": "gate-v1",
-        "documents": {"d0": {"utility_weight_denominator": 1.0, "assertion_ids": ["a1"]}},
-        "assertions": {"a1": assertion},
-    }
+    artifact = _sealed_utility_artifact(assertion)
 
     with pytest.raises(SystemExit, match=message):
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_artifact_gate_requires_hash_and_required_pins():
+    artifact = _sealed_utility_artifact()
+    artifact.pop("reader_pin")
+    artifact["artifact_hash"] = _stable_hash({
+        key: value for key, value in artifact.items() if key != "artifact_hash"
+    })
+
+    with pytest.raises(SystemExit, match="reader_pin"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_artifact_gate_rejects_hand_edited_hash_and_context_contract():
+    artifact = _sealed_utility_artifact()
+    artifact["reader_pin"] = "hand-edited"
+
+    with pytest.raises(SystemExit, match="artifact_hash"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+    context_assertion = {
+        "assertion_id": "a1", "doc_id": "d0", "family": "context",
+        "scope": "linked", "occurrence_ids": ["o1"], "weight": 1.0,
+        "status": "accepted",
+    }
+    artifact = _sealed_utility_artifact(context_assertion)
+    environment = {
+        "environment_hash": "env-v1",
+        "documents": {"d0": {
+            "occurrences": [{"occurrence_id": "o1", "decision_id": "dec1"}],
+            "decisions": [{"decision_id": "dec1", "controlled": True}],
+        }},
+    }
+
+    with pytest.raises(SystemExit, match="expected_action_support"):
+        tr.enforce_utility_artifact_gate(artifact, environment)
+
+
+def test_utility_artifact_gate_rejects_link_to_dangling_environment_decision():
+    artifact = _sealed_utility_artifact({
+        "assertion_id": "a1", "doc_id": "d0", "family": "delivered",
+        "scope": "linked", "occurrence_ids": ["o1"], "weight": 1.0,
+    })
+    environment = {
+        "environment_hash": "env-v1",
+        "documents": {"d0": {
+            "occurrences": [{"occurrence_id": "o1", "decision_id": "missing"}],
+            "decisions": [{"decision_id": "dec1", "controlled": True}],
+        }},
+    }
+
+    with pytest.raises(SystemExit, match="dangling decision"):
+        tr.enforce_utility_artifact_gate(artifact, environment)
+
+
+def test_utility_artifact_gate_requires_accepted_context_rows():
+    artifact = _sealed_utility_artifact(_accepted_context_assertion(status="rejected"))
+    environment = {
+        "environment_hash": "env-v1",
+        "documents": {"d0": {
+            "occurrences": [{"occurrence_id": "o1", "decision_id": "dec1"}],
+            "decisions": [{"decision_id": "dec1", "controlled": True}],
+        }},
+    }
+
+    with pytest.raises(SystemExit, match="not accepted"):
+        tr.enforce_utility_artifact_gate(artifact, environment)

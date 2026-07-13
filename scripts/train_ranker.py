@@ -27,6 +27,7 @@ Run (full, ~10-20 min/alpha):  PYTHONPATH=src:scripts .venv/bin/python -u script
 Smoke (~2 min):                ... scripts/train_ranker.py --smoke
 """
 import argparse
+import hashlib
 import json
 import math
 import random
@@ -42,7 +43,6 @@ from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
 from cloak.train.reward import canon, fact_f1s, stage1_reward, u_qa
 from cloak.train.qa_builder import frozen_occurrences_from_arms, freeze_ranker_environment
-from cloak.train.utility_credit import provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
@@ -123,23 +123,8 @@ def attach_utility_artifact(docs, artifact):
         assertion_ids = state.get("assertion_ids") or []
         if not assertion_ids:
             continue
-        decision_ids_by_key = {
-            (str(row.get("runtime_type")), str(row.get("canonical_key"))):
-                str(row["decision_id"])
-            for row in state.get("decision_keys", [])
-        }
-        utility_decision_ids = []
-        for span in doc["spans"]:
-            key = (str(span.get("type")), canon(str(span.get("surface", ""))))
-            decision_id = decision_ids_by_key.get(key)
-            if decision_id is None:
-                raise ValueError(
-                    f"utility artifact has no decision identity for {doc['id']} span {key}"
-                )
-            utility_decision_ids.append(decision_id)
         next_doc = dict(doc)
         next_doc["utility_artifact"] = artifact
-        next_doc["utility_decision_ids"] = utility_decision_ids
         attached.append(next_doc)
     return attached
 
@@ -442,27 +427,11 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             rt = torch.tensor([r["recall"] or 0.0 for r in res])
             ep["r"].append(rt.mean().item())
             ep["ph"].append(sum(ph_l) / G)
-            if doc.get("utility_artifact") is not None:
-                structured_advantages = provisional_advantages(
-                    [row["component_scores"] for row in res],
-                    doc["utility_artifact"],
-                    doc_id=doc["id"],
-                )
-                if not any(value != 0.0 for row in structured_advantages
-                           for value in row.values()):
-                    ep["ties_skipped"] += 1
-                    continue
-                pg = -sum(
-                    structured_advantages[rollout_index][decision_id] * log_prob
-                    for rollout_index, logps in enumerate(logps_l)
-                    for decision_id, log_prob in zip(doc["utility_decision_ids"], logps)
-                ) / G
-            else:
-                if rt.max() == rt.min():                  # DAPO tie filter
-                    ep["ties_skipped"] += 1
-                    continue
-                adv = rloo_advantage(rt)
-                pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
+            if rt.max() == rt.min():                      # DAPO tie filter
+                ep["ties_skipped"] += 1
+                continue
+            adv = rloo_advantage(rt)
+            pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
             # entropy over the DYNAMIC masks each rollout actually sampled from (not the
             # static floor-legal sets), mean over spans and rollouts
             ent, n_ent = 0.0, 0
@@ -698,6 +667,15 @@ def enforce_utility_artifact_gate(artifact, environment):
     """Validate QA-builder v2 artifact invariants required before training."""
     if artifact.get("artifact_version") != "utility-assertions-v1":
         raise SystemExit("unsupported utility artifact version")
+    for pin in ("artifact_hash", "task_pin", "builder_pin", "reader_pin", "gate_manifest_hash"):
+        if not artifact.get(pin):
+            raise SystemExit(f"utility artifact is missing {pin}")
+    hash_payload = {key: value for key, value in artifact.items() if key != "artifact_hash"}
+    encoded = json.dumps(hash_payload, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True).encode("utf-8")
+    expected_hash = "sha256:" + hashlib.sha256(encoded).hexdigest()
+    if artifact["artifact_hash"] != expected_hash:
+        raise SystemExit("utility artifact artifact_hash does not match its contents")
     if artifact.get("environment_hash") != environment.get("environment_hash"):
         live_documents = environment.get("documents", {})
         for doc_id, state in artifact.get("documents", {}).items():
@@ -707,9 +685,8 @@ def enforce_utility_artifact_gate(artifact, environment):
                     f"utility artifact environment_hash/document {doc_id} "
                     "does not match ranker environment"
                 )
-    if not artifact.get("gate_manifest_hash"):
-        raise SystemExit("utility artifact is missing gate_manifest_hash")
     assertions = artifact.get("assertions", {})
+    referenced_assertion_ids = set()
     for doc_id, state in artifact.get("documents", {}).items():
         if float(state.get("utility_weight_denominator", 0.0)) <= 0:
             raise SystemExit(f"utility artifact document {doc_id} has invalid denominator")
@@ -719,6 +696,11 @@ def enforce_utility_artifact_gate(artifact, environment):
                 f"utility artifact document {doc_id} has missing assertions: {missing}"
             )
         for assertion_id in state.get("assertion_ids", []):
+            if assertion_id in referenced_assertion_ids:
+                raise SystemExit(
+                    f"utility artifact assertion {assertion_id} appears in multiple documents"
+                )
+            referenced_assertion_ids.add(assertion_id)
             assertion = assertions[assertion_id]
             if assertion.get("assertion_id") != assertion_id:
                 raise SystemExit(
@@ -743,6 +725,83 @@ def enforce_utility_artifact_gate(artifact, environment):
                 raise SystemExit(
                     f"utility artifact assertion {assertion_id} has invalid scope {scope!r}"
                 )
+            live_document = environment.get("documents", {}).get(doc_id, {})
+            live_occurrences = {
+                str(row["occurrence_id"]): row
+                for row in live_document.get("occurrences", [])
+            }
+            live_decisions = {
+                str(row["decision_id"])
+                for row in live_document.get("decisions", [])
+            }
+            if live_occurrences:
+                missing_occurrences = sorted(set(occurrence_ids) - set(live_occurrences))
+                if missing_occurrences:
+                    raise SystemExit(
+                        f"utility artifact assertion {assertion_id} has unknown occurrence "
+                        f"links: {missing_occurrences}"
+                    )
+                dangling_decisions = sorted({
+                    str(live_occurrences[occurrence_id].get("decision_id"))
+                    for occurrence_id in occurrence_ids
+                    if str(live_occurrences[occurrence_id].get("decision_id"))
+                    not in live_decisions
+                })
+                if dangling_decisions:
+                    raise SystemExit(
+                        f"utility artifact assertion {assertion_id} links dangling decision "
+                        f"identities: {dangling_decisions}"
+                    )
+            if assertion.get("family") != "context":
+                continue
+            if assertion.get("status") != "accepted":
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} is not accepted"
+                )
+            support = assertion.get("expected_action_support")
+            if not isinstance(support, dict):
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} lacks expected_action_support"
+                )
+            action_vector = support.get("joint_anchor_action_vector")
+            if not isinstance(action_vector, dict) or not action_vector:
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} lacks joint action vector"
+                )
+            vector_encoded = json.dumps(
+                action_vector, sort_keys=True, separators=(",", ":"), ensure_ascii=True
+            ).encode("utf-8")
+            vector_hash = "sha256:" + hashlib.sha256(vector_encoded).hexdigest()
+            if support.get("joint_anchor_hash") != vector_hash:
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} has invalid joint anchor hash"
+                )
+            if "property_level" not in support or support.get("property_levels") is not None:
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} has invalid property_level"
+                )
+            validation = (assertion.get("evidence") or {}).get("validation")
+            scores = validation.get("scores") if isinstance(validation, dict) else None
+            stability = validation.get("stability") if isinstance(validation, dict) else None
+            if (
+                validation is None
+                or validation.get("verdict") != "accepted"
+                or not isinstance(scores, dict)
+                or set(scores) != {"original", "representative", "placeholder"}
+                or not isinstance(stability, dict)
+            ):
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} lacks accepted validation evidence"
+                )
+            if float(stability.get("passing_fraction", 0.0)) < float(
+                stability.get("threshold", 1.0)
+            ):
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} has unstable reader evidence"
+                )
+    unassigned = sorted(set(assertions) - referenced_assertion_ids)
+    if unassigned:
+        raise SystemExit(f"utility artifact has unassigned assertions: {unassigned}")
 
 
 def main():
