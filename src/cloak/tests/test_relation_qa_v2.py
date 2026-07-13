@@ -138,9 +138,9 @@ def test_teacher_pin_reflects_v6_contract_and_uncapped_token_budgets():
     # prompt/schema/config must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v6"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v7"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 6
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r18"
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r19"
 
 
 def test_prompt_worked_examples_show_safe_level_based_questions_and_answers():
@@ -652,6 +652,96 @@ def test_linked_surface_in_qa_is_substituted_with_the_selected_level():
     assert accepted[0]["question"] == "Which medication was prescribed for the endocrine condition?"
     assert accepted[0]["accepted_values"] == ["thyroid medication"]
     assert accepted[0]["evidence"]["sanitized_qa"] is True
+
+
+def test_treated_with_accepts_procedure_form_condition_via_indication_connector():
+    # D2N002 (and its reference verbatim): "you've had the kidney transplant a
+    # few years ago for some polycystic kidneys". The transplant is detector-
+    # typed health-condition, so treated_with's procedure slot needs the
+    # closed procedure-form lexicon; the "<procedure> for <condition>"
+    # indication form needs a reversed connector.
+    source = "you've had the kidney transplant a few years ago for some polycystic kidneys ."
+    transplant_start = source.index("kidney transplant")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "transplant", "decision_id": "d-transplant",
+            "surface": "kidney transplant", "start": transplant_start,
+            "end": transplant_start + 17, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-transplant",
+            "actions": [{"mode": "level", "legal": True, "entails": ["solid organ transplant"]}],
+        }],
+    }
+    proposal = {
+        "relation": "treated_with",
+        "arguments": [
+            {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "polycystic kidneys"},
+            {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "solid organ transplant", "literal": None},
+        ],
+        "question": "Which procedure category addressed the polycystic kidneys?",
+        "accepted_answers": ["solid organ transplant"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "treated_with"
+    assert accepted[0]["occurrence_ids"] == ["transplant"]
+
+
+def test_prompt_displays_dual_class_for_procedure_form_conditions():
+    source = "you've had the kidney transplant a few years ago for some polycystic kidneys ."
+    transplant_start = source.index("kidney transplant")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "transplant", "decision_id": "d-transplant",
+            "surface": "kidney transplant", "start": transplant_start,
+            "end": transplant_start + 17, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-transplant",
+            "actions": [{"mode": "level", "legal": True, "entails": ["solid organ transplant"]}],
+        }],
+    }
+
+    prompt = relation_teacher_prompt("d2", source, environment)
+
+    assert "[S1: kidney transplant | condition/procedure | levels: solid organ transplant]" in prompt
+
+
+def test_plain_condition_still_cannot_fill_the_procedure_slot():
+    # The dual class applies only to the closed procedure-form lexicon; an
+    # ordinary condition surface must keep failing treated_with's object slot.
+    source = "the knee pain was managed for some arthritis ."
+    arthritis_start = source.index("arthritis")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "arthritis", "decision_id": "d-arthritis",
+            "surface": "arthritis", "start": arthritis_start,
+            "end": arthritis_start + 9, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-arthritis",
+            "actions": [{"mode": "level", "legal": True, "entails": ["joint condition"]}],
+        }],
+    }
+    proposal = {
+        "relation": "treated_with",
+        "arguments": [
+            {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "knee pain"},
+            {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "joint condition", "literal": None},
+        ],
+        "question": "Which procedure category addressed the knee pain?",
+        "accepted_answers": ["joint condition"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert accepted == []
+    assert rejected[0]["detail_reason"] == "invalid_argument_types"
 
 
 def test_question_may_use_declared_generalization_level_tokens():

@@ -15,9 +15,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v6"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v7"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 6}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r18"
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r19"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -184,6 +184,13 @@ ACI_RELATION_CONTRACT = {
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
             r"treated\s+with\s+",
         ),
+        # Indication form, procedure textually first: "had the kidney
+        # transplant a few years ago for some polycystic kidneys" (verbatim in
+        # the D2N002 reference). Class gating already restricts this to a
+        # procedure-class object and condition-class subject.
+        "reversed_connector_patterns": (
+            r"\s+(?:[\w',]+\s+){0,5}?for\s+(?:some\s+|your\s+|the\s+|a\s+|an\s+|his\s+|her\s+)?",
+        ),
     },
     "monitored_by": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["monitored_by"],
@@ -230,6 +237,24 @@ ACI_RELATION_CONTRACT = {
         "connector_patterns": (r"\s+(?:has\s+category|category\s+is)\s+",),
     },
 }
+# Closed procedure-form lexicon: detector-typed conditions whose surface names
+# a performed procedure ("kidney transplant" in past medical history) may also
+# fill procedure slots; ordinary condition surfaces may not.
+_PROCEDURE_FORM_PATTERN = re.compile(
+    r"\b(?:transplant\w*|surgery|surgeries|\w+ectomy|\w+plasty|bypass|graft\w*"
+    r"|replacement|repair)\b",
+    re.IGNORECASE,
+)
+
+
+def _argument_relation_classes(runtime_type: str, surface: str) -> set[str]:
+    base = _RUNTIME_TYPE_CLASSES.get(canon(str(runtime_type)))
+    classes = {base} if base else set()
+    if base == "condition" and _PROCEDURE_FORM_PATTERN.search(str(surface)):
+        classes.add("procedure")
+    return classes
+
+
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
 _CLAUSE_DELIMITER_PATTERN = re.compile(r"[\n.!?;]")
 _PLAN_SECTION_HEADING_PATTERN = re.compile(
@@ -1175,6 +1200,15 @@ def _shared_plan_section(
 
 def _prompt_relation_class(relation_class: str) -> str:
     return {"treatment": "drug", "monitoring": "test"}.get(relation_class, relation_class)
+
+
+def _prompt_display_classes(row: Mapping) -> str:
+    """Teacher-facing class label; procedure-form conditions show both roles."""
+    classes = _argument_relation_classes(str(row["runtime_type"]), str(row["surface"]))
+    ordered = [cls for cls in ("condition", "symptom", "treatment", "procedure",
+                               "monitoring", "provider", "status", "category")
+               if cls in classes] or [str(row["relation_class"])]
+    return "/".join(_prompt_relation_class(cls) for cls in ordered)
 
 
 def relation_evidence_windows(document: str, environment_document: Mapping) -> list[dict]:
@@ -2220,7 +2254,7 @@ def relation_teacher_prompt(
     del doc_id
     inventory = relation_teacher_span_inventory(environment_document)
     spans = "\n".join(
-        f"[{row['span_label']}: {row['surface']} | {_prompt_relation_class(row['relation_class'])} | levels: {'; '.join(row['properties'])}]"
+        f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} | levels: {'; '.join(row['properties'])}]"
         for row in inventory
     ) or "(No eligible controlled spans.)"
     cards = []
@@ -2366,7 +2400,10 @@ def _relation_arguments_are_legal(
 ) -> bool:
     allowed = relation_contract[relation]["argument_classes"]
     return len(arguments) == len(allowed) and all(
-        _RUNTIME_TYPE_CLASSES.get(canon(str(argument.get("runtime_type", "")))) in permitted
+        _argument_relation_classes(
+            str(argument.get("runtime_type", "")),
+            str(argument.get("surface", argument.get("literal", ""))),
+        ) & set(permitted)
         for argument, permitted in zip(arguments, allowed)
     )
 
@@ -2573,6 +2610,13 @@ def _relation_quote_has_direct_support(
                     for cue in relation_contract[relation].get("cues", ())
                 )
         return False
+    # Reversed textual order: an explicit reversed connector between object
+    # and subject ("kidney transplant ... for some polycystic kidneys") is
+    # direct support on its own.
+    reversed_connector = normalized[positions[1][1]:positions[0][0]]
+    if any(re.fullmatch(pattern, reversed_connector) for pattern in
+           relation_contract[relation].get("reversed_connector_patterns", ())):
+        return True
     cues = relation_contract[relation].get("cues", ())
     if len(clause_ranges) == 1:
         return any(re.search(re.escape(cue), normalized) for cue in cues)

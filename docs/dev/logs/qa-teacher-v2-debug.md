@@ -92,6 +92,18 @@ Conclusion: the expressible ceiling (~6–7) is set by (a) detector/lattice cove
 frozen environment, (b) the ≥1-linked + same/adjacent-clause grounding contract, and (c) closed
 cue sets missing the indication form — not by the relation teacher.
 
+## 2026-07-14 — coverage extension after the audit (v7/r19, compiler v5)
+
+From the four unreachable relations, one was soundly extendable now: the polycystic-kidneys
+indication. Implemented as a closed procedure-form lexicon (a condition surface naming a
+performed procedure also fills procedure slots; prompt shows `condition/procedure`) plus a
+reversed `treated_with` connector for "<procedure> for <condition>". Pins bumped to prompt v7 /
+revision r19 / assertion-compiler v5. Deliberately **not** extended: backchannel-turn adjacency
+for the physical-therapy referral (the reference states it conditionally — accepting would
+overstate the truth source); the immunosuppressive link (needs the reference-grounded channel,
+logged as an open fork in the decision log); tylenol/WBC (detector coverage, tracked in the
+misclassification issue).
+
 **Open finding — provider draw variance.** `nvidia/nemotron-3-super-120b-a12b:free` is
 nondeterministic at `temperature=0.0` even with `seed`: identical prompts returned 6, 4, 1, 3,
 and 4 proposals of varying quality across draws. The production builder caches the first draw

@@ -40,14 +40,18 @@ def test_render_report_shows_text_inventory_and_relation_qa(tmp_path, monkeypatc
         "id": "aci/D2N002", "text": "original note", "gold_ref": "reference output",
     }])
 
+    out_lo_p_path = artifact_path.parent / "out_lo_p.txt"
+    out_lo_p_path.write_text("floor model output")
+
     rendered = report.render_report(
         artifact_path, arms_path, corpus="clinical", doc_id="aci/D2N002",
-        out_p_path=out_p_path,
+        out_p_path=out_p_path, out_lo_p_path=out_lo_p_path,
     )
 
     assert "## doc_orig\n\n```text\noriginal note\n```" in rendered
     assert "## out_hi (reference output)\n\n```text\nreference output\n```" in rendered
-    assert "## doc_p (tau_walk)\n\n```text\nanonymized note\n```" in rendered
+    assert "## out_lo_p (remote output on the all_floor doc_p)\n\n```text\nfloor model output\n```" in rendered
+    assert "doc_p (tau_walk)" not in rendered
     assert "## out_p (remote model output)\n\n```text\nremote model output\n```" in rendered
     assert "### PERSON (2)" in rendered
     assert "### Structural schemas (deterministic)" in rendered

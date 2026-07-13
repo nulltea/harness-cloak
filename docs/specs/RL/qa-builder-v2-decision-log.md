@@ -278,6 +278,20 @@ information-free for level-based QA. **Rejected alternatives:** rejecting on any
 the sanctioned level vocabulary); free rewriting of teacher QA by code (authorship violation —
 substitution uses only the teacher's selected level and the argument's frozen surface).
 
+**Coverage-extension decisions (2026-07-14 D2N002 audit).** Accepted: the closed procedure-form
+lexicon (dual condition/procedure class) plus the reversed `treated_with` indication connector
+"<procedure> for <condition>" — the polycystic-kidneys indication is explicit in both source and
+reference and was blocked only by detector typing and cue coverage. **Rejected:**
+backchannel-transparent turn adjacency to reach the physical-therapy referral — the authoritative
+reference itself states it conditionally ("can consider … possibly a referral"), so admitting it
+would assert a fact the truth source does not. **Open fork (undecided):** a reference-grounded
+relation channel. The adapter's declared truth source already prefers the human reference, and
+the D2N002 reference explicitly links the transplant to the immunosuppressive medications inside
+one plan section, while the dialogue states it only across distant turns (which the cross-turn
+prohibition correctly rejects). Grounding teacher relations in reference plan sections would
+recover such facts without weakening dialogue anchoring, but requires prompt, anchor, and
+linked-argument design across two texts; it stays out of scope until selected.
+
 **Deferred.** Reader stability repetitions and answer-option permutation remain at their current
 single-pass gates until smoke results justify and preregister a changed protocol. No
 repetition/permutation behavior or thresholds are changed by this relation-QA work.

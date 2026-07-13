@@ -361,7 +361,15 @@ links, cue substrings, contradictory polarity, and a relation whose arguments ca
 connected in that anchor. Two clause conventions are normative for transcript sources: the cue is
 searched within the clause or two adjacent clauses holding the arguments (an explicit cue such as
 "ca n't take" legitimately precedes the subject), and a period inside a run ("if ... and
-prescribe") is a spoken hesitation marker, never a clause boundary. Cards help the teacher navigate; they neither limit search nor
+prescribe") is a spoken hesitation marker, never a clause boundary.
+
+Two closed extensions cover the clinical indication form. A detector-typed condition whose
+surface names a performed procedure (closed lexicon: transplant, surgery, -ectomy, -plasty,
+bypass, graft, replacement, repair) may also fill procedure slots, displayed to the teacher as
+`condition/procedure`; an ordinary condition surface may not. And `treated_with` accepts the
+reversed indication connector "<procedure> for <condition>" within one clause ("had the kidney
+transplant a few years ago for some polycystic kidneys" — stated verbatim in the D2N002
+reference). Class gating keeps the generic word "for" inert for every other argument pairing. Cards help the teacher navigate; they neither limit search nor
 constitute accepted evidence. There is no `evidence_window_id` in the teacher response or relation
 artifact.
 
