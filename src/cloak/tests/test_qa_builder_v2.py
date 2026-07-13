@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 import cloak.train.roundtrip as roundtrip
@@ -242,6 +244,108 @@ def test_builder_records_unstable_context_reader_without_accepting_assertion():
 
     assert artifact["assertions"] == {}
     assert artifact["rejections"]["summary_by_reason"] == {"unstable": 1}
+    rejection = artifact["rejections"]["records"][0]
+    assert rejection["reason"] == "unstable"
+    assert rejection["evidence"]["validation"]["verdict"] == "unstable"
+    assert rejection["evidence"]["joint_anchor_hash"].startswith("sha256:")
+
+
+def test_builder_preserves_deterministic_not_generated_rejection_record():
+    frozen = {
+        "environment_hash": "env-v1",
+        "documents": {"d1": {"occurrences": [], "decisions": []}},
+    }
+    deterministic_rejection = {
+        "status": "rejected",
+        "reason": "not_generated",
+        "detail_reason": "no_safe_contextual_locator",
+        "rejection_id": "sha256:deterministic",
+        "evidence": {"source": "deterministic_template", "decision_id": "dec1"},
+    }
+
+    class Adapter:
+        def deterministic_candidates(self, doc_id, document, environment_document):
+            return [deterministic_rejection]
+
+    artifact = build_utility_artifact(
+        frozen,
+        Adapter(),
+        {"d1": "source"},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+        },
+        pins={"gate_manifest_hash": "gate-v1"},
+        reader=lambda questions, context: [],
+        render_action_vector=lambda doc_id, vector: "unused",
+    )
+
+    assert artifact["assertions"] == {}
+    assert artifact["rejections"] == {
+        "summary_by_reason": {"not_generated": 1},
+        "records": [deterministic_rejection],
+    }
+
+
+def test_builder_preserves_every_teacher_rejection_with_stable_summary():
+    environment = _relation_environment()
+    frozen = {
+        "environment_hash": "env-v1",
+        "documents": {"d1": environment},
+    }
+    source = "Hypothyroidism is treated with Synthroid."
+    leaking = {
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "o-drug"],
+        "support_properties": {
+            "o-condition": "an endocrine condition",
+            "o-drug": "a thyroid medication",
+        },
+        "answer_occurrence_id": "o-drug",
+        "answer_property": "a thyroid medication",
+        "question": "Which treatment is used for hypothyroidism?",
+        "evidence_quote": source,
+    }
+
+    class Adapter:
+        def deterministic_candidates(self, doc_id, document, environment_document):
+            return []
+
+        def compile_relations(self, doc_id, document, environment_document, proposals):
+            return compile_relational_assertions(
+                doc_id, document, environment_document, proposals
+            )
+
+    class Teacher:
+        def __init__(self):
+            self.calls = 0
+
+        def propose(self, prompt):
+            self.calls += 1
+            return [leaking, leaking]
+
+    teacher = Teacher()
+    artifact = build_utility_artifact(
+        frozen,
+        Adapter(),
+        {"d1": source},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "min_context_assertions": 1,
+        },
+        pins={"gate_manifest_hash": "gate-v1"},
+        reader=lambda questions, context: [],
+        render_action_vector=lambda doc_id, vector: "unused",
+        relation_teacher=teacher,
+    )
+
+    records = artifact["rejections"]["records"]
+    assert teacher.calls == 1
+    assert artifact["rejections"]["summary_by_reason"] == {"leakage": 2}
+    assert len(records) == 2
+    assert len({row["rejection_id"] for row in records}) == 2
+    assert {row["detail_reason"] for row in records} == {"protected_locator"}
+    assert all(row["reason"] == "leakage" for row in records)
+    assert all(row["proposal_hash"].startswith("sha256:") for row in records)
 
 
 def test_runtime_scores_context_assertions_in_one_reader_batch():
@@ -492,7 +596,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
         def compile_relations(self, doc_id, document, environment_document, proposals):
             assert proposals == [{"raw": "proposal"}]
             return ([{
-                "family": "context", "scope": "linked", "subtype": "semantic_property",
+                "family": "context", "scope": "linked", "subtype": "contextual_relation",
                 "occurrence_ids": ["o1"], "group_id": "condition:category",
                 "question": "What category?", "accepted_values": ["endocrine"],
                 "decision_requirements": {"dec1": "endocrine"},
@@ -534,6 +638,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     assert artifact["documents"]["d1"]["measurement_state"] == "measured"
     context = next(row for row in artifact["assertions"].values()
                    if row["family"] == "context")
+    assert context["subtype"] == "contextual_relation"
     assert context["expected_action_support"]["joint_anchor_hash"].startswith("sha256:")
     assert context["expected_action_support"]["property_level"] == {"dec1": "endocrine"}
     assert "property_levels" not in context["expected_action_support"]
@@ -604,6 +709,155 @@ def _relation_environment():
     }
 
 
+def _semantic_property_environment():
+    return {
+        "occurrences": [
+            {
+                "occurrence_id": "o-uncontrolled-condition",
+                "decision_id": None,
+                "surface": "hypothyroidism",
+                "runtime_type": "health-condition",
+                "controlled": False,
+            },
+            {
+                "occurrence_id": "o-drug-1",
+                "decision_id": "d-drug",
+                "surface": "Synthroid",
+                "runtime_type": "drug",
+            },
+            {
+                "occurrence_id": "o-drug-2",
+                "decision_id": "d-drug",
+                "surface": "Synthroid",
+                "runtime_type": "drug",
+            },
+        ],
+        "decisions": [{
+            "decision_id": "d-drug",
+            "runtime_type": "drug",
+            "controlled": True,
+            "actions": [
+                {
+                    "action_id": "thyroid-specific",
+                    "mode": "level",
+                    "legal": True,
+                    "fill": "teacher-bait-specific",
+                    "entails": ["thyroid medication", "medication"],
+                },
+                {
+                    "action_id": "thyroid-equivalent",
+                    "mode": "level",
+                    "legal": True,
+                    "fill": "teacher-bait-equivalent",
+                    "entails": ["thyroid medication", "medication"],
+                },
+                {
+                    "action_id": "medication",
+                    "mode": "level",
+                    "legal": True,
+                    "fill": "teacher-bait-coarse",
+                    "entails": ["medication"],
+                },
+                {
+                    "action_id": "runtime-type-only",
+                    "mode": "level",
+                    "legal": True,
+                    "entails": ["drug"],
+                },
+                {
+                    "action_id": "illegal-property",
+                    "mode": "level",
+                    "legal": False,
+                    "entails": ["forbidden property"],
+                },
+                {
+                    "action_id": "keep",
+                    "mode": "keep",
+                    "legal": True,
+                    "entails": ["synthroid"],
+                },
+                {
+                    "action_id": "placeholder",
+                    "mode": "placeholder",
+                    "legal": True,
+                    "entails": [],
+                },
+            ],
+        }],
+    }
+
+
+def test_semantic_property_candidates_use_legal_entails_and_link_repetitions():
+    document = (
+        "The patient with hypothyroidism takes Synthroid daily. "
+        "Synthroid remains on the medication list."
+    )
+
+    candidates = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002", document, _semantic_property_environment()
+    )
+
+    accepted = [row for row in candidates if row.get("status") != "rejected"]
+    assert {row["accepted_values"][0] for row in accepted} == {
+        "thyroid medication", "medication",
+    }
+    assert len(accepted) == 2
+    assert all(row["occurrence_ids"] == ["o-drug-1", "o-drug-2"] for row in accepted)
+    assert all(row["decision_requirements"] == {
+        "d-drug": row["accepted_values"][0]
+    } for row in accepted)
+    assert all("Synthroid" not in row["question"] for row in accepted)
+    assert all("hypothyroidism" not in row["question"].casefold() for row in accepted)
+    assert all("[target item]" in row["question"] for row in accepted)
+    assert all("[protected item]" in row["question"] for row in accepted)
+    assert all(
+        row["accepted_values"][0].casefold() not in row["question"].casefold()
+        for row in accepted
+    )
+    assert "forbidden property" not in {
+        row["accepted_values"][0] for row in accepted
+    }
+    type_only = next(
+        row for row in candidates if row.get("detail_reason") == "placeholder_type_only"
+    )
+    assert type_only["reason"] == "not_generated"
+
+    medication = next(
+        row for row in accepted if row["accepted_values"] == ["medication"]
+    )
+    anchor = build_joint_representative_anchor(
+        medication, _semantic_property_environment()["decisions"]
+    )
+    assert anchor["action_vector"] == {"d-drug": "medication"}
+
+
+def test_semantic_property_records_not_generated_without_safe_context_locator():
+    environment = _semantic_property_environment()
+    environment["decisions"][0]["actions"] = [
+        environment["decisions"][0]["actions"][2],
+        environment["decisions"][0]["actions"][5],
+        environment["decisions"][0]["actions"][6],
+    ]
+
+    first = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002", "Synthroid.", environment
+    )
+    second = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002", "Synthroid.", environment
+    )
+
+    assert first == second
+    assert len(first) == 1
+    rejection = first[0]
+    assert rejection["status"] == "rejected"
+    assert rejection["reason"] == "not_generated"
+    assert rejection["detail_reason"] == "no_safe_contextual_locator"
+    assert rejection["rejection_id"].startswith("sha256:")
+    assert rejection["evidence"]["decision_id"] == "d-drug"
+    assert "Synthroid" not in json.dumps(rejection)
+    assert "medication" not in json.dumps(rejection)
+
+
 def test_relation_prompt_exposes_only_closed_ids_properties_and_source():
     prompt = relation_teacher_prompt(
         "aci/D2N002",
@@ -617,6 +871,96 @@ def test_relation_prompt_exposes_only_closed_ids_properties_and_source():
     assert "treated_with" in prompt
     assert "Hypothyroidism is treated with Synthroid." in prompt
     assert "accepted_values" not in prompt
+
+
+def test_relation_teacher_properties_come_only_from_legal_entails():
+    environment = _relation_environment()
+    environment["decisions"][1]["actions"][0]["fill"] = "teacher bait"
+    prompt = relation_teacher_prompt(
+        "aci/D2N002",
+        "Hypothyroidism is treated with Synthroid.",
+        environment,
+    )
+
+    assert "a thyroid medication" in prompt
+    assert "teacher bait" not in prompt
+
+    proposal = {
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "o-drug"],
+        "support_properties": {
+            "o-condition": "an endocrine condition",
+            "o-drug": "teacher bait",
+        },
+        "answer_occurrence_id": "o-drug",
+        "answer_property": "teacher bait",
+        "question": "What treatment category is used for the endocrine condition?",
+        "evidence_quote": "Hypothyroidism is treated with Synthroid.",
+    }
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002",
+        "Hypothyroidism is treated with Synthroid.",
+        environment,
+        [proposal],
+    )
+
+    assert accepted == []
+    assert rejected[0]["reason"] == "invalid"
+    assert rejected[0]["detail_reason"] == "invalid_property"
+
+
+def test_contextual_relation_rejections_have_stable_ids_and_safe_evidence():
+    source = "Hypothyroidism is treated with Synthroid."
+    proposal = {
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "o-drug"],
+        "support_properties": {
+            "o-condition": "an endocrine condition",
+            "o-drug": "a thyroid medication",
+        },
+        "answer_occurrence_id": "o-drug",
+        "answer_property": "a thyroid medication",
+        "question": "Which treatment is used for hypothyroidism?",
+        "evidence_quote": source,
+    }
+
+    _, first = compile_relational_assertions(
+        "aci/D2N002", source, _relation_environment(), [proposal]
+    )
+    _, second = compile_relational_assertions(
+        "aci/D2N002", source, _relation_environment(), [proposal]
+    )
+
+    assert first == second
+    assert first[0]["reason"] == "leakage"
+    assert first[0]["detail_reason"] == "protected_locator"
+    assert first[0]["rejection_id"].startswith("sha256:")
+    assert first[0]["proposal_hash"].startswith("sha256:")
+    assert first[0]["evidence"]["source"] == "relation_teacher"
+    assert first[0]["evidence"]["evidence_span"] == [0, len(source)]
+    assert source not in json.dumps(first[0])
+    assert "hypothyroidism" not in json.dumps(first[0]).casefold()
+
+
+def test_contextual_relation_rejection_hashes_unknown_teacher_argument_ids():
+    source = "Hypothyroidism is treated with Synthroid."
+    proposal = {
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "Hypothyroidism"],
+        "evidence_quote": source,
+    }
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, _relation_environment(), [proposal]
+    )
+
+    assert accepted == []
+    assert rejected[0]["reason"] == "invalid"
+    assert rejected[0]["detail_reason"] == "invalid_arguments"
+    assert rejected[0]["evidence"]["argument_occurrence_ids"][0] == "o-condition"
+    assert rejected[0]["evidence"]["argument_occurrence_ids"][1].startswith("sha256:")
+    assert "hypothyroidism" not in json.dumps(rejected[0]).casefold()
 
 
 def test_relational_compiler_derives_gold_and_links_from_frozen_inventory():
@@ -686,7 +1030,10 @@ def test_relational_compiler_rejects_unfrozen_or_leaking_proposals(change, reaso
     )
 
     assert accepted == []
-    assert rejected[0]["reason"] == reason
+    assert rejected[0]["reason"] == (
+        "leakage" if reason == "answer_leakage" else "invalid"
+    )
+    assert rejected[0]["detail_reason"] == reason
 
 
 @pytest.mark.parametrize(
@@ -732,7 +1079,13 @@ def test_relational_compiler_requires_direct_noncontradictory_authoritative_evid
     )
 
     assert accepted == []
-    assert rejected == [{"proposal_index": 0, "reason": reason}]
+    assert len(rejected) == 1
+    assert rejected[0]["proposal_index"] == 0
+    assert rejected[0]["reason"] == "invalid"
+    assert rejected[0]["detail_reason"] == reason
+    assert rejected[0]["rejection_id"].startswith("sha256:")
+    assert rejected[0]["proposal_hash"].startswith("sha256:")
+    assert rejected[0]["evidence"]["source"] == "relation_teacher"
 
 
 def test_aci_adapter_builds_delivered_facts_only_from_authoritative_reference():
@@ -1099,7 +1452,12 @@ def test_relational_compiler_rejects_illegal_argument_runtime_types():
     )
 
     assert accepted == []
-    assert rejected == [{"proposal_index": 0, "reason": "invalid_argument_types"}]
+    assert len(rejected) == 1
+    assert rejected[0]["proposal_index"] == 0
+    assert rejected[0]["reason"] == "invalid"
+    assert rejected[0]["detail_reason"] == "invalid_argument_types"
+    assert rejected[0]["rejection_id"].startswith("sha256:")
+    assert rejected[0]["proposal_hash"].startswith("sha256:")
 
 
 def test_teacher_abstention_records_missing_context_without_retry():
@@ -1170,7 +1528,12 @@ def test_relational_compiler_rejects_protected_locator_leakage():
     )
 
     assert accepted == []
-    assert rejected == [{"proposal_index": 0, "reason": "protected_locator"}]
+    assert len(rejected) == 1
+    assert rejected[0]["proposal_index"] == 0
+    assert rejected[0]["reason"] == "leakage"
+    assert rejected[0]["detail_reason"] == "protected_locator"
+    assert rejected[0]["rejection_id"].startswith("sha256:")
+    assert rejected[0]["proposal_hash"].startswith("sha256:")
 
 
 def test_delivered_only_scoring_is_deterministic_without_reader_call():

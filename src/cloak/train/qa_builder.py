@@ -186,9 +186,153 @@ class AciTaskAdapter:
         document: str,
         environment_document: Mapping,
     ) -> list[dict]:
-        return self.delivered_candidates(
-            doc_id, document, self._references[doc_id], environment_document
-        )
+        return [
+            *self.semantic_property_candidates(doc_id, document, environment_document),
+            *self.delivered_candidates(
+                doc_id, document, self._references[doc_id], environment_document
+            ),
+        ]
+
+    def semantic_property_candidates(
+        self,
+        doc_id: str,
+        document: str,
+        environment_document: Mapping,
+    ) -> list[dict]:
+        """Compile safe category probes from legal frozen action entailments."""
+        occurrences_by_decision: dict[str, list[Mapping]] = defaultdict(list)
+        protected_surfaces = []
+        for occurrence in environment_document.get("occurrences", []):
+            surface = str(occurrence.get("surface", "")).strip()
+            if surface:
+                protected_surfaces.append(surface)
+            decision_id = occurrence.get("decision_id")
+            if decision_id is None or not occurrence.get("controlled", True):
+                continue
+            occurrences_by_decision[str(decision_id)].append(occurrence)
+
+        records = []
+        for decision in environment_document.get("decisions", []):
+            if not decision.get("controlled", True):
+                continue
+            decision_id = str(decision["decision_id"])
+            occurrences = occurrences_by_decision.get(decision_id, [])
+            occurrence_ids = [str(row["occurrence_id"]) for row in occurrences]
+            runtime_type = str(decision.get("runtime_type", ""))
+            actions = [
+                action for action in decision.get("actions", [])
+                if action.get("legal", True)
+                and action.get("mode") not in {"keep", "placeholder"}
+            ]
+            properties = []
+            supporting_actions: dict[str, list[str]] = defaultdict(list)
+            for action in actions:
+                for value in action.get("entails") or []:
+                    property_level = canon(str(value))
+                    if not property_level:
+                        continue
+                    if property_level not in supporting_actions:
+                        properties.append(property_level)
+                    supporting_actions[property_level].append(str(action["action_id"]))
+            if not properties:
+                continue
+
+            locator = _safe_context_locator(
+                document,
+                occurrences,
+                protected_terms=[*protected_surfaces, *properties],
+            )
+            for property_level in properties:
+                attempt = {
+                    "doc_id": doc_id,
+                    "decision_id": decision_id,
+                    "runtime_type": runtime_type,
+                    "occurrence_ids": occurrence_ids,
+                    "property_hash": _stable_hash(property_level),
+                    "definition_version": "aci-semantic-property-v1",
+                }
+                if _semantic_label(property_level) == _semantic_label(runtime_type):
+                    records.append(_rejection_record(
+                        reason="not_generated",
+                        detail_reason="placeholder_type_only",
+                        attempt=attempt,
+                        evidence={
+                            "source": "deterministic_template",
+                            "decision_id": decision_id,
+                            "runtime_type": runtime_type,
+                            "occurrence_ids": occurrence_ids,
+                            "property_hash": _stable_hash(property_level),
+                            "supporting_action_hashes": [
+                                _stable_hash(action_id)
+                                for action_id in supporting_actions[property_level]
+                            ],
+                        },
+                    ))
+                    continue
+                if locator is None:
+                    records.append(_rejection_record(
+                        reason="not_generated",
+                        detail_reason="no_safe_contextual_locator",
+                        attempt=attempt,
+                        evidence={
+                            "source": "deterministic_template",
+                            "decision_id": decision_id,
+                            "runtime_type": runtime_type,
+                            "occurrence_ids": occurrence_ids,
+                            "property_hash": _stable_hash(property_level),
+                            "supporting_action_hashes": [
+                                _stable_hash(action_id)
+                                for action_id in supporting_actions[property_level]
+                            ],
+                        },
+                    ))
+                    continue
+                question = (
+                    f'Within the clinical context "{locator}", what semantic category is '
+                    "preserved for [target item]?"
+                )
+                if any(_contains(question, term) for term in (
+                    *protected_surfaces, property_level,
+                )):
+                    records.append(_rejection_record(
+                        reason="not_generated",
+                        detail_reason="unsafe_template_leakage",
+                        attempt=attempt,
+                        evidence={
+                            "source": "deterministic_template",
+                            "decision_id": decision_id,
+                            "runtime_type": runtime_type,
+                            "occurrence_ids": occurrence_ids,
+                            "property_hash": _stable_hash(property_level),
+                            "supporting_action_hashes": [
+                                _stable_hash(action_id)
+                                for action_id in supporting_actions[property_level]
+                            ],
+                            "locator_hash": _stable_hash(locator),
+                        },
+                    ))
+                    continue
+                records.append({
+                    "family": "context",
+                    "scope": "linked",
+                    "subtype": "semantic_property",
+                    "occurrence_ids": occurrence_ids,
+                    "group_id": (
+                        f"semantic-property:{decision_id}:"
+                        f"{_stable_hash(property_level)}"
+                    ),
+                    "question": question,
+                    "accepted_values": [property_level],
+                    "decision_requirements": {decision_id: property_level},
+                    "evidence": {
+                        "authority": "frozen_action_entails",
+                        "template": "aci-context-category-v1",
+                        "runtime_type": runtime_type,
+                        "locator_hash": _stable_hash(locator),
+                        "supporting_action_ids": supporting_actions[property_level],
+                    },
+                })
+        return records
 
     def delivered_candidates(
         self,
@@ -332,6 +476,115 @@ class AciTaskAdapter:
 def _stable_hash(value) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _rejection_record(
+    *,
+    reason: str,
+    detail_reason: str,
+    attempt: Mapping,
+    evidence: Mapping,
+) -> dict:
+    identity = {
+        "reason": reason,
+        "detail_reason": detail_reason,
+        "attempt": dict(attempt),
+    }
+    return {
+        "status": "rejected",
+        "reason": reason,
+        "detail_reason": detail_reason,
+        "rejection_id": _stable_hash(identity),
+        "evidence": dict(evidence),
+    }
+
+
+def _stable_rejection_reason(detail_reason: str) -> str:
+    if detail_reason in {"answer_leakage", "protected_locator"}:
+        return "leakage"
+    if detail_reason in {
+        "not_generated",
+        "generation_failed",
+        "leakage",
+        "unsupported",
+        "floor_answerable",
+        "unstable",
+        "infrastructure_failed",
+    }:
+        return detail_reason
+    return "invalid"
+
+
+def _semantic_label(value: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", canon(value)))
+
+
+def _safe_context_locator(
+    document: str,
+    occurrences: Sequence[Mapping],
+    *,
+    protected_terms: Sequence[str],
+) -> str | None:
+    positions = []
+    for occurrence in occurrences:
+        surface = str(occurrence.get("surface", ""))
+        start = occurrence.get("start")
+        if isinstance(start, int) and 0 <= start < len(document):
+            positions.append(start)
+            continue
+        position = document.casefold().find(surface.casefold()) if surface else -1
+        if position >= 0:
+            positions.append(position)
+    if not positions:
+        return None
+    position = min(positions)
+    left = max(
+        document.rfind(".", 0, position),
+        document.rfind("!", 0, position),
+        document.rfind("?", 0, position),
+        document.rfind("\n", 0, position),
+    ) + 1
+    boundaries = [
+        value for value in (
+            document.find(".", position),
+            document.find("!", position),
+            document.find("?", position),
+            document.find("\n", position),
+        ) if value >= 0
+    ]
+    right = min(boundaries) + 1 if boundaries else len(document)
+    locator = document[left:right].strip()
+    target_terms = {
+        str(occurrence.get("surface", "")).strip()
+        for occurrence in occurrences
+        if str(occurrence.get("surface", "")).strip()
+    }
+
+    def redact(terms: Sequence[str], marker: str) -> None:
+        nonlocal locator
+        for term in sorted(
+            set(terms), key=lambda value: (-len(value), canon(value), value)
+        ):
+            if not term:
+                continue
+            locator = re.sub(
+                rf"(?<!\w){re.escape(term)}(?!\w)",
+                marker,
+                locator,
+                flags=re.IGNORECASE,
+            )
+
+    redact(list(target_terms), "[target item]")
+    redact([
+        term for term in protected_terms
+        if canon(term) not in {canon(target) for target in target_terms}
+    ], "[protected item]")
+    locator = re.sub(r"\s+", " ", locator).strip()
+    surviving_words = re.findall(
+        r"[A-Za-z0-9]+",
+        locator.replace("[target item]", "").replace("[protected item]", ""),
+    )
+    return locator if len(surviving_words) >= 2 else None
 
 
 def _contains(text: str, value: str) -> bool:
@@ -512,11 +765,14 @@ def relation_teacher_prompt(
     }
     for occurrence in environment_document.get("occurrences", []):
         decision = decisions.get(str(occurrence.get("decision_id")), {})
-        properties = [
-            str(action.get("fill"))
+        properties = list(dict.fromkeys(
+            canon(str(property_level))
             for action in decision.get("actions", [])
-            if action.get("mode") == "level" and not action.get("keep") and action.get("fill")
-        ]
+            if action.get("legal", True)
+            and action.get("mode") not in {"keep", "placeholder"}
+            for property_level in (action.get("entails") or [])
+            if canon(str(property_level))
+        ))
         inventory.append({
             "occurrence_id": occurrence.get("occurrence_id"),
             "surface": occurrence.get("surface"),
@@ -525,6 +781,7 @@ def relation_teacher_prompt(
         })
     schema = {
         "relations": [{
+            "subtype": "contextual_relation",
             "relation": f"one of: {', '.join(RELATION_ONTOLOGY)}",
             "argument_occurrence_ids": ["existing occurrence IDs"],
             "support_properties": {
@@ -570,19 +827,51 @@ def compile_relational_assertions(
     for occurrence_id, occurrence in occurrences.items():
         decision = decisions.get(str(occurrence.get("decision_id")), {})
         legal_properties[occurrence_id] = {
-            canon(str(action["fill"]))
+            canon(str(property_level))
             for action in decision.get("actions", [])
-            if action.get("mode") == "level"
-            and not action.get("keep")
-            and action.get("fill")
+            if action.get("legal", True)
+            and action.get("mode") not in {"keep", "placeholder"}
+            for property_level in (action.get("entails") or [])
+            if canon(str(property_level))
         }
 
     accepted, rejected = [], []
     for index, proposal_value in enumerate(proposals):
         proposal = dict(proposal_value)
+        proposal_hash = _stable_hash(proposal)
 
         def reject(reason: str) -> None:
-            rejected.append({"proposal_index": index, "reason": reason})
+            quote = str(proposal.get("evidence_quote", ""))
+            quote_start = document.find(quote) if quote else -1
+            evidence = {
+                "source": "relation_teacher",
+                "proposal_index": index,
+                "argument_occurrence_ids": [
+                    (
+                        str(value) if str(value) in occurrences
+                        else _stable_hash(str(value))
+                    )
+                    for value in proposal.get("argument_occurrence_ids", [])
+                ],
+                "evidence_quote_hash": _stable_hash(quote),
+                "evidence_span": (
+                    [quote_start, quote_start + len(quote)] if quote_start >= 0 else None
+                ),
+            }
+            record = _rejection_record(
+                reason=_stable_rejection_reason(reason),
+                detail_reason=reason,
+                attempt={
+                    "doc_id": doc_id,
+                    "proposal_index": index,
+                    "proposal_hash": proposal_hash,
+                    "definition_version": "contextual-relation-v1",
+                },
+                evidence=evidence,
+            )
+            record["proposal_index"] = index
+            record["proposal_hash"] = proposal_hash
+            rejected.append(record)
 
         relation = str(proposal.get("relation", ""))
         if relation not in relation_contract:
@@ -649,8 +938,8 @@ def compile_relational_assertions(
         if _contains(question, answer_property):
             reject("answer_leakage")
             continue
-        if any(_contains(question, str(occurrences[value].get("surface", "")))
-               for value in occurrence_ids):
+        if any(_contains(question, str(occurrence.get("surface", "")))
+               for occurrence in occurrences.values()):
             reject("protected_locator")
             continue
         decision_requirements = {
@@ -1000,36 +1289,81 @@ def build_utility_artifact(
     option_permutations = int(threshold_manifest.get("reader_option_permutations", 1))
     stability_threshold = float(threshold_manifest.get("reader_stability_threshold", 1.0))
     candidates_by_document: dict[str, list[dict]] = {}
-    rejection_counts: dict[str, int] = defaultdict(int)
+    rejection_records: list[dict] = []
+
+    def preserve_rejection(record_value: Mapping, *, doc_id: str) -> None:
+        record = dict(record_value)
+        detail_reason = str(record.get("detail_reason") or record.get("reason") or "invalid")
+        stable_reason = _stable_rejection_reason(str(record.get("reason") or detail_reason))
+        record["status"] = "rejected"
+        record["reason"] = stable_reason
+        record["detail_reason"] = detail_reason
+        if not record.get("rejection_id"):
+            record["rejection_id"] = _stable_hash({
+                "doc_id": doc_id,
+                "reason": stable_reason,
+                "detail_reason": detail_reason,
+                "evidence": dict(record.get("evidence") or {}),
+                "definition_version": "qa-builder-rejection-v1",
+            })
+        rejection_records.append(record)
 
     for doc_id, environment_document in frozen_environment.get("documents", {}).items():
         source = source_documents[doc_id]
-        candidates = [
+        deterministic_records = [
             dict(row) for row in task_adapter.deterministic_candidates(
                 doc_id, source, environment_document
             )
         ]
+        candidates = []
+        for record in deterministic_records:
+            if record.get("status") == "rejected":
+                preserve_rejection(record, doc_id=doc_id)
+            else:
+                candidates.append(record)
         context_count = sum(row.get("family") == "context" for row in candidates)
         if context_count < min_context and relation_teacher is not None:
+            prompt = relation_teacher_prompt(doc_id, source, environment_document)
             try:
-                proposals = relation_teacher.propose(
-                    relation_teacher_prompt(doc_id, source, environment_document)
-                )
+                proposals = relation_teacher.propose(prompt)
                 if not proposals:
-                    rejection_counts["not_generated"] += 1
+                    preserve_rejection(_rejection_record(
+                        reason="not_generated",
+                        detail_reason="teacher_abstained",
+                        attempt={
+                            "doc_id": doc_id,
+                            "prompt_hash": _stable_hash(prompt),
+                            "definition_version": "contextual-relation-v1",
+                        },
+                        evidence={
+                            "source": "relation_teacher",
+                            "prompt_hash": _stable_hash(prompt),
+                            "proposal_count": 0,
+                        },
+                    ), doc_id=doc_id)
                 else:
                     relation_candidates, relation_rejections = task_adapter.compile_relations(
                         doc_id, source, environment_document, proposals
                     )
                     candidates.extend(dict(row) for row in relation_candidates)
                     for rejection in relation_rejections:
-                        reason = str(rejection["reason"])
-                        stable_reason = "leakage" if reason in {
-                            "answer_leakage", "protected_locator"
-                        } else "invalid"
-                        rejection_counts[stable_reason] += 1
-            except Exception:
-                rejection_counts["generation_failed"] += 1
+                        preserve_rejection(rejection, doc_id=doc_id)
+            except Exception as error:
+                preserve_rejection(_rejection_record(
+                    reason="generation_failed",
+                    detail_reason="teacher_generation_failed",
+                    attempt={
+                        "doc_id": doc_id,
+                        "prompt_hash": _stable_hash(prompt),
+                        "error_type": type(error).__name__,
+                        "definition_version": "contextual-relation-v1",
+                    },
+                    evidence={
+                        "source": "relation_teacher",
+                        "prompt_hash": _stable_hash(prompt),
+                        "error_type": type(error).__name__,
+                    },
+                ), doc_id=doc_id)
 
         decisions = environment_document.get("decisions", [])
         placeholder_vector = {}
@@ -1052,7 +1386,21 @@ def build_utility_artifact(
             try:
                 anchor = build_joint_representative_anchor(candidate, decisions)
             except ValueError:
-                rejection_counts["unsupported"] += 1
+                preserve_rejection(_rejection_record(
+                    reason="unsupported",
+                    detail_reason="no_joint_representative_anchor",
+                    attempt={
+                        "doc_id": doc_id,
+                        "candidate_hash": _stable_hash(candidate),
+                        "definition_version": "context-validation-v1",
+                    },
+                    evidence={
+                        "source": "context_validation",
+                        "candidate_hash": _stable_hash(candidate),
+                        "subtype": candidate.get("subtype"),
+                        "occurrence_ids": list(candidate.get("occurrence_ids") or []),
+                    },
+                ), doc_id=doc_id)
                 continue
             representative_context = render_action_vector(doc_id, anchor["action_vector"])
             try:
@@ -1067,8 +1415,26 @@ def build_utility_artifact(
                     option_permutations=option_permutations,
                     stability_threshold=stability_threshold,
                 )
-            except Exception:
-                rejection_counts["infrastructure_failed"] += 1
+            except Exception as error:
+                preserve_rejection(_rejection_record(
+                    reason="infrastructure_failed",
+                    detail_reason="context_reader_failed",
+                    attempt={
+                        "doc_id": doc_id,
+                        "candidate_hash": _stable_hash(candidate),
+                        "error_type": type(error).__name__,
+                        "definition_version": "context-validation-v1",
+                    },
+                    evidence={
+                        "source": "context_validation",
+                        "candidate_hash": _stable_hash(candidate),
+                        "subtype": candidate.get("subtype"),
+                        "occurrence_ids": list(candidate.get("occurrence_ids") or []),
+                        "joint_anchor_action_vector": anchor["action_vector"],
+                        "joint_anchor_hash": anchor["action_vector_hash"],
+                        "error_type": type(error).__name__,
+                    },
+                ), doc_id=doc_id)
                 continue
             evidence_row = next(iter(validation_evidence.values()))
             if not validated:
@@ -1080,7 +1446,29 @@ def build_utility_artifact(
                         if evidence_row["scores"]["placeholder"] >= reader_threshold
                         else "unsupported"
                     )
-                rejection_counts[reason] += 1
+                preserve_rejection(_rejection_record(
+                    reason=reason,
+                    detail_reason=(
+                        "reader_unstable" if reason == "unstable"
+                        else "placeholder_answerable" if reason == "floor_answerable"
+                        else "three_point_gate_failed"
+                    ),
+                    attempt={
+                        "doc_id": doc_id,
+                        "candidate_hash": _stable_hash(candidate),
+                        "reason": reason,
+                        "definition_version": "context-validation-v1",
+                    },
+                    evidence={
+                        "source": "context_validation",
+                        "candidate_hash": _stable_hash(candidate),
+                        "subtype": candidate.get("subtype"),
+                        "occurrence_ids": list(candidate.get("occurrence_ids") or []),
+                        "joint_anchor_action_vector": anchor["action_vector"],
+                        "joint_anchor_hash": anchor["action_vector_hash"],
+                        "validation": evidence_row,
+                    },
+                ), doc_id=doc_id)
                 continue
             row = dict(candidate)
             row["expected_action_support"] = {
@@ -1102,7 +1490,13 @@ def build_utility_artifact(
         structural_cap=threshold_manifest.get("structural_cap"),
         pins={**dict(pins), "threshold_manifest": dict(threshold_manifest)},
     )
-    artifact["rejections"] = {"summary_by_reason": dict(rejection_counts)}
+    summary_by_reason: dict[str, int] = defaultdict(int)
+    for record in rejection_records:
+        summary_by_reason[str(record["reason"])] += 1
+    artifact["rejections"] = {
+        "summary_by_reason": dict(summary_by_reason),
+        "records": rejection_records,
+    }
     artifact["artifact_hash"] = _stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
     })
