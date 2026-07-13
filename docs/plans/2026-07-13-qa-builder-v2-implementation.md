@@ -147,3 +147,108 @@ Run the CLI on `aci/D2N002` with teacher escalation disabled and a checked-in or
 - [ ] **Step 5: Commit the reviewed slice**
 
 Commit task files with message `test(qa): gate and smoke utility artifacts`.
+
+### Task 4: Compile Authoritative Delivered Assertions
+
+**Files:**
+- Modify: `src/cloak/train/qa_builder.py`
+- Test: `src/cloak/tests/test_qa_builder_v2.py`
+
+**Interfaces:**
+- Produces: `AciTaskAdapter.delivered_candidates(doc_id, document, reference, environment_document) -> list[dict]`
+- Produces scoring contracts for `required_sections`, `field_value`, `contains`, and `exact_relation`.
+- Extends: `score_utility(...)` with deterministic evaluation of every delivered contract.
+
+- [ ] **Step 1: Add failing delivered-component tests**
+
+Use a compact ACI note fixture containing required headings, demographic fields, assessment/status rows, and a condition-treatment-test relation. Assert that the compiler emits separate `content`, `field`, `structure`, and `exact_relation` groups; structural assertions must have a capped share of the delivered budget and must not aggregate semantic fields a second time.
+
+- [ ] **Step 2: Implement a deterministic ACI note parser**
+
+Parse uppercase section headings and assessment-plan rows from the authoritative human reference. Emit only facts supported by the source/reference/task schema. Treat the reference as truth for delivered assertions; never use a ceiling output as truth. Abstain on ambiguous rows rather than inventing clinical normalization.
+
+- [ ] **Step 3: Implement deterministic delivered scorers**
+
+Score required-section presence, parseability, field/value agreement, explicit omission/content checks, and exact symbolic relations on `out_final`. Keep each fact/relation in one group so schema aggregates cannot double-count it. Structural compliance is low-weight through the frozen structural cap.
+
+- [ ] **Step 4: Run delivered-component tests**
+
+Run: `PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py -k 'delivered or schema or exact_relation'`
+Expected: all selected tests pass.
+
+- [ ] **Step 5: Commit the reviewed slice**
+
+Commit task files with message `feat(qa): compile deterministic ACI utility assertions`.
+
+### Task 5: Compile and Validate Context Probes
+
+**Files:**
+- Modify: `src/cloak/train/qa_builder.py`
+- Test: `src/cloak/tests/test_qa_builder_v2.py`
+
+**Interfaces:**
+- Produces: `AciTaskAdapter.semantic_property_candidates(doc_id, document, environment_document) -> list[dict]`
+- Extends: the single batched teacher proposal schema with `contextual_relation` candidates only.
+- Produces: complete accepted/rejected candidate records with stable rejection IDs and evidence.
+
+- [ ] **Step 1: Add failing semantic-property tests**
+
+For every controlled decision with at least one legal non-KEEP, non-placeholder action, assert that deterministic candidates expose the legal property support band, link all repeated occurrences, and pin one joint representative anchor. Do not require one probe per rung; deduplicate equivalent property levels.
+
+- [ ] **Step 2: Implement template-first semantic-property candidates**
+
+Derive category/function questions from the frozen runtime type and legal lattice action semantics. Questions must test meaning unavailable from `<TYPE_N>` without containing the protected surface or accepted answer. If no safe task-native template can identify the role from surviving context, record an explicit `not_generated` rejection rather than fabricating a probe.
+
+- [ ] **Step 3: Harden teacher contextual relations**
+
+Keep at most one cached batched Nemotron proposal call per under-supported document. Compile only exact-evidence, legal-property relations. Preserve each rejected proposal with reason, proposal hash, and non-sensitive evidence metadata; aggregate summaries remain derived.
+
+- [ ] **Step 4: Validate both context subtypes through the three-point gate**
+
+Every rewarded context assertion must pass `doc_orig`, pass its joint coarsest legal representative-generalization anchor, fail the all-placeholder anchor, and satisfy the frozen stability gate. Store the full validation evidence and anchor vector/hash.
+
+- [ ] **Step 5: Run context-component tests**
+
+Run: `PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py -k 'semantic_property or contextual_relation or context or rejection or anchor'`
+Expected: all selected tests pass.
+
+- [ ] **Step 6: Commit the reviewed slice**
+
+Commit task files with message `feat(qa): compile context-preservation probes`.
+
+### Task 6: Export Inspectable Artifacts and D2N002 Acceptance
+
+**Files:**
+- Modify: `scripts/build_qa_utility_artifact.py`
+- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/tests/test_build_qa_utility_artifact_cli.py`
+- Modify: `src/cloak/tests/test_qa_builder_v2.py`
+
+**Interfaces:**
+- Produces: one normative JSON artifact plus derived `<stem>.assertions.json` and `<stem>.qa-pairs.json` views.
+- Produces: `artifact_views(artifact) -> tuple[dict, dict]` without a second source of truth.
+
+- [ ] **Step 1: Add failing derived-view tests**
+
+Assert that the assertions view groups structural, field/content, exact-relation, and contextual records with evidence and scoring contracts. Assert that the QA-pairs view groups semantic-property and contextual-relation questions by decision, exposing legal action/property support, occurrence links, accepted values, validation evidence, and rejection states.
+
+- [ ] **Step 2: Implement deterministic view projection**
+
+Generate both views solely from the normative artifact. Preserve stable component, occurrence, decision, group, and action IDs. Never maintain separate caches or regenerate questions while exporting.
+
+- [ ] **Step 3: Add a substantive D2N002 acceptance test**
+
+Using corrected frozen detector fixtures and stubbed teacher/reader responses, require nonzero delivered structure/field/exact-relation assertions, nonzero accepted semantic-property and contextual-relation assertions, complete rejection rows, both family budgets present, and both derived files. The test must fail if the artifact regresses to surface-containment-only output.
+
+- [ ] **Step 4: Run the complete QA-builder suite**
+
+Run: `PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_roundtrip.py`
+Expected: all tests pass.
+
+- [ ] **Step 5: Run a local D2N002 smoke without external calls**
+
+Build from `/tmp/ranker_env_qa_v2_d2n002.json` and `/tmp/task_arms_qa_v2_d2n002.json` with a deterministic stub/cached fixture. Inspect assertion subtype counts and both derived outputs. Do not call OpenRouter or any paid/external model.
+
+- [ ] **Step 6: Commit the reviewed slice**
+
+Commit task files with message `feat(qa): export complete QA artifacts`.
