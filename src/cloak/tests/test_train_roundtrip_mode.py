@@ -83,6 +83,7 @@ def _frozen_anchor_environment():
             "decisions": [
                 {
                     "decision_id": "dec1", "controlled": True,
+                    "runtime_type": "QUANTITY", "canonical_key": "metformin",
                     "actions": [
                         {"action_id": "keep-1", "mode": "keep", "legal": True,
                          "entails": ["exact"]},
@@ -96,6 +97,7 @@ def _frozen_anchor_environment():
                 },
                 {
                     "decision_id": "dec2", "controlled": True,
+                    "runtime_type": "DRUG", "canonical_key": "synthroid",
                     "actions": [
                         {"action_id": "keep-2", "mode": "keep", "legal": True,
                          "entails": ["exact"]},
@@ -163,6 +165,12 @@ def _verified_context_artifact():
             "assertion_ids": ["a-context", "a-delivered"],
             "controlled_decision_ids": ["dec1", "dec2"],
             "occurrence_to_decision": {"o1": "dec1"},
+            "decision_keys": [
+                {"decision_id": "dec1", "runtime_type": "QUANTITY",
+                 "canonical_key": "metformin"},
+                {"decision_id": "dec2", "runtime_type": "DRUG",
+                 "canonical_key": "synthroid"},
+            ],
         }},
         "assertions": {"a-context": context, "a-delivered": delivered},
     })
@@ -658,6 +666,37 @@ def test_utility_artifact_gate_requires_exact_frozen_decision_identity(mutate, m
         tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
 
 
+def test_utility_artifact_gate_rejects_swapped_frozen_decision_keys():
+    artifact = _verified_context_artifact()
+    keys = artifact["documents"]["d0"]["decision_keys"]
+    keys[0]["decision_id"], keys[1]["decision_id"] = (
+        keys[1]["decision_id"], keys[0]["decision_id"]
+    )
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="decision key bindings"):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda keys: keys.pop(),
+        lambda keys: keys[1].update({
+            "runtime_type": keys[0]["runtime_type"],
+            "canonical_key": keys[0]["canonical_key"],
+        }),
+    ],
+)
+def test_utility_artifact_gate_rejects_missing_or_duplicate_frozen_decision_keys(mutate):
+    artifact = _verified_context_artifact()
+    mutate(artifact["documents"]["d0"]["decision_keys"])
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="decision keys"):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
 @pytest.mark.parametrize(
     ("assertion", "message"),
     [
@@ -811,6 +850,10 @@ def test_utility_artifact_gate_rejects_context_link_to_uncontrolled_occurrence()
     environment["documents"]["d0"]["occurrences"][0]["controlled"] = False
     artifact["documents"]["d0"]["controlled_decision_ids"] = ["dec2"]
     artifact["documents"]["d0"]["occurrence_to_decision"] = {}
+    artifact["documents"]["d0"]["decision_keys"] = [
+        key for key in artifact["documents"]["d0"]["decision_keys"]
+        if key["decision_id"] == "dec2"
+    ]
     _seal_artifact(artifact)
 
     with pytest.raises(SystemExit, match="uncontrolled occurrence"):

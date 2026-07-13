@@ -817,7 +817,12 @@ def test_package_excludes_uncontrolled_occurrences_from_credit_mapping():
                 {"occurrence_id": "o-uncontrolled", "decision_id": None,
                  "controlled": False},
             ],
-            "decisions": [{"decision_id": "dec1", "controlled": True}],
+            "decisions": [
+                {"decision_id": "dec1", "controlled": True,
+                 "runtime_type": "drug", "canonical_key": "synthroid"},
+                {"decision_id": "uncontrolled", "controlled": False,
+                 "runtime_type": "drug", "canonical_key": "unrelated"},
+            ],
         }},
     }
     global_candidate = {
@@ -834,6 +839,9 @@ def test_package_excludes_uncontrolled_occurrences_from_credit_mapping():
     )
 
     assert artifact["documents"]["d1"]["occurrence_to_decision"] == {"o1": "dec1"}
+    assert artifact["documents"]["d1"]["decision_keys"] == [{
+        "decision_id": "dec1", "runtime_type": "drug", "canonical_key": "synthroid",
+    }]
     assertion_id = artifact["documents"]["d1"]["assertion_ids"][0]
     assert provisional_advantages(
         [{assertion_id: 1.0}, {assertion_id: 0.0}],

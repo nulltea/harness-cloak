@@ -653,7 +653,7 @@ def package_utility_artifact(
                 "decision_id": str(row["decision_id"]),
                 "runtime_type": row.get("runtime_type"),
                 "canonical_key": row.get("canonical_key"),
-            } for row in environment_document.get("decisions", [])],
+            } for row in decision_rows if row.get("controlled", True)],
             "uncovered_decision_ids": [
                 decision_id for decision_id in controlled if decision_id not in linked_decisions
             ],

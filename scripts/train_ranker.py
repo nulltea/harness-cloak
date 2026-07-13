@@ -379,19 +379,36 @@ def rloo_advantage(rt: torch.Tensor) -> torch.Tensor:
     return (rt - rt.mean()) * G / (G - 1)
 
 
+def _decision_key_mapping(rows, controlled_ids, *, doc_id, error_type):
+    mapping = {}
+    seen_ids = set()
+    for row in rows:
+        decision_id = str(row.get("decision_id"))
+        runtime_type = row.get("runtime_type")
+        canonical_key = row.get("canonical_key")
+        if (decision_id not in controlled_ids or runtime_type is None
+                or canonical_key is None or decision_id in seen_ids):
+            raise error_type(f"document {doc_id!r} has invalid frozen decision keys")
+        key = (str(runtime_type), str(canonical_key))
+        if key in mapping:
+            raise error_type(f"document {doc_id!r} has duplicate frozen decision keys")
+        mapping[key] = decision_id
+        seen_ids.add(decision_id)
+    if set(mapping.values()) != controlled_ids:
+        raise error_type(f"document {doc_id!r} decision keys do not cover controlled decisions")
+    return mapping
+
+
 def utility_decision_ids(doc, span_rows):
     """Bind sampled span rows to frozen stable decision IDs without positional semantics."""
     state = doc["utility_artifact"]["documents"][doc["id"]]
     controlled_ids = {str(value) for value in state["controlled_decision_ids"]}
-    decision_by_key = {}
-    for row in state.get("decision_keys", []):
-        decision_id = str(row["decision_id"])
-        key = (str(row["runtime_type"]), str(row["canonical_key"]))
-        if decision_id not in controlled_ids or key in decision_by_key:
-            raise ValueError(f"document {doc['id']!r} has invalid frozen decision keys")
-        decision_by_key[key] = decision_id
-    if set(decision_by_key.values()) != controlled_ids:
-        raise ValueError(f"document {doc['id']!r} decision keys do not cover controlled decisions")
+    decision_by_key = _decision_key_mapping(
+        state.get("decision_keys", []),
+        controlled_ids,
+        doc_id=doc["id"],
+        error_type=ValueError,
+    )
 
     sampled_ids = []
     for span in span_rows:
@@ -1095,6 +1112,28 @@ def enforce_utility_artifact_gate(artifact, environment):
                 f"utility artifact document {doc_id} controlled decision IDs do not match "
                 "the frozen environment"
             )
+        has_frozen_decision_keys = has_frozen_identities and any(
+            "runtime_type" in row or "canonical_key" in row
+            for row in live_decisions.values()
+        )
+        if has_frozen_decision_keys:
+            live_decision_keys = _decision_key_mapping(
+                [row for row in live_decisions.values() if row.get("controlled", True)],
+                live_controlled_ids,
+                doc_id=doc_id,
+                error_type=SystemExit,
+            )
+            artifact_decision_keys = _decision_key_mapping(
+                state.get("decision_keys", []),
+                set(artifact_controlled_ids),
+                doc_id=doc_id,
+                error_type=SystemExit,
+            )
+            if artifact_decision_keys != live_decision_keys:
+                raise SystemExit(
+                    f"utility artifact document {doc_id} decision key bindings do not match "
+                    "the frozen environment"
+                )
         live_occurrence_to_decision = {}
         for occurrence_id, row in live_occurrences.items():
             if not row.get("controlled", row.get("decision_id") is not None):
