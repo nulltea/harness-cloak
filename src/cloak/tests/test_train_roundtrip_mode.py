@@ -40,7 +40,9 @@ def _sealed_utility_artifact(assertion=None):
         "documents": {"d0": {"utility_weight_denominator": 1.0,
                                 "present_family_budgets": [family],
                                 "missing_family_budgets": [],
-                                "assertion_ids": ["a1"]}},
+                                "assertion_ids": ["a1"],
+                                "controlled_decision_ids": ["dec1"],
+                                "occurrence_to_decision": {"o1": "dec1"}}},
         "assertions": {"a1": assertion},
     }
     artifact["artifact_hash"] = _stable_hash(artifact)
@@ -159,6 +161,8 @@ def _verified_context_artifact():
                 }},
             },
             "assertion_ids": ["a-context", "a-delivered"],
+            "controlled_decision_ids": ["dec1", "dec2"],
+            "occurrence_to_decision": {"o1": "dec1"},
         }},
         "assertions": {"a-context": context, "a-delivered": delivered},
     })
@@ -525,6 +529,10 @@ def test_train_roundtrip_uses_structured_credit_when_scalar_utility_is_tied(monk
             "utility_weight_denominator": 1.0,
             "controlled_decision_ids": ["dec1"],
             "occurrence_to_decision": {"o1": "dec1"},
+            "decision_keys": [{
+                "decision_id": "dec1", "runtime_type": "QUANTITY",
+                "canonical_key": "metformin",
+            }],
         }},
         "assertions": {"a1": {
             "assertion_id": "a1", "doc_id": "d0", "scope": "linked",
@@ -534,12 +542,14 @@ def test_train_roundtrip_uses_structured_credit_when_scalar_utility_is_tied(monk
     doc["utility_artifact"] = artifact
     actions = iter([0, 1])
 
-    def sample(doc, span_rows, feats, policy, greedy=False):
+    def sample(doc, span_rows, feats, policy, greedy=False, decision_ids=None):
+        assert decision_ids == ["dec1"]
         action_index = next(actions)
         choice = {"metformin": span_rows[0]["actions"][action_index]}
         log_prob = policy.log_probs(feats[0], [0, 1])[action_index]
         doc_p, replacements = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
-        return choice, [log_prob], float(action_index == 1), doc_p, replacements, [[0, 1]]
+        return (choice, {decision_ids[0]: log_prob}, float(action_index == 1), doc_p,
+                replacements, [[0, 1]])
 
     def tied_scalar_roundtrip(jobs, workers=1):
         return [{
@@ -577,6 +587,75 @@ def test_structured_utility_loss_replaces_tested_pair_at_group_weight():
     )
 
     assert loss.item() == pytest.approx(11.0)
+
+
+def test_utility_decision_ids_ignore_artifact_decision_order():
+    doc = {"id": "d0", "utility_artifact": {"documents": {"d0": {
+        "controlled_decision_ids": ["dec2", "dec1"],
+        "decision_keys": [
+            {"decision_id": "dec1", "runtime_type": "QUANTITY",
+             "canonical_key": "metformin"},
+            {"decision_id": "dec2", "runtime_type": "DRUG",
+             "canonical_key": "synthroid"},
+        ],
+    }}}}
+    spans = [
+        {"type": "QUANTITY", "surface": "metformin"},
+        {"type": "DRUG", "surface": "Synthroid"},
+    ]
+
+    assert tr.utility_decision_ids(doc, spans) == ["dec1", "dec2"]
+
+
+def test_structured_utility_loss_attaches_gradients_by_decision_id():
+    first_a = torch.tensor(2.0, requires_grad=True)
+    first_b = torch.tensor(3.0, requires_grad=True)
+    second_a = torch.tensor(5.0, requires_grad=True)
+    second_b = torch.tensor(7.0, requires_grad=True)
+
+    loss = tr.structured_utility_loss(
+        "d0",
+        [{"dec2": first_b, "dec1": first_a}, {"dec2": second_b, "dec1": second_a}],
+        {(0, "dec1"): 1.0, (0, "dec2"): 0.0,
+         (1, "dec1"): -1.0, (1, "dec2"): 0.0},
+    )
+    loss.backward()
+
+    assert first_a.grad.item() == pytest.approx(-0.5)
+    assert second_a.grad.item() == pytest.approx(0.5)
+    assert first_b.grad.item() == pytest.approx(0.0)
+    assert second_b.grad.item() == pytest.approx(0.0)
+
+
+def test_utility_artifact_gate_rejects_uncontrolled_occurrence_link():
+    artifact = _verified_context_artifact()
+    artifact["assertions"]["a-context"]["occurrence_ids"] = ["o-uncontrolled"]
+    _seal_artifact(artifact)
+    environment = _frozen_anchor_environment()
+    environment["documents"]["d0"]["occurrences"].append({
+        "occurrence_id": "o-uncontrolled", "decision_id": None, "controlled": False,
+    })
+
+    with pytest.raises(SystemExit, match="uncontrolled occurrence"):
+        tr.enforce_utility_artifact_gate(artifact, environment)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda state: state.update({"controlled_decision_ids": ["dec1"]}),
+         "controlled decision IDs"),
+        (lambda state: state.update({"occurrence_to_decision": {"o1": "dec2"}}),
+         "occurrence-to-decision"),
+    ],
+)
+def test_utility_artifact_gate_requires_exact_frozen_decision_identity(mutate, message):
+    artifact = _verified_context_artifact()
+    mutate(artifact["documents"]["d0"])
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match=message):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
 
 
 @pytest.mark.parametrize(
@@ -646,7 +725,7 @@ def test_utility_artifact_gate_rejects_link_to_dangling_environment_decision():
         }},
     }
 
-    with pytest.raises(SystemExit, match="dangling decision"):
+    with pytest.raises(SystemExit, match="invalid controlled occurrence"):
         tr.enforce_utility_artifact_gate(artifact, environment)
 
 
@@ -717,7 +796,7 @@ def test_utility_artifact_gate_rejects_finer_entailing_joint_anchor():
         tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
 
 
-def test_utility_artifact_gate_rejects_context_link_to_uncontrolled_decision():
+def test_utility_artifact_gate_rejects_context_link_to_uncontrolled_occurrence():
     artifact = _verified_context_artifact()
     vector = artifact["assertions"]["a-context"]["expected_action_support"][
         "joint_anchor_action_vector"
@@ -729,8 +808,12 @@ def test_utility_artifact_gate_rejects_context_link_to_uncontrolled_decision():
     _seal_artifact(artifact)
     environment = _frozen_anchor_environment()
     environment["documents"]["d0"]["decisions"][0]["controlled"] = False
+    environment["documents"]["d0"]["occurrences"][0]["controlled"] = False
+    artifact["documents"]["d0"]["controlled_decision_ids"] = ["dec2"]
+    artifact["documents"]["d0"]["occurrence_to_decision"] = {}
+    _seal_artifact(artifact)
 
-    with pytest.raises(SystemExit, match="links uncontrolled decision"):
+    with pytest.raises(SystemExit, match="uncontrolled occurrence"):
         tr.enforce_utility_artifact_gate(artifact, environment)
 
 

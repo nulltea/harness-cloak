@@ -327,13 +327,16 @@ def verify_bc_reproduction(docs, art) -> int:
 
 # ---------- reward ----------
 
-def sample_rollout(doc, span_rows, feats, policy, greedy=False):
+def sample_rollout(doc, span_rows, feats, policy, greedy=False, decision_ids=None):
     """Sampling half of a rollout under the DYNAMIC injectivity mask (spec §3.3-1).
     Returns (choice, logps, ph_rate, doc_p, R, legals) — no reward computed here. `legals`
     is the per-span DYNAMIC legal set actually sampled from (walk order), so entropy/KL can
-    be scored over the masks the policy really used, not the static floor-legal sets."""
+    be scored over the masks the policy really used, not the static floor-legal sets. When
+    stable decision IDs are supplied, `logps` is keyed by those IDs rather than span position."""
+    if decision_ids is not None and len(decision_ids) != len(span_rows):
+        raise ValueError("sampled decision IDs must align with span rows")
     used: set[str] = set()
-    choice, logps, legals, n_level = {}, [], [], 0
+    choice, logps, legals, n_level = {}, {} if decision_ids is not None else [], [], 0
     for i, (s, f) in enumerate(zip(span_rows, feats)):
         policy.set_context(_ctx_of(doc, i))
         legal_dyn = [j for j in s["legal"]
@@ -345,7 +348,13 @@ def sample_rollout(doc, span_rows, feats, policy, greedy=False):
             used.add(a["fill"].lower())
             n_level += 1
         choice[s["surface"].lower()] = a
-        logps.append(lp)
+        if decision_ids is None:
+            logps.append(lp)
+        else:
+            decision_id = str(decision_ids[i])
+            if decision_id in logps:
+                raise ValueError(f"duplicate sampled decision id {decision_id!r}")
+            logps[decision_id] = lp
         legals.append(legal_dyn)
     doc_p, R = assemble(doc["text"], doc["R_walk"], span_rows, choice)
     return choice, logps, 1.0 - n_level / len(span_rows), doc_p, R, legals
@@ -370,15 +379,30 @@ def rloo_advantage(rt: torch.Tensor) -> torch.Tensor:
     return (rt - rt.mean()) * G / (G - 1)
 
 
-def _decision_log_probs(doc, logps):
+def utility_decision_ids(doc, span_rows):
+    """Bind sampled span rows to frozen stable decision IDs without positional semantics."""
     state = doc["utility_artifact"]["documents"][doc["id"]]
-    decision_ids = [str(value) for value in state["controlled_decision_ids"]]
-    if len(decision_ids) != len(logps):
-        raise ValueError(
-            f"document {doc['id']!r} has {len(decision_ids)} controlled decisions but "
-            f"{len(logps)} sampled policy decisions"
-        )
-    return dict(zip(decision_ids, logps, strict=True))
+    controlled_ids = {str(value) for value in state["controlled_decision_ids"]}
+    decision_by_key = {}
+    for row in state.get("decision_keys", []):
+        decision_id = str(row["decision_id"])
+        key = (str(row["runtime_type"]), str(row["canonical_key"]))
+        if decision_id not in controlled_ids or key in decision_by_key:
+            raise ValueError(f"document {doc['id']!r} has invalid frozen decision keys")
+        decision_by_key[key] = decision_id
+    if set(decision_by_key.values()) != controlled_ids:
+        raise ValueError(f"document {doc['id']!r} decision keys do not cover controlled decisions")
+
+    sampled_ids = []
+    for span in span_rows:
+        key = (str(span["type"]), canon(str(span["surface"])))
+        decision_id = decision_by_key.get(key)
+        if decision_id is None:
+            raise ValueError(f"document {doc['id']!r} has no frozen decision for span {key}")
+        sampled_ids.append(decision_id)
+    if len(sampled_ids) != len(set(sampled_ids)) or set(sampled_ids) != controlled_ids:
+        raise ValueError(f"document {doc['id']!r} sampled spans do not match controlled decisions")
+    return sampled_ids
 
 
 def structured_utility_loss(doc_id, log_probs, provisional, *, counterfactual_losses=None):
@@ -448,9 +472,11 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             doc = docs[di]
             logps_l, ph_l, legals_l = [], [], []
             jobs = []
+            decision_ids = (utility_decision_ids(doc, doc["spans"])
+                            if "utility_artifact" in doc else None)
             for _ in range(G):
                 choice, logps, ph, doc_p, R, legals = sample_rollout(
-                    doc, doc["spans"], doc["feats"], policy)
+                    doc, doc["spans"], doc["feats"], policy, decision_ids=decision_ids)
                 jobs.append(_roundtrip_job(doc, doc_p, R))
                 logps_l.append(logps)
                 ph_l.append(ph)
@@ -474,7 +500,7 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
                 )
                 pg = structured_utility_loss(
                     doc["id"],
-                    [_decision_log_probs(doc, logps) for logps in logps_l],
+                    logps_l,
                     provisional,
                     counterfactual_losses=counterfactual_losses,
                 )
@@ -1048,12 +1074,47 @@ def enforce_utility_artifact_gate(artifact, environment):
                 f"utility artifact document {doc_id} has missing assertions: {missing}"
             )
         live_document = environment.get("documents", {}).get(doc_id, {})
+        has_frozen_identities = (
+            "decisions" in live_document or "occurrences" in live_document
+        )
         live_occurrences = {
             str(row["occurrence_id"]): row for row in live_document.get("occurrences", [])
         }
         live_decisions = {
             str(row["decision_id"]): row for row in live_document.get("decisions", [])
         }
+        live_controlled_ids = {
+            decision_id for decision_id, row in live_decisions.items()
+            if row.get("controlled", True)
+        }
+        artifact_controlled_ids = [str(value) for value in state.get("controlled_decision_ids", [])]
+        if len(artifact_controlled_ids) != len(set(artifact_controlled_ids)):
+            raise SystemExit(f"utility artifact document {doc_id} repeats controlled decision IDs")
+        if has_frozen_identities and set(artifact_controlled_ids) != live_controlled_ids:
+            raise SystemExit(
+                f"utility artifact document {doc_id} controlled decision IDs do not match "
+                "the frozen environment"
+            )
+        live_occurrence_to_decision = {}
+        for occurrence_id, row in live_occurrences.items():
+            if not row.get("controlled", row.get("decision_id") is not None):
+                continue
+            decision_id = row.get("decision_id")
+            if decision_id is None or str(decision_id) not in live_controlled_ids:
+                raise SystemExit(
+                    f"utility artifact environment has invalid controlled occurrence "
+                    f"{occurrence_id!r}"
+                )
+            live_occurrence_to_decision[occurrence_id] = str(decision_id)
+        artifact_occurrence_to_decision = {
+            str(occurrence_id): str(decision_id)
+            for occurrence_id, decision_id in state.get("occurrence_to_decision", {}).items()
+        }
+        if has_frozen_identities and artifact_occurrence_to_decision != live_occurrence_to_decision:
+            raise SystemExit(
+                f"utility artifact document {doc_id} occurrence-to-decision mapping does not "
+                "match the frozen environment"
+            )
         rows = []
         for assertion_id in assertion_ids:
             if assertion_id in referenced_assertion_ids:
@@ -1092,6 +1153,18 @@ def enforce_utility_artifact_gate(artifact, environment):
                     raise SystemExit(
                         f"utility artifact assertion {assertion_id} has unknown occurrence "
                         f"links: {missing_occurrences}"
+                    )
+                uncontrolled_occurrences = sorted(
+                    occurrence_id for occurrence_id in occurrence_ids
+                    if not live_occurrences[occurrence_id].get(
+                        "controlled",
+                        live_occurrences[occurrence_id].get("decision_id") is not None,
+                    )
+                )
+                if uncontrolled_occurrences:
+                    raise SystemExit(
+                        f"utility artifact assertion {assertion_id} links uncontrolled occurrence "
+                        f"identities: {uncontrolled_occurrences}"
                     )
                 dangling_decisions = sorted({
                     str(live_occurrences[occurrence_id].get("decision_id"))

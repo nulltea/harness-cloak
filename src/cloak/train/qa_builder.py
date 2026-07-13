@@ -551,27 +551,43 @@ def package_utility_artifact(
         }
         if len(occurrences) != len(environment_document.get("occurrences", [])):
             raise ValueError(f"duplicate occurrence ids for {doc_id}")
-        decision_ids = {
-            str(row["decision_id"])
-            for row in environment_document.get("decisions", [])
-        }
-        if len(decision_ids) != len(environment_document.get("decisions", [])):
+        decision_rows = environment_document.get("decisions", [])
+        decision_ids = {str(row["decision_id"]) for row in decision_rows}
+        if len(decision_ids) != len(decision_rows):
             raise ValueError(f"duplicate decision ids for {doc_id}")
+        controlled = []
+        for row in decision_rows:
+            if not row.get("controlled", True):
+                continue
+            decision_id = row.get("decision_id")
+            if decision_id is None:
+                raise ValueError(f"controlled decision lacks an id for {doc_id}")
+            controlled.append(str(decision_id))
+        controlled_set = set(controlled)
+        if len(controlled_set) != len(controlled):
+            raise ValueError(f"duplicate controlled decision ids for {doc_id}")
+        controlled_occurrences = {
+            occurrence_id: row
+            for occurrence_id, row in occurrences.items()
+            if row.get("controlled", row.get("decision_id") is not None)
+        }
+        missing_decision_ids = sorted(
+            occurrence_id for occurrence_id, row in controlled_occurrences.items()
+            if row.get("decision_id") is None
+        )
+        if missing_decision_ids:
+            raise ValueError(
+                f"controlled occurrences lack decision ids for {doc_id}: {missing_decision_ids}"
+            )
         dangling_decisions = sorted({
             str(row["decision_id"])
-            for row in occurrences.values()
-            if row.get("controlled", row.get("decision_id") is not None)
-            and row.get("decision_id") not in decision_ids
+            for row in controlled_occurrences.values()
+            if str(row["decision_id"]) not in controlled_set
         })
         if dangling_decisions:
             raise ValueError(
                 f"unknown decision links for {doc_id}: {dangling_decisions}"
             )
-        controlled = [
-            str(row["decision_id"])
-            for row in environment_document.get("decisions", [])
-            if row.get("controlled", True)
-        ]
         compiled = []
         compiled_ids = set()
         linked_decisions = set()
@@ -631,7 +647,7 @@ def package_utility_artifact(
             "controlled_decision_ids": controlled,
             "occurrence_to_decision": {
                 occurrence_id: str(row["decision_id"])
-                for occurrence_id, row in occurrences.items()
+                for occurrence_id, row in controlled_occurrences.items()
             },
             "decision_keys": [{
                 "decision_id": str(row["decision_id"]),

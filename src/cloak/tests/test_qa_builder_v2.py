@@ -2,6 +2,7 @@ import pytest
 
 import cloak.train.roundtrip as roundtrip
 import cloak.train.qa_builder as qa_builder
+from cloak.train.utility_credit import provisional_advantages
 from cloak.train.qa_builder import (
     AciTaskAdapter,
     BatchedContextReader,
@@ -802,6 +803,49 @@ def test_package_rejects_dangling_occurrence_decision_links():
                 "occurrence_ids": ["o1"], "group_id": "condition:1",
                 "scoring_contract": {"kind": "contains", "value": "condition"},
             }]},
+            family_budgets={"context": 0.6, "delivered": 0.4},
+            pins={},
+        )
+
+
+def test_package_excludes_uncontrolled_occurrences_from_credit_mapping():
+    environment = {
+        "environment_hash": "env-hash",
+        "documents": {"d1": {
+            "occurrences": [
+                {"occurrence_id": "o1", "decision_id": "dec1", "controlled": True},
+                {"occurrence_id": "o-uncontrolled", "decision_id": None,
+                 "controlled": False},
+            ],
+            "decisions": [{"decision_id": "dec1", "controlled": True}],
+        }},
+    }
+    global_candidate = {
+        "family": "delivered", "scope": "global", "subtype": "content",
+        "occurrence_ids": [], "group_id": "document:unlinked-evidence",
+        "scoring_contract": {"kind": "contains", "value": "unrelated"},
+    }
+
+    artifact = package_utility_artifact(
+        environment,
+        {"d1": [global_candidate]},
+        family_budgets={"context": 0.6, "delivered": 0.4},
+        pins={},
+    )
+
+    assert artifact["documents"]["d1"]["occurrence_to_decision"] == {"o1": "dec1"}
+    assertion_id = artifact["documents"]["d1"]["assertion_ids"][0]
+    assert provisional_advantages(
+        [{assertion_id: 1.0}, {assertion_id: 0.0}],
+        artifact,
+        artifact["documents"]["d1"]["occurrence_to_decision"],
+        doc_id="d1",
+    ) == pytest.approx({(0, "dec1"): 0.4, (1, "dec1"): -0.4})
+    with pytest.raises(ValueError, match="uncontrolled occurrence"):
+        package_utility_artifact(
+            environment,
+            {"d1": [{**global_candidate, "scope": "linked",
+                      "occurrence_ids": ["o-uncontrolled"]}]},
             family_budgets={"context": 0.6, "delivered": 0.4},
             pins={},
         )
