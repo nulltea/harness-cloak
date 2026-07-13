@@ -1,5 +1,6 @@
 """Round-trip trainer mode — offline: roundtrip_batch monkeypatched with a deterministic
 fake that rewards keeping level fills (so RLOO has a real gradient direction)."""
+import json
 import sys
 from pathlib import Path
 
@@ -230,6 +231,16 @@ def _exit_doc():
             "probes_train": [{"surface": "metformin", "question": "What drug?"}]}
 
 
+def _artifact_exit_doc():
+    doc = _exit_doc()
+    artifact = _sealed_utility_artifact()
+    artifact["documents"]["d0"]["decision_keys"] = [{
+        "decision_id": "dec1", "runtime_type": "QUANTITY", "canonical_key": "metformin",
+    }]
+    doc["utility_artifact"] = _seal_artifact(artifact)
+    return doc
+
+
 def fake_roundtrip(jobs, workers=1, reader_refresh=False):
     # reward 1.0 iff the level fill survived into doc_p, else 0.0
     return [{"out_p": "", "out_final": j["doc_p"], "f1s": [float("biguanide" in j["doc_p"])],
@@ -249,7 +260,7 @@ def _with_carrier(doc):
     return doc
 
 
-def _candidate_rollout(doc, span_rows, feats, policy):
+def _candidate_rollout(doc, span_rows, feats, policy, decision_ids=None):
     choice = {"metformin": span_rows[0]["actions"][1]}
     doc_p, R = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
     return choice, [], 0.0, doc_p, R, []
@@ -258,7 +269,7 @@ def _candidate_rollout(doc, span_rows, feats, policy):
 def _rollout_sequence(action_indices):
     actions = iter(action_indices)
 
-    def rollout(doc, span_rows, feats, policy):
+    def rollout(doc, span_rows, feats, policy, decision_ids=None):
         action_idx = next(actions)
         choice = {"metformin": span_rows[0]["actions"][action_idx]}
         doc_p, R = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
@@ -360,6 +371,116 @@ def test_exit_round_uses_verification_as_tiebreak_and_keeps_one_winner(monkeypat
     assert clean_doc_ps == ["<quantity_1> daily", "a biguanide daily",
                             "a medication daily"]
     assert sum("biguanide" in doc_p for doc_p in clean_doc_ps) == 1
+
+
+def test_exit_round_artifact_cache_coalesces_duplicate_floor_and_sample_jobs(monkeypatch, tmp_path):
+    doc = _artifact_exit_doc()
+    calls = []
+
+    def fake_roundtrip_exit(jobs, workers=1, reader_refresh=False):
+        calls.append({"jobs": list(jobs), "workers": workers, "reader_refresh": reader_refresh})
+        return [{"recall": 0.4, "out_p": "remote", "out_final": job["doc_p"],
+                 "component_scores": {"delivered": 0.4}} for job in jobs]
+
+    cache = tr.UtilityRewardCache(tmp_path / "utility-cache.json")
+    monkeypatch.setattr(tr, "sample_rollout", _rollout_sequence([0, 0]))
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_exit)
+
+    winners, stats = tr.exit_round(
+        [doc], tr.RankerPolicy(), G=2, rt_workers=9, seed=0, utility_reward_cache=cache,
+    )
+
+    assert winners == []
+    assert stats["qa_cache_hits"] == 2
+    assert stats["qa_cache_misses"] == 1
+    assert len(calls) == 1
+    assert calls[0]["workers"] == 9
+    assert calls[0]["reader_refresh"] is False
+    assert len(calls[0]["jobs"]) == 1
+
+
+def test_exit_round_artifact_cache_reuses_persisted_full_results(monkeypatch, tmp_path):
+    doc = _artifact_exit_doc()
+    cache_path = tmp_path / "utility-cache.json"
+    calls = []
+
+    def fake_roundtrip_exit(jobs, workers=1, reader_refresh=False):
+        calls.append({"jobs": list(jobs), "workers": workers, "reader_refresh": reader_refresh})
+        results = []
+        for job in jobs:
+            candidate = "medication" in job["doc_p"].lower()
+            results.append({
+                "recall": 0.9 if candidate else 0.2,
+                "out_p": "remote-candidate" if candidate else "remote-floor",
+                "out_final": job["doc_p"],
+                "component_scores": {"delivered": 0.9 if candidate else 0.2},
+            })
+        if reader_refresh:
+            return [{"recall": 0.8 if "medication" in job["doc_p"].lower() else 0.4}
+                    for job in jobs]
+        return results
+
+    monkeypatch.setattr(tr, "sample_rollout", _candidate_rollout)
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_exit)
+
+    first_cache = tr.UtilityRewardCache(cache_path)
+    first_winners, first_stats = tr.exit_round(
+        [doc], tr.RankerPolicy(), G=1, rt_workers=9, seed=0,
+        utility_reward_cache=first_cache,
+    )
+
+    assert first_winners == [(0, {"metformin": 1})]
+    assert first_stats["qa_cache_hits"] == 0
+    assert first_stats["qa_cache_misses"] == 2
+    assert len(calls) == 3
+    payload = json.loads(cache_path.read_text())
+    assert {entry["result"]["out_p"] for entry in payload["entries"].values()} == {
+        "remote-floor", "remote-candidate",
+    }
+
+    calls.clear()
+    second_cache = tr.UtilityRewardCache(cache_path)
+    second_winners, second_stats = tr.exit_round(
+        [doc], tr.RankerPolicy(), G=1, rt_workers=9, seed=0,
+        utility_reward_cache=second_cache,
+    )
+
+    assert second_winners == first_winners
+    assert second_stats["qa_cache_hits"] == 2
+    assert second_stats["qa_cache_misses"] == 0
+    assert len(calls) == 2
+    assert all(call["workers"] == 1 and call["reader_refresh"] for call in calls)
+
+
+def test_exit_round_legacy_documents_bypass_utility_reward_cache(monkeypatch, tmp_path):
+    doc = _exit_doc()
+    calls = []
+
+    def fake_roundtrip_exit(jobs, workers=1, reader_refresh=False):
+        calls.append({"jobs": list(jobs), "workers": workers, "reader_refresh": reader_refresh})
+        if reader_refresh:
+            return [{"recall": 0.8 if "medication" in job["doc_p"].lower() else 0.4}
+                    for job in jobs]
+        return [{"recall": 0.9 if "medication" in job["doc_p"].lower() else 0.2}
+                for job in jobs]
+
+    cache = tr.UtilityRewardCache(tmp_path / "utility-cache.json")
+    monkeypatch.setattr(tr, "sample_rollout", _candidate_rollout)
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip_exit)
+
+    winners, stats = tr.exit_round(
+        [doc], tr.RankerPolicy(), G=1, rt_workers=9, seed=0, utility_reward_cache=cache,
+    )
+
+    assert winners == [(0, {"metformin": 1})]
+    assert stats["qa_cache_hits"] == 0
+    assert stats["qa_cache_misses"] == 0
+    assert cache.entries == {}
+    _assert_serial_verify_calls([
+        {"doc_ps": [job["doc_p"] for job in call["jobs"]], **{
+            key: call[key] for key in ("workers", "reader_refresh")
+        }} for call in calls
+    ])
 
 
 def test_sample_rollout_shapes():

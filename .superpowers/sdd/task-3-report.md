@@ -135,3 +135,64 @@ git diff --check
   counterfactual scheduling and no counterfactual measurement was added here.
 - The `aci/D2N002` smoke remains partial (no context assertions); its command and measured output
   did not change, so its training record was intentionally not rewritten.
+
+---
+
+## Final Review Fix — ExIt Artifact Cache
+
+### Result
+
+- `exit_round` now receives the shared `UtilityRewardCache` explicitly from artifact-mode training.
+  Its floor and sampled artifact rollouts build the same complete stable action vectors and
+  scorer/reward pins used by RLOO base rollouts.
+- Exact duplicate ExIt requests coalesce before dispatch; persisted exact hits return the complete
+  stored result. Legacy documents still call `roundtrip_batch` directly and never populate the
+  QA cache.
+- ExIt stats now report `qa_cache_hits` and `qa_cache_misses` for its initial floor/sample work.
+  Refreshed serial verification remains direct, and no counterfactual calls or hits are reported.
+
+### TDD Evidence
+
+Red command:
+
+```bash
+PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_train_roundtrip_mode.py -k 'exit_round_artifact_cache or exit_round_legacy_documents_bypass'
+```
+
+```text
+3 failed, 54 deselected in 0.80s
+```
+
+The failure was the expected missing `utility_reward_cache` parameter on `exit_round`.
+
+Green command:
+
+```text
+3 passed, 54 deselected in 0.80s
+```
+
+### Verification
+
+Temporary symlinks to the host `.venv` and read-only clinical corpus were removed after the run.
+No external or paid calls were made.
+
+```bash
+PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_roundtrip.py
+.venv/bin/python -m py_compile scripts/train_ranker.py scripts/build_qa_utility_artifact.py
+git diff --check
+```
+
+```text
+107 passed in 2.62s
+```
+
+### Commit
+
+`fix(qa): cache artifact ExIt rollouts`.
+
+### Concerns
+
+- Cache reuse covers artifact ExIt's initial floor/sample batch. Serial `reader_refresh=True`
+  verification intentionally remains a fresh direct measurement.
+- This change does not add counterfactual execution and does not change the partial smoke's
+  empirical claims.

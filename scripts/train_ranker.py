@@ -618,12 +618,14 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
 
 # ---------- expert iteration (ExIt) outer loop ----------
 
-def exit_round(docs, policy, *, G, rt_workers, seed):
+def exit_round(docs, policy, *, G, rt_workers, seed, utility_reward_cache=None):
     """One expert-iteration round (spec Phase 2 workhorse): per doc sample G rollouts,
     keep the best strictly beating the floor-walk baseline. Baselines and rollouts all go
-    through the cached round trip. Returns (winners, stats)."""
+    through the round trip. Artifact-backed initial rollouts reuse the QA reward cache;
+    refreshed serial verification remains uncached. Returns (winners, stats)."""
     torch.manual_seed(seed)
     jobs, meta = [], []          # baseline job per doc first, then G rollouts per doc
+    cache_inputs = []
     bc_jobs = {}
     for di, doc in enumerate(docs):
         # ExIt reference = THE floor-walk baseline via floor_walk_choice (walk-order collision
@@ -636,8 +638,33 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
         jobs.append(job)
         bc_jobs[di] = job
         meta.append(("bc", di, None))
+        decision_ids = (
+            utility_decision_ids(doc, doc["spans"])
+            if "utility_artifact" in doc and utility_reward_cache is not None else None
+        )
+        scorer_pin = (
+            _utility_scorer_pin(doc["utility_artifact"])
+            if decision_ids is not None else None
+        )
+        if decision_ids is not None:
+            cache_inputs.append({
+                "doc_id": doc["id"],
+                "action_vector": utility_action_vector(doc["spans"], decision_ids, bc_choice),
+                "doc_p": doc_p,
+                "artifact_hash": doc["utility_artifact"]["artifact_hash"],
+                "scorer_pin": scorer_pin,
+            })
+        else:
+            cache_inputs.append(None)
         for _ in range(G):
-            choice, _, _, doc_p, R, _ = sample_rollout(doc, doc["spans"], doc["feats"], policy)
+            if decision_ids is None:
+                choice, _, _, doc_p, R, _ = sample_rollout(
+                    doc, doc["spans"], doc["feats"], policy
+                )
+            else:
+                choice, _, _, doc_p, R, _ = sample_rollout(
+                    doc, doc["spans"], doc["feats"], policy, decision_ids=decision_ids
+                )
             idx = {s["surface"].lower(): next(
                        i for i, a in enumerate(s["actions"])
                        if a is choice[s["surface"].lower()])
@@ -645,7 +672,41 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
             job = _roundtrip_job(doc, doc_p, R)
             jobs.append(job)
             meta.append(("roll", di, idx))
-    res = roundtrip_batch(jobs, workers=rt_workers)
+            if decision_ids is not None:
+                cache_inputs.append({
+                    "doc_id": doc["id"],
+                    "action_vector": utility_action_vector(doc["spans"], decision_ids, choice),
+                    "doc_p": doc_p,
+                    "artifact_hash": doc["utility_artifact"]["artifact_hash"],
+                    "scorer_pin": scorer_pin,
+                })
+            else:
+                cache_inputs.append(None)
+    cache_hits = cache_misses = 0
+    cached_indices = [index for index, inputs in enumerate(cache_inputs) if inputs is not None]
+    if cached_indices:
+        hits_before = utility_reward_cache.hits
+        misses_before = utility_reward_cache.misses
+        cached_results = cached_utility_roundtrips(
+            [jobs[index] for index in cached_indices],
+            [cache_inputs[index] for index in cached_indices],
+            utility_reward_cache,
+            workers=rt_workers,
+        )
+        cache_hits = utility_reward_cache.hits - hits_before
+        cache_misses = utility_reward_cache.misses - misses_before
+        res = [None] * len(jobs)
+        for index, result in zip(cached_indices, cached_results):
+            res[index] = result
+        uncached_indices = [index for index in range(len(jobs)) if index not in cached_indices]
+        if uncached_indices:
+            uncached_results = roundtrip_batch(
+                [jobs[index] for index in uncached_indices], workers=rt_workers
+            )
+            for index, result in zip(uncached_indices, uncached_results):
+                res[index] = result
+    else:
+        res = roundtrip_batch(jobs, workers=rt_workers)
     it = iter(res)
     bc_r, rolls = {}, {di: [] for di in range(len(docs))}
     for (kind, di, idx), job in zip(meta, jobs):
@@ -685,7 +746,9 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
              "mean_bc_r": round(sum(bc_vals) / len(bc_vals), 4) if bc_vals else None,
              "n_candidates": n_candidates,
              "n_verify_dropped": n_verify_dropped,
-             "n_winners": len(winners)}
+             "n_winners": len(winners),
+             "qa_cache_hits": cache_hits,
+             "qa_cache_misses": cache_misses}
     return winners, stats
 
 
@@ -1805,7 +1868,8 @@ def main():
         # the floor. --exit-rounds 0 skips it entirely.
         for rnd in range(args.exit_rounds):
             winners, stats = exit_round(docs, policy, G=args.G, rt_workers=args.rt_workers,
-                                        seed=args.seed + rnd)
+                                        seed=args.seed + rnd,
+                                        utility_reward_cache=utility_reward_cache)
             clone_choices(policy, [(docs[di]["spans"], docs[di]["feats"], idx,
                                     docs[di].get("ctx")) for di, idx in winners],
                           epochs=args.exit_epochs, lr=args.lr)
