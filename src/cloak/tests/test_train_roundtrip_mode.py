@@ -1061,6 +1061,27 @@ def test_utility_reward_cache_invalidates_task_prompt_or_invert_identity(
     assert cache.lookup(**(inputs | {"scorer_pin": changed_invert_pin})) is None
 
 
+def test_utility_reward_cache_rejects_previous_roundtrip_reward_pin(tmp_path):
+    doc = _artifact_exit_doc()
+    cache = tr.UtilityRewardCache(tmp_path / "utility-reward-cache.jsonl")
+    current_pin = tr._utility_scorer_pin(doc)
+    inputs = {
+        "doc_id": doc["id"],
+        "action_vector": {"dec1": "action-v1"},
+        "doc_p": "generalized document",
+        "artifact_hash": doc["utility_artifact"]["artifact_hash"],
+        "scorer_pin": current_pin,
+    }
+    cache.store(**inputs, result=_complete_cache_result("current"))
+    previous_pin = {
+        **current_pin,
+        "reward_pin_version": "qa-builder-v2-roundtrip-reward-v1",
+    }
+
+    assert current_pin["reward_pin_version"] == "qa-builder-v2-roundtrip-reward-v2"
+    assert cache.lookup(**(inputs | {"scorer_pin": previous_pin})) is None
+
+
 def test_greedy_artifact_readout_reuses_persisted_reward_cache(tmp_path, monkeypatch):
     doc = _artifact_exit_doc()
     calls = []
