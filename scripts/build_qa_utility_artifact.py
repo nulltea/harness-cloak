@@ -10,6 +10,7 @@ from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
     AciTaskAdapter,
     OpenRouterRelationTeacher,
+    artifact_views,
     build_utility_artifact,
     frozen_occurrences_from_arms,
     freeze_ranker_environment,
@@ -63,6 +64,7 @@ def _action_renderer(
             for row in frozen_document["decisions"]
         }
         choice = {}
+        keep_markers = {}
         for span in raw_document["spans"]:
             key = (str(span.get("type", "")), canon(str(span.get("surface", ""))))
             decision = decisions_by_key[key]
@@ -71,16 +73,30 @@ def _action_renderer(
                 action for action in decision["actions"]
                 if str(action["action_id"]) == selected_id
             )
+            fill = selected.get("fill")
+            if selected["mode"] == "keep":
+                marker = (
+                    "__QA_KEEP_"
+                    + str(selected["action_id"]).removeprefix("sha256:")[:16]
+                    + "__"
+                )
+                if marker in source_documents[doc_id]:
+                    raise ValueError(f"KEEP render marker collision for {selected_id}")
+                keep_markers[marker] = str(fill)
+                fill = marker
             choice[str(span["surface"]).lower()] = {
                 "mode": "level" if selected["mode"] in {"level", "keep"} else "placeholder",
-                "fill": selected.get("fill"),
+                "fill": fill,
             }
-        return assemble(
+        rendered = assemble(
             source_documents[doc_id],
             arms[corpus][doc_id]["tau_walk"][1],
             raw_document["spans"],
             choice,
         )[0]
+        for marker, fill in keep_markers.items():
+            rendered = rendered.replace(marker, fill)
+        return rendered
 
     return render
 
@@ -89,8 +105,11 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
     environment = json.loads(Path(args.env).read_text())
     environment = _selected_environment(environment, args.corpus, args.doc_id)
     arms = json.loads(Path(args.arms).read_text())
-    arms.pop("_meta", None)
-    all_occurrence_records = frozen_occurrences_from_arms(arms)
+    arms_meta = dict(arms.pop("_meta", {}) or {})
+    detector_pin = dict(arms_meta.get("detector", {}) or {})
+    all_occurrence_records = frozen_occurrences_from_arms(
+        arms, detector_provenance=detector_pin or None
+    )
     occurrence_records = {
         doc_id: all_occurrence_records[doc_id] for doc_id in args.doc_id
     }
@@ -118,6 +137,7 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         "gate_manifest_hash": _hash(manifest),
         "task_pin": AciTaskAdapter.task_pin,
         "builder_pin": "qa-builder-v2-assertion-compiler-v1",
+        "detector_pin": detector_pin or None,
         "teacher_pin": ({
             "provider": "openrouter",
             "model": "nvidia/nemotron-3-super-120b-a12b:free",
@@ -155,16 +175,29 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def main(argv=None):
-    args = parse_args(argv)
-    artifact = build_from_files(args)
-    output = Path(args.out)
+def write_artifacts(artifact: dict, output: Path) -> tuple[Path, Path]:
+    assertions_view, qa_pairs_view = artifact_views(artifact)
+    assertions_output = output.with_name(f"{output.stem}.assertions.json")
+    qa_pairs_output = output.with_name(f"{output.stem}.qa-pairs.json")
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(artifact, indent=1))
+    assertions_output.write_text(json.dumps(assertions_view, indent=1))
+    qa_pairs_output.write_text(json.dumps(qa_pairs_view, indent=1))
+    return assertions_output, qa_pairs_output
+
+
+def main(argv=None, *, relation_teacher=None, reader=read_context_batch):
+    args = parse_args(argv)
+    artifact = build_from_files(
+        args, relation_teacher=relation_teacher, reader=reader
+    )
+    output = Path(args.out)
+    assertions_output, qa_pairs_output = write_artifacts(artifact, output)
     print(
         f"wrote {output}: docs={len(artifact['documents'])} "
         f"assertions={len(artifact['assertions'])} "
-        f"rejections={sum(artifact['rejections']['summary_by_reason'].values())}",
+        f"rejections={sum(artifact['rejections']['summary_by_reason'].values())}; "
+        f"views={assertions_output},{qa_pairs_output}",
         flush=True,
     )
 

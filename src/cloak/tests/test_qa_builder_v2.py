@@ -7,6 +7,7 @@ import cloak.train.qa_builder as qa_builder
 from cloak.train.qa_builder import (
     AciTaskAdapter,
     BatchedContextReader,
+    artifact_views,
     assign_static_weights,
     build_utility_artifact,
     build_joint_representative_anchor,
@@ -17,6 +18,167 @@ from cloak.train.qa_builder import (
     score_utility,
     validate_context_assertions,
 )
+
+
+def test_artifact_views_project_complete_inspectable_records_without_mutation():
+    actions = [
+        {
+            "action_id": "action-general",
+            "mode": "level",
+            "legal": True,
+            "fill": "thyroid medication",
+            "entails": ["thyroid medication"],
+        },
+        {
+            "action_id": "action-keep",
+            "mode": "keep",
+            "keep": True,
+            "legal": True,
+            "fill": "synthroid",
+            "entails": ["synthroid"],
+        },
+    ]
+    validation = {
+        "verdict": "accepted",
+        "scores": {"original": 1.0, "representative": 1.0, "placeholder": 0.0},
+    }
+    delivered_rows = {
+        "component-structure": {
+            "assertion_id": "component-structure",
+            "doc_id": "d1",
+            "family": "delivered",
+            "subtype": "structure",
+            "group_id": "group-structure",
+            "occurrence_ids": [],
+            "evidence": {"authority": "human_reference"},
+            "scoring_contract": {"kind": "required_sections", "sections": ["PLAN"]},
+        },
+        "component-field": {
+            "assertion_id": "component-field",
+            "doc_id": "d1",
+            "family": "delivered",
+            "subtype": "field",
+            "group_id": "group-field",
+            "occurrence_ids": [],
+            "evidence": {"authority": "human_reference"},
+            "scoring_contract": {"kind": "field_value", "value": "stable"},
+        },
+        "component-content": {
+            "assertion_id": "component-content",
+            "doc_id": "d1",
+            "family": "delivered",
+            "subtype": "content",
+            "group_id": "group-content",
+            "occurrence_ids": ["occurrence-drug"],
+            "evidence": {"authority": "human_reference"},
+            "scoring_contract": {"kind": "contains", "value": "Synthroid"},
+        },
+        "component-exact": {
+            "assertion_id": "component-exact",
+            "doc_id": "d1",
+            "family": "delivered",
+            "subtype": "exact_relation",
+            "group_id": "group-exact",
+            "occurrence_ids": ["occurrence-drug"],
+            "evidence": {"authority": "human_reference"},
+            "scoring_contract": {"kind": "exact_relation", "treatment": "Synthroid"},
+        },
+    }
+    semantic = {
+        "assertion_id": "component-semantic",
+        "doc_id": "d1",
+        "family": "context",
+        "subtype": "semantic_property",
+        "group_id": "group-semantic",
+        "occurrence_ids": ["occurrence-drug"],
+        "question": "What category is the treatment?",
+        "accepted_values": ["thyroid medication"],
+        "decision_requirements": {"decision-drug": "thyroid medication"},
+        "expected_action_support": {
+            "joint_anchor_action_vector": {"decision-drug": "action-general"},
+            "joint_anchor_hash": "anchor-semantic",
+            "property_level": {"decision-drug": "thyroid medication"},
+        },
+        "evidence": {
+            "supporting_action_ids": ["action-general"],
+            "validation": validation,
+        },
+    }
+    contextual = {
+        **semantic,
+        "assertion_id": "component-contextual",
+        "subtype": "contextual_relation",
+        "group_id": "group-contextual",
+        "relation": "treated_with",
+        "question": "What treatment category is used?",
+    }
+    rejection = {
+        "rejection_id": "rejection-1",
+        "attempt_hash": "attempt-1",
+        "doc_id": "d1",
+        "status": "rejected",
+        "reason": "invalid",
+        "detail_reason": "invalid_question",
+        "evidence": {"decision_id": "decision-drug"},
+    }
+    artifact = {
+        "artifact_version": "utility-assertions-v1",
+        "artifact_hash": "artifact-hash",
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "documents": {
+            "d1": {
+                "measurement_state": "measured",
+                "occurrence_to_decision": {"occurrence-drug": "decision-drug"},
+                "decisions": [{
+                    "decision_id": "decision-drug",
+                    "runtime_type": "drug",
+                    "canonical_key": "synthroid",
+                    "occurrence_ids": ["occurrence-drug"],
+                    "actions": actions,
+                }],
+            },
+        },
+        "assertions": {**delivered_rows, semantic["assertion_id"]: semantic,
+                       contextual["assertion_id"]: contextual},
+        "rejections": {
+            "summary_by_reason": {"invalid": 1},
+            "records": [rejection],
+        },
+    }
+    before = json.dumps(artifact, sort_keys=True)
+
+    assertions_view, qa_pairs_view = artifact_views(artifact)
+
+    grouped = assertions_view["documents"]["d1"]["assertion_groups"]
+    assert [row["assertion_id"] for row in grouped["structure"]] == [
+        "component-structure"
+    ]
+    assert [row["assertion_id"] for row in grouped["field_content"]] == [
+        "component-content", "component-field"
+    ]
+    assert grouped["exact_relation"][0]["scoring_contract"]["kind"] == (
+        "exact_relation"
+    )
+    assert {row["subtype"] for row in grouped["contextual"]} == {
+        "semantic_property", "contextual_relation",
+    }
+    assert all(row["evidence"] for rows in grouped.values() for row in rows)
+
+    decision = qa_pairs_view["documents"]["d1"]["decisions"]["decision-drug"]
+    assert decision["occurrence_ids"] == ["occurrence-drug"]
+    assert decision["legal_actions"] == actions
+    assert [row["assertion_id"] for row in decision["qa_pairs"]] == [
+        "component-contextual", "component-semantic",
+    ]
+    assert decision["qa_pairs"][1]["accepted_values"] == ["thyroid medication"]
+    assert decision["qa_pairs"][1]["evidence"]["supporting_action_ids"] == [
+        "action-general"
+    ]
+    assert decision["qa_pairs"][1]["evidence"]["validation"] == validation
+    assert decision["rejections"] == [rejection]
+    assert qa_pairs_view["documents"]["d1"]["unassigned_rejections"] == []
+    assert assertions_view["rejections"]["records"] == [rejection]
+    assert json.dumps(artifact, sort_keys=True) == before
 
 
 def test_static_weights_keep_family_budgets_and_fixed_denominator():
@@ -539,6 +701,37 @@ def test_freeze_ranker_environment_maps_repeated_occurrences_to_one_decision():
     ]
 
 
+def test_freeze_ranker_environment_synthesizes_missing_keep_into_frozen_menu():
+    ranker_env = {
+        "corpora": {"clinical": {"d1": {"spans": [{
+            "surface": "Synthroid",
+            "type": "drug",
+            "start": 10,
+            "end": 19,
+            "actions": [
+                {"fill": "a thyroid medication", "mode": "level"},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }]}}},
+    }
+
+    first = freeze_ranker_environment(ranker_env)
+    second = freeze_ranker_environment(ranker_env)
+    decision = first["documents"]["d1"]["decisions"][0]
+    keep_actions = [row for row in decision["actions"] if row["mode"] == "keep"]
+
+    assert keep_actions == [{
+        "fill": "Synthroid",
+        "mode": "keep",
+        "keep": True,
+        "legal": True,
+        "entails": ["synthroid"],
+        "action_id": keep_actions[0]["action_id"],
+    }]
+    assert keep_actions[0]["action_id"].startswith("sha256:")
+    assert first == second
+
+
 def test_freeze_ranker_environment_uses_all_frozen_arm_occurrences():
     ranker_env = {
         "corpora": {"clinical": {"d1": {"spans": [{
@@ -676,6 +869,7 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
     assert captured["base_url"] == "https://openrouter.ai/api/v1"
     assert captured["api_key"] == "secret"
     assert captured["response_format"] == {"type": "json_object"}
+    assert "max_tokens" not in captured
     assert relations == [{"relation": "treated_with"}]
 
 
@@ -685,6 +879,22 @@ def test_openrouter_relation_teacher_requires_content_addressed_cache(monkeypatc
 
     with pytest.raises(ValueError, match="CLOAK_LLM_CACHE"):
         qa_builder.OpenRouterRelationTeacher()
+
+
+def test_aci_adapter_rejects_legacy_coarse_decision_types():
+    environment = {
+        "documents": {
+            "aci/D2N002": {
+                "decisions": [
+                    {"decision_id": "bad-dem", "runtime_type": "DEM"},
+                    {"decision_id": "bad-misc", "runtime_type": "MISC"},
+                ]
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="legacy or unsupported ACI decision types.*DEM.*MISC"):
+        qa_builder.AciTaskAdapter({}).validate_environment(environment)
 
 
 def _relation_environment():
@@ -1900,3 +2110,34 @@ def test_freeze_ranker_environment_preserves_uncontrolled_frozen_occurrence():
     assert occurrence["surface"] == "Unrelated"
     assert occurrence["controlled"] is False
     assert occurrence["decision_id"] is None
+
+
+def test_frozen_occurrences_from_arms_carries_detector_provenance():
+    arms = {
+        "clinical": {
+            "aci/D2N002": {
+                "tau_walk": ["doc", [{
+                    "surface": "Synthroid",
+                    "type": "drug",
+                    "start": 10,
+                    "end": 19,
+                    "score": 0.91,
+                    "lattice": ["thyroid medication"],
+                }]]
+            }
+        }
+    }
+    detector_pin = {
+        "config": "qa-v2-clinical",
+        "model": "knowledgator/gliner-pii-large-v1.0",
+        "threshold": 0.35,
+    }
+
+    occurrences = qa_builder.frozen_occurrences_from_arms(
+        arms, detector_provenance=detector_pin
+    )
+
+    assert occurrences["aci/D2N002"][0]["detector_provenance"] == {
+        **detector_pin,
+        "score": 0.91,
+    }

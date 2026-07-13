@@ -7,6 +7,7 @@ import os
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
 from numbers import Real
 
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
@@ -127,7 +128,6 @@ class OpenRouterRelationTeacher:
             base_url=RELATION_TEACHER_BASE_URL,
             api_key=api_key,
             temperature=0.0,
-            max_tokens=4096,
             response_format={"type": "json_object"},
             extra_body={"reasoning": {"exclude": True}},
             single_flight=True,
@@ -195,6 +195,9 @@ class AciTaskAdapter:
 
     task_pin = "aci-utility-v1"
     relation_contract = ACI_RELATION_CONTRACT
+    controlled_runtime_types = frozenset({
+        "health-condition", "drug", "medical-procedure", "LOC",
+    })
     semantic_type_contract = {
         "drug": {
             "placeholder_labels": frozenset({"drug", "medication", "treatment"}),
@@ -263,6 +266,19 @@ class AciTaskAdapter:
 
     def __init__(self, references: Mapping[str, str]):
         self._references = dict(references)
+
+    def validate_environment(self, frozen_environment: Mapping) -> None:
+        unsupported = sorted({
+            str(decision.get("runtime_type", ""))
+            for document in frozen_environment.get("documents", {}).values()
+            for decision in document.get("decisions", [])
+            if decision.get("runtime_type") not in self.controlled_runtime_types
+        })
+        if unsupported:
+            raise ValueError(
+                "legacy or unsupported ACI decision types in frozen environment: "
+                + ", ".join(unsupported)
+            )
 
     def deterministic_candidates(
         self,
@@ -1366,6 +1382,8 @@ def package_utility_artifact(
                 "runtime_type": row.get("runtime_type"),
                 "canonical_key": row.get("canonical_key"),
             } for row in environment_document.get("decisions", [])],
+            "occurrences": deepcopy(environment_document.get("occurrences", [])),
+            "decisions": deepcopy(environment_document.get("decisions", [])),
             "uncovered_decision_ids": [
                 decision_id for decision_id in controlled if decision_id not in linked_decisions
             ],
@@ -1387,6 +1405,136 @@ def package_utility_artifact(
     }
     artifact["artifact_hash"] = _stable_hash(artifact)
     return artifact
+
+
+def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
+    """Project inspectable assertion and QA-pair views from one normative artifact."""
+    view_header = {
+        "source_artifact_version": artifact.get("artifact_version"),
+        "source_artifact_hash": artifact.get("artifact_hash"),
+        "family_budgets": deepcopy(artifact.get("family_budgets", {})),
+    }
+    rejection_state = deepcopy(artifact.get("rejections", {
+        "summary_by_reason": {}, "records": [],
+    }))
+    rejection_records = sorted(
+        rejection_state.get("records", []),
+        key=lambda row: str(row.get("rejection_id", "")),
+    )
+    assertions_by_document: dict[str, list[dict]] = defaultdict(list)
+    for assertion in artifact.get("assertions", {}).values():
+        assertions_by_document[str(assertion["doc_id"])].append(deepcopy(assertion))
+
+    assertions_view = {
+        "artifact_version": "utility-assertions-view-v1",
+        **deepcopy(view_header),
+        "documents": {},
+        "rejections": rejection_state,
+    }
+    qa_pairs_view = {
+        "artifact_version": "utility-qa-pairs-view-v1",
+        **deepcopy(view_header),
+        "documents": {},
+        "rejections": deepcopy(rejection_state),
+    }
+    for doc_id, document in sorted(artifact.get("documents", {}).items()):
+        rows = sorted(
+            assertions_by_document.get(str(doc_id), []),
+            key=lambda row: str(row["assertion_id"]),
+        )
+        groups = {
+            "structure": [],
+            "field_content": [],
+            "exact_relation": [],
+            "contextual": [],
+        }
+        for row in rows:
+            subtype = row.get("subtype")
+            if subtype == "structure":
+                groups["structure"].append(row)
+            elif subtype in {"field", "content"}:
+                groups["field_content"].append(row)
+            elif subtype == "exact_relation":
+                groups["exact_relation"].append(row)
+            elif row.get("family") == "context":
+                groups["contextual"].append(row)
+
+        assertion_document = {
+            key: deepcopy(value)
+            for key, value in document.items()
+            if key not in {"decisions", "occurrences"}
+        }
+        assertion_document["assertion_groups"] = groups
+        assertions_view["documents"][doc_id] = assertion_document
+
+        occurrence_to_decision = {
+            str(key): str(value)
+            for key, value in document.get("occurrence_to_decision", {}).items()
+        }
+        document_rejections = [
+            deepcopy(record) for record in rejection_records
+            if str(record.get("doc_id", "")) == str(doc_id)
+        ]
+        decisions = {}
+        rejection_assignments: set[str] = set()
+        for decision in document.get("decisions", []):
+            decision_id = str(decision["decision_id"])
+            linked_pairs = [
+                deepcopy(row) for row in rows
+                if row.get("family") == "context"
+                and decision_id in {
+                    *map(str, (row.get("decision_requirements") or {}).keys()),
+                    *(occurrence_to_decision.get(str(occurrence_id), "")
+                      for occurrence_id in row.get("occurrence_ids", [])),
+                }
+            ]
+            linked_rejections = []
+            for record in document_rejections:
+                evidence = record.get("evidence") or {}
+                explicit_decisions = {
+                    str(value) for value in (
+                        record.get("decision_id"), evidence.get("decision_id")
+                    ) if value is not None
+                }
+                linked_occurrences = [
+                    *record.get("occurrence_ids", []),
+                    *evidence.get("occurrence_ids", []),
+                    *evidence.get("argument_occurrence_ids", []),
+                ]
+                linked_decisions = {
+                    occurrence_to_decision.get(str(occurrence_id))
+                    for occurrence_id in linked_occurrences
+                }
+                if decision_id in explicit_decisions | linked_decisions:
+                    linked_rejections.append(deepcopy(record))
+                    rejection_assignments.add(str(record.get("rejection_id", "")))
+            decisions[decision_id] = {
+                "decision_id": decision_id,
+                "runtime_type": decision.get("runtime_type"),
+                "canonical_key": decision.get("canonical_key"),
+                "occurrence_ids": deepcopy(decision.get("occurrence_ids", [])),
+                "legal_actions": [
+                    deepcopy(action) for action in decision.get("actions", [])
+                    if action.get("legal", True)
+                ],
+                "qa_pairs": linked_pairs,
+                "rejections": linked_rejections,
+            }
+        qa_pairs_view["documents"][doc_id] = {
+            "measurement_state": document.get("measurement_state"),
+            "present_family_budgets": deepcopy(
+                document.get("present_family_budgets", [])
+            ),
+            "missing_family_budgets": deepcopy(
+                document.get("missing_family_budgets", [])
+            ),
+            "decisions": decisions,
+            "unassigned_rejections": [
+                record for record in document_rejections
+                if str(record.get("rejection_id", "")) not in rejection_assignments
+            ],
+        }
+    return assertions_view, qa_pairs_view
 
 
 def freeze_ranker_environment(
@@ -1437,6 +1585,27 @@ def freeze_ranker_environment(
                         "legal": True,
                         "entails": [canon(str(fill))] if fill and mode != "placeholder" else [],
                     })
+                if not any(action["mode"] == "keep" for action in actions):
+                    keep_semantics = {
+                        "fill": surface,
+                        "mode": "keep",
+                        "keep": True,
+                        "legal": True,
+                        "entails": [decision_key[1]],
+                    }
+                    keep_action = {
+                        **keep_semantics,
+                        "action_id": _stable_hash({
+                            "decision_id": decision_id,
+                            "action": keep_semantics,
+                        }),
+                    }
+                    placeholder_index = next(
+                        (index for index, action in enumerate(actions)
+                         if action["mode"] == "placeholder"),
+                        len(actions),
+                    )
+                    actions.insert(placeholder_index, keep_action)
                 action_menu_hash = _stable_hash(actions)
                 previous = decisions_by_key.get(decision_key)
                 if previous and previous["action_menu_hash"] != action_menu_hash:
@@ -1499,10 +1668,25 @@ def freeze_ranker_environment(
     return frozen
 
 
-def frozen_occurrences_from_arms(arms: Mapping) -> dict[str, list[dict]]:
+def frozen_occurrences_from_arms(
+    arms: Mapping,
+    *,
+    detector_provenance: Mapping | None = None,
+) -> dict[str, list[dict]]:
     """Read controlled occurrence rows from an already-frozen arms artifact."""
     return {
-        doc_id: [dict(row) for row in document["tau_walk"][1] if row.get("lattice")]
+        doc_id: [
+            {
+                **dict(row),
+                **({
+                    "detector_provenance": {
+                        **dict(detector_provenance),
+                        "score": row.get("score"),
+                    }
+                } if detector_provenance is not None else {}),
+            }
+            for row in document["tau_walk"][1] if row.get("lattice")
+        ]
         for corpus, documents in arms.items()
         if corpus != "_meta"
         for doc_id, document in documents.items()
@@ -1521,6 +1705,9 @@ def build_utility_artifact(
     relation_teacher: OpenRouterRelationTeacher | None = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation."""
+    validate_environment = getattr(task_adapter, "validate_environment", None)
+    if validate_environment is not None:
+        validate_environment(frozen_environment)
     family_budgets = threshold_manifest["family_budgets"]
     min_context = int(threshold_manifest.get("min_context_assertions", 0))
     reader_threshold = float(threshold_manifest.get("reader_threshold", 1.0))
