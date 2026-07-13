@@ -8,6 +8,7 @@ from cloak.train.utility_credit import provisional_advantages
 from cloak.train.qa_builder import (
     AciTaskAdapter,
     BatchedContextReader,
+    OpenRouterRelationTeacher,
     assign_static_weights,
     build_utility_artifact,
     build_joint_representative_anchor,
@@ -247,6 +248,35 @@ def test_freeze_binds_action_legality_and_identity_to_effective_floors():
     assert lower_floor["environment_hash"] != frozen["environment_hash"]
 
 
+def test_freeze_binds_source_and_authoritative_reference_identity():
+    environment = {"corpora": {"clinical": {"d1": {"spans": []}}}}
+
+    frozen = freeze_ranker_environment(
+        environment,
+        source_documents={"d1": "source document"},
+        authoritative_references={"d1": "gold reference"},
+    )
+    changed_source = freeze_ranker_environment(
+        environment,
+        source_documents={"d1": "changed source"},
+        authoritative_references={"d1": "gold reference"},
+    )
+    changed_reference = freeze_ranker_environment(
+        environment,
+        source_documents={"d1": "source document"},
+        authoritative_references={"d1": "changed reference"},
+    )
+
+    assert frozen["documents"]["d1"]["source_hash"] == qa_builder._stable_hash(
+        "source document"
+    )
+    assert frozen["documents"]["d1"]["authoritative_reference_hash"] == (
+        qa_builder._stable_hash("gold reference")
+    )
+    assert changed_source["environment_hash"] != frozen["environment_hash"]
+    assert changed_reference["environment_hash"] != frozen["environment_hash"]
+
+
 def test_builder_rejects_under_floor_representative_action():
     frozen = freeze_ranker_environment({
         "k_floors": {"drug": 100.0, "OTHER": 100.0},
@@ -393,6 +423,28 @@ def test_context_validation_refreshes_repeated_reader_trials():
     assert refreshes == [False, False, False, True, True, True, True, True, True]
 
 
+def test_context_validation_repeated_trials_require_refresh_capability():
+    assertions = [{
+        "assertion_id": "a1",
+        "family": "context",
+        "question": "Which category is documented?",
+        "accepted_values": ["endocrine"],
+    }]
+
+    def reader(questions, context):
+        return ["NONE" if context == "placeholder" else "endocrine"]
+
+    with pytest.raises(TypeError, match="refresh"):
+        validate_context_assertions(
+            assertions,
+            original_context="original",
+            representative_context="generalized",
+            placeholder_context="placeholder",
+            reader=reader,
+            stability_repetitions=2,
+        )
+
+
 def test_builder_records_unstable_context_reader_without_accepting_assertion():
     frozen = {
         "environment_hash": "env-v1",
@@ -421,7 +473,7 @@ def test_builder_records_unstable_context_reader_without_accepting_assertion():
 
     calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, *, refresh=False):
         calls.append(context)
         if context == "placeholder":
             return ["NONE"]
@@ -884,6 +936,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     assert context["expected_action_support"]["joint_anchor_hash"].startswith("sha256:")
     assert context["expected_action_support"]["property_level"] == {"dec1": "endocrine"}
     assert "property_levels" not in context["expected_action_support"]
+    assert artifact["teacher_pin"]["production"] is False
     assert context["evidence"]["validation"]["scores"] == {
         "original": 1.0,
         "representative": 1.0,
@@ -1120,6 +1173,45 @@ def test_aci_adapter_builds_delivered_facts_only_from_authoritative_reference():
     assert condition["occurrence_ids"] == ["o-condition"]
 
 
+def test_builder_prefers_linked_aci_age_fact_over_global_duplicate():
+    environment = copy.deepcopy(_relation_environment())
+    environment["occurrences"].append({
+        "occurrence_id": "o-age",
+        "decision_id": "dec-age",
+        "surface": "62-year-old",
+        "runtime_type": "age",
+        "controlled": True,
+    })
+    environment["decisions"].append({
+        "decision_id": "dec-age",
+        "controlled": True,
+        "runtime_type": "age",
+        "canonical_key": "62-year-old",
+    })
+    adapter = AciTaskAdapter({
+        "aci/D2N002": "A 62-year-old male has hypothyroidism and takes Synthroid."
+    })
+    candidates = adapter.deterministic_candidates(
+        "aci/D2N002",
+        "A 62-year-old male has hypothyroidism and takes Synthroid.",
+        environment,
+    )
+    artifact = package_utility_artifact(
+        {"environment_hash": "env-v1", "documents": {"aci/D2N002": environment}},
+        {"aci/D2N002": candidates},
+        family_budgets={"context": 0.6, "delivered": 0.4},
+        pins={},
+    )
+    age_rows = [
+        row for row in artifact["assertions"].values()
+        if row["scoring_contract"]["value"] == "62-year-old"
+    ]
+
+    assert len(age_rows) == 1
+    assert age_rows[0]["scope"] == "linked"
+    assert age_rows[0]["occurrence_ids"] == ["o-age"]
+
+
 def test_package_rejects_dangling_occurrence_decision_links():
     environment = {
         "environment_hash": "env-hash",
@@ -1312,8 +1404,9 @@ def test_builder_emits_authoritative_transitive_pins_and_manifest_identity():
     assert artifact["task_pin"] == Adapter.task_pin
     assert artifact["builder_pin"]["version"]
     assert artifact["teacher_pin"]["enabled"] is False
-    assert artifact["reader_pin"] == qa_builder.context_reader_pin()
-    assert artifact["scorer_pin"]["reader"] == artifact["reader_pin"]
+    assert artifact["reader_pin"]["production"] is False
+    assert artifact["reader_pin"] != qa_builder.context_reader_pin()
+    assert artifact["scorer_pin"]["reader"] == qa_builder.context_reader_pin()
     assert artifact["gate_manifest_hash"] == qa_builder._stable_hash(
         artifact["threshold_manifest"]
     )
@@ -1321,6 +1414,25 @@ def test_builder_emits_authoritative_transitive_pins_and_manifest_identity():
         "schema": "qa-threshold-manifest-v1",
         "sha256": artifact["gate_manifest_hash"],
     }
+
+
+def test_builder_stamps_exact_production_reader_and_teacher_dependencies():
+    artifact = build_utility_artifact(
+        {"environment_hash": "env-v1", "documents": {}},
+        AciTaskAdapter({}),
+        {},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "cost_budgets": COST_BUDGETS,
+        },
+        pins={},
+        reader=qa_builder.read_context_batch,
+        render_action_vector=lambda doc_id, vector: "unused",
+        relation_teacher=object.__new__(OpenRouterRelationTeacher),
+    )
+
+    assert artifact["reader_pin"] == qa_builder.context_reader_pin()
+    assert artifact["teacher_pin"] == qa_builder.relation_teacher_pin(True)
 
 
 def test_relational_compiler_rejects_protected_locator_leakage():

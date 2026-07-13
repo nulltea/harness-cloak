@@ -106,11 +106,15 @@ def test_build_qa_utility_artifact_cli(tmp_path):
     )
     report = json.loads(report_line.removeprefix("qa preflight: "))
     assert report["documents"]["aci/D2N002"]["measurement_state"] == "partial"
-    assert report["documents"]["aci/D2N002"]["accepted_assertion_count"] == 13
+    assert report["documents"]["aci/D2N002"]["accepted_assertion_count"] == 12
     assert report["documents"]["aci/D2N002"]["missing_family_budgets"] == ["context"]
     assert report["call_budget"]["base"]["remote_round_trips_per_rollout"] == 1
     assert report["call_budget"]["counterfactual"]["remote_round_trips_per_selected_pair"] == 1
     assert report["executed_remote_calls"] == 0
+    assert artifact["documents"]["aci/D2N002"]["source_hash"].startswith("sha256:")
+    assert artifact["documents"]["aci/D2N002"][
+        "authoritative_reference_hash"
+    ].startswith("sha256:")
 
 
 def test_build_cli_floor_override_changes_frozen_legality_and_identity(tmp_path, monkeypatch):
@@ -150,8 +154,8 @@ def test_build_cli_floor_override_changes_frozen_legality_and_identity(tmp_path,
     )
 
 
-def test_context_build_cli_preflights_against_full_frozen_environment(
-    tmp_path, monkeypatch, capsys,
+def test_context_build_cli_marks_injected_dependencies_nonproduction(
+    tmp_path, monkeypatch,
 ):
     doc_id = "aci/context-fixture"
     source = "Hypothyroidism is treated with Synthroid."
@@ -237,7 +241,7 @@ def test_context_build_cli_preflights_against_full_frozen_environment(
             return [""] * len(questions)
         return ["a thyroid medication"] * len(questions)
 
-    builder_cli.main([
+    args = builder_cli.parse_args([
         "--env", str(env_path),
         "--arms", str(arms_path),
         "--corpus", "clinical",
@@ -245,21 +249,23 @@ def test_context_build_cli_preflights_against_full_frozen_environment(
         "--threshold-manifest", str(manifest_path),
         "--out", str(out_path),
         "--relation-teacher",
-    ], relation_teacher=Teacher(), reader=reader)
+    ])
+    artifact, frozen_environment = builder_cli.build_from_files(
+        args,
+        relation_teacher=Teacher(),
+        reader=reader,
+        return_frozen_environment=True,
+    )
 
-    artifact = json.loads(out_path.read_text())
     context_rows = [
         row for row in artifact["assertions"].values() if row["family"] == "context"
     ]
     assert len(context_rows) == 1
     assert len(context_rows[0]["expected_action_support"]["joint_anchor_action_vector"]) == 2
-    report_line = next(
-        line for line in capsys.readouterr().out.splitlines()
-        if line.startswith("qa preflight: ")
-    )
-    report = json.loads(report_line.removeprefix("qa preflight: "))
-    assert report["documents"][doc_id]["measurement_state"] == "measured"
-    assert report["documents"][doc_id]["context_assertion_count"] == 1
+    assert artifact["reader_pin"]["production"] is False
+    assert artifact["teacher_pin"]["production"] is False
+    with pytest.raises(SystemExit, match="live reader pin"):
+        builder_cli.qa_utility_preflight_report(artifact, frozen_environment)
 
 
 @pytest.mark.parametrize("family_budgets", [

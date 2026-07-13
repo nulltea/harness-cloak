@@ -135,6 +135,28 @@ def test_utility_artifact_roundtrip_aggregates_builder_components(monkeypatch):
     assert result["recall"] == pytest.approx(0.7)
 
 
+def test_roundtrip_reward_pin_tracks_actual_task_prompt_and_invert(monkeypatch):
+    baseline = rt.roundtrip_reward_pin({"scorer": "utility-v1"}, corpus="clinical")
+
+    assert baseline["task_prompt"]["sha256"].startswith("sha256:")
+    assert baseline["extractor"]["version"]
+    assert baseline["extractor"]["sha256"].startswith("sha256:")
+
+    with monkeypatch.context() as context:
+        context.setitem(rt.TASK_TEMPLATE, "clinical", "changed prompt\n{doc}")
+        changed_prompt = rt.roundtrip_reward_pin(
+            {"scorer": "utility-v1"}, corpus="clinical"
+        )
+    with monkeypatch.context() as context:
+        context.setattr(rt, "INVERT_EXTRACTOR_VERSION", "invert-rule-cascade-test-change")
+        changed_invert = rt.roundtrip_reward_pin(
+            {"scorer": "utility-v1"}, corpus="clinical"
+        )
+
+    assert changed_prompt != baseline
+    assert changed_invert != baseline
+
+
 def test_fact_recall_is_per_fact_max_mean_over_facts(monkeypatch):
     import cloak.train.reward as rw
     # three questions -> two are the SAME fact after canon ("42 mg"/"42 milligrams"),

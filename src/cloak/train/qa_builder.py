@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import math
 import os
@@ -32,8 +33,8 @@ CONTEXT_READER_RESPONSE_SCHEMA = {
 }
 CONTEXT_READER_RESPONSE_FORMAT = {"type": "json_object"}
 CONTEXT_READER_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
-BUILDER_PIN = {"builder": "qa-builder-v2", "version": "assertion-compiler-v3"}
-UTILITY_SCORER_PIN_VERSION = "qa-utility-scorer-v2"
+BUILDER_PIN = {"builder": "qa-builder-v2", "version": "assertion-compiler-v4"}
+UTILITY_SCORER_PIN_VERSION = "qa-utility-scorer-v3"
 THRESHOLD_MANIFEST_SCHEMA = "qa-threshold-manifest-v1"
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
@@ -198,6 +199,42 @@ def relation_teacher_pin(enabled: bool) -> dict:
             "reasoning_excluded": True,
             "response_format": {"type": "json_object"},
         },
+    }
+
+
+def _injected_dependency_pin(kind: str, dependency) -> dict:
+    target = dependency if inspect.isfunction(dependency) else type(dependency)
+    module = str(getattr(target, "__module__", "unknown"))
+    qualname = str(getattr(target, "__qualname__", getattr(target, "__name__", "unknown")))
+    try:
+        source = inspect.getsource(target)
+    except (OSError, TypeError):
+        source = f"{module}.{qualname}"
+    return {
+        "production": False,
+        "pin_version": f"qa-{kind}-injected-v1",
+        "implementation": {
+            "module": module,
+            "qualname": qualname,
+            "sha256": _stable_hash(source),
+        },
+    }
+
+
+def reader_dependency_pin(reader) -> dict:
+    if reader is read_context_batch:
+        return context_reader_pin()
+    return _injected_dependency_pin("context-reader", reader)
+
+
+def teacher_dependency_pin(teacher) -> dict:
+    if teacher is None:
+        return relation_teacher_pin(False)
+    if type(teacher) is OpenRouterRelationTeacher:
+        return relation_teacher_pin(True)
+    return {
+        "enabled": True,
+        **_injected_dependency_pin("relation-teacher", teacher),
     }
 
 
@@ -802,6 +839,43 @@ def assign_static_weights(
     return weighted, state
 
 
+def utility_assertion_semantic_key(assertion: Mapping) -> str:
+    family = str(assertion.get("family", ""))
+    if family == "delivered":
+        contract = assertion.get("scoring_contract") or {}
+        payload = {
+            "family": family,
+            "kind": str(contract.get("kind", "")),
+            "value": canon(str(contract.get("value", ""))),
+        }
+    elif family == "context":
+        payload = {
+            "family": family,
+            "question": canon(str(assertion.get("question", ""))),
+            "accepted_values": sorted(
+                canon(str(value)) for value in assertion.get("accepted_values") or []
+            ),
+        }
+    else:
+        payload = {"family": family, "assertion": dict(assertion)}
+    return _stable_hash(payload)
+
+
+def _prefer_linked_cross_scope_facts(candidates: Sequence[Mapping]) -> list[Mapping]:
+    scopes_by_fact: dict[str, set[str]] = defaultdict(set)
+    for candidate in candidates:
+        scopes_by_fact[utility_assertion_semantic_key(candidate)].add(
+            str(candidate.get("scope", ""))
+        )
+    return [
+        candidate for candidate in candidates
+        if not (
+            candidate.get("scope") == "global"
+            and "linked" in scopes_by_fact[utility_assertion_semantic_key(candidate)]
+        )
+    ]
+
+
 def _weight_group_state(assertions: Sequence[Mapping], family_budgets: Mapping[str, float]) -> dict:
     """Persist the derived family/group allocation used to assign assertion weights."""
     groups: dict[str, dict[str, list[Mapping]]] = defaultdict(lambda: defaultdict(list))
@@ -878,7 +952,9 @@ def package_utility_artifact(
         compiled = []
         compiled_ids = set()
         linked_decisions = set()
-        for candidate in candidates_by_document.get(doc_id, []):
+        for candidate in _prefer_linked_cross_scope_facts(
+            candidates_by_document.get(doc_id, [])
+        ):
             row = {**dict(candidate), "doc_id": doc_id, "status": "accepted"}
             scope = row.get("scope")
             occurrence_ids = [str(value) for value in row.get("occurrence_ids", [])]
@@ -925,6 +1001,11 @@ def package_utility_artifact(
             "environment_document_hash": environment_document.get(
                 "environment_document_hash", _stable_hash(environment_document)
             ),
+            **{
+                field: environment_document[field]
+                for field in ("source_hash", "authoritative_reference_hash")
+                if field in environment_document
+            },
             "measurement_state": (
                 "unsupported" if not weighted else "partial" if missing_families else "measured"
             ),
@@ -964,6 +1045,8 @@ def freeze_ranker_environment(
     *,
     occurrences_by_document: Mapping[str, Sequence[Mapping]] | None = None,
     floors: Mapping[str, float] | None = None,
+    source_documents: Mapping[str, str] | None = None,
+    authoritative_references: Mapping[str, str] | None = None,
 ) -> dict:
     """Migrate embedded ranker spans to stable occurrence/decision identities, without detection."""
     effective_floors = effective_count_floors(ranker_environment, floors)
@@ -1087,6 +1170,18 @@ def freeze_ranker_environment(
                 "occurrences": occurrences,
                 "decisions": list(decisions_by_key.values()),
             }
+            if source_documents is not None:
+                if doc_id not in source_documents:
+                    raise ValueError(f"source document identity is missing for {doc_id}")
+                frozen_document["source_hash"] = _stable_hash(source_documents[doc_id])
+            if authoritative_references is not None:
+                if doc_id not in authoritative_references:
+                    raise ValueError(
+                        f"authoritative reference identity is missing for {doc_id}"
+                    )
+                frozen_document["authoritative_reference_hash"] = _stable_hash(
+                    authoritative_references[doc_id]
+                )
             frozen_document["environment_document_hash"] = _stable_hash(frozen_document)
             documents[doc_id] = frozen_document
     frozen = {
@@ -1133,6 +1228,27 @@ def build_utility_artifact(
 
     for doc_id, environment_document in frozen_environment.get("documents", {}).items():
         source = source_documents[doc_id]
+        if (
+            environment_document.get("source_hash") is not None
+            and environment_document["source_hash"] != _stable_hash(source)
+        ):
+            raise ValueError(f"source document hash does not match frozen identity for {doc_id}")
+        authoritative_reference = (
+            task_adapter.authoritative_reference(doc_id)
+            if hasattr(task_adapter, "authoritative_reference")
+            else None
+        )
+        if (
+            environment_document.get("authoritative_reference_hash") is not None
+            and (
+                authoritative_reference is None
+                or environment_document["authoritative_reference_hash"]
+                != _stable_hash(authoritative_reference)
+            )
+        ):
+            raise ValueError(
+                f"authoritative reference hash does not match frozen identity for {doc_id}"
+            )
         candidates = [
             dict(row) for row in task_adapter.deterministic_candidates(
                 doc_id, source, environment_document
@@ -1146,11 +1262,7 @@ def build_utility_artifact(
                         doc_id,
                         source,
                         environment_document,
-                        authoritative_reference=(
-                            task_adapter.authoritative_reference(doc_id)
-                            if hasattr(task_adapter, "authoritative_reference")
-                            else None
-                        ),
+                        authoritative_reference=authoritative_reference,
                     )
                 )
                 if not proposals:
@@ -1246,10 +1358,20 @@ def build_utility_artifact(
         family_budgets=family_budgets,
         pins={
             **dict(pins),
+            "source_hashes": {
+                doc_id: document["source_hash"]
+                for doc_id, document in frozen_environment.get("documents", {}).items()
+                if "source_hash" in document
+            },
+            "reference_hashes": {
+                doc_id: document["authoritative_reference_hash"]
+                for doc_id, document in frozen_environment.get("documents", {}).items()
+                if "authoritative_reference_hash" in document
+            },
             "task_pin": json.loads(json.dumps(task_pin, sort_keys=True)),
             "builder_pin": builder_pin(),
-            "teacher_pin": relation_teacher_pin(relation_teacher is not None),
-            "reader_pin": context_reader_pin(),
+            "teacher_pin": teacher_dependency_pin(relation_teacher),
+            "reader_pin": reader_dependency_pin(reader),
             "scorer_pin": utility_scorer_pin(),
             "gate_manifest_hash": manifest_hash,
             "threshold_manifest_pin": {
@@ -1360,12 +1482,7 @@ def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str
 def _call_context_reader(reader, questions, context, *, refresh: bool):
     if not refresh:
         return reader(questions, context)
-    try:
-        return reader(questions, context, refresh=True)
-    except TypeError as error:
-        if "unexpected keyword argument 'refresh'" not in str(error):
-            raise
-        return reader(questions, context)
+    return reader(questions, context, refresh=True)
 
 
 def validate_context_assertions(

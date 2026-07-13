@@ -8,12 +8,15 @@ from pathlib import Path
 import pytest
 import torch
 
+import cloak.train.roundtrip as rt
 from cloak.train.qa_builder import (
     AciTaskAdapter,
     _stable_hash,
+    build_utility_artifact,
     builder_pin,
     context_reader_pin,
     package_utility_artifact,
+    read_context_batch,
     relation_teacher_pin,
     utility_scorer_pin,
 )
@@ -1033,6 +1036,70 @@ def test_utility_reward_cache_rejects_changed_reward_identity(tmp_path):
         cache.lookup(**inputs)
 
 
+def test_utility_reward_cache_invalidates_task_prompt_or_invert_identity(
+    tmp_path, monkeypatch,
+):
+    doc = _artifact_exit_doc()
+    cache = tr.UtilityRewardCache(tmp_path / "utility-reward-cache.jsonl")
+    inputs = {
+        "doc_id": doc["id"],
+        "action_vector": {"dec1": "action-v1"},
+        "doc_p": "generalized document",
+        "artifact_hash": doc["utility_artifact"]["artifact_hash"],
+        "scorer_pin": tr._utility_scorer_pin(doc),
+    }
+    cache.store(**inputs, result=_complete_cache_result("baseline"))
+
+    with monkeypatch.context() as context:
+        context.setitem(rt.TASK_TEMPLATE, "clinical", "changed prompt\n{doc}")
+        changed_prompt_pin = tr._utility_scorer_pin(doc)
+    with monkeypatch.context() as context:
+        context.setattr(rt, "INVERT_EXTRACTOR_VERSION", "invert-rule-cascade-test-change")
+        changed_invert_pin = tr._utility_scorer_pin(doc)
+
+    assert cache.lookup(**(inputs | {"scorer_pin": changed_prompt_pin})) is None
+    assert cache.lookup(**(inputs | {"scorer_pin": changed_invert_pin})) is None
+
+
+def test_greedy_artifact_readout_reuses_persisted_reward_cache(tmp_path, monkeypatch):
+    doc = _artifact_exit_doc()
+    calls = []
+
+    def deterministic_greedy(doc, span_rows, feats, policy, greedy=False, decision_ids=None):
+        assert greedy is True
+        choice = {"metformin": span_rows[0]["actions"][0]}
+        doc_p, replacements = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
+        return choice, {}, 0.0, doc_p, replacements, []
+
+    def fake_roundtrip(jobs, workers=1):
+        calls.append(len(jobs))
+        return [{
+            "out_p": "remote output",
+            "out_final": "delivered output",
+            "recall": 1.0,
+            "component_scores": {"a1": 1.0},
+            "f1s": [],
+        } for _ in jobs]
+
+    monkeypatch.setattr(tr, "sample_rollout", deterministic_greedy)
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip)
+    cache_path = tmp_path / "utility-reward-cache.jsonl"
+
+    first_results, _first_phs, first_accounting = tr.greedy_roundtrip_readout(
+        [doc], tr.RankerPolicy(), rt_workers=2,
+        utility_reward_cache=tr.UtilityRewardCache(cache_path),
+    )
+    second_results, _second_phs, second_accounting = tr.greedy_roundtrip_readout(
+        [doc], tr.RankerPolicy(), rt_workers=2,
+        utility_reward_cache=tr.UtilityRewardCache(cache_path),
+    )
+
+    assert first_results == second_results
+    assert calls == [1]
+    assert first_accounting == {"qa_cache_hits": 0, "qa_cache_misses": 1}
+    assert second_accounting == {"qa_cache_hits": 1, "qa_cache_misses": 0}
+
+
 def test_train_roundtrip_reuses_identical_artifact_rollout_cache(tmp_path, monkeypatch):
     doc = _doc()
     artifact = {
@@ -1308,15 +1375,74 @@ def test_utility_artifact_gate_rejects_live_reader_pin_mismatch():
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
 
 
+def test_utility_artifact_gate_rejects_injected_builder_dependencies():
+    class InjectedTeacher:
+        pass
+
+    injected_reader_artifact = build_utility_artifact(
+        {"environment_hash": "env-v1", "documents": {}},
+        AciTaskAdapter({}),
+        {},
+        threshold_manifest={
+            "family_budgets": {"context": 0.5, "delivered": 0.5},
+            "cost_budgets": _COST_BUDGETS,
+        },
+        pins={},
+        reader=lambda questions, context: [],
+        render_action_vector=lambda doc_id, vector: "unused",
+    )
+    with pytest.raises(SystemExit, match="live reader pin"):
+        tr.enforce_utility_artifact_gate(
+            injected_reader_artifact, {"environment_hash": "env-v1"}
+        )
+
+    injected_teacher_artifact = build_utility_artifact(
+        {"environment_hash": "env-v1", "documents": {}},
+        AciTaskAdapter({}),
+        {},
+        threshold_manifest={
+            "family_budgets": {"context": 0.5, "delivered": 0.5},
+            "cost_budgets": _COST_BUDGETS,
+        },
+        pins={},
+        reader=read_context_batch,
+        render_action_vector=lambda doc_id, vector: "unused",
+        relation_teacher=InjectedTeacher(),
+    )
+    with pytest.raises(SystemExit, match="teacher_pin"):
+        tr.enforce_utility_artifact_gate(
+            injected_teacher_artifact, {"environment_hash": "env-v1"}
+        )
+
+
+def test_utility_artifact_gate_rejects_forged_cross_scope_semantic_duplicate():
+    artifact = _sealed_utility_artifact({
+        "assertion_id": "a1", "doc_id": "d0", "family": "delivered",
+        "scope": "linked", "occurrence_ids": ["o1"], "group_id": "content:dec1",
+        "scoring_contract": {"kind": "contains", "value": "62-year-old"},
+    })
+    artifact["assertions"]["a-global"] = {
+        "assertion_id": "a-global", "doc_id": "d0", "family": "delivered",
+        "scope": "global", "occurrence_ids": [], "group_id": "demographic:age",
+        "status": "accepted", "weight": 0.5,
+        "scoring_contract": {"kind": "contains", "value": "62-year-old"},
+    }
+    artifact["documents"]["d0"]["assertion_ids"].append("a-global")
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="duplicate semantic utility fact"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
 @pytest.mark.parametrize(("pin_name", "previous_pin", "message"), [
     (
         "builder_pin",
-        {"builder": "qa-builder-v2", "version": "assertion-compiler-v2"},
+        {"builder": "qa-builder-v2", "version": "assertion-compiler-v3"},
         "live builder",
     ),
     (
         "scorer_pin",
-        {**utility_scorer_pin(), "pin_version": "qa-utility-scorer-v1"},
+        {**utility_scorer_pin(), "pin_version": "qa-utility-scorer-v2"},
         "live scorer",
     ),
 ])
@@ -1329,6 +1455,54 @@ def test_utility_artifact_gate_rejects_previous_semantic_pins(
 
     with pytest.raises(SystemExit, match=message):
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+@pytest.mark.parametrize(("field", "live_value", "message"), [
+    ("source_hash", "sha256:changed-source", "source hash"),
+    (
+        "authoritative_reference_hash",
+        "sha256:changed-reference",
+        "authoritative reference hash",
+    ),
+])
+def test_utility_artifact_gate_rejects_source_or_reference_mismatch(
+    field, live_value, message
+):
+    artifact = _sealed_utility_artifact()
+    artifact["documents"]["d0"].update({
+        "source_hash": "sha256:source",
+        "authoritative_reference_hash": "sha256:reference",
+    })
+    _seal_artifact(artifact)
+    live_document = {
+        "source_hash": "sha256:source",
+        "authoritative_reference_hash": "sha256:reference",
+    }
+    live_document[field] = live_value
+
+    with pytest.raises(SystemExit, match=message):
+        tr.enforce_utility_artifact_gate(
+            artifact,
+            {"environment_hash": "env-v1", "documents": {"d0": live_document}},
+        )
+
+
+def test_frozen_training_environment_binds_loaded_source_and_gold_reference():
+    environment = {"corpora": {"clinical": {"d0": {"spans": []}}}}
+    arms = {"clinical": {"d0": {"tau_walk": ["source", []]}}}
+    docs = [{
+        "id": "d0",
+        "corpus": "clinical",
+        "text": "source document",
+        "gold_ref": "gold reference",
+    }]
+
+    frozen = tr.frozen_training_environment(environment, arms, docs)
+
+    assert frozen["documents"]["d0"]["source_hash"] == _stable_hash("source document")
+    assert frozen["documents"]["d0"]["authoritative_reference_hash"] == _stable_hash(
+        "gold reference"
+    )
 
 
 def test_qa_preflight_recomputes_counts_and_enforces_call_budgets():

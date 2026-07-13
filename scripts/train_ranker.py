@@ -57,6 +57,7 @@ from cloak.train.qa_builder import (AciTaskAdapter,
                                     normalize_family_budgets,
                                     normalize_threshold_manifest,
                                     relation_teacher_pin,
+                                    utility_assertion_semantic_key,
                                     utility_scorer_pin)
 from cloak.train.utility_credit import provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
@@ -514,7 +515,7 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             decision_ids = (utility_decision_ids(doc, doc["spans"])
                             if "utility_artifact" in doc else None)
             scorer_pin = (
-                _utility_scorer_pin(doc["utility_artifact"])
+                _utility_scorer_pin(doc)
                 if decision_ids is not None and utility_reward_cache is not None else None
             )
             for _ in range(G):
@@ -655,7 +656,7 @@ def exit_round(docs, policy, *, G, rt_workers, seed, utility_reward_cache=None):
             if "utility_artifact" in doc and utility_reward_cache is not None else None
         )
         scorer_pin = (
-            _utility_scorer_pin(doc["utility_artifact"])
+            _utility_scorer_pin(doc)
             if decision_ids is not None else None
         )
         if decision_ids is not None:
@@ -1101,21 +1102,14 @@ def utility_action_vector(span_rows, decision_ids, choice):
     return vector
 
 
-def _utility_scorer_pin(artifact):
-    from cloak.train.roundtrip import MAX_TOKENS, RT_BASE_URL, RT_MODEL
+def _utility_scorer_pin(doc):
+    from cloak.train.roundtrip import roundtrip_reward_pin
 
-    return {
-        "reward_pin_version": "qa-builder-v2-roundtrip-reward-v1",
-        "utility_scorer": artifact["scorer_pin"],
-        "remote": {
-            "model": RT_MODEL,
-            "base_url": RT_BASE_URL,
-            "temperature": 0.0,
-            "max_tokens": MAX_TOKENS,
-            "enable_thinking": False,
-        },
-        "extractor": {"kind": "invert", "semantic": False},
-    }
+    return roundtrip_reward_pin(
+        doc["utility_artifact"]["scorer_pin"],
+        corpus=doc["corpus"],
+        schema=bool(doc.get("template") == "schema" or doc.get("schema")),
+    )
 
 
 def cached_utility_roundtrips(jobs, cache_inputs, cache, *, workers):
@@ -1150,6 +1144,51 @@ def cached_utility_roundtrips(jobs, cache_inputs, cache, *, workers):
     return results
 
 
+def greedy_roundtrip_readout(docs, policy, *, rt_workers, utility_reward_cache=None):
+    """Score the final greedy artifact readout through the complete reward cache."""
+    jobs, phs, cache_inputs = [], [], []
+    use_cache = utility_reward_cache is not None and all(
+        "utility_artifact" in doc for doc in docs
+    )
+    with torch.no_grad():
+        for doc in docs:
+            decision_ids = utility_decision_ids(doc, doc["spans"]) if use_cache else None
+            choice, _, ph, doc_p, replacements, _ = sample_rollout(
+                doc,
+                doc["spans"],
+                doc["feats"],
+                policy,
+                greedy=True,
+                decision_ids=decision_ids,
+            )
+            jobs.append(_roundtrip_job(doc, doc_p, replacements))
+            phs.append(ph)
+            if use_cache:
+                cache_inputs.append({
+                    "doc_id": doc["id"],
+                    "action_vector": utility_action_vector(
+                        doc["spans"], decision_ids, choice
+                    ),
+                    "doc_p": doc_p,
+                    "artifact_hash": doc["utility_artifact"]["artifact_hash"],
+                    "scorer_pin": _utility_scorer_pin(doc),
+                })
+    if not use_cache:
+        return roundtrip_batch(jobs, workers=rt_workers), phs, {
+            "qa_cache_hits": 0,
+            "qa_cache_misses": 0,
+        }
+    hits_before = utility_reward_cache.hits
+    misses_before = utility_reward_cache.misses
+    results = cached_utility_roundtrips(
+        jobs, cache_inputs, utility_reward_cache, workers=rt_workers
+    )
+    return results, phs, {
+        "qa_cache_hits": utility_reward_cache.hits - hits_before,
+        "qa_cache_misses": utility_reward_cache.misses - misses_before,
+    }
+
+
 def frozen_training_environment(environment, arms, docs, *, floors=None):
     """Freeze exactly the documents loaded for one artifact-backed training invocation."""
     selected_corpora = {}
@@ -1161,6 +1200,8 @@ def frozen_training_environment(environment, arms, docs, *, floors=None):
         {**environment, "corpora": selected_corpora},
         occurrences_by_document=frozen_occurrences_from_arms(arms),
         floors=floors,
+        source_documents={doc["id"]: doc["text"] for doc in docs},
+        authoritative_references={doc["id"]: doc["gold_ref"] for doc in docs},
     )
 
 
@@ -1519,17 +1560,33 @@ def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_ha
     if artifact.get("scorer_pin") != utility_scorer_pin():
         raise SystemExit("utility artifact scorer_pin does not match the live scorer")
     family_budgets, thresholds, cost_budgets = _frozen_utility_manifest(artifact)
-    if artifact.get("environment_hash") != environment.get("environment_hash"):
-        raise SystemExit("utility artifact environment_hash does not match ranker environment")
     artifact_documents = artifact.get("documents")
     if not isinstance(artifact_documents, dict):
         raise SystemExit("utility artifact has invalid document coverage")
     if "documents" in environment:
         environment_documents = environment["documents"]
-        if not isinstance(environment_documents, dict) or set(artifact_documents) != set(
-            environment_documents
+        if (
+            isinstance(environment_documents, dict)
+            and set(artifact_documents) == set(environment_documents)
         ):
-            raise SystemExit("utility artifact document coverage does not match ranker environment")
+            for doc_id, state in artifact_documents.items():
+                live_document = environment_documents[doc_id]
+                for field, label in (
+                    ("source_hash", "source hash"),
+                    ("authoritative_reference_hash", "authoritative reference hash"),
+                ):
+                    if state.get(field) != live_document.get(field):
+                        raise SystemExit(
+                            f"utility artifact document {doc_id} {label} does not match "
+                            "the frozen environment"
+                        )
+    if artifact.get("environment_hash") != environment.get("environment_hash"):
+        raise SystemExit("utility artifact environment_hash does not match ranker environment")
+    if "documents" in environment and (
+        not isinstance(environment_documents, dict)
+        or set(artifact_documents) != set(environment_documents)
+    ):
+        raise SystemExit("utility artifact document coverage does not match ranker environment")
     assertions = artifact.get("assertions", {})
     referenced_assertion_ids = set()
     for doc_id, state in artifact_documents.items():
@@ -1626,6 +1683,7 @@ def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_ha
                 "match the frozen environment"
             )
         rows = []
+        semantic_scopes: dict[str, set[str]] = {}
         for assertion_id in assertion_ids:
             if assertion_id in referenced_assertion_ids:
                 raise SystemExit(
@@ -1657,6 +1715,14 @@ def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_ha
                 raise SystemExit(
                     f"utility artifact assertion {assertion_id} has invalid scope {scope!r}"
                 )
+            semantic_key = utility_assertion_semantic_key(assertion)
+            prior_scopes = semantic_scopes.setdefault(semantic_key, set())
+            if prior_scopes and scope not in prior_scopes:
+                raise SystemExit(
+                    f"utility artifact document {doc_id} has a duplicate semantic utility "
+                    "fact across linked/global scopes"
+                )
+            prior_scopes.add(scope)
             if live_occurrences:
                 missing_occurrences = sorted(set(occurrence_ids) - set(live_occurrences))
                 if missing_occurrences:
@@ -1934,17 +2000,22 @@ def main():
     floor_eq_stored = True
     docs = []
     for corpus, per_doc in env["corpora"].items():
-        texts = {d["id"]: d["text"] for d in load_task_docs(corpus, args.n_docs)}
+        loaded_documents = {
+            document["id"]: document
+            for document in load_task_docs(corpus, args.n_docs)
+        }
         for doc_id, d in per_doc.items():
             # env may hold more docs than --n-docs loaded texts for (e.g. a small smoke on a
             # full env); only build docs whose text is loaded. load_task_docs is deterministic,
             # so this takes the first n_docs per corpus.
-            if doc_id not in texts or not d["trainable"] or not d["spans"]:
+            if doc_id not in loaded_documents or not d["trainable"] or not d["spans"]:
                 continue
+            loaded_document = loaded_documents[doc_id]
             stored_bc = [s["bc_action"] for s in d["spans"]]
             spans, feats = derive_spans(d["spans"], floors, corpus, device)
             floor_eq_stored &= all(s["bc_action"] == b for s, b in zip(spans, stored_bc))
-            docs.append({"id": doc_id, "corpus": corpus, "text": texts[doc_id],
+            docs.append({"id": doc_id, "corpus": corpus, "text": loaded_document["text"],
+                         "gold_ref": loaded_document["gold_ref"],
                          "R_walk": art[corpus][doc_id]["tau_walk"][1],
                          "raw_spans": d["spans"], "spans": spans, "feats": feats,
                          "probes_train": d["probes"]["train"]})
@@ -2130,15 +2201,13 @@ def main():
                         ref=(ref if kl_coef > 0 else None), rt_workers=args.rt_workers,
                         seed=args.seed, cf_frac=args.cf_frac, log_rows=log["rounds"],
                         utility_reward_cache=utility_reward_cache)
-        # greedy read-out at the env floors, scored via one round-trip batch (fixed floor only)
-        jobs, phs = [], []
-        with torch.no_grad():
-            for doc in docs:
-                _, _, ph, doc_p, R, _ = sample_rollout(doc, doc["spans"], doc["feats"],
-                                                       policy, greedy=True)
-                jobs.append(_roundtrip_job(doc, doc_p, R))
-                phs.append(ph)
-        res = roundtrip_batch(jobs, workers=args.rt_workers)
+        # greedy read-out at the env floors; artifact mode reuses the complete reward cache.
+        res, phs, greedy_cache = greedy_roundtrip_readout(
+            docs,
+            policy,
+            rt_workers=args.rt_workers,
+            utility_reward_cache=utility_reward_cache,
+        )
         rs = [r["recall"] or 0.0 for r in res]
         # heldout read-out: SAME greedy rollouts (out_final unchanged), scored on each doc's
         # heldout probes from the validated artifact; docs with empty heldout are skipped.
@@ -2153,6 +2222,8 @@ def main():
             "r_train": round(sum(rs) / len(rs), 4) if rs else 0.0,
             "r_heldout": round(sum(held) / len(held), 4) if held else None,
             "ph": round(sum(phs) / len(phs), 4) if phs else 0.0}
+        if utility_reward_cache is not None:
+            log["greedy_final"].update(greedy_cache)
         log["wall_s"] = round(time.time() - t0, 1)
         tag = "rt" + ("_enc" if encoder_mode else "") + ("_smoke" if args.smoke else "")
         torch.save(policy.state_dict(), f"data/ranker_policy_{tag}.pt")

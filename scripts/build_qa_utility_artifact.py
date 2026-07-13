@@ -113,36 +113,33 @@ def build_from_files(
     occurrence_records = {
         doc_id: all_occurrence_records[doc_id] for doc_id in args.doc_id
     }
-    frozen_environment = freeze_ranker_environment(
-        environment,
-        occurrences_by_document=occurrence_records,
-        floors=_parse_floors(args.floors),
-    )
     try:
         manifest = normalize_threshold_manifest(
             json.loads(Path(args.threshold_manifest).read_text())
         )
     except ValueError as error:
         raise SystemExit(f"threshold manifest is invalid: {error}") from None
-
     rows = _source_rows(args.corpus, args.doc_id)
     if any(not doc_id.startswith("aci/") for doc_id in rows):
         raise SystemExit("the implemented task adapter currently supports ACI documents only")
     source_documents = {doc_id: row["text"] for doc_id, row in rows.items()}
     references = {doc_id: row["gold_ref"] for doc_id, row in rows.items()}
+    frozen_environment = freeze_ranker_environment(
+        environment,
+        occurrences_by_document=occurrence_records,
+        floors=_parse_floors(args.floors),
+        source_documents=source_documents,
+        authoritative_references=references,
+    )
     if relation_teacher is None and args.relation_teacher:
         relation_teacher = OpenRouterRelationTeacher()
 
-    pins = {
-        "source_hashes": {doc_id: _hash(text) for doc_id, text in source_documents.items()},
-        "reference_hashes": {doc_id: _hash(text) for doc_id, text in references.items()},
-    }
     artifact = build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
         source_documents,
         threshold_manifest=manifest,
-        pins=pins,
+        pins={},
         reader=reader,
         render_action_vector=_action_renderer(
             environment, frozen_environment, arms, args.corpus, source_documents

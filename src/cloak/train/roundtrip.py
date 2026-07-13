@@ -12,6 +12,9 @@ The extractor is part of the reward pin: legacy rewards are pinned to the `inver
 frozen-extractor rewards are keyed by `extractor_version`, and cached rewards are valid only
 under the pin they were produced with.
 """
+import hashlib
+import inspect
+import json
 import os
 
 from cloak.extract import invert
@@ -34,6 +37,9 @@ MAX_TOKENS = 1024   # raised from 512 (2026-07-05, pre-gate calibration): full A
                     # the 512 cap mid-sentence (measured: out_len ~532 tok, tail truncated),
                     # killing ceiling-anchor validation on facts from later note sections.
                     # gemma finishes real notes in ~400-700 tok; 1024 is headroom, not a target.
+ROUNDTRIP_REWARD_PIN_VERSION = "qa-builder-v2-roundtrip-reward-v2"
+TASK_PROMPT_PIN_VERSION = "roundtrip-task-prompt-v1"
+INVERT_EXTRACTOR_VERSION = "invert-rule-cascade-v1"
 
 _client = None
 
@@ -133,6 +139,39 @@ def _template(job: dict) -> str:
     if wants_schema and job["corpus"] in SCHEMA_TEMPLATE:
         return SCHEMA_TEMPLATE[job["corpus"]]
     return TASK_TEMPLATE[job["corpus"]]
+
+
+def _pin_hash(value) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def roundtrip_reward_pin(utility_scorer_pin: dict, *, corpus: str, schema: bool = False) -> dict:
+    """Return the complete identity of the artifact-backed roundtrip reward."""
+    template = _template({"corpus": corpus, "schema": schema})
+    return {
+        "reward_pin_version": ROUNDTRIP_REWARD_PIN_VERSION,
+        "utility_scorer": utility_scorer_pin,
+        "task_prompt": {
+            "version": TASK_PROMPT_PIN_VERSION,
+            "corpus": corpus,
+            "schema": bool(schema),
+            "sha256": _pin_hash(template),
+        },
+        "remote": {
+            "model": RT_MODEL,
+            "base_url": RT_BASE_URL,
+            "temperature": 0.0,
+            "max_tokens": MAX_TOKENS,
+            "enable_thinking": False,
+        },
+        "extractor": {
+            "kind": "invert",
+            "version": INVERT_EXTRACTOR_VERSION,
+            "sha256": _pin_hash(inspect.getsource(invert)),
+            "semantic": True,
+        },
+    }
 
 
 def _carrier_enabled(job: dict) -> bool:
