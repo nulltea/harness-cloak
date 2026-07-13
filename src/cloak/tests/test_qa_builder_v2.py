@@ -150,6 +150,100 @@ def test_context_validation_requires_original_and_generalization_but_not_placeho
     assert len(calls) == 3
 
 
+def test_context_validation_rejects_unstable_reader_after_deterministic_option_permutations():
+    assertions = [{
+        "assertion_id": "a1",
+        "family": "context",
+        "question": "Which category is documented?",
+        "options": ["endocrine", "musculoskeletal", "respiratory"],
+        "accepted_values": ["endocrine"],
+    }]
+    calls = []
+
+    def reader(questions, context):
+        calls.append((list(questions), context))
+        trial = (len(calls) - 1) // 3
+        if context == "placeholder":
+            return ["NONE"]
+        if context == "generalized" and trial == 1:
+            return ["NONE"]
+        return ["endocrine"]
+
+    accepted, evidence = validate_context_assertions(
+        assertions,
+        original_context="original",
+        representative_context="generalized",
+        placeholder_context="placeholder",
+        reader=reader,
+        stability_repetitions=1,
+        option_permutations=2,
+        stability_threshold=1.0,
+    )
+
+    assert accepted == []
+    assert evidence["a1"]["verdict"] == "unstable"
+    assert evidence["a1"]["stability"]["passing_fraction"] == pytest.approx(0.5)
+    assert evidence["a1"]["stability"]["option_permutations"] == 2
+    assert calls[0][0] != calls[3][0]
+
+
+def test_builder_records_unstable_context_reader_without_accepting_assertion():
+    frozen = {
+        "environment_hash": "env-v1",
+        "documents": {"d1": {
+            "occurrences": [{"occurrence_id": "o1", "decision_id": "dec1"}],
+            "decisions": [{
+                "decision_id": "dec1",
+                "actions": [
+                    {"action_id": "keep", "mode": "keep", "legal": True},
+                    {"action_id": "general", "mode": "level", "legal": True,
+                     "entails": ["endocrine"]},
+                    {"action_id": "placeholder", "mode": "placeholder", "legal": True},
+                ],
+            }],
+        }},
+    }
+
+    class Adapter:
+        def deterministic_candidates(self, doc_id, document, environment_document):
+            return [{
+                "family": "context", "scope": "linked", "subtype": "semantic_property",
+                "occurrence_ids": ["o1"], "group_id": "condition:category",
+                "question": "What category?", "accepted_values": ["endocrine"],
+                "decision_requirements": {"dec1": "endocrine"},
+            }]
+
+    calls = []
+
+    def reader(questions, context):
+        calls.append(context)
+        if context == "placeholder":
+            return ["NONE"]
+        if context == "generalized" and len(calls) > 4:
+            return ["NONE"]
+        return ["endocrine"]
+
+    artifact = build_utility_artifact(
+        frozen,
+        Adapter(),
+        {"d1": "original"},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "reader_stability_repetitions": 2,
+            "reader_option_permutations": 1,
+            "reader_stability_threshold": 1.0,
+        },
+        pins={"gate_manifest_hash": "gate-v1"},
+        reader=reader,
+        render_action_vector=lambda doc_id, vector: (
+            "placeholder" if vector["dec1"] == "placeholder" else "generalized"
+        ),
+    )
+
+    assert artifact["assertions"] == {}
+    assert artifact["rejections"]["summary_by_reason"] == {"unstable": 1}
+
+
 def test_runtime_scores_context_assertions_in_one_reader_batch():
     artifact = {
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
@@ -441,6 +535,8 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     context = next(row for row in artifact["assertions"].values()
                    if row["family"] == "context")
     assert context["expected_action_support"]["joint_anchor_hash"].startswith("sha256:")
+    assert context["expected_action_support"]["property_level"] == {"dec1": "endocrine"}
+    assert "property_levels" not in context["expected_action_support"]
     assert context["evidence"]["validation"]["scores"] == {
         "original": 1.0,
         "representative": 1.0,
@@ -591,6 +687,52 @@ def test_relational_compiler_rejects_unfrozen_or_leaking_proposals(change, reaso
 
     assert accepted == []
     assert rejected[0]["reason"] == reason
+
+
+@pytest.mark.parametrize(
+    ("source", "proposal_change", "reason"),
+    [
+        (
+            "Hypothyroidism and Synthroid are listed in the chart.",
+            {"evidence_quote": "Hypothyroidism and Synthroid are listed in the chart."},
+            "invalid_evidence",
+        ),
+        (
+            "Hypothyroidism is treated with Synthroid.",
+            {"argument_polarities": {"o-condition": "negated", "o-drug": "active"}},
+            "invalid_polarity",
+        ),
+        (
+            "Hypothyroidism is treated with Synthroid. "
+            "Hypothyroidism is not treated with Synthroid.",
+            {"evidence_quote": "Hypothyroidism is treated with Synthroid."},
+            "source_contradiction",
+        ),
+    ],
+)
+def test_relational_compiler_requires_direct_noncontradictory_authoritative_evidence(
+    source, proposal_change, reason
+):
+    proposal = {
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "o-drug"],
+        "support_properties": {
+            "o-condition": "an endocrine condition",
+            "o-drug": "a thyroid medication",
+        },
+        "answer_occurrence_id": "o-drug",
+        "answer_property": "a thyroid medication",
+        "question": "What treatment category is used for the endocrine condition?",
+        "evidence_quote": source,
+    }
+    proposal.update(proposal_change)
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, _relation_environment(), [proposal]
+    )
+
+    assert accepted == []
+    assert rejected == [{"proposal_index": 0, "reason": reason}]
 
 
 def test_aci_adapter_builds_delivered_facts_only_from_authoritative_reference():
