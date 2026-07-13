@@ -130,3 +130,93 @@ exit 0, no output
 - No external relation-teacher run was authorized or executed. The context channel remains empirically undemonstrated, and the smoke still has zero context assertions.
 - Existing version-2 whole-file reward caches are intentionally rejected by the fail-closed version-3 loader and must be rebuilt as JSONL.
 - Verification used the host `.venv` because this worktree has no `.venv` entry.
+
+---
+
+## Final-review follow-up fix wave
+
+### Commit
+
+- Implementation commit: `91f9e6f6b96d37b9b0bb5fa233ef69f09d7501ad`
+
+### Changed files
+
+- `src/cloak/train/qa_builder.py`
+- `src/cloak/train/utility_credit.py`
+- `src/cloak/train/roundtrip.py`
+- `src/cloak/tests/test_qa_builder_v2.py`
+- `src/cloak/tests/test_utility_credit.py`
+- `src/cloak/tests/test_roundtrip.py`
+- `.superpowers/sdd/final-review-fix-report.md`
+
+### RED evidence
+
+1. Validation/runtime option ordering after packaging:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_packaged_runtime_option_order_matches_prepackaging_validation
+1 failed in 0.07s
+```
+
+Validation rendered `musculoskeletal | respiratory | endocrine`; after final ID assignment runtime rendered `endocrine | respiratory | musculoskeletal`.
+
+2. Exact short protected phrase leakage:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_relational_compiler_rejects_exact_short_protected_phrase
+1 failed in 0.04s
+```
+
+The compiler accepted a question containing the exact protected phrase `HIV`.
+
+3. Builder/ranker weighted-aggregation ownership:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_delivered_only_scoring_is_deterministic_without_reader_call src/cloak/tests/test_utility_credit.py::test_document_utility_owns_weighted_component_aggregation src/cloak/tests/test_utility_credit.py::test_document_utility_rejects_missing_component_scores src/cloak/tests/test_roundtrip.py::test_utility_artifact_roundtrip_aggregates_builder_components
+4 failed in 0.06s
+```
+
+`score_utility` still returned `utility`, `utility_credit` had no document aggregator, and roundtrip required the builder-owned scalar.
+
+4. Strict reader count types:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_threshold_manifest_requires_integer_reader_counts
+6 failed in 0.08s
+```
+
+Both reader count fields silently accepted `True`, `1.0`, and `"1"`.
+
+### GREEN evidence
+
+All new and directly updated regressions:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_packaged_runtime_option_order_matches_prepackaging_validation src/cloak/tests/test_qa_builder_v2.py::test_relational_compiler_rejects_exact_short_protected_phrase src/cloak/tests/test_qa_builder_v2.py::test_threshold_manifest_requires_integer_reader_counts src/cloak/tests/test_qa_builder_v2.py::test_delivered_only_scoring_is_deterministic_without_reader_call src/cloak/tests/test_utility_credit.py::test_document_utility_owns_weighted_component_aggregation src/cloak/tests/test_utility_credit.py::test_document_utility_rejects_missing_component_scores src/cloak/tests/test_roundtrip.py::test_utility_artifact_roundtrip_aggregates_builder_components src/cloak/tests/test_qa_builder_v2.py::test_roundtrip_utility_artifact_scores_doc_p_and_out_final
+13 passed in 0.06s
+```
+
+Required focused five-file suite:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py
+182 passed in 2.78s
+```
+
+Changed Python files compiled successfully:
+
+```text
+/home/timo/repos/agent-cloak/.venv/bin/python -m py_compile src/cloak/train/qa_builder.py src/cloak/train/utility_credit.py src/cloak/train/roundtrip.py src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py
+exit 0, no output
+```
+
+Patch hygiene:
+
+```text
+git diff --check
+exit 0, no output
+```
+
+### Concerns
+
+- No new concern from this follow-up wave. The prior no-teacher-run and cache-v2 migration concerns remain unchanged.
