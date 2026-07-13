@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-13
 tags: [qa, reward-design, utility-components, context-preservation, credit-routing,
        interactive-ranker, spec]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
@@ -14,7 +14,8 @@ companion: [docs/specs/RL/interactive-ranker-v2.md,
 
 # QA builder v2 — context-preservation utility for interactive ranker v2
 
-**Status: normative design, not implemented.**
+**Status: normative design with an implemented ACI builder/scorer; empirical gates remain
+uncertified until the preregistered smoke and support runs complete.**
 
 QA builder v2 produces a small, frozen set of utility assertions that reward truthful
 generalization when it preserves useful context that a generic placeholder destroys. It also
@@ -99,6 +100,12 @@ TaskAdapter:
 
 Add an adapter only when a second task genuinely requires different schema or assertion logic.
 Do not expose separate public ladder, decision, schema, validator, or compiler modules.
+
+**Compiler terminology is normative.** Relational-assertion compilation is the complete
+deterministic-first operation that may invoke the one-call teacher escalation and then validates
+the proposal against frozen IDs, legal properties, and exact evidence. Artifact packaging is the
+subsequent local-only operation that assigns IDs, links, weights, coverage states, hashes, and
+pins. A packaging-only command must not be described as the assertion compiler.
 
 Runtime scoring has one interface:
 
