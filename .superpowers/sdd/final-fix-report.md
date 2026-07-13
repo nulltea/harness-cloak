@@ -10,7 +10,7 @@ Complete. All Critical, Important, and Minor final-review findings were fixed in
 - Chose fail-closed cache integrity rather than silently treating corruption as a miss. A corrupt cache file, request record, result hash, result schema, or invalid score now raises an explicit validation error.
 - Preserved atomic JSON persistence while moving it to one `store_many` call per dispatched miss batch. Duplicate requests remain coalesced and hit/miss accounting remains request-accurate.
 - Derived lattice entailment from canonical frozen action order and semantics rather than trusting optional input `entails` metadata.
-- Kept all numeric gate values manifest-driven. The gate validates required frozen cost budgets and recomputes metadata from assertions and the live environment.
+- Kept all numeric gate values manifest-driven. The gate validates manifest-declared call ceilings and recomputes metadata from assertions and the live environment.
 
 ## Findings Resolved
 
@@ -83,8 +83,8 @@ Measured preflight:
 - Reader prompt hash: `sha256:ec1c90a6487f8365b41259618f01f4eb876e4f7251d062fa29296cd07f71e274`.
 - Measurement state: `partial`; accepted assertions: `13` (`0` context, `13` delivered); missing family: `context`.
 - Uncovered decisions: `1` (`sha256:35865283793e22780435488e33bfd0acc154cb517854b046479153013c72288f`).
-- Frozen base budget: `1` remote round trip, `0` context-reader batches per rollout.
-- Frozen counterfactual budget: `1` remote round trip, `0` context-reader batches per selected pair.
+- Planned/observed base call surface: `1` remote round trip, `0` context-reader batches per rollout.
+- Planned/observed counterfactual call surface: `1` remote round trip, `0` context-reader batches per selected pair.
 - Executed remote calls: `0`; wall time: `0.96s`.
 
 ## Final Verification
@@ -136,3 +136,119 @@ Result:
 - Artifact-mode counterfactual scheduling/execution, lambda conditioning, and count-objective training remain unimplemented. Nonzero artifact `--cf-frac` now fails explicitly.
 - Cache schema v1 files are intentionally rejected by the fail-closed v2 loader and must be regenerated.
 - Smoke artifacts remain in `/tmp/qa-utility-final-fix.FNHSoM` for inspection.
+
+---
+
+# Localized Context-Preflight Fix Wave
+
+## Status
+
+Complete on 2026-07-13. No external calls were made.
+
+## Root Causes and Fixes
+
+- `build_qa_utility_artifact.py` discarded the full frozen environment before preflight and supplied only its hash. `build_from_files` can now return the exact environment it used, and `main` passes that full value to `qa_utility_preflight_report`.
+- Artifact mode had no reward-mode invariant before torch seeding and data/model setup. `--utility-artifact` now requires `--reward roundtrip` immediately after argument parsing.
+- Family-budget validation checked names inconsistently and allowed zero or non-finite values at some boundaries. One `normalize_family_budgets` contract now requires exactly `context` and `delivered`, each positive and finite, in packaging/building, CLI manifest loading, artifact gating, and preflight.
+- Preflight values previously described as frozen budgets were actually the planned/observed call surface. The report and committed documentation now use the correct terminology.
+
+## TDD Red Evidence
+
+Command:
+
+```bash
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_qa_builder_v2.py -k 'context_build_cli_preflights or invalid_family_budgets or utility_artifact_requires_roundtrip or exact_positive_family_budgets or builder_requires_exact_positive'
+```
+
+Result: `16 failed, 6 passed, 119 deselected in 1.10s`. The context CLI rejected injected dependencies, invalid budgets reached source/weight logic, surrogate artifact mode reached `torch.manual_seed`, and package validation accepted invalid budgets.
+
+## TDD Green Evidence
+
+The same command passed after the minimal boundary fixes:
+
+```text
+22 passed, 119 deselected in 0.84s
+```
+
+The context integration was then strengthened to use the real relation compiler with fixture-generated frozen occurrence IDs. Its isolated rerun produced:
+
+```text
+1 passed in 0.80s
+```
+
+The integration executes argument parsing, file loading, environment freezing, relation compilation, legal joint-anchor construction, reader validation, artifact packaging, strict gate validation, preflight reporting, and output writing. The fixture teacher and reader are local deterministic callables.
+
+## Focused Suite
+
+Command:
+
+```bash
+set -e
+cleanup() { rm -f .venv corpora/clinical; rmdir corpora 2>/dev/null || true; }
+trap cleanup EXIT
+ln -s /home/timo/repos/agent-cloak/.venv .venv
+mkdir -p corpora
+ln -s /home/timo/repos/agent-cloak/corpora/clinical corpora/clinical
+PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_roundtrip.py
+```
+
+Result: `153 passed in 2.71s`.
+
+## Deterministic Local Smoke
+
+Preflight behavior changed, so the no-teacher smoke was rerun with the prior manifest and no external calls:
+
+```bash
+PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_qa_utility_artifact.py --env data/ranker_env.json --arms data/task_arms_tau0.02.json --corpus clinical --doc-id aci/D2N002 --threshold-manifest /tmp/qa-utility-localized-fix.LJXZmd/manifest.json --out /tmp/qa-utility-localized-fix.LJXZmd/aci-D2N002.utility.json
+```
+
+Measured output was unchanged:
+
+- Artifact hash: `sha256:57b6934ff83310d3a5710150d55c0e566289fb109c1e4e6e275ee649182daba3`.
+- Environment hash: `sha256:f09c36723681014c7e6f94725b2c3f61bfe3ab98bb074f585a4c870943fa900f`.
+- Assertions: `13` accepted (`0` context, `13` delivered); one uncovered decision.
+- Planned/observed call surface: base `1` remote round trip and `0` context-reader batches; counterfactual `1` remote round trip and `0` context-reader batches.
+- Executed remote calls: `0`; wall time: `0.96s`.
+
+The training record's measured values therefore did not change; only its call-surface wording was corrected.
+
+## Final Verification
+
+Command:
+
+```bash
+set -e
+cleanup() { rm -f .venv corpora/clinical; rmdir corpora 2>/dev/null || true; }
+trap cleanup EXIT
+ln -s /home/timo/repos/agent-cloak/.venv .venv
+mkdir -p corpora
+ln -s /home/timo/repos/agent-cloak/corpora/clinical corpora/clinical
+PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_roundtrip.py
+.venv/bin/python -m py_compile scripts/train_ranker.py scripts/build_qa_utility_artifact.py src/cloak/train/qa_builder.py src/cloak/train/roundtrip.py src/cloak/train/utility_credit.py
+git diff --check
+```
+
+Result: `153 passed in 2.72s`. `py_compile` and `git diff --check` exited `0` with no output. Temporary dependency links were removed by the cleanup trap.
+
+## Files
+
+- `scripts/build_qa_utility_artifact.py`
+- `scripts/train_ranker.py`
+- `src/cloak/train/qa_builder.py`
+- `src/cloak/tests/test_build_qa_utility_artifact_cli.py`
+- `src/cloak/tests/test_train_roundtrip_mode.py`
+- `src/cloak/tests/test_qa_builder_v2.py`
+- `docs/specs/qa-builder-v2.md`
+- `docs/plans/2026-07-13-qa-builder-v2-implementation.md`
+- `research-wiki/training/2026-07-13-RL-ranker-v4-qa-utility-smoke.md`
+- `.superpowers/sdd/final-fix-report.md`
+
+## Commit
+
+`HEAD` — `fix(qa): validate context preflight and artifact mode`
+
+## Concerns
+
+- The deterministic smoke remains partial and supports contract validation only, not utility, privacy, or RL claims.
+- The public preflight JSON field remains named `call_budget` for schema compatibility, but its values are documented as the planned/observed call surface; `cost_budgets` remains the manifest-declared ceiling.
+- Artifact-mode counterfactual scheduling/execution, lambda conditioning, and count training remain out of scope.

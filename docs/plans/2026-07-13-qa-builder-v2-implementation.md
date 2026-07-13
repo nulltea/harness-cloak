@@ -138,7 +138,7 @@ Cover pin mismatches, dangling assertions, invalid denominator, unsupported/buil
 
 - [ ] **Step 2: Implement the minimal gates**
 
-Reference ranker-v2 for shared routing/loss gates; keep only QA-specific artifact checks locally. Report base versus counterfactual call budgets without launching remote calls.
+Reference ranker-v2 for shared routing/loss gates; keep only QA-specific artifact checks locally. Report the planned base versus counterfactual call surface without launching remote calls.
 
 - [ ] **Step 3: Run the complete model-free suite**
 

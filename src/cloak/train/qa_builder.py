@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import re
 from collections import defaultdict
@@ -137,6 +138,24 @@ _COST_BUDGET_FIELDS = {
         "context_reader_batches_per_selected_pair",
     ),
 }
+
+_FAMILY_BUDGET_NAMES = ("context", "delivered")
+
+
+def normalize_family_budgets(value: Mapping) -> dict[str, float]:
+    """Validate the exact positive QA utility-family allocation."""
+    if not isinstance(value, Mapping) or set(value) != set(_FAMILY_BUDGET_NAMES):
+        raise ValueError("family budgets require exactly context and delivered")
+    normalized = {}
+    for family in _FAMILY_BUDGET_NAMES:
+        budget = value[family]
+        if isinstance(budget, bool) or not isinstance(budget, (int, float)):
+            raise ValueError(f"family budgets: {family} must be a positive finite number")
+        budget = float(budget)
+        if not math.isfinite(budget) or budget <= 0.0:
+            raise ValueError(f"family budgets: {family} must be a positive finite number")
+        normalized[family] = budget
+    return normalized
 
 
 def normalize_cost_budgets(value: Mapping) -> dict:
@@ -630,6 +649,7 @@ def package_utility_artifact(
     pins: Mapping,
 ) -> dict:
     """Compile validated candidates into one deterministic, link-checked utility artifact."""
+    family_budgets = normalize_family_budgets(family_budgets)
     assertions: dict[str, dict] = {}
     documents: dict[str, dict] = {}
     environment_documents = frozen_environment.get("documents", {})
@@ -912,7 +932,7 @@ def build_utility_artifact(
     relation_teacher: OpenRouterRelationTeacher | None = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation."""
-    family_budgets = threshold_manifest["family_budgets"]
+    family_budgets = normalize_family_budgets(threshold_manifest.get("family_budgets"))
     cost_budgets = normalize_cost_budgets(threshold_manifest.get("cost_budgets"))
     min_context = int(threshold_manifest.get("min_context_assertions", 0))
     reader_threshold = float(threshold_manifest.get("reader_threshold", 1.0))

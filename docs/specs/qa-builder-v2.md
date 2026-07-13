@@ -388,13 +388,15 @@ recomputes each joint anchor against the frozen legal action menus: the vector m
 controlled decision, linked decisions must use an entailing non-KEEP/non-placeholder action, and
 unrelated decisions must use KEEP. The gate independently checks the canonical vector hash.
 
-Family weights remain fixed even when a family is absent. The gate requires the document
-denominator to equal the frozen family-budget sum, present/missing families to partition the
-manifest families, accepted weights to exhaust each present family budget (and no missing budget),
-and emitted group allocations to agree with the derived family/group split. It also rejects an
-unknown measurement state, requires group metadata and exact frozen cost budgets, derives
-uncovered decisions and family/count summaries from accepted assertions plus the frozen
-environment, and compares the recomputed call surface with the manifest-owned budgets.
+Family weights remain fixed even when a family is absent. The manifest and artifact must contain
+exactly the `context` and `delivered` family budgets, and each value must be positive and finite.
+The gate requires the document denominator to equal the frozen family-budget sum,
+present/missing families to partition those two families, accepted weights to exhaust each
+present family budget (and no missing budget), and emitted group allocations to agree with the
+derived family/group split. It also rejects an unknown measurement state, requires group metadata
+and exact manifest-declared call ceilings, derives uncovered decisions and family/count summaries
+from accepted assertions plus the frozen environment, and compares the recomputed call surface
+with the manifest-owned ceilings.
 
 Other checks remain adapter-specific diagnostics until a measured failure justifies promoting
 them to a gate.
@@ -531,8 +533,9 @@ dominant expected cost.
 ## Required tests
 
 - identical pinned inputs produce identical environment, assertion, and artifact IDs;
-- frozen family budgets deterministically produce group/assertion weights, keep context and
-  delivered groups separate for the same fact, and obey the declared missing-family state;
+- exactly two positive finite frozen family budgets (`context` and `delivered`) deterministically
+  produce group/assertion weights, keep the families separate for the same fact, and obey the
+  declared missing-family state;
 - missing-family fixtures retain the full reserved denominator, contribute zero absent-family
   numerator, and do not renormalize surviving weights;
 - teacher output cannot create or override IDs, gold, relation types, polarity, or aliases;

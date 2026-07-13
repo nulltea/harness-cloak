@@ -48,7 +48,8 @@ from cloak.train.qa_builder import (coarsest_entailing_legal_action,
                                     context_reader_pin,
                                     frozen_occurrences_from_arms,
                                     freeze_ranker_environment,
-                                    normalize_cost_budgets)
+                                    normalize_cost_budgets,
+                                    normalize_family_budgets)
 from cloak.train.utility_credit import provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
@@ -1147,23 +1148,13 @@ def _frozen_utility_manifest(artifact):
     budgets = artifact.get("family_budgets")
     if not isinstance(manifest, dict) or not isinstance(budgets, dict):
         raise SystemExit("utility artifact is missing frozen threshold/family budget state")
-    manifest_budgets = manifest.get("family_budgets")
-    if not isinstance(manifest_budgets, dict) or set(budgets) != set(manifest_budgets):
-        raise SystemExit("utility artifact has inconsistent frozen family budgets")
     try:
-        normalized_budgets = {str(family): float(budget) for family, budget in budgets.items()}
-    except (TypeError, ValueError):
-        raise SystemExit("utility artifact has invalid frozen family budgets") from None
-    if not normalized_budgets or any(
-        not math.isfinite(budget) or budget < 0.0 for budget in normalized_budgets.values()
-    ):
-        raise SystemExit("utility artifact has invalid frozen family budgets")
+        normalized_budgets = normalize_family_budgets(budgets)
+        manifest_budgets = normalize_family_budgets(manifest.get("family_budgets"))
+    except ValueError as error:
+        raise SystemExit(f"utility artifact has invalid family budgets: {error}") from None
     for family, budget in normalized_budgets.items():
-        try:
-            matches = _utility_close(manifest_budgets[family], budget)
-        except (TypeError, ValueError):
-            matches = False
-        if not matches:
+        if not _utility_close(manifest_budgets[family], budget):
             raise SystemExit("utility artifact has inconsistent frozen family budgets")
     try:
         reader_threshold = float(manifest["reader_threshold"])
@@ -1812,6 +1803,8 @@ def main():
                     help="bypass the round-trip support-scan gate with a loud warning "
                          "(roundtrip mode only)")
     args = ap.parse_args()
+    if args.utility_artifact is not None and args.reward != "roundtrip":
+        raise SystemExit("--utility-artifact requires --reward roundtrip")
     assert args.G >= 2, "group-relative advantage needs G >= 2 (std of one reward is NaN)"
     assert 0.0 <= args.cf_frac <= 1.0, "--cf-frac must be in [0, 1]"
     if args.exit_rounds > 0:

@@ -47,8 +47,8 @@ PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_qa_utility_artifact.py 
 ```
 
 The temporary manifest contained `family_budgets={context: 0.6, delivered: 0.4}`,
-`min_context_assertions=0`, `task_pin=aci-v1`, and frozen base/counterfactual call budgets of one
-remote round trip plus at most one context-reader batch per rollout or selected pair. The builder
+`min_context_assertions=0`, `task_pin=aci-v1`, and a planned maximum call surface of one remote
+round trip plus at most one context-reader batch per rollout or selected pair. The builder
 persisted the canonical live reader pin rather than accepting a manifest-supplied alias. The
 worktree used temporary symlinks to the host `.venv` and read-only clinical corpus, both removed
 immediately after the command.

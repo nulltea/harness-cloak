@@ -14,6 +14,7 @@ from cloak.train.qa_builder import (
     context_reader_pin,
     frozen_occurrences_from_arms,
     freeze_ranker_environment,
+    normalize_family_budgets,
     normalize_cost_budgets,
     read_context_batch,
 )
@@ -87,7 +88,13 @@ def _action_renderer(
     return render
 
 
-def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) -> dict:
+def build_from_files(
+    args,
+    *,
+    relation_teacher=None,
+    reader=read_context_batch,
+    return_frozen_environment=False,
+) -> dict | tuple[dict, dict]:
     environment = json.loads(Path(args.env).read_text())
     environment = _selected_environment(environment, args.corpus, args.doc_id)
     arms = json.loads(Path(args.arms).read_text())
@@ -100,9 +107,12 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         environment, occurrences_by_document=occurrence_records
     )
     manifest = json.loads(Path(args.threshold_manifest).read_text())
-    family_budgets = manifest.get("family_budgets")
-    if not isinstance(family_budgets, dict) or set(family_budgets) != {"context", "delivered"}:
-        raise SystemExit("threshold manifest requires context and delivered family_budgets")
+    try:
+        manifest["family_budgets"] = normalize_family_budgets(
+            manifest.get("family_budgets")
+        )
+    except ValueError as error:
+        raise SystemExit(f"threshold manifest has invalid family_budgets: {error}") from None
     try:
         manifest["cost_budgets"] = normalize_cost_budgets(manifest.get("cost_budgets"))
     except ValueError as error:
@@ -132,7 +142,7 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         "source_hashes": {doc_id: _hash(text) for doc_id, text in source_documents.items()},
         "reference_hashes": {doc_id: _hash(text) for doc_id, text in references.items()},
     })
-    return build_utility_artifact(
+    artifact = build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
         source_documents,
@@ -144,6 +154,9 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         ),
         relation_teacher=relation_teacher,
     )
+    if return_frozen_environment:
+        return artifact, frozen_environment
+    return artifact
 
 
 def parse_args(argv=None):
@@ -162,13 +175,15 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def main(argv=None):
+def main(argv=None, *, relation_teacher=None, reader=read_context_batch):
     args = parse_args(argv)
-    artifact = build_from_files(args)
-    report = qa_utility_preflight_report(
-        artifact,
-        {"environment_hash": artifact["environment_hash"]},
+    artifact, frozen_environment = build_from_files(
+        args,
+        relation_teacher=relation_teacher,
+        reader=reader,
+        return_frozen_environment=True,
     )
+    report = qa_utility_preflight_report(artifact, frozen_environment)
     output = Path(args.out)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(artifact, indent=1))

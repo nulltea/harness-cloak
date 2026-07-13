@@ -66,6 +66,23 @@ def test_missing_family_does_not_renormalize_surviving_weights():
     assert document_state["missing_family_budgets"] == ["context"]
 
 
+@pytest.mark.parametrize("family_budgets", [
+    {"context": 1.0},
+    {"context": 0.5, "delivered": 0.5, "unknown": 0.1},
+    {"context": 0.0, "delivered": 1.0},
+    {"context": float("nan"), "delivered": 1.0},
+    {"context": float("inf"), "delivered": 1.0},
+])
+def test_builder_requires_exact_positive_finite_family_budgets(family_budgets):
+    with pytest.raises(ValueError, match="family budgets"):
+        package_utility_artifact(
+            {"environment_hash": "env-v1", "documents": {}},
+            {},
+            family_budgets=family_budgets,
+            pins={},
+        )
+
+
 def test_joint_anchor_uses_coarsest_entailing_actions_and_keep_elsewhere():
     decisions = [
         {

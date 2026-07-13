@@ -35,8 +35,11 @@ def _sealed_utility_artifact(assertion=None):
     assertion.setdefault("group_id", "default")
     assertion.setdefault("weight", 1.0)
     family = assertion["family"]
+    family_budgets = {"context": 0.5, "delivered": 0.5}
+    missing_family = "context" if family == "delivered" else "delivered"
+    assertion["weight"] = family_budgets[family]
     threshold_manifest = {
-        "family_budgets": {family: 1.0},
+        "family_budgets": family_budgets,
         "reader_threshold": 1.0,
         "reader_stability_repetitions": 1,
         "reader_option_permutations": 1,
@@ -52,14 +55,15 @@ def _sealed_utility_artifact(assertion=None):
         "gate_manifest_hash": "gate-v1",
         "threshold_manifest": threshold_manifest,
         "cost_budgets": _COST_BUDGETS,
-        "family_budgets": {family: 1.0},
+        "family_budgets": family_budgets,
         "documents": {"d0": {"utility_weight_denominator": 1.0,
-                                "measurement_state": "measured",
+                                "measurement_state": "partial",
                                 "present_family_budgets": [family],
-                                "missing_family_budgets": [],
+                                "missing_family_budgets": [missing_family],
                                 "weight_groups": {
                                     family: {assertion["group_id"]: {
-                                        "assertion_ids": ["a1"], "weight": 1.0,
+                                        "assertion_ids": ["a1"],
+                                        "weight": family_budgets[family],
                                     }},
                                 },
                                 "assertion_ids": ["a1"],
@@ -256,6 +260,27 @@ def test_artifact_cf_frac_is_rejected_before_training_initialization(monkeypatch
     )
 
     with pytest.raises(SystemExit, match="--cf-frac.*--utility-artifact"):
+        tr.main()
+
+
+def test_utility_artifact_requires_roundtrip_before_training_initialization(monkeypatch):
+    monkeypatch.setattr(sys, "argv", [
+        "train_ranker.py",
+        "--reward", "surrogate",
+        "--utility-artifact", "utility.json",
+    ])
+    monkeypatch.setattr(
+        tr.torch,
+        "manual_seed",
+        lambda seed: pytest.fail("training initialization must not run"),
+    )
+    monkeypatch.setattr(
+        tr,
+        "roundtrip_batch",
+        lambda *args, **kwargs: pytest.fail("roundtrip must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="--utility-artifact.*--reward roundtrip"):
         tr.main()
 
 
@@ -982,6 +1007,29 @@ def test_utility_artifact_gate_requires_frozen_cost_budgets():
 
     with pytest.raises(SystemExit, match="cost budgets"):
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+@pytest.mark.parametrize("family_budgets", [
+    {"context": 1.0},
+    {"context": 0.5, "delivered": 0.5, "unknown": 0.1},
+    {"context": 0.0, "delivered": 1.0},
+    {"context": float("nan"), "delivered": 1.0},
+    {"context": float("inf"), "delivered": 1.0},
+])
+@pytest.mark.parametrize("entrypoint", [
+    tr.enforce_utility_artifact_gate,
+    tr.qa_utility_preflight_report,
+])
+def test_artifact_gate_and_preflight_require_exact_positive_family_budgets(
+    family_budgets, entrypoint,
+):
+    artifact = _verified_context_artifact()
+    artifact["family_budgets"] = family_budgets
+    artifact["threshold_manifest"]["family_budgets"] = family_budgets
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="family budgets"):
+        entrypoint(artifact, _frozen_anchor_environment())
 
 
 def test_utility_artifact_gate_requires_weight_groups():
