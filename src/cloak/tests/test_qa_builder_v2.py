@@ -759,23 +759,6 @@ def test_aci_adapter_builds_delivered_facts_only_from_authoritative_reference():
     assert condition["occurrence_ids"] == ["o-condition"]
 
 
-def test_package_rejects_dangling_occurrence_decision_links():
-    environment = {
-        "environment_hash": "env-hash",
-        "documents": {
-            "d1": {
-                "occurrences": [{"occurrence_id": "o1", "decision_id": "missing"}],
-                "decisions": [{"decision_id": "dec1", "controlled": True}],
-            }
-        },
-    }
-
-    with pytest.raises(ValueError, match="unknown decision links"):
-        package_utility_artifact(
-            environment,
-            {"d1": [{
-                "family": "delivered", "scope": "linked", "subtype": "content",
-                "occurrence_ids": ["o1"], "group_id": "condition:1",
 def _aci_delivered_environment():
     occurrences = [
         ("o-condition", "d-condition", "hypothyroidism", "health-condition"),
@@ -825,6 +808,7 @@ Hypothyroidism — Synthroid — thyroid labs
     assert structure["scoring_contract"] == {
         "kind": "required_sections",
         "sections": ["HISTORY OF PRESENT ILLNESS", "ASSESSMENT", "PLAN"],
+        "parseability": {"assessment_rows": 1, "plan_rows": 1},
     }
     assert "fields" not in structure["scoring_contract"]
 
@@ -841,6 +825,50 @@ Hypothyroidism — Synthroid — thyroid labs
     )
     assert structural_weight == pytest.approx(0.04)
     assert sum(row["weight"] for row in artifact["assertions"].values()) == pytest.approx(0.4)
+
+
+@pytest.mark.parametrize("structural_cap", [None, "0.1", True, -0.1, 1.1])
+def test_delivered_structure_requires_a_frozen_numeric_cap(structural_cap):
+    reference = """HISTORY OF PRESENT ILLNESS
+62-year-old male with hypothyroidism.
+ASSESSMENT
+Hypothyroidism — Endocrine — Stable
+PLAN
+Hypothyroidism — Synthroid — thyroid labs
+"""
+    candidates = AciTaskAdapter({"aci/D2N002": reference}).delivered_candidates(
+        "aci/D2N002", "unused", reference, _aci_delivered_environment()
+    )
+
+    with pytest.raises(ValueError, match="structural_cap"):
+        package_utility_artifact(
+            {"environment_hash": "env", "documents": {"aci/D2N002": _aci_delivered_environment()}},
+            {"aci/D2N002": candidates},
+            family_budgets={"context": 0.6, "delivered": 0.4},
+            structural_cap=structural_cap,
+            pins={},
+        )
+
+
+def test_aci_parser_accepts_schema_valid_inline_headings():
+    reference = """HISTORY OF PRESENT ILLNESS: 62-year-old male with hypothyroidism.
+ASSESSMENT: Hypothyroidism — Endocrine — Stable
+PLAN: Hypothyroidism — Synthroid — thyroid labs
+"""
+
+    candidates = AciTaskAdapter({"aci/D2N002": reference}).delivered_candidates(
+        "aci/D2N002", "unused", reference, _aci_delivered_environment()
+    )
+
+    structure = next(row for row in candidates if row["subtype"] == "structure")
+    assert structure["scoring_contract"]["sections"] == [
+        "HISTORY OF PRESENT ILLNESS", "ASSESSMENT", "PLAN",
+    ]
+    assert structure["scoring_contract"]["parseability"] == {
+        "assessment_rows": 1,
+        "plan_rows": 1,
+    }
+    assert any(row["subtype"] == "exact_relation" for row in candidates)
 
 
 def test_score_utility_evaluates_every_deterministic_delivered_contract():
@@ -903,6 +931,40 @@ Hypothyroidism — Synthroid — thyroid labs
     }
 
 
+    malformed = score_utility(
+        artifact,
+        "d1",
+        doc_p="unused",
+        out_final="""HISTORY OF PRESENT ILLNESS
+62-year-old male with hypothyroidism.
+ASSESSMENT
+Hypothyroidism stable
+PLAN
+Hypothyroidism — Synthroid — thyroid labs
+""",
+        reader=lambda questions, context: pytest.fail("reader must not be called"),
+    )
+
+    assert malformed["component_scores"]["structure"] == 0.0
+
+
+def test_package_rejects_dangling_occurrence_decision_links():
+    environment = {
+        "environment_hash": "env-hash",
+        "documents": {
+            "d1": {
+                "occurrences": [{"occurrence_id": "o1", "decision_id": "missing"}],
+                "decisions": [{"decision_id": "dec1", "controlled": True}],
+            }
+        },
+    }
+
+    with pytest.raises(ValueError, match="unknown decision links"):
+        package_utility_artifact(
+            environment,
+            {"d1": [{
+                "family": "delivered", "scope": "linked", "subtype": "content",
+                "occurrence_ids": ["o1"], "group_id": "condition:1",
                 "scoring_contract": {"kind": "contains", "value": "condition"},
             }]},
             family_budgets={"context": 0.6, "delivered": 0.4},

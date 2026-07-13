@@ -7,6 +7,7 @@ import os
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from numbers import Real
 
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
@@ -85,7 +86,9 @@ ACI_REQUIRED_SECTIONS = (
     "ASSESSMENT",
     "PLAN",
 )
-_ACI_HEADING_PATTERN = re.compile(r"^\s*([A-Z][A-Z /&-]*[A-Z])\s*:?\s*$")
+_ACI_HEADING_PATTERN = re.compile(
+    r"^\s*(?P<heading>[A-Z][A-Z /&-]*[A-Z])\s*(?::\s*(?P<content>.*))?$"
+)
 _ACI_ROW_DELIMITER = re.compile(r"\s+(?:—|–|-)\s+")
 
 
@@ -256,11 +259,12 @@ class AciTaskAdapter:
                     "evidence": {"authority": "human_reference"},
                 })
 
-        required_sections = [
-            section for section in ACI_REQUIRED_SECTIONS
-            if parsed_reference["sections"].get(section)
-        ]
-        if required_sections:
+        required_sections = list(ACI_REQUIRED_SECTIONS)
+        if (
+            all(parsed_reference["sections"].get(section) for section in required_sections)
+            and parsed_reference["assessment_rows"]
+            and parsed_reference["plan_rows"]
+        ):
             candidates.append({
                 "family": "delivered",
                 "scope": "global",
@@ -270,6 +274,10 @@ class AciTaskAdapter:
                 "scoring_contract": {
                     "kind": "required_sections",
                     "sections": required_sections,
+                    "parseability": {
+                        "assessment_rows": len(parsed_reference["assessment_rows"]),
+                        "plan_rows": len(parsed_reference["plan_rows"]),
+                    },
                 },
                 "evidence": {"authority": "human_reference"},
             })
@@ -330,10 +338,13 @@ def _parse_aci_note(text: str) -> dict:
     for raw_line in text.splitlines():
         line = raw_line.strip()
         heading = _ACI_HEADING_PATTERN.match(line)
-        heading_name = heading.group(1).strip() if heading else ""
+        heading_name = heading.group("heading").strip() if heading else ""
         if heading_name in ACI_REQUIRED_SECTIONS:
             current_section = heading_name
             sections[current_section] = []
+            content = heading.group("content")
+            if content and content.strip():
+                sections[current_section].append(content.strip())
         elif line and current_section is not None:
             sections[current_section].append(line)
 
@@ -363,6 +374,27 @@ def _parse_aci_rows(lines: Sequence[str], fields: Sequence[str]) -> list[dict]:
         if len(values) == len(fields):
             rows.append(dict(zip(fields, values)))
     return rows
+
+
+def _validated_structural_cap(
+    assertions: Sequence[Mapping],
+    structural_cap: float | None,
+) -> float | None:
+    has_structure = any(
+        row.get("family") == "delivered" and row.get("subtype") == "structure"
+        for row in assertions
+    )
+    if structural_cap is None:
+        if has_structure:
+            raise ValueError("structural_cap is required for delivered structure assertions")
+        return None
+    if (
+        isinstance(structural_cap, bool)
+        or not isinstance(structural_cap, Real)
+        or not 0.0 < float(structural_cap) < 1.0
+    ):
+        raise ValueError("structural_cap must be a numeric value between zero and one")
+    return float(structural_cap)
 
 
 def _relation_argument_types_are_legal(
@@ -619,8 +651,7 @@ def assign_static_weights(
     structural_cap: float | None = None,
 ) -> tuple[list[dict], dict]:
     """Assign family -> group -> assertion weights with a fixed family denominator."""
-    if structural_cap is not None and not 0.0 <= float(structural_cap) <= 1.0:
-        raise ValueError("structural_cap must be between zero and one")
+    structural_cap = _validated_structural_cap(assertions, structural_cap)
     groups: dict[str, dict[str, list[Mapping]]] = defaultdict(lambda: defaultdict(list))
     for assertion in assertions:
         family = str(assertion["family"])
@@ -784,6 +815,10 @@ def package_utility_artifact(
             ],
         }
 
+    all_candidates = [
+        row for candidates in candidates_by_document.values() for row in candidates
+    ]
+    structural_cap = _validated_structural_cap(all_candidates, structural_cap)
     artifact = {
         "artifact_version": "utility-assertions-v1",
         "environment_hash": frozen_environment.get("environment_hash"),
@@ -1194,9 +1229,33 @@ def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: 
         return fact_score(out_final, str(contract.get("value", "")))
     if kind == "required_sections":
         sections = [str(section) for section in contract.get("sections") or []]
-        return float(bool(sections) and all(
-            parsed_output["sections"].get(section) for section in sections
-        ))
+        if (
+            not sections
+            or not set(ACI_REQUIRED_SECTIONS).issubset(sections)
+            or not all(parsed_output["sections"].get(section) for section in sections)
+        ):
+            return 0.0
+        parseability = contract.get("parseability") or {
+            "assessment_rows": 1,
+            "plan_rows": 1,
+        }
+        if not isinstance(parseability, Mapping):
+            return 0.0
+        expected_counts = {
+            name: parseability.get(name)
+            for name in ("assessment_rows", "plan_rows")
+        }
+        if any(
+            isinstance(count, bool) or not isinstance(count, int) or count < 1
+            for count in expected_counts.values()
+        ):
+            return 0.0
+        return float(
+            len(parsed_output["assessment_rows"])
+            == expected_counts["assessment_rows"]
+            and len(parsed_output["plan_rows"])
+            == expected_counts["plan_rows"]
+        )
     if kind == "field_value":
         section = str(contract.get("section", ""))
         field = str(contract.get("field", ""))
