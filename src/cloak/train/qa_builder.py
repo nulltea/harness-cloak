@@ -32,8 +32,8 @@ CONTEXT_READER_RESPONSE_SCHEMA = {
 }
 CONTEXT_READER_RESPONSE_FORMAT = {"type": "json_object"}
 CONTEXT_READER_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
-BUILDER_PIN = {"builder": "qa-builder-v2", "version": "assertion-compiler-v2"}
-UTILITY_SCORER_PIN_VERSION = "qa-utility-scorer-v1"
+BUILDER_PIN = {"builder": "qa-builder-v2", "version": "assertion-compiler-v3"}
+UTILITY_SCORER_PIN_VERSION = "qa-utility-scorer-v2"
 THRESHOLD_MANIFEST_SCHEMA = "qa-threshold-manifest-v1"
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"

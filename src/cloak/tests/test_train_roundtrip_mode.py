@@ -1308,6 +1308,29 @@ def test_utility_artifact_gate_rejects_live_reader_pin_mismatch():
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
 
 
+@pytest.mark.parametrize(("pin_name", "previous_pin", "message"), [
+    (
+        "builder_pin",
+        {"builder": "qa-builder-v2", "version": "assertion-compiler-v2"},
+        "live builder",
+    ),
+    (
+        "scorer_pin",
+        {**utility_scorer_pin(), "pin_version": "qa-utility-scorer-v1"},
+        "live scorer",
+    ),
+])
+def test_utility_artifact_gate_rejects_previous_semantic_pins(
+    pin_name, previous_pin, message
+):
+    artifact = _sealed_utility_artifact()
+    artifact[pin_name] = previous_pin
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match=message):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
 def test_qa_preflight_recomputes_counts_and_enforces_call_budgets():
     artifact = _verified_context_artifact()
     state = artifact["documents"]["d0"]
