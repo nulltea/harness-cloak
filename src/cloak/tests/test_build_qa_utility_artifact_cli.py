@@ -52,7 +52,8 @@ def test_build_qa_utility_artifact_cli(tmp_path):
          "--env", "data/ranker_env.json",
          "--arms", "data/task_arms_tau0.02.json",
          "--corpus", "clinical", "--doc-id", "aci/D2N002",
-         "--threshold-manifest", str(manifest_path), "--out", str(out_path)],
+         "--threshold-manifest", str(manifest_path), "--build-cache", str(tmp_path / "cache"),
+         "--out", str(out_path)],
         cwd=HOST_REPO,
         env={
             **os.environ,
@@ -106,7 +107,7 @@ def test_build_qa_utility_artifact_cli(tmp_path):
     )
     report = json.loads(report_line.removeprefix("qa preflight: "))
     assert report["documents"]["aci/D2N002"]["measurement_state"] == "partial"
-    assert report["documents"]["aci/D2N002"]["accepted_assertion_count"] == 12
+    assert report["documents"]["aci/D2N002"]["accepted_assertion_count"] == 13
     assert report["documents"]["aci/D2N002"]["missing_family_budgets"] == ["context"]
     assert report["call_budget"]["base"]["remote_round_trips_per_rollout"] == 1
     assert report["call_budget"]["counterfactual"]["remote_round_trips_per_selected_pair"] == 1
@@ -115,6 +116,12 @@ def test_build_qa_utility_artifact_cli(tmp_path):
     assert artifact["documents"]["aci/D2N002"][
         "authoritative_reference_hash"
     ].startswith("sha256:")
+
+    cached = subprocess.run(result.args, cwd=HOST_REPO, env=result.env if hasattr(result, "env") else {
+        **os.environ,
+        "PYTHONPATH": f"{WORKTREE / 'src'}:{WORKTREE / 'scripts'}",
+    }, text=True, capture_output=True)
+    assert cached.returncode == 0, cached.stderr
 
 
 def test_build_cli_floor_override_changes_frozen_legality_and_identity(tmp_path, monkeypatch):
@@ -148,7 +155,7 @@ def test_build_cli_floor_override_changes_frozen_legality_and_identity(tmp_path,
     assert override_environment["environment_hash"] != default_environment["environment_hash"]
     assert override_environment["effective_floors"]["DEM"] == 1e30
     assert all(
-        action["mode"] == "placeholder" or not action["legal"]
+        action["mode"] in {"keep", "placeholder"} or not action["legal"]
         for decision in override_environment["documents"]["aci/D2N002"]["decisions"]
         for action in decision["actions"]
     )
@@ -249,6 +256,7 @@ def test_context_build_cli_marks_injected_dependencies_nonproduction(
         "--threshold-manifest", str(manifest_path),
         "--out", str(out_path),
         "--relation-teacher",
+        "--build-cache", str(tmp_path / "cache"),
     ])
     artifact, frozen_environment = builder_cli.build_from_files(
         args,
@@ -299,3 +307,30 @@ def test_build_cli_rejects_invalid_family_budgets_before_source_loading(
 
     with pytest.raises(SystemExit, match="family budgets"):
         builder_cli.build_from_files(args)
+
+
+def test_build_cache_reuses_complete_artifact_and_rejects_corruption(tmp_path):
+    cache = builder_cli.ArtifactBuildCache(tmp_path / "cache")
+    key = "sha256:test-key"
+    artifact = {
+        "artifact_hash": "sha256:artifact",
+        "documents": {"d1": {"measurement_state": "partial"}},
+    }
+
+    cache.store(key, artifact)
+
+    assert cache.load(key) == artifact
+    path = cache.path_for(key)
+    path.write_text("not json")
+    with pytest.raises(SystemExit, match="build cache"):
+        cache.load(key)
+
+
+def test_teacher_escalation_requires_artifact_build_cache():
+    args = builder_cli.parse_args([
+        "--env", "env.json", "--arms", "arms.json", "--doc-id", "aci/D2N002",
+        "--threshold-manifest", "manifest.json", "--out", "artifact.json", "--relation-teacher",
+    ])
+
+    with pytest.raises(SystemExit, match="build-cache"):
+        builder_cli.require_build_cache_for_teacher(args)

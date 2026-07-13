@@ -7,8 +7,10 @@ import json
 import math
 import os
 import re
+import time
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import Path
 
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
@@ -33,8 +35,8 @@ CONTEXT_READER_RESPONSE_SCHEMA = {
 }
 CONTEXT_READER_RESPONSE_FORMAT = {"type": "json_object"}
 CONTEXT_READER_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
-BUILDER_PIN = {"builder": "qa-builder-v2", "version": "assertion-compiler-v4"}
-UTILITY_SCORER_PIN_VERSION = "qa-utility-scorer-v3"
+BUILDER_PIN = {"builder": "qa-builder-v2", "version": "assertion-compiler-v5"}
+UTILITY_SCORER_PIN_VERSION = "qa-utility-scorer-v4"
 THRESHOLD_MANIFEST_SCHEMA = "qa-threshold-manifest-v1"
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
@@ -165,7 +167,7 @@ def context_reader_pin() -> dict:
 
 
 def builder_pin() -> dict:
-    return dict(BUILDER_PIN)
+    return {**BUILDER_PIN, "implementation_sha256": _qa_builder_source_digest()}
 
 
 def utility_scorer_pin() -> dict:
@@ -174,6 +176,7 @@ def utility_scorer_pin() -> dict:
         "scorer": "qa-builder-v2-score-utility",
         "reader": context_reader_pin(),
         "delivered": {"kind": "fact-score", "version": "fact-score-v1"},
+        "builder_implementation_sha256": _qa_builder_source_digest(),
     }
 
 
@@ -249,6 +252,12 @@ _COST_BUDGET_FIELDS = {
     ),
 }
 
+_WALL_TIME_BUDGET_FIELDS = (
+    "artifact_build_seconds_per_document",
+    "base_seconds_per_rollout",
+    "counterfactual_seconds_per_selected_pair",
+)
+
 _FAMILY_BUDGET_NAMES = ("context", "delivered")
 
 
@@ -286,6 +295,23 @@ def normalize_cost_budgets(value: Mapping) -> dict:
     return normalized
 
 
+def normalize_wall_time_budgets(value: Mapping | None) -> dict:
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping) or set(value) != set(_WALL_TIME_BUDGET_FIELDS):
+        raise ValueError("wall time budgets require all build/base/counterfactual fields")
+    normalized = {}
+    for field in _WALL_TIME_BUDGET_FIELDS:
+        amount = value[field]
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+            raise ValueError(f"wall time budget {field} must be a nonnegative finite number")
+        amount = float(amount)
+        if not math.isfinite(amount) or amount < 0.0:
+            raise ValueError(f"wall time budget {field} must be a nonnegative finite number")
+        normalized[field] = amount
+    return normalized
+
+
 def normalize_threshold_manifest(value: Mapping) -> dict:
     """Return the canonical threshold manifest embedded and hashed by the artifact."""
     if not isinstance(value, Mapping):
@@ -293,21 +319,24 @@ def normalize_threshold_manifest(value: Mapping) -> dict:
     normalized = dict(value)
     normalized["family_budgets"] = normalize_family_budgets(value.get("family_budgets"))
     normalized["cost_budgets"] = normalize_cost_budgets(value.get("cost_budgets"))
+    if "wall_time_budgets" in value:
+        normalized["wall_time_budgets"] = normalize_wall_time_budgets(value["wall_time_budgets"])
     for field in ("reader_stability_repetitions", "reader_option_permutations"):
         count = value.get(field, 1)
         if isinstance(count, bool) or not isinstance(count, int):
             raise ValueError(f"{field} must be an integer")
         normalized[field] = count
+    min_context = value.get("min_context_assertions", 0)
+    if isinstance(min_context, bool) or not isinstance(min_context, int) or min_context < 0:
+        raise ValueError("min_context_assertions must be a nonnegative integer")
     try:
-        normalized["min_context_assertions"] = int(value.get("min_context_assertions", 0))
+        normalized["min_context_assertions"] = min_context
         normalized["reader_threshold"] = float(value.get("reader_threshold", 1.0))
         normalized["reader_stability_threshold"] = float(
             value.get("reader_stability_threshold", 1.0)
         )
     except (TypeError, ValueError) as error:
         raise ValueError("threshold manifest has invalid reader thresholds") from error
-    if normalized["min_context_assertions"] < 0:
-        raise ValueError("min_context_assertions must be nonnegative")
     if not 0.0 <= normalized["reader_threshold"] <= 1.0:
         raise ValueError("reader_threshold must be in [0, 1]")
     if (
@@ -343,7 +372,8 @@ def floor_for_runtime_type(runtime_type: str, floors: Mapping[str, float]) -> fl
 
 
 def action_is_floor_legal(action: Mapping, floor: float) -> bool:
-    return action.get("mode") == "placeholder" or float(action.get("aset", 0.0)) >= floor
+    mode = "keep" if action.get("keep") else action.get("mode")
+    return mode in {"keep", "placeholder"} or float(action.get("aset", 0.0)) >= floor
 
 
 class OpenRouterRelationTeacher:
@@ -439,6 +469,37 @@ def read_context_batch(
 _batched_context_reader = None
 
 
+def _masked_local_context(document: str, target: Mapping, protected_values: Sequence[str]) -> str:
+    """Return a bounded sentence/window with no usable protected locator."""
+    start, end = target.get("start"), target.get("end")
+    surface = str(target.get("surface", ""))
+    if not isinstance(start, int) or not isinstance(end, int) or document[start:end] != surface:
+        match = re.search(re.escape(surface), document, re.IGNORECASE)
+        if match is None:
+            return ""
+        start, end = match.span()
+    left = max(document.rfind(".", 0, start) + 1, start - 180)
+    right_stop = document.find(".", end)
+    right = min(len(document), right_stop + 1 if right_stop >= 0 else end + 180)
+    rows = [(start, end, "[BLANK]")]
+    for value in protected_values:
+        if value and canon(value) != canon(surface):
+            rows.extend((left + match.start(), left + match.end(), "[SENSITIVE]")
+                        for match in re.finditer(re.escape(value), document[left:right], re.IGNORECASE))
+    local = document[left:right]
+    adjusted = []
+    for row_start, row_end, replacement in rows:
+        if row_start >= left and row_end <= right:
+            adjusted.append((row_start - left, row_end - left, replacement))
+    for row_start, row_end, replacement in sorted(adjusted, reverse=True):
+        local = local[:row_start] + replacement + local[row_end:]
+    return " ".join(local.split())
+
+
+def _is_informative_semantic_property(value: str) -> bool:
+    return canon(value) not in {"", "something", "something else", "thing", "item", "entity"}
+
+
 class AciTaskAdapter:
     """Authoritative deterministic ACI delivered facts and relation compilation."""
 
@@ -465,9 +526,20 @@ class AciTaskAdapter:
             if decision_id is None or not occurrence.get("controlled", True):
                 continue
             occurrences_by_decision[str(decision_id)].append(occurrence)
+        decisions = {
+            str(row["decision_id"]): row for row in environment_document.get("decisions", [])
+        }
+        protected_values = [
+            value
+            for occurrence in environment_document.get("occurrences", [])
+            for value in [occurrence.get("surface", ""), *(occurrence.get("aliases") or [])]
+        ]
         for decision_id, occurrences in occurrences_by_decision.items():
             surface = str(occurrences[0].get("surface", ""))
-            if not surface or not _contains(reference, surface):
+            if not surface:
+                continue
+            authority_text = reference if _contains(reference, surface) else document
+            if not _contains(authority_text, surface):
                 continue
             candidates.append({
                 "family": "delivered",
@@ -476,7 +548,40 @@ class AciTaskAdapter:
                 "occurrence_ids": [str(row["occurrence_id"]) for row in occurrences],
                 "group_id": f"content:{decision_id}",
                 "scoring_contract": {"kind": "contains", "value": surface},
-                "evidence": {"authority": "human_reference"},
+                "evidence": {
+                    "authority": "human_reference" if authority_text == reference else "doc_orig",
+                    "quote": surface,
+                },
+            })
+            decision = decisions.get(decision_id)
+            if decision is None:
+                continue
+            levels = [
+                action for action in decision.get("actions", [])
+                if action.get("legal", True)
+                and action.get("mode") == "level"
+                and not action.get("keep")
+                and action.get("fill")
+            ]
+            if not levels:
+                continue
+            property_level = str(levels[-1]["fill"])
+            masked = _masked_local_context(document, occurrences[0], protected_values)
+            if not masked or not _is_informative_semantic_property(property_level):
+                continue
+            candidates.append({
+                "family": "context",
+                "scope": "linked",
+                "subtype": "semantic_property",
+                "occurrence_ids": [str(row["occurrence_id"]) for row in occurrences],
+                "group_id": f"semantic:{decision_id}:{canon(property_level)}",
+                "question": (
+                    f"Masked local context: {masked}\n"
+                    "What broad semantic category is retained for [BLANK]?"
+                ),
+                "accepted_values": [property_level],
+                "decision_requirements": {decision_id: property_level},
+                "evidence": {"authority": "frozen_lattice", "masked_context": masked},
             })
 
         demographic = re.search(
@@ -484,7 +589,8 @@ class AciTaskAdapter:
         )
         if demographic:
             for name, value in zip(("age", "sex"), demographic.groups()):
-                if _contains(reference, value):
+                authority_text = reference if _contains(reference, value) else document
+                if _contains(authority_text, value):
                     candidates.append({
                         "family": "delivered",
                         "scope": "global",
@@ -492,7 +598,10 @@ class AciTaskAdapter:
                         "occurrence_ids": [],
                         "group_id": f"demographic:{name}",
                         "scoring_contract": {"kind": "contains", "value": value},
-                        "evidence": {"authority": "human_reference"},
+                        "evidence": {
+                            "authority": "human_reference" if authority_text == reference else "doc_orig",
+                            "quote": value,
+                        },
                     })
         return candidates
 
@@ -512,6 +621,11 @@ class AciTaskAdapter:
 def _stable_hash(value) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _qa_builder_source_digest() -> str:
+    """Conservatively bind pins to the complete live QA-builder implementation."""
+    return "sha256:" + hashlib.sha256(Path(__file__).read_bytes()).hexdigest()
 
 
 def _contains(text: str, value: str) -> bool:
@@ -899,6 +1013,8 @@ def package_utility_artifact(
     *,
     family_budgets: Mapping[str, float],
     pins: Mapping,
+    document_failures: Mapping[str, Mapping] | None = None,
+    document_build_seconds: Mapping[str, float] | None = None,
 ) -> dict:
     """Compile validated candidates into one deterministic, link-checked utility artifact."""
     family_budgets = normalize_family_budgets(family_budgets)
@@ -997,18 +1113,23 @@ def package_utility_artifact(
         for row in weighted:
             assertions[row["assertion_id"]] = row
         missing_families = weight_state["missing_family_budgets"]
+        build_failure = dict((document_failures or {}).get(doc_id) or {})
         documents[doc_id] = {
             "environment_document_hash": environment_document.get(
                 "environment_document_hash", _stable_hash(environment_document)
             ),
+            **({"artifact_build_seconds": float(document_build_seconds[doc_id])}
+               if document_build_seconds is not None and doc_id in document_build_seconds else {}),
             **{
                 field: environment_document[field]
                 for field in ("source_hash", "authoritative_reference_hash")
                 if field in environment_document
             },
             "measurement_state": (
+                "build_failed" if build_failure else
                 "unsupported" if not weighted else "partial" if missing_families else "measured"
             ),
+            **({"build_failure": build_failure} if build_failure else {}),
             **weight_state,
             "weight_groups": _weight_group_state(weighted, family_budgets),
             "assertion_ids": [row["assertion_id"] for row in weighted],
@@ -1203,6 +1324,12 @@ def frozen_occurrences_from_arms(arms: Mapping) -> dict[str, list[dict]]:
     }
 
 
+def _infrastructure_failure(stage: str, error: Exception) -> dict:
+    if isinstance(error, (AssertionError, AttributeError, KeyError, NameError, TypeError)):
+        raise error
+    return {"stage": stage, "reason": type(error).__name__}
+
+
 def build_utility_artifact(
     frozen_environment: Mapping,
     task_adapter,
@@ -1225,8 +1352,11 @@ def build_utility_artifact(
     stability_threshold = frozen_threshold_manifest["reader_stability_threshold"]
     candidates_by_document: dict[str, list[dict]] = {}
     rejection_counts: dict[str, int] = defaultdict(int)
+    document_failures: dict[str, dict] = {}
+    document_build_seconds: dict[str, float] = {}
 
     for doc_id, environment_document in frozen_environment.get("documents", {}).items():
+        started_at = time.perf_counter()
         source = source_documents[doc_id]
         if (
             environment_document.get("source_hash") is not None
@@ -1254,6 +1384,8 @@ def build_utility_artifact(
                 doc_id, source, environment_document
             )
         ]
+        if min_context == 0 and reader is read_context_batch:
+            candidates = [row for row in candidates if row.get("family") != "context"]
         context_count = sum(row.get("family") == "context" for row in candidates)
         if context_count < min_context and relation_teacher is not None:
             try:
@@ -1278,7 +1410,8 @@ def build_utility_artifact(
                             "answer_leakage", "protected_locator"
                         } else "invalid"
                         rejection_counts[stable_reason] += 1
-            except Exception:
+            except Exception as error:
+                document_failures[doc_id] = _infrastructure_failure("relation_teacher", error)
                 rejection_counts["generation_failed"] += 1
 
         decisions = environment_document.get("decisions", [])
@@ -1296,6 +1429,8 @@ def build_utility_artifact(
 
         accepted = []
         for candidate in candidates:
+            if doc_id in document_failures and candidate.get("family") == "context":
+                continue
             if candidate.get("family") != "context":
                 accepted.append(candidate)
                 continue
@@ -1317,9 +1452,10 @@ def build_utility_artifact(
                     option_permutations=option_permutations,
                     stability_threshold=stability_threshold,
                 )
-            except Exception:
+            except Exception as error:
+                document_failures[doc_id] = _infrastructure_failure("context_reader", error)
                 rejection_counts["infrastructure_failed"] += 1
-                continue
+                break
             evidence_row = next(iter(validation_evidence.values()))
             if not validated:
                 if evidence_row["verdict"] == "unstable":
@@ -1343,6 +1479,20 @@ def build_utility_artifact(
                 "validation": evidence_row,
             }
             accepted.append(row)
+        elapsed = time.perf_counter() - started_at
+        document_build_seconds[doc_id] = elapsed
+        wall_budgets = frozen_threshold_manifest.get("wall_time_budgets", {})
+        if (
+            wall_budgets
+            and elapsed > wall_budgets["artifact_build_seconds_per_document"]
+        ):
+            document_failures[doc_id] = {
+                "stage": "artifact_build_wall_time",
+                "reason": "budget_exceeded",
+                "elapsed_seconds": elapsed,
+            }
+        if doc_id in document_failures:
+            document_failures[doc_id].setdefault("elapsed_seconds", elapsed)
         candidates_by_document[doc_id] = accepted
 
     manifest_hash = _stable_hash(frozen_threshold_manifest)
@@ -1380,8 +1530,12 @@ def build_utility_artifact(
             },
             "threshold_manifest": frozen_threshold_manifest,
         },
+        document_failures=document_failures,
+        document_build_seconds=document_build_seconds,
     )
     artifact["cost_budgets"] = cost_budgets
+    if "wall_time_budgets" in frozen_threshold_manifest:
+        artifact["wall_time_budgets"] = frozen_threshold_manifest["wall_time_budgets"]
     artifact["rejections"] = {"summary_by_reason": dict(rejection_counts)}
     artifact["artifact_hash"] = _stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"

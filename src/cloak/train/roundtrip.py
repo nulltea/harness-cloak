@@ -14,6 +14,7 @@ under the pin they were produced with.
 """
 import hashlib
 import json
+import time
 import os
 
 from cloak.extract import invert, invert_implementation_pin
@@ -195,6 +196,7 @@ def roundtrip_batch(
         from cloak import frozen_extractor
 
     def _one(j):
+        started_at = time.perf_counter()
         op = remote.generate(_template(j).format(doc=j["doc_p"]))
         if extractor_models is None:
             out_final, _ = invert(op, j["R"])
@@ -228,6 +230,7 @@ def roundtrip_batch(
                 ),
                 "component_scores": component_scores,
             }
+            result["wall_seconds"] = time.perf_counter() - started_at
             if extractor_version is not None:
                 result["extractor_version"] = extractor_version
             return result
@@ -258,6 +261,7 @@ def roundtrip_batch(
                 "decision_score": decision_score,
                 "schema_score": schema_score,
             }
+            result["wall_seconds"] = time.perf_counter() - started_at
             if extractor_version is not None:
                 result["extractor_version"] = extractor_version
             return result
@@ -265,6 +269,7 @@ def roundtrip_batch(
         by_fact = _max_by_fact(j["probes"], f1s)
         result = {"out_p": op, "out_final": out_final, "f1s": f1s,
                   "recall": (sum(by_fact.values()) / len(by_fact)) if by_fact else None}
+        result["wall_seconds"] = time.perf_counter() - started_at
         if extractor_version is not None:
             result["extractor_version"] = extractor_version
         return result

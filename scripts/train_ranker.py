@@ -59,7 +59,7 @@ from cloak.train.qa_builder import (AciTaskAdapter,
                                     relation_teacher_pin,
                                     utility_assertion_semantic_key,
                                     utility_scorer_pin)
-from cloak.train.utility_credit import provisional_advantages
+from cloak.train.utility_credit import document_utility, provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
@@ -531,6 +531,9 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
                         "doc_p": doc_p,
                         "artifact_hash": doc["utility_artifact"]["artifact_hash"],
                         "scorer_pin": scorer_pin,
+                        "utility_binding": utility_cache_binding(
+                            doc["utility_artifact"], doc["id"]
+                        ),
                     })
                 logps_l.append(logps)
                 ph_l.append(ph)
@@ -666,6 +669,7 @@ def exit_round(docs, policy, *, G, rt_workers, seed, utility_reward_cache=None):
                 "doc_p": doc_p,
                 "artifact_hash": doc["utility_artifact"]["artifact_hash"],
                 "scorer_pin": scorer_pin,
+                "utility_binding": utility_cache_binding(doc["utility_artifact"], doc["id"]),
             })
         else:
             cache_inputs.append(None)
@@ -692,6 +696,9 @@ def exit_round(docs, policy, *, G, rt_workers, seed, utility_reward_cache=None):
                     "doc_p": doc_p,
                     "artifact_hash": doc["utility_artifact"]["artifact_hash"],
                     "scorer_pin": scorer_pin,
+                    "utility_binding": utility_cache_binding(
+                        doc["utility_artifact"], doc["id"]
+                    ),
                 })
             else:
                 cache_inputs.append(None)
@@ -892,6 +899,7 @@ def utility_rollout_cache_identity(
     out_final=None,
     artifact_hash,
     scorer_pin,
+    utility_binding=None,
     result_hash=None,
 ):
     """Return the cache identity for one complete QA utility measurement."""
@@ -904,6 +912,7 @@ def utility_rollout_cache_identity(
         "doc_p": str(doc_p),
         "artifact_hash": str(artifact_hash),
         "scorer_pin": scorer_pin,
+        **({"utility_binding": utility_binding} if utility_binding is not None else {}),
     }
     if result_hash is not None:
         identity["result_hash"] = str(result_hash)
@@ -912,10 +921,26 @@ def utility_rollout_cache_identity(
     return _utility_hash(identity)
 
 
+def utility_cache_binding(artifact, doc_id):
+    """Freeze the exact component aggregation contract for a cached reward."""
+    state = artifact["documents"][doc_id]
+    assertions = artifact["assertions"]
+    assertion_ids = [str(value) for value in state.get("assertion_ids") or sorted(
+        assertion_id for assertion_id, assertion in assertions.items()
+        if assertion.get("doc_id") == doc_id
+    )]
+    return {
+        "artifact_hash": str(artifact["artifact_hash"]),
+        "assertion_ids": assertion_ids,
+        "weights": {assertion_id: assertions[assertion_id]["weight"] for assertion_id in assertion_ids},
+        "utility_weight_denominator": state["utility_weight_denominator"],
+    }
+
+
 class UtilityRewardCache:
     """Append-only content-addressed JSONL cache for complete QA reward results."""
 
-    _VERSION = 3
+    _VERSION = 4
     _RESULT_VERSION = "utility-roundtrip-result-v1"
     _RESULT_STATUS = "complete"
 
@@ -982,7 +1007,8 @@ class UtilityRewardCache:
         stored_results = []
         for inputs, result in items:
             request_identity = self._request_identity(**inputs)
-            stored_result = self._canonical_result(result)
+            binding = inputs.get("utility_binding")
+            stored_result = self._canonical_result(result, binding)
             result_hash = _utility_hash(stored_result)
             entry = {
                 "request_identity": request_identity,
@@ -992,6 +1018,7 @@ class UtilityRewardCache:
                     "result_hash": result_hash,
                 }),
                 "result": stored_result,
+                **({"utility_binding": binding} if binding is not None else {}),
             }
             validated = self._validate_entry(request_identity, entry)
             previous = staged.get(request_identity, self.entries.get(request_identity))
@@ -1006,7 +1033,7 @@ class UtilityRewardCache:
         return stored_results
 
     @classmethod
-    def _canonical_result(cls, result):
+    def _canonical_result(cls, result, utility_binding=None):
         if not isinstance(result, Mapping):
             raise ValueError("utility reward cache requires a complete round-trip result")
         stored = dict(result)
@@ -1031,7 +1058,37 @@ class UtilityRewardCache:
         for assertion_id, score in stored["component_scores"].items():
             if not isinstance(assertion_id, str) or not assertion_id or not cls._valid_score(score):
                 raise ValueError("utility reward cache requires a complete round-trip result")
+        if utility_binding is None:
+            raise ValueError("utility reward cache requires an exact utility binding")
+        cls._validate_binding(utility_binding, stored)
         return json.loads(json.dumps(stored, sort_keys=True, allow_nan=False))
+
+    @classmethod
+    def _validate_binding(cls, binding, result):
+        if not isinstance(binding, Mapping):
+            raise ValueError("utility reward cache has invalid utility binding")
+        ids = binding.get("assertion_ids")
+        weights = binding.get("weights")
+        denominator = binding.get("utility_weight_denominator")
+        if (
+            not isinstance(binding.get("artifact_hash"), str)
+            or not isinstance(ids, list)
+            or len(ids) != len(set(ids))
+            or not isinstance(weights, Mapping)
+            or set(weights) != set(ids)
+            or isinstance(denominator, bool)
+            or not isinstance(denominator, (int, float))
+            or not math.isfinite(float(denominator))
+            or float(denominator) <= 0.0
+        ):
+            raise ValueError("utility reward cache has invalid utility binding")
+        if set(result["component_scores"]) != set(ids):
+            raise ValueError("utility reward cache component assertion set does not match binding")
+        expected = sum(float(weights[assertion_id]) * float(result["component_scores"][assertion_id])
+                       for assertion_id in ids) / float(denominator)
+        if not math.isclose(float(result["recall"]), expected, rel_tol=0.0,
+                            abs_tol=_UTILITY_FLOAT_TOLERANCE):
+            raise ValueError("utility reward cache recall does not match utility binding")
 
     @staticmethod
     def _valid_score(value):
@@ -1048,7 +1105,10 @@ class UtilityRewardCache:
             raise ValueError("invalid cache entry")
         if entry.get("request_identity") != request_identity:
             raise ValueError("cache request identity mismatch")
-        result = cls._canonical_result(entry.get("result"))
+        binding = entry.get("utility_binding")
+        if binding is None:
+            raise ValueError("cache entry lacks exact utility binding")
+        result = cls._canonical_result(entry.get("result"), binding)
         result_hash = _utility_hash(result)
         if entry.get("result_hash") != result_hash:
             raise ValueError("cache result hash mismatch")
@@ -1063,6 +1123,7 @@ class UtilityRewardCache:
             "result_hash": result_hash,
             "storage_identity": expected_storage_identity,
             "result": result,
+            "utility_binding": binding,
         }
 
     def _persist(self, entries):
@@ -1172,6 +1233,9 @@ def greedy_roundtrip_readout(docs, policy, *, rt_workers, utility_reward_cache=N
                     "doc_p": doc_p,
                     "artifact_hash": doc["utility_artifact"]["artifact_hash"],
                     "scorer_pin": _utility_scorer_pin(doc),
+                    "utility_binding": utility_cache_binding(
+                        doc["utility_artifact"], doc["id"]
+                    ),
                 })
     if not use_cache:
         return roundtrip_batch(jobs, workers=rt_workers), phs, {
@@ -1265,12 +1329,15 @@ def _frozen_utility_manifest(artifact):
             from None
     if artifact_cost_budgets != cost_budgets:
         raise SystemExit("utility artifact has inconsistent frozen cost budgets")
+    wall_time_budgets = normalized_manifest.get("wall_time_budgets", {})
+    if artifact.get("wall_time_budgets", wall_time_budgets) != wall_time_budgets:
+        raise SystemExit("utility artifact has inconsistent frozen wall time budgets")
     return normalized_budgets, {
         "reader_threshold": reader_threshold,
         "repetitions": repetitions,
         "option_permutations": option_permutations,
         "stability_threshold": stability_threshold,
-    }, cost_budgets
+    }, cost_budgets, wall_time_budgets
 
 
 def _verify_context_anchor(assertion_id, assertion, live_document, occurrence_ids):
@@ -1559,7 +1626,7 @@ def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_ha
         raise SystemExit("utility artifact teacher_pin is not authoritative")
     if artifact.get("scorer_pin") != utility_scorer_pin():
         raise SystemExit("utility artifact scorer_pin does not match the live scorer")
-    family_budgets, thresholds, cost_budgets = _frozen_utility_manifest(artifact)
+    family_budgets, thresholds, cost_budgets, wall_time_budgets = _frozen_utility_manifest(artifact)
     artifact_documents = artifact.get("documents")
     if not isinstance(artifact_documents, dict):
         raise SystemExit("utility artifact has invalid document coverage")
@@ -1824,6 +1891,17 @@ def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_ha
             )
         context_count = sum(row.get("family") == "context" for row in rows)
         _verify_call_budget(doc_id, context_count, cost_budgets)
+        if wall_time_budgets:
+            elapsed = state.get("artifact_build_seconds")
+            if (
+                isinstance(elapsed, bool)
+                or not isinstance(elapsed, (int, float))
+                or not math.isfinite(float(elapsed))
+                or float(elapsed) > wall_time_budgets["artifact_build_seconds_per_document"]
+            ):
+                raise SystemExit(
+                    f"utility artifact document {doc_id} exceeds frozen artifact build wall-time budget"
+                )
     unassigned = sorted(set(assertions) - referenced_assertion_ids)
     if unassigned:
         raise SystemExit(f"utility artifact has unassigned assertions: {unassigned}")
@@ -1832,7 +1910,7 @@ def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_ha
 def qa_utility_preflight_report(artifact, environment):
     """Validate QA-local readiness and describe its fixed call surface without running it."""
     enforce_utility_artifact_gate(artifact, environment)
-    _family_budgets, _thresholds, cost_budgets = _frozen_utility_manifest(artifact)
+    _family_budgets, _thresholds, cost_budgets, wall_time_budgets = _frozen_utility_manifest(artifact)
     assertions = artifact["assertions"]
     documents = {}
     total_context = total_delivered = total_uncovered = 0
@@ -1865,6 +1943,7 @@ def qa_utility_preflight_report(artifact, environment):
             "uncovered_decision_ids": uncovered,
             "uncovered_decision_count": len(uncovered),
             "context_reader_batches_per_rollout": int(context_count > 0),
+            "artifact_build_seconds": state.get("artifact_build_seconds"),
         }
     return {
         "artifact_hash": artifact["artifact_hash"],
@@ -1894,6 +1973,12 @@ def qa_utility_preflight_report(artifact, environment):
             },
         },
         "cost_budgets": cost_budgets,
+        "wall_time": {
+            "budgets": wall_time_budgets,
+            "artifact_build_seconds_per_document": {
+                doc_id: row["artifact_build_seconds"] for doc_id, row in documents.items()
+            },
+        },
         "executed_remote_calls": 0,
     }
 

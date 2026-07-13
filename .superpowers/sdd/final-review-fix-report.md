@@ -463,3 +463,62 @@ exit 0, no output
 ### Concerns
 
 - Existing reward-v3 cache entries intentionally miss and require recomputation.
+
+## Final whole-change review fixes (2026-07-13)
+
+### Implemented fixes
+
+- KEEP and placeholder are unconditional action endpoints; floor filtering now applies only to
+  non-KEEP lattice levels through the shared legality helper used by environment freezing and
+  ranker span derivation.
+- ACI now derives bounded, masked, lattice-backed semantic-property context candidates before any
+  optional relation-teacher escalation. Delivered facts use human-reference evidence when present,
+  otherwise explicit source evidence with authority metadata.
+- Per-document teacher/compiler/reader infrastructure failures seal the artifact document as
+  `build_failed`; training preflight rejects it. Builder/scorer pins include a complete
+  QA-builder source digest.
+- Utility reward cache rows require exact assertion IDs, weights, denominator, and artifact binding;
+  score sets and recall are checked before store, load, or reuse. CLI artifact builds have a
+  fail-closed content-addressed cache and teacher escalation requires that cache.
+- Threshold manifests and preflight reports now carry optional explicit wall-time budgets and
+  deterministic build measurements; runtime round trips report measured wall seconds only.
+
+### RED evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_threshold_manifest_requires_non_boolean_nonnegative_min_context_assertions src/cloak/tests/test_qa_builder_v2.py::test_threshold_manifest_freezes_wall_time_budgets src/cloak/tests/test_qa_builder_v2.py::test_aci_d2n002_joint_anchor_keeps_unrelated_decisions_above_floor src/cloak/tests/test_qa_builder_v2.py::test_aci_deterministic_semantic_candidate_masks_all_protected_locators src/cloak/tests/test_qa_builder_v2.py::test_deterministic_semantic_candidate_accepts_through_fake_reader src/cloak/tests/test_qa_builder_v2.py::test_aci_delivered_facts_fall_back_to_explicit_source_with_authority_metadata src/cloak/tests/test_qa_builder_v2.py::test_context_reader_failure_marks_only_that_document_build_failed src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_reuses_complete_artifact_and_rejects_corruption src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_teacher_escalation_requires_artifact_build_cache src/cloak/tests/test_train_roundtrip_mode.py::test_utility_reward_cache_binds_assertion_weights_denominator_and_recall
+11 failed, 2 passed in 1.10s
+```
+
+### GREEN evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_extract.py
+229 passed in 3.86s
+
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/python -m py_compile src/cloak/train/qa_builder.py scripts/build_qa_utility_artifact.py scripts/train_ranker.py src/cloak/train/roundtrip.py src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_extract.py
+exit 0, no output
+
+git diff --check
+exit 0, no output
+```
+
+### Deterministic no-call smoke
+
+```text
+PYTHONPATH=/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/src:/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts /usr/bin/time -f 'wall_s=%e' -o /tmp/qa-builder-final-smoke.PuYx74/time.txt /home/timo/repos/agent-cloak/.venv/bin/python -u /home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts/build_qa_utility_artifact.py --env data/ranker_env.json --arms data/task_arms_tau0.02.json --corpus clinical --doc-id aci/D2N002 --threshold-manifest /tmp/qa-builder-final-smoke.PuYx74/manifest.json --build-cache /tmp/qa-builder-final-smoke.PuYx74/cache --out /tmp/qa-builder-final-smoke.PuYx74/aci-D2N002.utility.json
+wrote /tmp/qa-builder-final-smoke.PuYx74/aci-D2N002.utility.json: docs=1 assertions=13 rejections=0
+wall_s=0.95
+```
+
+- Artifact: `sha256:54089cb264147fcbbfea8b033ab3025565c65a44e14916a3499f1441dd8c156c`;
+  environment: `sha256:3218b2b377721ad33bde0ad61654a7b327f795c68fe52d52d6f427d6c1c6dcb8`.
+- Preflight recorded zero context assertions, 13 delivered assertions, no uncovered decisions,
+  `executed_remote_calls=0`, and a 0.0040-second build measurement under its explicit five-second ceiling.
+
+### Concerns
+
+- The smoke remains a partial, no-context artifact. It provides no context-utility, training,
+  privacy, attacker, or remote-runtime evidence.
+- Existing artifact and utility-reward cache entries lack the new builder/scorer digest or exact
+  cache binding and intentionally fail closed; rebuild them before reuse.

@@ -509,8 +509,8 @@ def test_exit_round_artifact_cache_coalesces_duplicate_floor_and_sample_jobs(mon
 
     def fake_roundtrip_exit(jobs, workers=1, reader_refresh=False):
         calls.append({"jobs": list(jobs), "workers": workers, "reader_refresh": reader_refresh})
-        return [{"recall": 0.4, "out_p": "remote", "out_final": job["doc_p"],
-                 "component_scores": {"delivered": 0.4}} for job in jobs]
+        return [{"recall": 0.2, "out_p": "remote", "out_final": job["doc_p"],
+                 "component_scores": {"a1": 0.4}} for job in jobs]
 
     cache = tr.UtilityRewardCache(tmp_path / "utility-cache.json")
     monkeypatch.setattr(tr, "sample_rollout", _rollout_sequence([0, 0]))
@@ -540,10 +540,10 @@ def test_exit_round_artifact_cache_reuses_persisted_full_results(monkeypatch, tm
         for job in jobs:
             candidate = "medication" in job["doc_p"].lower()
             results.append({
-                "recall": 0.9 if candidate else 0.2,
+                "recall": 0.45 if candidate else 0.1,
                 "out_p": "remote-candidate" if candidate else "remote-floor",
                 "out_final": job["doc_p"],
-                "component_scores": {"delivered": 0.9 if candidate else 0.2},
+                "component_scores": {"a1": 0.9 if candidate else 0.2},
             })
         if reader_refresh:
             return [{"recall": 0.8 if "medication" in job["doc_p"].lower() else 0.4}
@@ -787,6 +787,14 @@ def test_attach_utility_artifact_rejects_unusable_document_state(measurement_sta
         tr.attach_utility_artifact([_doc()], artifact)
 
 
+def _cache_binding(ids=("a1",), weights=None):
+    weights = weights or {assertion_id: 1.0 for assertion_id in ids}
+    return {
+        "artifact_hash": "artifact-v1", "assertion_ids": list(ids), "weights": weights,
+        "utility_weight_denominator": 1.0,
+    }
+
+
 def test_utility_reward_cache_reuses_full_result_and_reloads(tmp_path):
     cache_path = tmp_path / "utility-reward-cache.json"
     inputs = {
@@ -795,6 +803,7 @@ def test_utility_reward_cache_reuses_full_result_and_reloads(tmp_path):
         "doc_p": "generalized document",
         "artifact_hash": "artifact-v1",
         "scorer_pin": {"reader": "reader-v1", "remote": "remote-v1"},
+        "utility_binding": _cache_binding(("a1", "a2"), {"a1": 0.5, "a2": 0.5}),
     }
     result = {
         "out_p": "remote output",
@@ -839,6 +848,7 @@ def test_utility_reward_cache_fails_closed_on_result_tampering(tmp_path, field, 
         "doc_p": "generalized document",
         "artifact_hash": "artifact-v1",
         "scorer_pin": {"reader": "reader-v1", "remote": "remote-v1"},
+        "utility_binding": _cache_binding(("a1", "a2"), {"a1": 0.5, "a2": 0.5}),
     }
     cache = tr.UtilityRewardCache(cache_path)
     cache.store(**inputs, result={
@@ -886,6 +896,7 @@ def test_utility_reward_cache_rejects_invalid_scores(tmp_path, field, value):
             doc_p="generalized document",
             artifact_hash="artifact-v1",
             scorer_pin={"reader": "reader-v1"},
+            utility_binding=_cache_binding(),
             result=result,
         )
 
@@ -916,6 +927,7 @@ def test_cached_utility_roundtrips_persists_once_per_dispatched_batch(tmp_path, 
         "doc_p": f"document {index}",
         "artifact_hash": "artifact-v1",
         "scorer_pin": {"reader": "reader-v1"},
+        "utility_binding": _cache_binding(),
     } for index in range(2)]
 
     results = tr.cached_utility_roundtrips(
@@ -945,6 +957,7 @@ def _cache_inputs(label):
         "doc_p": f"document {label}",
         "artifact_hash": "artifact-v1",
         "scorer_pin": {"reader": "reader-v1"},
+        "utility_binding": _cache_binding(),
     }
 
 
@@ -1018,6 +1031,7 @@ def test_utility_reward_cache_rejects_changed_reward_identity(tmp_path):
         "doc_p": "generalized document",
         "artifact_hash": "artifact-v1",
         "scorer_pin": {"reader": "reader-v1", "remote": "remote-v1"},
+        "utility_binding": _cache_binding(),
     }
     cache.store(**inputs, result={
         "out_p": "remote output", "out_final": "delivered output",
@@ -1054,8 +1068,9 @@ def test_utility_reward_cache_invalidates_task_prompt_or_invert_provenance(
         "doc_p": "generalized document",
         "artifact_hash": doc["utility_artifact"]["artifact_hash"],
         "scorer_pin": tr._utility_scorer_pin(doc),
+        "utility_binding": tr.utility_cache_binding(doc["utility_artifact"], doc["id"]),
     }
-    cache.store(**inputs, result=_complete_cache_result("baseline"))
+    cache.store(**inputs, result={**_complete_cache_result("baseline"), "recall": 0.25})
 
     with monkeypatch.context() as context:
         context.setitem(rt.TASK_TEMPLATE, "clinical", "changed prompt\n{doc}")
@@ -1115,8 +1130,9 @@ def test_utility_reward_cache_rejects_previous_roundtrip_reward_pin(tmp_path):
         "doc_p": "generalized document",
         "artifact_hash": doc["utility_artifact"]["artifact_hash"],
         "scorer_pin": current_pin,
+        "utility_binding": tr.utility_cache_binding(doc["utility_artifact"], doc["id"]),
     }
-    cache.store(**inputs, result=_complete_cache_result("current"))
+    cache.store(**inputs, result={**_complete_cache_result("current"), "recall": 0.25})
     previous_pin = {
         **current_pin,
         "reward_pin_version": "qa-builder-v2-roundtrip-reward-v3",
@@ -1141,7 +1157,7 @@ def test_greedy_artifact_readout_reuses_persisted_reward_cache(tmp_path, monkeyp
         return [{
             "out_p": "remote output",
             "out_final": "delivered output",
-            "recall": 1.0,
+            "recall": 0.5,
             "component_scores": {"a1": 1.0},
             "f1s": [],
         } for _ in jobs]
@@ -2003,3 +2019,72 @@ def test_utility_artifact_gate_rejects_tampered_fixed_weights(mutate, message):
 
     with pytest.raises(SystemExit, match=message):
         tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
+def test_utility_reward_cache_binds_assertion_weights_denominator_and_recall(tmp_path):
+    binding = {
+        "artifact_hash": "artifact-v1",
+        "assertion_ids": ["a1", "a2"],
+        "weights": {"a1": 0.6, "a2": 0.4},
+        "utility_weight_denominator": 1.0,
+    }
+    inputs = {
+        "doc_id": "d0", "action_vector": {"dec1": "general-1"},
+        "doc_p": "generalized", "artifact_hash": "artifact-v1",
+        "scorer_pin": {"reader": "reader-v1"}, "utility_binding": binding,
+    }
+    cache = tr.UtilityRewardCache(tmp_path / "cache.jsonl")
+    cache.store(**inputs, result={
+        "out_p": "remote", "out_final": "final", "f1s": [],
+        "component_scores": {"a1": 1.0, "a2": 0.5}, "recall": 0.8,
+    })
+
+    assert cache.lookup(**inputs)["recall"] == pytest.approx(0.8)
+    with pytest.raises(ValueError, match="component assertion set"):
+        cache.store(**inputs, result={
+            "out_p": "remote", "out_final": "final", "f1s": [],
+            "component_scores": {"a1": 1.0}, "recall": 0.6,
+        })
+    with pytest.raises(ValueError, match="recall"):
+        cache.store(**inputs, result={
+            "out_p": "remote", "out_final": "final", "f1s": [],
+            "component_scores": {"a1": 1.0, "a2": 0.5}, "recall": 0.7,
+        })
+
+
+def test_qa_builder_source_digest_invalidates_live_gate_and_cache_identity(monkeypatch):
+    artifact = _sealed_utility_artifact()
+    baseline_pin = utility_scorer_pin()
+    baseline_identity = tr.utility_rollout_cache_identity(
+        doc_id="d0", action_vector={"dec1": "a1"}, doc_p="doc", artifact_hash="artifact-v1",
+        scorer_pin=baseline_pin,
+    )
+
+    import cloak.train.qa_builder as qa_builder
+    monkeypatch.setattr(qa_builder, "_qa_builder_source_digest", lambda: "sha256:changed")
+
+    with pytest.raises(SystemExit, match="live builder"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+    assert tr.utility_rollout_cache_identity(
+        doc_id="d0", action_vector={"dec1": "a1"}, doc_p="doc", artifact_hash="artifact-v1",
+        scorer_pin=utility_scorer_pin(),
+    ) != baseline_identity
+
+
+def test_preflight_reports_frozen_wall_time_budget_and_build_measurement():
+    artifact = _sealed_utility_artifact()
+    artifact["threshold_manifest"]["wall_time_budgets"] = {
+        "artifact_build_seconds_per_document": 1.0,
+        "base_seconds_per_rollout": 2.0,
+        "counterfactual_seconds_per_selected_pair": 2.0,
+    }
+    artifact["wall_time_budgets"] = artifact["threshold_manifest"]["wall_time_budgets"]
+    artifact["documents"]["d0"]["artifact_build_seconds"] = 0.25
+    _seal_artifact(artifact)
+
+    report = tr.qa_utility_preflight_report(artifact, {"environment_hash": "env-v1"})
+
+    assert report["wall_time"] == {
+        "budgets": artifact["wall_time_budgets"],
+        "artifact_build_seconds_per_document": {"d0": 0.25},
+    }

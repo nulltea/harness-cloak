@@ -4,7 +4,7 @@ status: done
 created: 2026-07-13
 model: RankerPolicy unchanged; QA-builder v2 deterministic ACI artifact/preflight smoke only
 dataset: ACI clinical `aci/D2N002` only (1 document; no train/validation split and no optimizer updates)
-result: "Offline QA artifact smoke passed its local gate: 12 delivered assertions, no context assertions, one uncovered decision, and zero external calls; this is not an RL, privacy, or empirical-utility result."
+result: "Offline QA artifact smoke passed its local gate: 13 delivered assertions, no context assertions, no uncovered decisions, explicit wall-time diagnostics, and zero external calls; this is not an RL, privacy, or empirical-utility result."
 tags: [ranker, qa-builder-v2, utility-artifact, preflight, deterministic-smoke, offline]
 companion: ../../docs/research/adverserial-RL.md
 ---
@@ -44,12 +44,13 @@ lambda conditioning or selection, or count-objective training implementation or 
 The exact smoke invocation was:
 
 ```bash
-PYTHONPATH=/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/src:/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts /usr/bin/time -f 'wall_s=%e' -o /tmp/qa-utility-broad-review.alPlZV/time.txt /home/timo/repos/agent-cloak/.venv/bin/python -u /home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts/build_qa_utility_artifact.py --env data/ranker_env.json --arms data/task_arms_tau0.02.json --corpus clinical --doc-id aci/D2N002 --threshold-manifest /tmp/qa-utility-broad-review.alPlZV/manifest.json --out /tmp/qa-utility-broad-review.alPlZV/aci-D2N002.utility.json
+PYTHONPATH=/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/src:/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts /usr/bin/time -f 'wall_s=%e' -o /tmp/qa-builder-final-smoke.PuYx74/time.txt /home/timo/repos/agent-cloak/.venv/bin/python -u /home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts/build_qa_utility_artifact.py --env data/ranker_env.json --arms data/task_arms_tau0.02.json --corpus clinical --doc-id aci/D2N002 --threshold-manifest /tmp/qa-builder-final-smoke.PuYx74/manifest.json --build-cache /tmp/qa-builder-final-smoke.PuYx74/cache --out /tmp/qa-builder-final-smoke.PuYx74/aci-D2N002.utility.json
 ```
 
 The temporary manifest contained `family_budgets={context: 0.6, delivered: 0.4}`,
-`min_context_assertions=0`, `task_pin=aci-v1`, and a planned maximum call surface of one remote
-round trip plus at most one context-reader batch per rollout or selected pair. The builder
+`min_context_assertions=0`, explicit five-second build/base/counterfactual wall-time diagnostic
+ceilings, and a planned maximum call surface of one remote round trip plus at most one
+context-reader batch per rollout or selected pair. The builder
 persisted the canonical live reader pin rather than accepting a manifest-supplied alias. The
 command ran from the host repository so the frozen input paths resolved there, while importing
 and executing the implementation from the requested worktree.
@@ -70,27 +71,26 @@ criterion for full RL, realized privacy, attacker resistance, or utility variati
 
 ## Results
 
-The smoke completed in **0.98 s** and printed:
+The smoke completed in **0.95 s** and printed:
 
 ```text
-wrote /tmp/qa-utility-broad-review.alPlZV/aci-D2N002.utility.json: docs=1 assertions=12 rejections=0
+wrote /tmp/qa-builder-final-smoke.PuYx74/aci-D2N002.utility.json: docs=1 assertions=13 rejections=0
 ```
 
-- Artifact hash: `sha256:dfab9263ac7fe9d75e64ea9d42787a0a67418c5a07846a344729ff7312c9836b`.
-- Environment hash: `sha256:89d55c3747386687abfd7c4cc044a5a90b5231fee4d346bd6dd82b2b7065b544`.
-- Builder/scorer pins: `qa-builder-v2-assertion-compiler-v4` and
-  `qa-utility-scorer-v3`; relation teacher: explicit disabled `relation-teacher-v1`.
+- Artifact hash: `sha256:54089cb264147fcbbfea8b033ab3025565c65a44e14916a3499f1441dd8c156c`.
+- Environment hash: `sha256:3218b2b377721ad33bde0ad61654a7b327f795c68fe52d52d6f427d6c1c6dcb8`.
+- Builder/scorer pins: `qa-builder-v2-assertion-compiler-v5` and
+  `qa-utility-scorer-v4`; both include the complete QA-builder source digest.
 - Reader pin: `Qwen3.5-0.8B` at `http://localhost:8060/v1`, batched prompt
   `qa-context-batch-prompt-v1`, response schema `qa-context-answers-v1`, temperature `0`,
   `max_tokens=512`, non-thinking JSON-object decoding.
 - Frozen source hash: `sha256:c7e96f34a4878d6e33a02b5bc4de2becce9d58208dc74ac80800a99a123b1fb5`;
   authoritative-reference hash:
   `sha256:c377953855c5df61ebf712fdf004ccb1b67172fc8f727454b6d0eacb721c48cc`.
-- Measurement state: `partial`; accepted assertions: **12** total (**0 context**, **12 delivered**).
+- Measurement state: `partial`; accepted assertions: **13** total (**0 context**, **13 delivered**).
 - Missing family: `context`; rejection summary: `{}`. The smoke therefore does not establish
   context-assertion support or context/delivered utility variation.
-- Uncovered decisions: **1** —
-  `sha256:35865283793e22780435488e33bfd0acc154cb517854b046479153013c72288f`.
+- Uncovered decisions: **0**.
 - Preflight planned calls: base `1` remote round trip/rollout and `0` context-reader batches for
   this document; counterfactual `1` extra remote round trip/selected pair and `0` context-reader
   batches. `executed_remote_calls=0`.
@@ -107,16 +107,17 @@ training, counterfactual scheduler, privacy attack, or utility ablation ran.
 
 ## Cost
 
-Wall time was **0.98 s**. The artifact build made **zero external or paid calls**. The reported
-base/counterfactual figures are pinned call-surface counts, not measured remote throughput or a
-ranker-v2 scheduler allocation.
+Wall time was **0.95 s**; the builder recorded **0.0040 s** for the document against the explicit
+five-second artifact-build ceiling. The artifact build made **zero external or paid calls**. The
+reported base/counterfactual figures are pinned call-surface counts, not measured remote throughput
+or a ranker-v2 scheduler allocation.
 
 ## Risks & caveats
 
 - This partial artifact has no accepted context family, so it cannot support any claim requiring
   contextual-generalization measurement or context/delivered variation.
-- One controlled decision remains uncovered; ranker-v2 fallback/counterfactual behavior was not
-  exercised here.
+- Ranker-v2 fallback/counterfactual behavior was not exercised here despite full linked delivered
+  coverage.
 - Strict environment-hash equality means a subset smoke artifact is intentionally not a
   certificate for a full-environment RL run; rebuild under the exact training environment.
 - No RL optimization, remote round trip, privacy attack, or empirical comparison was run.
@@ -127,7 +128,7 @@ ranker-v2 scheduler allocation.
 - Tests: `src/cloak/tests/test_train_roundtrip_mode.py`,
   `src/cloak/tests/test_build_qa_utility_artifact_cli.py`.
 - Frozen inputs: `data/ranker_env.json`, `data/task_arms_tau0.02.json`.
-- Transient smoke artifact, manifest, stdout, and timing: `/tmp/qa-utility-broad-review.alPlZV/`
+- Transient smoke artifact, manifest, stdout, cache, and timing: `/tmp/qa-builder-final-smoke.PuYx74/`
   (not a durable experiment artifact; left for local review and eventual system cleanup).
 - Predecessor: [RL-ranker v3 round-trip pilot](2026-07-06-RL-ranker-v3-roundtrip-pilot.md).
 - Successor: none recorded; any full ranker-v4 run must receive a new record rather than

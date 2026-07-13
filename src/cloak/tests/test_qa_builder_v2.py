@@ -52,6 +52,30 @@ def test_threshold_manifest_requires_integer_reader_counts(field, value):
         normalize_threshold_manifest(manifest)
 
 
+@pytest.mark.parametrize("value", [True, 1.0, "1", -1])
+def test_threshold_manifest_requires_non_boolean_nonnegative_min_context_assertions(value):
+    with pytest.raises(ValueError, match="min_context_assertions"):
+        normalize_threshold_manifest({
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "cost_budgets": COST_BUDGETS,
+            "min_context_assertions": value,
+        })
+
+
+def test_threshold_manifest_freezes_wall_time_budgets():
+    manifest = normalize_threshold_manifest({
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "cost_budgets": COST_BUDGETS,
+        "wall_time_budgets": {
+            "artifact_build_seconds_per_document": 3.0,
+            "base_seconds_per_rollout": 2.0,
+            "counterfactual_seconds_per_selected_pair": 2.0,
+        },
+    })
+
+    assert manifest["wall_time_budgets"]["artifact_build_seconds_per_document"] == 3.0
+
+
 def test_static_weights_keep_family_budgets_and_fixed_denominator():
     assertions = [
         {"assertion_id": "c1", "family": "context", "group_id": "condition:hypothyroid"},
@@ -156,6 +180,44 @@ def test_joint_anchor_uses_coarsest_entailing_actions_and_keep_elsewhere():
     assert anchor["action_vector_hash"].startswith("sha256:")
 
 
+def test_aci_d2n002_joint_anchor_keeps_unrelated_decisions_above_floor():
+    frozen = freeze_ranker_environment({
+        "k_floors": {"DEM": 1e30, "OTHER": 1e30},
+        "corpora": {"clinical": {"aci/D2N002": {"spans": [
+            {
+                "surface": "arthritis", "type": "DEM", "start": 0, "end": 9,
+                "actions": [
+                    {"fill": "a disease", "mode": "level", "aset": 1e31},
+                    {"fill": "arthritis", "mode": "level", "keep": True, "aset": 1.0},
+                    {"fill": None, "mode": "placeholder"},
+                ],
+            },
+            {
+                "surface": "tylenol", "type": "OTHER", "start": 10, "end": 17,
+                "actions": [
+                    {"fill": "a medicine", "mode": "level", "aset": 60.0},
+                    {"fill": "tylenol", "mode": "level", "keep": True, "aset": 1.0},
+                    {"fill": None, "mode": "placeholder"},
+                ],
+            },
+        ]}}},
+    })
+    decisions = frozen["documents"]["aci/D2N002"]["decisions"]
+    linked = next(row for row in decisions if row["canonical_key"] == "arthritis")
+    unrelated = next(row for row in decisions if row["canonical_key"] == "tylenol")
+
+    anchor = build_joint_representative_anchor({
+        "decision_requirements": {linked["decision_id"]: "a disease"},
+    }, decisions)
+
+    assert next(action for action in linked["actions"] if action["action_id"] == anchor[
+        "action_vector"][linked["decision_id"]
+    ])["mode"] == "level"
+    assert next(action for action in unrelated["actions"] if action["action_id"] == anchor[
+        "action_vector"][unrelated["decision_id"]
+    ])["mode"] == "keep"
+
+
 def test_joint_anchor_rejects_missing_entailing_action():
     assertion = {
         "assertion_id": "a1",
@@ -241,7 +303,7 @@ def test_freeze_binds_action_legality_and_identity_to_effective_floors():
     assert actions == {
         "an ACE inhibitor": False,
         "a medicine": True,
-        "lisinopril": False,
+        "lisinopril": True,
         None: True,
     }
     assert lower_floor["effective_floors"] == {"OTHER": 50.0, "drug": 10.0}
@@ -1204,7 +1266,7 @@ def test_builder_prefers_linked_aci_age_fact_over_global_duplicate():
     )
     age_rows = [
         row for row in artifact["assertions"].values()
-        if row["scoring_contract"]["value"] == "62-year-old"
+            if row.get("scoring_contract", {}).get("value") == "62-year-old"
     ]
 
     assert len(age_rows) == 1
@@ -1675,3 +1737,95 @@ def test_freeze_ranker_environment_preserves_uncontrolled_frozen_occurrence():
     assert occurrence["controlled"] is False
     assert occurrence["decision_id"] is None
     assert occurrence["aliases"] == ["Other name"]
+
+
+def _semantic_fixture(source="Arthritis is treated with Tylenol."):
+    environment = freeze_ranker_environment({
+        "corpora": {"clinical": {"d1": {"spans": [
+            {"surface": "Arthritis", "type": "health-condition", "start": 0, "end": 9,
+             "aliases": ["joint disease"], "actions": [
+                 {"fill": "a disease", "mode": "level", "aset": 100.0},
+                 {"fill": "Arthritis", "mode": "level", "keep": True, "aset": 1.0},
+                 {"fill": None, "mode": "placeholder"},
+             ]},
+            {"surface": "Tylenol", "type": "drug", "start": 25, "end": 32,
+             "actions": [
+                 {"fill": "a medicine", "mode": "level", "aset": 100.0},
+                 {"fill": "Tylenol", "mode": "level", "keep": True, "aset": 1.0},
+                 {"fill": None, "mode": "placeholder"},
+             ]},
+        ]}}},
+    }, source_documents={"d1": source}, authoritative_references={"d1": ""})
+    return source, environment
+
+
+def test_aci_deterministic_semantic_candidate_masks_all_protected_locators():
+    source, environment = _semantic_fixture()
+    candidates = AciTaskAdapter({"d1": ""}).deterministic_candidates(
+        "d1", source, environment["documents"]["d1"]
+    )
+    context = next(row for row in candidates if row["family"] == "context")
+
+    assert context["subtype"] == "semantic_property"
+    assert "[BLANK]" in context["question"] and "[SENSITIVE]" in context["question"]
+    assert "arthritis" not in context["question"].lower()
+    assert "tylenol" not in context["question"].lower()
+    assert context["accepted_values"] == ["a disease"]
+
+
+def test_deterministic_semantic_candidate_accepts_through_fake_reader():
+    source, environment = _semantic_fixture()
+    decisions = environment["documents"]["d1"]["decisions"]
+
+    def render(_doc_id, vector):
+        selected = [next(action for action in decision["actions"]
+                         if action["action_id"] == vector[decision["decision_id"]])
+                    for decision in decisions]
+        return "all placeholders" if all(action["mode"] == "placeholder" for action in selected) else source
+
+    artifact = build_utility_artifact(
+        environment, AciTaskAdapter({"d1": ""}), {"d1": source},
+        threshold_manifest={"family_budgets": {"context": 0.6, "delivered": 0.4},
+                            "cost_budgets": COST_BUDGETS, "min_context_assertions": 1},
+        pins={},
+        reader=lambda questions, context, **_kwargs: [
+            "" if context == "all placeholders" else "a disease" for _ in questions
+        ],
+        render_action_vector=render,
+    )
+
+    assert any(row["subtype"] == "semantic_property" for row in artifact["assertions"].values())
+
+
+def test_aci_delivered_facts_fall_back_to_explicit_source_with_authority_metadata():
+    source = "A 62-year-old male with arthritis is seen."
+    environment = freeze_ranker_environment({
+        "corpora": {"clinical": {"d1": {"spans": [{
+            "surface": "arthritis", "type": "health-condition", "start": 25, "end": 34,
+            "actions": [{"fill": "a disease", "mode": "level", "aset": 100.0},
+                        {"fill": "arthritis", "mode": "level", "keep": True, "aset": 1.0},
+                        {"fill": None, "mode": "placeholder"}],
+        }]}}},
+    })
+    rows = AciTaskAdapter({"d1": "brief reference omits facts"}).deterministic_candidates(
+        "d1", source, environment["documents"]["d1"]
+    )
+    delivered = [row for row in rows if row["family"] == "delivered"]
+
+    assert {row["scoring_contract"]["value"] for row in delivered} >= {"arthritis", "62-year-old", "male"}
+    assert all(row["evidence"]["authority"] == "doc_orig" for row in delivered)
+
+
+def test_context_reader_failure_marks_only_that_document_build_failed():
+    source, environment = _semantic_fixture()
+    artifact = build_utility_artifact(
+        environment, AciTaskAdapter({"d1": ""}), {"d1": source},
+        threshold_manifest={"family_budgets": {"context": 0.6, "delivered": 0.4},
+                            "cost_budgets": COST_BUDGETS, "min_context_assertions": 1},
+        pins={}, reader=lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("reader down")),
+        render_action_vector=lambda *_args: "placeholder context",
+    )
+
+    state = artifact["documents"]["d1"]
+    assert state["measurement_state"] == "build_failed"
+    assert state["build_failure"]["stage"] == "context_reader"
