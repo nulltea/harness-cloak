@@ -220,3 +220,62 @@ exit 0, no output
 ### Concerns
 
 - No new concern from this follow-up wave. The prior no-teacher-run and cache-v2 migration concerns remain unchanged.
+
+---
+
+## Semantic pin bump follow-up
+
+### Commit
+
+- Implementation commit: `55949362da5e812dd3e1cb3e3ac039d4200a40cb`
+
+### Changed files
+
+- `src/cloak/train/qa_builder.py`
+- `src/cloak/tests/test_train_roundtrip_mode.py`
+- `.superpowers/sdd/final-review-fix-report.md`
+
+### RED evidence
+
+Previous builder and runtime-scorer pins were still accepted:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_train_roundtrip_mode.py::test_utility_artifact_gate_rejects_previous_semantic_pins
+2 failed in 0.85s
+```
+
+Both parameterized cases failed with `DID NOT RAISE SystemExit`: `assertion-compiler-v2` matched the live builder pin, and `qa-utility-scorer-v1` matched the live scorer pin.
+
+### GREEN evidence
+
+Pin regression after bumping to `assertion-compiler-v3` and `qa-utility-scorer-v2`:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_train_roundtrip_mode.py::test_utility_artifact_gate_rejects_previous_semantic_pins
+2 passed in 0.81s
+```
+
+Required focused five-file suite:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py
+184 passed in 3.02s
+```
+
+Changed Python files compiled successfully:
+
+```text
+/home/timo/repos/agent-cloak/.venv/bin/python -m py_compile src/cloak/train/qa_builder.py src/cloak/tests/test_train_roundtrip_mode.py
+exit 0, no output
+```
+
+Patch hygiene:
+
+```text
+git diff --check
+exit 0, no output
+```
+
+### Concerns
+
+- Artifacts sealed with `assertion-compiler-v2` or `qa-utility-scorer-v1` now intentionally fail the live gate and must be rebuilt.
