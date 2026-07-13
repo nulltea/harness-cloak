@@ -767,6 +767,29 @@ def _utility_hash(value):
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def utility_rollout_cache_identity(
+    *,
+    doc_id,
+    action_vector,
+    doc_p,
+    out_final,
+    artifact_hash,
+    scorer_pin,
+):
+    """Return the cache identity for one complete QA utility measurement."""
+    return _utility_hash({
+        "doc_id": str(doc_id),
+        "action_vector": {
+            str(decision_id): str(action_id)
+            for decision_id, action_id in action_vector.items()
+        },
+        "doc_p": str(doc_p),
+        "out_final": str(out_final),
+        "artifact_hash": str(artifact_hash),
+        "scorer_pin": scorer_pin,
+    })
+
+
 def _utility_close(actual, expected):
     try:
         actual = float(actual)
@@ -1071,20 +1094,22 @@ def enforce_utility_artifact_gate(artifact, environment):
         raise SystemExit("utility artifact artifact_hash does not match its contents")
     family_budgets, thresholds = _frozen_utility_manifest(artifact)
     if artifact.get("environment_hash") != environment.get("environment_hash"):
-        live_documents = environment.get("documents", {})
-        for doc_id, state in artifact.get("documents", {}).items():
-            live_hash = live_documents.get(doc_id, {}).get("environment_document_hash")
-            if not live_hash or state.get("environment_document_hash") != live_hash:
-                raise SystemExit(
-                    f"utility artifact environment_hash/document {doc_id} "
-                    "does not match ranker environment"
-                )
+        raise SystemExit("utility artifact environment_hash does not match ranker environment")
     assertions = artifact.get("assertions", {})
     referenced_assertion_ids = set()
     for doc_id, state in artifact.get("documents", {}).items():
+        if state.get("measurement_state") in {"unsupported", "build_failed"}:
+            raise SystemExit(
+                f"utility artifact document {doc_id} has unusable measurement_state "
+                f"{state['measurement_state']!r}"
+            )
         assertion_ids = state.get("assertion_ids", [])
         if len(assertion_ids) != len(set(assertion_ids)):
             raise SystemExit(f"utility artifact document {doc_id} repeats assertion ids")
+        if not assertion_ids:
+            raise SystemExit(
+                f"utility artifact document {doc_id} has no accepted assertions"
+            )
         missing = [value for value in assertion_ids if value not in assertions]
         if missing:
             raise SystemExit(
@@ -1230,6 +1255,61 @@ def enforce_utility_artifact_gate(artifact, environment):
     unassigned = sorted(set(assertions) - referenced_assertion_ids)
     if unassigned:
         raise SystemExit(f"utility artifact has unassigned assertions: {unassigned}")
+
+
+def qa_utility_preflight_report(artifact, environment):
+    """Validate QA-local readiness and describe its fixed call surface without running it."""
+    enforce_utility_artifact_gate(artifact, environment)
+    assertions = artifact["assertions"]
+    documents = {}
+    total_context = total_delivered = total_uncovered = 0
+    for doc_id, state in artifact["documents"].items():
+        rows = [assertions[assertion_id] for assertion_id in state["assertion_ids"]]
+        context_count = sum(row.get("family") == "context" for row in rows)
+        delivered_count = sum(row.get("family") == "delivered" for row in rows)
+        total_context += context_count
+        total_delivered += delivered_count
+        uncovered = list(state.get("uncovered_decision_ids", []))
+        total_uncovered += len(uncovered)
+        documents[doc_id] = {
+            "measurement_state": state.get("measurement_state", "measured"),
+            "accepted_assertion_count": len(rows),
+            "context_assertion_count": context_count,
+            "delivered_assertion_count": delivered_count,
+            "missing_family_budgets": list(state.get("missing_family_budgets", [])),
+            "uncovered_decision_ids": uncovered,
+            "uncovered_decision_count": len(uncovered),
+            "context_reader_batches_per_rollout": int(context_count > 0),
+        }
+    return {
+        "artifact_hash": artifact["artifact_hash"],
+        "environment_hash": artifact["environment_hash"],
+        "documents": documents,
+        "totals": {
+            "documents": len(documents),
+            "accepted_assertions": total_context + total_delivered,
+            "context_assertions": total_context,
+            "delivered_assertions": total_delivered,
+            "uncovered_decisions": total_uncovered,
+        },
+        "call_budget": {
+            "base": {
+                "remote_round_trips_per_rollout": 1,
+                "context_reader_batches_per_rollout": {
+                    doc_id: row["context_reader_batches_per_rollout"]
+                    for doc_id, row in documents.items()
+                },
+            },
+            "counterfactual": {
+                "remote_round_trips_per_selected_pair": 1,
+                "context_reader_batches_per_selected_pair": {
+                    doc_id: row["context_reader_batches_per_rollout"]
+                    for doc_id, row in documents.items()
+                },
+            },
+        },
+        "executed_remote_calls": 0,
+    }
 
 
 def main():

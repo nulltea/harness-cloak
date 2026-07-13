@@ -16,7 +16,7 @@ from cloak.train.qa_builder import (
     read_context_batch,
 )
 from cloak.train.reward import canon
-from train_ranker import assemble
+from train_ranker import assemble, qa_utility_preflight_report
 
 
 def _hash(payload) -> str:
@@ -165,6 +165,14 @@ def main(argv=None):
         f"wrote {output}: docs={len(artifact['documents'])} "
         f"assertions={len(artifact['assertions'])} "
         f"rejections={sum(artifact['rejections']['summary_by_reason'].values())}",
+        flush=True,
+    )
+    report = qa_utility_preflight_report(
+        artifact,
+        {"environment_hash": artifact["environment_hash"]},
+    )
+    print(
+        "qa preflight: " + json.dumps(report, sort_keys=True, separators=(",", ":")),
         flush=True,
     )
 

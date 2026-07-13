@@ -121,7 +121,7 @@ Commit task files with message `feat(rl): route QA utility credit by decision`.
 - Modify: `scripts/build_qa_utility_artifact.py`
 - Test: `src/cloak/tests/test_train_roundtrip_mode.py`
 - Test: `src/cloak/tests/test_build_qa_utility_artifact_cli.py`
-- Create: `research-wiki/training/2026-07-13-RL-ranker-v2-qa-utility-smoke.md`
+- Create: `research-wiki/training/2026-07-13-RL-ranker-v4-qa-utility-smoke.md`
 
 **Interfaces:**
 - Produces: artifact/environment identity gate and QA-specific preflight report.

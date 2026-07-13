@@ -508,7 +508,7 @@ def test_utility_artifact_gate_checks_environment_and_denominator():
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "other"})
 
 
-def test_utility_artifact_gate_accepts_subset_when_document_hash_matches():
+def test_utility_artifact_gate_rejects_subset_environment_hash_mismatch():
     artifact = _sealed_utility_artifact()
     artifact["environment_hash"] = "subset-env"
     artifact["documents"]["d0"]["environment_document_hash"] = "doc-v1"
@@ -523,11 +523,59 @@ def test_utility_artifact_gate_accepts_subset_when_document_hash_matches():
         },
     }
 
-    tr.enforce_utility_artifact_gate(artifact, full_environment)
-
-    full_environment["documents"]["d0"]["environment_document_hash"] = "changed"
-    with pytest.raises(SystemExit, match="document d0"):
+    with pytest.raises(SystemExit, match="environment_hash"):
         tr.enforce_utility_artifact_gate(artifact, full_environment)
+
+
+@pytest.mark.parametrize("measurement_state", ["unsupported", "build_failed"])
+def test_utility_artifact_gate_rejects_unmeasured_documents(measurement_state):
+    artifact = _sealed_utility_artifact()
+    artifact["documents"]["d0"]["measurement_state"] = measurement_state
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="measurement_state"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_artifact_gate_rejects_document_without_accepted_assertions():
+    artifact = _sealed_utility_artifact()
+    artifact["documents"]["d0"]["assertion_ids"] = []
+    artifact["assertions"] = {}
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="no accepted assertions"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_utility_rollout_cache_identity_covers_complete_reward_inputs():
+    baseline = tr.utility_rollout_cache_identity(
+        doc_id="d0",
+        action_vector={"dec1": "general-1"},
+        doc_p="generalized document",
+        out_final="delivered output",
+        artifact_hash="artifact-v1",
+        scorer_pin={"reader": "reader-v1", "extractor": "invert-v1"},
+    )
+    variants = [
+        {"doc_id": "d1"},
+        {"action_vector": {"dec1": "placeholder-1"}},
+        {"doc_p": "different generalized document"},
+        {"out_final": "different delivered output"},
+        {"artifact_hash": "artifact-v2"},
+        {"scorer_pin": {"reader": "reader-v2", "extractor": "invert-v1"}},
+    ]
+    inputs = {
+        "doc_id": "d0",
+        "action_vector": {"dec1": "general-1"},
+        "doc_p": "generalized document",
+        "out_final": "delivered output",
+        "artifact_hash": "artifact-v1",
+        "scorer_pin": {"reader": "reader-v1", "extractor": "invert-v1"},
+    }
+
+    assert baseline.startswith("sha256:")
+    for variant in variants:
+        assert tr.utility_rollout_cache_identity(**(inputs | variant)) != baseline
 
 
 def test_train_roundtrip_uses_structured_credit_when_scalar_utility_is_tied(monkeypatch):

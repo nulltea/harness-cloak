@@ -3,6 +3,8 @@ import os
 import subprocess
 from pathlib import Path
 
+import train_ranker as tr
+
 
 def test_build_qa_utility_artifact_cli(tmp_path):
     manifest_path = tmp_path / "manifest.json"
@@ -42,3 +44,12 @@ def test_build_qa_utility_artifact_cli(tmp_path):
         if row["scope"] == "linked"
     )
     assert "OpenRouter" not in result.stdout
+
+    report = tr.qa_utility_preflight_report(
+        artifact,
+        {"environment_hash": artifact["environment_hash"]},
+    )
+    assert report["documents"]["aci/D2N002"]["measurement_state"] == "partial"
+    assert report["call_budget"]["base"]["remote_round_trips_per_rollout"] == 1
+    assert report["call_budget"]["counterfactual"]["remote_round_trips_per_selected_pair"] == 1
+    assert report["executed_remote_calls"] == 0
