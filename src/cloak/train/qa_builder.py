@@ -8,12 +8,19 @@ import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
+from math import isfinite
 from numbers import Real
 
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
+CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v1"
+CONTEXT_READER_RESPONSE_SCHEMA = {"type": "answers-array", "version": 1}
+CONTEXT_READER_REVISION = "qa-reader-r1"
+READER_PIN_FIELDS = frozenset({
+    "model", "endpoint", "prompt_version", "response_schema", "revision",
+})
 RELATION_ONTOLOGY = (
     "treated_with",
     "monitored_by",
@@ -152,6 +159,16 @@ class OpenRouterRelationTeacher:
 class BatchedContextReader:
     """Pinned one-request reader for all context assertions on one document."""
 
+    @property
+    def pin(self) -> dict:
+        return {
+            "model": QA_MODEL,
+            "endpoint": QA_BASE_URL,
+            "prompt_version": CONTEXT_READER_PROMPT_VERSION,
+            "response_schema": deepcopy(CONTEXT_READER_RESPONSE_SCHEMA),
+            "revision": CONTEXT_READER_REVISION,
+        }
+
     def __init__(self, client=None):
         if client is None:
             from cloak.llm import LLMClient
@@ -196,6 +213,15 @@ def read_context_batch(questions: list[str], context: str) -> list[str]:
     if _batched_context_reader is None:
         _batched_context_reader = BatchedContextReader()
     return _batched_context_reader(questions, context)
+
+
+read_context_batch.pin = {
+    "model": QA_MODEL,
+    "endpoint": QA_BASE_URL,
+    "prompt_version": CONTEXT_READER_PROMPT_VERSION,
+    "response_schema": deepcopy(CONTEXT_READER_RESPONSE_SCHEMA),
+    "revision": CONTEXT_READER_REVISION,
+}
 
 
 class AciTaskAdapter:
@@ -342,6 +368,32 @@ class AciTaskAdapter:
                         properties.append(property_level)
                     supporting_actions[property_level].append(str(action["action_id"]))
             if not properties:
+                records.append(_rejection_record(
+                    reason="not_generated",
+                    detail_reason="no_legal_support_properties",
+                    attempt={
+                        "doc_id": doc_id,
+                        "decision_id": decision_id,
+                        "runtime_type": runtime_type,
+                        "occurrence_ids": occurrence_ids,
+                        "definition_version": "aci-semantic-property-v1",
+                    },
+                    evidence={
+                        "source": "deterministic_template",
+                        "decision_id": decision_id,
+                        "runtime_type": runtime_type,
+                        "occurrence_ids": occurrence_ids,
+                        "legal_action_hashes": [
+                            _stable_hash({
+                                "action_id": action.get("action_id"),
+                                "mode": action.get("mode"),
+                                "entails": list(action.get("entails") or []),
+                            })
+                            for action in decision.get("actions", [])
+                            if action.get("legal", True)
+                        ],
+                    },
+                ))
                 continue
 
             if type_contract is None:
@@ -480,34 +532,104 @@ class AciTaskAdapter:
         environment_document: Mapping,
     ) -> list[dict]:
         """Compile reference-backed ACI delivered assertions without clinical inference."""
-        del doc_id, document
         candidates = []
         parsed_reference = _parse_aci_note(reference)
+        parsed_source = _parse_aci_note(document)
         occurrences_by_decision: dict[str, list[Mapping]] = defaultdict(list)
         occurrences_by_surface: dict[str, list[Mapping]] = defaultdict(list)
+        occurrences_by_id = {}
         for occurrence in environment_document.get("occurrences", []):
             decision_id = occurrence.get("decision_id")
             if decision_id is None or not occurrence.get("controlled", True):
                 continue
+            occurrence_id = str(occurrence["occurrence_id"])
+            occurrences_by_id[occurrence_id] = occurrence
             occurrences_by_decision[str(decision_id)].append(occurrence)
             occurrences_by_surface[canon(str(occurrence.get("surface", "")))].append(
                 occurrence
             )
         for decision_id, occurrences in occurrences_by_decision.items():
             surface = str(occurrences[0].get("surface", ""))
-            if not surface or not _contains(reference, surface):
+            if not surface:
                 continue
-            candidates.append({
-                "family": "delivered",
-                "scope": "linked",
-                "subtype": "content",
-                "occurrence_ids": [str(row["occurrence_id"]) for row in occurrences],
-                "group_id": f"content:{decision_id}",
-                "scoring_contract": {"kind": "contains", "value": surface},
-                "evidence": {"authority": "human_reference"},
-            })
+            occurrence_ids = [str(row["occurrence_id"]) for row in occurrences]
+            if _contains(reference, surface):
+                reference_match = re.search(
+                    rf"(?<!\w){re.escape(surface)}(?!\w)",
+                    reference,
+                    flags=re.IGNORECASE,
+                )
+                candidates.append({
+                    "family": "delivered",
+                    "scope": "linked",
+                    "subtype": "content",
+                    "occurrence_ids": occurrence_ids,
+                    "group_id": f"content:{decision_id}",
+                    "scoring_contract": {"kind": "contains", "value": surface},
+                    "evidence": {
+                        "authority": "human_reference",
+                        "provenance": "delivered_reference",
+                        "reference_hash": _stable_hash(reference),
+                        "reference_span": (
+                            [reference_match.start(), reference_match.end()]
+                            if reference_match is not None else None
+                        ),
+                    },
+                })
+                continue
+            exact_spans = [
+                {
+                    "start": span[0],
+                    "end": span[1],
+                    "surface_hash": _stable_hash(str(occurrence.get("surface", ""))),
+                }
+                for occurrence in occurrences
+                if (span := _exact_occurrence_span(document, occurrence)) is not None
+            ]
+            if exact_spans:
+                candidates.append(_rejection_record(
+                    reason="not_generated",
+                    detail_reason="not_authoritative_for_delivery",
+                    attempt={
+                        "doc_id": doc_id,
+                        "coverage_kind": "controlled_source_fact",
+                        "decision_id": decision_id,
+                        "occurrence_ids": occurrence_ids,
+                        "source_hash": _stable_hash(document),
+                        "definition_version": "aci-delivered-authority-v1",
+                    },
+                    evidence={
+                        "source": "delivered_authority",
+                        "coverage_kind": "controlled_source_fact",
+                        "delivery_authority": "not_authoritative_for_delivery",
+                        "decision_id": decision_id,
+                        "occurrence_ids": occurrence_ids,
+                        "source_spans": exact_spans,
+                    },
+                ))
 
-        for name, value in parsed_reference["demographic"].items():
+        for name in ("age", "sex"):
+            if name in parsed_reference["demographic"]:
+                value = parsed_reference["demographic"][name]
+                evidence = {
+                    "authority": "human_reference",
+                    "provenance": "delivered_reference",
+                    "reference_hash": _stable_hash(reference),
+                    "reference_span": parsed_reference["demographic_evidence"][name],
+                }
+            elif name in parsed_source["demographic"]:
+                value = parsed_source["demographic"][name]
+                evidence = {
+                    "authority": "source_document_task_schema_fallback",
+                    "provenance": "exact_doc_orig",
+                    "source_span": parsed_source["demographic_evidence"][name],
+                    "source_hash": _stable_hash(document),
+                    "value_hash": _stable_hash(value),
+                    "task_schema_required": True,
+                    "reference_missing": True,
+                }
+            else:
+                continue
             candidates.append({
                 "family": "delivered",
                 "scope": "global",
@@ -520,7 +642,7 @@ class AciTaskAdapter:
                     "field": name,
                     "value": value,
                 },
-                "evidence": {"authority": "human_reference"},
+                "evidence": evidence,
             })
 
         duplicated_conditions = _duplicated_aci_conditions(
@@ -596,6 +718,39 @@ class AciTaskAdapter:
                 },
                 "evidence": {"authority": "human_reference"},
             })
+        for source_relation in _deterministic_source_relations(
+            document, environment_document, self.relation_contract
+        ):
+            occurrence_ids = source_relation["occurrence_ids"]
+            if _aci_reference_authorizes_relation(
+                source_relation["relation"],
+                occurrence_ids,
+                occurrences_by_id,
+                parsed_reference,
+            ):
+                continue
+            candidates.append(_rejection_record(
+                reason="not_generated",
+                detail_reason="not_authoritative_for_delivery",
+                attempt={
+                    "doc_id": doc_id,
+                    "coverage_kind": "controlled_source_relation",
+                    "relation": source_relation["relation"],
+                    "occurrence_ids": occurrence_ids,
+                    "source_span": source_relation["source_span"],
+                    "quote_hash": source_relation["quote_hash"],
+                    "definition_version": "aci-delivered-authority-v1",
+                },
+                evidence={
+                    "source": "delivered_authority",
+                    "coverage_kind": "controlled_source_relation",
+                    "delivery_authority": "not_authoritative_for_delivery",
+                    "relation": source_relation["relation"],
+                    "occurrence_ids": occurrence_ids,
+                    "source_span": source_relation["source_span"],
+                    "quote_hash": source_relation["quote_hash"],
+                },
+            ))
         return candidates
 
     def compile_relations(
@@ -614,6 +769,32 @@ class AciTaskAdapter:
 def _stable_hash(value) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _validated_reader_pin(value, *, label: str = "reader_pin") -> dict:
+    if not isinstance(value, Mapping) or not value:
+        raise ValueError(f"{label} must be a structured non-empty mapping")
+    missing = sorted(READER_PIN_FIELDS - set(value))
+    if missing:
+        raise ValueError(f"{label} is missing required fields: {missing}")
+    empty = sorted(
+        field for field in READER_PIN_FIELDS
+        if value.get(field) is None or value.get(field) == "" or value.get(field) == {}
+    )
+    if empty:
+        raise ValueError(f"{label} has empty required fields: {empty}")
+    return deepcopy(dict(value))
+
+
+def _validated_build_reader_pin(reader, pins: Mapping) -> dict:
+    provided = _validated_reader_pin(pins.get("reader_pin"))
+    injected = getattr(reader, "pin", None)
+    if not isinstance(injected, Mapping) or not injected:
+        raise ValueError("injected reader requires an explicit structured pin")
+    actual = _validated_reader_pin(injected, label="injected reader pin")
+    if provided != actual:
+        raise ValueError("reader_pin must match the injected reader pin")
+    return provided
 
 
 def _rejection_record(
@@ -685,12 +866,21 @@ def _meaningful_tokens(value: str) -> set[str]:
     }
 
 
+def _normalized_aliases(value) -> list[str]:
+    if value is None:
+        return []
+    values = [value] if isinstance(value, str) else list(value)
+    aliases = []
+    for alias in values:
+        exact_alias = str(alias)
+        if exact_alias.strip() and exact_alias not in aliases:
+            aliases.append(exact_alias)
+    return aliases
+
+
 def _occurrence_protected_terms(occurrence: Mapping) -> list[str]:
     terms = [str(occurrence.get("surface", "")).strip()]
-    aliases = occurrence.get("aliases") or []
-    if isinstance(aliases, str):
-        aliases = [aliases]
-    terms.extend(str(alias).strip() for alias in aliases)
+    terms.extend(alias.strip() for alias in _normalized_aliases(occurrence.get("aliases")))
     return [term for term in terms if term]
 
 
@@ -822,6 +1012,22 @@ def _contains(text: str, value: str) -> bool:
     return bool(re.search(rf"(?<!\w){re.escape(canon(value))}(?!\w)", canon(text)))
 
 
+def _exact_occurrence_span(document: str, occurrence: Mapping) -> list[int] | None:
+    start = occurrence.get("start")
+    end = occurrence.get("end")
+    surface = str(occurrence.get("surface", ""))
+    if (
+        isinstance(start, bool)
+        or isinstance(end, bool)
+        or not isinstance(start, int)
+        or not isinstance(end, int)
+        or not 0 <= start < end <= len(document)
+        or document[start:end] != surface
+    ):
+        return None
+    return [start, end]
+
+
 def _parse_aci_note(text: str) -> dict:
     """Parse only the fixed ACI headings and unambiguous assessment/plan triples."""
     sections: dict[str, list[str]] = {}
@@ -846,6 +1052,13 @@ def _parse_aci_note(text: str) -> dict:
         {"age": demographic_match.group(1), "sex": demographic_match.group(2)}
         if demographic_match else {}
     )
+    demographic_evidence = (
+        {
+            "age": [demographic_match.start(1), demographic_match.end(1)],
+            "sex": [demographic_match.start(2), demographic_match.end(2)],
+        }
+        if demographic_match else {}
+    )
     assessment_lines = sections.get("ASSESSMENT", [])
     plan_lines = sections.get("PLAN", [])
     assessment_rows = _parse_aci_rows(
@@ -857,6 +1070,7 @@ def _parse_aci_note(text: str) -> dict:
     return {
         "sections": sections,
         "demographic": demographic,
+        "demographic_evidence": demographic_evidence,
         "assessment_rows": assessment_rows,
         "assessment_shape": _aci_section_shape(assessment_lines, assessment_rows),
         "plan_rows": plan_rows,
@@ -1004,6 +1218,136 @@ def _source_contains_relation_contradiction(
     return False
 
 
+def _deterministic_source_relations(
+    document: str,
+    environment_document: Mapping,
+    relation_contract: Mapping[str, Mapping],
+) -> list[dict]:
+    occurrences = {
+        str(row["occurrence_id"]): row
+        for row in environment_document.get("occurrences", [])
+        if row.get("controlled", row.get("decision_id") is not None)
+        and _exact_occurrence_span(document, row) is not None
+    }
+    relations = []
+    seen = set()
+    for clause_match in re.finditer(r"[^\n.!?;]+(?:[.!?;]|$)", document):
+        clause = clause_match.group(0)
+        clause_span = (clause_match.start(), clause_match.end())
+        if _NEGATION_PATTERN.search(canon(clause)):
+            continue
+        contained = [
+            occurrence_id for occurrence_id, occurrence in occurrences.items()
+            if clause_span[0] <= occurrence["start"] < occurrence["end"] <= clause_span[1]
+        ]
+        for relation in relation_contract:
+            for first_id in contained:
+                for second_id in contained:
+                    occurrence_ids = [first_id, second_id]
+                    if first_id == second_id or not _relation_argument_types_are_legal(
+                        relation, occurrence_ids, occurrences, relation_contract
+                    ):
+                        continue
+                    if not _relation_clause_connects_arguments(
+                        relation, clause, occurrence_ids, occurrences, relation_contract
+                    ):
+                        continue
+                    identity = (relation, first_id, second_id, *clause_span)
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    relations.append({
+                        "relation": relation,
+                        "occurrence_ids": occurrence_ids,
+                        "source_span": [clause_span[0], clause_span[1]],
+                        "quote_hash": _stable_hash(clause),
+                    })
+    return relations
+
+
+def _aci_reference_authorizes_relation(
+    relation: str,
+    occurrence_ids: Sequence[str],
+    occurrences: Mapping[str, Mapping],
+    parsed_reference: Mapping,
+) -> bool:
+    if len(occurrence_ids) != 2:
+        return False
+    first = canon(str(occurrences[occurrence_ids[0]].get("surface", "")))
+    second = canon(str(occurrences[occurrence_ids[1]].get("surface", "")))
+    if relation == "treated_with":
+        return any(
+            canon(str(row["condition"])) == first
+            and canon(str(row["treatment"])) == second
+            for row in parsed_reference.get("plan_rows", [])
+        )
+    if relation == "monitored_by":
+        return any(
+            canon(str(row["condition"])) == first
+            and canon(str(row["test"])) == second
+            for row in parsed_reference.get("plan_rows", [])
+        )
+    return False
+
+
+def _exact_substring_starts(document: str, quote: str) -> list[int]:
+    starts = []
+    cursor = 0
+    while quote:
+        start = document.find(quote, cursor)
+        if start < 0:
+            break
+        starts.append(start)
+        cursor = start + 1
+    return starts
+
+
+def _resolve_relation_evidence_span(
+    document: str,
+    quote: str,
+    proposed_start,
+) -> tuple[tuple[int, int] | None, str | None]:
+    starts = _exact_substring_starts(document, quote)
+    if not quote or not starts:
+        return None, "invalid_evidence"
+    if proposed_start is None:
+        if len(starts) != 1:
+            return None, "ambiguous_evidence_start"
+        start = starts[0]
+    else:
+        if isinstance(proposed_start, bool) or not isinstance(proposed_start, int):
+            return None, "invalid_evidence_start"
+        if proposed_start not in starts:
+            return None, "invalid_evidence_start"
+        start = proposed_start
+    return (start, start + len(quote)), None
+
+
+def _evidence_span_contains_occurrences(
+    document: str,
+    evidence_span: tuple[int, int],
+    occurrence_ids: Sequence[str],
+    occurrences: Mapping[str, Mapping],
+) -> bool:
+    evidence_start, evidence_end = evidence_span
+    for occurrence_id in occurrence_ids:
+        occurrence = occurrences[occurrence_id]
+        start = occurrence.get("start")
+        end = occurrence.get("end")
+        surface = str(occurrence.get("surface", ""))
+        if (
+            isinstance(start, bool)
+            or isinstance(end, bool)
+            or not isinstance(start, int)
+            or not isinstance(end, int)
+            or not 0 <= start < end <= len(document)
+            or document[start:end] != surface
+            or not evidence_start <= start < end <= evidence_end
+        ):
+            return False
+    return True
+
+
 def relation_teacher_prompt(
     doc_id: str,
     document: str,
@@ -1027,7 +1371,10 @@ def relation_teacher_prompt(
         ))
         inventory.append({
             "occurrence_id": occurrence.get("occurrence_id"),
+            "start": occurrence.get("start"),
+            "end": occurrence.get("end"),
             "surface": occurrence.get("surface"),
+            "aliases": _normalized_aliases(occurrence.get("aliases")),
             "runtime_type": occurrence.get("runtime_type"),
             "legal_support_properties": properties,
         })
@@ -1043,6 +1390,10 @@ def relation_teacher_prompt(
             "answer_property": "that occurrence's exact selected support property",
             "question": "natural question not containing a protected surface or its answer",
             "evidence_quote": "one exact source substring directly connecting all arguments",
+            "evidence_start": (
+                "exact zero-based quote start; required when evidence_quote occurs more "
+                "than once, optional when unique"
+            ),
         }]
     }
     return (
@@ -1094,7 +1445,9 @@ def compile_relational_assertions(
 
         def reject(reason: str) -> None:
             quote = str(proposal.get("evidence_quote", ""))
-            quote_start = document.find(quote) if quote else -1
+            quote_span, _ = _resolve_relation_evidence_span(
+                document, quote, proposal.get("evidence_start")
+            )
             evidence = {
                 "source": "relation_teacher",
                 "proposal_index": index,
@@ -1106,9 +1459,7 @@ def compile_relational_assertions(
                     for value in proposal.get("argument_occurrence_ids", [])
                 ],
                 "evidence_quote_hash": _stable_hash(quote),
-                "evidence_span": (
-                    [quote_start, quote_start + len(quote)] if quote_start >= 0 else None
-                ),
+                "evidence_span": list(quote_span) if quote_span is not None else None,
             }
             record = _rejection_record(
                 reason=_stable_rejection_reason(reason),
@@ -1148,11 +1499,16 @@ def compile_relational_assertions(
             reject("invalid_argument_types")
             continue
         quote = str(proposal.get("evidence_quote", ""))
-        if not quote or quote not in document or any(
-            not _contains(quote, str(occurrences[occurrence_id].get("surface", "")))
-            for occurrence_id in occurrence_ids
+        evidence_span, evidence_error = _resolve_relation_evidence_span(
+            document, quote, proposal.get("evidence_start")
+        )
+        if evidence_error is not None:
+            reject(evidence_error)
+            continue
+        if not _evidence_span_contains_occurrences(
+            document, evidence_span, occurrence_ids, occurrences
         ):
-            reject("invalid_evidence")
+            reject("invalid_evidence_occurrence")
             continue
         if not _relation_evidence_connects_arguments(
             relation, quote, occurrence_ids, occurrences, relation_contract
@@ -1219,7 +1575,21 @@ def compile_relational_assertions(
             "question": question,
             "accepted_values": [answer_property],
             "decision_requirements": decision_requirements,
-            "evidence": {"source_quotes": [quote]},
+            "evidence": {
+                "authority": "source_document",
+                "source_span": {
+                    "start": evidence_span[0],
+                    "end": evidence_span[1],
+                    "quote_hash": _stable_hash(quote),
+                },
+                "argument_spans": {
+                    occurrence_id: [
+                        int(occurrences[occurrence_id]["start"]),
+                        int(occurrences[occurrence_id]["end"]),
+                    ]
+                    for occurrence_id in occurrence_ids
+                },
+            },
         })
     return accepted, rejected
 
@@ -1575,18 +1945,66 @@ def freeze_ranker_environment(
                 actions = []
                 action_ids = set()
                 for action in span.get("actions", []):
+                    declared_mode = str(action.get("mode", "level"))
+                    if declared_mode not in {"level", "keep", "placeholder"}:
+                        raise ValueError(
+                            f"invalid action mode for decision {decision_id}: {declared_mode}"
+                        )
+                    fill = action.get("fill")
+                    if declared_mode == "placeholder" and action.get("keep"):
+                        raise ValueError(
+                            f"placeholder action cannot be KEEP for decision {decision_id}"
+                        )
+                    source_fill = bool(fill) and canon(str(fill)) == decision_key[1]
+                    is_keep = bool(action.get("keep")) or declared_mode == "keep" or (
+                        declared_mode == "level" and source_fill
+                    )
+                    if action.get("source_identity") and not is_keep:
+                        raise ValueError(
+                            f"source_identity is reserved for KEEP actions on {decision_id}"
+                        )
+                    if is_keep and not source_fill:
+                        raise ValueError(
+                            f"KEEP action must preserve the source identity for {decision_id}"
+                        )
                     mode = (
-                        "keep" if action.get("keep") else
-                        "placeholder" if action.get("mode") == "placeholder" else
+                        "keep" if is_keep else
+                        "placeholder" if declared_mode == "placeholder" else
                         "level"
                     )
-                    fill = action.get("fill")
                     action_semantics = {
                         **dict(action),
                         "mode": mode,
-                        "fill": fill,
+                        "fill": decision_key[1] if is_keep else fill,
+                        "legal": bool(action.get("legal", True)),
                     }
                     action_semantics.pop("action_id", None)
+                    if mode == "keep":
+                        action_semantics.update({
+                            "keep": True,
+                            "source_identity": True,
+                            "entails": [decision_key[1]],
+                        })
+                        action_semantics.pop("coarseness_rank", None)
+                    elif mode == "placeholder":
+                        action_semantics["entails"] = []
+                        action_semantics.pop("coarseness_rank", None)
+                    else:
+                        rank = action.get("coarseness_rank", action.get("aset"))
+                        if action_semantics["legal"] and (
+                            isinstance(rank, bool)
+                            or not isinstance(rank, Real)
+                            or not isfinite(float(rank))
+                        ):
+                            raise ValueError(
+                                "legal level action requires numeric coarseness_rank "
+                                f"or aset for decision {decision_id}"
+                            )
+                        if isinstance(rank, Real) and not isinstance(rank, bool):
+                            action_semantics["coarseness_rank"] = rank
+                        action_semantics["entails"] = (
+                            [canon(str(fill))] if fill else []
+                        )
                     action_id = _stable_hash({
                         "decision_id": decision_id,
                         "action": action_semantics,
@@ -1595,11 +2013,8 @@ def freeze_ranker_environment(
                         raise ValueError(f"duplicate action semantics for decision {decision_id}")
                     action_ids.add(action_id)
                     actions.append({
-                        **dict(action),
+                        **action_semantics,
                         "action_id": action_id,
-                        "mode": mode,
-                        "legal": True,
-                        "entails": [canon(str(fill))] if fill and mode != "placeholder" else [],
                     })
                 if not any(action["mode"] == "keep" for action in actions):
                     keep_semantics = {
@@ -1661,6 +2076,7 @@ def freeze_ranker_environment(
                     "start": row.get("start"),
                     "end": row.get("end"),
                     "surface": surface,
+                    "aliases": _normalized_aliases(row.get("aliases")),
                     "runtime_type": runtime_type,
                     "polarity": row.get("polarity", "unknown"),
                     "detector_provenance": row.get("detector_provenance", {
@@ -1673,6 +2089,16 @@ def freeze_ranker_environment(
                 })
                 if decision is not None:
                     decision["occurrence_ids"].append(occurrence_id)
+            occurrences_by_id = {
+                str(row["occurrence_id"]): row for row in occurrences
+            }
+            for decision in decisions_by_key.values():
+                protected_aliases = []
+                for occurrence_id in decision["occurrence_ids"]:
+                    for alias in occurrences_by_id[occurrence_id]["aliases"]:
+                        if alias not in protected_aliases:
+                            protected_aliases.append(alias)
+                decision["protected_aliases"] = protected_aliases
             frozen_document = {
                 "corpus": corpus,
                 "occurrences": occurrences,
@@ -1722,11 +2148,17 @@ def build_utility_artifact(
     relation_teacher: OpenRouterRelationTeacher | None = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation."""
+    reader_pin = _validated_build_reader_pin(reader, pins)
     validate_environment = getattr(task_adapter, "validate_environment", None)
     if validate_environment is not None:
         validate_environment(frozen_environment)
     family_budgets = threshold_manifest["family_budgets"]
-    min_context = int(threshold_manifest.get("min_context_assertions", 0))
+    min_contextual_relations = int(threshold_manifest.get(
+        "min_contextual_relation_assertions",
+        threshold_manifest.get("min_context_assertions", 0),
+    ))
+    if min_contextual_relations < 0:
+        raise ValueError("min_contextual_relation_assertions must be non-negative")
     reader_threshold = float(threshold_manifest.get("reader_threshold", 1.0))
     stability_repetitions = int(threshold_manifest.get("reader_stability_repetitions", 1))
     option_permutations = int(threshold_manifest.get("reader_option_permutations", 1))
@@ -1775,6 +2207,7 @@ def build_utility_artifact(
         anchor: Mapping | None = None,
         validation: Mapping | None = None,
         error: Exception | None = None,
+        extra_evidence: Mapping | None = None,
     ) -> None:
         candidate_hash = _stable_hash(candidate)
         attempt = {
@@ -1800,6 +2233,8 @@ def build_utility_artifact(
             error_type = type(error).__name__
             attempt["error_type"] = error_type
             evidence["error_type"] = error_type
+        if extra_evidence is not None:
+            evidence.update(dict(extra_evidence))
         preserve_rejection(_rejection_record(
             reason=reason,
             detail_reason=detail_reason,
@@ -1809,62 +2244,11 @@ def build_utility_artifact(
 
     for doc_id, environment_document in frozen_environment.get("documents", {}).items():
         source = source_documents[doc_id]
-        deterministic_records = [
-            dict(row) for row in task_adapter.deterministic_candidates(
-                doc_id, source, environment_document
-            )
-        ]
-        candidates = []
-        for record in deterministic_records:
-            if record.get("status") == "rejected":
-                preserve_rejection(record, doc_id=doc_id)
-            else:
-                candidates.append(record)
-        context_count = sum(row.get("family") == "context" for row in candidates)
-        if context_count < min_context and relation_teacher is not None:
-            prompt = relation_teacher_prompt(doc_id, source, environment_document)
-            try:
-                proposals = relation_teacher.propose(prompt)
-                if not proposals:
-                    preserve_rejection(_rejection_record(
-                        reason="not_generated",
-                        detail_reason="teacher_abstained",
-                        attempt={
-                            "doc_id": doc_id,
-                            "prompt_hash": _stable_hash(prompt),
-                            "definition_version": "contextual-relation-v1",
-                        },
-                        evidence={
-                            "source": "relation_teacher",
-                            "prompt_hash": _stable_hash(prompt),
-                            "proposal_count": 0,
-                        },
-                    ), doc_id=doc_id)
-                else:
-                    relation_candidates, relation_rejections = task_adapter.compile_relations(
-                        doc_id, source, environment_document, proposals
-                    )
-                    candidates.extend(dict(row) for row in relation_candidates)
-                    for rejection in relation_rejections:
-                        preserve_rejection(rejection, doc_id=doc_id)
-            except Exception as error:
-                preserve_rejection(_rejection_record(
-                    reason="generation_failed",
-                    detail_reason="teacher_generation_failed",
-                    attempt={
-                        "doc_id": doc_id,
-                        "prompt_hash": _stable_hash(prompt),
-                        "error_type": type(error).__name__,
-                        "definition_version": "contextual-relation-v1",
-                    },
-                    evidence={
-                        "source": "relation_teacher",
-                        "prompt_hash": _stable_hash(prompt),
-                        "error_type": type(error).__name__,
-                    },
-                ), doc_id=doc_id)
-
         decisions = environment_document.get("decisions", [])
+        occurrences = {
+            str(row["occurrence_id"]): row
+            for row in environment_document.get("occurrences", [])
+        }
         placeholder_vector = {}
         for decision in decisions:
             placeholder = next(
@@ -1877,78 +2261,258 @@ def build_utility_artifact(
             placeholder_vector[str(decision["decision_id"])] = str(placeholder["action_id"])
         placeholder_context = render_action_vector(doc_id, placeholder_vector)
 
-        accepted = []
-        for candidate in candidates:
-            if candidate.get("family") != "context":
-                accepted.append(candidate)
-                continue
-            try:
-                anchor = build_joint_representative_anchor(candidate, decisions)
-            except ValueError:
-                reject_context_candidate(
-                    doc_id=doc_id,
-                    candidate=candidate,
-                    reason="unsupported",
-                    detail_reason="no_joint_representative_anchor",
-                )
-                continue
-            representative_context = render_action_vector(doc_id, anchor["action_vector"])
-            try:
-                validated, validation_evidence = validate_context_assertions(
-                    [candidate],
-                    original_context=source,
-                    representative_context=representative_context,
-                    placeholder_context=placeholder_context,
-                    reader=reader,
-                    threshold=reader_threshold,
-                    stability_repetitions=stability_repetitions,
-                    option_permutations=option_permutations,
-                    stability_threshold=stability_threshold,
-                )
-            except Exception as error:
-                reject_context_candidate(
-                    doc_id=doc_id,
-                    candidate=candidate,
-                    reason="infrastructure_failed",
-                    detail_reason="context_reader_failed",
-                    anchor=anchor,
-                    error=error,
-                )
-                continue
-            evidence_row = next(iter(validation_evidence.values()))
-            if not validated:
-                if evidence_row["verdict"] == "unstable":
-                    reason = "unstable"
-                else:
-                    reason = (
-                        "floor_answerable"
-                        if evidence_row["scores"]["placeholder"] >= reader_threshold
-                        else "unsupported"
+        def validate_candidate_rows(rows: Sequence[Mapping]) -> list[dict]:
+            accepted_rows = []
+            for candidate in rows:
+                if candidate.get("family") != "context":
+                    accepted_rows.append(dict(candidate))
+                    continue
+                occurrence_ids = [
+                    str(value) for value in candidate.get("occurrence_ids") or []
+                ]
+                linked_occurrences = [occurrences.get(value) for value in occurrence_ids]
+                requirements = {
+                    str(key): value
+                    for key, value in dict(
+                        candidate.get("decision_requirements") or {}
+                    ).items()
+                }
+                linked_decision_ids = {
+                    str(occurrence.get("decision_id"))
+                    for occurrence in linked_occurrences
+                    if occurrence is not None and occurrence.get("decision_id") is not None
+                }
+                if (
+                    not occurrence_ids
+                    or any(occurrence is None for occurrence in linked_occurrences)
+                    or not linked_decision_ids
+                    or not linked_decision_ids.issubset(requirements)
+                ):
+                    reject_context_candidate(
+                        doc_id=doc_id,
+                        candidate=candidate,
+                        reason="unsupported",
+                        detail_reason="linked_occurrence_not_transformed",
                     )
-                reject_context_candidate(
-                    doc_id=doc_id,
-                    candidate=candidate,
-                    reason=reason,
-                    detail_reason=(
-                        "reader_unstable" if reason == "unstable"
-                        else "placeholder_answerable" if reason == "floor_answerable"
-                        else "three_point_gate_failed"
-                    ),
-                    anchor=anchor,
-                    validation=evidence_row,
+                    continue
+                try:
+                    anchor = build_joint_representative_anchor(candidate, decisions)
+                except ValueError:
+                    reject_context_candidate(
+                        doc_id=doc_id,
+                        candidate=candidate,
+                        reason="unsupported",
+                        detail_reason="no_joint_representative_anchor",
+                    )
+                    continue
+                representative_context = render_action_vector(
+                    doc_id, anchor["action_vector"]
                 )
-                continue
-            row = dict(candidate)
-            row["expected_action_support"] = {
-                "joint_anchor_action_vector": anchor["action_vector"],
-                "joint_anchor_hash": anchor["action_vector_hash"],
-                "property_level": dict(candidate.get("decision_requirements") or {}),
-            }
-            row["evidence"] = {
-                **dict(row.get("evidence") or {}),
-                "validation": evidence_row,
-            }
-            accepted.append(row)
+                protected_terms = list(dict.fromkeys(
+                    term
+                    for occurrence in linked_occurrences
+                    for term in _occurrence_protected_terms(occurrence)
+                ))
+                surviving_terms = [
+                    term for term in protected_terms
+                    if _contains(representative_context, term)
+                ]
+                if surviving_terms:
+                    reject_context_candidate(
+                        doc_id=doc_id,
+                        candidate=candidate,
+                        reason="leakage",
+                        detail_reason="representative_protected_identity_survived",
+                        anchor=anchor,
+                        extra_evidence={
+                            "protected_term_hashes": [
+                                _stable_hash(term) for term in surviving_terms
+                            ],
+                        },
+                    )
+                    continue
+                try:
+                    validated, validation_evidence = validate_context_assertions(
+                        [candidate],
+                        original_context=source,
+                        representative_context=representative_context,
+                        placeholder_context=placeholder_context,
+                        reader=reader,
+                        threshold=reader_threshold,
+                        stability_repetitions=stability_repetitions,
+                        option_permutations=option_permutations,
+                        stability_threshold=stability_threshold,
+                    )
+                except Exception as error:
+                    reject_context_candidate(
+                        doc_id=doc_id,
+                        candidate=candidate,
+                        reason="infrastructure_failed",
+                        detail_reason="context_reader_failed",
+                        anchor=anchor,
+                        error=error,
+                    )
+                    continue
+                evidence_row = next(iter(validation_evidence.values()))
+                if not validated:
+                    if evidence_row["verdict"] == "unstable":
+                        reason = "unstable"
+                    else:
+                        reason = (
+                            "floor_answerable"
+                            if evidence_row["scores"]["placeholder"] >= reader_threshold
+                            else "unsupported"
+                        )
+                    reject_context_candidate(
+                        doc_id=doc_id,
+                        candidate=candidate,
+                        reason=reason,
+                        detail_reason=(
+                            "reader_unstable" if reason == "unstable"
+                            else "placeholder_answerable" if reason == "floor_answerable"
+                            else "three_point_gate_failed"
+                        ),
+                        anchor=anchor,
+                        validation=evidence_row,
+                    )
+                    continue
+                row = dict(candidate)
+                row["expected_action_support"] = {
+                    "joint_anchor_action_vector": anchor["action_vector"],
+                    "joint_anchor_hash": anchor["action_vector_hash"],
+                    "property_level": requirements,
+                }
+                row["evidence"] = {
+                    **dict(row.get("evidence") or {}),
+                    "validation": evidence_row,
+                }
+                accepted_rows.append(row)
+            return accepted_rows
+
+        deterministic_records = [
+            dict(row) for row in task_adapter.deterministic_candidates(
+                doc_id, source, environment_document
+            )
+        ]
+        deterministic_candidates = []
+        for record in deterministic_records:
+            if record.get("status") == "rejected":
+                preserve_rejection(record, doc_id=doc_id)
+            else:
+                deterministic_candidates.append(record)
+        accepted = validate_candidate_rows(deterministic_candidates)
+        contextual_relation_count = sum(
+            row.get("family") == "context"
+            and row.get("subtype") == "contextual_relation"
+            for row in accepted
+        )
+        if contextual_relation_count < min_contextual_relations:
+            if relation_teacher is None:
+                preserve_rejection(_rejection_record(
+                    reason="not_generated",
+                    detail_reason="contextual_relation_threshold_unmet_no_teacher",
+                    attempt={
+                        "doc_id": doc_id,
+                        "accepted_contextual_relation_count": contextual_relation_count,
+                        "required_contextual_relation_count": min_contextual_relations,
+                        "definition_version": "contextual-relation-v1",
+                    },
+                    evidence={
+                        "source": "relation_escalation",
+                        "accepted_contextual_relation_count": contextual_relation_count,
+                        "required_contextual_relation_count": min_contextual_relations,
+                    },
+                ), doc_id=doc_id)
+            else:
+                prompt = relation_teacher_prompt(doc_id, source, environment_document)
+                try:
+                    proposals = relation_teacher.propose(prompt)
+                    if not proposals:
+                        preserve_rejection(_rejection_record(
+                            reason="not_generated",
+                            detail_reason="teacher_abstained",
+                            attempt={
+                                "doc_id": doc_id,
+                                "prompt_hash": _stable_hash(prompt),
+                                "definition_version": "contextual-relation-v1",
+                            },
+                            evidence={
+                                "source": "relation_teacher",
+                                "prompt_hash": _stable_hash(prompt),
+                                "proposal_count": 0,
+                                "required_contextual_relation_count": (
+                                    min_contextual_relations
+                                ),
+                            },
+                        ), doc_id=doc_id)
+                    else:
+                        relation_candidates, relation_rejections = (
+                            task_adapter.compile_relations(
+                                doc_id, source, environment_document, proposals
+                            )
+                        )
+                        for rejection in relation_rejections:
+                            preserve_rejection(rejection, doc_id=doc_id)
+                        accepted_relations = validate_candidate_rows(
+                            [dict(row) for row in relation_candidates]
+                        )
+                        accepted.extend(accepted_relations)
+                        contextual_relation_count = sum(
+                            row.get("family") == "context"
+                            and row.get("subtype") == "contextual_relation"
+                            for row in accepted
+                        )
+                        if (
+                            contextual_relation_count < min_contextual_relations
+                            and (
+                                accepted_relations
+                                or not relation_candidates and not relation_rejections
+                            )
+                        ):
+                            preserve_rejection(_rejection_record(
+                                reason="not_generated",
+                                detail_reason=(
+                                    "contextual_relation_threshold_unmet_after_teacher"
+                                ),
+                                attempt={
+                                    "doc_id": doc_id,
+                                    "prompt_hash": _stable_hash(prompt),
+                                    "accepted_contextual_relation_count": (
+                                        contextual_relation_count
+                                    ),
+                                    "required_contextual_relation_count": (
+                                        min_contextual_relations
+                                    ),
+                                    "definition_version": "contextual-relation-v1",
+                                },
+                                evidence={
+                                    "source": "relation_teacher",
+                                    "prompt_hash": _stable_hash(prompt),
+                                    "proposal_count": len(proposals),
+                                    "accepted_contextual_relation_count": (
+                                        contextual_relation_count
+                                    ),
+                                    "required_contextual_relation_count": (
+                                        min_contextual_relations
+                                    ),
+                                },
+                            ), doc_id=doc_id)
+                except Exception as error:
+                    preserve_rejection(_rejection_record(
+                        reason="generation_failed",
+                        detail_reason="teacher_generation_failed",
+                        attempt={
+                            "doc_id": doc_id,
+                            "prompt_hash": _stable_hash(prompt),
+                            "error_type": type(error).__name__,
+                            "definition_version": "contextual-relation-v1",
+                        },
+                        evidence={
+                            "source": "relation_teacher",
+                            "prompt_hash": _stable_hash(prompt),
+                            "error_type": type(error).__name__,
+                        },
+                    ), doc_id=doc_id)
         candidates_by_document[doc_id] = accepted
 
     artifact = package_utility_artifact(
@@ -1956,7 +2520,11 @@ def build_utility_artifact(
         candidates_by_document,
         family_budgets=family_budgets,
         structural_cap=threshold_manifest.get("structural_cap"),
-        pins={**dict(pins), "threshold_manifest": dict(threshold_manifest)},
+        pins={
+            **dict(pins),
+            "reader_pin": reader_pin,
+            "threshold_manifest": dict(threshold_manifest),
+        },
     )
     summary_by_reason: dict[str, int] = defaultdict(int)
     for record in rejection_records:
@@ -1988,13 +2556,32 @@ def build_joint_representative_anchor(
             candidates = [
                 action for action in actions
                 if action.get("mode") not in {"keep", "placeholder"}
+                and not action.get("source_identity", False)
                 and property_level in (action.get("entails") or [])
             ]
             if not candidates:
                 raise ValueError(
                     f"no legal generalization for decision {decision_id} entails {property_level}"
                 )
-            action_vector[decision_id] = str(candidates[-1]["action_id"])
+            for action in candidates:
+                rank = action.get("coarseness_rank")
+                if (
+                    isinstance(rank, bool)
+                    or not isinstance(rank, Real)
+                    or not isfinite(float(rank))
+                ):
+                    raise ValueError(
+                        f"legal level action for decision {decision_id} lacks numeric "
+                        "coarseness_rank"
+                    )
+            selected = min(
+                candidates,
+                key=lambda action: (
+                    -float(action["coarseness_rank"]),
+                    str(action["action_id"]),
+                ),
+            )
+            action_vector[decision_id] = str(selected["action_id"])
         else:
             keep = next((action for action in actions if action.get("mode") == "keep"), None)
             if keep is None:

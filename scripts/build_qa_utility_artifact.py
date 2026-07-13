@@ -21,9 +21,31 @@ from cloak.train.reward import canon
 from train_ranker import assemble
 
 
+_READER_PIN_FIELDS = frozenset({
+    "model", "endpoint", "prompt_version", "response_schema", "revision",
+})
+
+
 def _hash(payload) -> str:
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _require_manifest_reader_pin(manifest: Mapping) -> dict:
+    reader_pin = manifest.get("reader_pin")
+    if not isinstance(reader_pin, Mapping) or not reader_pin:
+        raise ValueError("threshold manifest reader_pin must be a structured non-empty mapping")
+    missing = sorted(_READER_PIN_FIELDS - set(reader_pin))
+    if missing:
+        raise ValueError(f"threshold manifest reader_pin is missing fields: {missing}")
+    if any(
+        reader_pin.get(field) is None
+        or reader_pin.get(field) == ""
+        or reader_pin.get(field) == {}
+        for field in _READER_PIN_FIELDS
+    ):
+        raise ValueError("threshold manifest reader_pin fields must be non-empty")
+    return dict(reader_pin)
 
 
 def _selected_environment(environment: dict, corpus: str, doc_ids: list[str]) -> dict:
@@ -115,6 +137,12 @@ def _action_renderer(
 
 
 def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) -> dict:
+    manifest = json.loads(Path(args.threshold_manifest).read_text())
+    family_budgets = manifest.get("family_budgets")
+    if not isinstance(family_budgets, dict) or set(family_budgets) != {"context", "delivered"}:
+        raise SystemExit("threshold manifest requires context and delivered family_budgets")
+    _require_manifest_reader_pin(manifest)
+
     environment = json.loads(Path(args.env).read_text())
     environment = _selected_environment(environment, args.corpus, args.doc_id)
     arms = json.loads(Path(args.arms).read_text())
@@ -129,11 +157,6 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
     frozen_environment = freeze_ranker_environment(
         environment, occurrences_by_document=occurrence_records
     )
-    manifest = json.loads(Path(args.threshold_manifest).read_text())
-    family_budgets = manifest.get("family_budgets")
-    if not isinstance(family_budgets, dict) or set(family_budgets) != {"context", "delivered"}:
-        raise SystemExit("threshold manifest requires context and delivered family_budgets")
-
     rows = _source_rows(args.corpus, args.doc_id)
     if any(not doc_id.startswith("aci/") for doc_id in rows):
         raise SystemExit("the implemented task adapter currently supports ACI documents only")
@@ -150,7 +173,12 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
 
     pins = {
         key: value for key, value in manifest.items()
-        if key not in {"family_budgets", "min_context_assertions", "reader_threshold"}
+        if key not in {
+            "family_budgets",
+            "min_context_assertions",
+            "min_contextual_relation_assertions",
+            "reader_threshold",
+        }
     }
     pins.update({
         "gate_manifest_hash": _hash(manifest),

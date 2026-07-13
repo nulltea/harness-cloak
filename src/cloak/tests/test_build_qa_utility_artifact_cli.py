@@ -12,6 +12,15 @@ from cloak.train.qa_builder import (
 )
 
 
+TEST_READER_PIN = {
+    "model": "deterministic-test-reader",
+    "endpoint": "in-process",
+    "prompt_version": "qa-reader-test-v1",
+    "response_schema": {"type": "answers-array", "version": 1},
+    "revision": "test-revision-1",
+}
+
+
 def _d2n002_fixture():
     source = (
         "The patient is diagnosed with hypothyroidism. "
@@ -41,7 +50,7 @@ Hypothyroidism — Synthroid — thyroid labs
             "start": start,
             "end": end,
             "actions": [
-                {"fill": generalization, "mode": "level"},
+                {"fill": generalization, "mode": "level", "aset": 100},
                 {"fill": None, "mode": "placeholder"},
             ],
         })
@@ -55,6 +64,18 @@ Hypothyroidism — Synthroid — thyroid labs
             "replacement": f"<{runtime_type.upper().replace('-', '_')}_{index}>",
             "lattice": [generalization],
         })
+    repeated_condition_start = source.index("Hypothyroidism")
+    arm_rows.append({
+        "surface": "Hypothyroidism",
+        "type": "health-condition",
+        "start": repeated_condition_start,
+        "end": repeated_condition_start + len("Hypothyroidism"),
+        "score": 0.9,
+        "action": "placeholder",
+        "replacement": "<HEALTH_CONDITION_4>",
+        "lattice": ["endocrine condition"],
+    })
+    arm_rows.sort(key=lambda row: row["start"])
     environment = {
         "corpora": {"clinical": {"aci/D2N002": {"spans": spans}}},
     }
@@ -131,6 +152,9 @@ def _acceptance_reader(questions, context):
             continue
         answers.append(expected if supported else "unknown")
     return answers
+
+
+_acceptance_reader.pin = dict(TEST_READER_PIN)
 
 
 def test_acceptance_reader_rejects_broken_representative_rendering():
@@ -226,7 +250,7 @@ def test_action_renderer_preserves_repeated_mixed_case_keep_occurrences():
     arm_rows = []
     search_start = 0
     actions = [
-        {"fill": "thyroid medication", "mode": "level"},
+        {"fill": "thyroid medication", "mode": "level", "aset": 100},
         {"fill": None, "mode": "placeholder"},
     ]
     for index, surface in enumerate(surfaces, start=1):
@@ -308,6 +332,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
         "structural_cap": 0.1,
         "min_context_assertions": 10,
         "reader_threshold": 1.0,
+        "reader_pin": TEST_READER_PIN,
     }))
     monkeypatch.setattr(
         qa_cli,
@@ -344,6 +369,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
         "answer_property": "thyroid medication",
         "question": "What treatment category is used for the diagnosed condition?",
         "evidence_quote": "Hypothyroidism is treated with Synthroid.",
+        "evidence_start": source.index("Hypothyroidism is treated with Synthroid."),
     }
     teacher = _InjectedRelationTeacher([
         valid_proposal,
@@ -364,6 +390,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     subtypes = [row["subtype"] for row in artifact["assertions"].values()]
     assert teacher.calls == 1
     assert artifact["teacher_pin"] == teacher.pin
+    assert artifact["reader_pin"] == TEST_READER_PIN
     assert all(subtypes.count(subtype) > 0 for subtype in (
         "structure", "field", "content", "exact_relation", "semantic_property",
         "contextual_relation",
@@ -397,6 +424,105 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     assert any(row["qa_pairs"] for row in decision_rows)
     assert any(row["rejections"] for row in decision_rows)
 
+    relation = next(
+        row for row in artifact["assertions"].values()
+        if row["subtype"] == "contextual_relation"
+    )
+    render = qa_cli._action_renderer(
+        environment, frozen, {"clinical": arms["clinical"]}, "clinical",
+        {"aci/D2N002": source},
+    )
+    representative = render(
+        "aci/D2N002",
+        relation["expected_action_support"]["joint_anchor_action_vector"],
+    )
+    occurrences_by_id = {
+        row["occurrence_id"]: row for row in frozen_document["occurrences"]
+    }
+    assert all(
+        occurrences_by_id[occurrence_id]["surface"].casefold()
+        not in representative.casefold()
+        for occurrence_id in relation["occurrence_ids"]
+    )
+
+
+def test_default_reader_exposes_complete_structured_pin():
+    pin = qa_cli.read_context_batch.pin
+
+    assert set(pin).issuperset({
+        "model", "endpoint", "prompt_version", "response_schema", "revision",
+    })
+    assert all(pin[key] for key in (
+        "model", "endpoint", "prompt_version", "response_schema", "revision",
+    ))
+
+
+@pytest.mark.parametrize("reader_pin", [None, "reader-v1", {}, {"model": "reader"}])
+def test_build_from_files_rejects_unstructured_reader_pin(
+    tmp_path, monkeypatch, reader_pin,
+):
+    source, reference, environment, arms = _d2n002_fixture()
+    environment_path = tmp_path / "ranker-env.json"
+    arms_path = tmp_path / "arms.json"
+    manifest_path = tmp_path / "manifest.json"
+    environment_path.write_text(json.dumps(environment))
+    arms_path.write_text(json.dumps(arms))
+    manifest_path.write_text(json.dumps({
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "structural_cap": 0.1,
+        "min_contextual_relation_assertions": 0,
+        "reader_pin": reader_pin,
+    }))
+    monkeypatch.setattr(
+        qa_cli,
+        "_source_rows",
+        lambda corpus, doc_ids: {
+            "aci/D2N002": {"id": "aci/D2N002", "text": source, "gold_ref": reference}
+        },
+    )
+    args = qa_cli.parse_args([
+        "--env", str(environment_path),
+        "--arms", str(arms_path),
+        "--doc-id", "aci/D2N002",
+        "--threshold-manifest", str(manifest_path),
+        "--out", str(tmp_path / "artifact.json"),
+    ])
+
+    with pytest.raises(ValueError, match="reader_pin"):
+        qa_cli.build_from_files(args, reader=_acceptance_reader)
+
+
+def test_build_from_files_rejects_unpinned_injected_reader(tmp_path, monkeypatch):
+    source, reference, environment, arms = _d2n002_fixture()
+    environment_path = tmp_path / "ranker-env.json"
+    arms_path = tmp_path / "arms.json"
+    manifest_path = tmp_path / "manifest.json"
+    environment_path.write_text(json.dumps(environment))
+    arms_path.write_text(json.dumps(arms))
+    manifest_path.write_text(json.dumps({
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "structural_cap": 0.1,
+        "min_contextual_relation_assertions": 0,
+        "reader_pin": TEST_READER_PIN,
+    }))
+    monkeypatch.setattr(
+        qa_cli,
+        "_source_rows",
+        lambda corpus, doc_ids: {
+            "aci/D2N002": {"id": "aci/D2N002", "text": source, "gold_ref": reference}
+        },
+    )
+    args = qa_cli.parse_args([
+        "--env", str(environment_path),
+        "--arms", str(arms_path),
+        "--doc-id", "aci/D2N002",
+        "--threshold-manifest", str(manifest_path),
+        "--out", str(tmp_path / "artifact.json"),
+    ])
+
+    with pytest.raises(ValueError, match="injected reader.*pin"):
+        qa_cli.build_from_files(args, reader=lambda questions, context: [])
+
 
 def test_build_from_files_rejects_relation_teacher_without_explicit_pin(
     tmp_path, monkeypatch,
@@ -411,6 +537,7 @@ def test_build_from_files_rejects_relation_teacher_without_explicit_pin(
         "family_budgets": {"context": 0.6, "delivered": 0.4},
         "structural_cap": 0.1,
         "min_context_assertions": 0,
+        "reader_pin": TEST_READER_PIN,
     }))
     monkeypatch.setattr(
         qa_cli,
@@ -444,7 +571,7 @@ def test_build_qa_utility_artifact_cli_rejects_legacy_aci_detector_artifacts(tmp
         "family_budgets": {"context": 0.6, "delivered": 0.4},
         "min_context_assertions": 0,
         "task_pin": "aci-v1",
-        "reader_pin": "reader-v1",
+        "reader_pin": qa_cli.read_context_batch.pin,
     }))
 
     result = subprocess.run(
