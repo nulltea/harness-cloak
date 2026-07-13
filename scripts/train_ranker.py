@@ -33,6 +33,7 @@ import math
 import random
 import re
 import time
+from collections.abc import Mapping
 from pathlib import Path
 
 import torch
@@ -45,6 +46,7 @@ from cloak.train.reward import canon, fact_f1s, stage1_reward, u_qa
 from cloak.train.qa_builder import (coarsest_entailing_legal_action,
                                     frozen_occurrences_from_arms,
                                     freeze_ranker_environment)
+from cloak.train.utility_credit import provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
@@ -368,6 +370,33 @@ def rloo_advantage(rt: torch.Tensor) -> torch.Tensor:
     return (rt - rt.mean()) * G / (G - 1)
 
 
+def _decision_log_probs(doc, logps):
+    state = doc["utility_artifact"]["documents"][doc["id"]]
+    decision_ids = [str(value) for value in state["controlled_decision_ids"]]
+    if len(decision_ids) != len(logps):
+        raise ValueError(
+            f"document {doc['id']!r} has {len(decision_ids)} controlled decisions but "
+            f"{len(logps)} sampled policy decisions"
+        )
+    return dict(zip(decision_ids, logps, strict=True))
+
+
+def structured_utility_loss(doc_id, log_probs, provisional, *, counterfactual_losses=None):
+    """Apply one v2 utility term per rollout-decision pair at fixed 1/G weight."""
+    counterfactual_losses = counterfactual_losses or {}
+    terms = []
+    for rollout_index, per_decision in enumerate(log_probs):
+        for decision_id, log_prob in per_decision.items():
+            counterfactual = counterfactual_losses.get((doc_id, rollout_index, decision_id))
+            if counterfactual is not None:
+                terms.append(counterfactual)
+            else:
+                terms.append(-provisional[(rollout_index, decision_id)] * log_prob)
+    if not terms:
+        raise ValueError(f"document {doc_id!r} has no policy decisions")
+    return sum(terms) / len(log_probs)
+
+
 def policy_entropy(policy, feats, legal) -> torch.Tensor:
     lp = policy.log_probs(feats, legal)
     return -(lp.exp() * lp).sum()
@@ -403,10 +432,11 @@ def counterfactual_terms(doc, policy, choice, logps, base_r=None, *, frac, rng, 
 
 
 def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
-                    rt_workers, seed, cf_frac=0.0, log_rows=None):
+                    rt_workers, seed, cf_frac=0.0, log_rows=None,
+                    counterfactual_losses=None):
     """RLOO + tie-filter epoch loop against roundtrip_batch. Returns per-epoch stat rows.
-    cf_frac > 0 adds an exact per-span counterfactual PG term (counterfactual_terms) on a
-    fresh greedy rollout after each doc's group update."""
+    Artifact-backed documents use per-decision v2 utility credit. Legacy scalar documents retain
+    their existing RLOO and optional separate legacy counterfactual path."""
     opt = torch.optim.Adam(policy.parameters(), lr=lr)
     rows = []
     for epoch in range(epochs):
@@ -429,11 +459,31 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             rt = torch.tensor([r["recall"] or 0.0 for r in res])
             ep["r"].append(rt.mean().item())
             ep["ph"].append(sum(ph_l) / G)
-            if rt.max() == rt.min():                      # DAPO tie filter
-                ep["ties_skipped"] += 1
-                continue
-            adv = rloo_advantage(rt)
-            pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
+            if "utility_artifact" in doc:
+                vectors = [row.get("component_scores") for row in res]
+                if not all(isinstance(vector, Mapping) for vector in vectors):
+                    raise ValueError(
+                        f"document {doc['id']!r} has a utility artifact but no component scores"
+                    )
+                state = doc["utility_artifact"]["documents"][doc["id"]]
+                provisional = provisional_advantages(
+                    vectors,
+                    doc["utility_artifact"],
+                    state["occurrence_to_decision"],
+                    doc_id=doc["id"],
+                )
+                pg = structured_utility_loss(
+                    doc["id"],
+                    [_decision_log_probs(doc, logps) for logps in logps_l],
+                    provisional,
+                    counterfactual_losses=counterfactual_losses,
+                )
+            else:
+                if rt.max() == rt.min():                  # DAPO tie filter
+                    ep["ties_skipped"] += 1
+                    continue
+                adv = rloo_advantage(rt)
+                pg = -sum(a * torch.stack(lp).sum() for a, lp in zip(adv, logps_l)) / G
             # entropy over the DYNAMIC masks each rollout actually sampled from (not the
             # static floor-legal sets), mean over spans and rollouts
             ent, n_ent = 0.0, 0
@@ -459,7 +509,7 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
             loss.backward()
             opt.step()
             ep["ent"].append(ent.item())
-            if cf_frac > 0:                             # exact per-span counterfactual credit
+            if cf_frac > 0 and "utility_artifact" not in doc:
                 g_choice, g_logps, _, _, _, _ = sample_rollout(
                     doc, doc["spans"], doc["feats"], policy, greedy=True)
                 term, n_cf = counterfactual_terms(doc, policy, g_choice, g_logps,

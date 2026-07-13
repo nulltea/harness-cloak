@@ -518,7 +518,7 @@ def test_utility_artifact_gate_accepts_subset_when_document_hash_matches():
         tr.enforce_utility_artifact_gate(artifact, full_environment)
 
 
-def test_train_roundtrip_uses_scalar_utility_when_artifact_components_vary(monkeypatch):
+def test_train_roundtrip_uses_structured_credit_when_scalar_utility_is_tied(monkeypatch):
     doc = _doc()
     artifact = {
         "documents": {"d0": {
@@ -551,13 +551,32 @@ def test_train_roundtrip_uses_scalar_utility_when_artifact_components_vary(monke
     monkeypatch.setattr(tr, "sample_rollout", sample)
     monkeypatch.setattr(tr, "roundtrip_batch", tied_scalar_roundtrip)
 
+    policy = tr.RankerPolicy()
+    before = policy.log_probs(doc["feats"][0], [0, 1]).detach().clone()
     rows = tr.train_roundtrip(
-        [doc], tr.RankerPolicy(), G=2, epochs=1, lr=0.01,
+        [doc], policy, G=2, epochs=1, lr=0.01,
         entropy_coef=0.0, kl_coef=0.0, ref=None,
         rt_workers=1, seed=0,
     )
+    after = policy.log_probs(doc["feats"][0], [0, 1]).detach()
 
-    assert rows[0]["ties_skipped"] == 1
+    assert rows[0]["ties_skipped"] == 0
+    assert not torch.allclose(before, after)
+
+
+def test_structured_utility_loss_replaces_tested_pair_at_group_weight():
+    log_probs = [
+        {"dec1": torch.tensor(2.0, requires_grad=True)},
+        {"dec1": torch.tensor(3.0, requires_grad=True)},
+    ]
+    provisional = {(0, "dec1"): 4.0, (1, "dec1"): -5.0}
+    counterfactual = {("d0", 0, "dec1"): torch.tensor(7.0, requires_grad=True)}
+
+    loss = tr.structured_utility_loss(
+        "d0", log_probs, provisional, counterfactual_losses=counterfactual
+    )
+
+    assert loss.item() == pytest.approx(11.0)
 
 
 @pytest.mark.parametrize(

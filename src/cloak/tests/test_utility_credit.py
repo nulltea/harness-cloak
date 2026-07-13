@@ -31,34 +31,51 @@ def _artifact():
     }
 
 
-def test_provisional_credit_partitions_linked_global_and_uncovered_fallback():
+def _advantages(vectors, artifact):
+    return provisional_advantages(
+        vectors,
+        artifact,
+        artifact["documents"]["d1"]["occurrence_to_decision"],
+        doc_id="d1",
+    )
+
+
+def test_provisional_credit_routes_linked_global_and_uncovered_decisions():
     vectors = [
         {"linked1": 1.0, "linked12": 0.0, "global": 1.0},
         {"linked1": 0.0, "linked12": 1.0, "global": 0.0},
     ]
 
-    advantages = provisional_advantages(vectors, _artifact(), doc_id="d1")
+    advantages = _advantages(vectors, _artifact())
 
-    assert advantages == [
-        pytest.approx({"dec1": 0.6, "dec2": 0.3, "dec3": 0.6}),
-        pytest.approx({"dec1": -0.6, "dec2": -0.3, "dec3": -0.6}),
-    ]
+    assert advantages == pytest.approx({
+        (0, "dec1"): 0.6,
+        (0, "dec2"): 0.3,
+        (0, "dec3"): 0.6,
+        (1, "dec1"): -0.6,
+        (1, "dec2"): -0.3,
+        (1, "dec3"): -0.6,
+    })
 
 
-def test_repeated_occurrences_do_not_duplicate_linked_component_mass():
+def test_repeated_occurrences_route_a_linked_assertion_once_per_decision():
     artifact = _artifact()
     artifact["assertions"].pop("linked12")
     artifact["assertions"].pop("global")
-    vectors = [{"linked1": 1.0}, {"linked1": 0.0}]
 
-    advantages = provisional_advantages(vectors, artifact, doc_id="d1")
+    advantages = _advantages([{"linked1": 1.0}, {"linked1": 0.0}], artifact)
 
-    assert advantages[0]["dec1"] == pytest.approx(0.3)
-    assert advantages[0]["dec2"] == pytest.approx(0.3)
-    assert advantages[0]["dec3"] == pytest.approx(0.3)
+    assert advantages == pytest.approx({
+        (0, "dec1"): 0.3,
+        (0, "dec2"): 0.3,
+        (0, "dec3"): 0.3,
+        (1, "dec1"): -0.3,
+        (1, "dec2"): -0.3,
+        (1, "dec3"): -0.3,
+    })
 
 
-def test_missing_reserved_family_mass_uses_fixed_document_denominator():
+def test_fixed_denominator_preserves_missing_reserved_family_mass():
     artifact = {
         "documents": {"d1": {
             "utility_weight_denominator": 1.0,
@@ -71,14 +88,9 @@ def test_missing_reserved_family_mass_uses_fixed_document_denominator():
         }},
     }
 
-    advantages = provisional_advantages(
-        [{"delivered": 1.0}, {"delivered": 0.0}], artifact, doc_id="d1"
-    )
+    advantages = _advantages([{"delivered": 1.0}, {"delivered": 0.0}], artifact)
 
-    assert advantages == [
-        pytest.approx({"dec1": 0.4}),
-        pytest.approx({"dec1": -0.4}),
-    ]
+    assert advantages == pytest.approx({(0, "dec1"): 0.4, (1, "dec1"): -0.4})
 
 
 def test_tied_components_produce_zero_advantage():
@@ -87,7 +99,32 @@ def test_tied_components_produce_zero_advantage():
         {"linked1": 1.0, "linked12": 1.0, "global": 1.0},
     ]
 
-    advantages = provisional_advantages(vectors, _artifact(), doc_id="d1")
-
     assert all(value == pytest.approx(0.0)
-               for row in advantages for value in row.values())
+               for value in _advantages(vectors, _artifact()).values())
+
+
+def test_linked_decision_never_adds_complete_document_advantage():
+    artifact = _artifact()
+    artifact["assertions"].pop("linked12")
+    artifact["assertions"]["linked1"]["weight"] = 0.3
+    artifact["assertions"]["global"]["weight"] = 0.2
+    vectors = [
+        {"linked1": 1.0, "global": 0.0},
+        {"linked1": 0.0, "global": 1.0},
+    ]
+
+    advantages = _advantages(vectors, artifact)
+
+    assert advantages[(0, "dec1")] == pytest.approx(0.1)
+    assert advantages[(1, "dec1")] == pytest.approx(-0.1)
+
+
+def test_unknown_linked_occurrence_is_rejected():
+    artifact = _artifact()
+    artifact["assertions"]["linked1"]["occurrence_ids"] = ["missing"]
+
+    with pytest.raises(ValueError, match="unknown occurrence"):
+        _advantages([
+            {"linked1": 1.0, "linked12": 0.0, "global": 1.0},
+            {"linked1": 0.0, "linked12": 1.0, "global": 0.0},
+        ], artifact)
