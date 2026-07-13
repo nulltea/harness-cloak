@@ -93,23 +93,43 @@ def _acceptance_reader(questions, context):
         "thyroid test": ("thyroid labs", "thyroid test"),
     }
     normalized_context = context.casefold()
+
+    def supports_treated_with_relation():
+        return any(
+            f"{condition}{cue}{treatment}" in normalized_context
+            for condition in support["endocrine condition"]
+            for cue in (" is treated with ", " was treated with ")
+            for treatment in support["thyroid medication"]
+        )
+
     answers = []
     for question in questions:
         normalized_question = question.casefold()
-        if "condition category" in normalized_question:
+        if (
+            "treatment category" in normalized_question
+            and "diagnosed condition" in normalized_question
+        ):
+            expected = "thyroid medication"
+            supported = supports_treated_with_relation()
+        elif "condition category" in normalized_question:
             expected = "endocrine condition"
+            supported = any(
+                value in normalized_context for value in support[expected]
+            )
         elif "procedure or test category" in normalized_question:
             expected = "thyroid test"
+            supported = any(
+                value in normalized_context for value in support[expected]
+            )
         elif "treatment category" in normalized_question:
             expected = "thyroid medication"
+            supported = any(
+                value in normalized_context for value in support[expected]
+            )
         else:
             answers.append("unknown")
             continue
-        answers.append(
-            expected
-            if any(value in normalized_context for value in support[expected])
-            else "unknown"
-        )
+        answers.append(expected if supported else "unknown")
     return answers
 
 
@@ -131,6 +151,42 @@ def test_acceptance_reader_rejects_broken_representative_rendering():
 
     assert accepted == []
     assert evidence["condition-category"]["scores"] == {
+        "original": 1.0,
+        "representative": 0.0,
+        "placeholder": 0.0,
+    }
+
+
+@pytest.mark.parametrize(
+    "representative_context",
+    [
+        "An unrelated condition is treated with thyroid medication.",
+        "Endocrine condition was discussed. Thyroid medication remained listed.",
+    ],
+)
+def test_acceptance_reader_rejects_broken_contextual_relation(
+    representative_context,
+):
+    assertion = {
+        "assertion_id": "treated-with",
+        "family": "context",
+        "subtype": "contextual_relation",
+        "question": "What treatment category is used for the diagnosed condition?",
+        "accepted_values": ["thyroid medication"],
+    }
+
+    accepted, evidence = validate_context_assertions(
+        [assertion],
+        original_context="Hypothyroidism is treated with Synthroid.",
+        representative_context=representative_context,
+        placeholder_context=(
+            "<HEALTH_CONDITION_1> is treated with <DRUG_2>."
+        ),
+        reader=_acceptance_reader,
+    )
+
+    assert accepted == []
+    assert evidence["treated-with"]["scores"] == {
         "original": 1.0,
         "representative": 0.0,
         "placeholder": 0.0,
