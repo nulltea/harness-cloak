@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-13
 tags: [qa, reward-design, utility-components, decision-log, schema, assertions, rl]
 companion: [docs/specs/qa-builder-v2.md,
             docs/specs/RL/interactive-ranker-v2.md,
@@ -39,6 +39,8 @@ from generic placeholders. A source fact omitted by the ceiling is not anonymiza
 
 **Accepted implementation shape.** Fixed task schema plus deterministic fact extraction and
 templates, optional one-call teacher escalation, and evidence-based compiler acceptance.
+“Relational compiler” names this complete teacher-optional proposal-and-validation operation.
+The later local-only ID/weight/hash step is artifact packaging, not compilation.
 
 **Rejected alternatives.** Parse only `out_hi`; let the teacher write the complete manifest;
 use deterministic extraction only. Ceiling-only assertions inherit task-model omissions and
