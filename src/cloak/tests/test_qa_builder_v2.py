@@ -684,7 +684,8 @@ def test_builder_gates_deterministic_context_before_relation_escalation():
         "documents": {"d1": {
             "occurrences": [{
                 "occurrence_id": "o1", "decision_id": "dec1",
-                "surface": "SecretDrug", "runtime_type": "drug",
+                "surface": "SecretDrug", "start": 0, "end": 10,
+                "runtime_type": "drug",
             }],
             "decisions": [{
                 "decision_id": "dec1", "controlled": True,
@@ -905,6 +906,20 @@ def test_default_reader_pin_constant_drives_default_reader_entry_points():
 
     assert reader.pin == qa_builder.DEFAULT_CONTEXT_READER_PIN
     assert qa_builder.read_context_batch.pin == qa_builder.DEFAULT_CONTEXT_READER_PIN
+
+
+@pytest.mark.parametrize("wire", [
+    '["endocrine condition"]',
+    '```json\n["endocrine condition"]\n```',
+])
+def test_batched_context_reader_accepts_exact_json_array_wire_variants(wire):
+    class Client:
+        def generate(self, prompt):
+            return wire
+
+    assert BatchedContextReader(client=Client())(["What category?"], "note") == [
+        "endocrine condition"
+    ]
 
 
 def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
@@ -1220,7 +1235,10 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     frozen = {
         "environment_hash": "env-v1",
         "documents": {"d1": {
-            "occurrences": [{"occurrence_id": "o1", "decision_id": "dec1"}],
+            "occurrences": [{
+                "occurrence_id": "o1", "decision_id": "dec1", "surface": "original",
+                "start": 0, "end": 8, "runtime_type": "health-condition",
+            }],
             "decisions": [{
                 "decision_id": "dec1", "controlled": True,
                 "actions": [
@@ -1286,7 +1304,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     )
 
     assert len(teacher.prompts) == 1
-    assert "d1" in teacher.prompts[0]
+    assert "[S1: original | condition | levels: endocrine]" in teacher.prompts[0]
     assert artifact["documents"]["d1"]["measurement_state"] == "measured"
     context = next(row for row in artifact["assertions"].values()
                    if row["family"] == "context")
@@ -1310,7 +1328,8 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
 
         def generate(self, prompt):
             captured["prompt"] = prompt
-            return '{"relations": [{"relation": "treated_with"}]}'
+            return ('{"relations": [{"relation": "treated_with"}], '
+                    '"candidate_accounting": []}')
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret")
     monkeypatch.setenv("CLOAK_LLM_CACHE", "/tmp/qa-builder-test-cache")
@@ -1322,15 +1341,28 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
     assert captured["model"] == "nvidia/nemotron-3-super-120b-a12b:free"
     assert captured["base_url"] == "https://openrouter.ai/api/v1"
     assert captured["api_key"] == "secret"
-    assert captured["response_format"] == {"type": "json_object"}
-    assert "max_tokens" not in captured
+    assert captured["response_format"] == qa_builder.RELATION_TEACHER_RESPONSE_FORMAT
+    assert captured["response_format"]["type"] == "json_schema"
+    assert captured["response_format"]["json_schema"]["strict"] is True
+    assert captured["response_format"]["json_schema"]["schema"]["required"] == [
+        "relations", "candidate_accounting",
+    ]
+    assert captured["max_tokens"] == 8192
+    assert captured["extra_body"] == {
+        "reasoning": {"max_tokens": 1024, "exclude": True}
+    }
     assert teacher.pin == {
         "provider": "openrouter",
         "model": "nvidia/nemotron-3-super-120b-a12b:free",
         "base_url": "https://openrouter.ai/api/v1",
-        "prompt_version": "qa-relation-teacher-v1",
-        "response_schema": {"type": "relations-array", "version": 1},
-        "revision": "qa-relation-teacher-r1",
+        "prompt_version": "qa-relation-teacher-v4",
+        "response_schema": {"type": "relation-qa-batch", "version": 4},
+        "response_format": qa_builder.RELATION_TEACHER_RESPONSE_FORMAT,
+        "generation_config": {
+            "max_tokens": 8192,
+            "reasoning": {"max_tokens": 1024, "exclude": True},
+        },
+        "revision": "qa-relation-teacher-r16",
     }
     assert relations == [{"relation": "treated_with"}]
 
@@ -1694,19 +1726,20 @@ def test_semantic_property_records_unsupported_runtime_type_attempt():
     assert records[0]["attempt_hash"].startswith("sha256:")
 
 
-def test_relation_prompt_exposes_only_closed_ids_properties_and_source():
+def test_relation_prompt_exposes_only_source_labels_properties_and_source():
     prompt = relation_teacher_prompt(
         "aci/D2N002",
         "Hypothyroidism is treated with Synthroid.",
         _relation_environment(),
     )
 
-    assert "aci/D2N002" in prompt
-    assert "o-condition" in prompt
+    assert "aci/D2N002" not in prompt
+    assert "o-condition" not in prompt
     assert "an endocrine condition" in prompt
     assert "treated_with" in prompt
-    assert '"evidence_start"' in prompt
-    assert '"start": 0' in prompt
+    assert "evidence_window_id" not in prompt
+    assert "SOURCE EVIDENCE WINDOWS" not in prompt
+    assert "[S1: Hypothyroidism | condition | levels: an endocrine condition]" in prompt
     assert "Hypothyroidism is treated with Synthroid." in prompt
     assert "accepted_values" not in prompt
 
@@ -1962,33 +1995,13 @@ def test_relational_compiler_derives_gold_and_links_from_frozen_inventory():
     )
 
     assert rejected == []
-    assert accepted == [{
-        "family": "context",
-        "scope": "linked",
-        "subtype": "contextual_relation",
-        "relation": "treated_with",
-        "occurrence_ids": ["o-condition", "o-drug"],
-        "group_id": "relation:treated_with:o-condition:o-drug",
-        "question": "What treatment category is used for the endocrine condition?",
-        "accepted_values": ["a thyroid medication"],
-        "decision_requirements": {
-            "d-condition": "an endocrine condition",
-            "d-drug": "a thyroid medication",
-        },
-        "evidence": {
-            "authority": "source_document",
-            "proposal_hash": qa_builder._stable_hash(proposals[0]),
-            "source_span": {
-                "start": 0,
-                "end": len(source),
-                "quote_hash": qa_builder._stable_hash(source),
-            },
-            "argument_spans": {
-                "o-condition": [0, len("Hypothyroidism")],
-                "o-drug": [source.index("Synthroid"), source.index("Synthroid") + 9],
-            },
-        },
-    }]
+    assert len(accepted) == 1
+    relation = accepted[0]
+    assert relation["relation"] == "prescribed_with"
+    assert relation["occurrence_ids"] == ["o-condition", "o-drug"]
+    assert relation["accepted_values"] == ["a thyroid medication"]
+    assert relation["scoring_contract"] == {"kind": "semantic_qa", "match": "fact_score"}
+    assert relation["evidence"]["proposal_hash"] == qa_builder._stable_hash(proposals[0])
 
 
 def test_relational_compiler_requires_ambiguous_quote_start_and_binds_occurrences():
@@ -3010,8 +3023,8 @@ def test_teacher_abstention_records_missing_context_without_retry():
     frozen = {
         "environment_hash": "env-v1",
         "documents": {"d1": {
-            "occurrences": [],
-            "decisions": [],
+            "occurrences": [{"occurrence_id": "o1", "decision_id": "d1", "surface": "hypothyroidism", "start": 0, "end": 14, "runtime_type": "health-condition"}],
+            "decisions": [{"decision_id": "d1", "actions": [{"action_id": "general", "mode": "level", "legal": True, "entails": ["endocrine condition"]}, {"action_id": "placeholder", "mode": "placeholder", "legal": True, "entails": []}]}],
         }},
     }
 
@@ -3052,6 +3065,44 @@ def test_teacher_abstention_records_missing_context_without_retry():
     assert teacher.calls == 1
     assert artifact["documents"]["d1"]["measurement_state"] == "partial"
     assert artifact["rejections"]["summary_by_reason"] == {"not_generated": 1}
+
+
+def test_builder_preserves_a_safe_teacher_response_failure_code():
+    frozen = {
+        "environment_hash": "env-v1",
+            "documents": {"d1": {"occurrences": [{"occurrence_id": "o1", "decision_id": "d1", "surface": "hypothyroidism", "start": 0, "end": 14, "runtime_type": "health-condition"}], "decisions": [{"decision_id": "d1", "actions": [{"action_id": "general", "mode": "level", "legal": True, "entails": ["endocrine condition"]}, {"action_id": "placeholder", "mode": "placeholder", "legal": True, "entails": []}]}]}},
+    }
+
+    class Adapter:
+        def deterministic_candidates(self, doc_id, document, environment_document):
+            return []
+
+    class EmptyTeacher:
+        def propose(self, prompt):
+            raise qa_builder.RelationTeacherResponseError(
+                "teacher_empty_response", raw_length=0
+            )
+
+    artifact = build_utility_artifact(
+        frozen,
+        Adapter(),
+        {"d1": "hypothyroidism"},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "min_context_assertions": 1,
+        },
+        pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
+        reader=_pin_reader(lambda questions, context: []),
+        render_action_vector=lambda doc_id, action_vector: "unused",
+        relation_teacher=EmptyTeacher(),
+    )
+
+    rejection = artifact["rejections"]["records"][0]
+    assert rejection["reason"] == "generation_failed"
+    assert rejection["detail_reason"] == "teacher_empty_response"
+    assert rejection["evidence"]["error_type"] == "RelationTeacherResponseError"
+    assert rejection["evidence"]["error_code"] == "teacher_empty_response"
+    assert rejection["evidence"]["raw_length"] == 0
 
 
 def test_relational_compiler_rejects_protected_locator_leakage():

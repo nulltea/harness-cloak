@@ -15,12 +15,97 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v1"
-RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relations-array", "version": 1}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r1"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v4"
+RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 4}
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r16"
+RELATION_TEACHER_MAX_RELATIONS = 12
+# Nemotron's OpenRouter route has mandatory reasoning.  Bound it explicitly so
+# a compact structured extraction always retains a large final-answer budget.
+RELATION_TEACHER_GENERATION_CONFIG = {
+    "max_tokens": 8192,
+    "reasoning": {"max_tokens": 1024, "exclude": True},
+}
+RELATION_TEACHER_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "relation_qa_batch",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["relations", "candidate_accounting"],
+            "properties": {
+                "relations": {
+                    "type": "array",
+                    "maxItems": RELATION_TEACHER_MAX_RELATIONS,
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["relation", "arguments", "question", "accepted_answers",
+                                     "scoring_contract"],
+                        "properties": {
+                            "relation": {"enum": [
+                                "prescribed_with", "treated_with", "monitored_by",
+                                "contraindicated_because_of", "causes_or_explains",
+                                "referred_to", "has_status", "has_category",
+                            ]},
+                            "arguments": {
+                                "type": "array",
+                                "minItems": 2,
+                                "maxItems": 2,
+                                "items": {
+                                    "type": "object",
+                                    "additionalProperties": False,
+                                "required": ["role", "kind", "span_label",
+                                             "support_property", "literal"],
+                                "properties": {
+                                    "role": {"enum": ["subject", "object"]},
+                                    "kind": {"enum": ["linked", "context"]},
+                                    "span_label": {"type": ["string", "null"]},
+                                    "support_property": {"type": ["string", "null"]},
+                                    "literal": {"type": ["string", "null"]},
+                                },
+                                },
+                            },
+                            "question": {"type": "string"},
+                            "accepted_answers": {
+                                "type": "array", "minItems": 1,
+                                "items": {"type": "string"},
+                            },
+                            "scoring_contract": {
+                                "type": "object",
+                                "additionalProperties": False,
+                                "required": ["kind", "match"],
+                                "properties": {
+                                    "kind": {"const": "semantic_qa"},
+                                    "match": {"const": "fact_score"},
+                                },
+                            },
+                        },
+                    },
+                },
+                "candidate_accounting": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": False,
+                        "required": ["candidate_label", "state", "reason"],
+                        "properties": {
+                            "candidate_label": {"type": "string"},
+                            "state": {
+                                "enum": ["emitted", "exhausted_no_relation", "unsupported"]
+                            },
+                            "reason": {"type": "string", "maxLength": 96},
+                        },
+                    },
+                },
+            },
+        },
+    },
+}
 CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v1"
 CONTEXT_READER_RESPONSE_SCHEMA = {"type": "answers-array", "version": 1}
-CONTEXT_READER_REVISION = "qa-reader-r1"
+CONTEXT_READER_REVISION = "qa-reader-r2"
 DEFAULT_CONTEXT_READER_PIN = {
     "model": QA_MODEL,
     "endpoint": QA_BASE_URL,
@@ -32,6 +117,7 @@ READER_PIN_FIELDS = frozenset({
     "model", "endpoint", "prompt_version", "response_schema", "revision",
 })
 RELATION_ONTOLOGY = (
+    "prescribed_with",
     "treated_with",
     "monitored_by",
     "contraindicated_because_of",
@@ -51,6 +137,7 @@ _RUNTIME_TYPE_CLASSES = {
     "medication": "treatment",
     "treatment": "treatment",
     "procedure": "procedure",
+    "medical-procedure": "procedure",
     "lab": "monitoring",
     "test": "monitoring",
     "monitoring": "monitoring",
@@ -60,7 +147,10 @@ _RUNTIME_TYPE_CLASSES = {
     "category": "category",
 }
 _RELATION_ARGUMENT_CLASSES = {
-    "treated_with": (("condition",), ("treatment", "procedure")),
+    # Relation names are directional: condition/diagnosis first.  Medication is
+    # intentionally separate from a procedure performed to treat a condition.
+    "prescribed_with": (("condition",), ("treatment",)),
+    "treated_with": (("condition",), ("procedure",)),
     "monitored_by": (("condition",), ("monitoring", "procedure", "provider")),
     "contraindicated_because_of": (("treatment", "procedure"), ("condition",)),
     "causes_or_explains": (("condition",), ("condition", "symptom")),
@@ -69,8 +159,18 @@ _RELATION_ARGUMENT_CLASSES = {
     "has_category": (("condition", "symptom", "treatment", "procedure"), ("category",)),
 }
 ACI_RELATION_CONTRACT = {
+    "prescribed_with": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["prescribed_with"],
+        "definition": "a drug prescribed or used for a condition or diagnosis",
+        "cues": ("prescribe", "prescribed", "initiate", "continue", "uses", "taking", "takes", "treated with"),
+        "connector_patterns": (
+            r"\s+(?:(?:is|was)\s+)?(?:prescribed|used)\s+(?:with|for)\s+",
+            r"\s+(?:(?:is|was)\s+)?treated\s+with\s+",
+        ),
+    },
     "treated_with": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["treated_with"],
+        "definition": "a medical procedure used for a condition or diagnosis",
         "cues": ("treated with",),
         "connector_patterns": (
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
@@ -79,7 +179,7 @@ ACI_RELATION_CONTRACT = {
     },
     "monitored_by": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["monitored_by"],
-        "cues": ("monitored by",),
+        "cues": ("monitored by", "monitor", "check", "order"),
         "connector_patterns": (
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
             r"monitored\s+by\s+",
@@ -100,7 +200,7 @@ ACI_RELATION_CONTRACT = {
     },
     "referred_to": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["referred_to"],
-        "cues": ("referred to",),
+        "cues": ("referred to", "refer"),
         "connector_patterns": (
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
             r"referred\s+to\s+",
@@ -119,6 +219,15 @@ ACI_RELATION_CONTRACT = {
 }
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
 _CLAUSE_DELIMITER_PATTERN = re.compile(r"[\n.!?;]")
+_PLAN_SECTION_HEADING_PATTERN = re.compile(
+    r"(?m)^(?P<title>[A-Za-z][A-Za-z0-9 /-]{0,96})\.\s*$"
+)
+_RELATION_WINDOW_CUE_PATTERN = re.compile(
+    r"\b(?:prescrib\w*|continue|taking|takes|treated|refer\w*|order\w*|"
+    r"monitor\w*|contraindicat\w*|causes?|explains?|status|category)\b",
+    re.IGNORECASE,
+)
+_ACI_SPEAKER_TURN_PATTERN = re.compile(r"\[(?:doctor|patient)\]", re.IGNORECASE)
 ACI_REQUIRED_SECTIONS = (
     "HISTORY OF PRESENT ILLNESS",
     "ASSESSMENT",
@@ -160,6 +269,53 @@ _ACI_LABELED_PLAN_FIELDS = {
 _ACI_CONDITION_PREAMBLE_WORDS = frozenset({
     "a", "an", "the", "patient", "this", "he", "she", "they", "we", "i",
 })
+_CONTEXT_CANDIDATE_PATTERNS = (
+    ("test", re.compile(
+        r"\b(?:order|ordered|check|checking|monitor|monitoring|monitored\s+by|repeat|recheck)\s+"
+        r"(?:some\s+)?(?P<literal>(?:[A-Za-z][A-Za-z-]*\s+){0,4}"
+        r"(?:labs?|panel|test))\b", re.IGNORECASE)),
+    ("procedure", re.compile(
+        r"\b(?:refer|referred)\s+(?:\w+\s+){0,2}to\s+"
+        r"(?P<literal>(?:[A-Za-z][A-Za-z-]*\s+){0,3}"
+        r"(?:therapy|surgery|procedure))\b", re.IGNORECASE)),
+    ("status", re.compile(
+        r"\bstatus\s+(?:is|:)?\s*(?P<literal>[A-Za-z][A-Za-z -]{0,48})"
+        r"(?=[.;\n]|$)", re.IGNORECASE)),
+    ("category", re.compile(
+        r"\bcategory\s+(?:is|:)?\s*(?P<literal>[A-Za-z][A-Za-z -]{0,48})"
+        r"(?=[.;\n]|$)", re.IGNORECASE)),
+)
+
+
+class RelationTeacherProposals(list):
+    """List-compatible teacher proposals plus mandatory v2 coverage accounting."""
+
+    def __init__(self, relations: Sequence[Mapping], candidate_accounting: Sequence[Mapping]):
+        super().__init__(dict(row) for row in relations if isinstance(row, Mapping))
+        self.candidate_accounting = [
+            dict(row) for row in candidate_accounting if isinstance(row, Mapping)
+        ]
+
+
+class RelationTeacherResponseError(ValueError):
+    """A non-sensitive, artifact-safe failure while decoding a teacher reply."""
+
+    def __init__(
+        self,
+        code: str,
+        *,
+        raw_length: int,
+        completion_state: str | None = None,
+        parser_message: str | None = None,
+    ):
+        self.code = code
+        self.raw_length = raw_length
+        self.completion_state = completion_state
+        self.parser_message = parser_message
+        message = f"{code} (raw_length={raw_length})"
+        if parser_message:
+            message = f"{message}: {parser_message}"
+        super().__init__(message)
 
 
 class OpenRouterRelationTeacher:
@@ -173,6 +329,8 @@ class OpenRouterRelationTeacher:
             "base_url": RELATION_TEACHER_BASE_URL,
             "prompt_version": RELATION_TEACHER_PROMPT_VERSION,
             "response_schema": deepcopy(RELATION_TEACHER_RESPONSE_SCHEMA),
+            "response_format": deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
+            "generation_config": deepcopy(RELATION_TEACHER_GENERATION_CONFIG),
             "revision": RELATION_TEACHER_REVISION,
         }
 
@@ -189,17 +347,58 @@ class OpenRouterRelationTeacher:
             base_url=RELATION_TEACHER_BASE_URL,
             api_key=api_key,
             temperature=0.0,
-            response_format={"type": "json_object"},
-            extra_body={"reasoning": {"exclude": True}},
+            max_tokens=RELATION_TEACHER_GENERATION_CONFIG["max_tokens"],
+            response_format=deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
+            extra_body={
+                "reasoning": deepcopy(RELATION_TEACHER_GENERATION_CONFIG["reasoning"])
+            },
             single_flight=True,
         )
 
-    def propose(self, prompt: str) -> list[dict]:
-        payload = json.loads(self._client.generate(prompt))
+    def propose(
+        self, prompt: str, *, response_format: Mapping | None = None,
+    ) -> RelationTeacherProposals:
+        raw = self._client.generate(
+            prompt,
+            **({"response_format": dict(response_format)} if response_format else {}),
+        )
+        if not raw or not raw.strip():
+            # `LLMClient` deliberately does not cache an OpenRouter HTTP-200 reply
+            # with no choices/content.  Do not turn that provider condition into a
+            # misleading JSONDecodeError, and never persist potentially sensitive raw
+            # model text in the artifact.
+            state = getattr(self._client, "last_completion_state", {})
+            outcome = state.get("outcome") if isinstance(state, Mapping) else None
+            code = {
+                "no_choices": "teacher_no_choices",
+                "empty_content": "teacher_empty_content",
+            }.get(outcome, "teacher_empty_response")
+            raise RelationTeacherResponseError(
+                code,
+                raw_length=len(raw or ""),
+                completion_state=outcome,
+            )
+        try:
+            payload = json.loads(raw)
+        except json.JSONDecodeError as error:
+            raise RelationTeacherResponseError(
+                "teacher_invalid_json",
+                raw_length=len(raw),
+                parser_message=str(error),
+            ) from error
         relations = payload.get("relations") if isinstance(payload, dict) else None
         if not isinstance(relations, list):
-            raise ValueError("relation teacher reply must contain a relations list")
-        return [dict(row) for row in relations if isinstance(row, dict)]
+            raise RelationTeacherResponseError(
+                "teacher_invalid_schema", raw_length=len(raw),
+                parser_message="relation teacher reply must contain a relations list",
+            )
+        accounting = payload.get("candidate_accounting") if isinstance(payload, dict) else None
+        if not isinstance(accounting, list):
+            raise RelationTeacherResponseError(
+                "teacher_invalid_schema", raw_length=len(raw),
+                parser_message="relation teacher reply must contain candidate_accounting",
+            )
+        return RelationTeacherProposals(relations, accounting)
 
 
 class BatchedContextReader:
@@ -237,8 +436,15 @@ class BatchedContextReader:
             f"DOCUMENT:\n{context}\n\n"
             f"QUESTIONS:\n{json.dumps(questions, indent=2)}"
         )
-        payload = json.loads(self._client.generate(prompt))
-        answers = payload.get("answers") if isinstance(payload, dict) else None
+        raw = self._client.generate(prompt).strip()
+        if raw.startswith("```json") and raw.endswith("```"):
+            raw = raw.removeprefix("```json").removesuffix("```").strip()
+        payload = json.loads(raw)
+        # The pinned llama-swap reader has returned both the requested object
+        # and a bare JSON array. Both are unambiguous wire encodings here;
+        # retain the exact cardinality check below rather than treating an
+        # otherwise valid reader result as infrastructure failure.
+        answers = payload.get("answers") if isinstance(payload, dict) else payload
         if not isinstance(answers, list) or len(answers) != len(questions):
             raise ValueError("context reader returned the wrong number of answers")
         return ["" if str(answer).strip().upper() == "NONE" else str(answer).strip()
@@ -829,6 +1035,364 @@ class AciTaskAdapter:
 def _stable_hash(value) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def relation_context_candidates(document: str) -> list[dict]:
+    """Extract finite typed source context without creating detector/ranker decisions."""
+    candidates, seen = [], set()
+    for runtime_type, pattern in _CONTEXT_CANDIDATE_PATTERNS:
+        for match in pattern.finditer(document):
+            start, end = match.span("literal")
+            literal = document[start:end]
+            identity = (runtime_type, start, end, literal)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            candidates.append({
+                "context_candidate_id": "context:" + _stable_hash({
+                    "runtime_type": runtime_type, "start": start, "end": end,
+                    "literal": literal,
+                }),
+                "kind": "context_literal",
+                "runtime_type": runtime_type,
+                "literal": literal,
+                "start": start,
+                "end": end,
+                "provenance": "aci_explicit_context_cue",
+            })
+    return sorted(candidates, key=lambda row: (
+        int(row["start"]), str(row["context_candidate_id"])
+    ))
+
+
+def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]:
+    """Return prompt-safe, source-ordered controlled spans and private mappings.
+
+    This is intentionally a representability prefilter, not a relation-pair
+    prefilter.  The teacher receives only the resulting short labels.
+    """
+    decisions = {
+        str(row["decision_id"]): row
+        for row in environment_document.get("decisions", [])
+        if row.get("decision_id") is not None
+    }
+    rows = []
+    for occurrence in environment_document.get("occurrences", []):
+        if not occurrence.get("controlled", True):
+            continue
+        start, end = occurrence.get("start"), occurrence.get("end")
+        if not isinstance(start, int) or not isinstance(end, int) or start >= end:
+            continue
+        decision = decisions.get(str(occurrence.get("decision_id")), {})
+        properties = list(dict.fromkeys(
+            canon(str(value))
+            for action in decision.get("actions", [])
+            if action.get("legal", True) and action.get("mode") not in {"keep", "placeholder"}
+            for value in action.get("entails") or []
+            if canon(str(value))
+        ))
+        relation_class = _RUNTIME_TYPE_CLASSES.get(canon(str(occurrence.get("runtime_type", ""))))
+        if not properties or relation_class is None:
+            continue
+        if not any(relation_class in classes for contract in _RELATION_ARGUMENT_CLASSES.values()
+                   for classes in contract):
+            continue
+        rows.append({
+            "occurrence_id": str(occurrence["occurrence_id"]),
+            "surface": str(occurrence.get("surface", "")),
+            "start": start,
+            "end": end,
+            "runtime_type": str(occurrence.get("runtime_type", "")),
+            "relation_class": relation_class,
+            "properties": properties,
+        })
+    rows.sort(key=lambda row: (row["start"], row["end"], row["occurrence_id"]))
+    for index, row in enumerate(rows, start=1):
+        row["span_label"] = f"S{index}"
+    return rows
+
+
+def _source_clause_spans(document: str) -> list[tuple[int, int]]:
+    """Return source clauses without treating speaker turns as relation bridges."""
+    markers = list(_ACI_SPEAKER_TURN_PATTERN.finditer(document))
+    if len(markers) >= 2:
+        return [
+            (marker.start(), markers[index + 1].start() if index + 1 < len(markers) else len(document))
+            for index, marker in enumerate(markers)
+            if document[marker.start():markers[index + 1].start() if index + 1 < len(markers) else len(document)].strip()
+        ]
+    spans, left = [], 0
+    for delimiter in _CLAUSE_DELIMITER_PATTERN.finditer(document):
+        right = delimiter.end()
+        if document[left:right].strip():
+            spans.append((left, right))
+        left = right
+    if document[left:].strip():
+        spans.append((left, len(document)))
+    return spans
+
+
+def _clinical_plan_sections(document: str) -> list[tuple[int, int]]:
+    """Return bounded assessment-plan sections headed by a clinical concept.
+
+    A heading alone does not make a relation.  This only recognizes the common
+    note structure ``Condition.`` followed by plan bullets; the relation cue
+    and argument checks still run over the returned source span.
+    """
+    headings = list(_PLAN_SECTION_HEADING_PATTERN.finditer(document))
+    sections = []
+    for index, heading in enumerate(headings):
+        start = heading.start()
+        end = headings[index + 1].start() if index + 1 < len(headings) else len(document)
+        body = document[heading.end():end]
+        if re.search(r"(?m)^\s*[-•]\s+(?:Medical Reasoning|Additional Testing|Medical Treatment|Patient Education)", body):
+            sections.append((start, end))
+    return sections
+
+
+def _shared_plan_section(
+    document: str, spans: Sequence[tuple[int, int]],
+) -> tuple[int, int] | None:
+    """Find the one explicit plan section containing every source argument."""
+    candidates = [
+        section for section in _clinical_plan_sections(document)
+        if all(section[0] <= start < end <= section[1] for start, end in spans)
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _prompt_relation_class(relation_class: str) -> str:
+    return {"treatment": "drug", "monitoring": "test"}.get(relation_class, relation_class)
+
+
+def relation_evidence_windows(document: str, environment_document: Mapping) -> list[dict]:
+    """Finite one/two-clause source spans that can ground a typed relation.
+
+    These windows do not assert a relation.  They only prevent a teacher from
+    pairing a source quote with a duplicate occurrence elsewhere in the document.
+    """
+    speaker_markers = list(_ACI_SPEAKER_TURN_PATTERN.finditer(document))
+    if len(speaker_markers) >= 2:
+        clause_spans = [
+            (marker.start(), speaker_markers[index + 1].start()
+             if index + 1 < len(speaker_markers) else len(document))
+            for index, marker in enumerate(speaker_markers)
+        ]
+        window_widths = (1,)
+    else:
+        clause_spans, start = [], 0
+        for delimiter in _CLAUSE_DELIMITER_PATTERN.finditer(document):
+            end = delimiter.end()
+            if document[start:end].strip():
+                clause_spans.append((start, end))
+            start = end
+        if document[start:].strip():
+            clause_spans.append((start, len(document)))
+        window_widths = (1, 2)
+    decisions = {
+        str(row["decision_id"]): row
+        for row in environment_document.get("decisions", [])
+        if row.get("decision_id") is not None
+    }
+    arguments = [
+        {
+            "candidate_id": str(row["occurrence_id"]),
+            "runtime_type": str(row.get("runtime_type", "")),
+            "start": row.get("start"), "end": row.get("end"),
+            "kind": "linked",
+            "linkable": bool({
+                canon(str(property_level))
+                for action in decisions.get(str(row.get("decision_id")), {}).get("actions", [])
+                if action.get("legal", True)
+                and action.get("mode") not in {"keep", "placeholder"}
+                for property_level in (action.get("entails") or [])
+                if canon(str(property_level))
+            }),
+        }
+        for row in environment_document.get("occurrences", [])
+        if row.get("occurrence_id") is not None
+    ] + [
+        {
+            "candidate_id": str(row["context_candidate_id"]),
+            "runtime_type": str(row.get("runtime_type", "")),
+            "start": row.get("start"), "end": row.get("end"),
+            "kind": "context",
+            "linkable": True,
+        }
+        for row in relation_context_candidates(document)
+    ]
+    windows = []
+    for index, (left, _) in enumerate(clause_spans):
+        for width in window_widths:
+            if index + width > len(clause_spans):
+                continue
+            right = clause_spans[index + width - 1][1]
+            quote = document[left:right]
+            if not _RELATION_WINDOW_CUE_PATTERN.search(quote):
+                continue
+            contained = [
+                row for row in arguments
+                if isinstance(row["start"], int) and isinstance(row["end"], int)
+                and left <= row["start"] < row["end"] <= right
+            ]
+            if not any(
+                _RUNTIME_TYPE_CLASSES.get(canon(first["runtime_type"])) in subject_types
+                and _RUNTIME_TYPE_CLASSES.get(canon(second["runtime_type"])) in object_types
+                for first in contained for second in contained if first is not second
+                for subject_types, object_types in _RELATION_ARGUMENT_CLASSES.values()
+            ):
+                continue
+            eligible_pairs = []
+            for relation, (subject_types, object_types) in _RELATION_ARGUMENT_CLASSES.items():
+                for subject in contained:
+                    for obj in contained:
+                        if subject is obj or not subject["linkable"] or not obj["linkable"]:
+                            continue
+                        if (
+                            _RUNTIME_TYPE_CLASSES.get(canon(subject["runtime_type"])) in subject_types
+                            and _RUNTIME_TYPE_CLASSES.get(canon(obj["runtime_type"])) in object_types
+                            and _window_pair_has_relation_shape(
+                                relation, subject, obj, clause_spans, document
+                            )
+                        ):
+                            eligible_pairs.append({
+                                "relation": relation,
+                                "subject_candidate_id": subject["candidate_id"],
+                                "object_candidate_id": obj["candidate_id"],
+                            })
+            windows.append({
+                "evidence_window_id": "window:" + _stable_hash({"start": left, "end": right}),
+                "start": left,
+                "end": right,
+                "quote": quote,
+                "candidate_ids": [row["candidate_id"] for row in contained],
+                "eligible_pairs": eligible_pairs,
+            })
+    return windows
+
+
+def _window_pair_has_relation_shape(
+    relation: str,
+    subject: Mapping,
+    obj: Mapping,
+    clause_spans: Sequence[tuple[int, int]],
+    document: str,
+) -> bool:
+    """Keep only local source pairings with a relation-specific cue.
+
+    The pair is still a candidate, not a claimed fact: the teacher's semantics
+    and compiler evidence checks remain mandatory.
+    """
+    def clause_index(row: Mapping) -> int | None:
+        return next((index for index, (left, right) in enumerate(clause_spans)
+                     if left <= row["start"] < row["end"] <= right), None)
+
+    subject_clause, object_clause = clause_index(subject), clause_index(obj)
+    if subject_clause is None or object_clause is None:
+        return False
+    cue_patterns = {
+        "prescribed_with": r"\b(?:prescrib\w*|continue\s+.{0,24}\bon\b|treated\s+with)\b",
+        "treated_with": r"\btreated\s+with\b",
+        "monitored_by": r"\b(?:monitor\w*|check\w*|order\w*)\b",
+        "contraindicated_because_of": r"\bcontraindicat\w*\b",
+        "causes_or_explains": r"\b(?:causes?|explains?)\b",
+        "referred_to": r"\brefer\w*\b",
+        "has_status": r"\bstatus\b",
+        "has_category": r"\bcategory\b",
+    }[relation]
+    if subject_clause == object_clause:
+        if abs(int(obj["start"]) - int(subject["end"])) > 320:
+            return False
+        local_left = min(int(subject["start"]), int(obj["start"]))
+        local_right = max(int(subject["end"]), int(obj["end"]))
+        return re.search(cue_patterns, document[local_left:local_right], re.IGNORECASE) is not None
+    if subject_clause + 1 != object_clause:
+        return False
+    object_text = document[clause_spans[object_clause][0]:clause_spans[object_clause][1]]
+    return re.search(cue_patterns, object_text, re.IGNORECASE) is not None
+
+
+def relation_teacher_response_format(
+    environment_document: Mapping, document: str,
+) -> dict:
+    """Bind strict wire fields to displayed labels, never internal IDs or answers."""
+    response_format = deepcopy(RELATION_TEACHER_RESPONSE_FORMAT)
+    schema = response_format["json_schema"]["schema"]
+    relation_item = schema["properties"]["relations"]["items"]
+    inventory = relation_teacher_span_inventory(environment_document)
+    labels = [row["span_label"] for row in inventory]
+    support_properties = sorted({property_level for row in inventory for property_level in row["properties"]})
+    argument_item = {
+        "anyOf": [
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "role", "kind", "span_label", "support_property", "literal",
+                ],
+                "properties": {
+                    "role": {"enum": ["subject", "object"]},
+                    "kind": {"const": "linked"},
+                    "span_label": {"enum": labels},
+                    "support_property": {"enum": support_properties},
+                    "literal": {"const": None},
+                },
+            },
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "required": [
+                    "role", "kind", "span_label", "support_property", "literal",
+                ],
+                "properties": {
+                    "role": {"enum": ["subject", "object"]},
+                    "kind": {"const": "context"},
+                    "span_label": {"const": None},
+                    "support_property": {"const": None},
+                    "literal": {"type": "string", "minLength": 1},
+                },
+            },
+        ]
+    }
+    relation_item["properties"]["arguments"]["items"] = argument_item
+    ledger = schema["properties"]["candidate_accounting"]
+    ledger["minItems"] = len(labels)
+    ledger["maxItems"] = len(labels)
+    ledger_item_properties = ledger["items"]["properties"]
+    ledger["prefixItems"] = [
+        {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["candidate_label", "state", "reason"],
+            "properties": {
+                "candidate_label": {"const": label},
+                "state": deepcopy(ledger_item_properties["state"]),
+                "reason": deepcopy(ledger_item_properties["reason"]),
+            },
+        }
+        for label in labels
+    ]
+    ledger["items"] = False
+    return response_format
+
+
+def _validated_candidate_accounting(
+    accounting: Sequence[Mapping], environment_document: Mapping, document: str,
+) -> list[dict]:
+    del document
+    expected = {str(row["span_label"]) for row in relation_teacher_span_inventory(environment_document)}
+    records = [dict(row) for row in accounting if isinstance(row, Mapping)]
+    by_id = {str(row.get("candidate_label", row.get("candidate_id", ""))): row for row in records}
+    if len(by_id) != len(records) or set(by_id) != expected:
+        raise ValueError("candidate_accounting must contain exactly one record per supplied candidate")
+    allowed_states = {"emitted", "exhausted_no_relation", "unsupported"}
+    if any(
+        str(row.get("state", "")) not in allowed_states
+        or not str(row.get("reason", "")).strip()
+        for row in records
+    ):
+        raise ValueError("candidate_accounting has invalid state or empty reason")
+    return [by_id[label] for label in sorted(expected, key=lambda value: int(value[1:]))]
 
 
 def _validated_reader_pin(value, *, label: str = "reader_pin") -> dict:
@@ -1596,59 +2160,300 @@ def relation_teacher_prompt(
     document: str,
     environment_document: Mapping,
 ) -> str:
-    """Build the single bounded teacher prompt from frozen IDs and legal properties."""
-    inventory = []
-    decisions = {
-        str(row["decision_id"]): row
-        for row in environment_document.get("decisions", [])
-    }
-    for occurrence in environment_document.get("occurrences", []):
-        decision = decisions.get(str(occurrence.get("decision_id")), {})
-        properties = list(dict.fromkeys(
-            canon(str(property_level))
-            for action in decision.get("actions", [])
-            if action.get("legal", True)
-            and action.get("mode") not in {"keep", "placeholder"}
-            for property_level in (action.get("entails") or [])
-            if canon(str(property_level))
-        ))
-        inventory.append({
-            "occurrence_id": occurrence.get("occurrence_id"),
-            "start": occurrence.get("start"),
-            "end": occurrence.get("end"),
-            "surface": occurrence.get("surface"),
-            "aliases": _normalized_aliases(occurrence.get("aliases")),
-            "runtime_type": occurrence.get("runtime_type"),
-            "legal_support_properties": properties,
+    """Build the compact human-facing v4 relation-teacher prompt."""
+    del doc_id
+    inventory = relation_teacher_span_inventory(environment_document)
+    spans = "\n".join(
+        f"[{row['span_label']}: {row['surface']} | {_prompt_relation_class(row['relation_class'])} | levels: {'; '.join(row['properties'])}]"
+        for row in inventory
+    ) or "(No eligible controlled spans.)"
+    cards = []
+    for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
+        labels = [row["span_label"] for row in inventory if start <= row["start"] < row["end"] <= end]
+        if labels:
+            cards.append(f"E{index}: {document[start:end].strip()}\nLabels: {', '.join(labels)}")
+    relation_inventory = """prescribed_with: condition or diagnosis -> drug; explicit prescription/use only, never a procedure.
+treated_with: condition or diagnosis -> medical procedure; never a drug.
+monitored_by: condition or diagnosis -> monitoring test, procedure, or provider; require explicit monitoring/evaluation/follow-up, not proximity.
+contraindicated_because_of: drug or procedure -> condition or diagnosis; require explicit contraindication.
+causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation.
+referred_to: condition or diagnosis -> provider or procedure; require explicit referral.
+has_status: clinical concept -> status; require an explicit status statement.
+has_category: clinical concept -> category; require an explicit classification statement."""
+    return f"""TASK
+Find as many explicit, source-grounded, non-duplicate relations as the cap ({RELATION_TEACHER_MAX_RELATIONS}) permits. Prefer diversity only when supported. Abstain rather than inventing a fact.
+
+HOW TO INSPECT THE SOURCE
+Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. For an uncontrolled object, quote its exact source text as a context literal.
+
+PRIVACY-SAFE QA
+Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. A context literal may be an answer only when it is the measured fact.
+
+RELATION INVENTORY
+{relation_inventory}
+
+WORKED EXAMPLES
+Drug: arthritis + prescribed Ultram => prescribed_with, never treated_with.
+Procedure: kidney stone treated with lithotripsy => treated_with.
+Monitoring: "to follow the thyroid condition, order thyroid labs" => monitored_by. A lab mentioned elsewhere is not monitoring.
+Contraindication: emit only when explicitly stated.
+
+DETECTED SPANS
+{spans}
+
+EVIDENCE CARDS
+{chr(10).join(cards) or '(No span-local cards; inspect the source directly.)'}
+
+RESPONSE
+Return relation records and exactly one candidate_accounting row per S-label. emitted means a relation record uses the label; exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must be label-referential and not repeat protected text. Return only the structured response.
+
+SOURCE DOCUMENT
+{document}"""
+
+
+def _teacher_relation_arguments(
+    proposal: Mapping,
+    occurrences: Mapping[str, Mapping],
+    context_candidates: Mapping[str, Mapping],
+    span_labels: Mapping[str, str] | None = None,
+) -> tuple[list[dict] | None, str | None]:
+    """Normalize v4 labels/literals while retaining cached v1-v3 compatibility."""
+    raw = proposal.get("arguments")
+    if raw is None:
+        occurrence_ids = [str(value) for value in proposal.get("argument_occurrence_ids", [])]
+        support = {str(key): canon(str(value)) for key, value in
+                   dict(proposal.get("support_properties") or {}).items()}
+        raw = [{"role": role, "kind": "linked", "occurrence_id": occurrence_id,
+                "support_property": support.get(occurrence_id, "")}
+               for role, occurrence_id in zip(("subject", "object"), occurrence_ids)]
+    if not isinstance(raw, list) or len(raw) != 2:
+        return None, "invalid_arguments"
+    arguments = []
+    for index, value in enumerate(raw):
+        if not isinstance(value, Mapping):
+            return None, "invalid_arguments"
+        argument = dict(value)
+        if argument.get("role") != ("subject", "object")[index]:
+            return None, "invalid_argument_roles"
+        kind = str(argument.get("kind", ""))
+        if kind == "linked":
+            occurrence_id = str((span_labels or {}).get(
+                str(argument.get("span_label", "")), argument.get("occurrence_id", "")
+            ))
+            if occurrence_id not in occurrences:
+                return None, "invalid_arguments"
+            argument = {
+                "role": argument["role"], "kind": kind,
+                "occurrence_id": occurrence_id,
+                "surface": str(occurrences[occurrence_id].get("surface", "")),
+                "runtime_type": str(occurrences[occurrence_id].get("runtime_type", "")),
+                "support_property": canon(str(argument.get("support_property", ""))),
+            }
+        elif kind == "context":
+            literal = str(argument.get("literal", "")).strip()
+            if literal:
+                argument = {
+                    "role": argument["role"], "kind": kind, "literal": literal,
+                    "runtime_type": "", "start": None, "end": None,
+                }
+            else:
+                candidate_id = str(argument.get("context_candidate_id", ""))
+                candidate = context_candidates.get(candidate_id)
+                if candidate is None:
+                    return None, "unknown_context_candidate"
+                argument = {
+                    "role": argument["role"], "kind": kind,
+                    "context_candidate_id": candidate_id,
+                    "literal": str(candidate["literal"]),
+                    "runtime_type": str(candidate["runtime_type"]),
+                    "start": int(candidate["start"]), "end": int(candidate["end"]),
+                }
+        else:
+            return None, "invalid_argument_kind"
+        arguments.append(argument)
+    return arguments, None
+
+
+def _relation_arguments_are_legal(
+    relation: str, arguments: Sequence[Mapping], relation_contract: Mapping[str, Mapping],
+) -> bool:
+    allowed = relation_contract[relation]["argument_classes"]
+    return len(arguments) == len(allowed) and all(
+        _RUNTIME_TYPE_CLASSES.get(canon(str(argument.get("runtime_type", "")))) in permitted
+        for argument, permitted in zip(arguments, allowed)
+    )
+
+
+def _argument_is_grounded(
+    argument: Mapping, document: str, evidence_span: tuple[int, int],
+    occurrences: Mapping[str, Mapping],
+) -> bool:
+    start, end = evidence_span
+    if argument["kind"] == "linked":
+        occurrence = occurrences[argument["occurrence_id"]]
+        left, right, surface = occurrence.get("start"), occurrence.get("end"), argument["surface"]
+    else:
+        left, right, surface = argument["start"], argument["end"], argument["literal"]
+    return (isinstance(left, int) and isinstance(right, int) and 0 <= left < right <= len(document)
+            and document[left:right] == surface and start <= left < right <= end)
+
+
+def _derived_relation_anchor(
+    document: str,
+    arguments: list[dict],
+    occurrences: Mapping[str, Mapping],
+    context_candidates: Mapping[str, Mapping],
+) -> tuple[str, tuple[int, int] | None, str | None, str | None]:
+    """Resolve a v4 literal after deriving a source-local anchor from linked spans."""
+    clauses = _source_clause_spans(document)
+
+    def clause_index(start: int, end: int) -> int | None:
+        return next((index for index, (left, right) in enumerate(clauses)
+                     if left <= start < end <= right), None)
+
+    linked = [argument for argument in arguments if argument["kind"] == "linked"]
+    if not linked:
+        return "", None, "missing_linked_argument", None
+    linked_spans = [
+        (int(occurrences[argument["occurrence_id"]]["start"]),
+         int(occurrences[argument["occurrence_id"]]["end"]))
+        for argument in linked
+    ]
+    linked_clause_indices = [clause_index(start, end) for start, end in linked_spans]
+    if any(index is None for index in linked_clause_indices):
+        return "", None, "invalid_evidence_occurrence", None
+    linked_plan_section = _shared_plan_section(document, linked_spans)
+    context = next((argument for argument in arguments if argument["kind"] == "context"), None)
+    if context is not None and context.get("start") is None:
+        literal = str(context["literal"])
+        matches = _exact_substring_starts(document, literal)
+        candidates = []
+        for start in matches:
+            end = start + len(literal)
+            literal_clause = clause_index(start, end)
+            if literal_clause is None:
+                continue
+            all_indices = [*linked_clause_indices, literal_clause]
+            if max(all_indices) - min(all_indices) <= 1:
+                candidates.append((start, end))
+        if not candidates and linked_plan_section is not None:
+            candidates = [
+                (start, start + len(literal)) for start in matches
+                if linked_plan_section[0] <= start < start + len(literal) <= linked_plan_section[1]
+            ]
+        if len(candidates) != 1:
+            return "", None, "ambiguous_context_literal" if candidates else "unknown_context_literal", None
+        start, end = candidates[0]
+        typed = [row for row in context_candidates.values()
+                 if row.get("literal") == literal and int(row.get("start", -1)) == start
+                 and int(row.get("end", -1)) == end]
+        if len(typed) != 1:
+            return "", None, "untyped_context_literal", None
+        context.update({
+            "runtime_type": str(typed[0]["runtime_type"]), "start": start, "end": end,
+            "context_candidate_id": str(typed[0]["context_candidate_id"]),
         })
-    schema = {
-        "relations": [{
-            "subtype": "contextual_relation",
-            "relation": f"one of: {', '.join(RELATION_ONTOLOGY)}",
-            "argument_occurrence_ids": ["existing occurrence IDs"],
-            "support_properties": {
-                "occurrence ID": "one exact legal_support_properties value"
-            },
-            "answer_occurrence_id": "one argument occurrence ID",
-            "answer_property": "that occurrence's exact selected support property",
-            "question": "natural question not containing a protected surface or its answer",
-            "evidence_quote": "one exact source substring directly connecting all arguments",
-            "evidence_start": (
-                "exact zero-based quote start; required when evidence_quote occurs more "
-                "than once, optional when unique"
-            ),
-        }]
-    }
-    return (
-        "Extract only explicit, task-relevant clinical relations from the source. "
-        "Use the closed relation vocabulary and existing occurrence IDs. Select support "
-        "properties verbatim from the inventory. Do not use medical knowledge absent from "
-        "the source. Abstain with an empty relations list when evidence is insufficient. "
-        "Return only the requested JSON object.\n\n"
-        f"DOCUMENT ID:\n{doc_id}\n\n"
-        f"OCCURRENCE INVENTORY:\n{json.dumps(inventory, indent=2)}\n\n"
-        f"OUTPUT SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
-        f"SOURCE DOCUMENT:\n{document}"
+    all_indices = [
+        clause_index(
+            int(occurrences[argument["occurrence_id"]]["start"])
+            if argument["kind"] == "linked" else int(argument["start"]),
+            int(occurrences[argument["occurrence_id"]]["end"])
+            if argument["kind"] == "linked" else int(argument["end"]),
+        )
+        for argument in arguments
+    ]
+    if not any(index is None for index in all_indices) and max(all_indices) - min(all_indices) <= 1:
+        left, right = clauses[min(all_indices)][0], clauses[max(all_indices)][1]
+        return document[left:right], (left, right), None, "clause"
+    argument_spans = [
+        (int(occurrences[argument["occurrence_id"]]["start"]),
+         int(occurrences[argument["occurrence_id"]]["end"]))
+        if argument["kind"] == "linked" else (int(argument["start"]), int(argument["end"]))
+        for argument in arguments
+    ]
+    plan_section = _shared_plan_section(document, argument_spans)
+    if plan_section is None:
+        return "", None, "invalid_evidence", None
+    left, right = plan_section
+    return document[left:right], plan_section, None, "plan_section"
+
+
+def _relation_quote_has_direct_support(
+    relation: str,
+    quote: str,
+    arguments: Sequence[Mapping],
+    relation_contract: Mapping[str, Mapping],
+    *,
+    allow_adjacent_clauses: bool = False,
+    allow_plan_section: bool = False,
+) -> bool:
+    """Require both exact arguments in one clause and an adapter-declared relation cue.
+
+    Context literals may occur before the condition (for example, 'takes X for Y'),
+    so source word order does not redefine the directional relation signature.
+    """
+    clause_ranges = [
+        (match.start(), match.end())
+        for match in re.finditer(r"[^\n.!?;]+", canon(quote))
+        if match.group().strip()
+    ]
+    if len(clause_ranges) > 1 and not allow_adjacent_clauses:
+        return False
+    if len(clause_ranges) > 2 and not allow_adjacent_clauses:
+        return False
+    normalized = canon(quote)
+    positions = []
+    for argument in arguments:
+        match = re.search(rf"(?<!\w){re.escape(canon(str(argument.get('surface', argument.get('literal', '')))))}(?!\w)", normalized)
+        if match is None:
+            return False
+        positions.append((match.start(), match.end()))
+    if not positions:
+        return False
+    if len(clause_ranges) > 2:
+        local_left = min(position[0] for position in positions)
+        local_right = max(position[1] for position in positions)
+        return (
+            (allow_plan_section or local_right - local_left <= 320)
+            and any(re.search(re.escape(cue), normalized[local_left:local_right])
+                    for cue in relation_contract[relation].get("cues", ()))
+        )
+    if positions[0] < positions[1]:
+        connector = normalized[positions[0][1]:positions[1][0]]
+        if any(re.fullmatch(pattern, connector) for pattern in
+               relation_contract[relation].get("connector_patterns", ())):
+            return True
+        if allow_adjacent_clauses:
+            argument_clauses = [
+                next((index for index, (left, right) in enumerate(clause_ranges)
+                      if left <= position[0] < right), None)
+                for position in positions
+            ]
+            if (
+                None not in argument_clauses
+                and abs(argument_clauses[0] - argument_clauses[1]) <= 1
+            ):
+                local_left = min(position[0] for position in positions)
+                local_right = max(position[1] for position in positions)
+                return any(
+                    re.search(re.escape(cue), normalized[local_left:local_right])
+                    for cue in relation_contract[relation].get("cues", ())
+                )
+        return False
+    cues = relation_contract[relation].get("cues", ())
+    if len(clause_ranges) == 1:
+        return any(re.search(re.escape(cue), normalized) for cue in cues)
+    argument_clauses = [
+        next((index for index, (left, right) in enumerate(clause_ranges)
+              if left <= position[0] < right), None)
+        for position in positions
+    ]
+    if None in argument_clauses or abs(argument_clauses[0] - argument_clauses[1]) != 1:
+        return False
+    return any(
+        (cue_match := re.search(re.escape(cue), normalized)) is not None
+        and any(left <= cue_match.start() < right for left, right in clause_ranges)
+        for cue in cues
     )
 
 
@@ -1659,6 +2464,7 @@ def compile_relational_assertions(
     proposals: Sequence[Mapping],
     *,
     relation_contract: Mapping[str, Mapping] = ACI_RELATION_CONTRACT,
+    context_candidates: Sequence[Mapping] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     """Compile bounded teacher proposals into frozen, evidence-checked assertions."""
     occurrences = {
@@ -1669,6 +2475,29 @@ def compile_relational_assertions(
         str(row["decision_id"]): row
         for row in environment_document.get("decisions", [])
     }
+    context_by_id = {
+        str(row["context_candidate_id"]): row
+        for row in (relation_context_candidates(document)
+                    if context_candidates is None else context_candidates)
+    }
+    span_labels = {
+        str(row["span_label"]): str(row["occurrence_id"])
+        for row in relation_teacher_span_inventory(environment_document)
+    }
+    legacy_windows = {
+        str(row["evidence_window_id"]): row
+        for row in relation_evidence_windows(document, environment_document)
+    }
+
+    def proposal_evidence(proposal: Mapping) -> tuple[str, tuple[int, int] | None, str | None]:
+        window = legacy_windows.get(str(proposal.get("evidence_window_id", "")))
+        if window is not None:
+            return str(window["quote"]), (int(window["start"]), int(window["end"])), None
+        quote = str(proposal.get("evidence_quote", ""))
+        span, error = _resolve_relation_evidence_span(
+            document, quote, proposal.get("evidence_start")
+        )
+        return quote, span, error
     legal_properties: dict[str, set[str]] = {}
     for occurrence_id, occurrence in occurrences.items():
         decision = decisions.get(str(occurrence.get("decision_id")), {})
@@ -1682,15 +2511,13 @@ def compile_relational_assertions(
         }
 
     accepted, rejected = [], []
+    fact_groups = set()
     for index, proposal_value in enumerate(proposals):
         proposal = dict(proposal_value)
         proposal_hash = _stable_hash(proposal)
 
         def reject(reason: str) -> None:
-            quote = str(proposal.get("evidence_quote", ""))
-            quote_span, _ = _resolve_relation_evidence_span(
-                document, quote, proposal.get("evidence_start")
-            )
+            quote, quote_span, _ = proposal_evidence(proposal)
             evidence = {
                 "source": "relation_teacher",
                 "proposal_index": index,
@@ -1719,47 +2546,65 @@ def compile_relational_assertions(
             record["proposal_hash"] = proposal_hash
             rejected.append(record)
 
+        if index >= RELATION_TEACHER_MAX_RELATIONS:
+            reject("relation_cap_exceeded")
+            continue
+
         proposed_subtype = proposal.get("subtype")
         if proposed_subtype not in {None, "contextual_relation"}:
             reject("invalid_subtype")
             continue
         relation = str(proposal.get("relation", ""))
+        # Cached v1 proposals conflated drug and procedure under treated_with.
+        # Migrate only that old wire shape to the directional v2 relation; a v2
+        # proposal labelled treated_with with a drug still fails its type contract.
+        if proposal.get("arguments") is None and relation == "treated_with":
+            legacy_ids = [str(value) for value in proposal.get("argument_occurrence_ids", [])]
+            if len(legacy_ids) == 2 and legacy_ids[1] in occurrences and (
+                _RUNTIME_TYPE_CLASSES.get(canon(str(occurrences[legacy_ids[1]].get("runtime_type", ""))))
+                == "treatment"
+            ):
+                relation = "prescribed_with"
         if relation not in relation_contract:
             reject("invalid_relation")
             continue
-        occurrence_ids = [str(value) for value in proposal.get(
-            "argument_occurrence_ids", []
-        )]
-        if len(occurrence_ids) < 2 or len(set(occurrence_ids)) != len(occurrence_ids):
-            reject("invalid_arguments")
-            continue
-        if any(occurrence_id not in occurrences for occurrence_id in occurrence_ids):
-            reject("invalid_arguments")
-            continue
-        if not _relation_argument_types_are_legal(
-            relation, occurrence_ids, occurrences, relation_contract
-        ):
-            reject("invalid_argument_types")
-            continue
-        quote = str(proposal.get("evidence_quote", ""))
-        evidence_span, evidence_error = _resolve_relation_evidence_span(
-            document, quote, proposal.get("evidence_start")
+        arguments, argument_error = _teacher_relation_arguments(
+            proposal, occurrences, context_by_id, span_labels
         )
+        if argument_error is not None:
+            reject(argument_error)
+            continue
+        occurrence_ids = [argument["occurrence_id"] for argument in arguments
+                          if argument["kind"] == "linked"]
+        if len(set(occurrence_ids)) != len(occurrence_ids):
+            reject("invalid_arguments")
+            continue
+        uses_v4_arguments = any("span_label" in argument or "literal" in argument
+                                for argument in proposal.get("arguments") or [])
+        anchor_kind = None
+        if uses_v4_arguments:
+            quote, evidence_span, evidence_error, anchor_kind = _derived_relation_anchor(
+                document, arguments, occurrences, context_by_id
+            )
+        else:
+            quote, evidence_span, evidence_error = proposal_evidence(proposal)
         if evidence_error is not None:
             reject(evidence_error)
             continue
-        if not _evidence_span_contains_occurrences(
-            document, evidence_span, occurrence_ids, occurrences
-        ):
+        if not _relation_arguments_are_legal(relation, arguments, relation_contract):
+            reject("invalid_argument_types")
+            continue
+        if not all(_argument_is_grounded(argument, document, evidence_span, occurrences)
+                   for argument in arguments):
             reject("invalid_evidence_occurrence")
             continue
-        if not _relation_evidence_connects_selected_occurrences(
+        if not _relation_quote_has_direct_support(
             relation,
             quote,
-            evidence_span,
-            occurrence_ids,
-            occurrences,
+            arguments,
             relation_contract,
+            allow_adjacent_clauses=(uses_v4_arguments or proposal.get("evidence_window_id") is not None),
+            allow_plan_section=anchor_kind == "plan_section",
         ):
             reject("invalid_evidence")
             continue
@@ -1768,60 +2613,82 @@ def compile_relational_assertions(
         ):
             reject("invalid_polarity")
             continue
-        if _source_contains_relation_contradiction(
+        if occurrence_ids and _source_contains_relation_contradiction(
             relation, document, occurrence_ids, occurrences, relation_contract
         ):
             reject("source_contradiction")
             continue
-        support = {
-            str(key): canon(str(value))
-            for key, value in dict(proposal.get("support_properties") or {}).items()
-        }
-        if set(support) != set(occurrence_ids) or any(
-            support[occurrence_id] not in legal_properties[occurrence_id]
-            for occurrence_id in occurrence_ids
-        ):
-            reject("invalid_property")
-            continue
-        answer_occurrence_id = str(proposal.get("answer_occurrence_id", ""))
-        answer_property = canon(str(proposal.get("answer_property", "")))
-        if (
-            answer_occurrence_id not in occurrence_ids
-            or answer_property != support.get(answer_occurrence_id)
-        ):
+        support = {argument["occurrence_id"]: argument["support_property"]
+                   for argument in arguments if argument["kind"] == "linked"}
+        if any(not support[occurrence_id] or
+               support[occurrence_id] not in legal_properties[occurrence_id]
+               for occurrence_id in occurrence_ids):
             reject("invalid_property")
             continue
         question = str(proposal.get("question", "")).strip()
         if not question.endswith("?"):
             reject("invalid_question")
             continue
-        answer_runtime_type = str(
-            occurrences[answer_occurrence_id].get("runtime_type", "")
-        )
-        if _question_leaks_answer(question, answer_property, answer_runtime_type):
+        accepted_values = [str(value).strip() for value in proposal.get("accepted_answers", [])
+                           if str(value).strip()]
+        # v1 migration: preserve old cached proposals, but new requests must author answers.
+        if not accepted_values:
+            answer_occurrence_id = str(proposal.get("answer_occurrence_id", ""))
+            answer_property = canon(str(proposal.get("answer_property", "")))
+            if answer_occurrence_id not in occurrence_ids or answer_property != support.get(answer_occurrence_id):
+                reject("invalid_property")
+                continue
+            accepted_values = [answer_property]
+        scoring_contract = dict(proposal.get("scoring_contract") or {
+            "kind": "semantic_qa", "match": "fact_score"
+        })
+        if scoring_contract.get("kind") != "semantic_qa" or not accepted_values:
+            reject("invalid_scoring_contract")
+            continue
+        if any(_question_leaks_answer(question, answer, "") for answer in accepted_values):
             reject("answer_leakage")
             continue
         protected_terms = [
             term
             for occurrence in occurrences.values()
+            if occurrence.get("controlled", True)
+            and decisions.get(str(occurrence.get("decision_id")), {}).get("controlled", True)
             for term in _occurrence_protected_terms(occurrence)
         ]
         if _question_leaks_protected_term(question, protected_terms):
             reject("protected_locator")
             continue
+        if proposal.get("arguments") is not None and any(
+            _question_leaks_protected_term(answer, protected_terms)
+            for answer in accepted_values
+        ):
+            reject("protected_answer")
+            continue
         decision_requirements = {
             str(occurrences[occurrence_id]["decision_id"]): support[occurrence_id]
             for occurrence_id in occurrence_ids
         }
+        fact_group = (relation, tuple(
+            (argument["kind"], argument.get("occurrence_id", canon(argument.get("literal", ""))))
+            for argument in arguments
+        ))
+        if fact_group in fact_groups:
+            reject("duplicate_fact_group")
+            continue
+        fact_groups.add(fact_group)
         accepted.append({
             "family": "context",
             "scope": "linked",
             "subtype": "contextual_relation",
             "relation": relation,
             "occurrence_ids": occurrence_ids,
-            "group_id": f"relation:{relation}:{':'.join(occurrence_ids)}",
+            "group_id": "relation:" + relation + ":" + _stable_hash([
+                {key: argument[key] for key in ("kind", "occurrence_id", "literal") if key in argument}
+                for argument in arguments
+            ]),
             "question": question,
-            "accepted_values": [answer_property],
+            "accepted_values": accepted_values,
+            "scoring_contract": scoring_contract,
             "decision_requirements": decision_requirements,
             "evidence": {
                 "authority": "source_document",
@@ -1838,6 +2705,7 @@ def compile_relational_assertions(
                     ]
                     for occurrence_id in occurrence_ids
                 },
+                "arguments": arguments,
             },
         })
     return accepted, rejected
@@ -2413,6 +3281,8 @@ def build_utility_artifact(
     option_permutations = int(threshold_manifest.get("reader_option_permutations", 1))
     stability_threshold = float(threshold_manifest.get("reader_stability_threshold", 1.0))
     candidates_by_document: dict[str, list[dict]] = {}
+    candidate_accounting_by_document: dict[str, list[dict]] = {}
+    relation_generation_by_document: dict[str, list[dict]] = {}
     rejection_records: list[dict] = []
 
     def preserve_rejection(record_value: Mapping, *, doc_id: str) -> None:
@@ -2655,7 +3525,7 @@ def build_utility_artifact(
             and row.get("subtype") == "contextual_relation"
             for row in accepted
         )
-        if contextual_relation_count < min_contextual_relations:
+        if relation_teacher is not None and relation_teacher_span_inventory(environment_document):
             if relation_teacher is None:
                 preserve_rejection(_rejection_record(
                     reason="not_generated",
@@ -2676,7 +3546,47 @@ def build_utility_artifact(
                 prompt = relation_teacher_prompt(doc_id, source, environment_document)
                 prompt_hash = _stable_hash(prompt)
                 try:
-                    proposals = relation_teacher.propose(prompt)
+                    if isinstance(relation_teacher, OpenRouterRelationTeacher):
+                        proposals = relation_teacher.propose(
+                            prompt,
+                            response_format=relation_teacher_response_format(
+                                environment_document, source,
+                            ),
+                        )
+                    else:
+                        proposals = relation_teacher.propose(prompt)
+                    if isinstance(proposals, RelationTeacherProposals):
+                        try:
+                            candidate_accounting_by_document[doc_id] = (
+                                _validated_candidate_accounting(
+                                    proposals.candidate_accounting,
+                                    environment_document,
+                                    source,
+                                )
+                            )
+                            emitted_labels = {
+                                str(argument.get("span_label"))
+                                for proposal in proposals
+                                for argument in proposal.get("arguments") or []
+                                if isinstance(argument, Mapping)
+                                and argument.get("kind") == "linked"
+                            }
+                            ledger_emitted = {
+                                str(row.get("candidate_label"))
+                                for row in candidate_accounting_by_document[doc_id]
+                                if row.get("state") == "emitted"
+                            }
+                            if emitted_labels != ledger_emitted:
+                                candidate_accounting_by_document[doc_id].append({
+                                    "state": "ledger_inconsistent",
+                                    "reason": "emitted_labels_do_not_match_proposals",
+                                })
+                        except ValueError as error:
+                            candidate_accounting_by_document[doc_id] = [{
+                                "state": "ledger_inconsistent",
+                                "reason": "invalid_teacher_candidate_accounting",
+                                "detail": str(error),
+                            }]
                     if not proposals:
                         preserve_rejection(_rejection_record(
                             reason="not_generated",
@@ -2696,6 +3606,16 @@ def build_utility_artifact(
                             },
                         ), doc_id=doc_id)
                     else:
+                        relation_attempts = [{
+                            "proposal_index": proposal_index,
+                            "relation": proposal.get("relation"),
+                            "arguments": proposal.get("arguments"),
+                            "question": proposal.get("question"),
+                            "accepted_answers": proposal.get("accepted_answers"),
+                            "scoring_contract": proposal.get("scoring_contract"),
+                            "status": "rejected",
+                            "reason": "uncompiled",
+                        } for proposal_index, proposal in enumerate(proposals)]
                         relation_candidates, relation_rejections = (
                             task_adapter.compile_relations(
                                 doc_id, source, environment_document, proposals
@@ -2707,11 +3627,44 @@ def build_utility_artifact(
                                 **dict(relation_candidate.get("evidence") or {}),
                                 "prompt_hash": prompt_hash,
                             }
+                        attempts_by_proposal_hash = {
+                            _stable_hash(proposal): attempt
+                            for proposal, attempt in zip(proposals, relation_attempts)
+                        }
+                        attempts_by_candidate_hash = {
+                            _stable_hash(candidate): attempts_by_proposal_hash.get(
+                                candidate.get("evidence", {}).get("proposal_hash")
+                            )
+                            for candidate in relation_candidates
+                        }
                         for rejection in relation_rejections:
                             preserve_rejection(rejection, doc_id=doc_id)
+                            proposal_index = rejection.get("proposal_index")
+                            if isinstance(proposal_index, int) and proposal_index < len(relation_attempts):
+                                relation_attempts[proposal_index].update({
+                                    "status": "rejected",
+                                    "reason": rejection.get("detail_reason", rejection.get("reason")),
+                                })
+                        rejection_count_before_validation = len(rejection_records)
                         accepted_relations = validate_candidate_rows(
                             [dict(row) for row in relation_candidates]
                         )
+                        for row in accepted_relations:
+                            attempt = attempts_by_proposal_hash.get(
+                                row.get("evidence", {}).get("proposal_hash")
+                            )
+                            if attempt is not None:
+                                attempt.update({"status": "kept", "reason": "accepted"})
+                        for rejection in rejection_records[rejection_count_before_validation:]:
+                            attempt = attempts_by_candidate_hash.get(
+                                rejection.get("evidence", {}).get("candidate_hash")
+                            )
+                            if attempt is not None:
+                                attempt.update({
+                                    "status": "rejected",
+                                    "reason": rejection.get("detail_reason", rejection.get("reason")),
+                                })
+                        relation_generation_by_document[doc_id] = relation_attempts
                         accepted.extend(accepted_relations)
                         contextual_relation_count = sum(
                             row.get("family") == "context"
@@ -2754,21 +3707,62 @@ def build_utility_artifact(
                                 },
                             ), doc_id=doc_id)
                 except Exception as error:
+                    error_code = (
+                        error.code
+                        if isinstance(error, RelationTeacherResponseError)
+                        else "teacher_generation_failed"
+                    )
                     preserve_rejection(_rejection_record(
                         reason="generation_failed",
-                        detail_reason="teacher_generation_failed",
+                        detail_reason=error_code,
                         attempt={
                             "doc_id": doc_id,
                             "prompt_hash": _stable_hash(prompt),
                             "error_type": type(error).__name__,
+                            "error_code": error_code,
+                            "raw_length": (
+                                error.raw_length
+                                if isinstance(error, RelationTeacherResponseError)
+                                else None
+                            ),
+                            "completion_state": (
+                                error.completion_state
+                                if isinstance(error, RelationTeacherResponseError)
+                                else None
+                            ),
                             "definition_version": "contextual-relation-v1",
                         },
                         evidence={
                             "source": "relation_teacher",
                             "prompt_hash": _stable_hash(prompt),
                             "error_type": type(error).__name__,
+                            "error_code": error_code,
+                            "raw_length": (
+                                error.raw_length
+                                if isinstance(error, RelationTeacherResponseError)
+                                else None
+                            ),
+                            "completion_state": (
+                                error.completion_state
+                                if isinstance(error, RelationTeacherResponseError)
+                                else None
+                            ),
                         },
                     ), doc_id=doc_id)
+        elif relation_teacher is not None:
+            preserve_rejection(_rejection_record(
+                reason="not_generated",
+                detail_reason="no_eligible_relation_spans",
+                attempt={"doc_id": doc_id, "definition_version": "contextual-relation-v4"},
+                evidence={"source": "relation_teacher", "eligible_span_count": 0},
+            ), doc_id=doc_id)
+        elif contextual_relation_count < min_contextual_relations:
+            preserve_rejection(_rejection_record(
+                reason="not_generated",
+                detail_reason="contextual_relation_threshold_unmet_no_teacher",
+                attempt={"doc_id": doc_id, "definition_version": "contextual-relation-v4"},
+                evidence={"source": "relation_teacher", "teacher_configured": False},
+            ), doc_id=doc_id)
         candidates_by_document[doc_id] = accepted
 
     artifact = package_utility_artifact(
@@ -2789,6 +3783,8 @@ def build_utility_artifact(
         "summary_by_reason": dict(summary_by_reason),
         "records": rejection_records,
     }
+    artifact["relation_candidate_accounting"] = candidate_accounting_by_document
+    artifact["relation_generation"] = relation_generation_by_document
     artifact["artifact_hash"] = _stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
     })

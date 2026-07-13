@@ -55,8 +55,9 @@ minimum evidence that the assertion rewards usable generalization rather than me
    to one policy decision.
 3. **Assertions precede questions.** The builder first compiles grounded assertions. Questions,
    when needed, are only scoring forms of accepted assertions.
-4. **Teacher proposals are not gold.** Code owns IDs, canonical values, relation vocabulary,
-   accepted answers, channels, and validation.
+4. **Teacher proposals are not gold.** Code owns IDs, canonical links, relation vocabulary,
+   channels, and validation. The teacher authors contextual relation questions and accepted
+   answers; code validates rather than deterministically inventing that semantic content.
 5. **Probe links are routing hints.** They route provisional credit but do not certify causality.
 6. **Measurement and routing are orthogonal.** Assertion family records what is measured;
    `scope: linked | global` records how ranker v2 routes it.
@@ -166,46 +167,310 @@ Code derives what it can authoritatively:
 - fixed schema sections and row keys;
 - exact ceiling matches.
 
-### Optional relation escalation
+### One bounded relation-teacher request
 
-A pinned teacher is optional, not the backbone. Start with deterministic candidates from the
-frozen detector, lattice, task schema, and templates. If those cannot produce enough high-value
-contextual relations for a document under the preregistered support rule, make at most one
-batched, cached relation-proposal call for that document. Otherwise make no teacher call.
+For every document with at least one eligible controlled `S#` span, make one pinned, batched,
+cached relation-proposal call. Deterministic extraction supplies structural facts and the
+safety/representability prefilter; it does not create contextual relation QA templates. A document
+with no eligible controlled span makes no relation-teacher call and records that explicit
+no-candidate state. The teacher may abstain; do not retry to chase coverage.
 
-The teacher receives `doc_orig`, authoritative reference evidence when available, and the
-numbered occurrence inventory. It selects from the ACI adapter's closed relation vocabulary and
-quotes exact evidence. Abstain rather than retrying to chase coverage.
+The teacher receives `doc_orig`, authoritative reference evidence when available, and the compact
+relation prompt described in [Teacher prompt specification](#teacher-prompt-specification). It
+selects from the ACI adapter's closed relation vocabulary. Abstain rather than retrying to chase
+coverage.
 
-The optional relation teacher is pinned to
+The relation teacher is pinned to
 `nvidia/nemotron-3-super-120b-a12b:free` through
 `https://openrouter.ai/api/v1`, authenticated by `OPENROUTER_API_KEY`. Changing model, provider,
-prompt, or response schema invalidates the build cache and artifact pin.
+prompt, response schema, or generation configuration invalidates the build cache and artifact
+pin. Its current bounded configuration requests at most 8,192 completion tokens, reserves at
+most 1,024 reasoning tokens (the model's reasoning is mandatory on this route), and excludes the
+reasoning trace from the returned artifact. The OpenRouter wire request uses strict JSON Schema,
+with `relations` and `candidate_accounting` required at the top level; basic JSON-object mode is
+insufficient because `{}` is syntactically valid but semantically unusable. Per document, the
+wire schema constrains relation roles to `subject`/`object`, argument kinds to `linked`/`context`,
+linked short labels to the document's displayed `S#` labels, and ledger cardinality to the number
+of displayed `S#` labels. It must permit a clean empty relation list and must not create an empty
+enumeration for any optional field. It must not bind teacher-authored accepted answers to a finite
+answer enum. The compiler remains the authority for cross-field semantics and exactly-once
+candidate coverage.
 
-The initial ACI vocabulary is deliberately small:
+### Teacher prompt specification
+
+This section is normative for the relation teacher's human-facing prompt. It deliberately
+separates semantic search from deterministic validation.
+
+**Responsibilities.** The teacher searches `doc_orig` for as many source-grounded,
+task-relevant, non-duplicate relations as the preregistered cap permits, with relation diversity
+where evidence supports it. It authors the contextual question, accepted answer(s), scoring
+contract, and semantic generalization requirements. It must not fabricate a relation merely to
+cover a type. Deterministic code maps the teacher's short labels back to frozen records and
+validates source grounding, argument types, legal generalization support, protected-term leakage,
+duplicate fact groups, reader gates, and representative anchors.
+
+**Prompt presentation.** The human-facing instruction is a short fixed outline, not a narrative
+wall of text. It must appear in this order:
 
 ```text
-treated_with
-monitored_by
-contraindicated_because_of
-causes_or_explains
-referred_to
-has_status
-has_category
+TASK
+Find as many explicit, source-grounded, non-duplicate relations as the cap permits.
+Prefer diversity only when the source supports it. Abstain rather than inventing a fact.
+
+HOW TO INSPECT THE SOURCE
+Read the full document. Use evidence cards to find and name source spans.
+Consider every displayed span. A relation may use any ontology-compatible spans in the source;
+cards do not limit semantic search.
+
+PRIVACY-SAFE QA
+Write a question and accepted answer(s) that test the relation's meaning.
+Never copy a displayed controlled source span or alias into either; use its displayed
+generalization level. An exact uncontrolled literal is allowed only when it is the measured fact.
+
+RELATION INVENTORY
+<the concise plain-text inventory below>
+
+WORKED EXAMPLES
+<the three examples below>
+
+EVIDENCE CARDS
+<compact cards for this document>
+
+RESPONSE
+Return relation records and one concise accounting record for every displayed label.
 ```
 
-The teacher cannot create entities, IDs, gold values, or relation types.
+The instruction must not contain implementation/wire prose such as “the constrained wire
+schema,” JSON-null instructions, field-by-field schema explanations, hash rules, offset rules, or
+internal validation gates. Those belong solely to the provider response schema and deterministic
+compiler. The only response-level language visible to the teacher is the semantic task and the
+short list of required record contents.
+
+The prompt includes these compact worked examples before document-specific evidence cards:
+
+```text
+Example A — drug, not procedure
+Source: “… [S1: arthritis | condition | levels: joint disease; inflammatory condition] …
+prescribe [S2: Ultram | drug | levels: opioid analgesic] …”
+Relation: prescribed_with(S1, S2)
+Safe QA: “Which medication category was prescribed for the joint condition?”
+Accepted answer: “opioid analgesic”
+Never call this treated_with.
+
+Example B — explicit monitoring
+Source: “… To follow the [S3: thyroid condition | condition | levels: endocrine condition],
+order thyroid labs …”
+Relation: monitored_by(S3, "thyroid labs")
+Safe QA: “What follow-up testing was ordered for the endocrine condition?”
+Accepted answer: “thyroid labs”
+
+Example C — do not infer a relation
+Source: “… autoimmune panel …” with no explicit linked condition or purpose.
+Action: do not emit monitored_by merely because the test is present.
+```
+
+**Teacher input.** The prompt contains the full source document plus compact, readable
+relation-focused evidence cards. A card contains a source excerpt and inline short labels, for
+example:
+
+```text
+E12
+... acute exacerbation of [S7: arthritis | condition | levels: joint disease; inflammatory condition]
+... prescribe [S8: Ultram | drug | levels: opioid analgesic] ...
+```
+
+**Detected-span presentation.** The teacher sees source occurrences, not internal detector
+records. Before prompt construction, code selects a detector occurrence only when all of the
+following hold:
+
+1. it is an accepted frozen occurrence with an exact span in `doc_orig`;
+2. it is linked to a controlled decision;
+3. that decision has at least one legal non-KEEP, non-placeholder generalization level; and
+4. its adapter-mapped coarse class can fill at least one relation-inventory role (`condition`,
+   `symptom`, `drug`, `procedure`, or `provider`).
+
+Thus age, demographic/person labels, unsupported detector types, and any occurrence without a
+usable lattice profile are absent from the teacher prompt. This is eligibility filtering, not a
+semantic judgement about whether two retained spans have a relation.
+
+Every retained *source occurrence* receives one document-local label in source order: `S1`, `S2`,
+…. Repeated mentions receive separate labels because they are separate source anchors, even when
+they map internally to one policy decision. The visible form is exactly one line:
+
+```text
+[S7: arthritis | condition | levels: joint disease; inflammatory condition]
+```
+
+`arthritis` is the exact source text, `condition` is the adapter's human-readable relation class,
+and the listed levels are the decision's legal non-KEEP/non-placeholder lattice meanings. Code
+retains the opaque occurrence ID, decision ID, offsets, detector runtime type, aliases, polarity,
+and the `S7` mapping; none of those fields is shown to the teacher. The teacher refers to `S7`
+in its relation record, and the compiler resolves that label to the exact occurrence before any
+validation.
+
+An uncontrolled source-grounded literal is an exact quoted literal authored by the teacher. It is
+permitted only in a relation with at least one linked `S#` argument. The compiler first resolves
+the linked labels and derives candidate evidence anchors from them; it then resolves the literal
+as one exact, unique span inside an anchor. It derives the literal's canonical class from the
+adapter's closed literal contract: explicit lexical/structural rules for `test`, `procedure`,
+`provider`, `status`, and `category`, plus the relation object's permitted slot class. It rejects
+an ambiguous, duplicate, untyped, or slot-incompatible resolution. The compiler privately retains
+the exact source spans and mappings needed for that literal.
+
+The prompt must not expose unrelated detector types (for example age or `demographic-other`),
+opaque occurrence/context hashes, character offsets, aliases, the ambiguous word `surface`, a
+global context-candidate inventory, or a global evidence-window/pair matrix. Use `text` or
+`source span` for the displayed source text, and `allowed generalization levels` for the lattice
+levels; do not use `legal_support_properties` in teacher-facing prose.
+
+Evidence cards are navigation and grounding aids, not a semantic prefilter. In particular, code
+must not generate or expose `eligible_pairs`, and must not use relation-specific cue/order
+heuristics to decide which pairs the teacher may propose. Cards may exclude policy-ineligible
+spans, but must not decide that an ontology-compatible source pair lacks a relation. The teacher
+may propose any source-grounded ontology-compatible relation it finds in the supplied document and
+cards; the compiler performs the subsequent deterministic evidence check.
+
+**Evidence grounding.** The teacher does not select an evidence-window ID or manufacture an
+evidence quote. The compiler resolves linked arguments first and derives the smallest candidate
+source anchor containing them: normally one clause, or two adjacent clauses only when an
+unambiguous, word-boundary relation cue links them. For a recognized clinical assessment/plan
+block, it may instead use the single explicit condition heading and its following plan bullets as
+one bounded source section. This fallback applies only when every resolved argument is in that
+same section and the relation's direct cue occurs there; it is not a cross-turn or free-form
+proximity bridge. It resolves a quoted literal only within the chosen anchor, then verifies that
+the completed relation is directly supported. The compiler rejects proximity links, cross-turn
+links, cue substrings, contradictory polarity, and a relation whose arguments cannot be directly
+connected in that anchor. Cards help the teacher navigate; they neither limit search nor
+constitute accepted evidence. There is no `evidence_window_id` in the teacher response or relation
+artifact.
+
+**Leakage scope.** Protected-term lint applies to every controlled decision and its deterministic
+aliases, whether or not that decision was eligible for teacher presentation. Display eligibility
+only limits semantic search and candidate accounting; it never removes privacy protection. Raw
+detector-only occurrences that are not controlled decisions are outside this protected set. A
+context literal may appear in an accepted answer only when it resolves to an uncontrolled literal;
+if it also resolves to a protected controlled span, the proposal is rejected as ambiguous. The
+compiler separately checks answer-to-question leakage.
+
+**Candidate accounting.** The response includes exactly one concise accounting row for every
+displayed `S#` label: `emitted`, `exhausted_no_relation`, or `unsupported`. `emitted` means the
+teacher attempted a relation using that label; it does not claim compiler acceptance.
+`exhausted_no_relation` means the label was considered but no explicit, ontology-compatible
+relation is supported. `unsupported` means the source does not establish enough semantic role or
+connection for that label to support any ontology relation; it is not a claim that the policy
+decision lacks utility. The compiler records prefilter exclusions separately as
+`ineligible_prefilter`; those records are not teacher ledger members. Quoted literals are not
+ledger members. Reasons must be concise, sanitized, and label-referential: they
+must not repeat protected source text. This is a bounded coverage diagnostic, never a requirement
+to invent a relation or a reason to remove a ranker decision. The compiler cross-checks the ledger
+against proposals and preserves attempted, accepted, and rejected counts by relation type. A
+missing, duplicate, or proposal-inconsistent ledger row records `ledger_inconsistent` as a
+diagnostic; it must not reject an otherwise valid relation or erase its compilation outcome.
+
+**Relation inventory.** Present this inventory as structured instructional text, never JSON.
+The arrow is the complete argument-direction contract; do not separately repeat `ordered`,
+`ordered_roles`, or `argument_classes` in teacher-facing material.
+
+```text
+RELATION INVENTORY
+
+Use only these directed relations. The arrow gives argument direction.
+Do not reverse it. Emit a relation only when the source explicitly supports it.
+
+1. prescribed_with
+   condition or diagnosis → drug
+   Use when a drug is prescribed, continued, taken, or used for that condition.
+   Example: “arthritis … prescribe Ultram” → arthritis prescribed_with Ultram.
+   Do not use for a procedure.
+
+2. treated_with
+   condition or diagnosis → medical procedure
+   Use when a procedure is used to treat the condition.
+   Example: “stone treated with lithotripsy” → kidney stone treated_with lithotripsy.
+   Never use for a drug.
+
+3. monitored_by
+   condition or diagnosis → monitoring test, monitoring procedure, or provider
+   Use when the source says the condition is monitored, evaluated, checked, or followed by it.
+   Example: “to follow the thyroid condition, order thyroid labs” → condition monitored_by
+   thyroid labs. Do not infer monitoring from proximity or a test that appears elsewhere.
+
+4. contraindicated_because_of
+   drug or procedure → condition or diagnosis
+   Use only when the source explicitly states the treatment/procedure cannot be used because of
+   the condition.
+
+5. causes_or_explains
+   condition or diagnosis → condition or symptom
+   Use only for an explicit causal or explanatory statement.
+
+6. referred_to
+   condition or diagnosis → provider or procedure
+   Use when the source explicitly refers the patient for that provider/procedure.
+
+7. has_status
+   clinical concept → status
+   Use an explicitly stated status only. An adapter must preregister an explicit source form that
+   connects the concept to the status; otherwise this type is expected to have zero coverage.
+
+8. has_category
+   clinical concept → category
+   Use an explicitly stated category/classification only. An adapter must preregister an explicit
+   source form that connects the concept to the category; otherwise this type is expected to have
+   zero coverage.
+```
+
+The prompt additionally requires semantic QA: questions and accepted answers must not copy a
+displayed controlled source span or alias. They should use the selected allowed generalization
+level where needed; an uncontrolled context literal may remain an answer when that is what the
+relation measures. Accepted answers are teacher-authored nonempty strings, not deterministic
+templates or a schema enum. The compiler validates them for answer leakage, protected-term
+leakage, grounding, and reader support. The worked examples above are mandatory prompt content;
+add only one short contraindication example if the task adapter supports that relation.
+
+The provider's strict response schema remains a machine-level constraint. It may bind short labels
+and cardinality, but its field-level machinery must not be reproduced as prose instructions that
+compete with the semantic task.
+
+The teacher cannot invent relation types, span labels, or unsupported source facts. It does author
+the contextual QA question, accepted semantic answer(s), and scoring contract for an otherwise
+compiled relation; deterministic code validates rather than templates that semantic content.
+
+Relation arguments have two disjoint forms. A **linked decision argument** is a controlled,
+frozen occurrence ID and carries a legal lattice-support property; it receives routing links and
+the joint representative-anchor check. A **context/literal argument** is an exact, typed,
+source-grounded span (for example a lab, physical therapy, status, or category) that is not a
+detector decision and never requires a lattice action. Both forms require exact source evidence.
+Only linked arguments enter `occurrence_ids` and `decision_requirements`.
+
+Every adapter must map each controlled runtime type that it exposes to one canonical relation
+class before prefiltering. In particular, `medical-procedure` maps to `procedure`; a missing map
+is a configuration error, not grounds to silently remove a valid controlled procedure.
+
+**Versioning and deferred reader checks.** This redesign requires a new relation-teacher prompt
+revision and response-schema/artifact revision (v4 or a later explicitly named successor); both
+are cache pins. Reader repetition and answer-option permutation remain deliberately deferred:
+the current single-pass contextual reader gates remain in force, but no repeated/permuted protocol
+is introduced or claimed until a smoke result motivates and preregisters it.
 
 ### Deterministic compilation
 
 A relation is accepted only when:
 
-- every argument ID exists;
-- the relation permits the argument runtime types;
-- its evidence quote resolves exactly in `doc_orig`;
-- the evidence directly connects the arguments;
+- every linked `S#` label exists and every quoted literal resolves uniquely in the derived anchor;
+- the relation permits the arguments' canonical classes;
+- the compiler-derived evidence anchor directly connects the arguments;
 - polarity is consistent;
 - no source contradiction exists.
+
+The one bounded request uses the compact span labels, evidence cards, relation inventory, and a
+preregistered maximum of **12** relations per document. Context arguments may reference a local
+card label or an exact quoted literal under the resolution rule above. Coverage and relation
+diversity are diagnostics, not a reward for fabricating one relation of every type. The compiler
+rejects reversed roles, duplicate fact groups, unsupported literals, answer/protected-term
+leakage, and invalid scoring contracts. It records per-document and corpus attempted, accepted,
+and rejected counts by relation type. Missing coverage never removes a ranker decision or implies
+zero relevance.
 
 General domain knowledge absent from the document cannot become an assertion. Teacher failure or
 abstention produces an explicit missing/rejected state, not a fabricated fallback.
@@ -242,15 +507,18 @@ placeholder. It does not make QA reward generalization over KEEP inside the supp
 band. Ranker-v2's exact local count objective supplies pressure away from KEEP and toward the
 coarsest semantically viable action. This division of labor is intentional.
 
-Semantic accepted answers come from the frozen lattice or adapter ontology. Contextual gold and
-dependencies come from accepted compiled relations. Do not generate one question per lattice
-rung and do not force exactly two questions per span. Generate one measurement only when an
-accepted task-relevant assertion exists.
+Semantic accepted answers for fixed structural assertions come from the frozen lattice or adapter
+ontology. Contextual gold and dependencies come from accepted compiled relations. Do not generate
+one question per lattice rung and do not force exactly two questions per span. Generate one
+measurement only when an accepted task-relevant assertion exists.
 
-Question generation is template-first. A teacher is used only when no safe template exists. It
-receives the accepted assertion, `doc_orig`, frozen occurrence inventory, protected aliases, and
-expected answer type. It writes wording and evidence quotes only. Questions are static and may
-not contain protected-value locators; they are not rewritten per rollout.
+Relation QA is teacher-authored in the same bounded relation proposal: the teacher supplies the
+question, accepted semantic answer(s), and scoring contract. Deterministic code must never
+invent that relation semantics from templates; it validates grounding, answer/protected-term
+leakage, duplicate fact groups, reader support, and the joint anchor. Structural and delivered
+assertions may use deterministic contracts because their semantics are already fixed by the task
+adapter. Questions are static and may not contain protected-value locators; they are not rewritten
+per rollout.
 
 The generator does not see the all-placeholder document. Validation remains independent and
 prevents wording from overfitting one floor realization.
@@ -357,7 +625,8 @@ Use one bounded validation path with only load-bearing gates:
 2. **Leakage:** the question or options do not reveal the answer.
 3. **Context support:** the assertion passes `doc_orig`, passes its pinned joint representative
    generalization anchor, and fails the all-placeholder anchor.
-4. **Stability:** repeated reads and option permutations stay within the preregistered bound.
+4. **Stability:** until a later preregistered change, the single-pass reader gate is used. Any
+   repeated-read or option-permutation bound is a deferred future protocol, not a current gate.
 
 Other checks remain adapter-specific diagnostics until a measured failure justifies promoting
 them to a gate.
@@ -437,9 +706,9 @@ public ladder, decision, or schema caches after migration.
 
 Before building the artifact, freeze a QA threshold manifest defining:
 
-- the deterministic rule for under-supported documents and optional teacher escalation;
+- the eligibility prefilter, no-eligible-span state, and one-call-per-eligible-document rule;
 - joint representative-action selection and deterministic tie handling;
-- reader stability repetitions, permutations, and acceptance threshold;
+- the deferred reader-stability/permutation policy state and acceptance threshold;
 - context/delivered family budgets, group construction, structural cap, and missing-family state;
 - build and runtime cost budgets in calls and wall time.
 
@@ -480,8 +749,8 @@ dominant expected cost.
    many-to-one mappings.
 2. **Wrap current scores.** Emit per-assertion records from current exact, ladder, decision, and
    schema measurements; use the legacy scalar only as an equivalence check.
-3. **Build the ACI adapter.** Add deterministic candidates and templates first, one optional
-   batched teacher escalation per under-supported document, representative generalization
+3. **Build the ACI adapter.** Add deterministic structural extraction and eligibility filtering,
+   one batched teacher relation request for each eligible document, representative generalization
    anchors, and context assertions scored on `doc_p`.
 4. **Switch credit.** Remove probe-count document filtering, activate linked/global/fallback
    routing, and prioritize uncovered decisions for counterfactuals.
@@ -515,7 +784,8 @@ dominant expected cost.
 - ranker-v2 alone computes weighted means, linked/global/document advantages, fallback, and loss;
 - all context assertions for one rollout use one batched reader request;
 - deterministic delivered assertions use no reader call and remaining delivered assertions batch;
-- optional teacher escalation makes at most one cached call per under-supported document;
+- each eligible document makes one cached relation-teacher call, while a no-eligible-span document
+  records its no-call state;
 - parser, reader, or infrastructure failure follows declared semantics rather than implicit zero;
 - changing each pin invalidates the correct cache and downstream gate.
 
@@ -523,8 +793,8 @@ dominant expected cost.
 
 Only three bounded spikes are required before implementation claims:
 
-1. **ACI assertion support:** on a tiny development slice, measure deterministic extraction,
-   optional teacher escalation rate, representative-generalization support,
+1. **ACI assertion support:** on a tiny development slice, measure deterministic structural
+   extraction, relation-teacher acceptance and diversity diagnostics, representative-generalization support,
    context/delivered score variation, and uncovered decisions.
 2. **Reader stability:** measure repeated-read and option-order disagreement on the proposed
    context assertions.

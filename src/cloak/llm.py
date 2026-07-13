@@ -114,6 +114,10 @@ class LLMClient:
             api_key=api_key or os.getenv("OPENAI_API_KEY") or "not-needed",
             max_retries=max_retries,
         )
+        # A deliberately small diagnostic for callers that must distinguish an
+        # absent provider completion from malformed model text.  Never retain
+        # prompt or response content here.
+        self.last_completion_state: dict[str, str | None] = {"outcome": "not_called"}
 
     def chat(self, messages: list[Message], *, refresh: bool = False, **overrides: object) -> str:
         """Return the assistant reply text for chat messages, cached when configured.
@@ -142,9 +146,21 @@ class LLMClient:
         # the empty is treated as a miss and re-tried on the next run instead of crashing on
         # resp.choices[0] or poisoning the cache.
         if not resp.choices:
+            self.last_completion_state = {"outcome": "no_choices"}
             return ""
-        content = resp.choices[0].message.content or ""
-        if content and path:
+        choice = resp.choices[0]
+        content = choice.message.content or ""
+        if not content.strip():
+            self.last_completion_state = {
+                "outcome": "empty_content",
+                "finish_reason": getattr(choice, "finish_reason", None),
+            }
+            return content
+        self.last_completion_state = {
+            "outcome": "content",
+            "finish_reason": getattr(choice, "finish_reason", None),
+        }
+        if path:
             _write_cache(path, content, self.model)
         return content
 

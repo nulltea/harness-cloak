@@ -96,6 +96,19 @@ def test_cache_write_uses_atomic_replace(monkeypatch, tmp_path):
     assert _cache_files(tmp_path) == [llm.os.path.basename(llm.os.fspath(dst))]
 
 
+def test_empty_provider_completion_is_not_cached_and_records_no_choices(monkeypatch, tmp_path):
+    class EmptyChoicesTransport(FakeTransport):
+        def create(self, **params):
+            self.calls.append(params)
+            return SimpleNamespace(choices=[])
+
+    c = _make_client(monkeypatch, tmp_path, transport=EmptyChoicesTransport())
+
+    assert c.chat([{"role": "user", "content": "write"}]) == ""
+    assert c.last_completion_state == {"outcome": "no_choices"}
+    assert _cache_files(tmp_path) == []
+
+
 def test_single_flight_double_checks_cache_for_cold_key(monkeypatch, tmp_path):
     transport = FakeTransport(reply="once", delay=0.1)
     c = _make_client(monkeypatch, tmp_path, single_flight=True, transport=transport)

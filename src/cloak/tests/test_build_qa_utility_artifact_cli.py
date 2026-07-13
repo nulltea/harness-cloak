@@ -106,7 +106,8 @@ class _InjectedRelationTeacher:
         self.prompts = []
 
     def propose(self, prompt):
-        assert "aci/D2N002" in prompt
+        assert "[S1:" in prompt
+        assert "OCCURRENCE INVENTORY" not in prompt
         self.calls += 1
         self.prompts.append(prompt)
         return self.proposals
@@ -396,7 +397,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     assert teacher.calls == 1
     assert artifact["teacher_pin"] == teacher.pin
     assert artifact["reader_pin"] == TEST_READER_PIN
-    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v2"
+    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v4"
     assert all(subtypes.count(subtype) > 0 for subtype in (
         "structure", "field", "content", "exact_relation", "semantic_property",
         "contextual_relation",
