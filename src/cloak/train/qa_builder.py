@@ -176,6 +176,51 @@ class AciTaskAdapter:
 
     task_pin = "aci-utility-v1"
     relation_contract = ACI_RELATION_CONTRACT
+    semantic_type_contract = {
+        "drug": {
+            "placeholder_labels": frozenset({"drug", "medication", "treatment"}),
+            "role_cues": (
+                "prescribed", "prescribes", "prescribe", "taking", "takes", "take",
+                "treated", "treats", "treat",
+            ),
+            "question": (
+                'What specific treatment category is the patient taking or prescribed in '
+                'this context: "{locator}"?'
+            ),
+        },
+        "health condition": {
+            "placeholder_labels": frozenset({
+                "health condition", "condition", "disease", "medical condition",
+            }),
+            "role_cues": (
+                "diagnosis", "diagnosed", "history", "presents", "presented",
+                "complaint", "complaints",
+            ),
+            "question": (
+                'What specific condition category is documented in the diagnosis, history, '
+                'presentation, or complaint in this context: "{locator}"?'
+            ),
+        },
+        "medical procedure": {
+            "placeholder_labels": frozenset({"medical procedure", "procedure", "test"}),
+            "role_cues": ("ordered", "orders", "order", "test", "tests", "panel", "panels"),
+            "question": (
+                'What specific procedure or test category is ordered in this context: '
+                '"{locator}"?'
+            ),
+        },
+        "loc": {
+            "placeholder_labels": frozenset({"loc", "location", "place"}),
+            "role_cues": (
+                "located", "location", "address", "addresses", "travel", "traveled",
+                "travels", "traveling",
+            ),
+            "question": (
+                'What specific location category is referenced by the location, address, or '
+                'travel role in this context: "{locator}"?'
+            ),
+        },
+    }
 
     def __init__(self, references: Mapping[str, str]):
         self._references = dict(references)
@@ -201,11 +246,9 @@ class AciTaskAdapter:
     ) -> list[dict]:
         """Compile safe category probes from legal frozen action entailments."""
         occurrences_by_decision: dict[str, list[Mapping]] = defaultdict(list)
-        protected_surfaces = []
+        protected_terms = []
         for occurrence in environment_document.get("occurrences", []):
-            surface = str(occurrence.get("surface", "")).strip()
-            if surface:
-                protected_surfaces.append(surface)
+            protected_terms.extend(_occurrence_protected_terms(occurrence))
             decision_id = occurrence.get("decision_id")
             if decision_id is None or not occurrence.get("controlled", True):
                 continue
@@ -219,6 +262,7 @@ class AciTaskAdapter:
             occurrences = occurrences_by_decision.get(decision_id, [])
             occurrence_ids = [str(row["occurrence_id"]) for row in occurrences]
             runtime_type = str(decision.get("runtime_type", ""))
+            type_contract = self.semantic_type_contract.get(_semantic_label(runtime_type))
             actions = [
                 action for action in decision.get("actions", [])
                 if action.get("legal", True)
@@ -234,13 +278,14 @@ class AciTaskAdapter:
                     if property_level not in supporting_actions:
                         properties.append(property_level)
                     supporting_actions[property_level].append(str(action["action_id"]))
-            if not properties:
+            if not properties or type_contract is None:
                 continue
 
-            locator = _safe_context_locator(
+            locator, role_cue, locator_rejection = _task_role_context_locator(
                 document,
                 occurrences,
-                protected_terms=[*protected_surfaces, *properties],
+                protected_terms=[*protected_terms, *properties],
+                role_cues=type_contract["role_cues"],
             )
             for property_level in properties:
                 attempt = {
@@ -251,7 +296,7 @@ class AciTaskAdapter:
                     "property_hash": _stable_hash(property_level),
                     "definition_version": "aci-semantic-property-v1",
                 }
-                if _semantic_label(property_level) == _semantic_label(runtime_type):
+                if _semantic_label(property_level) in type_contract["placeholder_labels"]:
                     records.append(_rejection_record(
                         reason="not_generated",
                         detail_reason="placeholder_type_only",
@@ -272,7 +317,7 @@ class AciTaskAdapter:
                 if locator is None:
                     records.append(_rejection_record(
                         reason="not_generated",
-                        detail_reason="no_safe_contextual_locator",
+                        detail_reason=locator_rejection,
                         attempt=attempt,
                         evidence={
                             "source": "deterministic_template",
@@ -287,13 +332,11 @@ class AciTaskAdapter:
                         },
                     ))
                     continue
-                question = (
-                    f'Within the clinical context "{locator}", what semantic category is '
-                    "preserved for [target item]?"
-                )
-                if any(_contains(question, term) for term in (
-                    *protected_surfaces, property_level,
-                )):
+                question = str(type_contract["question"]).format(locator=locator)
+                if (
+                    _question_leaks_answer(question, property_level, runtime_type)
+                    or _question_leaks_protected_term(question, protected_terms)
+                ):
                     records.append(_rejection_record(
                         reason="not_generated",
                         detail_reason="unsafe_template_leakage",
@@ -328,6 +371,7 @@ class AciTaskAdapter:
                         "authority": "frozen_action_entails",
                         "template": "aci-context-category-v1",
                         "runtime_type": runtime_type,
+                        "role_cue": role_cue,
                         "locator_hash": _stable_hash(locator),
                         "supporting_action_ids": supporting_actions[property_level],
                     },
@@ -485,16 +529,23 @@ def _rejection_record(
     attempt: Mapping,
     evidence: Mapping,
 ) -> dict:
+    attempt_value = dict(attempt)
+    doc_id = str(attempt_value.get("doc_id", ""))
+    if not doc_id:
+        raise ValueError("rejection attempt requires doc_id")
+    attempt_hash = _stable_hash(attempt_value)
     identity = {
         "reason": reason,
         "detail_reason": detail_reason,
-        "attempt": dict(attempt),
+        "attempt_hash": attempt_hash,
     }
     return {
         "status": "rejected",
         "reason": reason,
         "detail_reason": detail_reason,
         "rejection_id": _stable_hash(identity),
+        "attempt_hash": attempt_hash,
+        "doc_id": doc_id,
         "evidence": dict(evidence),
     }
 
@@ -519,25 +570,49 @@ def _semantic_label(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", canon(value)))
 
 
-def _safe_context_locator(
-    document: str,
-    occurrences: Sequence[Mapping],
-    *,
-    protected_terms: Sequence[str],
-) -> str | None:
-    positions = []
-    for occurrence in occurrences:
-        surface = str(occurrence.get("surface", ""))
-        start = occurrence.get("start")
-        if isinstance(start, int) and 0 <= start < len(document):
-            positions.append(start)
-            continue
-        position = document.casefold().find(surface.casefold()) if surface else -1
-        if position >= 0:
-            positions.append(position)
-    if not positions:
-        return None
-    position = min(positions)
+_LEAKAGE_STOPWORDS = frozenset({
+    "a", "an", "and", "are", "as", "at", "be", "being", "by", "did", "does",
+    "for", "from", "how", "in", "is", "it", "of", "on", "or", "that", "the",
+    "this", "to", "was", "were", "what", "when", "where", "which", "who", "with",
+})
+
+
+def _meaningful_tokens(value: str) -> set[str]:
+    return {
+        token for token in re.findall(r"[a-z0-9]+", canon(value))
+        if len(token) > 2 and token not in _LEAKAGE_STOPWORDS
+    }
+
+
+def _occurrence_protected_terms(occurrence: Mapping) -> list[str]:
+    terms = [str(occurrence.get("surface", "")).strip()]
+    aliases = occurrence.get("aliases") or []
+    if isinstance(aliases, str):
+        aliases = [aliases]
+    terms.extend(str(alias).strip() for alias in aliases)
+    return [term for term in terms if term]
+
+
+def _placeholder_meaning_tokens(runtime_type: str) -> set[str]:
+    contract = AciTaskAdapter.semantic_type_contract.get(_semantic_label(runtime_type), {})
+    return {
+        token
+        for label in contract.get("placeholder_labels", ())
+        for token in _meaningful_tokens(str(label))
+    }
+
+
+def _question_leaks_answer(question: str, answer: str, runtime_type: str) -> bool:
+    answer_tokens = _meaningful_tokens(answer) - _placeholder_meaning_tokens(runtime_type)
+    return bool(answer_tokens & _meaningful_tokens(question))
+
+
+def _question_leaks_protected_term(question: str, protected_terms: Sequence[str]) -> bool:
+    question_tokens = _meaningful_tokens(question)
+    return any(_meaningful_tokens(term) & question_tokens for term in protected_terms)
+
+
+def _sentence_at(document: str, position: int) -> str:
     left = max(
         document.rfind(".", 0, position),
         document.rfind("!", 0, position),
@@ -553,7 +628,53 @@ def _safe_context_locator(
         ) if value >= 0
     ]
     right = min(boundaries) + 1 if boundaries else len(document)
-    locator = document[left:right].strip()
+    return document[left:right].strip()
+
+
+def _task_role_context_locator(
+    document: str,
+    occurrences: Sequence[Mapping],
+    *,
+    protected_terms: Sequence[str],
+    role_cues: Sequence[str],
+) -> tuple[str | None, str | None, str]:
+    positions = []
+    for occurrence in occurrences:
+        surface = str(occurrence.get("surface", ""))
+        start = occurrence.get("start")
+        if isinstance(start, int) and 0 <= start < len(document):
+            positions.append(start)
+            continue
+        position = document.casefold().find(surface.casefold()) if surface else -1
+        if position >= 0:
+            positions.append(position)
+    if not positions:
+        return None, None, "no_safe_contextual_locator"
+    locator = None
+    matched_cue = None
+    has_surviving_context = False
+    protected_tokens = {
+        token for term in protected_terms for token in _meaningful_tokens(term)
+    }
+    for position in sorted(set(positions)):
+        sentence = _sentence_at(document, position)
+        sentence_tokens = _meaningful_tokens(sentence)
+        if not sentence_tokens - protected_tokens:
+            continue
+        has_surviving_context = True
+        matched_cue = next(
+            (cue for cue in role_cues if _semantic_label(cue) in sentence_tokens),
+            None,
+        )
+        if matched_cue is not None:
+            locator = sentence
+            break
+    if locator is None:
+        return (
+            None,
+            None,
+            "no_task_role_cue" if has_surviving_context else "no_safe_contextual_locator",
+        )
     target_terms = {
         str(occurrence.get("surface", "")).strip()
         for occurrence in occurrences
@@ -580,11 +701,7 @@ def _safe_context_locator(
         if canon(term) not in {canon(target) for target in target_terms}
     ], "[protected item]")
     locator = re.sub(r"\s+", " ", locator).strip()
-    surviving_words = re.findall(
-        r"[A-Za-z0-9]+",
-        locator.replace("[target item]", "").replace("[protected item]", ""),
-    )
-    return locator if len(surviving_words) >= 2 else None
+    return locator, matched_cue, ""
 
 
 def _contains(text: str, value: str) -> bool:
@@ -702,17 +819,33 @@ def _relation_evidence_connects_arguments(
     occurrences: Mapping[str, Mapping],
     relation_contract: Mapping[str, Mapping],
 ) -> bool:
-    canonical_quote = canon(quote)
+    return any(
+        _relation_clause_connects_arguments(
+            relation, clause, occurrence_ids, occurrences, relation_contract
+        )
+        for clause in re.split(r"[\n.!?;]+", quote)
+        if clause.strip()
+    )
+
+
+def _relation_clause_connects_arguments(
+    relation: str,
+    clause: str,
+    occurrence_ids: Sequence[str],
+    occurrences: Mapping[str, Mapping],
+    relation_contract: Mapping[str, Mapping],
+) -> bool:
+    canonical_clause = canon(clause)
     positions = []
     for occurrence_id in occurrence_ids:
         surface = canon(str(occurrences[occurrence_id].get("surface", "")))
-        match = re.search(rf"(?<!\w){re.escape(surface)}(?!\w)", canonical_quote)
+        match = re.search(rf"(?<!\w){re.escape(surface)}(?!\w)", canonical_clause)
         if match is None:
             return False
         positions.append((match.start(), match.end()))
     if positions != sorted(positions):
         return False
-    connector_text = canonical_quote[positions[0][1]:positions[-1][0]]
+    connector_text = canonical_clause[positions[0][1]:positions[-1][0]]
     return any(cue in connector_text for cue in relation_contract[relation]["cues"])
 
 
@@ -873,6 +1006,10 @@ def compile_relational_assertions(
             record["proposal_hash"] = proposal_hash
             rejected.append(record)
 
+        proposed_subtype = proposal.get("subtype")
+        if proposed_subtype not in {None, "contextual_relation"}:
+            reject("invalid_subtype")
+            continue
         relation = str(proposal.get("relation", ""))
         if relation not in relation_contract:
             reject("invalid_relation")
@@ -935,11 +1072,18 @@ def compile_relational_assertions(
         if not question.endswith("?"):
             reject("invalid_question")
             continue
-        if _contains(question, answer_property):
+        answer_runtime_type = str(
+            occurrences[answer_occurrence_id].get("runtime_type", "")
+        )
+        if _question_leaks_answer(question, answer_property, answer_runtime_type):
             reject("answer_leakage")
             continue
-        if any(_contains(question, str(occurrence.get("surface", "")))
-               for occurrence in occurrences.values()):
+        protected_terms = [
+            term
+            for occurrence in occurrences.values()
+            for term in _occurrence_protected_terms(occurrence)
+        ]
+        if _question_leaks_protected_term(question, protected_terms):
             reject("protected_locator")
             continue
         decision_requirements = {
@@ -1295,18 +1439,74 @@ def build_utility_artifact(
         record = dict(record_value)
         detail_reason = str(record.get("detail_reason") or record.get("reason") or "invalid")
         stable_reason = _stable_rejection_reason(str(record.get("reason") or detail_reason))
+        attributed_doc_id = str(record.get("doc_id") or doc_id)
+        if attributed_doc_id != doc_id:
+            raise ValueError(
+                f"rejection document mismatch: {attributed_doc_id} != {doc_id}"
+            )
         record["status"] = "rejected"
         record["reason"] = stable_reason
         record["detail_reason"] = detail_reason
+        record["doc_id"] = doc_id
+        if not record.get("attempt_hash"):
+            record["attempt_hash"] = _stable_hash({
+                "doc_id": doc_id,
+                "reason": stable_reason,
+                "detail_reason": detail_reason,
+                "rejection_id": record.get("rejection_id"),
+                "evidence": dict(record.get("evidence") or {}),
+                "definition_version": "qa-builder-attempt-v1",
+            })
         if not record.get("rejection_id"):
             record["rejection_id"] = _stable_hash({
                 "doc_id": doc_id,
                 "reason": stable_reason,
                 "detail_reason": detail_reason,
-                "evidence": dict(record.get("evidence") or {}),
+                "attempt_hash": record["attempt_hash"],
                 "definition_version": "qa-builder-rejection-v1",
             })
         rejection_records.append(record)
+
+    def reject_context_candidate(
+        *,
+        doc_id: str,
+        candidate: Mapping,
+        reason: str,
+        detail_reason: str,
+        anchor: Mapping | None = None,
+        validation: Mapping | None = None,
+        error: Exception | None = None,
+    ) -> None:
+        candidate_hash = _stable_hash(candidate)
+        attempt = {
+            "doc_id": doc_id,
+            "candidate_hash": candidate_hash,
+            "reason": reason,
+            "definition_version": "context-validation-v1",
+        }
+        evidence = {
+            "source": "context_validation",
+            "candidate_hash": candidate_hash,
+            "subtype": candidate.get("subtype"),
+            "occurrence_ids": list(candidate.get("occurrence_ids") or []),
+        }
+        if anchor is not None:
+            evidence.update({
+                "joint_anchor_action_vector": anchor["action_vector"],
+                "joint_anchor_hash": anchor["action_vector_hash"],
+            })
+        if validation is not None:
+            evidence["validation"] = dict(validation)
+        if error is not None:
+            error_type = type(error).__name__
+            attempt["error_type"] = error_type
+            evidence["error_type"] = error_type
+        preserve_rejection(_rejection_record(
+            reason=reason,
+            detail_reason=detail_reason,
+            attempt=attempt,
+            evidence=evidence,
+        ), doc_id=doc_id)
 
     for doc_id, environment_document in frozen_environment.get("documents", {}).items():
         source = source_documents[doc_id]
@@ -1386,21 +1586,12 @@ def build_utility_artifact(
             try:
                 anchor = build_joint_representative_anchor(candidate, decisions)
             except ValueError:
-                preserve_rejection(_rejection_record(
+                reject_context_candidate(
+                    doc_id=doc_id,
+                    candidate=candidate,
                     reason="unsupported",
                     detail_reason="no_joint_representative_anchor",
-                    attempt={
-                        "doc_id": doc_id,
-                        "candidate_hash": _stable_hash(candidate),
-                        "definition_version": "context-validation-v1",
-                    },
-                    evidence={
-                        "source": "context_validation",
-                        "candidate_hash": _stable_hash(candidate),
-                        "subtype": candidate.get("subtype"),
-                        "occurrence_ids": list(candidate.get("occurrence_ids") or []),
-                    },
-                ), doc_id=doc_id)
+                )
                 continue
             representative_context = render_action_vector(doc_id, anchor["action_vector"])
             try:
@@ -1416,25 +1607,14 @@ def build_utility_artifact(
                     stability_threshold=stability_threshold,
                 )
             except Exception as error:
-                preserve_rejection(_rejection_record(
+                reject_context_candidate(
+                    doc_id=doc_id,
+                    candidate=candidate,
                     reason="infrastructure_failed",
                     detail_reason="context_reader_failed",
-                    attempt={
-                        "doc_id": doc_id,
-                        "candidate_hash": _stable_hash(candidate),
-                        "error_type": type(error).__name__,
-                        "definition_version": "context-validation-v1",
-                    },
-                    evidence={
-                        "source": "context_validation",
-                        "candidate_hash": _stable_hash(candidate),
-                        "subtype": candidate.get("subtype"),
-                        "occurrence_ids": list(candidate.get("occurrence_ids") or []),
-                        "joint_anchor_action_vector": anchor["action_vector"],
-                        "joint_anchor_hash": anchor["action_vector_hash"],
-                        "error_type": type(error).__name__,
-                    },
-                ), doc_id=doc_id)
+                    anchor=anchor,
+                    error=error,
+                )
                 continue
             evidence_row = next(iter(validation_evidence.values()))
             if not validated:
@@ -1446,29 +1626,18 @@ def build_utility_artifact(
                         if evidence_row["scores"]["placeholder"] >= reader_threshold
                         else "unsupported"
                     )
-                preserve_rejection(_rejection_record(
+                reject_context_candidate(
+                    doc_id=doc_id,
+                    candidate=candidate,
                     reason=reason,
                     detail_reason=(
                         "reader_unstable" if reason == "unstable"
                         else "placeholder_answerable" if reason == "floor_answerable"
                         else "three_point_gate_failed"
                     ),
-                    attempt={
-                        "doc_id": doc_id,
-                        "candidate_hash": _stable_hash(candidate),
-                        "reason": reason,
-                        "definition_version": "context-validation-v1",
-                    },
-                    evidence={
-                        "source": "context_validation",
-                        "candidate_hash": _stable_hash(candidate),
-                        "subtype": candidate.get("subtype"),
-                        "occurrence_ids": list(candidate.get("occurrence_ids") or []),
-                        "joint_anchor_action_vector": anchor["action_vector"],
-                        "joint_anchor_hash": anchor["action_vector_hash"],
-                        "validation": evidence_row,
-                    },
-                ), doc_id=doc_id)
+                    anchor=anchor,
+                    validation=evidence_row,
+                )
                 continue
             row = dict(candidate)
             row["expected_action_support"] = {
