@@ -1,4 +1,6 @@
 import json
+import re
+from collections import Counter
 
 import pytest
 
@@ -2295,88 +2297,146 @@ def _aci_delivered_environment():
     }
 
 
-def _real_d2n002_frozen_environment():
-    """Minimal frozen subset of the corrected D2N002 decisions and occurrences."""
-    entries = [
-        ("o-kidney", "d-kidney", "kidney transplant", "health-condition",
-         "solid organ transplant", 315),
-        ("o-arthritis", "d-arthritis", "arthritis", "health-condition",
-         "musculoskeletal condition", 6072),
-        ("o-hypothyroid", "d-hypothyroid", "hypothyroidism", "health-condition",
-         "thyroid condition", 335),
-        ("o-ultram", "d-ultram", "ultram", "drug", "opioid analgesic", 5381),
-        ("o-autoimmune", "d-autoimmune", "autoimmune panel", "medical-procedure",
-         "diagnostic panel", 5504),
-        ("o-synthroid", "d-synthroid", "synthroid", "drug", "thyroid medication", 5899),
-        ("o-thyroid", "d-thyroid", "thyroid panel", "medical-procedure",
-         "thyroid testing", 6019),
-    ]
-    return {
-        "occurrences": [
+_D2N002_CORRECTED_DECISIONS = (
+    ("kidney transplant", "health-condition", (
+        ("solid organ transplant", 0.6615, 1.0),
+        ("medical condition", 0.3292, 500000.0),
+    )),
+    ("arthritis", "health-condition", (
+        ("bone inflammation disease", 0.6026, 26.0),
+        ("bone disease", 0.5664, 571.0),
+        ("connective tissue disease", 0.3193, 884.0),
+        ("musculoskeletal system disease", 0.5043, 1356.0),
+    )),
+    ("hypothyroidism", "health-condition", (
+        ("thyroid gland disease", 0.6509, 84.0),
+        ("endocrine system disease", 0.4634, 575.0),
+        ("disease of anatomical entity", 0.2305, 9162.0),
+    )),
+    ("autoimmune panel", "medical-procedure", (
+        ("autoimmune serology panel", 0.8511, 1.0),
+        ("immunology laboratory panel", 0.6294, 86.0),
+    )),
+    ("ultram", "drug", (
+        ("opioid analgesic", 0.0856, 25.0),
+        ("opioid agonist", 0.1376, 35.0),
+        ("analgesic", 0.1842, 150.0),
+    )),
+    ("hyperthyroidism", "health-condition", (
+        ("thyroid gland disease", 0.6471, 84.0),
+        ("endocrine system disease", 0.4462, 575.0),
+        ("disease of anatomical entity", 0.2706, 9162.0),
+    )),
+)
+
+
+def _real_d2n002_frozen_environment(source):
+    """Hermetic corrected-D2 snapshot: six action menus and every source occurrence."""
+    decisions = []
+    occurrences = []
+    for surface, runtime_type, levels in _D2N002_CORRECTED_DECISIONS:
+        decision_id = f"d2:{surface}"
+        actions = [
             {
+                "action_id": f"{decision_id}:level:{index}",
+                "fill": fill,
+                "mode": "level",
+                "walk_risk": 1.0,
+                "p6": p6,
+                "aset": aset,
+                "legal": True,
+                "coarseness_rank": aset,
+                "entails": [fill],
+            }
+            for index, (fill, p6, aset) in enumerate(levels)
+        ]
+        actions.extend([
+            {
+                "action_id": f"{decision_id}:keep",
+                "fill": surface,
+                "mode": "keep",
+                "keep": True,
+                "source_identity": True,
+                "legal": True,
+                "entails": [surface],
+            },
+            {
+                "action_id": f"{decision_id}:placeholder",
+                "fill": None,
+                "mode": "placeholder",
+                "walk_risk": 0.0,
+                "p6": 0.0,
+                "legal": True,
+                "entails": [],
+            },
+        ])
+        decision_occurrences = []
+        for index, match in enumerate(re.finditer(re.escape(surface), source, re.IGNORECASE)):
+            occurrence_id = f"{decision_id}:occurrence:{index}"
+            decision_occurrences.append(occurrence_id)
+            occurrences.append({
                 "occurrence_id": occurrence_id,
                 "decision_id": decision_id,
-                "surface": surface,
+                "surface": source[match.start():match.end()],
                 "runtime_type": runtime_type,
                 "controlled": True,
-                "start": start,
-                "end": start + len(surface),
-            }
-            for occurrence_id, decision_id, surface, runtime_type, _, start in entries
-        ],
-        "decisions": [
-            {
-                "decision_id": decision_id,
-                "runtime_type": runtime_type,
-                "controlled": True,
-                "actions": [
-                    {
-                        "action_id": f"{decision_id}-general",
-                        "mode": "level",
-                        "legal": True,
-                        "entails": [property_level],
-                    },
-                    {
-                        "action_id": f"{decision_id}-keep",
-                        "mode": "keep",
-                        "legal": True,
-                        "entails": [surface],
-                    },
-                    {
-                        "action_id": f"{decision_id}-placeholder",
-                        "mode": "placeholder",
-                        "legal": True,
-                        "entails": [],
-                    },
-                ],
-            }
-            for _, decision_id, surface, runtime_type, property_level, _ in entries
-        ],
+                "start": match.start(),
+                "end": match.end(),
+            })
+        decisions.append({
+            "decision_id": decision_id,
+            "runtime_type": runtime_type,
+            "canonical_key": surface,
+            "controlled": True,
+            "occurrence_ids": decision_occurrences,
+            "actions": actions,
+        })
+    return {
+        "occurrences": occurrences,
+        "decisions": decisions,
     }
 
 
 def test_real_aci_d2n002_compiles_labeled_blocks_and_dialogue_cues():
     row = next(item for item in load_task_docs("aci") if item["id"] == "aci/D2N002")
+    environment = _real_d2n002_frozen_environment(row["text"])
     candidates = AciTaskAdapter({row["id"]: row["gold_ref"]}).deterministic_candidates(
-        row["id"], row["text"], _real_d2n002_frozen_environment()
+        row["id"], row["text"], environment
     )
     accepted = [candidate for candidate in candidates if candidate.get("status") != "rejected"]
     subtypes = {candidate["subtype"] for candidate in accepted}
 
+    assert {decision["canonical_key"] for decision in environment["decisions"]} == {
+        "kidney transplant", "arthritis", "hypothyroidism", "autoimmune panel",
+        "ultram", "hyperthyroidism",
+    }
+    assert Counter(item["surface"].casefold() for item in environment["occurrences"]) == {
+        "kidney transplant": 4,
+        "arthritis": 4,
+        "hypothyroidism": 2,
+        "autoimmune panel": 2,
+        "ultram": 1,
+        "hyperthyroidism": 1,
+    }
+    assert all(
+        row["text"][occurrence["start"]:occurrence["end"]] == occurrence["surface"]
+        for occurrence in environment["occurrences"]
+    )
     assert {"structure", "content", "field", "exact_relation"} <= subtypes
     semantic = [candidate for candidate in accepted if candidate["subtype"] == "semantic_property"]
-    assert len(semantic) >= 3
+    assert len(semantic) == 14
     assert {candidate["evidence"]["role_cue"] for candidate in semantic} >= {
-        "past medical history", "problem", "prescribed",
+        "past medical history", "in terms of", "prescribed",
     }
-    assert {
+    relations = {
         (
             candidate["scoring_contract"]["condition"],
             candidate["scoring_contract"]["treatment"],
             candidate["scoring_contract"]["test"],
         )
         for candidate in accepted if candidate["subtype"] == "exact_relation"
-    } == {
+    }
+    assert relations == {
         (
             "Arthritis",
             "Initiate Ultram 50 mg every 6 hours as needed.",
@@ -2388,7 +2448,210 @@ def test_real_aci_d2n002_compiles_labeled_blocks_and_dialogue_cues():
             "We will order a thyroid panel.",
         ),
     }
+    relation_occurrences = {
+        candidate["scoring_contract"]["condition"]: candidate["occurrence_ids"]
+        for candidate in accepted if candidate["subtype"] == "exact_relation"
+    }
+    assert relation_occurrences["Arthritis"] == [
+        occurrence["occurrence_id"]
+        for surface in ("arthritis", "ultram", "autoimmune panel")
+        for occurrence in environment["occurrences"]
+        if occurrence["surface"].casefold() == surface
+    ]
+    assert relation_occurrences["Hypothyroidism"] == [
+        occurrence["occurrence_id"]
+        for occurrence in environment["occurrences"]
+        if occurrence["surface"].casefold() == "hypothyroidism"
+    ]
     assert any(candidate["subtype"] != "content" for candidate in accepted)
+
+
+def test_aci_unknown_uppercase_heading_ends_hpi_capture():
+    parsed = qa_builder._parse_aci_note("""HISTORY OF PRESENT ILLNESS
+Captured HPI content.
+UNSUPPORTED HEADING
+This must not remain in the HPI section.
+ASSESSMENT AND PLAN
+Arthritis.
+• Medical Treatment: Initiate Ultram.
+""")
+
+    assert parsed["sections"]["HISTORY OF PRESENT ILLNESS"] == ["Captured HPI content."]
+
+
+def test_aci_combined_parser_rejects_prose_preamble_as_condition_entry():
+    parsed = qa_builder._parse_aci_note("""ASSESSMENT AND PLAN
+The patient reports worsening pain.
+• Medical Treatment: This is preamble, not a condition plan.
+Arthritis.
+• Medical Treatment: Initiate Ultram.
+""")
+
+    assert [row["condition"] for row in parsed["plan_rows"]] == ["Arthritis"]
+
+
+def test_aci_combined_parser_starts_new_entry_after_unrecognized_first_bullet():
+    parsed = qa_builder._parse_aci_note("""ASSESSMENT AND PLAN
+Arthritis.
+• Medical Treatment: Initiate Ultram.
+Hypothyroidism.
+• Patient Education: Continue routine follow-up.
+• Medical Treatment: Continue Synthroid.
+""")
+
+    assert [
+        (row["condition"], row["treatment"])
+        for row in parsed["plan_rows"]
+    ] == [
+        ("Arthritis", "Initiate Ultram."),
+        ("Hypothyroidism", "Continue Synthroid."),
+    ]
+
+
+def test_aci_combined_parser_keeps_triple_duplicate_labeled_field_ambiguous():
+    note = """ASSESSMENT AND PLAN
+Arthritis.
+• Additional Testing: First test.
+• Additional Testing: Second test.
+• Additional Testing: Third test.
+• Medical Treatment: Initiate Ultram.
+"""
+    parsed = qa_builder._parse_aci_note(note)
+
+    assert parsed["plan_rows"] == [{
+        "condition": "Arthritis",
+        "treatment": "Initiate Ultram.",
+        "test": None,
+        "evidence": {
+            "condition": [note.index("Arthritis."), note.index("Arthritis.") + 9],
+            "treatment": [note.index("Initiate Ultram."), note.index("Initiate Ultram.") + 16],
+        },
+    }]
+
+
+def _labeled_relation_environment(*occurrences):
+    return {
+        "occurrences": [
+            {
+                "occurrence_id": f"o{index}",
+                "decision_id": decision_id,
+                "surface": surface,
+                "runtime_type": runtime_type,
+                "controlled": True,
+                "start": start,
+                "end": end,
+            }
+            for index, (decision_id, surface, runtime_type, start, end) in enumerate(occurrences)
+        ],
+        "decisions": [],
+    }
+
+
+def test_aci_labeled_relation_rejects_stale_controlled_occurrence_offsets():
+    source = "Arthritis is treated with Ultram after an autoimmune panel."
+    reference = """HISTORY OF PRESENT ILLNESS
+No concerns.
+ASSESSMENT AND PLAN
+Arthritis.
+• Additional Testing: Order an autoimmune panel.
+• Medical Treatment: Initiate Ultram.
+"""
+    environment = _labeled_relation_environment(
+        ("d-arthritis", "Arthritis", "health-condition", 1, 10),
+        ("d-ultram", "Ultram", "drug", source.index("Ultram"), source.index("Ultram") + 6),
+        (
+            "d-panel", "autoimmune panel", "medical-procedure",
+            source.index("autoimmune panel"), source.index("autoimmune panel") + 16,
+        ),
+    )
+
+    candidates = AciTaskAdapter({"aci/stale": reference}).delivered_candidates(
+        "aci/stale", source, reference, environment
+    )
+
+    assert not [row for row in candidates if row.get("subtype") == "exact_relation"]
+
+
+def test_aci_labeled_relation_keeps_partial_controlled_links():
+    source = "Arthritis recurs. Arthritis remains documented."
+    reference = """HISTORY OF PRESENT ILLNESS
+No concerns.
+ASSESSMENT AND PLAN
+Arthritis.
+• Additional Testing: Order a thyroid panel.
+• Medical Treatment: Continue Synthroid.
+"""
+    first = source.index("Arthritis")
+    second = source.rindex("Arthritis")
+    environment = _labeled_relation_environment(
+        ("d-arthritis", "Arthritis", "health-condition", first, first + 9),
+        ("d-arthritis", "Arthritis", "health-condition", second, second + 9),
+    )
+
+    candidates = AciTaskAdapter({"aci/partial": reference}).delivered_candidates(
+        "aci/partial", source, reference, environment
+    )
+    relation = next(row for row in candidates if row["subtype"] == "exact_relation")
+
+    assert relation["scope"] == "linked"
+    assert relation["occurrence_ids"] == ["o0", "o1"]
+
+
+def test_aci_labeled_relation_rejects_field_with_multiple_decisions():
+    source = "Arthritis is treated with Ultram."
+    reference = """HISTORY OF PRESENT ILLNESS
+No concerns.
+ASSESSMENT AND PLAN
+Arthritis.
+• Additional Testing: None recorded.
+• Medical Treatment: Initiate Ultram.
+"""
+    environment = _labeled_relation_environment(
+        ("d-arthritis", "Arthritis", "health-condition", 0, 9),
+        ("d-ultram-a", "Ultram", "drug", source.index("Ultram"), source.index("Ultram") + 6),
+        ("d-ultram-b", "Ultram", "medical-procedure", source.index("Ultram"), source.index("Ultram") + 6),
+    )
+
+    candidates = AciTaskAdapter({"aci/ambiguous": reference}).delivered_candidates(
+        "aci/ambiguous", source, reference, environment
+    )
+
+    assert not [row for row in candidates if row.get("subtype") == "exact_relation"]
+
+
+def test_aci_scorer_returns_zero_for_incomplete_labeled_relation():
+    artifact = {
+        "reader_pin": TEST_READER_PIN,
+        "documents": {"aci/incomplete": {"utility_weight_denominator": 1.0}},
+        "assertions": {
+            "relation": {
+                "assertion_id": "relation",
+                "doc_id": "aci/incomplete",
+                "family": "delivered",
+                "weight": 1.0,
+                "scoring_contract": {
+                    "kind": "exact_relation",
+                    "section": "PLAN",
+                    "condition": "Arthritis",
+                    "treatment": "Initiate Ultram.",
+                    "test": "Order an autoimmune panel.",
+                },
+            },
+        },
+    }
+    incomplete = """HISTORY OF PRESENT ILLNESS
+No concerns.
+ASSESSMENT AND PLAN
+Arthritis.
+• Medical Treatment: Initiate Ultram.
+"""
+
+    result = score_utility(
+        artifact, "aci/incomplete", doc_p="unused", out_final=incomplete,
+        reader=_pin_reader(lambda questions, context: pytest.fail("reader must not be called")),
+    )
+
+    assert result["component_scores"] == {"relation": 0.0}
 
 
 def test_aci_delivered_candidates_compile_reference_backed_groups_with_capped_structure():

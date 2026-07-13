@@ -125,6 +125,24 @@ ACI_REQUIRED_SECTIONS = (
     "PLAN",
 )
 ACI_COMBINED_ASSESSMENT_PLAN = "ASSESSMENT AND PLAN"
+ACI_TASK_HEADINGS = frozenset({
+    "CHIEF COMPLAINT",
+    "HPI",
+    "HISTORY OF PRESENT ILLNESS",
+    "REVIEW OF SYSTEMS",
+    "PHYSICAL EXAMINATION",
+    "RESULTS",
+    "ASSESSMENT",
+    "PLAN",
+    ACI_COMBINED_ASSESSMENT_PLAN,
+})
+_ACI_CAPTURED_HEADING_SECTIONS = {
+    "HPI": ("HISTORY OF PRESENT ILLNESS",),
+    "HISTORY OF PRESENT ILLNESS": ("HISTORY OF PRESENT ILLNESS",),
+    "ASSESSMENT": ("ASSESSMENT",),
+    "PLAN": ("PLAN",),
+    ACI_COMBINED_ASSESSMENT_PLAN: ("ASSESSMENT", "PLAN"),
+}
 _ACI_HEADING_PATTERN = re.compile(
     r"^\s*(?P<heading>[A-Z][A-Z /&-]*[A-Z])\s*(?::\s*(?P<content>.*))?$"
 )
@@ -139,6 +157,9 @@ _ACI_LABELED_PLAN_FIELDS = {
     "additional testing": "test",
     "medical treatment": "treatment",
 }
+_ACI_CONDITION_PREAMBLE_WORDS = frozenset({
+    "a", "an", "the", "patient", "this", "he", "she", "they", "we", "i",
+})
 
 
 class OpenRouterRelationTeacher:
@@ -716,13 +737,18 @@ class AciTaskAdapter:
             if canon(row["condition"]) in duplicated_conditions:
                 continue
             values = (row["condition"], row["treatment"], row["test"])
+            if any(not isinstance(value, str) or not value.strip() for value in values):
+                continue
             if "evidence" in row:
                 occurrence_ids = _exact_labeled_field_occurrence_ids(
-                    values, occurrences_by_surface
+                    document,
+                    values,
+                    occurrences_by_surface,
+                    occurrences_by_decision,
                 )
                 if occurrence_ids is None:
                     continue
-                scope = "linked"
+                scope = "linked" if occurrence_ids else "global"
             else:
                 relation_occurrences = [
                     occurrences_by_surface.get(canon(value), []) for value in values
@@ -1072,19 +1098,16 @@ def _parse_aci_note(text: str) -> dict:
         line = raw.strip()
         heading = _ACI_HEADING_PATTERN.match(line)
         heading_name = heading.group("heading").strip() if heading else ""
-        if heading_name in ACI_REQUIRED_SECTIONS:
-            current_sections = (heading_name,)
-            sections[heading_name] = []
-            section_spans[heading_name] = []
-            content = heading.group("content")
-            if content and content.strip():
-                value = content.strip()
-                start = offset + raw.find(value)
-                sections[heading_name].append(value)
-                section_spans[heading_name].append([start, start + len(value)])
-        elif heading_name == ACI_COMBINED_ASSESSMENT_PLAN:
-            combined_assessment_plan = True
-            current_sections = ("ASSESSMENT", "PLAN")
+        if heading is not None:
+            current_sections = ()
+            if heading_name not in ACI_TASK_HEADINGS:
+                offset += len(raw_line)
+                continue
+            captured_sections = _ACI_CAPTURED_HEADING_SECTIONS.get(heading_name)
+            if captured_sections is None:
+                offset += len(raw_line)
+                continue
+            current_sections = captured_sections
             for section in current_sections:
                 sections[section] = []
                 section_spans[section] = []
@@ -1095,6 +1118,7 @@ def _parse_aci_note(text: str) -> dict:
                 for section in current_sections:
                     sections[section].append(value)
                     section_spans[section].append([start, start + len(value)])
+            combined_assessment_plan = heading_name == ACI_COMBINED_ASSESSMENT_PLAN
         elif line and current_sections:
             start = offset + len(raw) - len(raw.lstrip())
             for section in current_sections:
@@ -1159,43 +1183,20 @@ def _parse_aci_combined_rows(
     lines: Sequence[str], spans: Sequence[Sequence[int]],
 ) -> list[dict]:
     rows = []
-    current = None
-    for index, line in enumerate(lines):
-        field_match = _ACI_LABELED_FIELD_PATTERN.match(line)
-        if field_match is not None and current is not None:
-            field = _ACI_LABELED_PLAN_FIELDS.get(canon(field_match.group("label")))
-            if field is not None:
-                value = field_match.group("value")
-                if current.get(field) is not None:
-                    current[field] = None
-                    current["evidence"].pop(field, None)
-                else:
-                    span = spans[index]
-                    value_start = span[0] + field_match.start("value")
-                    current[field] = value
-                    current["evidence"][field] = [
-                        value_start, value_start + len(value),
-                    ]
-            continue
-        condition_match = _ACI_CONDITION_ENTRY_PATTERN.match(line)
-        if condition_match is None:
-            continue
-        next_match = next(
-            (
-                _ACI_LABELED_FIELD_PATTERN.match(next_line)
-                for next_line in lines[index + 1:]
-                if next_line
-            ),
-            None,
+    condition_entries = [
+        (index, match)
+        for index, line in enumerate(lines)
+        if (match := _aci_condition_entry_match(line)) is not None
+    ]
+    for entry_index, (line_index, condition_match) in enumerate(condition_entries):
+        next_line_index = (
+            condition_entries[entry_index + 1][0]
+            if entry_index + 1 < len(condition_entries) else len(lines)
         )
-        if next_match is None:
-            continue
-        if current is not None:
-            rows.append(current)
         condition = condition_match.group("condition")
-        span = spans[index]
+        span = spans[line_index]
         condition_start = span[0] + condition_match.start("condition")
-        current = {
+        row = {
             "condition": condition,
             "treatment": None,
             "test": None,
@@ -1203,9 +1204,46 @@ def _parse_aci_combined_rows(
                 "condition": [condition_start, condition_start + len(condition)],
             },
         }
-    if current is not None:
-        rows.append(current)
+        ambiguous_fields = set()
+        recognized_label = False
+        for field_index in range(line_index + 1, next_line_index):
+            field_match = _ACI_LABELED_FIELD_PATTERN.match(lines[field_index])
+            if field_match is None:
+                continue
+            recognized_label = True
+            field = _ACI_LABELED_PLAN_FIELDS.get(canon(field_match.group("label")))
+            if field is None or field in ambiguous_fields:
+                continue
+            if row[field] is not None:
+                row[field] = None
+                row["evidence"].pop(field, None)
+                ambiguous_fields.add(field)
+                continue
+            value = field_match.group("value")
+            field_span = spans[field_index]
+            value_start = field_span[0] + field_match.start("value")
+            row[field] = value
+            row["evidence"][field] = [value_start, value_start + len(value)]
+        if recognized_label:
+            rows.append(row)
     return rows
+
+
+def _aci_condition_entry_match(line: str):
+    match = _ACI_CONDITION_ENTRY_PATTERN.match(line)
+    if match is None:
+        return None
+    condition = match.group("condition").strip()
+    tokens = re.findall(r"[A-Za-z0-9]+", condition)
+    if (
+        not condition
+        or "," in condition
+        or len(condition) > 80
+        or not 1 <= len(tokens) <= 8
+        or canon(tokens[0]) in _ACI_CONDITION_PREAMBLE_WORDS
+    ):
+        return None
+    return match
 
 
 def _aci_section_shape(lines: Sequence[str], rows: Sequence[Mapping]) -> dict:
@@ -1223,21 +1261,35 @@ def _aci_labeled_section_shape(rows: Sequence[Mapping]) -> dict:
 
 
 def _exact_labeled_field_occurrence_ids(
+    document: str,
     values: Sequence[str],
     occurrences_by_surface: Mapping[str, Sequence[Mapping]],
+    occurrences_by_decision: Mapping[str, Sequence[Mapping]],
 ) -> list[str] | None:
     occurrence_ids = []
     for value in values:
-        matches = []
+        matching_decisions = set()
         for surface, occurrences in occurrences_by_surface.items():
             if _contains(value, surface):
-                if len(occurrences) != 1:
+                decision_ids = {str(row.get("decision_id", "")) for row in occurrences}
+                if len(decision_ids) != 1 or "" in decision_ids:
                     return None
-                matches.append(occurrences[0])
-        if len(matches) != 1:
+                matching_decisions.update(decision_ids)
+        if len(matching_decisions) > 1:
             return None
-        occurrence_ids.append(str(matches[0]["occurrence_id"]))
-    return occurrence_ids
+        if not matching_decisions:
+            continue
+        decision_id = matching_decisions.pop()
+        decision_occurrences = occurrences_by_decision.get(decision_id, ())
+        if not decision_occurrences or any(
+            _exact_occurrence_span(document, occurrence) is None
+            for occurrence in decision_occurrences
+        ):
+            return None
+        occurrence_ids.extend(
+            str(occurrence["occurrence_id"]) for occurrence in decision_occurrences
+        )
+    return list(dict.fromkeys(occurrence_ids))
 
 
 def _duplicated_aci_conditions(rows: Sequence[Mapping]) -> set[str]:
@@ -2955,6 +3007,7 @@ def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: 
             return float(
                 len(matches) == 1
                 and field in {"category", "status"}
+                and isinstance(matches[0].get(field), str)
                 and canon(matches[0][field]) == expected
             )
         return 0.0
@@ -2966,7 +3019,10 @@ def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: 
         if not all(expected.values()) or contract.get("section") != "PLAN":
             return 0.0
         return float(any(
-            all(canon(row[field]) == value for field, value in expected.items())
+            all(
+                isinstance(row.get(field), str) and canon(row[field]) == value
+                for field, value in expected.items()
+            )
             for row in parsed_output["plan_rows"]
         ))
     raise ValueError(f"unsupported delivered scoring contract: {contract}")
