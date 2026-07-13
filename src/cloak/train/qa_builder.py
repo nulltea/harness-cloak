@@ -241,7 +241,12 @@ class AciTaskAdapter:
                 "evidence": {"authority": "human_reference"},
             })
 
+        duplicated_conditions = _duplicated_aci_conditions(
+            parsed_reference["assessment_rows"]
+        )
         for row in parsed_reference["assessment_rows"]:
+            if canon(row["condition"]) in duplicated_conditions:
+                continue
             for field in ("category", "status"):
                 candidates.append({
                     "family": "delivered",
@@ -262,8 +267,8 @@ class AciTaskAdapter:
         required_sections = list(ACI_REQUIRED_SECTIONS)
         if (
             all(parsed_reference["sections"].get(section) for section in required_sections)
-            and parsed_reference["assessment_rows"]
-            and parsed_reference["plan_rows"]
+            and parsed_reference["assessment_shape"]["kind"] in {"rows", "none"}
+            and parsed_reference["plan_shape"]["kind"] in {"rows", "none"}
         ):
             candidates.append({
                 "family": "delivered",
@@ -275,14 +280,16 @@ class AciTaskAdapter:
                     "kind": "required_sections",
                     "sections": required_sections,
                     "parseability": {
-                        "assessment_rows": len(parsed_reference["assessment_rows"]),
-                        "plan_rows": len(parsed_reference["plan_rows"]),
+                        "assessment": parsed_reference["assessment_shape"],
+                        "plan": parsed_reference["plan_shape"],
                     },
                 },
                 "evidence": {"authority": "human_reference"},
             })
 
         for row in parsed_reference["plan_rows"]:
+            if canon(row["condition"]) in duplicated_conditions:
+                continue
             values = (row["condition"], row["treatment"], row["test"])
             relation_occurrences = [
                 occurrences_by_surface.get(canon(value), []) for value in values
@@ -355,15 +362,21 @@ def _parse_aci_note(text: str) -> dict:
         {"age": demographic_match.group(1), "sex": demographic_match.group(2)}
         if demographic_match else {}
     )
+    assessment_lines = sections.get("ASSESSMENT", [])
+    plan_lines = sections.get("PLAN", [])
+    assessment_rows = _parse_aci_rows(
+        assessment_lines, ("condition", "category", "status")
+    )
+    plan_rows = _parse_aci_rows(
+        plan_lines, ("condition", "treatment", "test")
+    )
     return {
         "sections": sections,
         "demographic": demographic,
-        "assessment_rows": _parse_aci_rows(
-            sections.get("ASSESSMENT", []), ("condition", "category", "status")
-        ),
-        "plan_rows": _parse_aci_rows(
-            sections.get("PLAN", []), ("condition", "treatment", "test")
-        ),
+        "assessment_rows": assessment_rows,
+        "assessment_shape": _aci_section_shape(assessment_lines, assessment_rows),
+        "plan_rows": plan_rows,
+        "plan_shape": _aci_section_shape(plan_lines, plan_rows),
     }
 
 
@@ -374,6 +387,21 @@ def _parse_aci_rows(lines: Sequence[str], fields: Sequence[str]) -> list[dict]:
         if len(values) == len(fields):
             rows.append(dict(zip(fields, values)))
     return rows
+
+
+def _aci_section_shape(lines: Sequence[str], rows: Sequence[Mapping]) -> dict:
+    if len(lines) == 1 and canon(lines[0]) == "none":
+        return {"kind": "none", "count": 0}
+    if lines and len(rows) == len(lines):
+        return {"kind": "rows", "count": len(rows)}
+    return {"kind": "invalid", "count": len(rows)}
+
+
+def _duplicated_aci_conditions(rows: Sequence[Mapping]) -> set[str]:
+    counts: dict[str, int] = defaultdict(int)
+    for row in rows:
+        counts[canon(str(row["condition"]))] += 1
+    return {condition for condition, count in counts.items() if count > 1}
 
 
 def _validated_structural_cap(
@@ -1236,26 +1264,26 @@ def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: 
         ):
             return 0.0
         parseability = contract.get("parseability") or {
-            "assessment_rows": 1,
-            "plan_rows": 1,
+            "assessment": {"kind": "rows", "count": 1},
+            "plan": {"kind": "rows", "count": 1},
         }
         if not isinstance(parseability, Mapping):
             return 0.0
-        expected_counts = {
-            name: parseability.get(name)
-            for name in ("assessment_rows", "plan_rows")
-        }
-        if any(
-            isinstance(count, bool) or not isinstance(count, int) or count < 1
-            for count in expected_counts.values()
-        ):
-            return 0.0
-        return float(
-            len(parsed_output["assessment_rows"])
-            == expected_counts["assessment_rows"]
-            and len(parsed_output["plan_rows"])
-            == expected_counts["plan_rows"]
-        )
+        for section in ("assessment", "plan"):
+            expected = parseability.get(section)
+            observed = parsed_output[f"{section}_shape"]
+            if (
+                not isinstance(expected, Mapping)
+                or expected.get("kind") not in {"rows", "none"}
+                or isinstance(expected.get("count"), bool)
+                or not isinstance(expected.get("count"), int)
+                or expected["count"] < 0
+                or expected["kind"] == "none" and expected["count"] != 0
+                or expected["kind"] != observed["kind"]
+                or expected["count"] != observed["count"]
+            ):
+                return 0.0
+        return 1.0
     if kind == "field_value":
         section = str(contract.get("section", ""))
         field = str(contract.get("field", ""))

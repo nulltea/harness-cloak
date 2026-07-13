@@ -808,7 +808,10 @@ Hypothyroidism — Synthroid — thyroid labs
     assert structure["scoring_contract"] == {
         "kind": "required_sections",
         "sections": ["HISTORY OF PRESENT ILLNESS", "ASSESSMENT", "PLAN"],
-        "parseability": {"assessment_rows": 1, "plan_rows": 1},
+        "parseability": {
+            "assessment": {"kind": "rows", "count": 1},
+            "plan": {"kind": "rows", "count": 1},
+        },
     }
     assert "fields" not in structure["scoring_contract"]
 
@@ -865,10 +868,91 @@ PLAN: Hypothyroidism — Synthroid — thyroid labs
         "HISTORY OF PRESENT ILLNESS", "ASSESSMENT", "PLAN",
     ]
     assert structure["scoring_contract"]["parseability"] == {
-        "assessment_rows": 1,
-        "plan_rows": 1,
+        "assessment": {"kind": "rows", "count": 1},
+        "plan": {"kind": "rows", "count": 1},
     }
     assert any(row["subtype"] == "exact_relation" for row in candidates)
+
+
+@pytest.mark.parametrize(
+    "reference",
+    [
+        """HISTORY OF PRESENT ILLNESS
+No acute concerns.
+ASSESSMENT
+none
+PLAN
+none
+""",
+        """HISTORY OF PRESENT ILLNESS: No acute concerns.
+ASSESSMENT: none
+PLAN: none
+""",
+    ],
+)
+def test_aci_structure_accepts_heading_only_and_inline_none_sections(reference):
+    candidates = AciTaskAdapter({"aci/D2N002": reference}).delivered_candidates(
+        "aci/D2N002", "unused", reference, _aci_delivered_environment()
+    )
+    structure = next(row for row in candidates if row["subtype"] == "structure")
+    artifact = {
+        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "assertions": {
+            "structure": {
+                "assertion_id": "structure", "doc_id": "d1", "family": "delivered",
+                "weight": 1.0, "scoring_contract": structure["scoring_contract"],
+            },
+        },
+    }
+
+    valid = score_utility(
+        artifact, "d1", doc_p="unused", out_final=reference,
+        reader=lambda questions, context: pytest.fail("reader must not be called"),
+    )
+    malformed = score_utility(
+        artifact,
+        "d1",
+        doc_p="unused",
+        out_final=reference.replace("ASSESSMENT: none", "ASSESSMENT: no concerns").replace(
+            "ASSESSMENT\nnone", "ASSESSMENT\nno concerns"
+        ),
+        reader=lambda questions, context: pytest.fail("reader must not be called"),
+    )
+
+    assert valid["component_scores"] == {"structure": 1.0}
+    assert malformed["component_scores"] == {"structure": 0.0}
+
+
+def test_aci_compiler_abstains_from_duplicate_assessment_condition_contracts():
+    reference = """HISTORY OF PRESENT ILLNESS
+Follow-up note.
+ASSESSMENT
+Hypothyroidism — Endocrine — Stable
+Hypothyroidism — Autoimmune — Active
+Arthritis — Musculoskeletal — Stable
+PLAN
+Hypothyroidism — Synthroid — thyroid labs
+Arthritis — physical therapy — mobility assessment
+"""
+
+    candidates = AciTaskAdapter({"aci/D2N002": reference}).delivered_candidates(
+        "aci/D2N002", "unused", reference, _aci_delivered_environment()
+    )
+    assessment_fields = [
+        row["scoring_contract"] for row in candidates
+        if row["subtype"] == "field"
+        and row["scoring_contract"].get("section") == "ASSESSMENT"
+    ]
+    relations = [
+        row["scoring_contract"] for row in candidates
+        if row["subtype"] == "exact_relation"
+    ]
+
+    assert {(row["row"], row["field"]) for row in assessment_fields} == {
+        ("Arthritis", "category"),
+        ("Arthritis", "status"),
+    }
+    assert [row["condition"] for row in relations] == ["Arthritis"]
 
 
 def test_score_utility_evaluates_every_deterministic_delivered_contract():
