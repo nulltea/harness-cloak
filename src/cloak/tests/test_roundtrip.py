@@ -147,8 +147,17 @@ def test_roundtrip_reward_pin_tracks_actual_task_prompt_and_invert(monkeypatch):
         "cloak.runtime_types",
     }
     assert set(baseline["extractor"]["packages"]) == {
+        "huggingface-hub",
+        "numpy",
         "rapidfuzz",
         "sentence-transformers",
+        "tokenizers",
+        "torch",
+        "transformers",
+    }
+    assert baseline["extractor"]["semantic_model"] == {
+        "id": "sentence-transformers/all-MiniLM-L6-v2",
+        "revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41",
     }
 
     with monkeypatch.context() as context:

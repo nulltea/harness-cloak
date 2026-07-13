@@ -37,8 +37,18 @@ DETECTOR_POINTER_GLINER_MODEL = "data/models/pii_gliner_multidomain/checkpoint-2
 _MAX_CANDIDATES = 12
 _GENERIC_SEMANTIC_FILLS = {"something"}
 INVERT_EXTRACTOR_VERSION = "invert-rule-cascade-v1"
-INVERT_IMPLEMENTATION_PIN_VERSION = "invert-implementation-pin-v1"
-INVERT_EXTERNAL_DISTRIBUTIONS = ("rapidfuzz", "sentence-transformers")
+INVERT_IMPLEMENTATION_PIN_VERSION = "invert-implementation-pin-v2"
+INVERT_EXTERNAL_DISTRIBUTIONS = (
+    "rapidfuzz",
+    "sentence-transformers",
+    "torch",
+    "transformers",
+    "tokenizers",
+    "numpy",
+    "huggingface-hub",
+)
+SEMANTIC_MODEL_ID = "sentence-transformers/all-MiniLM-L6-v2"
+SEMANTIC_MODEL_REVISION = "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"
 
 _MONTHS = ("jan", "january", "feb", "february", "mar", "march", "apr", "april", "may",
            "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september",
@@ -91,6 +101,10 @@ def invert_implementation_pin() -> dict:
         "version": INVERT_EXTRACTOR_VERSION,
         "pin_version": INVERT_IMPLEMENTATION_PIN_VERSION,
         "semantic": True,
+        "semantic_model": {
+            "id": SEMANTIC_MODEL_ID,
+            "revision": SEMANTIC_MODEL_REVISION,
+        },
         "modules": {
             "cloak.extract": _module_source_hash(sys.modules[__name__]),
             "cloak.runtime_types": _module_source_hash(runtime_types),
@@ -211,7 +225,7 @@ def _type_sane(entity_type: str, fill: str, window: str) -> bool:
 @lru_cache(maxsize=1)
 def _semantic_model():
     from sentence_transformers import SentenceTransformer
-    return SentenceTransformer("all-MiniLM-L6-v2")
+    return SentenceTransformer(SEMANTIC_MODEL_ID, revision=SEMANTIC_MODEL_REVISION)
 
 
 def _semantic_scores(fill: str, snippets: tuple[str, ...]) -> list[float]:

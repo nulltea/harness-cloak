@@ -1043,7 +1043,7 @@ def test_utility_reward_cache_rejects_changed_reward_identity(tmp_path):
         cache.lookup(**inputs)
 
 
-def test_utility_reward_cache_invalidates_task_prompt_or_invert_identity(
+def test_utility_reward_cache_invalidates_task_prompt_or_invert_provenance(
     tmp_path, monkeypatch,
 ):
     doc = _artifact_exit_doc()
@@ -1076,11 +1076,33 @@ def test_utility_reward_cache_invalidates_task_prompt_or_invert_identity(
             raising=False,
         )
         changed_helper_pin = tr._utility_scorer_pin(doc)
+    with monkeypatch.context() as context:
+        context.setattr(
+            extract,
+            "SEMANTIC_MODEL_REVISION",
+            "1111111111111111111111111111111111111111",
+            raising=False,
+        )
+        changed_model_revision_pin = tr._utility_scorer_pin(doc)
+    original_distribution_version = extract._distribution_version
+    with monkeypatch.context() as context:
+        context.setattr(
+            extract,
+            "_distribution_version",
+            lambda name: "changed-torch" if name == "torch"
+            else original_distribution_version(name),
+            raising=False,
+        )
+        changed_dependency_pin = tr._utility_scorer_pin(doc)
 
     assert cache.lookup(**(inputs | {"scorer_pin": changed_prompt_pin})) is None
     assert cache.lookup(**(inputs | {"scorer_pin": changed_invert_pin})) is None
     assert changed_helper_pin != inputs["scorer_pin"]
     assert cache.lookup(**(inputs | {"scorer_pin": changed_helper_pin})) is None
+    assert changed_model_revision_pin != inputs["scorer_pin"]
+    assert cache.lookup(**(inputs | {"scorer_pin": changed_model_revision_pin})) is None
+    assert changed_dependency_pin != inputs["scorer_pin"]
+    assert cache.lookup(**(inputs | {"scorer_pin": changed_dependency_pin})) is None
 
 
 def test_utility_reward_cache_rejects_previous_roundtrip_reward_pin(tmp_path):
@@ -1097,10 +1119,10 @@ def test_utility_reward_cache_rejects_previous_roundtrip_reward_pin(tmp_path):
     cache.store(**inputs, result=_complete_cache_result("current"))
     previous_pin = {
         **current_pin,
-        "reward_pin_version": "qa-builder-v2-roundtrip-reward-v2",
+        "reward_pin_version": "qa-builder-v2-roundtrip-reward-v3",
     }
 
-    assert current_pin["reward_pin_version"] == "qa-builder-v2-roundtrip-reward-v3"
+    assert current_pin["reward_pin_version"] == "qa-builder-v2-roundtrip-reward-v4"
     assert cache.lookup(**(inputs | {"scorer_pin": previous_pin})) is None
 
 

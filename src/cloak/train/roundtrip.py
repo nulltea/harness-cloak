@@ -36,7 +36,7 @@ MAX_TOKENS = 1024   # raised from 512 (2026-07-05, pre-gate calibration): full A
                     # the 512 cap mid-sentence (measured: out_len ~532 tok, tail truncated),
                     # killing ceiling-anchor validation on facts from later note sections.
                     # gemma finishes real notes in ~400-700 tok; 1024 is headroom, not a target.
-ROUNDTRIP_REWARD_PIN_VERSION = "qa-builder-v2-roundtrip-reward-v3"
+ROUNDTRIP_REWARD_PIN_VERSION = "qa-builder-v2-roundtrip-reward-v4"
 TASK_PROMPT_PIN_VERSION = "roundtrip-task-prompt-v1"
 
 _client = None

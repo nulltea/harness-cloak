@@ -125,6 +125,8 @@ git diff --check
 exit 0, no output
 ```
 
+
+
 ## Concerns
 
 - No external relation-teacher run was authorized or executed. The context channel remains empirically undemonstrated, and the smoke still has zero context assertions.
@@ -415,3 +417,49 @@ exit 0, no output
 git diff --check
 exit 0, no output
 ```
+
+## Transitive extractor dependency pin fix (2026-07-13)
+
+### Implemented fixes
+
+- Semantic extraction now loads `sentence-transformers/all-MiniLM-L6-v2` at exact Hugging Face
+  revision `1110a243fdf4706b3f48f1d95db1a4f5529b4d41`.
+- The extractor implementation identity records that model provenance and installed versions of
+  `rapidfuzz`, `sentence-transformers`, `torch`, `transformers`, `tokenizers`, `numpy`, and
+  `huggingface-hub`.
+- The round-trip reward pin is now `qa-builder-v2-roundtrip-reward-v4`; reward-v3 cache rows are
+  rejected.
+
+The extractor pin is the correct transitive identity boundary: it is included verbatim in the
+round-trip reward pin, which is included in the utility reward cache key.
+
+### Regression coverage
+
+- `test_semantic_model_loads_pinned_hf_revision` verifies the exact model ID and revision passed to
+  `SentenceTransformer` at load time.
+- `test_roundtrip_reward_pin_tracks_actual_task_prompt_and_invert` verifies all required package
+  keys and model provenance appear in the reward identity.
+- `test_utility_reward_cache_invalidates_task_prompt_or_invert_provenance` verifies a changed model
+  revision or a changed `torch` version changes the scorer pin and misses the persisted cache.
+- `test_utility_reward_cache_rejects_previous_roundtrip_reward_pin` verifies reward-v3 misses after
+  the reward-v4 bump.
+
+### Verification
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_build_qa_utility_artifact_cli.py
+202 passed in 2.86s
+
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_extract.py
+12 passed in 0.02s
+
+/home/timo/repos/agent-cloak/.venv/bin/python -m py_compile src/cloak/extract.py src/cloak/train/roundtrip.py src/cloak/tests/test_extract.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_train_roundtrip_mode.py
+exit 0, no output
+
+git diff --check
+exit 0, no output
+```
+
+### Concerns
+
+- Existing reward-v3 cache entries intentionally miss and require recomputation.
