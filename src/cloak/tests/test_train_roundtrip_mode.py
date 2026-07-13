@@ -8,7 +8,15 @@ from pathlib import Path
 import pytest
 import torch
 
-from cloak.train.qa_builder import _stable_hash, context_reader_pin
+from cloak.train.qa_builder import (
+    AciTaskAdapter,
+    _stable_hash,
+    builder_pin,
+    context_reader_pin,
+    package_utility_artifact,
+    relation_teacher_pin,
+    utility_scorer_pin,
+)
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import train_ranker as tr  # noqa: E402
@@ -40,6 +48,7 @@ def _sealed_utility_artifact(assertion=None):
     assertion["weight"] = family_budgets[family]
     threshold_manifest = {
         "family_budgets": family_budgets,
+        "min_context_assertions": 0,
         "reader_threshold": 1.0,
         "reader_stability_repetitions": 1,
         "reader_option_permutations": 1,
@@ -49,10 +58,16 @@ def _sealed_utility_artifact(assertion=None):
     artifact = {
         "artifact_version": "utility-assertions-v1",
         "environment_hash": "env-v1",
-        "task_pin": "task-v1",
-        "builder_pin": "builder-v1",
+        "task_pin": AciTaskAdapter.task_pin,
+        "builder_pin": builder_pin(),
+        "teacher_pin": relation_teacher_pin(False),
         "reader_pin": context_reader_pin(),
-        "gate_manifest_hash": "gate-v1",
+        "scorer_pin": utility_scorer_pin(),
+        "gate_manifest_hash": _stable_hash(threshold_manifest),
+        "threshold_manifest_pin": {
+            "schema": "qa-threshold-manifest-v1",
+            "sha256": _stable_hash(threshold_manifest),
+        },
         "threshold_manifest": threshold_manifest,
         "cost_budgets": _COST_BUDGETS,
         "family_budgets": family_budgets,
@@ -98,6 +113,13 @@ def _accepted_context_assertion(status="accepted"):
 
 
 def _seal_artifact(artifact):
+    if "threshold_manifest" in artifact:
+        manifest_hash = _stable_hash(artifact["threshold_manifest"])
+        artifact["gate_manifest_hash"] = manifest_hash
+        artifact["threshold_manifest_pin"] = {
+            "schema": "qa-threshold-manifest-v1",
+            "sha256": manifest_hash,
+        }
     artifact["artifact_hash"] = _stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
     })
@@ -169,6 +191,7 @@ def _verified_context_artifact():
     }
     threshold_manifest = {
         "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "min_context_assertions": 0,
         "reader_threshold": 1.0,
         "reader_stability_repetitions": 1,
         "reader_option_permutations": 1,
@@ -177,9 +200,16 @@ def _verified_context_artifact():
     }
     return _seal_artifact({
         "artifact_version": "utility-assertions-v1", "environment_hash": "env-v1",
-        "task_pin": "task-v1", "builder_pin": "builder-v1",
+        "task_pin": AciTaskAdapter.task_pin, "builder_pin": builder_pin(),
+        "teacher_pin": relation_teacher_pin(False),
         "reader_pin": context_reader_pin(),
-        "gate_manifest_hash": "gate-v1", "threshold_manifest": threshold_manifest,
+        "scorer_pin": utility_scorer_pin(),
+        "gate_manifest_hash": _stable_hash(threshold_manifest),
+        "threshold_manifest_pin": {
+            "schema": "qa-threshold-manifest-v1",
+            "sha256": _stable_hash(threshold_manifest),
+        },
+        "threshold_manifest": threshold_manifest,
         "cost_budgets": _COST_BUDGETS,
         "family_budgets": {"context": 0.6, "delivered": 0.4},
         "documents": {"d0": {
@@ -251,6 +281,7 @@ def test_artifact_cf_frac_is_rejected_before_training_initialization(monkeypatch
         "train_ranker.py",
         "--reward", "roundtrip",
         "--utility-artifact", "utility.json",
+        "--expected-utility-manifest-hash", "sha256:expected",
         "--cf-frac", "0.1",
     ])
     monkeypatch.setattr(
@@ -281,6 +312,24 @@ def test_utility_artifact_requires_roundtrip_before_training_initialization(monk
     )
 
     with pytest.raises(SystemExit, match="--utility-artifact.*--reward roundtrip"):
+        tr.main()
+
+
+def test_utility_artifact_requires_expected_manifest_hash_before_training_initialization(
+    monkeypatch,
+):
+    monkeypatch.setattr(sys, "argv", [
+        "train_ranker.py",
+        "--reward", "roundtrip",
+        "--utility-artifact", "utility.json",
+    ])
+    monkeypatch.setattr(
+        tr.torch,
+        "manual_seed",
+        lambda seed: pytest.fail("training initialization must not run"),
+    )
+
+    with pytest.raises(SystemExit, match="expected.*manifest hash"):
         tr.main()
 
 
@@ -504,8 +553,8 @@ def test_exit_round_artifact_cache_reuses_persisted_full_results(monkeypatch, tm
     assert first_stats["qa_cache_hits"] == 0
     assert first_stats["qa_cache_misses"] == 2
     assert len(calls) == 3
-    payload = json.loads(cache_path.read_text())
-    assert {entry["result"]["out_p"] for entry in payload["entries"].values()} == {
+    payload = [json.loads(line) for line in cache_path.read_text().splitlines()]
+    assert {record["entry"]["result"]["out_p"] for record in payload} == {
         "remote-floor", "remote-candidate",
     }
 
@@ -790,9 +839,9 @@ def test_utility_reward_cache_fails_closed_on_result_tampering(tmp_path, field, 
         "f1s": [],
     })
     payload = json.loads(cache_path.read_text())
-    entry = next(iter(payload["entries"].values()))
+    entry = payload["entry"]
     entry["result"][field] = tampered
-    cache_path.write_text(json.dumps(payload))
+    cache_path.write_text(json.dumps(payload) + "\n")
 
     with pytest.raises(ValueError, match="invalid utility reward cache"):
         tr.UtilityRewardCache(cache_path)
@@ -836,9 +885,9 @@ def test_cached_utility_roundtrips_persists_once_per_dispatched_batch(tmp_path, 
     persist_calls = []
     original_persist = cache._persist
 
-    def counted_persist():
+    def counted_persist(entries):
         persist_calls.append(True)
-        original_persist()
+        original_persist(entries)
 
     def fake_roundtrip(jobs, workers=1):
         return [{
@@ -867,6 +916,88 @@ def test_cached_utility_roundtrips_persists_once_per_dispatched_batch(tmp_path, 
     assert persist_calls == [True]
     assert cache.hits == 0
     assert cache.misses == 2
+
+
+def _complete_cache_result(label):
+    return {
+        "out_p": f"remote {label}",
+        "out_final": f"delivered {label}",
+        "recall": 0.5,
+        "component_scores": {"a1": 0.5},
+        "f1s": [],
+    }
+
+
+def _cache_inputs(label):
+    return {
+        "doc_id": f"doc-{label}",
+        "action_vector": {"dec1": f"action-{label}"},
+        "doc_p": f"document {label}",
+        "artifact_hash": "artifact-v1",
+        "scorer_pin": {"reader": "reader-v1"},
+    }
+
+
+def test_utility_reward_cache_appends_one_jsonl_record_per_new_identity(tmp_path):
+    cache_path = tmp_path / "utility-reward-cache.jsonl"
+    cache = tr.UtilityRewardCache(cache_path)
+
+    cache.store(**_cache_inputs("first"), result=_complete_cache_result("first"))
+    first_record = cache_path.read_text()
+    cache.store(**_cache_inputs("second"), result=_complete_cache_result("second"))
+    lines = cache_path.read_text().splitlines()
+
+    assert len(first_record.splitlines()) == 1
+    assert len(lines) == 2
+    assert all(json.loads(line)["version"] == tr.UtilityRewardCache._VERSION for line in lines)
+    assert len(cache.entries) == 2
+
+
+def test_utility_reward_cache_second_write_excludes_prior_history(tmp_path, monkeypatch):
+    persisted_batches = []
+
+    for name, history_size in (("small", 1), ("large", 25)):
+        cache = tr.UtilityRewardCache(tmp_path / f"{name}.jsonl")
+        cache.store_many([
+            (_cache_inputs(f"history-{index:02d}"), _complete_cache_result(f"history-{index:02d}"))
+            for index in range(history_size)
+        ])
+        original_persist = cache._persist
+
+        def measured_persist(entries, *, _original=original_persist):
+            persisted_batches.append(tuple(entries))
+            return _original(entries)
+
+        monkeypatch.setattr(cache, "_persist", measured_persist)
+        cache.store(**_cache_inputs("new"), result=_complete_cache_result("new"))
+
+    assert len(persisted_batches) == 2
+    assert persisted_batches[0] == persisted_batches[1]
+    assert len(persisted_batches[0]) == 1
+
+
+def test_utility_reward_cache_rejects_truncated_jsonl_record(tmp_path):
+    cache_path = tmp_path / "utility-reward-cache.jsonl"
+    cache = tr.UtilityRewardCache(cache_path)
+    cache.store(**_cache_inputs("first"), result=_complete_cache_result("first"))
+    cache_path.write_text(cache_path.read_text().removesuffix("\n"))
+
+    with pytest.raises(ValueError, match="truncated"):
+        tr.UtilityRewardCache(cache_path)
+
+
+def test_utility_reward_cache_rejects_conflicting_duplicate_identity(tmp_path):
+    first_path = tmp_path / "first.jsonl"
+    second_path = tmp_path / "second.jsonl"
+    inputs = _cache_inputs("same")
+    first = tr.UtilityRewardCache(first_path)
+    second = tr.UtilityRewardCache(second_path)
+    first.store(**inputs, result=_complete_cache_result("first"))
+    second.store(**inputs, result=_complete_cache_result("second"))
+    first_path.write_text(first_path.read_text() + second_path.read_text())
+
+    with pytest.raises(ValueError, match="conflicting duplicate"):
+        tr.UtilityRewardCache(first_path)
 
 
 def test_utility_reward_cache_rejects_changed_reward_identity(tmp_path):
@@ -907,6 +1038,7 @@ def test_train_roundtrip_reuses_identical_artifact_rollout_cache(tmp_path, monke
     artifact = {
         "artifact_hash": "artifact-v1",
         "reader_pin": "reader-v1",
+        "scorer_pin": utility_scorer_pin(),
         "documents": {"d0": {
             "utility_weight_denominator": 1.0,
             "controlled_decision_ids": ["dec1"],
@@ -960,6 +1092,112 @@ def test_utility_artifact_gate_checks_environment_and_denominator():
 
     with pytest.raises(SystemExit, match="environment_hash"):
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "other"})
+
+
+def test_utility_artifact_gate_recomputes_manifest_hash_and_checks_expected_identity():
+    artifact = _sealed_utility_artifact()
+
+    with pytest.raises(SystemExit, match="expected manifest hash"):
+        tr.enforce_utility_artifact_gate(
+            artifact,
+            {"environment_hash": "env-v1"},
+            expected_manifest_hash="sha256:expected",
+        )
+
+    artifact["gate_manifest_hash"] = "sha256:forged"
+    _seal_artifact(artifact)
+    artifact["gate_manifest_hash"] = "sha256:forged"
+    artifact["artifact_hash"] = _stable_hash({
+        key: value for key, value in artifact.items() if key != "artifact_hash"
+    })
+    with pytest.raises(SystemExit, match="gate_manifest_hash"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+def test_training_gate_rejects_under_floor_representative_action_from_frozen_environment():
+    frozen = tr.freeze_ranker_environment({
+        "k_floors": {"QUANTITY": 100.0, "OTHER": 100.0},
+        "corpora": {"clinical": {"d0": {"spans": [{
+            "surface": "metformin",
+            "type": "QUANTITY",
+            "start": 0,
+            "end": 9,
+            "actions": [
+                {"fill": "an endocrine treatment", "mode": "level", "aset": 10.0},
+                {"fill": "metformin", "mode": "level", "keep": True, "aset": 1.0},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }]}}},
+    })
+    live_document = frozen["documents"]["d0"]
+    decision = live_document["decisions"][0]
+    occurrence = live_document["occurrences"][0]
+    general = next(action for action in decision["actions"] if action["fill"])
+    vector = {decision["decision_id"]: general["action_id"]}
+    scores = {"original": 1.0, "representative": 1.0, "placeholder": 0.0}
+    artifact = package_utility_artifact(
+        frozen,
+        {"d0": [{
+            "assertion_id": "a-context",
+            "family": "context",
+            "scope": "linked",
+            "subtype": "semantic_property",
+            "occurrence_ids": [occurrence["occurrence_id"]],
+            "group_id": "treatment:category",
+            "weight": 0.5,
+            "status": "accepted",
+            "expected_action_support": {
+                "joint_anchor_action_vector": vector,
+                "joint_anchor_hash": _stable_hash(vector),
+                "property_level": {
+                    decision["decision_id"]: "an endocrine treatment",
+                },
+            },
+            "evidence": {"validation": {
+                "verdict": "accepted",
+                "scores": scores,
+                "stability": {
+                    "repetitions": 1,
+                    "option_permutations": 1,
+                    "threshold": 1.0,
+                    "passing_fraction": 1.0,
+                    "trials": [{
+                        "repetition": 0,
+                        "permutation_index": 0,
+                        "scores": scores,
+                        "passed": True,
+                    }],
+                },
+            }},
+        }]},
+        family_budgets={"context": 0.5, "delivered": 0.5},
+        pins={
+            "task_pin": AciTaskAdapter.task_pin,
+            "builder_pin": builder_pin(),
+            "teacher_pin": relation_teacher_pin(False),
+            "reader_pin": context_reader_pin(),
+            "scorer_pin": utility_scorer_pin(),
+            "gate_manifest_hash": "temporary",
+            "threshold_manifest_pin": {
+                "schema": "qa-threshold-manifest-v1",
+                "sha256": "temporary",
+            },
+        },
+    )
+    artifact["threshold_manifest"] = {
+        "family_budgets": {"context": 0.5, "delivered": 0.5},
+        "min_context_assertions": 0,
+        "reader_threshold": 1.0,
+        "reader_stability_repetitions": 1,
+        "reader_option_permutations": 1,
+        "reader_stability_threshold": 1.0,
+        "cost_budgets": _COST_BUDGETS,
+    }
+    artifact["cost_budgets"] = _COST_BUDGETS
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="unknown frozen action"):
+        tr.enforce_utility_artifact_gate(artifact, frozen)
 
 
 def test_utility_artifact_gate_rejects_subset_environment_hash_mismatch():

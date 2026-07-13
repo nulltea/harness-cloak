@@ -11,11 +11,9 @@ from cloak.train.qa_builder import (
     AciTaskAdapter,
     OpenRouterRelationTeacher,
     build_utility_artifact,
-    context_reader_pin,
     frozen_occurrences_from_arms,
     freeze_ranker_environment,
-    normalize_family_budgets,
-    normalize_cost_budgets,
+    normalize_threshold_manifest,
     read_context_batch,
 )
 from cloak.train.reward import canon
@@ -47,6 +45,18 @@ def _source_rows(corpus: str, doc_ids: list[str]) -> dict[str, dict]:
     if missing:
         raise SystemExit(f"documents absent from corpus {corpus!r}: {missing}")
     return rows
+
+
+def _parse_floors(value: str | None) -> dict[str, float] | None:
+    if value is None:
+        return None
+    try:
+        return {
+            runtime_type: float(floor)
+            for runtime_type, floor in (entry.split("=", 1) for entry in value.split(","))
+        }
+    except ValueError:
+        raise SystemExit("--floors must be comma-separated TYPE=COUNT entries") from None
 
 
 def _action_renderer(
@@ -104,19 +114,16 @@ def build_from_files(
         doc_id: all_occurrence_records[doc_id] for doc_id in args.doc_id
     }
     frozen_environment = freeze_ranker_environment(
-        environment, occurrences_by_document=occurrence_records
+        environment,
+        occurrences_by_document=occurrence_records,
+        floors=_parse_floors(args.floors),
     )
-    manifest = json.loads(Path(args.threshold_manifest).read_text())
     try:
-        manifest["family_budgets"] = normalize_family_budgets(
-            manifest.get("family_budgets")
+        manifest = normalize_threshold_manifest(
+            json.loads(Path(args.threshold_manifest).read_text())
         )
     except ValueError as error:
-        raise SystemExit(f"threshold manifest has invalid family_budgets: {error}") from None
-    try:
-        manifest["cost_budgets"] = normalize_cost_budgets(manifest.get("cost_budgets"))
-    except ValueError as error:
-        raise SystemExit(f"threshold manifest requires frozen cost budgets: {error}") from None
+        raise SystemExit(f"threshold manifest is invalid: {error}") from None
 
     rows = _source_rows(args.corpus, args.doc_id)
     if any(not doc_id.startswith("aci/") for doc_id in rows):
@@ -127,21 +134,9 @@ def build_from_files(
         relation_teacher = OpenRouterRelationTeacher()
 
     pins = {
-        key: value for key, value in manifest.items()
-        if key not in {"family_budgets", "min_context_assertions", "reader_threshold"}
-    }
-    pins.update({
-        "gate_manifest_hash": _hash(manifest),
-        "task_pin": AciTaskAdapter.task_pin,
-        "builder_pin": "qa-builder-v2-assertion-compiler-v1",
-        "reader_pin": context_reader_pin(),
-        "teacher_pin": ({
-            "provider": "openrouter",
-            "model": "nvidia/nemotron-3-super-120b-a12b:free",
-        } if args.relation_teacher else None),
         "source_hashes": {doc_id: _hash(text) for doc_id, text in source_documents.items()},
         "reference_hashes": {doc_id: _hash(text) for doc_id, text in references.items()},
-    })
+    }
     artifact = build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
@@ -167,6 +162,14 @@ def parse_args(argv=None):
     parser.add_argument("--doc-id", action="append", required=True)
     parser.add_argument("--threshold-manifest", required=True)
     parser.add_argument("--out", required=True)
+    parser.add_argument(
+        "--floors",
+        default=None,
+        help=(
+            "override per-type count floors as comma-separated TYPE=COUNT entries; "
+            "the effective floors are frozen into environment identity"
+        ),
+    )
     parser.add_argument(
         "--relation-teacher",
         action="store_true",

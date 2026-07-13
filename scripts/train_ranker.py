@@ -30,9 +30,9 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import random
 import re
-import tempfile
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -44,12 +44,20 @@ from cloak.corpora import load_task_docs
 from cloak.train.ranker import (EncoderPolicy, RankerPolicy, action_features,
                                 span_context)
 from cloak.train.reward import canon, fact_f1s, stage1_reward, u_qa
-from cloak.train.qa_builder import (coarsest_entailing_legal_action,
+from cloak.train.qa_builder import (AciTaskAdapter,
+                                    action_is_floor_legal,
+                                    builder_pin,
+                                    coarsest_entailing_legal_action,
                                     context_reader_pin,
+                                    effective_count_floors,
+                                    floor_for_runtime_type,
                                     frozen_occurrences_from_arms,
                                     freeze_ranker_environment,
                                     normalize_cost_budgets,
-                                    normalize_family_budgets)
+                                    normalize_family_budgets,
+                                    normalize_threshold_manifest,
+                                    relation_teacher_pin,
+                                    utility_scorer_pin)
 from cloak.train.utility_credit import provisional_advantages
 from cloak.tasks import SCHEMA_CORPORA
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token, placeholder_type_token
@@ -289,12 +297,13 @@ def derive_spans(raw_spans, floors, corpus, device):
     placeholder fallback when no non-KEEP level is legal. Every span keeps a placeholder so
     legal is never empty."""
     spans, feats = [], []
+    effective_floors = effective_count_floors({"k_floors": floors})
     for s in raw_spans:
         s = dict(s)
         # unknown span types inherit the OTHER floor (default-deny) — never a silent waiver
-        k = floors.get(s["type"], floors.get("OTHER", 100.0))
+        k = floor_for_runtime_type(s["type"], effective_floors)
         s["legal"] = [i for i, a in enumerate(s["actions"])
-                      if a["mode"] == "placeholder" or a.get("aset", 0) >= k]
+                      if action_is_floor_legal(a, k)]
         ph_idx = next(i for i, a in enumerate(s["actions"]) if a["mode"] == "placeholder")
         s["bc_action"] = min(((a.get("aset", 0), i) for i, a in enumerate(s["actions"])
                               if a["mode"] == "level" and not a.get("keep")
@@ -903,9 +912,9 @@ def utility_rollout_cache_identity(
 
 
 class UtilityRewardCache:
-    """One content-addressed JSON cache for complete artifact-backed QA reward results."""
+    """Append-only content-addressed JSONL cache for complete QA reward results."""
 
-    _VERSION = 2
+    _VERSION = 3
     _RESULT_VERSION = "utility-roundtrip-result-v1"
     _RESULT_STATUS = "complete"
 
@@ -919,14 +928,30 @@ class UtilityRewardCache:
         if not self.path.exists():
             return {}
         try:
-            payload = json.loads(self.path.read_text())
-            if payload.get("version") != self._VERSION or not isinstance(payload.get("entries"), dict):
-                raise ValueError("invalid cache schema")
-            entries = {
-                str(request_identity): self._validate_entry(str(request_identity), entry)
-                for request_identity, entry in payload["entries"].items()
-            }
-        except (OSError, ValueError, json.JSONDecodeError) as error:
+            payload = self.path.read_bytes()
+            if payload and not payload.endswith(b"\n"):
+                raise ValueError("truncated JSONL record")
+            entries = {}
+            for line_number, encoded_line in enumerate(payload.splitlines(), 1):
+                if not encoded_line:
+                    raise ValueError(f"malformed JSONL record at line {line_number}")
+                record = json.loads(encoded_line.decode("utf-8"))
+                if (
+                    not isinstance(record, Mapping)
+                    or record.get("version") != self._VERSION
+                    or not isinstance(record.get("entry"), Mapping)
+                ):
+                    raise ValueError(f"invalid cache schema at line {line_number}")
+                entry = record["entry"]
+                request_identity = str(entry.get("request_identity", ""))
+                validated = self._validate_entry(request_identity, entry)
+                previous = entries.get(request_identity)
+                if previous is not None and previous != validated:
+                    raise ValueError(
+                        f"conflicting duplicate request identity at line {line_number}"
+                    )
+                entries.setdefault(request_identity, validated)
+        except (OSError, UnicodeDecodeError, ValueError, json.JSONDecodeError) as error:
             raise ValueError(f"invalid utility reward cache {self.path}: {error}") from error
         return entries
 
@@ -951,7 +976,7 @@ class UtilityRewardCache:
         return self.store_many([(inputs, result)])[0]
 
     def store_many(self, items):
-        """Validate a dispatched miss batch, then atomically persist it once."""
+        """Validate a dispatched miss batch, then append only its new identities."""
         staged = {}
         stored_results = []
         for inputs, result in items:
@@ -967,11 +992,16 @@ class UtilityRewardCache:
                 }),
                 "result": stored_result,
             }
-            staged[request_identity] = self._validate_entry(request_identity, entry)
+            validated = self._validate_entry(request_identity, entry)
+            previous = staged.get(request_identity, self.entries.get(request_identity))
+            if previous is not None and previous != validated:
+                raise ValueError("conflicting duplicate utility reward cache identity")
+            if request_identity not in self.entries:
+                staged.setdefault(request_identity, validated)
             stored_results.append(json.loads(json.dumps(stored_result, sort_keys=True)))
         if staged:
+            self._persist(staged)
             self.entries.update(staged)
-            self._persist()
         return stored_results
 
     @classmethod
@@ -1034,17 +1064,20 @@ class UtilityRewardCache:
             "result": result,
         }
 
-    def _persist(self):
+    def _persist(self, entries):
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        with tempfile.NamedTemporaryFile(
-            "w", encoding="utf-8", dir=self.path.parent,
-            prefix=f".{self.path.name}.", suffix=".tmp", delete=False,
-        ) as handle:
-            json.dump({"version": self._VERSION, "entries": self.entries}, handle,
-                      sort_keys=True, separators=(",", ":"))
-            handle.write("\n")
-            temporary_path = Path(handle.name)
-        temporary_path.replace(self.path)
+        payload = "".join(
+            json.dumps(
+                {"version": self._VERSION, "entry": entry},
+                sort_keys=True,
+                separators=(",", ":"),
+            ) + "\n"
+            for entry in entries.values()
+        )
+        with self.path.open("a", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
 
 
 def utility_action_vector(span_rows, decision_ids, choice):
@@ -1072,8 +1105,8 @@ def _utility_scorer_pin(artifact):
     from cloak.train.roundtrip import MAX_TOKENS, RT_BASE_URL, RT_MODEL
 
     return {
-        "scorer": "qa-builder-v2-score-utility-v1",
-        "reader": artifact["reader_pin"],
+        "reward_pin_version": "qa-builder-v2-roundtrip-reward-v1",
+        "utility_scorer": artifact["scorer_pin"],
         "remote": {
             "model": RT_MODEL,
             "base_url": RT_BASE_URL,
@@ -1117,7 +1150,7 @@ def cached_utility_roundtrips(jobs, cache_inputs, cache, *, workers):
     return results
 
 
-def frozen_training_environment(environment, arms, docs):
+def frozen_training_environment(environment, arms, docs, *, floors=None):
     """Freeze exactly the documents loaded for one artifact-backed training invocation."""
     selected_corpora = {}
     for doc in docs:
@@ -1127,6 +1160,7 @@ def frozen_training_environment(environment, arms, docs):
     return freeze_ranker_environment(
         {**environment, "corpora": selected_corpora},
         occurrences_by_document=frozen_occurrences_from_arms(arms),
+        floors=floors,
     )
 
 
@@ -1149,18 +1183,30 @@ def _frozen_utility_manifest(artifact):
     if not isinstance(manifest, dict) or not isinstance(budgets, dict):
         raise SystemExit("utility artifact is missing frozen threshold/family budget state")
     try:
+        normalized_manifest = normalize_threshold_manifest(manifest)
         normalized_budgets = normalize_family_budgets(budgets)
-        manifest_budgets = normalize_family_budgets(manifest.get("family_budgets"))
     except ValueError as error:
-        raise SystemExit(f"utility artifact has invalid family budgets: {error}") from None
+        raise SystemExit(f"utility artifact has invalid threshold manifest: {error}") from None
+    if _utility_hash(manifest) != _utility_hash(normalized_manifest):
+        raise SystemExit("utility artifact threshold_manifest is not canonically normalized")
+    manifest_hash = _utility_hash(normalized_manifest)
+    if artifact.get("gate_manifest_hash") != manifest_hash:
+        raise SystemExit("utility artifact gate_manifest_hash does not match threshold_manifest")
+    expected_manifest_pin = {
+        "schema": "qa-threshold-manifest-v1",
+        "sha256": manifest_hash,
+    }
+    if artifact.get("threshold_manifest_pin") != expected_manifest_pin:
+        raise SystemExit("utility artifact threshold_manifest_pin does not match threshold_manifest")
+    manifest_budgets = normalized_manifest["family_budgets"]
     for family, budget in normalized_budgets.items():
         if not _utility_close(manifest_budgets[family], budget):
             raise SystemExit("utility artifact has inconsistent frozen family budgets")
     try:
-        reader_threshold = float(manifest["reader_threshold"])
-        repetitions = int(manifest["reader_stability_repetitions"])
-        option_permutations = int(manifest["reader_option_permutations"])
-        stability_threshold = float(manifest["reader_stability_threshold"])
+        reader_threshold = float(normalized_manifest["reader_threshold"])
+        repetitions = int(normalized_manifest["reader_stability_repetitions"])
+        option_permutations = int(normalized_manifest["reader_option_permutations"])
+        stability_threshold = float(normalized_manifest["reader_stability_threshold"])
     except (KeyError, TypeError, ValueError):
         raise SystemExit("utility artifact is missing frozen reader thresholds") from None
     if (
@@ -1171,7 +1217,7 @@ def _frozen_utility_manifest(artifact):
     ):
         raise SystemExit("utility artifact has invalid frozen reader thresholds")
     try:
-        cost_budgets = normalize_cost_budgets(manifest.get("cost_budgets"))
+        cost_budgets = normalize_cost_budgets(normalized_manifest.get("cost_budgets"))
         artifact_cost_budgets = normalize_cost_budgets(artifact.get("cost_budgets"))
     except ValueError as error:
         raise SystemExit(f"utility artifact is missing or has invalid frozen cost budgets: {error}") \
@@ -1440,19 +1486,38 @@ def _verify_call_budget(doc_id, context_count, cost_budgets):
     return actual
 
 
-def enforce_utility_artifact_gate(artifact, environment):
+def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_hash=None):
     """Recompute frozen QA-builder v2 guarantees before training."""
     if artifact.get("artifact_version") != "utility-assertions-v1":
         raise SystemExit("unsupported utility artifact version")
-    for pin in ("artifact_hash", "task_pin", "builder_pin", "reader_pin", "gate_manifest_hash"):
+    for pin in (
+        "artifact_hash", "task_pin", "builder_pin", "teacher_pin", "reader_pin",
+        "scorer_pin", "gate_manifest_hash", "threshold_manifest_pin",
+    ):
         if not artifact.get(pin):
             raise SystemExit(f"utility artifact is missing {pin}")
+    if (
+        expected_manifest_hash is not None
+        and artifact.get("gate_manifest_hash") != expected_manifest_hash
+    ):
+        raise SystemExit("utility artifact does not match the explicit expected manifest hash")
     if artifact["artifact_hash"] != _utility_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
     }):
         raise SystemExit("utility artifact artifact_hash does not match its contents")
     if artifact.get("reader_pin") != context_reader_pin():
         raise SystemExit("utility artifact reader_pin does not match the exact live reader pin")
+    if artifact.get("task_pin") != AciTaskAdapter.task_pin:
+        raise SystemExit("utility artifact task_pin does not match the live task adapter")
+    if artifact.get("builder_pin") != builder_pin():
+        raise SystemExit("utility artifact builder_pin does not match the live builder")
+    teacher = artifact.get("teacher_pin")
+    if not isinstance(teacher, dict) or not isinstance(teacher.get("enabled"), bool):
+        raise SystemExit("utility artifact has invalid teacher_pin")
+    if teacher != relation_teacher_pin(teacher["enabled"]):
+        raise SystemExit("utility artifact teacher_pin is not authoritative")
+    if artifact.get("scorer_pin") != utility_scorer_pin():
+        raise SystemExit("utility artifact scorer_pin does not match the live scorer")
     family_budgets, thresholds, cost_budgets = _frozen_utility_manifest(artifact)
     if artifact.get("environment_hash") != environment.get("environment_hash"):
         raise SystemExit("utility artifact environment_hash does not match ranker environment")
@@ -1782,8 +1847,16 @@ def main():
                     help="optional decision probe artifact for two-channel roundtrip reward")
     ap.add_argument("--utility-artifact", default=None,
                     help="QA-builder v2 utility artifact; replaces legacy probe filtering")
+    ap.add_argument(
+        "--expected-utility-manifest-hash",
+        default=None,
+        help=(
+            "required with --utility-artifact; exact gate_manifest_hash expected from the "
+            "preregistered canonical threshold manifest"
+        ),
+    )
     ap.add_argument("--utility-reward-cache", default=None,
-                    help="required content-addressed JSON cache for artifact-backed QA rewards")
+                    help="required append-only content-addressed JSONL cache for artifact-backed QA rewards")
     ap.add_argument("--adv", choices=["group", "rloo"], default=None,
                     help="advantage baseline (default: group for surrogate, rloo for roundtrip)")
     ap.add_argument("--entropy-coef", type=float, default=None,
@@ -1805,6 +1878,13 @@ def main():
     args = ap.parse_args()
     if args.utility_artifact is not None and args.reward != "roundtrip":
         raise SystemExit("--utility-artifact requires --reward roundtrip")
+    if args.utility_artifact is not None and not args.expected_utility_manifest_hash:
+        raise SystemExit(
+            "--utility-artifact requires --expected-utility-manifest-hash with the explicit "
+            "expected manifest hash"
+        )
+    if args.utility_artifact is None and args.expected_utility_manifest_hash is not None:
+        raise SystemExit("--expected-utility-manifest-hash requires --utility-artifact")
     assert args.G >= 2, "group-relative advantage needs G >= 2 (std of one reward is NaN)"
     assert 0.0 <= args.cf_frac <= 1.0, "--cf-frac must be in [0, 1]"
     if args.exit_rounds > 0:
@@ -1876,7 +1956,8 @@ def main():
             utility_artifact = json.loads(Path(args.utility_artifact).read_text())
             enforce_utility_artifact_gate(
                 utility_artifact,
-                frozen_training_environment(env, art, docs),
+                frozen_training_environment(env, art, docs, floors=floors),
+                expected_manifest_hash=args.expected_utility_manifest_hash,
             )
             attached = attach_utility_artifact(docs, utility_artifact)
             utility_reward_cache = UtilityRewardCache(args.utility_reward_cache)

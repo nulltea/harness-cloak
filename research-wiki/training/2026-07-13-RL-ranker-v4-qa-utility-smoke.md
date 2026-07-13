@@ -13,11 +13,11 @@ companion: ../../docs/research/adverserial-RL.md
 
 ## Objective & hypothesis
 
-Validate the integrated QA-specific artifact gate, strict environment identity, deterministic
-complete-reward cache identity, and no-call preflight reporting on one ACI document. The narrow
-hypothesis was that the deterministic builder can emit a gate-valid partial artifact without a
-relation teacher or any remote request. This is a plumbing smoke, not an RL run and not evidence
-of privacy or utility improvement.
+Validate the integrated QA-specific artifact gate, strict environment identity, and no-call
+preflight reporting on one ACI document. The narrow hypothesis was that the deterministic builder
+can emit a gate-valid partial artifact without a relation teacher or any remote request. Runtime
+scoring and the complete-reward cache were not exercised. This is a plumbing smoke, not an RL run
+and not evidence of privacy or utility improvement.
 
 ## Training data
 
@@ -35,10 +35,11 @@ No optimizer, policy sampling, remote generation, extraction, reader inference, 
 or counterfactual was launched. Relation escalation remained disabled because
 `--relation-teacher` was omitted.
 
-The implemented scope exercised here is QA artifact construction/scoring/gating. Elsewhere in the
-same code slice, ranker training has provisional structured credit and a tested-pair substitution
-hook only. There is no artifact-mode counterfactual scheduler/executor, lambda conditioning or
-selection, or count-objective training implementation or claim.
+The implemented scope exercised here is QA artifact construction plus gate/preflight validation.
+Runtime `score_utility`, complete round trips, and reward-cache lookup/persistence were not run.
+Elsewhere in the same code slice, ranker training has provisional structured credit and a
+tested-pair substitution hook only. There is no artifact-mode counterfactual scheduler/executor,
+lambda conditioning or selection, or count-objective training implementation or claim.
 
 The exact smoke invocation was:
 
@@ -89,12 +90,10 @@ wrote /tmp/qa-utility-final-fix.FNHSoM/aci-D2N002.utility.json: docs=1 assertion
   this document; counterfactual `1` extra remote round trip/selected pair and `0` context-reader
   batches. `executed_remote_calls=0`.
 
-The gate and cache tests also reject exact environment-hash or live-reader-pin mismatches,
-unknown/unsupported/build-failed measurement states, missing cost/group metadata, forged family
-or uncovered-decision summaries, empty accepted assertion sets, invalid fixed denominators, and
-dangling links. Cache v2 fail-closes on complete-result hash or field tampering and validates
-finite range-bounded component scores and recall; one dispatched miss batch persists atomically
-once.
+Separate unit tests—not this smoke—cover environment/reader-pin mismatches, invalid measurement
+states, missing cost/group metadata, forged summaries, empty assertion sets, invalid denominators,
+dangling links, runtime scoring, and reward-cache integrity. Those test results are implementation
+verification only; they do not turn this zero-context smoke into utility or privacy evidence.
 
 ## Ablations
 

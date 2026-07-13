@@ -11,6 +11,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import build_qa_utility_artifact as builder_cli  # noqa: E402
 
 
+WORKTREE = Path(__file__).resolve().parents[3]
+HOST_REPO = WORKTREE.parents[1]
+
+
 _COST_BUDGETS = {
     "base": {
         "remote_round_trips_per_rollout": 1,
@@ -44,13 +48,16 @@ def test_build_qa_utility_artifact_cli(tmp_path):
     }))
 
     result = subprocess.run(
-        [".venv/bin/python", "scripts/build_qa_utility_artifact.py",
+        [sys.executable, str(WORKTREE / "scripts/build_qa_utility_artifact.py"),
          "--env", "data/ranker_env.json",
          "--arms", "data/task_arms_tau0.02.json",
          "--corpus", "clinical", "--doc-id", "aci/D2N002",
          "--threshold-manifest", str(manifest_path), "--out", str(out_path)],
-        cwd=Path(__file__).resolve().parents[3],
-        env={**os.environ, "PYTHONPATH": "src"},
+        cwd=HOST_REPO,
+        env={
+            **os.environ,
+            "PYTHONPATH": f"{WORKTREE / 'src'}:{WORKTREE / 'scripts'}",
+        },
         text=True,
         capture_output=True,
     )
@@ -58,8 +65,18 @@ def test_build_qa_utility_artifact_cli(tmp_path):
     assert result.returncode == 0, result.stderr
     artifact = json.loads(out_path.read_text())
     assert artifact["artifact_version"] == "utility-assertions-v1"
-    assert artifact["gate_manifest_hash"].startswith("sha256:")
+    assert artifact["gate_manifest_hash"] == builder_cli._hash(
+        artifact["threshold_manifest"]
+    )
+    assert artifact["task_pin"] == builder_cli.AciTaskAdapter.task_pin
+    assert artifact["builder_pin"]["version"]
+    assert artifact["teacher_pin"]["enabled"] is False
     assert artifact["reader_pin"]["pin_version"] == "qa-context-reader-v1"
+    assert artifact["scorer_pin"]["reader"] == artifact["reader_pin"]
+    assert artifact["threshold_manifest_pin"] == {
+        "schema": "qa-threshold-manifest-v1",
+        "sha256": artifact["gate_manifest_hash"],
+    }
     assert artifact["cost_budgets"] == artifact["threshold_manifest"]["cost_budgets"]
     assert artifact["threshold_manifest"]["cost_budgets"] == {
         "base": {
@@ -96,6 +113,43 @@ def test_build_qa_utility_artifact_cli(tmp_path):
     assert report["executed_remote_calls"] == 0
 
 
+def test_build_cli_floor_override_changes_frozen_legality_and_identity(tmp_path, monkeypatch):
+    monkeypatch.chdir(HOST_REPO)
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "cost_budgets": _COST_BUDGETS,
+    }))
+    common = [
+        "--env", "data/ranker_env.json",
+        "--arms", "data/task_arms_tau0.02.json",
+        "--corpus", "clinical",
+        "--doc-id", "aci/D2N002",
+        "--threshold-manifest", str(manifest_path),
+        "--out", str(tmp_path / "utility.json"),
+    ]
+    default_args = builder_cli.parse_args(common)
+    override_args = builder_cli.parse_args([
+        *common,
+        "--floors", "DATETIME=1e30,DEM=1e30,MISC=1e30",
+    ])
+
+    _default_artifact, default_environment = builder_cli.build_from_files(
+        default_args, return_frozen_environment=True
+    )
+    _override_artifact, override_environment = builder_cli.build_from_files(
+        override_args, return_frozen_environment=True
+    )
+
+    assert override_environment["environment_hash"] != default_environment["environment_hash"]
+    assert override_environment["effective_floors"]["DEM"] == 1e30
+    assert all(
+        action["mode"] == "placeholder" or not action["legal"]
+        for decision in override_environment["documents"]["aci/D2N002"]["decisions"]
+        for action in decision["actions"]
+    )
+
+
 def test_context_build_cli_preflights_against_full_frozen_environment(
     tmp_path, monkeypatch, capsys,
 ):
@@ -107,10 +161,11 @@ def test_context_build_cli_preflights_against_full_frozen_environment(
             "type": "health-condition",
             "start": source.index("Hypothyroidism"),
             "end": source.index("Hypothyroidism") + len("Hypothyroidism"),
-            "actions": [
-                {"fill": "an endocrine condition", "mode": "level"},
-                {"fill": "a condition", "mode": "level"},
-                {"fill": "Hypothyroidism", "mode": "level", "keep": True},
+                "actions": [
+                    {"fill": "an endocrine condition", "mode": "level", "aset": 100.0},
+                    {"fill": "a condition", "mode": "level", "aset": 100.0},
+                    {"fill": "Hypothyroidism", "mode": "level", "keep": True,
+                     "aset": 100.0},
                 {"fill": None, "mode": "placeholder"},
             ],
         },
@@ -119,10 +174,10 @@ def test_context_build_cli_preflights_against_full_frozen_environment(
             "type": "drug",
             "start": source.index("Synthroid"),
             "end": source.index("Synthroid") + len("Synthroid"),
-            "actions": [
-                {"fill": "a thyroid medication", "mode": "level"},
-                {"fill": "a medication", "mode": "level"},
-                {"fill": "Synthroid", "mode": "level", "keep": True},
+                "actions": [
+                    {"fill": "a thyroid medication", "mode": "level", "aset": 100.0},
+                    {"fill": "a medication", "mode": "level", "aset": 100.0},
+                    {"fill": "Synthroid", "mode": "level", "keep": True, "aset": 100.0},
                 {"fill": None, "mode": "placeholder"},
             ],
         },
@@ -236,5 +291,5 @@ def test_build_cli_rejects_invalid_family_budgets_before_source_loading(
         "--out", str(tmp_path / "out.json"),
     ])
 
-    with pytest.raises(SystemExit, match="family_budgets"):
+    with pytest.raises(SystemExit, match="family budgets"):
         builder_cli.build_from_files(args)

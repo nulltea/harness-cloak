@@ -1,3 +1,5 @@
+import copy
+
 import pytest
 
 import cloak.train.roundtrip as roundtrip
@@ -157,10 +159,10 @@ def test_freeze_preserves_lattice_entailment_closure_for_representative_anchors(
             "start": 0,
             "end": 10,
             "actions": [
-                {"fill": "an ACE inhibitor", "mode": "level"},
-                {"fill": "an antihypertensive", "mode": "level"},
-                {"fill": "a medicine", "mode": "level"},
-                {"fill": "lisinopril", "mode": "level", "keep": True},
+                {"fill": "an ACE inhibitor", "mode": "level", "aset": 100.0},
+                {"fill": "an antihypertensive", "mode": "level", "aset": 100.0},
+                {"fill": "a medicine", "mode": "level", "aset": 100.0},
+                {"fill": "lisinopril", "mode": "level", "keep": True, "aset": 100.0},
                 {"fill": None, "mode": "placeholder"},
             ],
         }]}}},
@@ -189,6 +191,93 @@ def test_freeze_preserves_lattice_entailment_closure_for_representative_anchors(
     assert narrow["action_vector"] == {
         decision_id: actions["an ACE inhibitor"]["action_id"]
     }
+
+
+def test_freeze_binds_action_legality_and_identity_to_effective_floors():
+    environment = {
+        "k_floors": {"drug": 100.0, "OTHER": 50.0},
+        "corpora": {"clinical": {"d1": {"spans": [{
+            "surface": "lisinopril",
+            "type": "drug",
+            "start": 0,
+            "end": 10,
+            "actions": [
+                {"fill": "an ACE inhibitor", "mode": "level", "aset": 20.0},
+                {"fill": "a medicine", "mode": "level", "aset": 100.0},
+                {"fill": "lisinopril", "mode": "level", "keep": True, "aset": 1.0},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }]}}},
+    }
+
+    frozen = freeze_ranker_environment(environment)
+    lower_floor = freeze_ranker_environment(environment, floors={"drug": 10.0})
+    actions = {
+        row["fill"]: row["legal"]
+        for row in frozen["documents"]["d1"]["decisions"][0]["actions"]
+    }
+
+    assert frozen["effective_floors"] == {"OTHER": 50.0, "drug": 100.0}
+    assert actions == {
+        "an ACE inhibitor": False,
+        "a medicine": True,
+        "lisinopril": False,
+        None: True,
+    }
+    assert lower_floor["effective_floors"] == {"OTHER": 50.0, "drug": 10.0}
+    assert lower_floor["environment_hash"] != frozen["environment_hash"]
+
+
+def test_builder_rejects_under_floor_representative_action():
+    frozen = freeze_ranker_environment({
+        "k_floors": {"drug": 100.0, "OTHER": 100.0},
+        "corpora": {"clinical": {"d1": {"spans": [{
+            "surface": "Synthroid",
+            "type": "drug",
+            "start": 0,
+            "end": 9,
+            "actions": [
+                {"fill": "a thyroid medication", "mode": "level", "aset": 10.0},
+                {"fill": "Synthroid", "mode": "level", "keep": True, "aset": 1.0},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }]}}},
+    })
+    decision = frozen["documents"]["d1"]["decisions"][0]
+    occurrence = frozen["documents"]["d1"]["occurrences"][0]
+
+    class Adapter:
+        task_pin = {"adapter": "test", "version": "v1"}
+
+        def deterministic_candidates(self, doc_id, document, environment_document):
+            return [{
+                "family": "context",
+                "scope": "linked",
+                "subtype": "semantic_property",
+                "occurrence_ids": [occurrence["occurrence_id"]],
+                "group_id": "drug:category",
+                "question": "What treatment category?",
+                "accepted_values": ["a thyroid medication"],
+                "decision_requirements": {
+                    decision["decision_id"]: "a thyroid medication",
+                },
+            }]
+
+    artifact = build_utility_artifact(
+        frozen,
+        Adapter(),
+        {"d1": "Synthroid"},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "cost_budgets": COST_BUDGETS,
+        },
+        pins={},
+        reader=lambda questions, context: ["a thyroid medication"],
+        render_action_vector=lambda doc_id, vector: "generalized",
+    )
+
+    assert artifact["assertions"] == {}
+    assert artifact["rejections"]["summary_by_reason"] == {"unsupported": 1}
 
 
 def test_context_validation_requires_original_and_generalization_but_not_placeholder():
@@ -257,6 +346,32 @@ def test_context_validation_rejects_unstable_reader_after_deterministic_option_p
     assert evidence["a1"]["stability"]["passing_fraction"] == pytest.approx(0.5)
     assert evidence["a1"]["stability"]["option_permutations"] == 2
     assert calls[0][0] != calls[3][0]
+
+
+def test_context_validation_refreshes_repeated_reader_trials():
+    assertions = [{
+        "assertion_id": "a1",
+        "family": "context",
+        "question": "Which category is documented?",
+        "accepted_values": ["endocrine"],
+    }]
+    refreshes = []
+
+    def reader(questions, context, *, refresh=False):
+        refreshes.append(refresh)
+        return ["NONE" if context == "placeholder" else "endocrine"]
+
+    accepted, _evidence = validate_context_assertions(
+        assertions,
+        original_context="original",
+        representative_context="generalized",
+        placeholder_context="placeholder",
+        reader=reader,
+        stability_repetitions=3,
+    )
+
+    assert [row["assertion_id"] for row in accepted] == ["a1"]
+    assert refreshes == [False, False, False, True, True, True, True, True, True]
 
 
 def test_builder_records_unstable_context_reader_without_accepting_assertion():
@@ -347,6 +462,34 @@ def test_runtime_scores_context_assertions_in_one_reader_batch():
     assert len(calls) == 1
     assert result["component_scores"] == {"c1": 1.0, "c2": 1.0, "d1": 1.0}
     assert result["utility"] == pytest.approx(1.0)
+
+
+def test_runtime_renders_option_questions_like_validation_permutation_zero():
+    assertion = {
+        "assertion_id": "c1",
+        "doc_id": "d1",
+        "family": "context",
+        "question": "Which category is documented?",
+        "options": ["respiratory", "endocrine", "musculoskeletal"],
+        "accepted_values": ["endocrine"],
+        "weight": 1.0,
+    }
+    artifact = {
+        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "assertions": {"c1": assertion},
+    }
+    calls = []
+
+    result = score_utility(
+        artifact,
+        "d1",
+        doc_p="generalized document",
+        out_final="unused",
+        reader=lambda questions, context: calls.append(list(questions)) or ["endocrine"],
+    )
+
+    assert calls == [[qa_builder._permuted_reader_question(assertion, 0)]]
+    assert result["component_scores"] == {"c1": 1.0}
 
 
 def test_batched_context_reader_uses_one_model_request_for_all_questions():
@@ -746,12 +889,17 @@ def test_relation_prompt_exposes_only_closed_ids_properties_and_source():
         "aci/D2N002",
         "Hypothyroidism is treated with Synthroid.",
         _relation_environment(),
+        authoritative_reference=(
+            "Assessment: hypothyroidism. Plan: continue Synthroid and monitor thyroid labs."
+        ),
     )
 
     assert "aci/D2N002" in prompt
     assert "o-condition" in prompt
     assert "an endocrine condition" in prompt
     assert "treated_with" in prompt
+    assert "AUTHORITATIVE REFERENCE EVIDENCE" in prompt
+    assert "continue Synthroid and monitor thyroid labs" in prompt
     assert "Hypothyroidism is treated with Synthroid." in prompt
     assert "accepted_values" not in prompt
 
@@ -1066,6 +1214,39 @@ def test_teacher_abstention_records_missing_context_without_retry():
     assert artifact["rejections"]["summary_by_reason"] == {"not_generated": 1}
 
 
+def test_builder_emits_authoritative_transitive_pins_and_manifest_identity():
+    frozen = {"environment_hash": "env-v1", "documents": {}}
+
+    class Adapter:
+        task_pin = {"adapter": "test-task", "version": "v1"}
+
+    artifact = build_utility_artifact(
+        frozen,
+        Adapter(),
+        {},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "cost_budgets": COST_BUDGETS,
+        },
+        pins={"task_pin": "forged", "reader_pin": "forged"},
+        reader=lambda questions, context: [],
+        render_action_vector=lambda doc_id, vector: "unused",
+    )
+
+    assert artifact["task_pin"] == Adapter.task_pin
+    assert artifact["builder_pin"]["version"]
+    assert artifact["teacher_pin"]["enabled"] is False
+    assert artifact["reader_pin"] == qa_builder.context_reader_pin()
+    assert artifact["scorer_pin"]["reader"] == artifact["reader_pin"]
+    assert artifact["gate_manifest_hash"] == qa_builder._stable_hash(
+        artifact["threshold_manifest"]
+    )
+    assert artifact["threshold_manifest_pin"] == {
+        "schema": "qa-threshold-manifest-v1",
+        "sha256": artifact["gate_manifest_hash"],
+    }
+
+
 def test_relational_compiler_rejects_protected_locator_leakage():
     source = "Hypothyroidism is treated with Synthroid."
     proposal = {
@@ -1087,6 +1268,101 @@ def test_relational_compiler_rejects_protected_locator_leakage():
 
     assert accepted == []
     assert rejected == [{"proposal_index": 0, "reason": "protected_locator"}]
+
+
+def _valid_relation_proposal():
+    source = "Hypothyroidism is treated with Synthroid."
+    return source, {
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["o-condition", "o-drug"],
+        "support_properties": {
+            "o-condition": "an endocrine condition",
+            "o-drug": "a thyroid medication",
+        },
+        "answer_occurrence_id": "o-drug",
+        "answer_property": "a thyroid medication",
+        "question": "What treatment category is used for the endocrine disorder?",
+        "evidence_quote": source,
+    }
+
+
+def test_relational_compiler_rejects_partial_answer_clue():
+    source, proposal = _valid_relation_proposal()
+    proposal["question"] = "Which thyroid category is used for the endocrine disorder?"
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, _relation_environment(), [proposal]
+    )
+
+    assert accepted == []
+    assert rejected == [{"proposal_index": 0, "reason": "answer_leakage"}]
+
+
+def test_relational_compiler_rejects_frozen_answer_alias():
+    source, proposal = _valid_relation_proposal()
+    environment = copy.deepcopy(_relation_environment())
+    environment["decisions"][1]["actions"][0]["aliases"] = ["levothyroxine class"]
+    proposal["question"] = "Which levothyroxine class is used for the endocrine disorder?"
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, environment, [proposal]
+    )
+
+    assert accepted == []
+    assert rejected == [{"proposal_index": 0, "reason": "answer_leakage"}]
+
+
+def test_relational_compiler_rejects_unlinked_protected_surface_or_alias():
+    source, proposal = _valid_relation_proposal()
+    environment = copy.deepcopy(_relation_environment())
+    environment["occurrences"].append({
+        "occurrence_id": "o-unlinked",
+        "decision_id": None,
+        "surface": "Boston",
+        "aliases": ["Beantown"],
+        "runtime_type": "location",
+        "controlled": False,
+    })
+    proposal["question"] = "Which treatment category is used near Beantown?"
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, environment, [proposal]
+    )
+
+    assert accepted == []
+    assert rejected == [{"proposal_index": 0, "reason": "protected_locator"}]
+
+
+def test_relational_compiler_lints_protected_leakage_in_options():
+    source, proposal = _valid_relation_proposal()
+    proposal["options"] = ["supportive care", "Synthroid", "physical therapy"]
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, _relation_environment(), [proposal]
+    )
+
+    assert accepted == []
+    assert rejected == [{"proposal_index": 0, "reason": "protected_locator"}]
+
+
+def test_relational_compiler_ignores_one_character_protected_tokens():
+    source, proposal = _valid_relation_proposal()
+    environment = copy.deepcopy(_relation_environment())
+    environment["occurrences"].append({
+        "occurrence_id": "o-short",
+        "decision_id": None,
+        "surface": "A",
+        "aliases": ["I"],
+        "runtime_type": "misc",
+        "controlled": False,
+    })
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, environment, [proposal]
+    )
+
+    assert rejected == []
+    assert len(accepted) == 1
 
 
 def test_delivered_only_scoring_is_deterministic_without_reader_call():
@@ -1181,6 +1457,7 @@ def test_freeze_ranker_environment_preserves_uncontrolled_frozen_occurrence():
         ranker_env,
         occurrences_by_document={"d1": [{
             "surface": "Unrelated", "type": "drug", "start": 30, "end": 39,
+            "aliases": ["Other name"],
         }]},
     )
 
@@ -1188,3 +1465,4 @@ def test_freeze_ranker_environment_preserves_uncontrolled_frozen_occurrence():
     assert occurrence["surface"] == "Unrelated"
     assert occurrence["controlled"] is False
     assert occurrence["decision_id"] is None
+    assert occurrence["aliases"] == ["Other name"]

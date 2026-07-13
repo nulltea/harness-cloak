@@ -32,9 +32,14 @@ CONTEXT_READER_RESPONSE_SCHEMA = {
 }
 CONTEXT_READER_RESPONSE_FORMAT = {"type": "json_object"}
 CONTEXT_READER_EXTRA_BODY = {"chat_template_kwargs": {"enable_thinking": False}}
+BUILDER_PIN = {"builder": "qa-builder-v2", "version": "assertion-compiler-v2"}
+UTILITY_SCORER_PIN_VERSION = "qa-utility-scorer-v1"
+THRESHOLD_MANIFEST_SCHEMA = "qa-threshold-manifest-v1"
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-prompt-v2"
+RELATION_TEACHER_RESPONSE_SCHEMA_VERSION = "qa-relation-proposals-v1"
 RELATION_ONTOLOGY = (
     "treated_with",
     "monitored_by",
@@ -43,6 +48,31 @@ RELATION_ONTOLOGY = (
     "referred_to",
     "has_status",
     "has_category",
+)
+RELATION_TEACHER_OUTPUT_SCHEMA = {
+    "relations": [{
+        "relation": f"one of: {', '.join(RELATION_ONTOLOGY)}",
+        "argument_occurrence_ids": ["existing occurrence IDs"],
+        "support_properties": {
+            "occurrence ID": "one exact legal_support_properties value"
+        },
+        "answer_occurrence_id": "one argument occurrence ID",
+        "answer_property": "that occurrence's exact selected support property",
+        "question": "natural question not containing a protected surface or its answer",
+        "evidence_quote": "one exact source substring directly connecting all arguments",
+    }]
+}
+RELATION_TEACHER_PROMPT_TEMPLATE = (
+    "Extract only explicit, task-relevant clinical relations from the source. "
+    "Use the closed relation vocabulary and existing occurrence IDs. Select support "
+    "properties verbatim from the inventory. Do not use medical knowledge absent from "
+    "the source. Abstain with an empty relations list when evidence is insufficient. "
+    "Return only the requested JSON object.\n\n"
+    "DOCUMENT ID:\n{doc_id}\n\n"
+    "OCCURRENCE INVENTORY:\n{inventory_json}\n\n"
+    "OUTPUT SCHEMA:\n{schema_json}\n\n"
+    "AUTHORITATIVE REFERENCE EVIDENCE:\n{authoritative_reference}\n\n"
+    "SOURCE DOCUMENT:\n{document}"
 )
 
 _RUNTIME_TYPE_CLASSES = {
@@ -103,6 +133,11 @@ ACI_RELATION_CONTRACT = {
     },
 }
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
+_LEAKAGE_GENERIC_TOKENS = {
+    "answer", "category", "clinic", "condition", "disease", "doctor", "documented",
+    "hospital", "medication", "monitoring", "option", "procedure", "provider", "status",
+    "symptom", "treatment", "type", "used", "which", "what", "where", "when",
+}
 
 
 def context_reader_pin() -> dict:
@@ -124,6 +159,44 @@ def context_reader_pin() -> dict:
             "max_tokens": CONTEXT_READER_MAX_TOKENS,
             "enable_thinking": False,
             "response_format": dict(CONTEXT_READER_RESPONSE_FORMAT),
+        },
+    }
+
+
+def builder_pin() -> dict:
+    return dict(BUILDER_PIN)
+
+
+def utility_scorer_pin() -> dict:
+    return {
+        "pin_version": UTILITY_SCORER_PIN_VERSION,
+        "scorer": "qa-builder-v2-score-utility",
+        "reader": context_reader_pin(),
+        "delivered": {"kind": "fact-score", "version": "fact-score-v1"},
+    }
+
+
+def relation_teacher_pin(enabled: bool) -> dict:
+    if not enabled:
+        return {"enabled": False, "pin_version": "qa-relation-teacher-disabled-v1"}
+    return {
+        "enabled": True,
+        "provider": "openrouter",
+        "base_url": RELATION_TEACHER_BASE_URL,
+        "model": RELATION_TEACHER_MODEL,
+        "prompt": {
+            "version": RELATION_TEACHER_PROMPT_VERSION,
+            "sha256": _stable_hash(RELATION_TEACHER_PROMPT_TEMPLATE),
+        },
+        "response_schema": {
+            "version": RELATION_TEACHER_RESPONSE_SCHEMA_VERSION,
+            "schema": json.loads(json.dumps(RELATION_TEACHER_OUTPUT_SCHEMA)),
+        },
+        "decoding": {
+            "temperature": 0.0,
+            "max_tokens": 4096,
+            "reasoning_excluded": True,
+            "response_format": {"type": "json_object"},
         },
     }
 
@@ -174,6 +247,67 @@ def normalize_cost_budgets(value: Mapping) -> dict:
                 raise ValueError(f"cost budget {section}.{field} must be a nonnegative integer")
             normalized[section][field] = amount
     return normalized
+
+
+def normalize_threshold_manifest(value: Mapping) -> dict:
+    """Return the canonical threshold manifest embedded and hashed by the artifact."""
+    if not isinstance(value, Mapping):
+        raise ValueError("threshold manifest must be an object")
+    normalized = dict(value)
+    normalized["family_budgets"] = normalize_family_budgets(value.get("family_budgets"))
+    normalized["cost_budgets"] = normalize_cost_budgets(value.get("cost_budgets"))
+    try:
+        normalized["min_context_assertions"] = int(value.get("min_context_assertions", 0))
+        normalized["reader_threshold"] = float(value.get("reader_threshold", 1.0))
+        normalized["reader_stability_repetitions"] = int(
+            value.get("reader_stability_repetitions", 1)
+        )
+        normalized["reader_option_permutations"] = int(
+            value.get("reader_option_permutations", 1)
+        )
+        normalized["reader_stability_threshold"] = float(
+            value.get("reader_stability_threshold", 1.0)
+        )
+    except (TypeError, ValueError) as error:
+        raise ValueError("threshold manifest has invalid reader thresholds") from error
+    if normalized["min_context_assertions"] < 0:
+        raise ValueError("min_context_assertions must be nonnegative")
+    if not 0.0 <= normalized["reader_threshold"] <= 1.0:
+        raise ValueError("reader_threshold must be in [0, 1]")
+    if (
+        normalized["reader_stability_repetitions"] < 1
+        or normalized["reader_option_permutations"] < 1
+        or not 0.0 < normalized["reader_stability_threshold"] <= 1.0
+    ):
+        raise ValueError("reader stability settings are invalid")
+    return json.loads(json.dumps(normalized, sort_keys=True, allow_nan=False))
+
+
+def effective_count_floors(
+    ranker_environment: Mapping,
+    floors: Mapping[str, float] | None = None,
+) -> dict[str, float]:
+    effective = {
+        str(runtime_type): float(value)
+        for runtime_type, value in dict(ranker_environment.get("k_floors") or {}).items()
+    }
+    if floors is not None:
+        effective.update({
+            str(runtime_type): float(value)
+            for runtime_type, value in floors.items()
+        })
+    effective.setdefault("OTHER", 100.0)
+    if any(not math.isfinite(value) or value < 0.0 for value in effective.values()):
+        raise ValueError("count floors must be finite nonnegative numbers")
+    return dict(sorted(effective.items()))
+
+
+def floor_for_runtime_type(runtime_type: str, floors: Mapping[str, float]) -> float:
+    return float(floors.get(runtime_type, floors["OTHER"]))
+
+
+def action_is_floor_legal(action: Mapping, floor: float) -> bool:
+    return action.get("mode") == "placeholder" or float(action.get("aset", 0.0)) >= floor
 
 
 class OpenRouterRelationTeacher:
@@ -272,11 +406,14 @@ _batched_context_reader = None
 class AciTaskAdapter:
     """Authoritative deterministic ACI delivered facts and relation compilation."""
 
-    task_pin = "aci-utility-v1"
+    task_pin = {"adapter": "aci", "version": "aci-utility-v1"}
     relation_contract = ACI_RELATION_CONTRACT
 
     def __init__(self, references: Mapping[str, str]):
         self._references = dict(references)
+
+    def authoritative_reference(self, doc_id: str) -> str:
+        return self._references[doc_id]
 
     def deterministic_candidates(
         self,
@@ -343,6 +480,38 @@ def _stable_hash(value) -> str:
 
 def _contains(text: str, value: str) -> bool:
     return bool(re.search(rf"(?<!\w){re.escape(canon(value))}(?!\w)", canon(text)))
+
+
+def _canonical_leakage_phrase(value: str) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", canon(value)))
+
+
+def _meaningful_leakage_tokens(value: str) -> set[str]:
+    return {
+        token for token in _canonical_leakage_phrase(value).split()
+        if len(token) >= 4 and token not in _LEAKAGE_GENERIC_TOKENS
+    }
+
+
+def _text_leaks_values(texts: Sequence[str], values: Sequence[str]) -> bool:
+    canonical_texts = [_canonical_leakage_phrase(str(text)) for text in texts]
+    text_tokens = {
+        token
+        for text in canonical_texts
+        for token in text.split()
+        if len(token) >= 4
+    }
+    for value in values:
+        phrase = _canonical_leakage_phrase(str(value))
+        meaningful = _meaningful_leakage_tokens(str(value))
+        phrase_tokens = {token for token in phrase.split() if len(token) >= 4}
+        if not phrase or not phrase_tokens:
+            continue
+        if any(f" {phrase} " in f" {text} " for text in canonical_texts):
+            return True
+        if meaningful & text_tokens:
+            return True
+    return False
 
 
 def _relation_argument_types_are_legal(
@@ -423,6 +592,8 @@ def relation_teacher_prompt(
     doc_id: str,
     document: str,
     environment_document: Mapping,
+    *,
+    authoritative_reference: str | None = None,
 ) -> str:
     """Build the single bounded teacher prompt from frozen IDs and legal properties."""
     inventory = []
@@ -435,7 +606,10 @@ def relation_teacher_prompt(
         properties = [
             str(action.get("fill"))
             for action in decision.get("actions", [])
-            if action.get("mode") == "level" and not action.get("keep") and action.get("fill")
+            if action.get("legal", True)
+            and action.get("mode") == "level"
+            and not action.get("keep")
+            and action.get("fill")
         ]
         inventory.append({
             "occurrence_id": occurrence.get("occurrence_id"),
@@ -443,29 +617,12 @@ def relation_teacher_prompt(
             "runtime_type": occurrence.get("runtime_type"),
             "legal_support_properties": properties,
         })
-    schema = {
-        "relations": [{
-            "relation": f"one of: {', '.join(RELATION_ONTOLOGY)}",
-            "argument_occurrence_ids": ["existing occurrence IDs"],
-            "support_properties": {
-                "occurrence ID": "one exact legal_support_properties value"
-            },
-            "answer_occurrence_id": "one argument occurrence ID",
-            "answer_property": "that occurrence's exact selected support property",
-            "question": "natural question not containing a protected surface or its answer",
-            "evidence_quote": "one exact source substring directly connecting all arguments",
-        }]
-    }
-    return (
-        "Extract only explicit, task-relevant clinical relations from the source. "
-        "Use the closed relation vocabulary and existing occurrence IDs. Select support "
-        "properties verbatim from the inventory. Do not use medical knowledge absent from "
-        "the source. Abstain with an empty relations list when evidence is insufficient. "
-        "Return only the requested JSON object.\n\n"
-        f"DOCUMENT ID:\n{doc_id}\n\n"
-        f"OCCURRENCE INVENTORY:\n{json.dumps(inventory, indent=2)}\n\n"
-        f"OUTPUT SCHEMA:\n{json.dumps(schema, indent=2)}\n\n"
-        f"SOURCE DOCUMENT:\n{document}"
+    return RELATION_TEACHER_PROMPT_TEMPLATE.format(
+        doc_id=doc_id,
+        inventory_json=json.dumps(inventory, indent=2),
+        schema_json=json.dumps(RELATION_TEACHER_OUTPUT_SCHEMA, indent=2),
+        authoritative_reference=authoritative_reference or "NONE PROVIDED",
+        document=document,
     )
 
 
@@ -492,7 +649,8 @@ def compile_relational_assertions(
         legal_properties[occurrence_id] = {
             canon(str(action["fill"]))
             for action in decision.get("actions", [])
-            if action.get("mode") == "level"
+            if action.get("legal", True)
+            and action.get("mode") == "level"
             and not action.get("keep")
             and action.get("fill")
         }
@@ -566,11 +724,29 @@ def compile_relational_assertions(
         if not question.endswith("?"):
             reject("invalid_question")
             continue
-        if _contains(question, answer_property):
+        options_value = proposal.get("options") or []
+        if (
+            not isinstance(options_value, Sequence)
+            or isinstance(options_value, (str, bytes))
+            or any(not isinstance(option, str) for option in options_value)
+        ):
+            reject("invalid_question")
+            continue
+        options = [str(option).strip() for option in options_value]
+        lint_texts = [question, *options]
+        answer_aliases = []
+        answer_decision = decisions.get(str(occurrences[answer_occurrence_id].get("decision_id")), {})
+        for action in answer_decision.get("actions", []):
+            if canon(str(action.get("fill", ""))) == answer_property:
+                answer_aliases.extend(str(alias) for alias in action.get("aliases") or [])
+        if _text_leaks_values(lint_texts, [answer_property, *answer_aliases]):
             reject("answer_leakage")
             continue
-        if any(_contains(question, str(occurrences[value].get("surface", "")))
-               for value in occurrence_ids):
+        protected_values = []
+        for occurrence in occurrences.values():
+            protected_values.append(str(occurrence.get("surface", "")))
+            protected_values.extend(str(alias) for alias in occurrence.get("aliases") or [])
+        if _text_leaks_values(lint_texts, protected_values):
             reject("protected_locator")
             continue
         decision_requirements = {
@@ -585,6 +761,7 @@ def compile_relational_assertions(
             "occurrence_ids": occurrence_ids,
             "group_id": f"relation:{relation}:{':'.join(occurrence_ids)}",
             "question": question,
+            **({"options": options} if options else {}),
             "accepted_values": [answer_property],
             "decision_requirements": decision_requirements,
             "evidence": {"source_quotes": [quote]},
@@ -785,14 +962,17 @@ def freeze_ranker_environment(
     ranker_environment: Mapping,
     *,
     occurrences_by_document: Mapping[str, Sequence[Mapping]] | None = None,
+    floors: Mapping[str, float] | None = None,
 ) -> dict:
     """Migrate embedded ranker spans to stable occurrence/decision identities, without detection."""
+    effective_floors = effective_count_floors(ranker_environment, floors)
     documents: dict[str, dict] = {}
     for corpus, per_document in ranker_environment.get("corpora", {}).items():
         for doc_id, document in per_document.items():
             decisions_by_key: dict[tuple[str, str], dict] = {}
             for span in document.get("spans", []):
                 runtime_type = str(span.get("type", ""))
+                floor = floor_for_runtime_type(runtime_type, effective_floors)
                 surface = str(span.get("surface", ""))
                 decision_key = (runtime_type, canon(surface))
                 decision_id = _stable_hash({
@@ -845,7 +1025,7 @@ def freeze_ranker_environment(
                         **dict(action),
                         "action_id": action_id,
                         "mode": mode,
-                        "legal": True,
+                        "legal": action_is_floor_legal(action_semantics, floor),
                         "entails": entails,
                     })
                 action_menu_hash = _stable_hash(actions)
@@ -881,7 +1061,7 @@ def freeze_ranker_environment(
                     "start": row.get("start"),
                     "end": row.get("end"),
                 })
-                occurrences.append({
+                occurrence = {
                     "occurrence_id": occurrence_id,
                     "start": row.get("start"),
                     "end": row.get("end"),
@@ -895,7 +1075,10 @@ def freeze_ranker_environment(
                     "overlap_disposition": row.get("overlap_disposition", "accepted"),
                     "decision_id": decision["decision_id"] if decision is not None else None,
                     "controlled": decision is not None,
-                })
+                }
+                if row.get("aliases") is not None:
+                    occurrence["aliases"] = [str(alias) for alias in row.get("aliases") or []]
+                occurrences.append(occurrence)
                 if decision is not None:
                     decision["occurrence_ids"].append(occurrence_id)
             frozen_document = {
@@ -905,7 +1088,11 @@ def freeze_ranker_environment(
             }
             frozen_document["environment_document_hash"] = _stable_hash(frozen_document)
             documents[doc_id] = frozen_document
-    frozen = {"artifact_version": "occurrence-decisions-v1", "documents": documents}
+    frozen = {
+        "artifact_version": "occurrence-decisions-v1",
+        "effective_floors": effective_floors,
+        "documents": documents,
+    }
     frozen["environment_hash"] = _stable_hash(frozen)
     return frozen
 
@@ -932,22 +1119,14 @@ def build_utility_artifact(
     relation_teacher: OpenRouterRelationTeacher | None = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation."""
-    family_budgets = normalize_family_budgets(threshold_manifest.get("family_budgets"))
-    cost_budgets = normalize_cost_budgets(threshold_manifest.get("cost_budgets"))
-    min_context = int(threshold_manifest.get("min_context_assertions", 0))
-    reader_threshold = float(threshold_manifest.get("reader_threshold", 1.0))
-    stability_repetitions = int(threshold_manifest.get("reader_stability_repetitions", 1))
-    option_permutations = int(threshold_manifest.get("reader_option_permutations", 1))
-    stability_threshold = float(threshold_manifest.get("reader_stability_threshold", 1.0))
-    frozen_threshold_manifest = {
-        **dict(threshold_manifest),
-        "family_budgets": dict(family_budgets),
-        "cost_budgets": cost_budgets,
-        "reader_threshold": reader_threshold,
-        "reader_stability_repetitions": stability_repetitions,
-        "reader_option_permutations": option_permutations,
-        "reader_stability_threshold": stability_threshold,
-    }
+    frozen_threshold_manifest = normalize_threshold_manifest(threshold_manifest)
+    family_budgets = frozen_threshold_manifest["family_budgets"]
+    cost_budgets = frozen_threshold_manifest["cost_budgets"]
+    min_context = frozen_threshold_manifest["min_context_assertions"]
+    reader_threshold = frozen_threshold_manifest["reader_threshold"]
+    stability_repetitions = frozen_threshold_manifest["reader_stability_repetitions"]
+    option_permutations = frozen_threshold_manifest["reader_option_permutations"]
+    stability_threshold = frozen_threshold_manifest["reader_stability_threshold"]
     candidates_by_document: dict[str, list[dict]] = {}
     rejection_counts: dict[str, int] = defaultdict(int)
 
@@ -962,7 +1141,16 @@ def build_utility_artifact(
         if context_count < min_context and relation_teacher is not None:
             try:
                 proposals = relation_teacher.propose(
-                    relation_teacher_prompt(doc_id, source, environment_document)
+                    relation_teacher_prompt(
+                        doc_id,
+                        source,
+                        environment_document,
+                        authoritative_reference=(
+                            task_adapter.authoritative_reference(doc_id)
+                            if hasattr(task_adapter, "authoritative_reference")
+                            else None
+                        ),
+                    )
                 )
                 if not proposals:
                     rejection_counts["not_generated"] += 1
@@ -1044,13 +1232,29 @@ def build_utility_artifact(
             accepted.append(row)
         candidates_by_document[doc_id] = accepted
 
+    manifest_hash = _stable_hash(frozen_threshold_manifest)
+    task_pin = getattr(task_adapter, "task_pin", None)
+    if task_pin is None:
+        task_pin = {
+            "adapter": f"{type(task_adapter).__module__}.{type(task_adapter).__qualname__}",
+            "version": "unversioned",
+        }
     artifact = package_utility_artifact(
         frozen_environment,
         candidates_by_document,
         family_budgets=family_budgets,
         pins={
             **dict(pins),
+            "task_pin": json.loads(json.dumps(task_pin, sort_keys=True)),
+            "builder_pin": builder_pin(),
+            "teacher_pin": relation_teacher_pin(relation_teacher is not None),
             "reader_pin": context_reader_pin(),
+            "scorer_pin": utility_scorer_pin(),
+            "gate_manifest_hash": manifest_hash,
+            "threshold_manifest_pin": {
+                "schema": THRESHOLD_MANIFEST_SCHEMA,
+                "sha256": manifest_hash,
+            },
             "threshold_manifest": frozen_threshold_manifest,
         },
     )
@@ -1135,6 +1339,17 @@ def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str
     return f"{question}\nOptions: {' | '.join(permutation)}"
 
 
+def _call_context_reader(reader, questions, context, *, refresh: bool):
+    if not refresh:
+        return reader(questions, context)
+    try:
+        return reader(questions, context, refresh=True)
+    except TypeError as error:
+        if "unexpected keyword argument 'refresh'" not in str(error):
+            raise
+        return reader(questions, context)
+
+
 def validate_context_assertions(
     assertions: Sequence[Mapping],
     *,
@@ -1160,9 +1375,16 @@ def validate_context_assertions(
             questions = [
                 _permuted_reader_question(row, permutation_index) for row in rows
             ]
-            original_answers = list(reader(questions, original_context))
-            representative_answers = list(reader(questions, representative_context))
-            placeholder_answers = list(reader(questions, placeholder_context))
+            refresh = repetition > 0
+            original_answers = list(_call_context_reader(
+                reader, questions, original_context, refresh=refresh
+            ))
+            representative_answers = list(_call_context_reader(
+                reader, questions, representative_context, refresh=refresh
+            ))
+            placeholder_answers = list(_call_context_reader(
+                reader, questions, placeholder_context, refresh=refresh
+            ))
             if not all(len(answers) == len(rows) for answers in (
                 original_answers, representative_answers, placeholder_answers
             )):
@@ -1232,7 +1454,7 @@ def score_utility(
     assertions.sort(key=lambda row: str(row["assertion_id"]))
     context_rows = [row for row in assertions if row.get("family") == "context"]
     context_answers = list(reader(
-        [str(row["question"]) for row in context_rows],
+        [_permuted_reader_question(row, 0) for row in context_rows],
         doc_p,
         **({"refresh": True} if reader_refresh else {}),
     )) if context_rows else []
