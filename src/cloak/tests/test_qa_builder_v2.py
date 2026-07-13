@@ -2597,6 +2597,23 @@ Arthritis.
     assert relation["occurrence_ids"] == ["o0", "o1"]
 
 
+def test_aci_labeled_relation_abstains_without_controlled_links():
+    source = "No controlled clinical surfaces appear here."
+    reference = """HISTORY OF PRESENT ILLNESS
+No concerns.
+ASSESSMENT AND PLAN
+Arthritis.
+• Additional Testing: Order a thyroid panel.
+• Medical Treatment: Continue Synthroid.
+"""
+
+    candidates = AciTaskAdapter({"aci/uncontrolled": reference}).delivered_candidates(
+        "aci/uncontrolled", source, reference, _labeled_relation_environment()
+    )
+
+    assert not [row for row in candidates if row.get("subtype") == "exact_relation"]
+
+
 def test_aci_labeled_relation_rejects_field_with_multiple_decisions():
     source = "Arthritis is treated with Ultram."
     reference = """HISTORY OF PRESENT ILLNESS

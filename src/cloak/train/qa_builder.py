@@ -748,7 +748,9 @@ class AciTaskAdapter:
                 )
                 if occurrence_ids is None:
                     continue
-                scope = "linked" if occurrence_ids else "global"
+                if not occurrence_ids:
+                    continue
+                scope = "linked"
             else:
                 relation_occurrences = [
                     occurrences_by_surface.get(canon(value), []) for value in values
