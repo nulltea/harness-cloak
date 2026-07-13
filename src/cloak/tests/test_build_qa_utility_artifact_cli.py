@@ -348,11 +348,15 @@ def test_build_cache_rejects_fabricated_hash_on_store_and_valid_json_content_cor
 @pytest.mark.parametrize("changed_module", [
     "build_qa_utility_artifact.py",
     "train_ranker.py",
+    "runtime_types.py",
 ])
-def test_build_cache_key_pins_each_executing_pipeline_module(monkeypatch, changed_module):
+def test_build_cache_key_pins_each_executing_pipeline_module_and_misses(
+    tmp_path, monkeypatch, changed_module,
+):
     digests = {
         "build_qa_utility_artifact.py": "sha256:build-v1",
         "train_ranker.py": "sha256:ranker-v1",
+        "runtime_types.py": "sha256:runtime-types-v1",
     }
     monkeypatch.setattr(
         builder_cli,
@@ -368,10 +372,17 @@ def test_build_cache_key_pins_each_executing_pipeline_module(monkeypatch, change
         teacher_pin={"enabled": False},
     )
     original = builder_cli._build_cache_key(**args)
+    cache = builder_cli.ArtifactBuildCache(tmp_path / "cache")
+    artifact = {"documents": {"d1": {"measurement_state": "partial"}}}
+    artifact["artifact_hash"] = builder_cli._hash(artifact)
+    cache.store(original, artifact)
 
     digests[changed_module] = "sha256:changed"
 
-    assert builder_cli._build_cache_key(**args) != original
+    changed = builder_cli._build_cache_key(**args)
+
+    assert changed != original
+    assert cache.load(changed) is None
 
 
 def test_teacher_escalation_requires_artifact_build_cache():

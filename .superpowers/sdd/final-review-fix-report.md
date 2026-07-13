@@ -562,3 +562,47 @@ exit 0, no output
 ### Concerns
 
 - The requested isolated-worktree validation intentionally excludes the untracked real-data corpus test.
+
+## Runtime-types build-cache identity fix (2026-07-13)
+
+### Implemented fix
+
+- Artifact build-cache identity now includes a complete byte digest of the imported
+  `cloak.runtime_types` module. This is a direct execution dependency because
+  `train_ranker.assemble` uses `PLACEHOLDER_RE`, `placeholder_type_token`, and
+  `placeholder_token`; a runtime-types source change now receives a distinct cache key and
+  cannot reuse the prior artifact.
+
+The module `__file__` was selected over a hard-coded repository path so the identity follows the
+actual imported source used by the process.
+
+### RED evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_key_pins_each_executing_pipeline_module_and_misses
+..F                                                                      [100%]
+1 failed, 2 passed in 0.78s
+```
+
+Before the fix, changing the mocked `runtime_types.py` digest left the build-cache key unchanged.
+
+### GREEN evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_key_pins_each_executing_pipeline_module_and_misses
+3 passed in 0.82s
+
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_extract.py
+234 passed in 3.90s
+
+/home/timo/repos/agent-cloak/.venv/bin/python -m py_compile scripts/build_qa_utility_artifact.py src/cloak/tests/test_build_qa_utility_artifact_cli.py
+exit 0, no output
+
+git diff --check
+exit 0, no output
+```
+
+### Concerns
+
+- Existing artifact build-cache entries intentionally miss after any `cloak.runtime_types` source
+  change and must be rebuilt.

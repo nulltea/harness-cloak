@@ -6,6 +6,7 @@ import hashlib
 import json
 from pathlib import Path
 
+from cloak import runtime_types
 from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
     AciTaskAdapter,
@@ -126,6 +127,7 @@ def _build_cache_key(
         "pipeline_source_digests": {
             "build_qa_utility_artifact.py": _source_digest(__file__),
             "train_ranker.py": _source_digest(assemble.__code__.co_filename),
+            "runtime_types.py": _source_digest(runtime_types.__file__),
         },
     })
 
