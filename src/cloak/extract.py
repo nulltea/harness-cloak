@@ -14,11 +14,17 @@ Designs:
   docs/plans/2026-07-05-extractor-inverse-designs.md
   docs/plans/2026-07-05-detector-pointer-extractor.md
 """
+import hashlib
+import inspect
+import json
 import re
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
+from importlib.metadata import PackageNotFoundError, version as distribution_version
 from typing import Any
 
+from cloak import runtime_types
 from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES, PLACEHOLDER_RE
 
 FUZZ_MIN = 90.0
@@ -30,6 +36,9 @@ POINTER_MARGIN = 0.05
 DETECTOR_POINTER_GLINER_MODEL = "data/models/pii_gliner_multidomain/checkpoint-2479"
 _MAX_CANDIDATES = 12
 _GENERIC_SEMANTIC_FILLS = {"something"}
+INVERT_EXTRACTOR_VERSION = "invert-rule-cascade-v1"
+INVERT_IMPLEMENTATION_PIN_VERSION = "invert-implementation-pin-v1"
+INVERT_EXTERNAL_DISTRIBUTIONS = ("rapidfuzz", "sentence-transformers")
 
 _MONTHS = ("jan", "january", "feb", "february", "mar", "march", "apr", "april", "may",
            "jun", "june", "jul", "july", "aug", "august", "sep", "sept", "september",
@@ -57,6 +66,40 @@ _ETHNICITY_WORDS = ("ethnicity", "ancestry", "race", "ethnic", "asian", "europea
 _RELIGION_WORDS = ("christian", "muslim", "jewish", "hindu", "buddhist", "religion",
                    "religious")
 _FAMILY_WORDS = ("parent", "child", "spouse", "sibling", "grandparent", "family")
+
+
+def _implementation_hash(value: Any) -> str:
+    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _module_source_hash(module: Any) -> str:
+    return _implementation_hash(inspect.getsource(module))
+
+
+def _distribution_version(name: str) -> str | None:
+    try:
+        return distribution_version(name)
+    except PackageNotFoundError:
+        return None
+
+
+def invert_implementation_pin() -> dict:
+    """Return the complete local implementation identity of the deployed invert cascade."""
+    implementation = {
+        "kind": "invert",
+        "version": INVERT_EXTRACTOR_VERSION,
+        "pin_version": INVERT_IMPLEMENTATION_PIN_VERSION,
+        "semantic": True,
+        "modules": {
+            "cloak.extract": _module_source_hash(sys.modules[__name__]),
+            "cloak.runtime_types": _module_source_hash(runtime_types),
+        },
+        "packages": {
+            name: _distribution_version(name) for name in INVERT_EXTERNAL_DISTRIBUTIONS
+        },
+    }
+    return {**implementation, "sha256": _implementation_hash(implementation)}
 
 
 @dataclass(frozen=True)

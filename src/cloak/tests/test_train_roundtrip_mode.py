@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 import torch
 
+import cloak.extract as extract
 import cloak.train.roundtrip as rt
 from cloak.train.qa_builder import (
     AciTaskAdapter,
@@ -41,10 +42,15 @@ def _sealed_utility_artifact(assertion=None):
     assertion = dict(assertion or {
         "assertion_id": "a1", "doc_id": "d0", "family": "delivered",
         "scope": "global", "occurrence_ids": [], "weight": 1.0,
+        "scoring_contract": {"kind": "contains", "value": "documented fact"},
     })
     assertion.setdefault("family", "delivered")
     assertion.setdefault("group_id", "default")
     assertion.setdefault("weight", 1.0)
+    if assertion["family"] == "delivered":
+        assertion.setdefault(
+            "scoring_contract", {"kind": "contains", "value": "documented fact"},
+        )
     family = assertion["family"]
     family_budgets = {"context": 0.5, "delivered": 0.5}
     missing_family = "context" if family == "delivered" else "delivered"
@@ -191,6 +197,7 @@ def _verified_context_artifact():
     delivered = {
         "assertion_id": "a-delivered", "doc_id": "d0", "family": "delivered",
         "scope": "global", "occurrence_ids": [], "group_id": "schema:one", "weight": 0.4,
+        "scoring_contract": {"kind": "contains", "value": "delivered fact"},
     }
     threshold_manifest = {
         "family_budgets": {"context": 0.6, "delivered": 0.4},
@@ -1054,11 +1061,26 @@ def test_utility_reward_cache_invalidates_task_prompt_or_invert_identity(
         context.setitem(rt.TASK_TEMPLATE, "clinical", "changed prompt\n{doc}")
         changed_prompt_pin = tr._utility_scorer_pin(doc)
     with monkeypatch.context() as context:
-        context.setattr(rt, "INVERT_EXTRACTOR_VERSION", "invert-rule-cascade-test-change")
+        context.setattr(
+            extract,
+            "INVERT_EXTRACTOR_VERSION",
+            "invert-rule-cascade-test-change",
+            raising=False,
+        )
         changed_invert_pin = tr._utility_scorer_pin(doc)
+    with monkeypatch.context() as context:
+        context.setattr(
+            extract,
+            "_module_source_hash",
+            lambda module: f"sha256:changed:{module.__name__}",
+            raising=False,
+        )
+        changed_helper_pin = tr._utility_scorer_pin(doc)
 
     assert cache.lookup(**(inputs | {"scorer_pin": changed_prompt_pin})) is None
     assert cache.lookup(**(inputs | {"scorer_pin": changed_invert_pin})) is None
+    assert changed_helper_pin != inputs["scorer_pin"]
+    assert cache.lookup(**(inputs | {"scorer_pin": changed_helper_pin})) is None
 
 
 def test_utility_reward_cache_rejects_previous_roundtrip_reward_pin(tmp_path):
@@ -1075,10 +1097,10 @@ def test_utility_reward_cache_rejects_previous_roundtrip_reward_pin(tmp_path):
     cache.store(**inputs, result=_complete_cache_result("current"))
     previous_pin = {
         **current_pin,
-        "reward_pin_version": "qa-builder-v2-roundtrip-reward-v1",
+        "reward_pin_version": "qa-builder-v2-roundtrip-reward-v2",
     }
 
-    assert current_pin["reward_pin_version"] == "qa-builder-v2-roundtrip-reward-v2"
+    assert current_pin["reward_pin_version"] == "qa-builder-v2-roundtrip-reward-v3"
     assert cache.lookup(**(inputs | {"scorer_pin": previous_pin})) is None
 
 
@@ -1452,6 +1474,27 @@ def test_utility_artifact_gate_rejects_forged_cross_scope_semantic_duplicate():
     _seal_artifact(artifact)
 
     with pytest.raises(SystemExit, match="duplicate semantic utility fact"):
+        tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
+
+
+@pytest.mark.parametrize(("contract", "message"), [
+    (None, "missing scoring_contract"),
+    ({}, "empty scoring_contract"),
+    ({"kind": "equals", "value": "documented fact"}, "unsupported scoring_contract"),
+    ({"kind": "contains", "value": ""}, "non-empty string value"),
+    ({"kind": "contains", "value": "  "}, "non-empty string value"),
+])
+def test_utility_artifact_gate_rejects_invalid_delivered_scoring_contract(
+    contract, message,
+):
+    artifact = _sealed_utility_artifact()
+    if contract is None:
+        artifact["assertions"]["a1"].pop("scoring_contract")
+    else:
+        artifact["assertions"]["a1"]["scoring_contract"] = contract
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match=message):
         tr.enforce_utility_artifact_gate(artifact, {"environment_hash": "env-v1"})
 
 

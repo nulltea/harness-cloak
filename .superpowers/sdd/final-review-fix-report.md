@@ -375,3 +375,43 @@ wall_s=0.98
   reward v1 identities are intentionally invalid and must be rebuilt.
 - The transient smoke remains partial: zero context assertions, one uncovered decision, no runtime
   reward/cache execution, and no utility or privacy evidence.
+
+## Follow-up final QA-builder review fix (2026-07-13)
+
+### Implemented fixes
+
+- The round-trip reward identity now pins the complete `cloak.extract` source, the directly used
+  `cloak.runtime_types` source, and installed `rapidfuzz` and `sentence-transformers` versions.
+  The semantic reward pin is `qa-builder-v2-roundtrip-reward-v3`, invalidating reward-v2 cache rows.
+- `enforce_utility_artifact_gate` now rejects every delivered assertion whose scoring contract is
+  absent, empty, unsupported, malformed, or has an empty expected value before training can issue
+  a remote round trip.
+
+The full-module source digest was chosen over a curated helper list because `invert` relies on
+private cascade helpers and module constants; source hashing avoids silently omitting future local
+behavior changes. It deliberately invalidates caches for unrelated edits in `cloak.extract`.
+
+### RED evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_train_roundtrip_mode.py::test_utility_artifact_gate_rejects_invalid_delivered_scoring_contract
+5 failed in 0.94s
+```
+
+Before the gate change, absent, empty, unsupported, and empty-value delivered contracts all
+passed preflight.
+
+### GREEN evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_build_qa_utility_artifact_cli.py
+202 passed in 2.83s
+```
+
+```text
+/home/timo/repos/agent-cloak/.venv/bin/python -m py_compile src/cloak/extract.py src/cloak/train/roundtrip.py scripts/train_ranker.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_train_roundtrip_mode.py
+exit 0, no output
+
+git diff --check
+exit 0, no output
+```

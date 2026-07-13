@@ -1,6 +1,7 @@
 """Round-trip reward wiring — offline (LLM + reader monkeypatched)."""
 import pytest
 
+import cloak.extract as extract
 import cloak.train.roundtrip as rt
 
 
@@ -141,6 +142,14 @@ def test_roundtrip_reward_pin_tracks_actual_task_prompt_and_invert(monkeypatch):
     assert baseline["task_prompt"]["sha256"].startswith("sha256:")
     assert baseline["extractor"]["version"]
     assert baseline["extractor"]["sha256"].startswith("sha256:")
+    assert set(baseline["extractor"]["modules"]) == {
+        "cloak.extract",
+        "cloak.runtime_types",
+    }
+    assert set(baseline["extractor"]["packages"]) == {
+        "rapidfuzz",
+        "sentence-transformers",
+    }
 
     with monkeypatch.context() as context:
         context.setitem(rt.TASK_TEMPLATE, "clinical", "changed prompt\n{doc}")
@@ -148,13 +157,40 @@ def test_roundtrip_reward_pin_tracks_actual_task_prompt_and_invert(monkeypatch):
             {"scorer": "utility-v1"}, corpus="clinical"
         )
     with monkeypatch.context() as context:
-        context.setattr(rt, "INVERT_EXTRACTOR_VERSION", "invert-rule-cascade-test-change")
+        context.setattr(
+            extract,
+            "INVERT_EXTRACTOR_VERSION",
+            "invert-rule-cascade-test-change",
+            raising=False,
+        )
         changed_invert = rt.roundtrip_reward_pin(
+            {"scorer": "utility-v1"}, corpus="clinical"
+        )
+    with monkeypatch.context() as context:
+        context.setattr(
+            extract,
+            "_module_source_hash",
+            lambda module: f"sha256:changed:{module.__name__}",
+            raising=False,
+        )
+        changed_helper = rt.roundtrip_reward_pin(
+            {"scorer": "utility-v1"}, corpus="clinical"
+        )
+    with monkeypatch.context() as context:
+        context.setattr(
+            extract,
+            "_distribution_version",
+            lambda name: f"changed-{name}",
+            raising=False,
+        )
+        changed_package = rt.roundtrip_reward_pin(
             {"scorer": "utility-v1"}, corpus="clinical"
         )
 
     assert changed_prompt != baseline
     assert changed_invert != baseline
+    assert changed_helper != baseline
+    assert changed_package != baseline
 
 
 def test_fact_recall_is_per_fact_max_mean_over_facts(monkeypatch):

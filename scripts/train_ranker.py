@@ -1701,6 +1701,33 @@ def enforce_utility_artifact_gate(artifact, environment, *, expected_manifest_ha
                     f"utility artifact assertion {assertion_id} belongs to document "
                     f"{assertion.get('doc_id')!r}, not {doc_id!r}"
                 )
+            if assertion.get("family") == "delivered":
+                if "scoring_contract" not in assertion or assertion["scoring_contract"] is None:
+                    raise SystemExit(
+                        f"utility artifact delivered assertion {assertion_id} is missing "
+                        "scoring_contract"
+                    )
+                contract = assertion["scoring_contract"]
+                if not isinstance(contract, dict):
+                    raise SystemExit(
+                        f"utility artifact delivered assertion {assertion_id} has unsupported "
+                        "scoring_contract"
+                    )
+                if not contract:
+                    raise SystemExit(
+                        f"utility artifact delivered assertion {assertion_id} has empty "
+                        "scoring_contract"
+                    )
+                if set(contract) != {"kind", "value"} or contract.get("kind") != "contains":
+                    raise SystemExit(
+                        f"utility artifact delivered assertion {assertion_id} has unsupported "
+                        "scoring_contract"
+                    )
+                if not isinstance(contract["value"], str) or not contract["value"].strip():
+                    raise SystemExit(
+                        f"utility artifact delivered assertion {assertion_id} requires a "
+                        "non-empty string value in scoring_contract"
+                    )
             occurrence_ids = [str(value) for value in assertion.get("occurrence_ids") or []]
             scope = assertion.get("scope")
             if scope == "global" and occurrence_ids:
