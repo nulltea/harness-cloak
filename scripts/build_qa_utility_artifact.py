@@ -183,7 +183,7 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
     pins.update({
         "gate_manifest_hash": _hash(manifest),
         "task_pin": AciTaskAdapter.task_pin,
-        "builder_pin": "qa-builder-v2-assertion-compiler-v1",
+        "builder_pin": "qa-builder-v2-assertion-compiler-v2",
         "detector_pin": detector_pin or None,
         "teacher_pin": teacher_pin,
         "source_hashes": {doc_id: _hash(text) for doc_id, text in source_documents.items()},

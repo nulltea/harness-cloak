@@ -94,16 +94,21 @@ class _InjectedRelationTeacher:
     pin = {
         "provider": "injected",
         "model": "deterministic-relation-teacher",
-        "revision": "v1",
+        "base_url": "in-process",
+        "prompt_version": "qa-relation-teacher-test-v1",
+        "response_schema": {"type": "relations-array", "version": 1},
+        "revision": "test-revision-1",
     }
 
     def __init__(self, proposals):
         self.proposals = proposals
         self.calls = 0
+        self.prompts = []
 
     def propose(self, prompt):
         assert "aci/D2N002" in prompt
         self.calls += 1
+        self.prompts.append(prompt)
         return self.proposals
 
 
@@ -391,6 +396,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     assert teacher.calls == 1
     assert artifact["teacher_pin"] == teacher.pin
     assert artifact["reader_pin"] == TEST_READER_PIN
+    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v2"
     assert all(subtypes.count(subtype) > 0 for subtype in (
         "structure", "field", "content", "exact_relation", "semantic_property",
         "contextual_relation",
@@ -428,6 +434,9 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
         row for row in artifact["assertions"].values()
         if row["subtype"] == "contextual_relation"
     )
+    assert relation["evidence"]["proposal_hash"] == qa_cli._hash(valid_proposal)
+    assert relation["evidence"]["prompt_hash"] == qa_cli._hash(teacher.prompts[0])
+    assert teacher.prompts[0] not in output.read_text()
     render = qa_cli._action_renderer(
         environment, frozen, {"clinical": arms["clinical"]}, "clinical",
         {"aci/D2N002": source},

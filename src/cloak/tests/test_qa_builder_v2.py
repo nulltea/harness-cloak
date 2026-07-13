@@ -307,7 +307,7 @@ def test_joint_anchor_uses_coarsest_entailing_actions_and_keep_elsewhere():
     assert anchor["action_vector_hash"].startswith("sha256:")
 
 
-def test_joint_anchor_breaks_max_rank_ties_by_stable_action_id():
+def test_joint_anchor_rejects_ambiguous_max_rank_ties():
     assertion = {"decision_requirements": {"condition": "endocrine"}}
     actions = [
         {"action_id": "z-action", "mode": "level", "legal": True,
@@ -317,15 +317,10 @@ def test_joint_anchor_breaks_max_rank_ties_by_stable_action_id():
         {"action_id": "keep", "mode": "keep", "legal": True},
     ]
 
-    first = build_joint_representative_anchor(
-        assertion, [{"decision_id": "condition", "actions": actions}]
-    )
-    second = build_joint_representative_anchor(
-        assertion, [{"decision_id": "condition", "actions": list(reversed(actions))}]
-    )
-
-    assert first == second
-    assert first["action_vector"] == {"condition": "a-action"}
+    with pytest.raises(ValueError, match="multiple legal generalizations.*maximum"):
+        build_joint_representative_anchor(
+            assertion, [{"decision_id": "condition", "actions": actions}]
+        )
 
 
 def test_joint_anchor_rejects_missing_entailing_action():
@@ -797,6 +792,7 @@ def test_builder_records_unmet_relation_threshold_without_teacher():
 
 def test_runtime_scores_context_assertions_in_one_reader_batch():
     artifact = {
+        "reader_pin": TEST_READER_PIN,
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
         "assertions": {
             "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
@@ -814,6 +810,7 @@ def test_runtime_scores_context_assertions_in_one_reader_batch():
         calls.append((list(questions), context))
         return ["endocrine", "arthritis"]
 
+    _pin_reader(reader)
     result = score_utility(
         artifact,
         "d1",
@@ -825,6 +822,59 @@ def test_runtime_scores_context_assertions_in_one_reader_batch():
     assert len(calls) == 1
     assert result["component_scores"] == {"c1": 1.0, "c2": 1.0, "d1": 1.0}
     assert result["utility"] == pytest.approx(1.0)
+
+
+def test_score_utility_rejects_missing_reader_pin_before_reader_call():
+    calls = []
+
+    def reader(questions, context):
+        calls.append((questions, context))
+        return ["endocrine"]
+
+    _pin_reader(reader)
+    artifact = {
+        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "assertions": {
+            "c1": {
+                "assertion_id": "c1", "doc_id": "d1", "family": "context",
+                "question": "Q1", "accepted_values": ["endocrine"], "weight": 1.0,
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="reader_pin"):
+        score_utility(
+            artifact, "d1", doc_p="generalized", out_final="unused", reader=reader,
+        )
+
+    assert calls == []
+
+
+def test_score_utility_rejects_mismatched_reader_pin_before_reader_call():
+    calls = []
+
+    def reader(questions, context):
+        calls.append((questions, context))
+        return ["endocrine"]
+
+    reader.pin = {**TEST_READER_PIN, "revision": "wrong-revision"}
+    artifact = {
+        "reader_pin": TEST_READER_PIN,
+        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "assertions": {
+            "c1": {
+                "assertion_id": "c1", "doc_id": "d1", "family": "context",
+                "question": "Q1", "accepted_values": ["endocrine"], "weight": 1.0,
+            },
+        },
+    }
+
+    with pytest.raises(ValueError, match="reader_pin.*match"):
+        score_utility(
+            artifact, "d1", doc_p="generalized", out_final="unused", reader=reader,
+        )
+
+    assert calls == []
 
 
 def test_batched_context_reader_uses_one_model_request_for_all_questions():
@@ -845,6 +895,13 @@ def test_batched_context_reader_uses_one_model_request_for_all_questions():
     assert len(client.prompts) == 1
     assert "What condition category?" in client.prompts[0]
     assert "What treatment category?" in client.prompts[0]
+
+
+def test_default_reader_pin_constant_drives_default_reader_entry_points():
+    reader = BatchedContextReader(client=object())
+
+    assert reader.pin == qa_builder.DEFAULT_CONTEXT_READER_PIN
+    assert qa_builder.read_context_batch.pin == qa_builder.DEFAULT_CONTEXT_READER_PIN
 
 
 def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
@@ -1268,6 +1325,9 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
         "provider": "openrouter",
         "model": "nvidia/nemotron-3-super-120b-a12b:free",
         "base_url": "https://openrouter.ai/api/v1",
+        "prompt_version": "qa-relation-teacher-v1",
+        "response_schema": {"type": "relations-array", "version": 1},
+        "revision": "qa-relation-teacher-r1",
     }
     assert relations == [{"relation": "treated_with"}]
 
@@ -1914,6 +1974,7 @@ def test_relational_compiler_derives_gold_and_links_from_frozen_inventory():
         },
         "evidence": {
             "authority": "source_document",
+            "proposal_hash": qa_builder._stable_hash(proposals[0]),
             "source_span": {
                 "start": 0,
                 "end": len(source),
@@ -1995,6 +2056,54 @@ def test_relational_compiler_requires_ambiguous_quote_start_and_binds_occurrence
     }
     assert wrong_occurrence == []
     assert wrong_rejections[0]["detail_reason"] == "invalid_evidence_occurrence"
+
+
+def test_relational_compiler_rejects_wide_quote_using_unselected_duplicate_relation():
+    source = (
+        "Hypothyroidism was discussed; "
+        "Hypothyroidism is treated with Synthroid."
+    )
+    first_condition = source.index("Hypothyroidism")
+    related_condition = source.rindex("Hypothyroidism")
+    drug = source.index("Synthroid")
+    environment = _relation_environment(source)
+    environment["occurrences"] = [
+        {
+            "occurrence_id": "condition-unrelated", "decision_id": "d-condition",
+            "start": first_condition, "end": first_condition + len("Hypothyroidism"),
+            "surface": "Hypothyroidism", "runtime_type": "health-condition",
+        },
+        {
+            "occurrence_id": "condition-related", "decision_id": "d-condition",
+            "start": related_condition, "end": related_condition + len("Hypothyroidism"),
+            "surface": "Hypothyroidism", "runtime_type": "health-condition",
+        },
+        {
+            "occurrence_id": "drug", "decision_id": "d-drug",
+            "start": drug, "end": drug + len("Synthroid"),
+            "surface": "Synthroid", "runtime_type": "drug",
+        },
+    ]
+    proposal = {
+        "relation": "treated_with",
+        "argument_occurrence_ids": ["condition-unrelated", "drug"],
+        "support_properties": {
+            "condition-unrelated": "an endocrine condition",
+            "drug": "a thyroid medication",
+        },
+        "answer_occurrence_id": "drug",
+        "answer_property": "a thyroid medication",
+        "question": "What treatment category is used for the endocrine condition?",
+        "evidence_quote": source,
+        "evidence_start": 0,
+    }
+
+    accepted, rejected = compile_relational_assertions(
+        "aci/D2N002", source, environment, [proposal]
+    )
+
+    assert accepted == []
+    assert rejected[0]["detail_reason"] == "invalid_evidence"
 
 
 @pytest.mark.parametrize(
@@ -2299,6 +2408,7 @@ def test_aci_structure_accepts_heading_only_and_inline_none_sections(reference):
     )
     structure = next(row for row in candidates if row["subtype"] == "structure")
     artifact = {
+        "reader_pin": TEST_READER_PIN,
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
         "assertions": {
             "structure": {
@@ -2310,7 +2420,9 @@ def test_aci_structure_accepts_heading_only_and_inline_none_sections(reference):
 
     valid = score_utility(
         artifact, "d1", doc_p="unused", out_final=reference,
-        reader=lambda questions, context: pytest.fail("reader must not be called"),
+        reader=_pin_reader(
+            lambda questions, context: pytest.fail("reader must not be called")
+        ),
     )
     malformed = score_utility(
         artifact,
@@ -2319,7 +2431,9 @@ def test_aci_structure_accepts_heading_only_and_inline_none_sections(reference):
         out_final=reference.replace("ASSESSMENT: none", "ASSESSMENT: no concerns").replace(
             "ASSESSMENT\nnone", "ASSESSMENT\nno concerns"
         ),
-        reader=lambda questions, context: pytest.fail("reader must not be called"),
+        reader=_pin_reader(
+            lambda questions, context: pytest.fail("reader must not be called")
+        ),
     )
 
     assert valid["component_scores"] == {"structure": 1.0}
@@ -2360,6 +2474,7 @@ Arthritis — physical therapy — mobility assessment
 
 def test_score_utility_evaluates_every_deterministic_delivered_contract():
     artifact = {
+        "reader_pin": TEST_READER_PIN,
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
         "assertions": {
             "content": {
@@ -2407,7 +2522,9 @@ Hypothyroidism — Synthroid — thyroid labs
         "d1",
         doc_p="unused",
         out_final=delivered,
-        reader=lambda questions, context: pytest.fail("reader must not be called"),
+        reader=_pin_reader(
+            lambda questions, context: pytest.fail("reader must not be called")
+        ),
     )
 
     assert result == {
@@ -2429,7 +2546,9 @@ Hypothyroidism stable
 PLAN
 Hypothyroidism — Synthroid — thyroid labs
 """,
-        reader=lambda questions, context: pytest.fail("reader must not be called"),
+        reader=_pin_reader(
+            lambda questions, context: pytest.fail("reader must not be called")
+        ),
     )
 
     assert malformed["component_scores"]["structure"] == 0.0
@@ -2588,6 +2707,7 @@ def test_relational_compiler_rejects_protected_locator_leakage():
 
 def test_delivered_only_scoring_is_deterministic_without_reader_call():
     artifact = {
+        "reader_pin": TEST_READER_PIN,
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
         "assertions": {
             "d1": {
@@ -2603,7 +2723,9 @@ def test_delivered_only_scoring_is_deterministic_without_reader_call():
         "d1",
         doc_p="unused",
         out_final="History includes kidney transplant.",
-        reader=lambda questions, context: pytest.fail("reader must not be called"),
+        reader=_pin_reader(
+            lambda questions, context: pytest.fail("reader must not be called")
+        ),
     )
 
     assert result == {"component_scores": {"d1": 1.0}, "utility": 1.0}
@@ -2611,6 +2733,7 @@ def test_delivered_only_scoring_is_deterministic_without_reader_call():
 
 def test_runtime_component_scores_follow_stable_assertion_id_order():
     artifact = {
+        "reader_pin": TEST_READER_PIN,
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
         "assertions": {
             "z": {
@@ -2631,7 +2754,9 @@ def test_runtime_component_scores_follow_stable_assertion_id_order():
         "d1",
         doc_p="unused",
         out_final="A female has a kidney transplant.",
-        reader=lambda questions, context: pytest.fail("reader must not be called"),
+        reader=_pin_reader(
+            lambda questions, context: pytest.fail("reader must not be called")
+        ),
     )
 
     assert list(result["component_scores"]) == ["a", "z"]

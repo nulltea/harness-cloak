@@ -15,9 +15,19 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v1"
+RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relations-array", "version": 1}
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r1"
 CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v1"
 CONTEXT_READER_RESPONSE_SCHEMA = {"type": "answers-array", "version": 1}
 CONTEXT_READER_REVISION = "qa-reader-r1"
+DEFAULT_CONTEXT_READER_PIN = {
+    "model": QA_MODEL,
+    "endpoint": QA_BASE_URL,
+    "prompt_version": CONTEXT_READER_PROMPT_VERSION,
+    "response_schema": CONTEXT_READER_RESPONSE_SCHEMA,
+    "revision": CONTEXT_READER_REVISION,
+}
 READER_PIN_FIELDS = frozenset({
     "model", "endpoint", "prompt_version", "response_schema", "revision",
 })
@@ -108,6 +118,7 @@ ACI_RELATION_CONTRACT = {
     },
 }
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
+_CLAUSE_DELIMITER_PATTERN = re.compile(r"[\n.!?;]")
 ACI_REQUIRED_SECTIONS = (
     "HISTORY OF PRESENT ILLNESS",
     "ASSESSMENT",
@@ -128,6 +139,9 @@ class OpenRouterRelationTeacher:
             "provider": "openrouter",
             "model": RELATION_TEACHER_MODEL,
             "base_url": RELATION_TEACHER_BASE_URL,
+            "prompt_version": RELATION_TEACHER_PROMPT_VERSION,
+            "response_schema": deepcopy(RELATION_TEACHER_RESPONSE_SCHEMA),
+            "revision": RELATION_TEACHER_REVISION,
         }
 
     def __init__(self):
@@ -161,13 +175,7 @@ class BatchedContextReader:
 
     @property
     def pin(self) -> dict:
-        return {
-            "model": QA_MODEL,
-            "endpoint": QA_BASE_URL,
-            "prompt_version": CONTEXT_READER_PROMPT_VERSION,
-            "response_schema": deepcopy(CONTEXT_READER_RESPONSE_SCHEMA),
-            "revision": CONTEXT_READER_REVISION,
-        }
+        return deepcopy(DEFAULT_CONTEXT_READER_PIN)
 
     def __init__(self, client=None):
         if client is None:
@@ -215,13 +223,7 @@ def read_context_batch(questions: list[str], context: str) -> list[str]:
     return _batched_context_reader(questions, context)
 
 
-read_context_batch.pin = {
-    "model": QA_MODEL,
-    "endpoint": QA_BASE_URL,
-    "prompt_version": CONTEXT_READER_PROMPT_VERSION,
-    "response_schema": deepcopy(CONTEXT_READER_RESPONSE_SCHEMA),
-    "revision": CONTEXT_READER_REVISION,
-}
+read_context_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
 
 
 class AciTaskAdapter:
@@ -1348,6 +1350,50 @@ def _evidence_span_contains_occurrences(
     return True
 
 
+def _relation_evidence_connects_selected_occurrences(
+    relation: str,
+    quote: str,
+    evidence_span: tuple[int, int],
+    occurrence_ids: Sequence[str],
+    occurrences: Mapping[str, Mapping],
+    relation_contract: Mapping[str, Mapping],
+) -> bool:
+    evidence_start, _ = evidence_span
+    local_spans = []
+    clause_spans = []
+    for occurrence_id in occurrence_ids:
+        occurrence = occurrences[occurrence_id]
+        local_start = int(occurrence["start"]) - evidence_start
+        local_end = int(occurrence["end"]) - evidence_start
+        surface = str(occurrence.get("surface", ""))
+        if not 0 <= local_start < local_end <= len(quote):
+            return False
+        if quote[local_start:local_end] != surface:
+            return False
+        if _CLAUSE_DELIMITER_PATTERN.search(quote, local_start, local_end):
+            return False
+        previous_delimiters = list(
+            _CLAUSE_DELIMITER_PATTERN.finditer(quote, 0, local_start)
+        )
+        next_delimiter = _CLAUSE_DELIMITER_PATTERN.search(quote, local_end)
+        clause_spans.append((
+            previous_delimiters[-1].end() if previous_delimiters else 0,
+            next_delimiter.start() if next_delimiter else len(quote),
+        ))
+        local_spans.append((local_start, local_end))
+    if local_spans != sorted(local_spans):
+        return False
+    if any(first[1] > second[0] for first, second in zip(local_spans, local_spans[1:])):
+        return False
+    if len(set(clause_spans)) != 1:
+        return False
+    connector_text = canon(quote[local_spans[0][1]:local_spans[-1][0]])
+    return any(
+        re.fullmatch(pattern, connector_text) is not None
+        for pattern in relation_contract[relation].get("connector_patterns", ())
+    )
+
+
 def relation_teacher_prompt(
     doc_id: str,
     document: str,
@@ -1510,8 +1556,13 @@ def compile_relational_assertions(
         ):
             reject("invalid_evidence_occurrence")
             continue
-        if not _relation_evidence_connects_arguments(
-            relation, quote, occurrence_ids, occurrences, relation_contract
+        if not _relation_evidence_connects_selected_occurrences(
+            relation,
+            quote,
+            evidence_span,
+            occurrence_ids,
+            occurrences,
+            relation_contract,
         ):
             reject("invalid_evidence")
             continue
@@ -1577,6 +1628,7 @@ def compile_relational_assertions(
             "decision_requirements": decision_requirements,
             "evidence": {
                 "authority": "source_document",
+                "proposal_hash": proposal_hash,
                 "source_span": {
                     "start": evidence_span[0],
                     "end": evidence_span[1],
@@ -2425,6 +2477,7 @@ def build_utility_artifact(
                 ), doc_id=doc_id)
             else:
                 prompt = relation_teacher_prompt(doc_id, source, environment_document)
+                prompt_hash = _stable_hash(prompt)
                 try:
                     proposals = relation_teacher.propose(prompt)
                     if not proposals:
@@ -2451,6 +2504,12 @@ def build_utility_artifact(
                                 doc_id, source, environment_document, proposals
                             )
                         )
+                        relation_candidates = [dict(row) for row in relation_candidates]
+                        for relation_candidate in relation_candidates:
+                            relation_candidate["evidence"] = {
+                                **dict(relation_candidate.get("evidence") or {}),
+                                "prompt_hash": prompt_hash,
+                            }
                         for rejection in relation_rejections:
                             preserve_rejection(rejection, doc_id=doc_id)
                         accepted_relations = validate_candidate_rows(
@@ -2574,13 +2633,17 @@ def build_joint_representative_anchor(
                         f"legal level action for decision {decision_id} lacks numeric "
                         "coarseness_rank"
                     )
-            selected = min(
-                candidates,
-                key=lambda action: (
-                    -float(action["coarseness_rank"]),
-                    str(action["action_id"]),
-                ),
-            )
+            maximum_rank = max(float(action["coarseness_rank"]) for action in candidates)
+            coarsest = [
+                action for action in candidates
+                if float(action["coarseness_rank"]) == maximum_rank
+            ]
+            if len(coarsest) != 1:
+                raise ValueError(
+                    f"multiple legal generalizations for decision {decision_id} share "
+                    f"maximum coarseness_rank {maximum_rank}"
+                )
+            selected = coarsest[0]
             action_vector[decision_id] = str(selected["action_id"])
         else:
             keep = next((action for action in actions if action.get("mode") == "keep"), None)
@@ -2775,6 +2838,7 @@ def score_utility(
     reader: Callable[[list[str], str], Sequence[str]],
 ) -> dict:
     """Score one document with one context-reader batch and deterministic delivered checks."""
+    _validated_build_reader_pin(reader, artifact)
     assertions = [
         row for row in artifact.get("assertions", {}).values()
         if row.get("doc_id") == doc_id and row.get("status", "accepted") == "accepted"
