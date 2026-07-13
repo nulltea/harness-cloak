@@ -129,6 +129,17 @@ def test_artifact_views_project_complete_inspectable_records_without_mutation():
             "d1": {
                 "measurement_state": "measured",
                 "occurrence_to_decision": {"occurrence-drug": "decision-drug"},
+                "occurrences": [{
+                    "occurrence_id": "occurrence-drug",
+                    "start": 10,
+                    "end": 19,
+                    "surface": "Synthroid",
+                    "runtime_type": "drug",
+                    "detector_provenance": {"model": "detector", "score": 0.91},
+                    "overlap_disposition": "accepted",
+                    "decision_id": "decision-drug",
+                    "controlled": True,
+                }],
                 "decisions": [{
                     "decision_id": "decision-drug",
                     "runtime_type": "drug",
@@ -150,6 +161,19 @@ def test_artifact_views_project_complete_inspectable_records_without_mutation():
     assertions_view, qa_pairs_view = artifact_views(artifact)
 
     grouped = assertions_view["documents"]["d1"]["assertion_groups"]
+    expected_occurrence = artifact["documents"]["d1"]["occurrences"][0]
+    for view in (assertions_view, qa_pairs_view):
+        view_document = view["documents"]["d1"]
+        assert view_document["occurrences"] == {
+            "occurrence-drug": expected_occurrence,
+        }
+        assert view_document["decisions"]["decision-drug"]["decision_id"] == (
+            "decision-drug"
+        )
+        assert view_document["decisions"]["decision-drug"]["actions"] == actions
+        assert view_document["occurrences"]["occurrence-drug"]["decision_id"] in (
+            view_document["decisions"]
+        )
     assert [row["assertion_id"] for row in grouped["structure"]] == [
         "component-structure"
     ]
@@ -721,15 +745,56 @@ def test_freeze_ranker_environment_synthesizes_missing_keep_into_frozen_menu():
     keep_actions = [row for row in decision["actions"] if row["mode"] == "keep"]
 
     assert keep_actions == [{
-        "fill": "Synthroid",
+        "fill": "synthroid",
         "mode": "keep",
         "keep": True,
+        "source_identity": True,
         "legal": True,
         "entails": ["synthroid"],
         "action_id": keep_actions[0]["action_id"],
     }]
     assert keep_actions[0]["action_id"].startswith("sha256:")
     assert first == second
+
+
+def test_freeze_ranker_environment_keeps_mixed_case_repetitions_menu_consistent():
+    actions = [
+        {"fill": "thyroid medication", "mode": "level"},
+        {"fill": None, "mode": "placeholder"},
+    ]
+    ranker_env = {
+        "corpora": {"clinical": {"d1": {"spans": [
+            {
+                "surface": "Synthroid",
+                "type": "drug",
+                "start": 0,
+                "end": 9,
+                "actions": actions,
+            },
+            {
+                "surface": "SYNTHROID",
+                "type": "drug",
+                "start": 20,
+                "end": 29,
+                "actions": actions,
+            },
+        ]}}},
+    }
+
+    frozen = freeze_ranker_environment(ranker_env)
+    document = frozen["documents"]["d1"]
+    keep_actions = [
+        action for action in document["decisions"][0]["actions"]
+        if action["mode"] == "keep"
+    ]
+
+    assert len(document["decisions"]) == 1
+    assert len(keep_actions) == 1
+    assert keep_actions[0]["fill"] == "synthroid"
+    assert keep_actions[0]["source_identity"] is True
+    assert [row["surface"] for row in document["occurrences"]] == [
+        "Synthroid", "SYNTHROID",
+    ]
 
 
 def test_freeze_ranker_environment_uses_all_frozen_arm_occurrences():
@@ -870,6 +935,11 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
     assert captured["api_key"] == "secret"
     assert captured["response_format"] == {"type": "json_object"}
     assert "max_tokens" not in captured
+    assert teacher.pin == {
+        "provider": "openrouter",
+        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "base_url": "https://openrouter.ai/api/v1",
+    }
     assert relations == [{"relation": "treated_with"}]
 
 

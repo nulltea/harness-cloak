@@ -4,9 +4,11 @@ import subprocess
 from pathlib import Path
 
 import build_qa_utility_artifact as qa_cli
+import pytest
 from cloak.train.qa_builder import (
     freeze_ranker_environment,
     frozen_occurrences_from_arms,
+    validate_context_assertions,
 )
 
 
@@ -68,6 +70,12 @@ Hypothyroidism — Synthroid — thyroid labs
 
 
 class _InjectedRelationTeacher:
+    pin = {
+        "provider": "injected",
+        "model": "deterministic-relation-teacher",
+        "revision": "v1",
+    }
+
     def __init__(self, proposals):
         self.proposals = proposals
         self.calls = 0
@@ -79,17 +87,54 @@ class _InjectedRelationTeacher:
 
 
 def _acceptance_reader(questions, context):
-    if "<" in context and ">" in context:
-        return ["unknown" for _ in questions]
+    support = {
+        "endocrine condition": ("hypothyroidism", "endocrine condition"),
+        "thyroid medication": ("synthroid", "thyroid medication"),
+        "thyroid test": ("thyroid labs", "thyroid test"),
+    }
+    normalized_context = context.casefold()
     answers = []
     for question in questions:
-        if "condition category" in question:
-            answers.append("endocrine condition")
-        elif "procedure or test category" in question:
-            answers.append("thyroid test")
+        normalized_question = question.casefold()
+        if "condition category" in normalized_question:
+            expected = "endocrine condition"
+        elif "procedure or test category" in normalized_question:
+            expected = "thyroid test"
+        elif "treatment category" in normalized_question:
+            expected = "thyroid medication"
         else:
-            answers.append("thyroid medication")
+            answers.append("unknown")
+            continue
+        answers.append(
+            expected
+            if any(value in normalized_context for value in support[expected])
+            else "unknown"
+        )
     return answers
+
+
+def test_acceptance_reader_rejects_broken_representative_rendering():
+    assertion = {
+        "assertion_id": "condition-category",
+        "family": "context",
+        "question": "What specific condition category is documented?",
+        "accepted_values": ["endocrine condition"],
+    }
+
+    accepted, evidence = validate_context_assertions(
+        [assertion],
+        original_context="The patient is diagnosed with hypothyroidism.",
+        representative_context="The patient has an unrelated condition.",
+        placeholder_context="The patient is diagnosed with <HEALTH_CONDITION_1>.",
+        reader=_acceptance_reader,
+    )
+
+    assert accepted == []
+    assert evidence["condition-category"]["scores"] == {
+        "original": 1.0,
+        "representative": 0.0,
+        "placeholder": 0.0,
+    }
 
 
 def test_action_renderer_uses_synthesized_keep_as_source_identity():
@@ -116,6 +161,53 @@ def test_action_renderer_uses_synthesized_keep_as_source_identity():
     )
 
     assert render("aci/D2N002", action_vector) == source
+
+
+def test_action_renderer_preserves_repeated_mixed_case_keep_occurrences():
+    source = "Synthroid was continued; SYNTHROID remained listed; synthroid was refilled."
+    surfaces = ["Synthroid", "SYNTHROID", "synthroid"]
+    spans = []
+    arm_rows = []
+    search_start = 0
+    actions = [
+        {"fill": "thyroid medication", "mode": "level"},
+        {"fill": None, "mode": "placeholder"},
+    ]
+    for index, surface in enumerate(surfaces, start=1):
+        start = source.index(surface, search_start)
+        end = start + len(surface)
+        search_start = end
+        spans.append({
+            "surface": surface,
+            "type": "drug",
+            "start": start,
+            "end": end,
+            "actions": actions,
+        })
+        arm_rows.append({
+            "surface": surface,
+            "type": "drug",
+            "start": start,
+            "end": end,
+            "action": "placeholder",
+            "replacement": f"<DRUG_{index}>",
+            "lattice": ["thyroid medication"],
+        })
+    environment = {
+        "corpora": {"clinical": {"d1": {"spans": spans}}},
+    }
+    arms = {"clinical": {"d1": {"tau_walk": [source, arm_rows]}}}
+    frozen = freeze_ranker_environment(
+        environment,
+        occurrences_by_document=frozen_occurrences_from_arms(arms),
+    )
+    decision = frozen["documents"]["d1"]["decisions"][0]
+    keep = next(action for action in decision["actions"] if action["mode"] == "keep")
+    render = qa_cli._action_renderer(
+        environment, frozen, arms, "clinical", {"d1": source}
+    )
+
+    assert render("d1", {decision["decision_id"]: keep["action_id"]}) == source
 
 
 def test_cli_writes_normative_and_derived_views_from_same_artifact(tmp_path, monkeypatch):
@@ -200,6 +292,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     teacher = _InjectedRelationTeacher([
         valid_proposal,
         {**valid_proposal, "question": "Malformed question"},
+        {**valid_proposal, "relation": "invented_relation"},
     ])
 
     qa_cli.main([
@@ -214,8 +307,9 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     artifact = json.loads(output.read_text())
     subtypes = [row["subtype"] for row in artifact["assertions"].values()]
     assert teacher.calls == 1
+    assert artifact["teacher_pin"] == teacher.pin
     assert all(subtypes.count(subtype) > 0 for subtype in (
-        "structure", "field", "exact_relation", "semantic_property",
+        "structure", "field", "content", "exact_relation", "semantic_property",
         "contextual_relation",
     ))
     assert set(artifact["family_budgets"]) == {"context", "delivered"}
@@ -227,12 +321,16 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
         for decision in document["decisions"]
     )
     assert set(decisions.values()).issubset(document["controlled_decision_ids"])
-    rejection = artifact["rejections"]["records"][0]
-    assert {
+    rejections = artifact["rejections"]["records"]
+    assert len(rejections) >= 2
+    required_rejection_fields = {
         "rejection_id", "attempt_hash", "doc_id", "status", "reason",
         "detail_reason", "evidence",
-    }.issubset(rejection)
-    assert rejection["detail_reason"] == "invalid_question"
+    }
+    assert all(required_rejection_fields.issubset(rejection) for rejection in rejections)
+    assert {rejection["detail_reason"] for rejection in rejections}.issuperset({
+        "invalid_question", "invalid_relation",
+    })
 
     assertions_view = json.loads((tmp_path / "d2n002.assertions.json").read_text())
     qa_pairs_view = json.loads((tmp_path / "d2n002.qa-pairs.json").read_text())
@@ -242,6 +340,46 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     decision_rows = qa_pairs_view["documents"]["aci/D2N002"]["decisions"].values()
     assert any(row["qa_pairs"] for row in decision_rows)
     assert any(row["rejections"] for row in decision_rows)
+
+
+def test_build_from_files_rejects_relation_teacher_without_explicit_pin(
+    tmp_path, monkeypatch,
+):
+    source, reference, environment, arms = _d2n002_fixture()
+    environment_path = tmp_path / "ranker-env.json"
+    arms_path = tmp_path / "arms.json"
+    manifest_path = tmp_path / "manifest.json"
+    environment_path.write_text(json.dumps(environment))
+    arms_path.write_text(json.dumps(arms))
+    manifest_path.write_text(json.dumps({
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "structural_cap": 0.1,
+        "min_context_assertions": 0,
+    }))
+    monkeypatch.setattr(
+        qa_cli,
+        "_source_rows",
+        lambda corpus, doc_ids: {
+            "aci/D2N002": {"id": "aci/D2N002", "text": source, "gold_ref": reference}
+        },
+    )
+    args = qa_cli.parse_args([
+        "--env", str(environment_path),
+        "--arms", str(arms_path),
+        "--doc-id", "aci/D2N002",
+        "--threshold-manifest", str(manifest_path),
+        "--out", str(tmp_path / "artifact.json"),
+    ])
+
+    class TeacherWithoutPin:
+        def propose(self, prompt):
+            return []
+
+    with pytest.raises(ValueError, match="relation teacher.*pin"):
+        qa_cli.build_from_files(
+            args, relation_teacher=TeacherWithoutPin(), reader=_acceptance_reader
+        )
+
 
 def test_build_qa_utility_artifact_cli_rejects_legacy_aci_detector_artifacts(tmp_path):
     manifest_path = tmp_path / "manifest.json"

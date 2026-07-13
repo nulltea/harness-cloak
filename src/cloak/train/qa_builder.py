@@ -115,6 +115,14 @@ _ACI_ROW_DELIMITER = re.compile(r"\s+(?:—|–|-)\s+")
 class OpenRouterRelationTeacher:
     """Optional cached JSON relation proposer pinned to Nemotron on OpenRouter."""
 
+    @property
+    def pin(self) -> dict:
+        return {
+            "provider": "openrouter",
+            "model": RELATION_TEACHER_MODEL,
+            "base_url": RELATION_TEACHER_BASE_URL,
+        }
+
     def __init__(self):
         from cloak.llm import LLMClient
 
@@ -1438,6 +1446,14 @@ def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
         "rejections": deepcopy(rejection_state),
     }
     for doc_id, document in sorted(artifact.get("documents", {}).items()):
+        occurrence_inventory = {
+            str(row["occurrence_id"]): deepcopy(row)
+            for row in document.get("occurrences", [])
+        }
+        decision_inventory = {
+            str(row["decision_id"]): deepcopy(row)
+            for row in document.get("decisions", [])
+        }
         rows = sorted(
             assertions_by_document.get(str(doc_id), []),
             key=lambda row: str(row["assertion_id"]),
@@ -1464,6 +1480,8 @@ def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
             for key, value in document.items()
             if key not in {"decisions", "occurrences"}
         }
+        assertion_document["occurrences"] = deepcopy(occurrence_inventory)
+        assertion_document["decisions"] = deepcopy(decision_inventory)
         assertion_document["assertion_groups"] = groups
         assertions_view["documents"][doc_id] = assertion_document
 
@@ -1477,7 +1495,7 @@ def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
         ]
         decisions = {}
         rejection_assignments: set[str] = set()
-        for decision in document.get("decisions", []):
+        for decision in decision_inventory.values():
             decision_id = str(decision["decision_id"])
             linked_pairs = [
                 deepcopy(row) for row in rows
@@ -1509,10 +1527,7 @@ def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
                     linked_rejections.append(deepcopy(record))
                     rejection_assignments.add(str(record.get("rejection_id", "")))
             decisions[decision_id] = {
-                "decision_id": decision_id,
-                "runtime_type": decision.get("runtime_type"),
-                "canonical_key": decision.get("canonical_key"),
-                "occurrence_ids": deepcopy(decision.get("occurrence_ids", [])),
+                **deepcopy(decision),
                 "legal_actions": [
                     deepcopy(action) for action in decision.get("actions", [])
                     if action.get("legal", True)
@@ -1528,6 +1543,7 @@ def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
             "missing_family_budgets": deepcopy(
                 document.get("missing_family_budgets", [])
             ),
+            "occurrences": occurrence_inventory,
             "decisions": decisions,
             "unassigned_rejections": [
                 record for record in document_rejections
@@ -1587,9 +1603,10 @@ def freeze_ranker_environment(
                     })
                 if not any(action["mode"] == "keep" for action in actions):
                     keep_semantics = {
-                        "fill": surface,
+                        "fill": decision_key[1],
                         "mode": "keep",
                         "keep": True,
+                        "source_identity": True,
                         "legal": True,
                         "entails": [decision_key[1]],
                     }

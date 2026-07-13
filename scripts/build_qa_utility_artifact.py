@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from collections.abc import Mapping
 from pathlib import Path
 
 from cloak.corpora import load_task_docs
@@ -65,6 +66,7 @@ def _action_renderer(
         }
         choice = {}
         keep_markers = {}
+        walk_rows = arms[corpus][doc_id]["tau_walk"][1]
         for span in raw_document["spans"]:
             key = (str(span.get("type", "")), canon(str(span.get("surface", ""))))
             decision = decisions_by_key[key]
@@ -82,7 +84,13 @@ def _action_renderer(
                 )
                 if marker in source_documents[doc_id]:
                     raise ValueError(f"KEEP render marker collision for {selected_id}")
-                keep_markers[marker] = str(fill)
+                keep_markers.setdefault(marker, [
+                    str(row["surface"])
+                    for row in sorted(walk_rows, key=lambda row: int(row["start"]))
+                    if row.get("lattice")
+                    and str(row.get("type", "")) == str(decision["runtime_type"])
+                    and canon(str(row.get("surface", ""))) == str(decision["canonical_key"])
+                ])
                 fill = marker
             choice[str(span["surface"]).lower()] = {
                 "mode": "level" if selected["mode"] in {"level", "keep"} else "placeholder",
@@ -94,8 +102,13 @@ def _action_renderer(
             raw_document["spans"],
             choice,
         )[0]
-        for marker, fill in keep_markers.items():
-            rendered = rendered.replace(marker, fill)
+        for marker, surfaces in keep_markers.items():
+            for surface in surfaces:
+                if marker not in rendered:
+                    raise ValueError(f"missing KEEP render marker {marker}")
+                rendered = rendered.replace(marker, surface, 1)
+            if marker in rendered:
+                raise ValueError(f"unresolved KEEP render marker {marker}")
         return rendered
 
     return render
@@ -128,6 +141,12 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
     references = {doc_id: row["gold_ref"] for doc_id, row in rows.items()}
     if relation_teacher is None and args.relation_teacher:
         relation_teacher = OpenRouterRelationTeacher()
+    teacher_pin = None
+    if relation_teacher is not None:
+        raw_teacher_pin = getattr(relation_teacher, "pin", None)
+        if not isinstance(raw_teacher_pin, Mapping) or not raw_teacher_pin:
+            raise ValueError("relation teacher requires an explicit non-empty pin")
+        teacher_pin = dict(raw_teacher_pin)
 
     pins = {
         key: value for key, value in manifest.items()
@@ -138,10 +157,7 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         "task_pin": AciTaskAdapter.task_pin,
         "builder_pin": "qa-builder-v2-assertion-compiler-v1",
         "detector_pin": detector_pin or None,
-        "teacher_pin": ({
-            "provider": "openrouter",
-            "model": "nvidia/nemotron-3-super-120b-a12b:free",
-        } if args.relation_teacher else None),
+        "teacher_pin": teacher_pin,
         "source_hashes": {doc_id: _hash(text) for doc_id, text in source_documents.items()},
         "reference_hashes": {doc_id: _hash(text) for doc_id, text in references.items()},
     })
