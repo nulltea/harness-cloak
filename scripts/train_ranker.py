@@ -32,6 +32,7 @@ import json
 import math
 import random
 import re
+import tempfile
 import time
 from collections.abc import Mapping
 from pathlib import Path
@@ -122,11 +123,16 @@ def attach_utility_artifact(docs, artifact):
     attached = []
     for doc in docs:
         state = artifact_docs.get(doc["id"])
-        if not state or state.get("measurement_state") in {"unsupported", "build_failed"}:
-            continue
+        if not state:
+            raise ValueError(f"utility artifact is missing document state for {doc['id']!r}")
+        if state.get("measurement_state") in {"unsupported", "build_failed"}:
+            raise ValueError(
+                f"utility artifact document {doc['id']!r} has unusable measurement_state "
+                f"{state['measurement_state']!r}"
+            )
         assertion_ids = state.get("assertion_ids") or []
         if not assertion_ids:
-            continue
+            raise ValueError(f"utility artifact document {doc['id']!r} has no accepted assertions")
         next_doc = dict(doc)
         next_doc["utility_artifact"] = artifact
         attached.append(next_doc)
@@ -474,7 +480,7 @@ def counterfactual_terms(doc, policy, choice, logps, base_r=None, *, frac, rng, 
 
 def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
                     rt_workers, seed, cf_frac=0.0, log_rows=None,
-                    counterfactual_losses=None):
+                    counterfactual_losses=None, utility_reward_cache=None):
     """RLOO + tie-filter epoch loop against roundtrip_batch. Returns per-epoch stat rows.
     Artifact-backed documents use per-decision v2 utility credit. Legacy scalar documents retain
     their existing RLOO and optional separate legacy counterfactual path."""
@@ -484,21 +490,48 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
         rng = random.Random(seed * 1000 + epoch)
         order = list(range(len(docs)))
         rng.shuffle(order)
-        ep = {"r": [], "ph": [], "ent": [], "ties_skipped": 0, "cf_used": 0}
+        ep = {
+            "r": [], "ph": [], "ent": [], "ties_skipped": 0, "cf_used": 0,
+            "qa_cache_hits": 0, "qa_cache_misses": 0,
+        }
         for di in order:
             doc = docs[di]
             logps_l, ph_l, legals_l = [], [], []
             jobs = []
+            cache_inputs = []
             decision_ids = (utility_decision_ids(doc, doc["spans"])
                             if "utility_artifact" in doc else None)
+            scorer_pin = (
+                _utility_scorer_pin(doc["utility_artifact"])
+                if decision_ids is not None and utility_reward_cache is not None else None
+            )
             for _ in range(G):
                 choice, logps, ph, doc_p, R, legals = sample_rollout(
                     doc, doc["spans"], doc["feats"], policy, decision_ids=decision_ids)
                 jobs.append(_roundtrip_job(doc, doc_p, R))
+                if decision_ids is not None and utility_reward_cache is not None:
+                    cache_inputs.append({
+                        "doc_id": doc["id"],
+                        "action_vector": utility_action_vector(
+                            doc["spans"], decision_ids, choice
+                        ),
+                        "doc_p": doc_p,
+                        "artifact_hash": doc["utility_artifact"]["artifact_hash"],
+                        "scorer_pin": scorer_pin,
+                    })
                 logps_l.append(logps)
                 ph_l.append(ph)
                 legals_l.append(legals)
-            res = roundtrip_batch(jobs, workers=rt_workers)
+            if cache_inputs:
+                hits_before = utility_reward_cache.hits
+                misses_before = utility_reward_cache.misses
+                res = cached_utility_roundtrips(
+                    jobs, cache_inputs, utility_reward_cache, workers=rt_workers
+                )
+                ep["qa_cache_hits"] += utility_reward_cache.hits - hits_before
+                ep["qa_cache_misses"] += utility_reward_cache.misses - misses_before
+            else:
+                res = roundtrip_batch(jobs, workers=rt_workers)
             rt = torch.tensor([r["recall"] or 0.0 for r in res])
             ep["r"].append(rt.mean().item())
             ep["ph"].append(sum(ph_l) / G)
@@ -566,8 +599,16 @@ def train_roundtrip(docs, policy, *, G, epochs, lr, entropy_coef, kl_coef, ref,
         row = {"epoch": epoch, "r": round(sum(ep["r"]) / n, 4),
                "ph": round(sum(ep["ph"]) / n, 4),
                "ent": round(sum(ep["ent"]) / max(len(ep["ent"]), 1), 4),
-               "ties_skipped": ep["ties_skipped"], "cf_used": ep["cf_used"]}
+               "ties_skipped": ep["ties_skipped"], "cf_used": ep["cf_used"],
+               "qa_cache_hits": ep["qa_cache_hits"],
+               "qa_cache_misses": ep["qa_cache_misses"]}
         rows.append(row)
+        if utility_reward_cache is not None:
+            print(
+                f"[roundtrip] QA reward cache hits={ep['qa_cache_hits']} "
+                f"misses={ep['qa_cache_misses']}",
+                flush=True,
+            )
         if log_rows is not None:
             log_rows.append(row)
         print(f"[rt] epoch {epoch}: " +
@@ -788,6 +829,160 @@ def utility_rollout_cache_identity(
         "artifact_hash": str(artifact_hash),
         "scorer_pin": scorer_pin,
     })
+
+
+class UtilityRewardCache:
+    """One content-addressed JSON cache for complete artifact-backed QA reward results."""
+
+    _VERSION = 1
+
+    def __init__(self, path):
+        self.path = Path(path)
+        self.entries = self._load()
+        self.hits = 0
+        self.misses = 0
+
+    def _load(self):
+        if not self.path.exists():
+            return {}
+        try:
+            payload = json.loads(self.path.read_text())
+            if payload.get("version") != self._VERSION or not isinstance(payload.get("entries"), dict):
+                raise ValueError("invalid cache schema")
+        except (OSError, ValueError, json.JSONDecodeError) as error:
+            raise ValueError(f"invalid utility reward cache {self.path}: {error}") from error
+        return payload["entries"]
+
+    @staticmethod
+    def _request_identity(**inputs):
+        return utility_rollout_cache_identity(**inputs, out_final=None)
+
+    def request_identity(self, **inputs):
+        return self._request_identity(**inputs)
+
+    def lookup(self, **inputs):
+        request_identity = self._request_identity(**inputs)
+        entry = self.entries.get(request_identity)
+        if not isinstance(entry, dict) or not isinstance(entry.get("result"), dict):
+            self.misses += 1
+            return None
+        result = entry["result"]
+        if "out_final" not in result:
+            self.misses += 1
+            return None
+        storage_identity = utility_rollout_cache_identity(
+            **inputs, out_final=result["out_final"]
+        )
+        if entry.get("storage_identity") != storage_identity:
+            self.misses += 1
+            return None
+        self.hits += 1
+        return json.loads(json.dumps(result, sort_keys=True))
+
+    def store(self, *, result, **inputs):
+        if not isinstance(result, Mapping) or "out_final" not in result:
+            raise ValueError("utility reward cache requires a complete round-trip result")
+        request_identity = self._request_identity(**inputs)
+        stored_result = json.loads(json.dumps(dict(result), sort_keys=True))
+        self.entries[request_identity] = {
+            "storage_identity": utility_rollout_cache_identity(
+                **inputs, out_final=stored_result["out_final"]
+            ),
+            "result": stored_result,
+        }
+        self._persist()
+
+    def _persist(self):
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", dir=self.path.parent,
+            prefix=f".{self.path.name}.", suffix=".tmp", delete=False,
+        ) as handle:
+            json.dump({"version": self._VERSION, "entries": self.entries}, handle,
+                      sort_keys=True, separators=(",", ":"))
+            handle.write("\n")
+            temporary_path = Path(handle.name)
+        temporary_path.replace(self.path)
+
+
+def utility_action_vector(span_rows, decision_ids, choice):
+    """Return a complete stable decision/action vector for one sampled artifact rollout."""
+    if len(span_rows) != len(decision_ids):
+        raise ValueError("sampled decision IDs must align with action rows")
+    vector = {}
+    for span, decision_id in zip(span_rows, decision_ids):
+        surface = str(span["surface"]).lower()
+        if surface not in choice or decision_id in vector:
+            raise ValueError("sampled choices must cover each frozen decision exactly once")
+        action = dict(choice[surface])
+        action.pop("action_id", None)
+        action.pop("legal", None)
+        action.pop("entails", None)
+        action["mode"] = (
+            "keep" if action.get("keep") else
+            "placeholder" if action.get("mode") == "placeholder" else "level"
+        )
+        vector[str(decision_id)] = _utility_hash(action)
+    return vector
+
+
+def _utility_scorer_pin(artifact):
+    from cloak.train.roundtrip import MAX_TOKENS, RT_BASE_URL, RT_MODEL
+
+    return {
+        "scorer": "qa-builder-v2-score-utility-v1",
+        "reader": artifact["reader_pin"],
+        "remote": {
+            "model": RT_MODEL,
+            "base_url": RT_BASE_URL,
+            "temperature": 0.0,
+            "max_tokens": MAX_TOKENS,
+            "enable_thinking": False,
+        },
+        "extractor": {"kind": "invert", "semantic": False},
+    }
+
+
+def cached_utility_roundtrips(jobs, cache_inputs, cache, *, workers):
+    """Reuse validated artifact-backed base rollouts and persist only complete misses."""
+    if len(jobs) != len(cache_inputs):
+        raise ValueError("utility cache jobs must align with cache identities")
+    results = [None] * len(jobs)
+    pending = {}
+    miss_inputs, misses = [], []
+    for index, inputs in enumerate(cache_inputs):
+        request_identity = cache.request_identity(**inputs)
+        if request_identity in pending:
+            pending[request_identity]["indices"].append(index)
+            cache.hits += 1
+            continue
+        cached = cache.lookup(**inputs)
+        if cached is None:
+            pending[request_identity] = {"indices": [index], "inputs": inputs}
+            miss_inputs.append(inputs)
+            misses.append(jobs[index])
+        else:
+            results[index] = cached
+    if misses:
+        for inputs, result in zip(miss_inputs, roundtrip_batch(misses, workers=workers)):
+            cache.store(**inputs, result=result)
+            request_identity = cache.request_identity(**inputs)
+            for index in pending[request_identity]["indices"]:
+                results[index] = result
+    return results
+
+
+def frozen_training_environment(environment, arms, docs):
+    """Freeze exactly the documents loaded for one artifact-backed training invocation."""
+    selected_corpora = {}
+    for doc in docs:
+        selected_corpora.setdefault(doc["corpus"], {})[doc["id"]] = (
+            environment["corpora"][doc["corpus"]][doc["id"]]
+        )
+    return freeze_ranker_environment(
+        {**environment, "corpora": selected_corpora},
+        occurrences_by_document=frozen_occurrences_from_arms(arms),
+    )
 
 
 def _utility_close(actual, expected):
@@ -1095,9 +1290,18 @@ def enforce_utility_artifact_gate(artifact, environment):
     family_budgets, thresholds = _frozen_utility_manifest(artifact)
     if artifact.get("environment_hash") != environment.get("environment_hash"):
         raise SystemExit("utility artifact environment_hash does not match ranker environment")
+    artifact_documents = artifact.get("documents")
+    if not isinstance(artifact_documents, dict):
+        raise SystemExit("utility artifact has invalid document coverage")
+    if "documents" in environment:
+        environment_documents = environment["documents"]
+        if not isinstance(environment_documents, dict) or set(artifact_documents) != set(
+            environment_documents
+        ):
+            raise SystemExit("utility artifact document coverage does not match ranker environment")
     assertions = artifact.get("assertions", {})
     referenced_assertion_ids = set()
-    for doc_id, state in artifact.get("documents", {}).items():
+    for doc_id, state in artifact_documents.items():
         if state.get("measurement_state") in {"unsupported", "build_failed"}:
             raise SystemExit(
                 f"utility artifact document {doc_id} has unusable measurement_state "
@@ -1354,6 +1558,8 @@ def main():
                     help="optional decision probe artifact for two-channel roundtrip reward")
     ap.add_argument("--utility-artifact", default=None,
                     help="QA-builder v2 utility artifact; replaces legacy probe filtering")
+    ap.add_argument("--utility-reward-cache", default=None,
+                    help="required content-addressed JSON cache for artifact-backed QA rewards")
     ap.add_argument("--adv", choices=["group", "rloo"], default=None,
                     help="advantage baseline (default: group for surrogate, rloo for roundtrip)")
     ap.add_argument("--entropy-coef", type=float, default=None,
@@ -1432,21 +1638,23 @@ def main():
                          "raw_spans": d["spans"], "spans": spans, "feats": feats,
                          "probes_train": d["probes"]["train"]})
     if roundtrip:
+        utility_reward_cache = None
         if args.utility_artifact is not None:
+            if not args.utility_reward_cache:
+                raise SystemExit("--utility-artifact requires --utility-reward-cache")
             utility_artifact = json.loads(Path(args.utility_artifact).read_text())
             enforce_utility_artifact_gate(
                 utility_artifact,
-                freeze_ranker_environment(
-                    env,
-                    occurrences_by_document=frozen_occurrences_from_arms(art),
-                ),
+                frozen_training_environment(env, art, docs),
             )
             attached = attach_utility_artifact(docs, utility_artifact)
+            utility_reward_cache = UtilityRewardCache(args.utility_reward_cache)
             print(
                 f"utility artifact ({args.utility_artifact}): kept {len(attached)}/{len(docs)} "
                 "docs with measured utility",
                 flush=True,
             )
+            print(f"utility reward cache: {args.utility_reward_cache}", flush=True)
             docs = attached
         else:
             # reward uses the validated train-split probes; docs with < 3 distinct facts are
@@ -1584,6 +1792,7 @@ def main():
                "n_exit_rounds": args.exit_rounds, "exit_epochs": args.exit_epochs,
                "cf_frac": args.cf_frac,
                "utility_artifact": args.utility_artifact,
+               "utility_reward_cache": args.utility_reward_cache,
                "ladder_probes": args.ladder_probes,
                "decision_probes": args.decision_probes,
                "kl_coef": kl_coef, "entropy_coef": entropy_coef, "seed": args.seed,
@@ -1606,7 +1815,8 @@ def main():
         train_roundtrip(docs, policy, G=args.G, epochs=args.epochs, lr=args.lr,
                         entropy_coef=entropy_coef, kl_coef=kl_coef,
                         ref=(ref if kl_coef > 0 else None), rt_workers=args.rt_workers,
-                        seed=args.seed, cf_frac=args.cf_frac, log_rows=log["rounds"])
+                        seed=args.seed, cf_frac=args.cf_frac, log_rows=log["rounds"],
+                        utility_reward_cache=utility_reward_cache)
         # greedy read-out at the env floors, scored via one round-trip batch (fixed floor only)
         jobs, phs = [], []
         with torch.no_grad():

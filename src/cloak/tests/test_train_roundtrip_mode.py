@@ -475,7 +475,7 @@ def test_counterfactual_terms_excludes_span_free_decisions(monkeypatch):
 
 
 def test_utility_artifact_keeps_measured_documents_without_legacy_probe_threshold():
-    docs = [_doc(), {**_doc(), "id": "missing"}]
+    docs = [_doc()]
     docs[0]["probes_train"] = []
     artifact = {
         "documents": {
@@ -497,6 +497,154 @@ def test_utility_artifact_keeps_measured_documents_without_legacy_probe_threshol
     job = tr._roundtrip_job(attached[0], "generalized", [])
     assert job["doc_id"] == "d0"
     assert job["utility_artifact"] is artifact
+
+
+@pytest.mark.parametrize(
+    "environment_documents",
+    [
+        {},
+        {"other": {}},
+        {"d0": {}, "extra": {}},
+    ],
+)
+def test_utility_artifact_gate_requires_exact_document_coverage(environment_documents):
+    artifact = _sealed_utility_artifact()
+
+    with pytest.raises(SystemExit, match="document coverage"):
+        tr.enforce_utility_artifact_gate(
+            artifact,
+            {"environment_hash": "env-v1", "documents": environment_documents},
+        )
+
+
+def test_attach_utility_artifact_rejects_missing_document_state():
+    with pytest.raises(ValueError, match="missing document state"):
+        tr.attach_utility_artifact([_doc()], {"documents": {}, "assertions": {}})
+
+
+@pytest.mark.parametrize("measurement_state", ["unsupported", "build_failed"])
+def test_attach_utility_artifact_rejects_unusable_document_state(measurement_state):
+    artifact = {
+        "documents": {"d0": {
+            "measurement_state": measurement_state,
+            "assertion_ids": ["a1"],
+        }},
+        "assertions": {"a1": {"assertion_id": "a1"}},
+    }
+
+    with pytest.raises(ValueError, match="measurement_state"):
+        tr.attach_utility_artifact([_doc()], artifact)
+
+
+def test_utility_reward_cache_reuses_full_result_and_reloads(tmp_path):
+    cache_path = tmp_path / "utility-reward-cache.json"
+    inputs = {
+        "doc_id": "d0",
+        "action_vector": {"dec1": "general-1"},
+        "doc_p": "generalized document",
+        "artifact_hash": "artifact-v1",
+        "scorer_pin": {"reader": "reader-v1", "remote": "remote-v1"},
+    }
+    result = {
+        "out_p": "remote output",
+        "out_final": "delivered output",
+        "recall": 0.75,
+        "component_scores": {"a1": 1.0, "a2": 0.5},
+        "f1s": [],
+    }
+    cache = tr.UtilityRewardCache(cache_path)
+
+    assert cache.lookup(**inputs) is None
+    cache.store(**inputs, result=result)
+    assert cache.lookup(**inputs) == result
+    assert cache.hits == 1
+    assert cache.misses == 1
+
+    reloaded = tr.UtilityRewardCache(cache_path)
+    assert reloaded.lookup(**inputs) == result
+
+
+def test_utility_reward_cache_rejects_changed_reward_identity(tmp_path):
+    cache = tr.UtilityRewardCache(tmp_path / "utility-reward-cache.json")
+    inputs = {
+        "doc_id": "d0",
+        "action_vector": {"dec1": "general-1"},
+        "doc_p": "generalized document",
+        "artifact_hash": "artifact-v1",
+        "scorer_pin": {"reader": "reader-v1", "remote": "remote-v1"},
+    }
+    cache.store(**inputs, result={
+        "out_p": "remote output", "out_final": "delivered output",
+        "recall": 1.0, "component_scores": {"a1": 1.0}, "f1s": [],
+    })
+
+    variants = [
+        {"doc_id": "d1"},
+        {"action_vector": {"dec1": "placeholder-1"}},
+        {"doc_p": "other document"},
+        {"artifact_hash": "artifact-v2"},
+        {"scorer_pin": {"reader": "reader-v2", "remote": "remote-v1"}},
+    ]
+    for variant in variants:
+        assert cache.lookup(**(inputs | variant)) is None
+
+    entry = next(iter(cache.entries.values()))
+    entry["storage_identity"] = tr.utility_rollout_cache_identity(
+        **inputs,
+        out_final="other delivered output",
+    )
+    assert cache.lookup(**inputs) is None
+
+
+def test_train_roundtrip_reuses_identical_artifact_rollout_cache(tmp_path, monkeypatch):
+    doc = _doc()
+    artifact = {
+        "artifact_hash": "artifact-v1",
+        "reader_pin": "reader-v1",
+        "documents": {"d0": {
+            "utility_weight_denominator": 1.0,
+            "controlled_decision_ids": ["dec1"],
+            "occurrence_to_decision": {"o1": "dec1"},
+            "decision_keys": [{
+                "decision_id": "dec1", "runtime_type": "QUANTITY",
+                "canonical_key": "metformin",
+            }],
+        }},
+        "assertions": {"a1": {
+            "assertion_id": "a1", "doc_id": "d0", "scope": "linked",
+            "occurrence_ids": ["o1"], "weight": 1.0,
+        }},
+    }
+    doc["utility_artifact"] = artifact
+    batch_sizes = []
+
+    def identical_rollout(doc, span_rows, feats, policy, greedy=False, decision_ids=None):
+        action_index = 0
+        choice = {"metformin": span_rows[0]["actions"][action_index]}
+        log_prob = policy.log_probs(feats[0], [0, 1])[action_index]
+        doc_p, replacements = tr.assemble(doc["text"], doc["R_walk"], span_rows, choice)
+        return choice, {decision_ids[0]: log_prob}, 0.0, doc_p, replacements, [[0, 1]]
+
+    def fake_roundtrip(jobs, workers=1):
+        batch_sizes.append(len(jobs))
+        return [{
+            "out_p": "remote output", "out_final": "delivered output", "f1s": [],
+            "recall": 1.0, "component_scores": {"a1": 1.0},
+        } for _ in jobs]
+
+    monkeypatch.setattr(tr, "sample_rollout", identical_rollout)
+    monkeypatch.setattr(tr, "roundtrip_batch", fake_roundtrip)
+    cache = tr.UtilityRewardCache(tmp_path / "utility-reward-cache.json")
+
+    tr.train_roundtrip(
+        [doc], tr.RankerPolicy(), G=2, epochs=1, lr=0.01,
+        entropy_coef=0.0, kl_coef=0.0, ref=None, rt_workers=1, seed=0,
+        utility_reward_cache=cache,
+    )
+
+    assert batch_sizes == [1]
+    assert cache.hits == 1
+    assert cache.misses == 1
 
 
 def test_utility_artifact_gate_checks_environment_and_denominator():
