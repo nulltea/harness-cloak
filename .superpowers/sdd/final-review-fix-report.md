@@ -279,3 +279,99 @@ exit 0, no output
 ### Concerns
 
 - Artifacts sealed with `assertion-compiler-v2` or `qa-utility-scorer-v1` now intentionally fail the live gate and must be rebuilt.
+
+---
+
+## Final broad-review fix wave
+
+### Commits
+
+- Implementation commit: `6605deb08219c0d87b2cd0a98bd52c8f190afb6e`
+- Immediate-prior reward-pin regression commit: `fb2a91b78af1995324cf786c6f189579998c1780`
+
+### Changed files
+
+- `src/cloak/train/qa_builder.py`
+- `src/cloak/train/roundtrip.py`
+- `scripts/build_qa_utility_artifact.py`
+- `scripts/train_ranker.py`
+- `src/cloak/tests/test_qa_builder_v2.py`
+- `src/cloak/tests/test_roundtrip.py`
+- `src/cloak/tests/test_train_roundtrip_mode.py`
+- `src/cloak/tests/test_build_qa_utility_artifact_cli.py`
+- `research-wiki/training/2026-07-13-RL-ranker-v4-qa-utility-smoke.md`
+- `.superpowers/sdd/final-review-fix-report.md`
+
+### RED evidence
+
+1. Semantic deduplication, refresh capability, and dependency identity:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_context_validation_repeated_trials_require_refresh_capability src/cloak/tests/test_qa_builder_v2.py::test_builder_prefers_linked_aci_age_fact_over_global_duplicate src/cloak/tests/test_qa_builder_v2.py::test_high_level_builder_calls_teacher_once_then_compiles_and_validates src/cloak/tests/test_qa_builder_v2.py::test_builder_emits_authoritative_transitive_pins_and_manifest_identity src/cloak/tests/test_qa_builder_v2.py::test_builder_stamps_exact_production_reader_and_teacher_dependencies src/cloak/tests/test_train_roundtrip_mode.py::test_utility_artifact_gate_rejects_injected_builder_dependencies src/cloak/tests/test_train_roundtrip_mode.py::test_utility_artifact_gate_rejects_forged_cross_scope_semantic_duplicate
+6 failed, 1 passed in 0.97s
+```
+
+The builder silently replayed refresh trials through readers without refresh support, retained both
+linked and global ACI age facts, stamped injected dependencies as production, and let the forged
+cross-scope semantic duplicate reach weight validation. The exact-production dependency case was
+the one passing test.
+
+2. Frozen source/reference identity, complete reward identity/cache use, and semantic pin bumps:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_freeze_binds_source_and_authoritative_reference_identity src/cloak/tests/test_train_roundtrip_mode.py::test_utility_artifact_gate_rejects_source_or_reference_mismatch src/cloak/tests/test_train_roundtrip_mode.py::test_frozen_training_environment_binds_loaded_source_and_gold_reference src/cloak/tests/test_roundtrip.py::test_roundtrip_reward_pin_tracks_actual_task_prompt_and_invert src/cloak/tests/test_train_roundtrip_mode.py::test_utility_reward_cache_invalidates_task_prompt_or_invert_identity src/cloak/tests/test_train_roundtrip_mode.py::test_greedy_artifact_readout_reuses_persisted_reward_cache src/cloak/tests/test_train_roundtrip_mode.py::test_utility_artifact_gate_rejects_previous_semantic_pins
+9 failed in 1.05s
+```
+
+Freeze accepted no source/reference inputs; two mismatch cases did not raise; training did not bind
+loaded source/reference hashes; the centralized reward-pin helper and greedy cached readout did not
+exist; prompt/invert cache identity could not be formed; and both immediately previous builder and
+scorer pins were accepted.
+
+### GREEN evidence
+
+Required focused five-file suite, including the explicit previous reward-v1 cache regression:
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_build_qa_utility_artifact_cli.py
+197 passed in 2.82s
+```
+
+Changed Python files compiled successfully:
+
+```text
+/home/timo/repos/agent-cloak/.venv/bin/python -m py_compile scripts/build_qa_utility_artifact.py scripts/train_ranker.py src/cloak/train/qa_builder.py src/cloak/train/roundtrip.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_train_roundtrip_mode.py
+exit 0, no output
+```
+
+Patch hygiene:
+
+```text
+git diff --check
+exit 0, no output
+```
+
+### Deterministic no-call smoke
+
+The smoke ran from `/home/timo/repos/agent-cloak`, importing and executing the requested worktree:
+
+```text
+PYTHONPATH=/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/src:/home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts /usr/bin/time -f 'wall_s=%e' -o /tmp/qa-utility-broad-review.alPlZV/time.txt /home/timo/repos/agent-cloak/.venv/bin/python -u /home/timo/repos/agent-cloak/.worktrees/qa-builder-v2-clean/scripts/build_qa_utility_artifact.py --env data/ranker_env.json --arms data/task_arms_tau0.02.json --corpus clinical --doc-id aci/D2N002 --threshold-manifest /tmp/qa-utility-broad-review.alPlZV/manifest.json --out /tmp/qa-utility-broad-review.alPlZV/aci-D2N002.utility.json
+wrote /tmp/qa-utility-broad-review.alPlZV/aci-D2N002.utility.json: docs=1 assertions=12 rejections=0
+qa preflight: {"artifact_hash":"sha256:dfab9263ac7fe9d75e64ea9d42787a0a67418c5a07846a344729ff7312c9836b","call_budget":{"base":{"context_reader_batches_per_rollout":{"aci/D2N002":0},"remote_round_trips_per_rollout":1},"counterfactual":{"context_reader_batches_per_selected_pair":{"aci/D2N002":0},"remote_round_trips_per_selected_pair":1}},"cost_budgets":{"base":{"context_reader_batches_per_rollout":1,"remote_round_trips_per_rollout":1},"counterfactual":{"context_reader_batches_per_selected_pair":1,"remote_round_trips_per_selected_pair":1}},"documents":{"aci/D2N002":{"accepted_assertion_count":12,"context_assertion_count":0,"context_reader_batches_per_rollout":0,"delivered_assertion_count":12,"measurement_state":"partial","missing_family_budgets":["context"],"uncovered_decision_count":1,"uncovered_decision_ids":["sha256:35865283793e22780435488e33bfd0acc154cb517854b046479153013c72288f"]}},"environment_hash":"sha256:89d55c3747386687abfd7c4cc044a5a90b5231fee4d346bd6dd82b2b7065b544","executed_remote_calls":0,"totals":{"accepted_assertions":12,"context_assertions":0,"delivered_assertions":12,"documents":1,"uncovered_decisions":1}}
+wall_s=0.98
+```
+
+- Builder/scorer pins: `qa-builder-v2-assertion-compiler-v4` and `qa-utility-scorer-v3`.
+- Reward pin: `qa-builder-v2-roundtrip-reward-v2`; the smoke did not execute runtime rewards.
+- Source hash: `sha256:c7e96f34a4878d6e33a02b5bc4de2becce9d58208dc74ac80800a99a123b1fb5`.
+- Authoritative-reference hash: `sha256:c377953855c5df61ebf712fdf004ccb1b67172fc8f727454b6d0eacb721c48cc`.
+- Relation teacher remained explicitly disabled. No relation-teacher, remote model, context-reader,
+  or paid call was made; `executed_remote_calls=0`.
+
+### Concerns
+
+- Artifacts and cached rewards sealed with the immediately previous builder v3, scorer v2, or
+  reward v1 identities are intentionally invalid and must be rebuilt.
+- The transient smoke remains partial: zero context assertions, one uncovered decision, no runtime
+  reward/cache execution, and no utility or privacy evidence.
