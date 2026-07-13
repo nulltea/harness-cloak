@@ -30,6 +30,30 @@ def _hash(payload) -> str:
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
 
 
+def _source_digest(path: str | Path) -> str:
+    return "sha256:" + hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _artifact_content_hash(artifact: dict) -> str:
+    return _hash({key: value for key, value in artifact.items() if key != "artifact_hash"})
+
+
+def _validate_complete_artifact(artifact: object) -> dict:
+    if not isinstance(artifact, dict):
+        raise ValueError("artifact is not an object")
+    documents = artifact.get("documents")
+    if not isinstance(documents, dict):
+        raise ValueError("artifact documents are invalid")
+    if artifact.get("artifact_hash") != _artifact_content_hash(artifact):
+        raise ValueError("artifact_hash does not match artifact contents")
+    if any(
+        not isinstance(state, dict) or state.get("measurement_state") == "build_failed"
+        for state in documents.values()
+    ):
+        raise ValueError("incomplete artifact")
+    return artifact
+
+
 class ArtifactBuildCache:
     """Fail-closed standard-library cache for complete utility artifacts."""
 
@@ -54,22 +78,15 @@ class ArtifactBuildCache:
                 or not isinstance(record.get("artifact"), dict)
             ):
                 raise ValueError("schema or identity mismatch")
-            artifact = record["artifact"]
-            if not artifact.get("artifact_hash") or any(
-                state.get("measurement_state") == "build_failed"
-                for state in artifact.get("documents", {}).values()
-            ):
-                raise ValueError("incomplete artifact")
-            return artifact
+            return _validate_complete_artifact(record["artifact"])
         except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
             raise SystemExit(f"artifact build cache {path} is invalid: {error}") from None
 
     def store(self, key: str, artifact: dict) -> None:
-        if not artifact.get("artifact_hash") or any(
-            state.get("measurement_state") == "build_failed"
-            for state in artifact.get("documents", {}).values()
-        ):
-            raise SystemExit("artifact build cache only accepts complete artifacts")
+        try:
+            _validate_complete_artifact(artifact)
+        except ValueError as error:
+            raise SystemExit(f"artifact build cache only accepts complete artifacts: {error}") from None
         existing = self.load(key)
         if existing is not None:
             if existing != artifact:
@@ -106,6 +123,10 @@ def _build_cache_key(
         "reader_pin": reader_dependency_pin(reader),
         "scorer_pin": utility_scorer_pin(),
         "threshold_manifest": manifest,
+        "pipeline_source_digests": {
+            "build_qa_utility_artifact.py": _source_digest(__file__),
+            "train_ranker.py": _source_digest(assemble.__code__.co_filename),
+        },
     })
 
 

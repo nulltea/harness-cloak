@@ -482,14 +482,23 @@ def _masked_local_context(document: str, target: Mapping, protected_values: Sequ
     right_stop = document.find(".", end)
     right = min(len(document), right_stop + 1 if right_stop >= 0 else end + 180)
     rows = [(start, end, "[BLANK]")]
-    for value in protected_values:
-        if value and canon(value) != canon(surface):
-            rows.extend((left + match.start(), left + match.end(), "[SENSITIVE]")
-                        for match in re.finditer(re.escape(value), document[left:right], re.IGNORECASE))
+    local_document = document[left:right]
+    values = {surface, *(str(value) for value in protected_values if value)}
+    for value in values:
+        rows.extend((left + match.start(), left + match.end(), "[SENSITIVE]")
+                    for match in re.finditer(re.escape(value), local_document, re.IGNORECASE)
+                    if (left + match.start(), left + match.end()) != (start, end))
     local = document[left:right]
     adjusted = []
-    for row_start, row_end, replacement in rows:
+    occupied = []
+    for row_start, row_end, replacement in sorted(
+        rows, key=lambda row: (row[0], row[2] != "[BLANK]", -(row[1] - row[0]))
+    ):
         if row_start >= left and row_end <= right:
+            if any(row_start < occupied_end and row_end > occupied_start
+                   for occupied_start, occupied_end in occupied):
+                continue
+            occupied.append((row_start, row_end))
             adjusted.append((row_start - left, row_end - left, replacement))
     for row_start, row_end, replacement in sorted(adjusted, reverse=True):
         local = local[:row_start] + replacement + local[row_end:]

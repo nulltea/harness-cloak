@@ -313,9 +313,9 @@ def test_build_cache_reuses_complete_artifact_and_rejects_corruption(tmp_path):
     cache = builder_cli.ArtifactBuildCache(tmp_path / "cache")
     key = "sha256:test-key"
     artifact = {
-        "artifact_hash": "sha256:artifact",
         "documents": {"d1": {"measurement_state": "partial"}},
     }
+    artifact["artifact_hash"] = builder_cli._hash(artifact)
 
     cache.store(key, artifact)
 
@@ -324,6 +324,54 @@ def test_build_cache_reuses_complete_artifact_and_rejects_corruption(tmp_path):
     path.write_text("not json")
     with pytest.raises(SystemExit, match="build cache"):
         cache.load(key)
+
+
+def test_build_cache_rejects_fabricated_hash_on_store_and_valid_json_content_corruption(tmp_path):
+    cache = builder_cli.ArtifactBuildCache(tmp_path / "cache")
+    key = "sha256:test-key"
+    artifact = {"documents": {"d1": {"measurement_state": "partial"}}}
+    artifact["artifact_hash"] = builder_cli._hash(artifact)
+
+    fabricated = {**artifact, "artifact_hash": "sha256:invented"}
+    with pytest.raises(SystemExit, match="artifact_hash"):
+        cache.store(key, fabricated)
+    assert not cache.path_for(key).exists()
+
+    cache.store(key, artifact)
+    record = json.loads(cache.path_for(key).read_text())
+    record["artifact"]["documents"]["d1"]["measurement_state"] = "measured"
+    cache.path_for(key).write_text(json.dumps(record))
+    with pytest.raises(SystemExit, match="artifact_hash"):
+        cache.load(key)
+
+
+@pytest.mark.parametrize("changed_module", [
+    "build_qa_utility_artifact.py",
+    "train_ranker.py",
+])
+def test_build_cache_key_pins_each_executing_pipeline_module(monkeypatch, changed_module):
+    digests = {
+        "build_qa_utility_artifact.py": "sha256:build-v1",
+        "train_ranker.py": "sha256:ranker-v1",
+    }
+    monkeypatch.setattr(
+        builder_cli,
+        "_source_digest",
+        lambda path: digests[Path(path).name],
+    )
+    args = dict(
+        frozen_environment={"environment_hash": "sha256:environment"},
+        source_documents={"d1": "source"},
+        references={"d1": "reference"},
+        manifest={"family_budgets": {"context": 1.0}},
+        reader=lambda *_args, **_kwargs: [],
+        teacher_pin={"enabled": False},
+    )
+    original = builder_cli._build_cache_key(**args)
+
+    digests[changed_module] = "sha256:changed"
+
+    assert builder_cli._build_cache_key(**args) != original
 
 
 def test_teacher_escalation_requires_artifact_build_cache():

@@ -522,3 +522,43 @@ wall_s=0.95
   privacy, attacker, or remote-runtime evidence.
 - Existing artifact and utility-reward cache entries lack the new builder/scorer digest or exact
   cache binding and intentionally fail closed; rebuild them before reuse.
+
+## Final mechanical QA-builder review fixes (2026-07-13)
+
+### Implemented fixes
+
+- `ArtifactBuildCache` recomputes the hash over every artifact field except `artifact_hash` on
+  both store and load, so fabricated hashes and syntactically valid JSON mutations fail closed.
+- Masked context leaves only the selected target occurrence as `[BLANK]`; all repeats represented
+  by canonically equivalent protected surfaces or aliases, plus every other protected locator,
+  become `[SENSITIVE]`.
+- Build-cache identity now pins byte digests for the executing
+  `build_qa_utility_artifact.py` module and the imported `train_ranker.py` module that provides
+  `assemble`, alongside the existing QA-builder pin and inputs.
+
+### RED evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_reuses_complete_artifact_and_rejects_corruption src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_rejects_fabricated_hash_on_store_and_valid_json_content_corruption src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_key_pins_each_executing_pipeline_module src/cloak/tests/test_qa_builder_v2.py::test_masked_local_context_blanks_selected_target_and_masks_repeated_target_values
+4 failed, 1 passed in 0.84s
+```
+
+### GREEN evidence
+
+```text
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py::test_masked_local_context_blanks_selected_target_and_masks_repeated_target_values src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_rejects_fabricated_hash_on_store_and_valid_json_content_corruption src/cloak/tests/test_build_qa_utility_artifact_cli.py::test_build_cache_key_pins_each_executing_pipeline_module
+4 passed in 0.82s
+
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_utility_credit.py src/cloak/tests/test_roundtrip.py src/cloak/tests/test_extract.py
+233 passed in 3.88s
+
+/home/timo/repos/agent-cloak/.venv/bin/python -m py_compile scripts/build_qa_utility_artifact.py src/cloak/train/qa_builder.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_qa_builder_v2.py
+exit 0, no output
+
+git diff --check
+exit 0, no output
+```
+
+### Concerns
+
+- The requested isolated-worktree validation intentionally excludes the untracked real-data corpus test.

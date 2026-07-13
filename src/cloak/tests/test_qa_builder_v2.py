@@ -1773,6 +1773,20 @@ def test_aci_deterministic_semantic_candidate_masks_all_protected_locators():
     assert context["accepted_values"] == ["a disease"]
 
 
+def test_masked_local_context_blanks_selected_target_and_masks_repeated_target_values():
+    document = "Dr. Kumar and Doctor Kumar improve with Tylenol."
+    target = {"surface": "Dr. Kumar", "start": 0, "end": 9}
+
+    context = qa_builder._masked_local_context(
+        document, target, ["Doctor Kumar", "Tylenol"]
+    )
+
+    assert context.count("[BLANK]") == 1
+    assert context.count("[SENSITIVE]") == 2
+    assert "kumar" not in context.lower()
+    assert "tylenol" not in context.lower()
+
+
 def test_deterministic_semantic_candidate_accepts_through_fake_reader():
     source, environment = _semantic_fixture()
     decisions = environment["documents"]["d1"]["decisions"]
