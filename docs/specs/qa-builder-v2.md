@@ -170,6 +170,11 @@ The teacher receives `doc_orig`, authoritative reference evidence when available
 numbered occurrence inventory. It selects from the ACI adapter's closed relation vocabulary and
 quotes exact evidence. Abstain rather than retrying to chase coverage.
 
+The optional relation teacher is pinned to
+`nvidia/nemotron-3-super-120b-a12b:free` through
+`https://openrouter.ai/api/v1`, authenticated by `OPENROUTER_API_KEY`. Changing model, provider,
+prompt, or response schema invalidates the build cache and artifact pin.
+
 The initial ACI vocabulary is deliberately small:
 
 ```text

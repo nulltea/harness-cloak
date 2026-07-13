@@ -166,6 +166,10 @@ teacher proposal call for that document. Otherwise make no teacher call. Permit 
 abstention rather than retries. Use one build cache and one document/action-vector score cache.
 Retire separate ladder, decision, and schema caches after migration.
 
+The escalation teacher is pinned to `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter
+and uses `OPENROUTER_API_KEY`. A model, provider, prompt, or response-schema change creates a new
+builder pin and invalidates cached proposals.
+
 **Rejected alternatives.** Teacher generation for every assertion; forced retries until every
 decision has a probe; separate cache families for every subtype. These optimize nominal coverage
 at the cost of latency, circular failure loops, and operational complexity. Missing linked QA is
