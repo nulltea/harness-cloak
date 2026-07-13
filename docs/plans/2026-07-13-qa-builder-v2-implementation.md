@@ -252,3 +252,41 @@ Build from `/tmp/ranker_env_qa_v2_d2n002.json` and `/tmp/task_arms_qa_v2_d2n002.
 - [ ] **Step 6: Commit the reviewed slice**
 
 Commit task files with message `feat(qa): export complete QA artifacts`.
+
+### Task 7: Support Real ACI Note Structure
+
+**Files:**
+- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/tests/test_qa_builder_v2.py`
+
+**Interfaces:**
+- Extends: the ACI parser to real uppercase headings and bullet-labeled `ASSESSMENT AND PLAN` entries.
+- Extends: task-role locators with bounded ACI dialogue patterns.
+
+- [ ] **Step 1: Add a failing real D2N002 regression**
+
+Load the checked-in `aci/D2N002` source/reference and corrected frozen detector artifacts. Require deterministic candidates to include delivered `structure`, `content`, `field`, and `exact_relation` plus nontrivial `semantic_property`; reject a surface-containment-only result.
+
+- [ ] **Step 2: Parse real ACI combined assessment/plan blocks**
+
+Recognize the task's fixed headings, condition entry headings, and labeled bullets such as `Medical Reasoning`, `Additional Testing`, and `Medical Treatment`. Preserve exact values and evidence offsets. Support the existing compact dash-row fixture without creating a second parser.
+
+- [ ] **Step 3: Compile exact relations from labeled fields**
+
+Use controlled occurrence surfaces and exact labeled-field text to compile condition/treatment/test relations. Abstain when a condition or field is ambiguous; do not infer clinical synonyms or missing values.
+
+- [ ] **Step 4: Ground semantic properties in real dialogue cues**
+
+Add small bounded patterns for ACI phrasing such as `past medical history ... <condition>`, `problem ... <condition>`, `in terms of ... <condition>`, and `prescribe some <drug>`. Preserve direct cue-to-target attachment and leakage gates.
+
+- [ ] **Step 5: Run focused and complete QA tests**
+
+Run: `PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py -k 'real_aci or d2n002'`
+Expected: all selected tests pass.
+
+Run: `PYTHONPATH=src:scripts .venv/bin/pytest -q src/cloak/tests/test_qa_builder_v2.py src/cloak/tests/test_build_qa_utility_artifact_cli.py src/cloak/tests/test_train_roundtrip_mode.py src/cloak/tests/test_roundtrip.py`
+Expected: all tests pass.
+
+- [ ] **Step 6: Commit the reviewed slice**
+
+Commit task files with message `fix(qa): support real ACI note structure`.
