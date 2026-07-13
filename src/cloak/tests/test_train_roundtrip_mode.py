@@ -13,9 +13,20 @@ import train_ranker as tr  # noqa: E402
 
 
 def _sealed_utility_artifact(assertion=None):
-    assertion = assertion or {
+    assertion = dict(assertion or {
         "assertion_id": "a1", "doc_id": "d0", "family": "delivered",
         "scope": "global", "occurrence_ids": [], "weight": 1.0,
+    })
+    assertion.setdefault("family", "delivered")
+    assertion.setdefault("group_id", "default")
+    assertion.setdefault("weight", 1.0)
+    family = assertion["family"]
+    threshold_manifest = {
+        "family_budgets": {family: 1.0},
+        "reader_threshold": 1.0,
+        "reader_stability_repetitions": 1,
+        "reader_option_permutations": 1,
+        "reader_stability_threshold": 1.0,
     }
     artifact = {
         "artifact_version": "utility-assertions-v1",
@@ -24,7 +35,11 @@ def _sealed_utility_artifact(assertion=None):
         "builder_pin": "builder-v1",
         "reader_pin": "reader-v1",
         "gate_manifest_hash": "gate-v1",
+        "threshold_manifest": threshold_manifest,
+        "family_budgets": {family: 1.0},
         "documents": {"d0": {"utility_weight_denominator": 1.0,
+                                "present_family_budgets": [family],
+                                "missing_family_budgets": [],
                                 "assertion_ids": ["a1"]}},
         "assertions": {"a1": assertion},
     }
@@ -49,6 +64,102 @@ def _accepted_context_assertion(status="accepted"):
             "stability": {"threshold": 1.0, "passing_fraction": 1.0},
         }},
     }
+
+
+def _seal_artifact(artifact):
+    artifact["artifact_hash"] = _stable_hash({
+        key: value for key, value in artifact.items() if key != "artifact_hash"
+    })
+    return artifact
+
+
+def _frozen_anchor_environment():
+    return {
+        "environment_hash": "env-v1",
+        "documents": {"d0": {
+            "occurrences": [{"occurrence_id": "o1", "decision_id": "dec1"}],
+            "decisions": [
+                {
+                    "decision_id": "dec1", "controlled": True,
+                    "actions": [
+                        {"action_id": "keep-1", "mode": "keep", "legal": True,
+                         "entails": ["exact"]},
+                        {"action_id": "general-1", "mode": "level", "legal": True,
+                         "entails": ["endocrine"]},
+                        {"action_id": "placeholder-1", "mode": "placeholder", "legal": True,
+                         "entails": []},
+                    ],
+                },
+                {
+                    "decision_id": "dec2", "controlled": True,
+                    "actions": [
+                        {"action_id": "keep-2", "mode": "keep", "legal": True,
+                         "entails": ["exact"]},
+                        {"action_id": "general-2", "mode": "level", "legal": True,
+                         "entails": ["other"]},
+                        {"action_id": "placeholder-2", "mode": "placeholder", "legal": True,
+                         "entails": []},
+                    ],
+                },
+            ],
+        }},
+    }
+
+
+def _verified_context_artifact():
+    vector = {"dec1": "general-1", "dec2": "keep-2"}
+    scores = {"original": 1.0, "representative": 1.0, "placeholder": 0.0}
+    context = {
+        "assertion_id": "a-context", "doc_id": "d0", "family": "context",
+        "scope": "linked", "occurrence_ids": ["o1"], "group_id": "condition:one",
+        "weight": 0.6, "status": "accepted",
+        "expected_action_support": {
+            "joint_anchor_action_vector": vector,
+            "joint_anchor_hash": _stable_hash(vector),
+            "property_level": {"dec1": "endocrine"},
+        },
+        "evidence": {"validation": {
+            "verdict": "accepted", "scores": scores,
+            "stability": {
+                "repetitions": 1, "option_permutations": 1, "threshold": 1.0,
+                "passing_fraction": 1.0,
+                "trials": [{"repetition": 0, "permutation_index": 0,
+                            "scores": scores, "passed": True}],
+            },
+        }},
+    }
+    delivered = {
+        "assertion_id": "a-delivered", "doc_id": "d0", "family": "delivered",
+        "scope": "global", "occurrence_ids": [], "group_id": "schema:one", "weight": 0.4,
+    }
+    threshold_manifest = {
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "reader_threshold": 1.0,
+        "reader_stability_repetitions": 1,
+        "reader_option_permutations": 1,
+        "reader_stability_threshold": 1.0,
+    }
+    return _seal_artifact({
+        "artifact_version": "utility-assertions-v1", "environment_hash": "env-v1",
+        "task_pin": "task-v1", "builder_pin": "builder-v1", "reader_pin": "reader-v1",
+        "gate_manifest_hash": "gate-v1", "threshold_manifest": threshold_manifest,
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "documents": {"d0": {
+            "utility_weight_denominator": 1.0,
+            "present_family_budgets": ["context", "delivered"],
+            "missing_family_budgets": [],
+            "weight_groups": {
+                "context": {"condition:one": {
+                    "assertion_ids": ["a-context"], "weight": 0.6,
+                }},
+                "delivered": {"schema:one": {
+                    "assertion_ids": ["a-delivered"], "weight": 0.4,
+                }},
+            },
+            "assertion_ids": ["a-context", "a-delivered"],
+        }},
+        "assertions": {"a-context": context, "a-delivered": delivered},
+    })
 
 
 def _doc():
@@ -530,3 +641,85 @@ def test_utility_artifact_gate_requires_accepted_context_rows():
 
     with pytest.raises(SystemExit, match="not accepted"):
         tr.enforce_utility_artifact_gate(artifact, environment)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda artifact: artifact["assertions"]["a-context"]["expected_action_support"]
+         ["joint_anchor_action_vector"].pop("dec2"), "does not cover controlled decisions"),
+        (lambda artifact: artifact["assertions"]["a-context"]["expected_action_support"]
+         ["joint_anchor_action_vector"].update({"dec1": "unknown-action"}),
+         "unknown frozen action"),
+        (lambda artifact: artifact["assertions"]["a-context"]["expected_action_support"]
+         ["joint_anchor_action_vector"].update({"dec1": "placeholder-1"}),
+         "requires a non-placeholder generalization"),
+        (lambda artifact: artifact["assertions"]["a-context"]["expected_action_support"]
+         ["joint_anchor_action_vector"].update({"dec2": "general-2"}),
+         "must keep unrelated decision"),
+    ],
+)
+def test_utility_artifact_gate_recomputes_forged_joint_anchor_invariants(mutate, message):
+    artifact = _verified_context_artifact()
+    mutate(artifact)
+    vector = artifact["assertions"]["a-context"]["expected_action_support"][
+        "joint_anchor_action_vector"
+    ]
+    artifact["assertions"]["a-context"]["expected_action_support"][
+        "joint_anchor_hash"
+    ] = _stable_hash(vector)
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match=message):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
+def test_utility_artifact_gate_recomputes_forged_validation_evidence():
+    artifact = _verified_context_artifact()
+    validation = artifact["assertions"]["a-context"]["evidence"]["validation"]
+    validation["stability"]["trials"][0]["scores"]["representative"] = 0.0
+    validation["stability"]["trials"][0]["passed"] = True
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match="recomputed validation"):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())
+
+
+def test_utility_artifact_gate_rejects_context_link_to_uncontrolled_decision():
+    artifact = _verified_context_artifact()
+    vector = artifact["assertions"]["a-context"]["expected_action_support"][
+        "joint_anchor_action_vector"
+    ]
+    vector.pop("dec1")
+    artifact["assertions"]["a-context"]["expected_action_support"][
+        "joint_anchor_hash"
+    ] = _stable_hash(vector)
+    _seal_artifact(artifact)
+    environment = _frozen_anchor_environment()
+    environment["documents"]["d0"]["decisions"][0]["controlled"] = False
+
+    with pytest.raises(SystemExit, match="links uncontrolled decision"):
+        tr.enforce_utility_artifact_gate(artifact, environment)
+
+
+@pytest.mark.parametrize(
+    ("mutate", "message"),
+    [
+        (lambda artifact: artifact["documents"]["d0"].update(
+            {"utility_weight_denominator": 0.9}), "invalid denominator"),
+        (lambda artifact: artifact["documents"]["d0"].update(
+            {"present_family_budgets": ["context"],
+             "missing_family_budgets": ["context", "delivered"]}), "invalid family state"),
+        (lambda artifact: artifact["assertions"]["a-context"].update({"weight": 0.5}),
+         "weights do not match family budget"),
+        (lambda artifact: artifact["documents"]["d0"]["weight_groups"]["context"]
+         ["condition:one"].update({"weight": 0.5}), "invalid group weight"),
+    ],
+)
+def test_utility_artifact_gate_rejects_tampered_fixed_weights(mutate, message):
+    artifact = _verified_context_artifact()
+    mutate(artifact)
+    _seal_artifact(artifact)
+
+    with pytest.raises(SystemExit, match=message):
+        tr.enforce_utility_artifact_gate(artifact, _frozen_anchor_environment())

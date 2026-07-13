@@ -663,19 +663,307 @@ def enforce_support_gate(force_ungated: bool, probes_path: str, env_path: str):
         "scripts/spikes/roundtrip_support_scan.py until it PASSes (or --force-ungated)")
 
 
+_UTILITY_FLOAT_TOLERANCE = 1e-12
+
+
+def _utility_hash(value):
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":"),
+                         ensure_ascii=True).encode("utf-8")
+    return "sha256:" + hashlib.sha256(encoded).hexdigest()
+
+
+def _utility_close(actual, expected):
+    try:
+        actual = float(actual)
+        expected = float(expected)
+    except (TypeError, ValueError):
+        return False
+    return (
+        math.isfinite(actual)
+        and math.isfinite(expected)
+        and math.isclose(actual, expected, rel_tol=0.0, abs_tol=_UTILITY_FLOAT_TOLERANCE)
+    )
+
+
+def _frozen_utility_manifest(artifact):
+    manifest = artifact.get("threshold_manifest")
+    budgets = artifact.get("family_budgets")
+    if not isinstance(manifest, dict) or not isinstance(budgets, dict):
+        raise SystemExit("utility artifact is missing frozen threshold/family budget state")
+    manifest_budgets = manifest.get("family_budgets")
+    if not isinstance(manifest_budgets, dict) or set(budgets) != set(manifest_budgets):
+        raise SystemExit("utility artifact has inconsistent frozen family budgets")
+    try:
+        normalized_budgets = {str(family): float(budget) for family, budget in budgets.items()}
+    except (TypeError, ValueError):
+        raise SystemExit("utility artifact has invalid frozen family budgets") from None
+    if not normalized_budgets or any(
+        not math.isfinite(budget) or budget < 0.0 for budget in normalized_budgets.values()
+    ):
+        raise SystemExit("utility artifact has invalid frozen family budgets")
+    for family, budget in normalized_budgets.items():
+        try:
+            matches = _utility_close(manifest_budgets[family], budget)
+        except (TypeError, ValueError):
+            matches = False
+        if not matches:
+            raise SystemExit("utility artifact has inconsistent frozen family budgets")
+    try:
+        reader_threshold = float(manifest["reader_threshold"])
+        repetitions = int(manifest["reader_stability_repetitions"])
+        option_permutations = int(manifest["reader_option_permutations"])
+        stability_threshold = float(manifest["reader_stability_threshold"])
+    except (KeyError, TypeError, ValueError):
+        raise SystemExit("utility artifact is missing frozen reader thresholds") from None
+    if (
+        not 0.0 <= reader_threshold <= 1.0
+        or repetitions < 1
+        or option_permutations < 1
+        or not 0.0 < stability_threshold <= 1.0
+    ):
+        raise SystemExit("utility artifact has invalid frozen reader thresholds")
+    return normalized_budgets, {
+        "reader_threshold": reader_threshold,
+        "repetitions": repetitions,
+        "option_permutations": option_permutations,
+        "stability_threshold": stability_threshold,
+    }
+
+
+def _verify_context_anchor(assertion_id, assertion, live_document, occurrence_ids):
+    support = assertion.get("expected_action_support")
+    if not isinstance(support, dict):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} lacks expected_action_support"
+        )
+    action_vector = support.get("joint_anchor_action_vector")
+    if not isinstance(action_vector, dict) or not action_vector:
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} lacks joint action vector"
+        )
+    if support.get("joint_anchor_hash") != _utility_hash(action_vector):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} has invalid joint anchor hash"
+        )
+    property_levels = support.get("property_level")
+    if not isinstance(property_levels, dict) or support.get("property_levels") is not None:
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} has invalid property_level"
+        )
+    decisions = {
+        str(row["decision_id"]): row for row in live_document.get("decisions", [])
+    }
+    controlled = {
+        decision_id: row for decision_id, row in decisions.items()
+        if row.get("controlled", True)
+    }
+    if set(action_vector) != set(controlled):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} joint vector does not cover "
+            "controlled decisions"
+        )
+    occurrences = {
+        str(row["occurrence_id"]): row for row in live_document.get("occurrences", [])
+    }
+    linked_decisions = {str(occurrences[occurrence_id]["decision_id"])
+                        for occurrence_id in occurrence_ids}
+    if not linked_decisions <= set(controlled):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} links uncontrolled decision"
+        )
+    if set(property_levels) != linked_decisions:
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} has invalid property_level"
+        )
+    for decision_id, decision in controlled.items():
+        actions = {
+            str(action["action_id"]): action for action in decision.get("actions", [])
+            if action.get("legal", True)
+        }
+        action = actions.get(str(action_vector[decision_id]))
+        if action is None:
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} selects an unknown frozen action"
+            )
+        mode = action.get("mode")
+        if decision_id not in linked_decisions:
+            if mode != "keep":
+                raise SystemExit(
+                    f"utility artifact context assertion {assertion_id} must keep unrelated decision"
+                )
+            continue
+        expected_property = canon(str(property_levels[decision_id]))
+        entailed = {canon(str(value)) for value in action.get("entails", [])}
+        if mode in {"keep", "placeholder"} or expected_property not in entailed:
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} requires a non-placeholder "
+                "generalization with matching property support"
+            )
+
+
+def _verify_context_validation(assertion_id, assertion, thresholds):
+    validation = (assertion.get("evidence") or {}).get("validation")
+    if not isinstance(validation, dict):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} lacks accepted validation evidence"
+        )
+    scores = validation.get("scores")
+    stability = validation.get("stability")
+    if not isinstance(scores, dict) or not isinstance(stability, dict):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} lacks accepted validation evidence"
+        )
+    if (
+        stability.get("repetitions") != thresholds["repetitions"]
+        or stability.get("option_permutations") != thresholds["option_permutations"]
+        or not _utility_close(stability.get("threshold", -1.0), thresholds["stability_threshold"])
+    ):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} has mismatched frozen reader evidence"
+        )
+    trials = stability.get("trials")
+    expected_trials = [
+        (repetition, permutation_index)
+        for repetition in range(thresholds["repetitions"])
+        for permutation_index in range(thresholds["option_permutations"])
+    ]
+    if not isinstance(trials, list) or len(trials) != len(expected_trials):
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} lacks complete reader trials"
+        )
+    passed_trials = []
+    for trial, (repetition, permutation_index) in zip(trials, expected_trials):
+        trial_scores = trial.get("scores") if isinstance(trial, dict) else None
+        if (
+            not isinstance(trial_scores, dict)
+            or set(trial_scores) != {"original", "representative", "placeholder"}
+            or trial.get("repetition") != repetition
+            or trial.get("permutation_index") != permutation_index
+        ):
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} has invalid reader trial evidence"
+            )
+        try:
+            normalized_scores = {
+                key: float(value) for key, value in trial_scores.items()
+            }
+        except (TypeError, ValueError):
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} has invalid reader trial evidence"
+            ) from None
+        if any(not math.isfinite(value) or not 0.0 <= value <= 1.0
+               for value in normalized_scores.values()):
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} has invalid reader trial evidence"
+            )
+        trial_passed = (
+            normalized_scores["original"] >= thresholds["reader_threshold"]
+            and normalized_scores["representative"] >= thresholds["reader_threshold"]
+            and normalized_scores["placeholder"] < thresholds["reader_threshold"]
+        )
+        if trial.get("passed") is not trial_passed:
+            raise SystemExit(
+                f"utility artifact context assertion {assertion_id} has recomputed validation mismatch"
+            )
+        passed_trials.append(trial_passed)
+    try:
+        summary_matches = (
+            set(scores) == {"original", "representative", "placeholder"}
+            and all(_utility_close(scores[key], trials[0]["scores"][key]) for key in scores)
+            and _utility_close(
+                stability.get("passing_fraction", -1.0),
+                sum(passed_trials) / len(passed_trials),
+            )
+        )
+    except (TypeError, ValueError):
+        summary_matches = False
+    recomputed_verdict = (
+        "accepted" if sum(passed_trials) / len(passed_trials) >= thresholds["stability_threshold"]
+        else "unstable" if any(passed_trials) else "unsupported"
+    )
+    if not summary_matches or validation.get("verdict") != recomputed_verdict:
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} has recomputed validation mismatch"
+        )
+    if recomputed_verdict != "accepted":
+        raise SystemExit(
+            f"utility artifact context assertion {assertion_id} has unstable reader evidence"
+        )
+
+
+def _verify_document_weights(doc_id, state, rows, family_budgets):
+    expected_denominator = sum(family_budgets.values())
+    if not _utility_close(state.get("utility_weight_denominator", 0.0), expected_denominator):
+        raise SystemExit(f"utility artifact document {doc_id} has invalid denominator")
+    expected_present = [family for family in family_budgets if any(
+        row.get("family") == family for row in rows
+    )]
+    expected_missing = [family for family in family_budgets if family not in expected_present]
+    if (
+        state.get("present_family_budgets") != expected_present
+        or state.get("missing_family_budgets") != expected_missing
+    ):
+        raise SystemExit(f"utility artifact document {doc_id} has invalid family state")
+    grouped = {}
+    for row in rows:
+        family = row.get("family")
+        if family not in family_budgets or not row.get("group_id"):
+            raise SystemExit(f"utility artifact document {doc_id} has invalid family/group state")
+        grouped.setdefault(family, {}).setdefault(str(row["group_id"]), []).append(row)
+    for family, budget in family_budgets.items():
+        groups = grouped.get(family, {})
+        expected_total = budget if groups else 0.0
+        try:
+            actual_total = sum(float(row["weight"]) for rows in groups.values() for row in rows)
+        except (KeyError, TypeError, ValueError):
+            raise SystemExit(
+                f"utility artifact document {doc_id} has invalid assertion weight"
+            ) from None
+        if not _utility_close(actual_total, expected_total):
+            raise SystemExit(
+                f"utility artifact document {doc_id} weights do not match family budget"
+            )
+        if not groups:
+            continue
+        expected_group_weight = budget / len(groups)
+        for rows in groups.values():
+            if not _utility_close(sum(float(row["weight"]) for row in rows), expected_group_weight):
+                raise SystemExit(f"utility artifact document {doc_id} has invalid group weight")
+            expected_assertion_weight = expected_group_weight / len(rows)
+            if any(not _utility_close(row["weight"], expected_assertion_weight) for row in rows):
+                raise SystemExit(f"utility artifact document {doc_id} has invalid assertion weight")
+    if "weight_groups" not in state:
+        return
+    recorded_groups = state["weight_groups"]
+    if not isinstance(recorded_groups, dict) or set(recorded_groups) != set(grouped):
+        raise SystemExit(f"utility artifact document {doc_id} has invalid group weight metadata")
+    for family, groups in grouped.items():
+        recorded_family = recorded_groups.get(family)
+        if not isinstance(recorded_family, dict) or set(recorded_family) != set(groups):
+            raise SystemExit(f"utility artifact document {doc_id} has invalid group weight metadata")
+        expected_group_weight = family_budgets[family] / len(groups)
+        for group_id, rows in groups.items():
+            recorded = recorded_family[group_id]
+            if (
+                not isinstance(recorded, dict)
+                or set(recorded.get("assertion_ids", [])) != {row["assertion_id"] for row in rows}
+                or not _utility_close(recorded.get("weight", -1.0), expected_group_weight)
+            ):
+                raise SystemExit(f"utility artifact document {doc_id} has invalid group weight")
+
+
 def enforce_utility_artifact_gate(artifact, environment):
-    """Validate QA-builder v2 artifact invariants required before training."""
+    """Recompute frozen QA-builder v2 guarantees before training."""
     if artifact.get("artifact_version") != "utility-assertions-v1":
         raise SystemExit("unsupported utility artifact version")
     for pin in ("artifact_hash", "task_pin", "builder_pin", "reader_pin", "gate_manifest_hash"):
         if not artifact.get(pin):
             raise SystemExit(f"utility artifact is missing {pin}")
-    hash_payload = {key: value for key, value in artifact.items() if key != "artifact_hash"}
-    encoded = json.dumps(hash_payload, sort_keys=True, separators=(",", ":"),
-                         ensure_ascii=True).encode("utf-8")
-    expected_hash = "sha256:" + hashlib.sha256(encoded).hexdigest()
-    if artifact["artifact_hash"] != expected_hash:
+    if artifact["artifact_hash"] != _utility_hash({
+        key: value for key, value in artifact.items() if key != "artifact_hash"
+    }):
         raise SystemExit("utility artifact artifact_hash does not match its contents")
+    family_budgets, thresholds = _frozen_utility_manifest(artifact)
     if artifact.get("environment_hash") != environment.get("environment_hash"):
         live_documents = environment.get("documents", {})
         for doc_id, state in artifact.get("documents", {}).items():
@@ -688,20 +976,30 @@ def enforce_utility_artifact_gate(artifact, environment):
     assertions = artifact.get("assertions", {})
     referenced_assertion_ids = set()
     for doc_id, state in artifact.get("documents", {}).items():
-        if float(state.get("utility_weight_denominator", 0.0)) <= 0:
-            raise SystemExit(f"utility artifact document {doc_id} has invalid denominator")
-        missing = [value for value in state.get("assertion_ids", []) if value not in assertions]
+        assertion_ids = state.get("assertion_ids", [])
+        if len(assertion_ids) != len(set(assertion_ids)):
+            raise SystemExit(f"utility artifact document {doc_id} repeats assertion ids")
+        missing = [value for value in assertion_ids if value not in assertions]
         if missing:
             raise SystemExit(
                 f"utility artifact document {doc_id} has missing assertions: {missing}"
             )
-        for assertion_id in state.get("assertion_ids", []):
+        live_document = environment.get("documents", {}).get(doc_id, {})
+        live_occurrences = {
+            str(row["occurrence_id"]): row for row in live_document.get("occurrences", [])
+        }
+        live_decisions = {
+            str(row["decision_id"]): row for row in live_document.get("decisions", [])
+        }
+        rows = []
+        for assertion_id in assertion_ids:
             if assertion_id in referenced_assertion_ids:
                 raise SystemExit(
                     f"utility artifact assertion {assertion_id} appears in multiple documents"
                 )
             referenced_assertion_ids.add(assertion_id)
             assertion = assertions[assertion_id]
+            rows.append(assertion)
             if assertion.get("assertion_id") != assertion_id:
                 raise SystemExit(
                     f"utility artifact assertion {assertion_id} has an unstable row id"
@@ -711,7 +1009,7 @@ def enforce_utility_artifact_gate(artifact, environment):
                     f"utility artifact assertion {assertion_id} belongs to document "
                     f"{assertion.get('doc_id')!r}, not {doc_id!r}"
                 )
-            occurrence_ids = assertion.get("occurrence_ids") or []
+            occurrence_ids = [str(value) for value in assertion.get("occurrence_ids") or []]
             scope = assertion.get("scope")
             if scope == "global" and occurrence_ids:
                 raise SystemExit(
@@ -725,15 +1023,6 @@ def enforce_utility_artifact_gate(artifact, environment):
                 raise SystemExit(
                     f"utility artifact assertion {assertion_id} has invalid scope {scope!r}"
                 )
-            live_document = environment.get("documents", {}).get(doc_id, {})
-            live_occurrences = {
-                str(row["occurrence_id"]): row
-                for row in live_document.get("occurrences", [])
-            }
-            live_decisions = {
-                str(row["decision_id"])
-                for row in live_document.get("decisions", [])
-            }
             if live_occurrences:
                 missing_occurrences = sorted(set(occurrence_ids) - set(live_occurrences))
                 if missing_occurrences:
@@ -752,53 +1041,17 @@ def enforce_utility_artifact_gate(artifact, environment):
                         f"utility artifact assertion {assertion_id} links dangling decision "
                         f"identities: {dangling_decisions}"
                     )
+            if assertion.get("status", "accepted") != "accepted":
+                if assertion.get("family") == "context":
+                    raise SystemExit(
+                        f"utility artifact context assertion {assertion_id} is not accepted"
+                    )
+                raise SystemExit(f"utility artifact assertion {assertion_id} is not accepted")
             if assertion.get("family") != "context":
                 continue
-            if assertion.get("status") != "accepted":
-                raise SystemExit(
-                    f"utility artifact context assertion {assertion_id} is not accepted"
-                )
-            support = assertion.get("expected_action_support")
-            if not isinstance(support, dict):
-                raise SystemExit(
-                    f"utility artifact context assertion {assertion_id} lacks expected_action_support"
-                )
-            action_vector = support.get("joint_anchor_action_vector")
-            if not isinstance(action_vector, dict) or not action_vector:
-                raise SystemExit(
-                    f"utility artifact context assertion {assertion_id} lacks joint action vector"
-                )
-            vector_encoded = json.dumps(
-                action_vector, sort_keys=True, separators=(",", ":"), ensure_ascii=True
-            ).encode("utf-8")
-            vector_hash = "sha256:" + hashlib.sha256(vector_encoded).hexdigest()
-            if support.get("joint_anchor_hash") != vector_hash:
-                raise SystemExit(
-                    f"utility artifact context assertion {assertion_id} has invalid joint anchor hash"
-                )
-            if "property_level" not in support or support.get("property_levels") is not None:
-                raise SystemExit(
-                    f"utility artifact context assertion {assertion_id} has invalid property_level"
-                )
-            validation = (assertion.get("evidence") or {}).get("validation")
-            scores = validation.get("scores") if isinstance(validation, dict) else None
-            stability = validation.get("stability") if isinstance(validation, dict) else None
-            if (
-                validation is None
-                or validation.get("verdict") != "accepted"
-                or not isinstance(scores, dict)
-                or set(scores) != {"original", "representative", "placeholder"}
-                or not isinstance(stability, dict)
-            ):
-                raise SystemExit(
-                    f"utility artifact context assertion {assertion_id} lacks accepted validation evidence"
-                )
-            if float(stability.get("passing_fraction", 0.0)) < float(
-                stability.get("threshold", 1.0)
-            ):
-                raise SystemExit(
-                    f"utility artifact context assertion {assertion_id} has unstable reader evidence"
-                )
+            _verify_context_anchor(assertion_id, assertion, live_document, occurrence_ids)
+            _verify_context_validation(assertion_id, assertion, thresholds)
+        _verify_document_weights(doc_id, state, rows, family_budgets)
     unassigned = sorted(set(assertions) - referenced_assertion_ids)
     if unassigned:
         raise SystemExit(f"utility artifact has unassigned assertions: {unassigned}")

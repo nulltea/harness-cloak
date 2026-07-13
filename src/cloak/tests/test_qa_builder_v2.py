@@ -374,6 +374,22 @@ def test_compile_artifact_assigns_stable_ids_weights_and_uncovered_decisions():
         "o1": "dec1", "o2": "dec2"
     }
     assert first["documents"]["d1"]["utility_weight_denominator"] == pytest.approx(1.0)
+    assert first["documents"]["d1"]["weight_groups"] == {
+        "context": {
+            "hypothyroid:category": {
+                "assertion_ids": [next(assertion_id for assertion_id, row in first["assertions"].items()
+                                  if row["family"] == "context")],
+                "weight": pytest.approx(0.6),
+            }
+        },
+        "delivered": {
+            "document:age": {
+                "assertion_ids": [next(assertion_id for assertion_id, row in first["assertions"].items()
+                                  if row["family"] == "delivered")],
+                "weight": pytest.approx(0.4),
+            }
+        },
+    }
 
 
 def test_compile_artifact_rejects_invalid_scope_links():
@@ -541,6 +557,14 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
         "original": 1.0,
         "representative": 1.0,
         "placeholder": 0.0,
+    }
+    assert artifact["threshold_manifest"] == {
+        "family_budgets": {"context": 0.6, "delivered": 0.4},
+        "min_context_assertions": 1,
+        "reader_threshold": 1.0,
+        "reader_stability_repetitions": 1,
+        "reader_option_permutations": 1,
+        "reader_stability_threshold": 1.0,
     }
 
 

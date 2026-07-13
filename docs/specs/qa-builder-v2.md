@@ -295,12 +295,24 @@ builder_pin: {...}
 teacher_pin: {...}
 reader_pin: {...}
 gate_manifest_hash: sha256:...
+threshold_manifest:
+  family_budgets: {context: 0.6, delivered: 0.4}
+  reader_threshold: 1.0
+  reader_stability_repetitions: 1
+  reader_option_permutations: 1
+  reader_stability_threshold: 1.0
+family_budgets: {context: 0.6, delivered: 0.4}
 documents:
   aci/D2N002:
     measurement_state: measured | partial | unsupported | build_failed
     utility_weight_denominator: <context budget + delivered budget>
     present_family_budgets: [context, delivered]
     missing_family_budgets: []
+    weight_groups:
+      context:
+        "fact-or-relation:...":
+          assertion_ids: [ast:...]
+          weight: <derived family/group budget>
     assertion_ids: [ast:...]
     controlled_decision_ids: [dec:...]
     uncovered_decision_ids: [dec:...]
@@ -351,6 +363,17 @@ Use one bounded validation path with only load-bearing gates:
 3. **Context support:** the assertion passes `doc_orig`, passes its pinned joint representative
    generalization anchor, and fails the all-placeholder anchor.
 4. **Stability:** repeated reads and option permutations stay within the preregistered bound.
+
+Before ranker training, the artifact gate recomputes the accepted context verdict from every
+persisted original/representative/placeholder trial under the frozen reader thresholds. It also
+recomputes each joint anchor against the frozen legal action menus: the vector must cover every
+controlled decision, linked decisions must use an entailing non-KEEP/non-placeholder action, and
+unrelated decisions must use KEEP. The gate independently checks the canonical vector hash.
+
+Family weights remain fixed even when a family is absent. The gate requires the document
+denominator to equal the frozen family-budget sum, present/missing families to partition the
+manifest families, accepted weights to exhaust each present family budget (and no missing budget),
+and emitted group allocations to agree with the derived family/group split.
 
 Other checks remain adapter-specific diagnostics until a measured failure justifies promoting
 them to a gate.

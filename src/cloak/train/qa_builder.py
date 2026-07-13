@@ -516,6 +516,23 @@ def assign_static_weights(
     return weighted, state
 
 
+def _weight_group_state(assertions: Sequence[Mapping], family_budgets: Mapping[str, float]) -> dict:
+    """Persist the derived family/group allocation used to assign assertion weights."""
+    groups: dict[str, dict[str, list[Mapping]]] = defaultdict(lambda: defaultdict(list))
+    for assertion in assertions:
+        groups[str(assertion["family"])][str(assertion["group_id"])].append(assertion)
+    return {
+        family: {
+            group_id: {
+                "assertion_ids": [str(row["assertion_id"]) for row in rows],
+                "weight": float(family_budgets[family]) / len(family_groups),
+            }
+            for group_id, rows in family_groups.items()
+        }
+        for family, family_groups in groups.items()
+    }
+
+
 def package_utility_artifact(
     frozen_environment: Mapping,
     candidates_by_document: Mapping[str, Sequence[Mapping]],
@@ -609,6 +626,7 @@ def package_utility_artifact(
                 "unsupported" if not weighted else "partial" if missing_families else "measured"
             ),
             **weight_state,
+            "weight_groups": _weight_group_state(weighted, family_budgets),
             "assertion_ids": [row["assertion_id"] for row in weighted],
             "controlled_decision_ids": controlled,
             "occurrence_to_decision": {
@@ -776,6 +794,14 @@ def build_utility_artifact(
     stability_repetitions = int(threshold_manifest.get("reader_stability_repetitions", 1))
     option_permutations = int(threshold_manifest.get("reader_option_permutations", 1))
     stability_threshold = float(threshold_manifest.get("reader_stability_threshold", 1.0))
+    frozen_threshold_manifest = {
+        **dict(threshold_manifest),
+        "family_budgets": dict(family_budgets),
+        "reader_threshold": reader_threshold,
+        "reader_stability_repetitions": stability_repetitions,
+        "reader_option_permutations": option_permutations,
+        "reader_stability_threshold": stability_threshold,
+    }
     candidates_by_document: dict[str, list[dict]] = {}
     rejection_counts: dict[str, int] = defaultdict(int)
 
@@ -876,7 +902,7 @@ def build_utility_artifact(
         frozen_environment,
         candidates_by_document,
         family_budgets=family_budgets,
-        pins={**dict(pins), "threshold_manifest": dict(threshold_manifest)},
+        pins={**dict(pins), "threshold_manifest": frozen_threshold_manifest},
     )
     artifact["rejections"] = {"summary_by_reason": dict(rejection_counts)}
     artifact["artifact_hash"] = _stable_hash({
