@@ -15,15 +15,17 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v4"
-RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 4}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r16"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v6"
+RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 6}
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r18"
 RELATION_TEACHER_MAX_RELATIONS = 12
-# Nemotron's OpenRouter route has mandatory reasoning.  Bound it explicitly so
-# a compact structured extraction always retains a large final-answer budget.
+# Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
+# broke the teacher: completion caps returned empty replies, and the r16
+# smoke's 1,024-token reasoning cap truncated the source scan mid-document,
+# leaving three further explicit relations unproposed.  The v5 contract sets
+# no completion or reasoning cap; only the trace exclusion remains.
 RELATION_TEACHER_GENERATION_CONFIG = {
-    "max_tokens": 8192,
-    "reasoning": {"max_tokens": 1024, "exclude": True},
+    "reasoning": {"exclude": True},
 }
 RELATION_TEACHER_RESPONSE_FORMAT = {
     "type": "json_schema",
@@ -92,10 +94,16 @@ RELATION_TEACHER_RESPONSE_FORMAT = {
                         "required": ["candidate_label", "state", "reason"],
                         "properties": {
                             "candidate_label": {"type": "string"},
+                            # duplicate_mention: a repeated mention of a value whose
+                            # fact was already emitted at another label; without it
+                            # the v5 smoke fabricated one relation per duplicate.
                             "state": {
-                                "enum": ["emitted", "exhausted_no_relation", "unsupported"]
+                                "enum": ["emitted", "duplicate_mention",
+                                         "exhausted_no_relation", "unsupported"]
                             },
-                            "reason": {"type": "string", "maxLength": 96},
+                            # minLength: the same smoke returned "" reasons for
+                            # emitted rows, invalidating the entire ledger.
+                            "reason": {"type": "string", "minLength": 1, "maxLength": 160},
                         },
                     },
                 },
@@ -187,7 +195,9 @@ ACI_RELATION_CONTRACT = {
     },
     "contraindicated_because_of": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["contraindicated_because_of"],
-        "cues": ("contraindicated because of",),
+        # ACI dialogue states contraindication as "you ca n't take X because
+        # of Y" (transcript-tokenized negation), not with the clinical word.
+        "cues": ("contraindicated", "ca n't take", "can't take", "cannot take"),
         "connector_patterns": (
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
             r"contraindicated\s+because\s+of\s+",
@@ -195,7 +205,10 @@ ACI_RELATION_CONTRACT = {
     },
     "causes_or_explains": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["causes_or_explains"],
-        "cues": ("causes", "explains"),
+        # Clinical attribution is stated as "exacerbation of"/"due to"/
+        # "secondary to" far more often than with the verb "causes".
+        "cues": ("causes", "explains", "due to", "secondary to", "caused by",
+                 "explained by", "exacerbation of"),
         "connector_patterns": (r"\s+(?:causes|explains)\s+",),
     },
     "referred_to": {
@@ -347,7 +360,6 @@ class OpenRouterRelationTeacher:
             base_url=RELATION_TEACHER_BASE_URL,
             api_key=api_key,
             temperature=0.0,
-            max_tokens=RELATION_TEACHER_GENERATION_CONFIG["max_tokens"],
             response_format=deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
             extra_body={
                 "reasoning": deepcopy(RELATION_TEACHER_GENERATION_CONFIG["reasoning"])
@@ -1322,39 +1334,47 @@ def relation_teacher_response_format(
     inventory = relation_teacher_span_inventory(environment_document)
     labels = [row["span_label"] for row in inventory]
     support_properties = sorted({property_level for row in inventory for property_level in row["properties"]})
-    argument_item = {
+    def argument_branch(role: str, kind: str) -> dict:
+        fields = (
+            {
+                "span_label": {"enum": labels},
+                "support_property": {"enum": support_properties},
+                "literal": {"const": None},
+            }
+            if kind == "linked" else
+            {
+                "span_label": {"const": None},
+                "support_property": {"const": None},
+                "literal": {"type": "string", "minLength": 1},
+            }
+        )
+        return {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["role", "kind", "span_label", "support_property", "literal"],
+            "properties": {"role": {"const": role}, "kind": {"const": kind}, **fields},
+        }
+
+    # The compiler unconditionally rejects a relation with no linked argument
+    # (missing_linked_argument), so a zero-linked pair must be unrepresentable
+    # on the wire; the observed Nemotron reply emitted exactly that shape.
+    relation_item["properties"]["arguments"] = {
         "anyOf": [
             {
-                "type": "object",
-                "additionalProperties": False,
-                "required": [
-                    "role", "kind", "span_label", "support_property", "literal",
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 2,
+                "prefixItems": [
+                    argument_branch("subject", subject_kind),
+                    argument_branch("object", object_kind),
                 ],
-                "properties": {
-                    "role": {"enum": ["subject", "object"]},
-                    "kind": {"const": "linked"},
-                    "span_label": {"enum": labels},
-                    "support_property": {"enum": support_properties},
-                    "literal": {"const": None},
-                },
-            },
-            {
-                "type": "object",
-                "additionalProperties": False,
-                "required": [
-                    "role", "kind", "span_label", "support_property", "literal",
-                ],
-                "properties": {
-                    "role": {"enum": ["subject", "object"]},
-                    "kind": {"const": "context"},
-                    "span_label": {"const": None},
-                    "support_property": {"const": None},
-                    "literal": {"type": "string", "minLength": 1},
-                },
-            },
+                "items": False,
+            }
+            for subject_kind, object_kind in (
+                ("linked", "linked"), ("linked", "context"), ("context", "linked"),
+            )
         ]
     }
-    relation_item["properties"]["arguments"]["items"] = argument_item
     ledger = schema["properties"]["candidate_accounting"]
     ledger["minItems"] = len(labels)
     ledger["maxItems"] = len(labels)
@@ -1376,6 +1396,17 @@ def relation_teacher_response_format(
     return response_format
 
 
+def _sanitized_ledger_reason(reason: str, protected_terms: Sequence[str]) -> str:
+    """Redact protected surfaces/aliases the teacher repeated despite the prompt."""
+    sanitized = reason
+    for term in sorted({term for term in protected_terms if term}, key=len, reverse=True):
+        sanitized = re.sub(
+            rf"(?<!\w){re.escape(term)}(?!\w)", "[protected]", sanitized,
+            flags=re.IGNORECASE,
+        )
+    return sanitized.strip() or "[protected]"
+
+
 def _validated_candidate_accounting(
     accounting: Sequence[Mapping], environment_document: Mapping, document: str,
 ) -> list[dict]:
@@ -1385,13 +1416,21 @@ def _validated_candidate_accounting(
     by_id = {str(row.get("candidate_label", row.get("candidate_id", ""))): row for row in records}
     if len(by_id) != len(records) or set(by_id) != expected:
         raise ValueError("candidate_accounting must contain exactly one record per supplied candidate")
-    allowed_states = {"emitted", "exhausted_no_relation", "unsupported"}
+    allowed_states = {"emitted", "duplicate_mention", "exhausted_no_relation", "unsupported"}
     if any(
         str(row.get("state", "")) not in allowed_states
         or not str(row.get("reason", "")).strip()
         for row in records
     ):
         raise ValueError("candidate_accounting has invalid state or empty reason")
+    protected_terms = [
+        term
+        for occurrence in environment_document.get("occurrences", [])
+        if occurrence.get("controlled", True)
+        for term in _occurrence_protected_terms(occurrence)
+    ]
+    for row in records:
+        row["reason"] = _sanitized_ledger_reason(str(row["reason"]), protected_terms)
     return [by_id[label] for label in sorted(expected, key=lambda value: int(value[1:]))]
 
 
@@ -1450,7 +1489,7 @@ def _rejection_record(
 
 
 def _stable_rejection_reason(detail_reason: str) -> str:
-    if detail_reason in {"answer_leakage", "protected_locator"}:
+    if detail_reason in {"answer_leakage", "protected_locator", "protected_context_literal"}:
         return "leakage"
     if detail_reason in {
         "not_generated",
@@ -1517,16 +1556,33 @@ def _placeholder_meaning_tokens(runtime_type: str) -> set[str]:
     }
 
 
-def _question_leaks_answer(question: str, answer: str, runtime_type: str) -> bool:
-    answer_tokens = _meaningful_tokens(answer) - _placeholder_meaning_tokens(runtime_type)
+def _question_leaks_answer(
+    question: str, answer: str, runtime_type: str | Sequence[str],
+) -> bool:
+    types = [runtime_type] if isinstance(runtime_type, str) else list(runtime_type)
+    exempt: set[str] = set()
+    for type_value in types:
+        exempt |= _placeholder_meaning_tokens(type_value)
+    answer_tokens = _meaningful_tokens(answer) - exempt
     return bool(answer_tokens & _meaningful_tokens(question))
 
 
-def _question_leaks_protected_term(question: str, protected_terms: Sequence[str]) -> bool:
+def _question_leaks_protected_term(
+    question: str,
+    protected_terms: Sequence[str],
+    allowed_tokens_by_term: Mapping[str, frozenset[str]] | None = None,
+) -> bool:
+    """Full-term containment always leaks; token overlap leaks unless the
+    token belongs to the decision's declared legal generalization levels,
+    which the spec directs questions and answers to use verbatim."""
     if any(_contains(question, term) for term in protected_terms if term):
         return True
     question_tokens = _meaningful_tokens(question)
-    return any(_meaningful_tokens(term) & question_tokens for term in protected_terms)
+    return any(
+        (_meaningful_tokens(term) - (allowed_tokens_by_term or {}).get(term, frozenset()))
+        & question_tokens
+        for term in protected_terms
+    )
 
 
 def _sentence_at(document: str, position: int) -> str:
@@ -2184,19 +2240,21 @@ has_category: clinical concept -> category; require an explicit classification s
 Find as many explicit, source-grounded, non-duplicate relations as the cap ({RELATION_TEACHER_MAX_RELATIONS}) permits. Prefer diversity only when supported. Abstain rather than inventing a fact.
 
 HOW TO INSPECT THE SOURCE
-Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. For an uncontrolled object, quote its exact source text as a context literal.
+Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. A repeated value has several S-labels: always use the S-label whose mention is inside the sentence that states the relation; the compiler grounds the relation at that exact mention. For an uncontrolled argument, quote its exact source text as a context literal.
 
 PRIVACY-SAFE QA
-Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. A context literal may be an answer only when it is the measured fact.
+Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. An exact uncontrolled context literal may be an answer only when it is the measured fact.
 
 RELATION INVENTORY
 {relation_inventory}
 
 WORKED EXAMPLES
-Drug: arthritis + prescribed Ultram => prescribed_with, never treated_with.
-Procedure: kidney stone treated with lithotripsy => treated_with.
-Monitoring: "to follow the thyroid condition, order thyroid labs" => monitored_by. A lab mentioned elsewhere is not monitoring.
-Contraindication: emit only when explicitly stated.
+Drug, never treated_with: source "exacerbation of [S3: arthritis | condition | levels: joint disease] ... prescribe [S4: ultram | drug | levels: opioid analgesic]" => prescribed_with(S3, S4).
+Safe question: "Which medication category was prescribed for the joint disease?" Accepted answer: "opioid analgesic". Refer to linked spans by their levels, never the source words.
+Procedure: "kidney stone treated with lithotripsy" => treated_with.
+Monitoring: source "to follow the [S5: hypothyroidism | condition | levels: thyroid gland disease], order thyroid labs" => monitored_by(S5, context literal "thyroid labs").
+Safe question: "What testing follows the thyroid gland disease?" Accepted answer: "thyroid labs" (an uncontrolled literal answer is the measured fact). A lab mentioned elsewhere is not monitoring.
+Contraindication: emit only when explicitly stated, for example "ca n't take X because of ...".
 
 DETECTED SPANS
 {spans}
@@ -2205,7 +2263,13 @@ EVIDENCE CARDS
 {chr(10).join(cards) or '(No span-local cards; inspect the source directly.)'}
 
 RESPONSE
-Return relation records and exactly one candidate_accounting row per S-label. emitted means a relation record uses the label; exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must be label-referential and not repeat protected text. Return only the structured response.
+Each relation record contains: relation; a subject argument then an object argument; a question; accepted answers; the fixed scoring contract.
+An argument for a displayed span is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim.
+Every relation needs at least one linked S-label argument. Never quote a displayed span as a context literal. An uncontrolled argument is kind context with its exact source text as literal.
+Emit each distinct fact once, at the S-label inside the sentence that states the relation. Do not repeat the same fact for other S-labels of the same value.
+Example record: relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the joint condition?"; accepted answer "opioid analgesic".
+Example record with a literal: relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "synthroid" quoted from the relation sentence; accepted answer "synthroid".
+Return exactly one candidate_accounting row per S-label, with a short reason for every row. emitted means a relation record uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
 
 SOURCE DOCUMENT
 {document}"""
@@ -2274,6 +2338,29 @@ def _teacher_relation_arguments(
     return arguments, None
 
 
+def _substitute_linked_surfaces(
+    text: str, arguments: Sequence[Mapping], occurrences: Mapping[str, Mapping],
+) -> str:
+    """Replace a linked argument's protected surface/alias with the teacher's
+    own selected support_property. Three consecutive live smokes wrote the
+    surface into questions/answers despite prompt guidance; this mechanical
+    substitution uses only teacher-chosen content and the leakage gates rerun
+    on the result."""
+    substituted = text
+    for argument in arguments:
+        if argument.get("kind") != "linked":
+            continue
+        level = str(argument.get("support_property", ""))
+        if not level:
+            continue
+        for term in _occurrence_protected_terms(occurrences[argument["occurrence_id"]]):
+            substituted = re.sub(
+                rf"(?<!\w){re.escape(term)}(?!\w)", level, substituted,
+                flags=re.IGNORECASE,
+            )
+    return substituted
+
+
 def _relation_arguments_are_legal(
     relation: str, arguments: Sequence[Mapping], relation_contract: Mapping[str, Mapping],
 ) -> bool:
@@ -2303,6 +2390,8 @@ def _derived_relation_anchor(
     arguments: list[dict],
     occurrences: Mapping[str, Mapping],
     context_candidates: Mapping[str, Mapping],
+    relation: str,
+    relation_contract: Mapping[str, Mapping],
 ) -> tuple[str, tuple[int, int] | None, str | None, str | None]:
     """Resolve a v4 literal after deriving a source-local anchor from linked spans."""
     clauses = _source_clause_spans(document)
@@ -2344,15 +2433,37 @@ def _derived_relation_anchor(
         if len(candidates) != 1:
             return "", None, "ambiguous_context_literal" if candidates else "unknown_context_literal", None
         start, end = candidates[0]
+        # A literal that lands on a protected controlled span is an S-label
+        # smuggled past the linked contract; the teacher must reference it by
+        # its label (leakage-scope rule).
+        if any(
+            occurrence.get("controlled", True)
+            and isinstance(occurrence.get("start"), int)
+            and isinstance(occurrence.get("end"), int)
+            and start < int(occurrence["end"]) and int(occurrence["start"]) < end
+            for occurrence in occurrences.values()
+        ):
+            return "", None, "protected_context_literal", None
         typed = [row for row in context_candidates.values()
                  if row.get("literal") == literal and int(row.get("start", -1)) == start
                  and int(row.get("end", -1)) == end]
-        if len(typed) != 1:
-            return "", None, "untyped_context_literal", None
-        context.update({
-            "runtime_type": str(typed[0]["runtime_type"]), "start": start, "end": end,
-            "context_candidate_id": str(typed[0]["context_candidate_id"]),
-        })
+        if typed:
+            if len(typed) != 1:
+                return "", None, "untyped_context_literal", None
+            context.update({
+                "runtime_type": str(typed[0]["runtime_type"]),
+                "context_candidate_id": str(typed[0]["context_candidate_id"]),
+            })
+        else:
+            # Closed lexical rules only cover test/procedure/provider/status/
+            # category; per the literal contract the relation slot's permitted
+            # class types the rest (observed: drug literals such as
+            # "synthroid").  Grounding, cue, leakage, and reader gates remain
+            # the semantic filters.
+            slot_index = arguments.index(context)
+            slot_classes = relation_contract[relation]["argument_classes"][slot_index]
+            context["runtime_type"] = slot_classes[0]
+        context.update({"start": start, "end": end})
     all_indices = [
         clause_index(
             int(occurrences[argument["occurrence_id"]]["start"])
@@ -2392,9 +2503,11 @@ def _relation_quote_has_direct_support(
     Context literals may occur before the condition (for example, 'takes X for Y'),
     so source word order does not redefine the directional relation signature.
     """
+    # A dot inside a run ("if ... and prescribe") is a transcript hesitation
+    # marker, not a sentence boundary; only a lone period delimits a clause.
     clause_ranges = [
         (match.start(), match.end())
-        for match in re.finditer(r"[^\n.!?;]+", canon(quote))
+        for match in re.finditer(r"(?:[^\n.!?;]|\.(?=\.)|(?<=\.)\.)+", canon(quote))
         if match.group().strip()
     ]
     if len(clause_ranges) > 1 and not allow_adjacent_clauses:
@@ -2411,13 +2524,29 @@ def _relation_quote_has_direct_support(
     if not positions:
         return False
     if len(clause_ranges) > 2:
-        local_left = min(position[0] for position in positions)
-        local_right = max(position[1] for position in positions)
-        return (
-            (allow_plan_section or local_right - local_left <= 320)
-            and any(re.search(re.escape(cue), normalized[local_left:local_right])
-                    for cue in relation_contract[relation].get("cues", ()))
-        )
+        if allow_plan_section:
+            local_left = min(position[0] for position in positions)
+            local_right = max(position[1] for position in positions)
+            return any(re.search(re.escape(cue), normalized[local_left:local_right])
+                       for cue in relation_contract[relation].get("cues", ()))
+        # A multi-sentence speaker turn: the arguments must share one clause
+        # (or two adjacent ones) and the cue is searched within those clause
+        # bounds — explicit cues can precede the subject ("you ca n't take X
+        # because of Y"), and between-args-only search missed them.
+        argument_clauses = [
+            next((index for index, (left, right) in enumerate(clause_ranges)
+                  if left <= position[0] < right), None)
+            for position in positions
+        ]
+        if (
+            None in argument_clauses
+            or abs(argument_clauses[0] - argument_clauses[-1]) > 1
+        ):
+            return False
+        local_left = min(clause_ranges[index][0] for index in argument_clauses)
+        local_right = max(clause_ranges[index][1] for index in argument_clauses)
+        return any(re.search(re.escape(cue), normalized[local_left:local_right])
+                   for cue in relation_contract[relation].get("cues", ()))
     if positions[0] < positions[1]:
         connector = normalized[positions[0][1]:positions[1][0]]
         if any(re.fullmatch(pattern, connector) for pattern in
@@ -2433,8 +2562,12 @@ def _relation_quote_has_direct_support(
                 None not in argument_clauses
                 and abs(argument_clauses[0] - argument_clauses[1]) <= 1
             ):
-                local_left = min(position[0] for position in positions)
-                local_right = max(position[1] for position in positions)
+                # Search the clause(s) holding the arguments, not only the
+                # text between them: explicit cues can precede the subject
+                # ("you ca n't take X because of Y"), and the reversed-order
+                # single-clause branch below already searches the full clause.
+                local_left = min(clause_ranges[index][0] for index in argument_clauses)
+                local_right = max(clause_ranges[index][1] for index in argument_clauses)
                 return any(
                     re.search(re.escape(cue), normalized[local_left:local_right])
                     for cue in relation_contract[relation].get("cues", ())
@@ -2443,18 +2576,19 @@ def _relation_quote_has_direct_support(
     cues = relation_contract[relation].get("cues", ())
     if len(clause_ranges) == 1:
         return any(re.search(re.escape(cue), normalized) for cue in cues)
+    # Reversed textual order ("for your knee pain ... exacerbation of your
+    # arthritis"): same rule as the forward branches — arguments share one
+    # clause or two adjacent ones, and the cue must sit inside those clauses.
     argument_clauses = [
         next((index for index, (left, right) in enumerate(clause_ranges)
               if left <= position[0] < right), None)
         for position in positions
     ]
-    if None in argument_clauses or abs(argument_clauses[0] - argument_clauses[1]) != 1:
+    if None in argument_clauses or abs(argument_clauses[0] - argument_clauses[1]) > 1:
         return False
-    return any(
-        (cue_match := re.search(re.escape(cue), normalized)) is not None
-        and any(left <= cue_match.start() < right for left, right in clause_ranges)
-        for cue in cues
-    )
+    local_left = min(clause_ranges[index][0] for index in argument_clauses)
+    local_right = max(clause_ranges[index][1] for index in argument_clauses)
+    return any(re.search(re.escape(cue), normalized[local_left:local_right]) for cue in cues)
 
 
 def compile_relational_assertions(
@@ -2584,7 +2718,8 @@ def compile_relational_assertions(
         anchor_kind = None
         if uses_v4_arguments:
             quote, evidence_span, evidence_error, anchor_kind = _derived_relation_anchor(
-                document, arguments, occurrences, context_by_id
+                document, arguments, occurrences, context_by_id,
+                relation, relation_contract,
             )
         else:
             quote, evidence_span, evidence_error = proposal_evidence(proposal)
@@ -2645,21 +2780,46 @@ def compile_relational_assertions(
         if scoring_contract.get("kind") != "semantic_qa" or not accepted_values:
             reject("invalid_scoring_contract")
             continue
-        if any(_question_leaks_answer(question, answer, "") for answer in accepted_values):
+        sanitized_qa = False
+        if uses_v4_arguments:
+            sanitized_question = _substitute_linked_surfaces(question, arguments, occurrences)
+            sanitized_values = [
+                _substitute_linked_surfaces(answer, arguments, occurrences)
+                for answer in accepted_values
+            ]
+            sanitized_qa = (sanitized_question, sanitized_values) != (question, accepted_values)
+            question, accepted_values = sanitized_question, sanitized_values
+        # Placeholder-label tokens of the linked argument types ("medication",
+        # "condition") are information-free for level-based QA; only the v4
+        # contract exempts them so cached legacy replies keep their outcomes.
+        answer_exempt_types = (
+            [argument["runtime_type"] for argument in arguments
+             if argument["kind"] == "linked"]
+            if uses_v4_arguments else ""
+        )
+        if any(_question_leaks_answer(question, answer, answer_exempt_types)
+               for answer in accepted_values):
             reject("answer_leakage")
             continue
-        protected_terms = [
-            term
-            for occurrence in occurrences.values()
-            if occurrence.get("controlled", True)
-            and decisions.get(str(occurrence.get("decision_id")), {}).get("controlled", True)
-            for term in _occurrence_protected_terms(occurrence)
-        ]
-        if _question_leaks_protected_term(question, protected_terms):
+        protected_terms = []
+        allowed_level_tokens: dict[str, frozenset[str]] = {}
+        for occurrence_id_value, occurrence in occurrences.items():
+            if not (occurrence.get("controlled", True)
+                    and decisions.get(str(occurrence.get("decision_id")), {}).get("controlled", True)):
+                continue
+            level_tokens = frozenset(
+                token
+                for property_level in legal_properties.get(occurrence_id_value, ())
+                for token in _meaningful_tokens(property_level)
+            )
+            for term in _occurrence_protected_terms(occurrence):
+                protected_terms.append(term)
+                allowed_level_tokens[term] = allowed_level_tokens.get(term, frozenset()) | level_tokens
+        if _question_leaks_protected_term(question, protected_terms, allowed_level_tokens):
             reject("protected_locator")
             continue
         if proposal.get("arguments") is not None and any(
-            _question_leaks_protected_term(answer, protected_terms)
+            _question_leaks_protected_term(answer, protected_terms, allowed_level_tokens)
             for answer in accepted_values
         ):
             reject("protected_answer")
@@ -2693,6 +2853,7 @@ def compile_relational_assertions(
             "evidence": {
                 "authority": "source_document",
                 "proposal_hash": proposal_hash,
+                "sanitized_qa": sanitized_qa,
                 "source_span": {
                     "start": evidence_span[0],
                     "end": evidence_span[1],

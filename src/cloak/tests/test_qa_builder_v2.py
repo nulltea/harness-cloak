@@ -1347,22 +1347,21 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
     assert captured["response_format"]["json_schema"]["schema"]["required"] == [
         "relations", "candidate_accounting",
     ]
-    assert captured["max_tokens"] == 8192
-    assert captured["extra_body"] == {
-        "reasoning": {"max_tokens": 1024, "exclude": True}
-    }
+    # Token caps repeatedly produced empty/truncated teacher replies; the v5
+    # contract sends none and only excludes the reasoning trace from the reply.
+    assert "max_tokens" not in captured
+    assert captured["extra_body"] == {"reasoning": {"exclude": True}}
     assert teacher.pin == {
         "provider": "openrouter",
         "model": "nvidia/nemotron-3-super-120b-a12b:free",
         "base_url": "https://openrouter.ai/api/v1",
-        "prompt_version": "qa-relation-teacher-v4",
-        "response_schema": {"type": "relation-qa-batch", "version": 4},
+        "prompt_version": "qa-relation-teacher-v6",
+        "response_schema": {"type": "relation-qa-batch", "version": 6},
         "response_format": qa_builder.RELATION_TEACHER_RESPONSE_FORMAT,
         "generation_config": {
-            "max_tokens": 8192,
-            "reasoning": {"max_tokens": 1024, "exclude": True},
+            "reasoning": {"exclude": True},
         },
-        "revision": "qa-relation-teacher-r16",
+        "revision": "qa-relation-teacher-r18",
     }
     assert relations == [{"relation": "treated_with"}]
 

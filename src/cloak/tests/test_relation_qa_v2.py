@@ -117,8 +117,9 @@ def test_teacher_response_schema_binds_roles_and_candidate_ledger_to_inventory()
     ledger = schema["properties"]["candidate_accounting"]
     expected_labels = [row["span_label"] for row in qa_builder.relation_teacher_span_inventory(environment)]
 
-    linked, context = arguments["items"]["anyOf"]
-    assert linked["properties"]["role"]["enum"] == ["subject", "object"]
+    linked, context = arguments["anyOf"][1]["prefixItems"]
+    assert linked["properties"]["role"]["const"] == "subject"
+    assert context["properties"]["role"]["const"] == "object"
     assert linked["properties"]["kind"]["const"] == "linked"
     assert context["properties"]["kind"]["const"] == "context"
     assert linked["properties"]["literal"]["const"] is None
@@ -127,6 +128,94 @@ def test_teacher_response_schema_binds_roles_and_candidate_ledger_to_inventory()
     assert ledger["minItems"] == ledger["maxItems"] == len(expected_labels)
     assert ledger["items"] is False
     assert [row["properties"]["candidate_label"]["const"] for row in ledger["prefixItems"]] == expected_labels
+
+
+def test_teacher_pin_reflects_v6_contract_and_uncapped_token_budgets():
+    # Token caps repeatedly produced empty/truncated teacher replies: the r16
+    # smoke's reasoning trace was cut mid-source-scan before three further
+    # explicit relations. The v6 contract carries no completion or reasoning
+    # cap; only the reasoning-trace exclusion remains, and the changed
+    # prompt/schema/config must repin caches.
+    assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
+    assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v6"
+    assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 6
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r18"
+
+
+def test_prompt_worked_examples_show_safe_level_based_questions_and_answers():
+    # The v6 live smoke wrote "arthritis"/"hypothyroidism" into questions and
+    # answered "ultram" for a linked span: the compressed worked examples
+    # themselves modelled raw-surface usage and dropped the spec-mandated
+    # Safe QA lines.
+    source = "Hypothyroidism is treated with Synthroid."
+    prompt = relation_teacher_prompt("d2", source, _environment(source))
+
+    assert 'Safe question: "Which medication category was prescribed for the joint disease?"' in prompt
+    assert 'Accepted answer: "opioid analgesic"' in prompt
+    assert "never the source words" in prompt
+    assert "Drug: arthritis + prescribed Ultram" not in prompt
+
+
+def test_prompt_anchors_labels_to_the_relation_sentence_and_deduplicates_facts():
+    # The v5 live smoke paired literals with the FIRST label of a value
+    # (S1/S2) instead of the label at the relation sentence, and spent 10 of
+    # 12 slots on per-label copies of the same facts, crowding out
+    # monitored_by. Answers used controlled surfaces ("ultram") instead of
+    # levels.
+    source = "Hypothyroidism is treated with Synthroid."
+    prompt = relation_teacher_prompt("d2", source, _environment(source))
+
+    assert "sentence that states the relation" in prompt
+    assert "Emit each distinct fact once" in prompt
+    assert "duplicate_mention" in prompt
+    assert "listed levels, never its source text" in prompt
+    assert "reason for every row" in prompt
+
+
+def test_prompt_defines_the_response_record_fields_and_linked_argument_rule():
+    # The observed Nemotron reasoning trace planned a text format ("format?
+    # Not fully specified") and then fell into the all-context wire branch;
+    # the prompt must name the record contents the decoder will demand.
+    source = "Hypothyroidism is treated with Synthroid."
+    prompt = relation_teacher_prompt("d2", source, _environment(source))
+
+    assert "span_label" in prompt
+    assert "support_property" in prompt
+    assert "at least one linked" in prompt
+    assert "verbatim" in prompt
+    assert "Never quote a displayed span as a context literal" in prompt
+    assert "Example record" in prompt
+
+
+def test_response_schema_forbids_zero_linked_argument_pairs_and_fixes_roles():
+    source = "Hypothyroidism is treated with Synthroid."
+    environment = _environment(source)
+    schema = relation_teacher_response_format(environment, source)["json_schema"]["schema"]
+    arguments = schema["properties"]["relations"]["items"]["properties"]["arguments"]
+
+    shapes = arguments["anyOf"]
+    kinds = [
+        tuple(branch["properties"]["kind"]["const"] for branch in shape["prefixItems"])
+        for shape in shapes
+    ]
+    # The observed Nemotron failure emitted context+context, which the compiler
+    # always rejects (missing_linked_argument); it must be unrepresentable.
+    assert ("context", "context") not in kinds
+    assert set(kinds) == {("linked", "linked"), ("linked", "context"), ("context", "linked")}
+    for shape in shapes:
+        assert shape["items"] is False
+        assert shape["minItems"] == shape["maxItems"] == 2
+        roles = [branch["properties"]["role"]["const"] for branch in shape["prefixItems"]]
+        assert roles == ["subject", "object"]
+        for branch in shape["prefixItems"]:
+            if branch["properties"]["kind"]["const"] == "linked":
+                assert branch["properties"]["span_label"]["enum"] == ["S1", "S2"]
+                assert branch["properties"]["literal"]["const"] is None
+            else:
+                assert branch["properties"]["span_label"]["const"] is None
+                assert branch["properties"]["support_property"]["const"] is None
+                assert branch["properties"]["literal"] == {"type": "string", "minLength": 1}
 
 
 def test_context_argument_must_reference_inventory_candidate():
@@ -266,6 +355,352 @@ def test_openrouter_teacher_accepts_a_document_bound_response_schema(monkeypatch
     assert captured["response_format"] == bound_format
 
 
+def test_prescribed_with_accepts_explicit_continue_on_prescription():
+    # The relation inventory promises "prescribed, continued, taken, or used";
+    # D2N002 grounds hypothyroidism -> Synthroid as "continue you on the
+    # synthroid", which the cue contract must accept.
+    source = "For your Hypothyroidism, I will continue you on the Synthroid."
+    environment = _environment(source)
+    environment["occurrences"][0]["start"] = source.index("Hypothyroidism")
+    environment["occurrences"][0]["end"] = source.index("Hypothyroidism") + 14
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "endocrine condition", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S2", "support_property": "thyroid medication", "literal": None},
+        ],
+        "question": "Which medication class is continued for the endocrine disorder?",
+        "accepted_answers": ["hormone replacement therapy"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "prescribed_with"
+
+
+def test_candidate_accounting_reasons_are_sanitized_of_protected_terms():
+    # The observed r16 ledger repeated protected surfaces in its reasons
+    # ("no explicit relation found for kidney transplant"); the compiler must
+    # sanitize reasons before they can reach the artifact.
+    source = "Hypothyroidism is treated with Synthroid."
+    environment = _environment(source)
+    environment["occurrences"][0]["aliases"] = ["underactive thyroid"]
+    accounting = [
+        {"candidate_label": "S1", "state": "exhausted_no_relation",
+         "reason": "no explicit relation found for hypothyroidism"},
+        {"candidate_label": "S2", "state": "emitted",
+         "reason": "Synthroid used for the underactive thyroid problem"},
+    ]
+
+    validated = qa_builder._validated_candidate_accounting(accounting, environment, source)
+
+    reasons = {row["candidate_label"]: row["reason"] for row in validated}
+    assert "hypothyroidism" not in reasons["S1"].casefold()
+    assert "synthroid" not in reasons["S2"].casefold()
+    assert "underactive thyroid" not in reasons["S2"].casefold()
+    assert reasons["S1"] == "no explicit relation found for [protected]"
+    assert all(row["reason"].strip() for row in validated)
+
+
+def test_context_literal_is_typed_by_the_relation_slot_when_lexical_rules_cannot():
+    # The v5 live smoke grounded hypothyroidism -> "synthroid" ("continue you
+    # on the synthroid") but the closed lexical rules cover only
+    # test/procedure/provider/status/category, so the drug literal died as
+    # untyped_context_literal. The spec's literal contract adds "the relation
+    # object's permitted slot class"; grounding, cue, leakage, and reader
+    # gates remain the real filters.
+    source = "for your hypothyroidism , i will continue you on the synthroid ."
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "condition", "decision_id": "d-condition",
+            "surface": "hypothyroidism", "start": source.index("hypothyroidism"),
+            "end": source.index("hypothyroidism") + 14, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-condition",
+            "actions": [{"mode": "level", "legal": True, "entails": ["endocrine condition"]}],
+        }],
+    }
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "endocrine condition", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None, "support_property": None, "literal": "synthroid"},
+        ],
+        "question": "Which medication is continued for the endocrine disorder?",
+        "accepted_answers": ["synthroid"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "prescribed_with"
+    assert accepted[0]["occurrence_ids"] == ["condition"]
+
+
+def test_context_literal_resolving_onto_a_controlled_span_is_rejected_as_leakage():
+    # Spec: a literal that also resolves to a protected controlled span is
+    # rejected; the teacher must reference that span by its S-label instead.
+    source = "for your arthritis , i will prescribe some ultram ."
+    ultram_start = source.index("ultram")
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "arthritis", "decision_id": "d-arthritis", "surface": "arthritis", "start": source.index("arthritis"), "end": source.index("arthritis") + 9, "runtime_type": "health-condition"},
+            {"occurrence_id": "ultram", "decision_id": "d-ultram", "surface": "ultram", "start": ultram_start, "end": ultram_start + 6, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-arthritis", "actions": [{"mode": "level", "legal": True, "entails": ["joint condition"]}]},
+            {"decision_id": "d-ultram", "actions": [{"mode": "level", "legal": True, "entails": ["opioid analgesic"]}]},
+        ],
+    }
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "joint condition", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None, "support_property": None, "literal": "ultram"},
+        ],
+        "question": "Which medication class is started for the joint condition?",
+        "accepted_answers": ["opioid analgesic"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert accepted == []
+    assert rejected[0]["detail_reason"] == "protected_context_literal"
+    assert rejected[0]["reason"] == "leakage"
+
+
+def test_contraindicated_because_of_accepts_explicit_cannot_take_wording():
+    # D2N002 grounds the contraindication as "you ca n't take some of those
+    # anti-inflammatory medications because of your kidney transplant"; the
+    # cue lives before the subject argument, so the cue window must cover the
+    # clause holding the arguments, not only the text between them.
+    source = (
+        "again , you ca n't take some of those anti-inflammatory medications "
+        "because of your kidney transplant , so it will be a struggle ."
+    )
+    transplant_start = source.index("kidney transplant")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "transplant", "decision_id": "d-transplant",
+            "surface": "kidney transplant", "start": transplant_start,
+            "end": transplant_start + 17, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-transplant",
+            "actions": [{"mode": "level", "legal": True, "entails": ["solid organ transplant"]}],
+        }],
+    }
+    proposal = {
+        "relation": "contraindicated_because_of",
+        "arguments": [
+            {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "some of those anti-inflammatory medications"},
+            {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "solid organ transplant", "literal": None},
+        ],
+        "question": "Which medication group cannot be taken because of the transplant history?",
+        "accepted_answers": ["anti-inflammatory medications"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "contraindicated_because_of"
+
+
+def test_multi_sentence_turn_anchors_search_cues_in_the_argument_clauses():
+    # In D2N002 the contraindication lives inside a long doctor turn: the
+    # anchor quote spans several sentences and the "ca n't take" cue precedes
+    # the subject argument, so the cue window must be the clause holding the
+    # arguments, not the text between them.
+    source = (
+        "[doctor] you are doing well . again , you ca n't take some of those "
+        "anti-inflammatory medications because of your kidney transplant , so "
+        "it will be a struggle . let us move on .\n[patient] okay ."
+    )
+    transplant_start = source.index("kidney transplant")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "transplant", "decision_id": "d-transplant",
+            "surface": "kidney transplant", "start": transplant_start,
+            "end": transplant_start + 17, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-transplant",
+            "actions": [{"mode": "level", "legal": True, "entails": ["solid organ transplant"]}],
+        }],
+    }
+    proposal = {
+        "relation": "contraindicated_because_of",
+        "arguments": [
+            {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "anti-inflammatory medications"},
+            {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "solid organ transplant", "literal": None},
+        ],
+        "question": "Which medication group cannot be taken because of the solid organ transplant?",
+        "accepted_answers": ["anti-inflammatory medications"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "contraindicated_because_of"
+
+
+def test_causes_or_explains_accepts_explicit_exacerbation_attribution():
+    # D2N002 explains the knee pain as "an acute exacerbation of your
+    # arthritis"; explicit clinical attribution wordings (exacerbation of,
+    # due to, secondary to) belong in the closed cue set alongside
+    # causes/explains.
+    source = (
+        "[doctor] so for your knee pain , i think that this is an acute "
+        "exacerbation of your arthritis , okay ? so i wan na go ahead and "
+        "prescribe some ultram .\n[patient] okay ."
+    )
+    arthritis_start = source.index("arthritis")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "arthritis", "decision_id": "d-arthritis",
+            "surface": "arthritis", "start": arthritis_start,
+            "end": arthritis_start + 9, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-arthritis",
+            "actions": [{"mode": "level", "legal": True, "entails": ["bone inflammation disease"]}],
+        }],
+    }
+    proposal = {
+        "relation": "causes_or_explains",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "bone inflammation disease", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None, "support_property": None, "literal": "knee pain"},
+        ],
+        "question": "What symptom is attributed to the bone inflammation disease?",
+        "accepted_answers": ["knee pain"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "causes_or_explains"
+
+
+def test_spoken_ellipsis_does_not_split_a_clause_in_the_direct_support_gate():
+    # ACI transcripts contain hesitation ellipses ("i wan na go ahead and if
+    # ... and prescribe some ultram"); dots in a run are not sentence
+    # boundaries and must not make same-sentence arguments non-adjacent.
+    source = (
+        "[doctor] this is an acute exacerbation of your arthritis , okay ? "
+        "so i wan na go ahead and if ... and prescribe some ultram 50 mg .\n"
+        "[patient] okay ."
+    )
+    arthritis_start = source.index("arthritis")
+    ultram_start = source.index("ultram")
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "arthritis", "decision_id": "d-arthritis", "surface": "arthritis", "start": arthritis_start, "end": arthritis_start + 9, "runtime_type": "health-condition"},
+            {"occurrence_id": "ultram", "decision_id": "d-ultram", "surface": "ultram", "start": ultram_start, "end": ultram_start + 6, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-arthritis", "actions": [{"mode": "level", "legal": True, "entails": ["bone inflammation disease"]}]},
+            {"decision_id": "d-ultram", "actions": [{"mode": "level", "legal": True, "entails": ["opioid analgesic"]}]},
+        ],
+    }
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "bone inflammation disease", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S2", "support_property": "opioid analgesic", "literal": None},
+        ],
+        "question": "Which medication category was prescribed for the bone inflammation disease?",
+        "accepted_answers": ["opioid analgesic"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "prescribed_with"
+
+
+def test_linked_surface_in_qa_is_substituted_with_the_selected_level():
+    # Three consecutive live smokes wrote the linked span's surface into the
+    # question/answers ("for the arthritis?", answer "ultram") despite
+    # escalating prompt guidance. The compiler substitutes the teacher's own
+    # selected support_property for that argument's protected surface and
+    # re-runs the leakage gates; unrelated protected surfaces still reject.
+    source = "Hypothyroidism is treated with Synthroid."
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "endocrine condition", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S2", "support_property": "thyroid medication", "literal": None},
+        ],
+        "question": "Which medication was prescribed for the Hypothyroidism?",
+        "accepted_answers": ["Synthroid"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [proposal])
+
+    assert rejected == []
+    assert accepted[0]["question"] == "Which medication was prescribed for the endocrine condition?"
+    assert accepted[0]["accepted_values"] == ["thyroid medication"]
+    assert accepted[0]["evidence"]["sanitized_qa"] is True
+
+
+def test_question_may_use_declared_generalization_level_tokens():
+    # "kidney transplant" generalizes to the declared legal level "solid organ
+    # transplant"; the spec directs questions to use that level, so its tokens
+    # cannot count as protected residue. Full-term containment and non-level
+    # tokens ("kidney") still leak.
+    allowed = {"kidney transplant": frozenset({"solid", "organ", "transplant"})}
+    assert not qa_builder._question_leaks_protected_term(
+        "Which medication group cannot be taken because of the solid organ transplant?",
+        ["kidney transplant"], allowed,
+    )
+    assert qa_builder._question_leaks_protected_term(
+        "Which medication group cannot be taken because of the kidney issue?",
+        ["kidney transplant"], allowed,
+    )
+    assert qa_builder._question_leaks_protected_term(
+        "Is the kidney transplant relevant?", ["kidney transplant"], allowed,
+    )
+
+
+def test_ledger_supports_duplicate_mention_and_wire_schema_requires_reasons():
+    # The v5 live smoke fabricated one relation per duplicate S-label (10 of 12
+    # slots) because `emitted` was the only way to cover a repeated mention,
+    # and returned empty reasons the wire schema permitted, invalidating the
+    # whole ledger. Repeated mentions need their own state and reasons must be
+    # wire-required.
+    source = "Hypothyroidism is treated with Synthroid."
+    environment = _environment(source)
+    accounting = [
+        {"candidate_label": "S1", "state": "emitted", "reason": "used in prescribed_with"},
+        {"candidate_label": "S2", "state": "duplicate_mention", "reason": "same value as the S2 fact"},
+    ]
+
+    validated = qa_builder._validated_candidate_accounting(accounting, environment, source)
+    assert [row["state"] for row in validated] == ["emitted", "duplicate_mention"]
+
+    ledger_item = qa_builder.RELATION_TEACHER_RESPONSE_FORMAT[
+        "json_schema"]["schema"]["properties"]["candidate_accounting"]["items"]
+    assert "duplicate_mention" in ledger_item["properties"]["state"]["enum"]
+    assert ledger_item["properties"]["reason"]["minLength"] == 1
+
+    bound = relation_teacher_response_format(environment, source)
+    bound_rows = bound["json_schema"]["schema"]["properties"]["candidate_accounting"]["prefixItems"]
+    for row in bound_rows:
+        assert "duplicate_mention" in row["properties"]["state"]["enum"]
+        assert row["properties"]["reason"]["minLength"] == 1
+
+
 def test_candidate_accounting_must_cover_exactly_the_prompted_inventory():
     source = "Hypothyroidism is treated with Synthroid. Order thyroid labs."
     environment = _environment(source)
@@ -288,7 +723,7 @@ def test_v4_prompt_and_schema_use_source_labels_not_internal_inventory():
 
     prompt = relation_teacher_prompt("d2", source, environment)
     schema = relation_teacher_response_format(environment, source)["json_schema"]["schema"]
-    argument_variants = schema["properties"]["relations"]["items"]["properties"]["arguments"]["items"]["anyOf"]
+    argument_shapes = schema["properties"]["relations"]["items"]["properties"]["arguments"]["anyOf"]
 
     assert "[S1: Hypothyroidism | condition | levels: endocrine condition]" in prompt
     assert "[S2: Synthroid | drug | levels: thyroid medication]" in prompt
@@ -296,8 +731,8 @@ def test_v4_prompt_and_schema_use_source_labels_not_internal_inventory():
     assert "SOURCE EVIDENCE WINDOWS" not in prompt
     assert '"occurrence_id"' not in prompt
     assert "evidence_window_id" not in schema["properties"]["relations"]["items"]["properties"]
-    assert argument_variants[0]["properties"]["span_label"]["enum"] == ["S1", "S2"]
-    assert argument_variants[1]["properties"]["literal"]["type"] == "string"
+    assert argument_shapes[0]["prefixItems"][0]["properties"]["span_label"]["enum"] == ["S1", "S2"]
+    assert argument_shapes[1]["prefixItems"][1]["properties"]["literal"]["type"] == "string"
     assert schema["properties"]["candidate_accounting"]["prefixItems"][0]["properties"]["candidate_label"]["const"] == "S1"
 
 

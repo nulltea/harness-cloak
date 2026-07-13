@@ -184,17 +184,22 @@ The relation teacher is pinned to
 `nvidia/nemotron-3-super-120b-a12b:free` through
 `https://openrouter.ai/api/v1`, authenticated by `OPENROUTER_API_KEY`. Changing model, provider,
 prompt, response schema, or generation configuration invalidates the build cache and artifact
-pin. Its current bounded configuration requests at most 8,192 completion tokens, reserves at
-most 1,024 reasoning tokens (the model's reasoning is mandatory on this route), and excludes the
-reasoning trace from the returned artifact. The OpenRouter wire request uses strict JSON Schema,
+pin. The request sets no completion or reasoning token cap: the model's reasoning is mandatory
+on this route, and observed caps repeatedly produced empty replies or a truncated source scan
+(the r16 smoke's reasoning cut off mid-document, leaving explicit relations unproposed). The
+configuration only excludes the reasoning trace from the returned reply, keeping it out of the
+cache and artifact. The OpenRouter wire request uses strict JSON Schema,
 with `relations` and `candidate_accounting` required at the top level; basic JSON-object mode is
 insufficient because `{}` is syntactically valid but semantically unusable. Per document, the
-wire schema constrains relation roles to `subject`/`object`, argument kinds to `linked`/`context`,
-linked short labels to the document's displayed `S#` labels, and ledger cardinality to the number
-of displayed `S#` labels. It must permit a clean empty relation list and must not create an empty
-enumeration for any optional field. It must not bind teacher-authored accepted answers to a finite
-answer enum. The compiler remains the authority for cross-field semantics and exactly-once
-candidate coverage.
+wire schema constrains relation roles to `subject`/`object` fixed by argument position, argument
+kinds to `linked`/`context`, linked short labels to the document's displayed `S#` labels, and
+ledger cardinality to the number of displayed `S#` labels. Because the compiler unconditionally
+rejects a relation with no linked argument, the argument pair is bound to the three shapes
+`linked+linked`, `linked+context`, and `context+linked`; a zero-linked pair is unrepresentable
+on the wire (the r16 smoke's only proposal was exactly that always-rejected shape). It must
+permit a clean empty relation list and must not create an empty enumeration for any optional
+field. It must not bind teacher-authored accepted answers to a finite answer enum. The compiler
+remains the authority for cross-field semantics and exactly-once candidate coverage.
 
 ### Teacher prompt specification
 
@@ -237,14 +242,27 @@ EVIDENCE CARDS
 <compact cards for this document>
 
 RESPONSE
-Return relation records and one concise accounting record for every displayed label.
+State the required record contents: relation; subject then object argument; question; accepted
+answers; the fixed scoring contract. A displayed span is a linked argument carrying its S-label
+as span_label and exactly one of that label's listed levels, copied verbatim, as
+support_property. Every relation needs at least one linked S-label argument; never quote a
+displayed span as a context literal; an uncontrolled argument is a context literal with its
+exact source text. Emit each distinct fact once, at the S-label inside the sentence that states
+the relation; other labels of that value are duplicate_mention rows naming the emitting label.
+Include compact record-shaped examples (one all-linked, one with a context literal). Then
+request one concise accounting record for every displayed label, with a short label-referential
+reason on every row.
 ```
 
 The instruction must not contain implementation/wire prose such as “the constrained wire
-schema,” JSON-null instructions, field-by-field schema explanations, hash rules, offset rules, or
-internal validation gates. Those belong solely to the provider response schema and deterministic
-compiler. The only response-level language visible to the teacher is the semantic task and the
-short list of required record contents.
+schema,” JSON-null instructions, hash rules, offset rules, or internal validation gates. Those
+belong solely to the provider response schema and deterministic compiler. The only
+response-level language visible to the teacher is the semantic task and the short list of
+required record contents above. Naming the record fields (`span_label`, `support_property`,
+`literal`, argument kind) is required, not optional: the r16 smoke's reasoning trace shows the
+teacher planning a free-text format (“format? Not fully specified”) and then falling into the
+degenerate all-context wire shape the compiler always rejects. The record-contents list aligns
+the teacher's plan with what the constrained decoder will demand.
 
 The prompt includes these compact worked examples before document-specific evidence cards:
 
@@ -340,7 +358,10 @@ same section and the relation's direct cue occurs there; it is not a cross-turn 
 proximity bridge. It resolves a quoted literal only within the chosen anchor, then verifies that
 the completed relation is directly supported. The compiler rejects proximity links, cross-turn
 links, cue substrings, contradictory polarity, and a relation whose arguments cannot be directly
-connected in that anchor. Cards help the teacher navigate; they neither limit search nor
+connected in that anchor. Two clause conventions are normative for transcript sources: the cue is
+searched within the clause or two adjacent clauses holding the arguments (an explicit cue such as
+"ca n't take" legitimately precedes the subject), and a period inside a run ("if ... and
+prescribe") is a spoken hesitation marker, never a clause boundary. Cards help the teacher navigate; they neither limit search nor
 constitute accepted evidence. There is no `evidence_window_id` in the teacher response or relation
 artifact.
 
@@ -352,13 +373,30 @@ context literal may appear in an accepted answer only when it resolves to an unc
 if it also resolves to a protected controlled span, the proposal is rejected as ambiguous. The
 compiler separately checks answer-to-question leakage.
 
+Three lint refinements are normative, each with a measured motivation. First, tokens of a
+decision's declared legal generalization levels are exempt from that decision's token-overlap
+lint: QA is directed to use those levels verbatim, and without the exemption "solid organ
+transplant" could never appear in a question about a kidney transplant. Full-term containment of
+the protected surface still rejects. Second, before the leakage gates run, the compiler
+substitutes each linked argument's protected surface/alias in the question and accepted answers
+with that argument's teacher-selected support property, recording `sanitized_qa` in the
+assertion evidence. This is mechanical substitution of teacher-chosen content, not authorship:
+three consecutive live smokes wrote the source surface into otherwise valid QA despite
+escalating prompt guidance, and the leakage gates rerun on the substituted text. Third,
+placeholder-label tokens of the linked argument types (for example "medication", "condition")
+are information-free for level-based QA and are exempt from answer-to-question overlap; the
+answer's distinguishing tokens remain linted.
+
 **Candidate accounting.** The response includes exactly one concise accounting row for every
-displayed `S#` label: `emitted`, `exhausted_no_relation`, or `unsupported`. `emitted` means the
-teacher attempted a relation using that label; it does not claim compiler acceptance.
+displayed `S#` label: `emitted`, `duplicate_mention`, `exhausted_no_relation`, or `unsupported`.
+`emitted` means the teacher attempted a relation using that label; it does not claim compiler
+acceptance. `duplicate_mention` means another label of the same underlying value already carries
+the fact, named in the reason; without this state a live smoke fabricated one relation per
+repeated label to make every label `emitted`, crowding out real relation types under the cap.
 `exhausted_no_relation` means the label was considered but no explicit, ontology-compatible
 relation is supported. `unsupported` means the source does not establish enough semantic role or
 connection for that label to support any ontology relation; it is not a claim that the policy
-decision lacks utility. The compiler records prefilter exclusions separately as
+decision lacks utility. The wire schema requires a nonempty bounded reason on every row. The compiler records prefilter exclusions separately as
 `ineligible_prefilter`; those records are not teacher ledger members. Quoted literals are not
 ledger members. Reasons must be concise, sanitized, and label-referential: they
 must not repeat protected source text. This is a bounded coverage diagnostic, never a requirement

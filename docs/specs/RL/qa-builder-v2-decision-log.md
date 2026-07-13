@@ -176,15 +176,21 @@ Permit explicit abstention rather than retries. Use one build cache and one docu
 score cache. Retire separate ladder, decision, and schema caches after migration.
 
 The escalation teacher is pinned to `nvidia/nemotron-3-super-120b-a12b:free` through OpenRouter
-and uses `OPENROUTER_API_KEY`. A model, provider, prompt, or response-schema change creates a new
-builder pin and invalidates cached proposals. The pin also records a bounded generation
-configuration: 8,192 maximum completion tokens and 1,024 maximum reasoning tokens with the
-reasoning trace excluded. Nemotron's selected route has reasoning enabled by default, so merely
-excluding its trace is not a reasoning-budget control. The request uses OpenRouter strict JSON
-Schema with required `relations` and `candidate_accounting`; JSON-object mode alone accepted an
-observed `{}` reply and is therefore rejected for this contract. Each request binds its schema to
-the displayed `S#` inventory (valid relation role/kind enums and `S#` ledger cardinality), but
-does not bind teacher-authored answers to finite candidate values. It permits an empty relation
+and uses `OPENROUTER_API_KEY`. A model, provider, prompt, response-schema, or generation-
+configuration change creates a new builder pin and invalidates cached proposals. The generation
+configuration sets no completion or reasoning token cap and only excludes the reasoning trace
+from the reply. Caps are rejected on measured evidence: completion caps repeatedly returned
+empty replies on this route, and the r16 smoke's 1,024-token reasoning cap truncated the
+teacher's source scan mid-document (its trace ends mid-sentence before the source region holding
+three further explicit relations), yielding one degenerate proposal and an all-exhausted ledger.
+Nemotron's selected route has reasoning enabled by default. The request uses OpenRouter strict
+JSON Schema with required `relations` and `candidate_accounting`; JSON-object mode alone accepted
+an observed `{}` reply and is therefore rejected for this contract. Each request binds its schema
+to the displayed `S#` inventory (`S#` label enums, ledger cardinality, and roles fixed by
+argument position), but does not bind teacher-authored answers to finite candidate values. The
+argument pair is bound to `linked+linked`, `linked+context`, and `context+linked` shapes because
+the compiler always rejects a zero-linked relation; the r16 smoke emitted exactly that
+unrepresentable-by-design shape when it was still wire-legal. It permits an empty relation
 list without an empty enum. Deterministic compilation verifies exact once-only ledger coverage and
 every cross-field relation contract. Evidence cards are non-gating navigation aids; the response
 contains no evidence-window ID. The compiler derives a minimal same-clause, or explicitly
@@ -231,11 +237,16 @@ slot-incompatible, or protected controlled-span resolution. There is no global c
 inventory and no context-literal ledger obligation.
 
 **Decision.** The teacher request has a maximum of 12 relations per document, seeks diverse valid
-coverage, and accounts for every displayed `S#` exactly once as `emitted`,
+coverage, and accounts for every displayed `S#` exactly once as `emitted`, `duplicate_mention`,
 `exhausted_no_relation`, or `unsupported`. `emitted` records a proposal attempt, not acceptance;
-`exhausted_no_relation` records a considered label with no explicit supported relation; and
-`unsupported` records insufficient source role/connection for any ontology relation, never zero
-utility relevance. The compiler records omitted prefilter candidates separately as
+`duplicate_mention` records a repeated mention whose fact another named label already carries —
+without it a live v5 smoke fabricated one relation per duplicate label (10 of 12 cap slots) to
+mark every label emitted; `exhausted_no_relation` records a considered label with no explicit
+supported relation; and `unsupported` records insufficient source role/connection for any
+ontology relation, never zero utility relevance. Every row carries a nonempty bounded reason at
+the wire level; an observed reply used empty reasons and invalidated its whole ledger. Facts are
+emitted at the S-label inside the sentence stating the relation, where the compiler grounds
+them. The compiler records omitted prefilter candidates separately as
 `ineligible_prefilter`, sanitizes ledger reasons so they do not repeat protected text, and
 cross-checks emitted labels against proposals. A missing, duplicate, or inconsistent row yields a
 `ledger_inconsistent` diagnostic without rejecting an otherwise valid compiled relation.
@@ -254,6 +265,18 @@ Protected-term lint covers every controlled decision and deterministic aliases, 
 displayed to the teacher; raw detector-only non-decisions remain outside the protected set. Answer-to-question leakage remains a
 separate check. Teacher-authored accepted answers are nonempty free strings and must not be bound
 to a finite schema enum.
+
+Three lint decisions follow measured teacher behavior. Declared legal generalization-level
+tokens are exempt from that decision's token-overlap lint (full-term surface containment still
+rejects), because QA is directed to use those levels verbatim. The compiler substitutes each
+linked argument's surface/alias in the question and accepted answers with that argument's own
+selected support property before the leakage gates, recording `sanitized_qa`: three consecutive
+live smokes wrote surfaces into otherwise valid QA despite escalating prompt guidance, and
+rejecting them forfeits real measurements the teacher already authored. Placeholder-label
+tokens of the linked argument types are exempt from answer-to-question overlap; they are
+information-free for level-based QA. **Rejected alternatives:** rejecting on any overlap (kills
+the sanctioned level vocabulary); free rewriting of teacher QA by code (authorship violation —
+substitution uses only the teacher's selected level and the argument's frozen surface).
 
 **Deferred.** Reader stability repetitions and answer-option permutation remain at their current
 single-pass gates until smoke results justify and preregister a changed protocol. No
