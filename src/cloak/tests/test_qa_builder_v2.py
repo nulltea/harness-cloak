@@ -794,7 +794,7 @@ def test_builder_records_unmet_relation_threshold_without_teacher():
     )
 
 
-def test_runtime_scores_context_assertions_in_one_reader_batch():
+def test_runtime_scores_context_assertions_per_assertion():
     artifact = {
         "reader_pin": TEST_READER_PIN,
         "documents": {"d1": {"utility_weight_denominator": 1.0}},
@@ -812,7 +812,7 @@ def test_runtime_scores_context_assertions_in_one_reader_batch():
 
     def reader(questions, context):
         calls.append((list(questions), context))
-        return ["endocrine", "arthritis"]
+        return ["endocrine" if "Q1" in questions[0] else "arthritis"]
 
     _pin_reader(reader)
     result = score_utility(
@@ -823,7 +823,9 @@ def test_runtime_scores_context_assertions_in_one_reader_batch():
         reader=reader,
     )
 
-    assert len(calls) == 1
+    # one reader call per context assertion (per-assertion excerpt + directive)
+    assert len(calls) == 2
+    assert all(len(questions) == 1 for questions, _ in calls)
     assert result["component_scores"] == {"c1": 1.0, "c2": 1.0, "d1": 1.0}
     assert result["utility"] == pytest.approx(1.0)
 

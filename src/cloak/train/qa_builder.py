@@ -4570,9 +4570,16 @@ def score_utility(
     ]
     assertions.sort(key=lambda row: str(row["assertion_id"]))
     context_rows = [row for row in assertions if row.get("family") == "context"]
-    context_answers = list(reader(
-        [str(row["question"]) for row in context_rows], doc_p
-    )) if context_rows else []
+    # Match the gate exactly: typed-directive question + per-assertion turn
+    # excerpt of doc_p (same stored turn indices), so an assertion accepted on
+    # its excerpt at build time is scored on the same excerpt at runtime.
+    context_answers = []
+    for row in context_rows:
+        question = _permuted_reader_question(row, 0)
+        turns = (row.get("evidence") or {}).get("reader_turns") or []
+        context_answers += reader(
+            [question], _turn_excerpt(doc_p, turns, window=CONTEXT_READER_TURN_WINDOW)
+        )
     if len(context_answers) != len(context_rows):
         raise ValueError("reader returned the wrong number of answers")
 
