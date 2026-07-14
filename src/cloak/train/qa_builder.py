@@ -3792,6 +3792,86 @@ def frozen_occurrences_from_arms(
     }
 
 
+# Detected runtime types that are supposed to carry a generalization lattice
+# (identity types like PERSON/LOC are placeholder-by-rule and excluded).
+_REVIEW_LADDER_TYPES = frozenset({"drug", "health-condition", "medical-procedure"})
+
+
+def _review_flag(code: str, stage: str, fix_class: str, severity: str, detail: dict) -> dict:
+    return {"code": code, "stage": stage, "fix_class": fix_class,
+            "severity": severity, "detail": detail}
+
+
+def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
+    """Per-document diagnostics classifying *why* a document may be worth
+    re-processing after a fix. Pure function over the built artifact; each flag
+    carries a `fix_class` (data_lattice / teacher_redraw / reader /
+    ontology_review) so a change can re-select exactly the affected documents.
+    Diagnostic only — never enters the artifact hash or any measurement."""
+    flags: dict[str, list[dict]] = defaultdict(list)
+
+    # A) a detected, lattice-eligible span with no legal generalization level
+    #    (e.g. an unaliased drug brand -> placeholder-only, the synthroid case).
+    for doc_id, document in (artifact.get("documents") or {}).items():
+        decisions = {str(d.get("decision_id")): d for d in document.get("decisions") or []}
+        seen: set[tuple[str, str]] = set()
+        for occurrence in document.get("occurrences") or []:
+            runtime_type = canon(str(occurrence.get("runtime_type", "")))
+            if runtime_type not in _REVIEW_LADDER_TYPES:
+                continue
+            key = (runtime_type, canon(str(occurrence.get("surface", ""))))
+            if key in seen:
+                continue
+            seen.add(key)
+            decision = decisions.get(str(occurrence.get("decision_id")))
+            if not (_ordered_decision_levels(decision) if decision else []):
+                flags[doc_id].append(_review_flag(
+                    "missing_generalization", "freeze", "data_lattice", "warn",
+                    {"runtime_type": occurrence.get("runtime_type"),
+                     "surface": occurrence.get("surface"),
+                     "resolved_decision": bool(decision)}))
+
+    # D) classify signals the build already emits
+    for record in (artifact.get("rejections") or {}).get("records") or []:
+        doc_id = str(record.get("doc_id"))
+        reason = record.get("detail_reason") or record.get("reason")
+        evidence = record.get("evidence") or {}
+        if reason == "literal_will_be_substituted":
+            flags[doc_id].append(_review_flag(
+                "literal_will_be_substituted", "compile", "data_lattice", "warn", {}))
+        elif reason == "answer_leakage":
+            flags[doc_id].append(_review_flag(
+                "unrepaired_answer_leakage", "compile", "ontology_review", "warn", {}))
+        elif reason == "placeholder_answerable":
+            flags[doc_id].append(_review_flag(
+                "placeholder_answerable", "gate", "ontology_review", "info", {}))
+        elif reason == "three_point_gate_failed":
+            scores = (evidence.get("validation") or {}).get("scores") or {}
+            if (scores.get("original", 0.0) >= 1.0
+                    and scores.get("representative", 0.0) < 1.0
+                    and scores.get("placeholder", 1.0) < 1.0):
+                # original answerable, generalized form not -> reader capability
+                flags[doc_id].append(_review_flag(
+                    "representative_unreadable", "gate", "reader", "warn",
+                    {"scores": scores}))
+
+    # D) a repair that had to lower the answer floor is worth a human look
+    for row in (artifact.get("assertions") or {}).values():
+        repair = (row.get("evidence") or {}).get("leakage_repair")
+        if isinstance(repair, Mapping) and repair.get("floor_lowered"):
+            flags[str(row.get("doc_id"))].append(_review_flag(
+                "floor_lowered_repair", "compile", "ontology_review", "info",
+                {"from_level": repair.get("from_level"), "to_level": repair.get("to_level")}))
+
+    # teacher self-report inconsistency -> the draw is unreliable, re-run it
+    for doc_id, rows in (artifact.get("relation_candidate_accounting") or {}).items():
+        if any(isinstance(r, Mapping) and r.get("state") == "ledger_inconsistent" for r in rows):
+            flags[doc_id].append(_review_flag(
+                "ledger_inconsistent", "compile", "teacher_redraw", "warn", {}))
+
+    return {doc_id: doc_flags for doc_id, doc_flags in flags.items()}
+
+
 def build_utility_artifact(
     frozen_environment: Mapping,
     task_adapter,
@@ -4329,6 +4409,10 @@ def build_utility_artifact(
     }
     artifact["relation_candidate_accounting"] = candidate_accounting_by_document
     artifact["relation_generation"] = relation_generation_by_document
+    # Diagnostic classification of the finished artifact. Deterministic from its
+    # contents, so it is included in the hashed payload (keeps the downstream
+    # gate's hash recompute consistent) without adding entropy.
+    artifact["review_flags"] = compute_review_flags(artifact)
     artifact["artifact_hash"] = _stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
     })

@@ -3358,3 +3358,43 @@ def test_frozen_occurrences_from_arms_carries_detector_provenance():
         }],
         "score": 0.91,
     }
+
+
+def test_compute_review_flags_classifies_missing_generalization_and_rejections():
+    artifact = {
+        "documents": {"d1": {
+            "occurrences": [
+                {"occurrence_id": "o1", "runtime_type": "drug", "surface": "synthroid"},
+                {"occurrence_id": "o2", "runtime_type": "drug", "surface": "ultram",
+                 "decision_id": "dec1"},
+                {"occurrence_id": "o3", "runtime_type": "age", "surface": "62-year-old"},
+            ],
+            "decisions": [{"decision_id": "dec1", "actions": [
+                {"mode": "level", "legal": True, "entails": ["opioid analgesic"]}]}],
+        }},
+        "rejections": {"records": [
+            {"doc_id": "d1", "detail_reason": "literal_will_be_substituted", "evidence": {}},
+            {"doc_id": "d1", "detail_reason": "three_point_gate_failed", "evidence": {
+                "validation": {"scores": {"original": 1.0, "representative": 0.0,
+                                          "placeholder": 0.0}}}},
+            {"doc_id": "d1", "detail_reason": "no_task_role_cue", "evidence": {}},
+        ]},
+        "assertions": {"a1": {"doc_id": "d1", "evidence": {
+            "leakage_repair": {"floor_lowered": True, "from_level": "x", "to_level": "y"}}}},
+        "relation_candidate_accounting": {"d1": [{"state": "ledger_inconsistent"}]},
+    }
+
+    flags = qa_builder.compute_review_flags(artifact)
+    codes = {f["code"] for f in flags["d1"]}
+    assert {"missing_generalization", "literal_will_be_substituted",
+            "representative_unreadable", "floor_lowered_repair",
+            "ledger_inconsistent"} <= codes
+    assert "no_task_role_cue" not in codes  # legitimate rejection, not flagged
+
+    missing = [f for f in flags["d1"] if f["code"] == "missing_generalization"]
+    assert len(missing) == 1  # ultram (has levels) and age (ineligible) excluded
+    assert missing[0]["detail"]["surface"] == "synthroid"
+    assert missing[0]["fix_class"] == "data_lattice"
+    by_class = {f["code"]: f["fix_class"] for f in flags["d1"]}
+    assert by_class["ledger_inconsistent"] == "teacher_redraw"
+    assert by_class["representative_unreadable"] == "reader"
