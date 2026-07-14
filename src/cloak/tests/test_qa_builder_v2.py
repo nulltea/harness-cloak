@@ -1355,13 +1355,13 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
         "provider": "openrouter",
         "model": "nvidia/nemotron-3-super-120b-a12b:free",
         "base_url": "https://openrouter.ai/api/v1",
-        "prompt_version": "qa-relation-teacher-v11",
+        "prompt_version": "qa-relation-teacher-v12",
         "response_schema": {"type": "relation-qa-batch", "version": 7},
         "response_format": qa_builder.RELATION_TEACHER_RESPONSE_FORMAT,
         "generation_config": {
             "reasoning": {"exclude": True},
         },
-        "revision": "qa-relation-teacher-r23",
+        "revision": "qa-relation-teacher-r24",
     }
     assert relations == [{"relation": "treated_with"}]
 

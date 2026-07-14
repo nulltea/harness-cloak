@@ -140,9 +140,9 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     # prompt/schema (v8/r20) must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v11"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v12"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 7
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r23"
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r24"
 
 
 def test_prompt_worked_examples_are_source_independent_and_level_based():
@@ -776,6 +776,45 @@ def test_multiturn_span_pair_grounds_within_one_problem_block():
     assert accepted[0]["occurrence_ids"] == ["arthritis", "panel"]
 
 
+def test_treated_with_indication_grounds_inside_a_speaker_turn_anchor():
+    # D2N002: "you've had the kidney transplant a few years ago for some
+    # polycystic kidneys" sits in one doctor turn with preamble, so the anchor
+    # re-splits into >2 sub-clauses. The reversed indication connector must be
+    # consulted there, not only in a clean 2-clause fixture.
+    source = (
+        "[doctor] okay . all right . now , i know that you've had the kidney transplant "
+        "a few years ago for some polycystic kidneys .\n[patient] mm-hmm .\n"
+    )
+    kt = source.index("kidney transplant")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "transplant", "decision_id": "d-transplant",
+            "surface": "kidney transplant", "start": kt, "end": kt + 17,
+            "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-transplant",
+            "actions": [{"mode": "level", "legal": True, "entails": ["solid organ transplant"]}],
+        }],
+    }
+    proposal = {
+        "relation": "treated_with",
+        "arguments": [
+            {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "polycystic kidneys"},
+            {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "solid organ transplant", "literal": None},
+        ],
+        "question": "Which procedure category addressed the polycystic kidneys?",
+        "accepted_answers": ["solid organ transplant"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "treated_with"
+    assert accepted[0]["occurrence_ids"] == ["transplant"]
+
+
 def test_multiturn_anchor_rejects_link_across_a_problem_switch():
     # arthritis (first problem) must not link to the thyroid panel ordered
     # under "for your second problem".
@@ -841,6 +880,16 @@ def test_prompt_permits_within_problem_block_multiturn_links():
     assert "SAME problem discussion" in prompt
     assert "different problem discussion" in prompt
     assert "conditional or hypothetical" in prompt
+
+
+def test_prompt_prefers_the_most_specific_generalization_level():
+    # The teacher was picking the vacuous root level (e.g. "medical condition")
+    # as the answer, which discriminates nothing; the prompt must ask for the
+    # most specific applicable level.
+    source = "Hypothyroidism is treated with Synthroid."
+    prompt = relation_teacher_prompt("d2", source, _environment(source))
+    assert "most specific" in prompt
+    assert "not the broadest" in prompt
 
 
 def test_treated_with_accepts_procedure_form_condition_via_indication_connector():

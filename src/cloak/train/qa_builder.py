@@ -15,9 +15,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v11"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v12"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 7}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r23"
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r24"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -2366,7 +2366,7 @@ Read the full source. Evidence cards are navigation aids only, not pair gates. U
 A relation may connect spans from different turns of the SAME problem discussion, the block where the doctor assesses and plans one problem, including short patient acknowledgments between the doctor's sentences (for example a condition named when the problem is introduced and a test ordered for it a sentence later). Never link spans from a different problem discussion or from unrelated small talk, and never assert a conditional or hypothetical statement ("if symptoms continue", "possibly", "we can consider") as a relation.
 
 PRIVACY-SAFE QA
-Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. An exact uncontrolled context literal may be an answer only when it is the measured fact.
+Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest (a level so generic it fits almost any concept measures nothing). An exact uncontrolled context literal may be an answer only when it is the measured fact.
 
 RELATION INVENTORY
 {relation_inventory}
@@ -2655,30 +2655,42 @@ def _relation_quote_has_direct_support(
         positions.append((match.start(), match.end()))
     if not positions:
         return False
+    cues = relation_contract[relation].get("cues", ())
     if len(clause_ranges) > 2:
         if allow_plan_section:
             local_left = min(position[0] for position in positions)
             local_right = max(position[1] for position in positions)
-            return any(re.search(re.escape(cue), normalized[local_left:local_right])
-                       for cue in relation_contract[relation].get("cues", ()))
-        # A multi-sentence speaker turn: the arguments must share one clause
-        # (or two adjacent ones) and the cue is searched within those clause
-        # bounds — explicit cues can precede the subject ("you ca n't take X
-        # because of Y"), and between-args-only search missed them.
-        argument_clauses = [
-            next((index for index, (left, right) in enumerate(clause_ranges)
-                  if left <= position[0] < right), None)
-            for position in positions
-        ]
-        if (
-            None in argument_clauses
-            or abs(argument_clauses[0] - argument_clauses[-1]) > 1
-        ):
-            return False
-        local_left = min(clause_ranges[index][0] for index in argument_clauses)
-        local_right = max(clause_ranges[index][1] for index in argument_clauses)
+        else:
+            # A multi-sentence speaker turn: the arguments must share one clause
+            # (or two adjacent ones) and support is searched within those clause
+            # bounds — explicit cues/connectors can precede the subject
+            # ("you ca n't take X because of Y"; "<procedure> ... for <condition>"),
+            # and between-args-only search missed them.
+            argument_clauses = [
+                next((index for index, (left, right) in enumerate(clause_ranges)
+                      if left <= position[0] < right), None)
+                for position in positions
+            ]
+            if (
+                None in argument_clauses
+                or abs(argument_clauses[0] - argument_clauses[-1]) > 1
+            ):
+                return False
+            local_left = min(clause_ranges[index][0] for index in argument_clauses)
+            local_right = max(clause_ranges[index][1] for index in argument_clauses)
+        # An exact directional connector between the two arguments is direct
+        # support on its own (forward "<subject> connector <object>", or the
+        # reversed indication form "<object> ... for <subject>").
+        if positions[0] < positions[1]:
+            connector = normalized[positions[0][1]:positions[1][0]]
+            connector_patterns = relation_contract[relation].get("connector_patterns", ())
+        else:
+            connector = normalized[positions[1][1]:positions[0][0]]
+            connector_patterns = relation_contract[relation].get("reversed_connector_patterns", ())
+        if any(re.fullmatch(pattern, connector) for pattern in connector_patterns):
+            return True
         return any(re.search(re.escape(cue), normalized[local_left:local_right])
-                   for cue in relation_contract[relation].get("cues", ()))
+                   for cue in cues)
     if positions[0] < positions[1]:
         connector = normalized[positions[0][1]:positions[1][0]]
         if any(re.fullmatch(pattern, connector) for pattern in
