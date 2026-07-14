@@ -3416,9 +3416,12 @@ def package_utility_artifact(
             missing = sorted(set(occurrence_ids) - set(occurrences))
             if missing:
                 raise ValueError(f"unknown occurrence links for {doc_id}: {missing}")
+            # Placeholder-anchor (PERSON) links are legitimately uncontrolled: they
+            # carry no decision and only anchor the generalizable answer.
             uncontrolled = sorted(
                 occurrence_id for occurrence_id in occurrence_ids
-                if not occurrences[occurrence_id].get(
+                if not occurrences[occurrence_id].get("anchor")
+                and not occurrences[occurrence_id].get(
                     "controlled", occurrences[occurrence_id].get("decision_id") is not None
                 )
             )
