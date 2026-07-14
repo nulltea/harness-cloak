@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-07-14
 tags: [detector, clinical, aci, misclassification, transcript-normalization, runtime-types, issue-register]
 companion: [2026-07-10-detector-junk-and-noise-gate-limits.md,
             ../specs/RL/interactive-ranker-v2.md,
@@ -33,7 +33,7 @@ before quantitative claims.
 | `white blood cell count` | `CODE` | Clinical measurement name misclassified as an identifier/code. |
 | `heart rate` | `CODE` | Clinical vital-sign name misclassified as an identifier/code. |
 | `two out of six` | `CODE` | Clinical measurement/value phrase misclassified as an identifier/code. |
-| `andrew` (two occurrences; intended name `Andrew`) | `demographic-other` | Both occurrences of the person name are routed to the demographic fallback instead of `PERSON`. |
+| `andrew` (three occurrences; intended name `Andrew`) | `demographic-other` | All three occurrences of the person name were routed to the demographic fallback instead of `PERSON`. |
 
 ### `demographic-other` is an erroneous RL-v2 clinical runtime type
 
@@ -95,3 +95,58 @@ jq '[.clinical["aci/D2N002"].tau_walk[1][] | {surface, type, score}]
     | map({surface: .[0].surface, type: .[0].type, count: length, scores: map(.score)})' \
   /tmp/task_arms_qa_v2_d2n002.json
 ```
+
+## Resolution measured on 2026-07-14
+
+The attributable detector and QA-v2 runtime contracts resolve the four preregistered failure
+classes on both the representative document and the complete local ACI slice. Evidence is committed
+as the [D2N002 gate artifact](../../results/clinical_detector_gate_aci_d2n002.json) and the
+[67-document ACI gate artifact](../../results/clinical_detector_gate_aci.json).
+
+Both artifacts pin `knowledgator/gliner-pii-large-v1.0` at threshold `0.35`, the native clinical
+label mapping, the clinical profile, and GLiNER plus Presidio composition. Each document carries a
+SHA-256 source hash. They were generated with one flattened detector batch per command:
+
+```bash
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/python -u \
+  scripts/clinical_detector_gate.py \
+  --corpus aci \
+  --doc-id aci/D2N002 \
+  --out results/clinical_detector_gate_aci_d2n002.json
+
+PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/python -u \
+  scripts/clinical_detector_gate.py \
+  --corpus aci \
+  --out results/clinical_detector_gate_aci.json
+```
+
+Measured outcomes:
+
+| Scope | Documents | Wall time | Split-contraction `PERSON` | Native clinical `CODE` without identifier shape | Explicit name not `PERSON` | Frozen `demographic-other` |
+|---|---:|---:|---:|---:|---:|---:|
+| `aci/D2N002` | 1 | 9.218 s | 0 | 0 | 0 | 0 |
+| Complete local ACI slice | 67 | 86.912 s | 0 | 0 | 0 | 0 |
+
+The D2N002 artifact contains 45 accepted candidates, 6 rejected candidates, 4 overlap losers,
+8 normalization events, and 0 post-detection rejections. All three `andrew` occurrences are accepted
+as `PERSON` from native GLiNER label `name`; the duplicate Presidio candidates remain visible as
+same-type overlap losers. `heart rate`, `two out of six`, and `white blood cell count` are retained as
+rejected native `medical code` candidates with reason
+`clinical_code_without_identifier_shape`. The analysis view records `wan na`→`wanna ` and
+`gon na`→`gonna ` at unchanged offsets.
+
+Across all 67 ACI documents, the artifact contains 3,021 accepted candidates, 293 rejected
+candidates, 224 overlap losers, 376 normalization events, and 42 post-detection rejections.
+Representative accepted evidence includes `martha` as `PERSON/name`; rejected evidence includes
+`three out of six systolic ejection murmur` and `one plus` under the positive code contract.
+
+The 42 post-detection rejections are not frozen `demographic-other` occurrences and therefore do not
+fail the preregistered gate. They are nevertheless an unresolved recall/typing audit queue: examples
+include `nick`, `cushing`, and `miller`, where a lowercase Presidio `PERSON` candidate was rejected
+after the legacy role-word path proposed `demographic-other`. The gate also does not establish overall
+clinical entity recall, privacy, or downstream utility; those require their own matched-setting
+evaluations.
+
+The standardized `scripts/harness/perf_gate.md` prompt and codex-rescue/auto-review backend were not
+available in this worktree. The runs used the approved flattened-batch design and measured GPU wall
+times above; no standardized external performance review was run or implied.
