@@ -16,9 +16,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v17"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v18"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r29"
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r30"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -2594,7 +2594,10 @@ def relation_teacher_prompt(
                 f"| levels: {'; '.join(row['properties'])}]")
     spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
     cards = []
-    redaction = _identity_redaction_map(environment_document)
+    # Only the person call needs identity tokens (its anchors). The clinical call
+    # never references a person, so it reads the raw source — byte-identical to the
+    # proven pre-person prompt, so person relations cannot perturb its output.
+    redaction = _identity_redaction_map(environment_document) if family == "person" else {}
     for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
         labels = [row["span_label"] for row in shown if start <= row["start"] < row["end"] <= end]
         if labels:
