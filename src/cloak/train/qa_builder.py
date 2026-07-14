@@ -1715,6 +1715,86 @@ def _question_leaks_answer(
     return bool(answer_tokens & _meaningful_tokens(question))
 
 
+def _ordered_decision_levels(decision: Mapping) -> list[str]:
+    """Legal non-placeholder generalization levels of a decision, most-specific
+    to coarsest (same flattening/order as the teacher span inventory)."""
+    return list(dict.fromkeys(
+        str(value)
+        for action in decision.get("actions", [])
+        if action.get("legal", True) and action.get("mode") not in {"keep", "placeholder"}
+        for value in action.get("entails") or []
+        if str(value).strip()
+    ))
+
+
+def _repair_leaked_relation(
+    question: str,
+    accepted_values: Sequence[str],
+    arguments: Sequence[Mapping],
+    answer_role: str,
+    answer_exempt_types: Sequence[str] | str,
+    decisions: Mapping[str, Mapping],
+    occurrences: Mapping[str, Mapping],
+) -> tuple[str, list[str], list[dict], dict] | None:
+    """Clear a *lexical* answer-leakage collision by recoloring levels within the
+    already-legal set, without inventing anything. `answer_leakage` fires when the
+    question shares a meaningful token with the answer; for entities whose
+    condition and drug levels share a word (e.g. "thyroid gland disease" vs
+    "thyroid hormonal medication") a genuine relation is blocked by naming alone.
+
+    Strategy, in order:
+      1. Subject-side: rewrite the question's reference to the non-answer argument
+         to a coarser legal level that shares no token with the answer. Preserves
+         the answer floor (the measured quantity is unchanged) — preferred.
+      2. Answer-side (last resort): coarsen the answer to a legal level that shares
+         no token with the question. This *lowers the utility floor*, so it is
+         flagged floor_lowered in the repair record.
+    Returns (question, accepted_values, arguments, repair) or None if no legal
+    recoloring clears the collision (then the caller rejects honestly)."""
+    values = list(accepted_values)
+
+    def leaks(q: str, vals: Sequence[str]) -> bool:
+        return any(_question_leaks_answer(q, v, answer_exempt_types) for v in vals)
+
+    object_index = 0 if answer_role == "subject" else 1
+    args = [dict(argument) for argument in arguments]
+    answer_arg = args[object_index]
+    other_arg = args[1 - object_index]
+
+    def levels(argument: Mapping) -> list[str]:
+        if argument.get("kind") != "linked":
+            return []
+        occurrence = occurrences.get(argument.get("occurrence_id")) or {}
+        return _ordered_decision_levels(decisions.get(str(occurrence.get("decision_id"))) or {})
+
+    # 1) subject-side recolor: swap the question's non-answer level reference
+    current = _normalize_teacher_text(str(other_arg.get("support_property") or ""))
+    if current:
+        pattern = re.compile(re.escape(current), re.IGNORECASE)
+        for candidate in levels(other_arg):
+            if canon(candidate) == canon(current):
+                continue
+            new_question = pattern.sub(candidate, question)
+            if new_question != question and not leaks(new_question, values):
+                other_arg["support_property"] = candidate
+                repair = {"kind": "subject_level_recolor", "argument_role": other_arg.get("role"),
+                          "from_level": current, "to_level": candidate, "floor_lowered": False}
+                return new_question, values, args, repair
+
+    # 2) answer-side recolor (last resort): coarsen the answer level
+    for candidate in levels(answer_arg):
+        if any(canon(candidate) == canon(v) for v in values):
+            continue
+        if not leaks(question, [candidate]):
+            answer_arg["support_property"] = candidate
+            repair = {"kind": "answer_level_recolor", "argument_role": answer_arg.get("role"),
+                      "from_level": values[0] if values else "", "to_level": candidate,
+                      "floor_lowered": True}
+            return question, [candidate], args, repair
+
+    return None
+
+
 def _question_leaks_protected_term(
     question: str,
     protected_terms: Sequence[str],
@@ -3016,10 +3096,22 @@ def compile_relational_assertions(
              if argument["kind"] == "linked"]
             if uses_v4_arguments else ""
         )
+        answer_role = str(proposal.get("answer_role", "object"))
+        leakage_repair = None
         if any(_question_leaks_answer(question, answer, answer_exempt_types)
                for answer in accepted_values):
-            reject("answer_leakage")
-            continue
+            repaired = _repair_leaked_relation(
+                question, accepted_values, arguments, answer_role,
+                answer_exempt_types, decisions, occurrences,
+            ) if uses_v4_arguments else None
+            if repaired is None:
+                reject("answer_leakage")
+                continue
+            # Recolored to a legal level that clears the lexical collision; the
+            # linked answer target and support are rebuilt from the new levels.
+            question, accepted_values, arguments, leakage_repair = repaired
+            support = {argument["occurrence_id"]: argument["support_property"]
+                       for argument in arguments if argument["kind"] == "linked"}
         protected_terms = []
         allowed_level_tokens: dict[str, frozenset[str]] = {}
         for occurrence_id_value, occurrence in occurrences.items():
@@ -3058,7 +3150,6 @@ def compile_relational_assertions(
         # The answered argument (default: the object). A linked answer is scored
         # by lattice entailment against its decision's frozen chain; a literal
         # answer keeps lexical matching against the exact grounded span.
-        answer_role = str(proposal.get("answer_role", "object"))
         answer_argument = arguments[0] if answer_role == "subject" else arguments[1]
         if answer_argument["kind"] == "linked":
             answer_target = {
@@ -3095,6 +3186,8 @@ def compile_relational_assertions(
             ),
             "arguments": arguments,
         }
+        if leakage_repair is not None:
+            evidence["leakage_repair"] = leakage_repair
         accepted.append({
             "family": "context",
             "scope": "linked",

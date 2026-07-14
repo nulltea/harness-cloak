@@ -577,6 +577,93 @@ def test_context_literal_matching_an_uncontrolled_detected_span_is_rejected():
     assert rejected[0]["detail_reason"] == "literal_will_be_substituted"
 
 
+def test_leakage_repair_recolors_subject_side_and_preserves_answer_floor():
+    # "thyroid gland disease" (subject level, in the question) collides on
+    # "thyroid" with the answer "thyroid hormonal medication" -> answer_leakage.
+    # Repair rewrites the question's subject reference to the coarser legal level
+    # "endocrine system disease" and leaves the answer floor intact.
+    decisions = {
+        "d-hypo": {"actions": [{"mode": "level", "legal": True,
+                                "entails": ["thyroid gland disease", "endocrine system disease"]}]},
+        "d-syn": {"actions": [{"mode": "level", "legal": True,
+                               "entails": ["thyroid hormonal medication", "hormonal therapy agent"]}]},
+    }
+    occurrences = {
+        "hypo": {"occurrence_id": "hypo", "decision_id": "d-hypo", "runtime_type": "health-condition"},
+        "syn": {"occurrence_id": "syn", "decision_id": "d-syn", "runtime_type": "drug"},
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "hypo", "support_property": "thyroid gland disease"},
+        {"role": "object", "kind": "linked", "occurrence_id": "syn", "support_property": "thyroid hormonal medication"},
+    ]
+    question = "Which medication was prescribed for the thyroid gland disease?"
+
+    result = qa_builder._repair_leaked_relation(
+        question, ["thyroid hormonal medication"], arguments, "object",
+        ["health-condition", "drug"], decisions, occurrences,
+    )
+
+    assert result is not None
+    new_question, values, args, repair = result
+    assert repair["kind"] == "subject_level_recolor" and repair["floor_lowered"] is False
+    assert repair["to_level"] == "endocrine system disease"
+    assert "endocrine system disease" in new_question and "thyroid gland disease" not in new_question
+    assert values == ["thyroid hormonal medication"]  # answer floor unchanged
+    assert not qa_builder._question_leaks_answer(new_question, values[0], ["health-condition", "drug"])
+
+
+def test_leakage_repair_answer_side_fallback_lowers_floor():
+    # Subject has no alternative legal level, so the only way to clear the
+    # collision is to coarsen the answer -> flagged floor_lowered.
+    decisions = {
+        "d-hypo": {"actions": [{"mode": "level", "legal": True, "entails": ["thyroid gland disease"]}]},
+        "d-syn": {"actions": [{"mode": "level", "legal": True,
+                               "entails": ["thyroid hormonal medication", "hormonal therapy agent"]}]},
+    }
+    occurrences = {
+        "hypo": {"occurrence_id": "hypo", "decision_id": "d-hypo", "runtime_type": "health-condition"},
+        "syn": {"occurrence_id": "syn", "decision_id": "d-syn", "runtime_type": "drug"},
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "hypo", "support_property": "thyroid gland disease"},
+        {"role": "object", "kind": "linked", "occurrence_id": "syn", "support_property": "thyroid hormonal medication"},
+    ]
+    question = "Which medication was prescribed for the thyroid gland disease?"
+
+    result = qa_builder._repair_leaked_relation(
+        question, ["thyroid hormonal medication"], arguments, "object",
+        ["health-condition", "drug"], decisions, occurrences,
+    )
+
+    assert result is not None
+    new_question, values, args, repair = result
+    assert repair["kind"] == "answer_level_recolor" and repair["floor_lowered"] is True
+    assert values == ["hormonal therapy agent"]
+    assert new_question == question  # question untouched on answer-side repair
+
+
+def test_leakage_repair_returns_none_when_no_legal_recoloring_clears_it():
+    # Every level on both sides carries "thyroid" -> unrepairable, caller rejects.
+    decisions = {
+        "d-hypo": {"actions": [{"mode": "level", "legal": True, "entails": ["thyroid gland disease"]}]},
+        "d-syn": {"actions": [{"mode": "level", "legal": True, "entails": ["thyroid hormone agent"]}]},
+    }
+    occurrences = {
+        "hypo": {"occurrence_id": "hypo", "decision_id": "d-hypo", "runtime_type": "health-condition"},
+        "syn": {"occurrence_id": "syn", "decision_id": "d-syn", "runtime_type": "drug"},
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "hypo", "support_property": "thyroid gland disease"},
+        {"role": "object", "kind": "linked", "occurrence_id": "syn", "support_property": "thyroid hormone agent"},
+    ]
+    question = "Which medication was prescribed for the thyroid gland disease?"
+
+    assert qa_builder._repair_leaked_relation(
+        question, ["thyroid hormone agent"], arguments, "object",
+        ["health-condition", "drug"], decisions, occurrences,
+    ) is None
+
+
 def test_contraindicated_because_of_accepts_explicit_cannot_take_wording():
     # D2N002 grounds the contraindication as "you ca n't take some of those
     # anti-inflammatory medications because of your kidney transplant"; the
