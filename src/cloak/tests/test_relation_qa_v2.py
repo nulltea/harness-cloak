@@ -140,23 +140,32 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     # prompt/schema (v8/r20) must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v9"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v11"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 7
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r21"
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r23"
 
 
-def test_prompt_worked_examples_show_safe_level_based_questions_and_answers():
-    # The v6 live smoke wrote "arthritis"/"hypothyroidism" into questions and
-    # answered "ultram" for a linked span: the compressed worked examples
-    # themselves modelled raw-surface usage and dropped the spec-mandated
-    # Safe QA lines.
-    source = "Hypothyroidism is treated with Synthroid."
-    prompt = relation_teacher_prompt("d2", source, _environment(source))
+def test_prompt_worked_examples_are_source_independent_and_level_based():
+    # Worked examples must not leak the document's own entities: verbatim
+    # excerpts turn the examples into an answer key the teacher can copy,
+    # confounding any per-document result. Examples use unrelated conditions.
+    source = "Hypothyroidism is treated with Synthroid. Arthritis exacerbation, prescribe Ultram."
+    environment = _environment(source)
+    arth = source.index("Arthritis")
+    environment["occurrences"].append({"occurrence_id": "arthritis", "decision_id": "d-arth", "surface": "Arthritis", "start": arth, "end": arth + 9, "runtime_type": "health-condition"})
+    environment["decisions"].append({"decision_id": "d-arth", "actions": [{"mode": "level", "legal": True, "entails": ["joint disease"]}]})
+    prompt = relation_teacher_prompt("d2", source, environment)
+    instructions = prompt.split("DETECTED SPANS")[0]
 
-    assert 'Safe question: "Which medication category was prescribed for the joint disease?"' in prompt
-    assert 'Accepted answer: "opioid analgesic"' in prompt
+    assert 'Safe question: "Which medication category was prescribed for the neurological disorder?"' in prompt
+    assert 'Accepted answer: "triptan"' in prompt
     assert "never the source words" in prompt
-    assert "Drug: arthritis + prescribed Ultram" not in prompt
+    # The example scenario is independent of any document's spans.
+    for example_entity in ("migraine", "sumatriptan", "cataract", "diabetes", "asthma", "beta-blockers"):
+        assert example_entity in instructions
+    # No document span/level leaks into the worked examples.
+    for leaked in ("arthritis", "ultram", "hypothyroidism", "synthroid", "opioid analgesic", "joint disease"):
+        assert leaked not in instructions.lower()
 
 
 def test_prompt_anchors_labels_to_the_relation_sentence_and_deduplicates_facts():

@@ -15,9 +15,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v9"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v11"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 7}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r21"
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r23"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -2371,13 +2371,14 @@ Author the question, accepted answers, and scoring contract. Do not repeat a dis
 RELATION INVENTORY
 {relation_inventory}
 
-WORKED EXAMPLES
-Drug, never treated_with: source "exacerbation of [S3: arthritis | condition | levels: joint disease] ... prescribe [S4: ultram | drug | levels: opioid analgesic]" => prescribed_with(S3, S4).
-Safe question: "Which medication category was prescribed for the joint disease?" Accepted answer: "opioid analgesic". Refer to linked spans by their levels, never the source words.
-Procedure: "kidney stone treated with lithotripsy" => treated_with.
-Monitoring: source "to follow the [S5: hypothyroidism | condition | levels: thyroid gland disease], order thyroid labs" => monitored_by(S5, context literal "thyroid labs").
-Safe question: "What testing follows the thyroid gland disease?" Accepted answer: "thyroid labs" (an uncontrolled literal answer is the measured fact). A lab mentioned elsewhere is not monitoring.
-Contraindication: emit only when explicitly stated, for example "ca n't take X because of ...".
+WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy these entities — read this document's own source and spans)
+Drug, never treated_with: source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
+Safe question: "Which medication category was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words.
+Procedure: "cataract treated with phacoemulsification" => treated_with (a procedure, not a drug).
+Monitoring: source "to follow the [S3: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => monitored_by(S3, context literal "hemoglobin A1c").
+Safe question: "What testing follows the metabolic disorder?" Accepted answer: "hemoglobin A1c" (an uncontrolled literal answer is the measured fact). A test mentioned elsewhere is not monitoring.
+Contraindication: source "you ca n't use beta-blockers because of your [S4: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S4). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition.
+Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
 
 DETECTED SPANS
 {spans}
@@ -2390,8 +2391,8 @@ Return two relation lists. Each relation record contains: relation; a subject ar
 span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim.
 context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span.
 Never quote a displayed span as a context literal. Emit each distinct fact once, in the list its argument kinds require, at the S-label inside the sentence that states the relation. Do not repeat the same fact for other S-labels of the same value.
-Example span_relations record: relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the joint condition?"; accepted answer "opioid analgesic".
-Example context_relations record: relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "synthroid" quoted from the relation sentence; accepted answer "synthroid".
+Example span_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the neurological disorder?"; accepted answer "triptan".
+Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "azithromycin" quoted from the relation sentence; accepted answer "azithromycin".
 Return exactly one candidate_accounting row per S-label covering both lists, with a short reason for every row. emitted means a relation record in either list uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
 
 SOURCE DOCUMENT

@@ -128,6 +128,32 @@ now reachable via the problem-block anchor). The "4-6" span pairs seen in one ea
 same `arthritis -> ultram` fact re-emitted at four duplicate arthritis labels, collapsed by
 `duplicate_mention`, not four distinct facts.
 
+## 2026-07-14 — worked-example decontamination (v10 → v11) and the fixed-detector finding
+
+Two related findings while chasing D2N002 relation coverage:
+
+- **v10 contraindication example.** Adding one full contraindication worked example (drug literal +
+  condition span at the contraindication sentence + condition-level answer) got the teacher to emit
+  `contraindicated_because_of(anti-inflammatory medications -> kidney transplant)` at the correct
+  plan-region kidney-transplant label with a level answer, where it previously failed
+  `unknown_context_literal` on the PMH-list label.
+- **v11 example decontamination (empirical-honesty fix).** The worked examples had used verbatim
+  D2N002 excerpts (arthritis→ultram, hypothyroidism→synthroid→thyroid labs,
+  anti-inflammatory→kidney transplant), so every D2N002 build r18–r22 was confounded: the teacher
+  could copy the answer key. Rewrote all worked + RESPONSE examples to a source-independent scenario
+  (migraine/sumatriptan, cataract, diabetes/A1c, asthma/beta-blockers). The re-run (r23) then produced
+  **more** relations (8), all in D2N002's own terms, zero example entities leaked — disproving the
+  "teacher was copying" hypothesis. Extraction is genuine; the examples teach the pattern, not the
+  answers. `test_prompt_worked_examples_are_source_independent_and_level_based` guards against regress.
+
+- **Fixed-detector rerun (r24).** With the merged detector fix the junk types are gone
+  (`demographic-other`/PERSON/CODE) but the eligible condition set grew 14→18 by freezing exam
+  findings (`edema`/`erythema`/`immunocompromised`/`acute exacerbation`) as controlled conditions.
+  `acute exacerbation` (detector score 0.382) hijacked `arthritis→ultram`. Root cause and the two
+  discriminator spikes (GLiNER label-schema split failed; detector confidence separates but only
+  partially) are logged in `docs/issues/detector-misclassifications.md`; the fix is handed to the
+  detector lane (raise the health-condition admission threshold).
+
 ## Retry budget (2026-07-14)
 
 The OpenAI SDK honors OpenRouter's `Retry-After` (up to 60s) on every retry; stacking those with

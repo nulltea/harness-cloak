@@ -151,3 +151,54 @@ evaluations.
 The standardized `scripts/harness/perf_gate.md` prompt and codex-rescue/auto-review backend were not
 available in this worktree. The runs used the approved flattened-batch design and measured GPU wall
 times above; no standardized external performance review was run or implied.
+
+## 2026-07-14 — exam-finding over-capture as controlled conditions (QA-v2 impact)
+
+After the `demographic-other`/PERSON/CODE fixes merged, a fixed-detector QA-v2 build on `aci/D2N002`
+(`/tmp/qa-v2-d2n002-newdet.json`) showed the eligible controlled-condition set grow from 14 to 18.
+The four additions are descriptive clinical findings, not diagnoses, now frozen as controlled
+`health-condition` decisions: `edema`, `erythema`, `immunocompromised`, `acute exacerbation`. In the
+pre-fix detector these were detected but uncontrolled; the "preserve attributable clinical decisions"
+change now controls them.
+
+**QA-side harm (measured).** `acute exacerbation` is a modifier of `arthritis`
+("acute exacerbation of your arthritis"), not a standalone diagnosis, but as a controlled span it sits
+beside "prescribe ultram" and the relation teacher anchored the prescription on it:
+the true `prescribed_with(arthritis -> ultram)` degraded to `prescribed_with(acute exacerbation ->
+ultram)`, and a `causes_or_explains(acute exacerbation -> knee pain)` also appeared. `edema`, `erythema`,
+`immunocompromised` were inert (`exhausted_no_relation`) — no relations, no harm — but remain noise in
+candidate accounting. This is not a QA-builder bug: QA cannot distinguish a finding from a diagnosis
+from its inputs (see below), so the fix belongs at the detector.
+
+**Two discriminators tested.**
+1. *GLiNER label schema (does not work).* Prompting GLiNER with added finding labels
+   (`symptom`, `physical examination finding`, `clinical sign`) alongside `condition` did not pull the
+   findings off `condition`: `edema`/`erythema`/`immunocompromised` still won `condition`; the finding
+   labels never cleared threshold. GLiNER (this model, zero-shot) does not separate finding from
+   diagnosis by label name. Spike: `scripts/spikes/detector_finding_label_split.py`.
+2. *Detector confidence (partial, and already frozen).* The frozen `detector_provenance.score`
+   separates the low-confidence findings from diagnoses, but not perfectly:
+
+   | frozen score | surface | type |
+   |---:|---|---|
+   | 0.382 | acute exacerbation | finding (the harmful one) |
+   | 0.410 | immunocompromised | finding |
+   | 0.634 | erythema | finding |
+   | 0.677 | edema | finding |
+   | 0.736 | hyperthyroidism | diagnosis |
+   | 0.941–0.979 | kidney transplant, hypothyroidism, arthritis | diagnosis |
+
+   The harmful `acute exacerbation` (0.382) sits 0.35 below the lowest real diagnosis (0.736), so a
+   modest admission-threshold raise drops it with wide margin. But `edema` (0.677) and the lowest
+   diagnosis `hyperthyroidism` (0.736) are only 0.06 apart, so no single confidence threshold cleanly
+   drops all four findings without risking real diagnoses on other documents.
+
+**Recommendation (detector lane).** Raise the `health-condition` admission threshold above the current
+`0.35` (≈0.5 clears the two worst findings, incl. the harmful `acute exacerbation`, with a 0.24+ margin
+to every real diagnosis on this doc) — or add a condition-specific confidence gate — so low-confidence
+findings never freeze as controlled decisions. This fixes both QA-v2 relation quality and the RL action
+space, and needs a matched-setting recall check on a wider slice before freezing the threshold (the
+finding/diagnosis confidence bands overlap near 0.68–0.74 and one document is not enough to set it).
+Until then the QA builder leaves these spans relation-eligible; `acute exacerbation` will keep competing
+with `arthritis` as a relation subject. Evidence artifacts: `/tmp/qa-v2-d2n002-newdet.json`,
+`/tmp/finding_split.log`.
