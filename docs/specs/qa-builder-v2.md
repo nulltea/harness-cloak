@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-13
+updated: 2026-07-14
 tags: [qa, reward-design, utility-components, context-preservation, credit-routing,
        interactive-ranker, spec]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
@@ -478,7 +478,26 @@ Do not reverse it. Emit a relation only when the source explicitly supports it.
    Use an explicitly stated category/classification only. An adapter must preregister an explicit
    source form that connects the concept to the category; otherwise this type is expected to have
    zero coverage.
+
+9. has_condition
+   person → condition or diagnosis
+   Use when the source states the person has, presents with, or was diagnosed with the condition.
+
+10. takes_medication
+    person → drug
+    Use when the source states the person takes, is on, continues, or was prescribed the drug.
+
+11. underwent_procedure
+    person → medical procedure
+    Use when the source states the person had, underwent, or received the procedure.
 ```
+
+Relations 9–11 anchor a generalizable clinical span to a **person**. The person is the subject
+and the clinical span is always the object and the answer; the person is never the answer (it has
+no generalization level). These relations exist for coverage: a clinical span that participates in
+no condition↔drug↔procedure relation still earns a context assertion by anchoring to the person.
+`age` is deliberately excluded — it is a demographic attribute, not a per-fact relation subject,
+and would only duplicate person-anchored facts with a weaker, non-disambiguating anchor.
 
 The prompt additionally requires semantic QA: questions and accepted answers must not copy a
 displayed controlled source span or alias. They should use the selected allowed generalization
@@ -496,12 +515,36 @@ The teacher cannot invent relation types, span labels, or unsupported source fac
 the contextual QA question, accepted semantic answer(s), and scoring contract for an otherwise
 compiled relation; deterministic code validates rather than templates that semantic content.
 
-Relation arguments have two disjoint forms. A **linked decision argument** is a controlled,
+Relation arguments have three disjoint forms. A **linked decision argument** is a controlled,
 frozen occurrence ID and carries a legal lattice-support property; it receives routing links and
 the joint representative-anchor check. A **context/literal argument** is an exact, typed,
 source-grounded span (for example a lab, physical therapy, status, or category) that is not a
-detector decision and never requires a lattice action. Both forms require exact source evidence.
-Only linked arguments enter `occurrence_ids` and `decision_requirements`.
+detector decision and never requires a lattice action. A **placeholder-anchor argument** is a
+controlled *identity* occurrence (PERSON, and any type that is placeholder-by-rule) that has no
+generalization level: it is never the answer and carries no `support_property`; it exists only to
+anchor the answer to a specific individual. All three forms require exact source evidence. Only
+linked and placeholder-anchor arguments enter `occurrence_ids`; only linked arguments carry a
+`decision_requirements` lattice action.
+
+**Identity-token anchoring (relations 9–11).** A person's surface differs across renders — the
+real name in the clear document, `<PERSON_2>` after substitution — and it has no level to
+reference. To give the reader a *stable* anchor, identity types are pre-substituted to their
+frozen placeholder tokens in **two** views: the teacher's source view and the gate's `original`
+reader context. The teacher therefore never sees the real name (a privacy benefit) and anchors
+its question on `<PERSON_2>`, which then appears identically in the original, representative,
+placeholder, and runtime `doc_p` contexts. This is faithful, not a hack: identity types are
+placeholder-by-rule, so the pipeline never emits the real name — the honest utility baseline is
+*clinical-clear, identity-anonymized*. The clinical object remains the only span that varies
+across the three gate renders, so the three-point gate still discriminates on the object
+(original ✓, representative ✓, all-placeholder ✗). The person→token assignment must be identical
+across the teacher view, all three gate contexts, and runtime, reusing the frozen
+occurrence→placeholder fills so the anchor never drifts. Because the anchor is a per-person token,
+multi-person documents disambiguate for free (each person is a distinct token); no patient-vs-
+provider role classification is required.
+
+Placeholder-anchor arguments are exempt from the `literal_will_be_substituted` guard (they are
+anchors by design, referenced by their placeholder token, not doomed literals), and the compiler
+must reject any relation that makes a placeholder-anchor argument the answer.
 
 Every adapter must map each controlled runtime type that it exposes to one canonical relation
 class before prefiltering. In particular, `medical-procedure` maps to `procedure`; a missing map
