@@ -125,8 +125,8 @@ Measured outcomes:
 
 | Scope | Documents | Wall time | Split-contraction `PERSON` | Native clinical `CODE` without identifier shape | Explicit name not `PERSON` | Frozen `demographic-other` |
 |---|---:|---:|---:|---:|---:|---:|
-| `aci/D2N002` | 1 | 9.218 s | 0 | 0 | 0 | 0 |
-| Complete local ACI slice | 67 | 86.912 s | 0 | 0 | 0 | 0 |
+| `aci/D2N002` | 1 | 9.174 s | 0 | 0 | 0 | 0 |
+| Complete local ACI slice | 67 | 111.124 s | 0 | 0 | 0 | 0 |
 
 The D2N002 artifact contains 45 accepted candidates, 6 rejected candidates, 4 overlap losers,
 8 normalization events, and 0 post-detection rejections. All three `andrew` occurrences are accepted
