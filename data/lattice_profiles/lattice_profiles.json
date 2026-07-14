@@ -17649,7 +17649,21 @@
         ]
       },
       "levothyroxine": {
-        "aliases": [],
+        "aliases": [
+          "synthroid",
+          "levoxyl",
+          "unithroid",
+          "tirosint",
+          "euthyrox",
+          "levothyroxine sodium",
+          "ermeza",
+          "levo-t",
+          "l-thyroxine",
+          "levothyroxine sodium anhydrous",
+          "synthroid",
+          "thyquidity",
+          "tirosint sol"
+        ],
         "count": 4.0,
         "entry_origin": "observed-surface",
         "level_counts": {
