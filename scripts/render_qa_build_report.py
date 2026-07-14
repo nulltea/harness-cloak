@@ -91,12 +91,21 @@ def _relations(
     # any leakage recolor); the teacher attempt carries the pre-recolor question.
     # Match on (relation, answers) — stable across a subject-side recolor — so the
     # report shows what the artifact actually holds, not the raw teacher question.
-    def _final_key(relation, answers):
-        return (relation, tuple(sorted(str(v) for v in answers or [])))
+    def _literals(arguments):
+        return tuple(sorted(
+            str(a.get("literal")) for a in arguments or []
+            if isinstance(a, Mapping) and a.get("literal")))
+    def _final_key(relation, answers, arguments):
+        # relation + subject/object literals + answers distinguishes near-duplicate
+        # relations (e.g. two contraindications with the same answer but different
+        # drug-class literals) while surviving a subject-level recolor.
+        return (relation, _literals(arguments),
+                tuple(sorted(str(v) for v in answers or [])))
     kept_final = {}
     for row in kept_rows:
         kept_final.setdefault(
-            _final_key(row.get("relation"), row.get("accepted_values")), row)
+            _final_key(row.get("relation"), row.get("accepted_values"),
+                       row.get("evidence", {}).get("arguments")), row)
 
     def kept_span(question) -> list | None:
         for row in kept_rows:
@@ -132,7 +141,8 @@ def _relations(
         lines = ["## Generated relations and semantic QA", ""]
         for attempt in attempts:
             final = (kept_final.get(_final_key(attempt.get("relation"),
-                                               attempt.get("accepted_answers")))
+                                               attempt.get("accepted_answers"),
+                                               attempt.get("arguments")))
                      if attempt.get("status") == "kept" else None)
             question = final.get("question") if final else attempt.get("question")
             answers = final.get("accepted_values") if final else attempt.get("accepted_answers", [])
