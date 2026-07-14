@@ -140,9 +140,9 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     # prompt/schema (v8/r20) must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v15"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v16"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 8
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r27"
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r28"
 
 
 def test_prompt_worked_examples_are_source_independent_and_level_based():

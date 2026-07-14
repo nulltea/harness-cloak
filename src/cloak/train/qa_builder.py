@@ -16,9 +16,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v15"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v16"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 8}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r27"
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r28"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -2561,8 +2561,10 @@ Monitoring: source "to follow the [S3: diabetes | condition | levels: metabolic 
 Safe question: "What testing follows the metabolic disorder?" Accepted answer: "hemoglobin A1c" (an uncontrolled literal answer is the measured fact). A test mentioned elsewhere is not monitoring.
 Contraindication: source "you ca n't use beta-blockers because of your [S4: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S4). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition.
 Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
-Person anchor: source "[S5: <PERSON_9> | person | anchor only] is taking [S6: metformin | drug | levels: biguanide]" => takes_medication(S5, S6). The person is a linked anchor argument (its <PERSON_#> token as span_label, no support_property); the drug is the answer.
-Safe question: "Which medication is <PERSON_9> taking?" Accepted answer: "biguanide" (the drug's level). Reference the person by its token; never the answer.
+Person anchor (a <PERSON_#> token span) is a linked anchor argument: its token as span_label, support_property null, and it is only ever the subject of has_condition / takes_medication / underwent_procedure, never the answer. Reference the person by its token in the question. Ask with the generic clinical word (condition / medication / procedure), never with the answer's specific level, or the question leaks the answer.
+takes_medication: source "[S5: <PERSON_9> | person | anchor only] is taking [S6: metformin | drug | levels: biguanide]" => takes_medication(S5, S6). Safe question: "Which medication is <PERSON_9> taking?" Accepted answer: "biguanide" (the drug's level). Wrong question: "Which biguanide is <PERSON_9> taking?" (names the answer level -> leak).
+has_condition: source "[S7: <PERSON_9> | person | anchor only] has [S8: psoriasis | condition | levels: skin disease]" => has_condition(S7, S8). Safe question: "Which condition does <PERSON_9> have?" Accepted answer: "skin disease". Do not write "Which skin disease does <PERSON_9> have?".
+underwent_procedure: source "[S9: <PERSON_9> | person | anchor only] had a [S10: cholecystectomy | medical procedure | levels: abdominal surgery]" => underwent_procedure(S9, S10). Safe question: "Which procedure did <PERSON_9> undergo?" Accepted answer: "abdominal surgery".
 
 DETECTED SPANS
 {spans}
