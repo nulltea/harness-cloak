@@ -3250,6 +3250,15 @@ def test_frozen_occurrences_from_arms_carries_detector_provenance():
                     "end": 19,
                     "score": 0.91,
                     "lattice": ["thyroid medication"],
+                    "detector_provenance": {
+                        "source": "gliner",
+                        "raw_label": "drug",
+                        "recognizer": None,
+                        "candidates": [{
+                            "source": "presidio",
+                            "status": "overlap_loser",
+                        }],
+                    },
                 }]]
             }
         }
@@ -3266,5 +3275,12 @@ def test_frozen_occurrences_from_arms_carries_detector_provenance():
 
     assert occurrences["aci/D2N002"][0]["detector_provenance"] == {
         **detector_pin,
+        "source": "gliner",
+        "raw_label": "drug",
+        "recognizer": None,
+        "candidates": [{
+            "source": "presidio",
+            "status": "overlap_loser",
+        }],
         "score": 0.91,
     }

@@ -3547,10 +3547,13 @@ def frozen_occurrences_from_arms(
                 **dict(row),
                 **({
                     "detector_provenance": {
-                        **dict(detector_provenance),
+                        **dict(detector_provenance or {}),
+                        **dict(row.get("detector_provenance") or {}),
                         "score": row.get("score"),
                     }
-                } if detector_provenance is not None else {}),
+                } if (
+                    detector_provenance is not None or row.get("detector_provenance")
+                ) else {}),
             }
             for row in document["tau_walk"][1] if row.get("lattice")
         ]

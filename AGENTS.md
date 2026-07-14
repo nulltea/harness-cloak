@@ -148,3 +148,18 @@ position in its `<TASK>-<component>` lineage — defined by the training-record 
 and is **stable** (a completed run's version never renumbers, unlike plan/phase numbers). So `FT-detector v3`
 in a filename, cross-reference, or discussion is correct. This exception is narrow: it does **not** license
 plan/phase/requirement/arm identifiers (`P7`, `D1`, `Arm B`) anywhere.
+
+## Delegation means one implementation handoff
+
+When I say **delegate** a development task to a named model and effort, hand the full requested
+implementation scope to **one subagent** running that model and effort. The primary agent then inspects
+the resulting combined diff, runs the final verification, and performs the final review itself.
+
+Delegation does **not** mean subagent-driven development: do not split the work across fresh per-task
+implementers, dispatch per-task review subagents, or invoke the SDD review loop unless I explicitly ask
+for **SDD**, **subagent-driven development**, or per-task agent/review gates. If a delegated scope contains
+multiple plan tasks, the same delegate owns all of them unless I explicitly request separate delegates.
+
+Always state the requested subagent model and effort in the handoff. If the available delegation tool
+cannot enforce or report model metadata, disclose that limitation; do not silently substitute a different
+workflow or claim that the requested runtime was verified.
