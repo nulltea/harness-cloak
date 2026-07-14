@@ -6,6 +6,7 @@ first level whose MTI guess-back risk < tau (tau is the privacy knob).
 R (substitution record) stays client-side and drives extraction.
 """
 import re
+from dataclasses import replace
 
 from cloak.detect import Detector, Span, coref_chains, relabel_dem
 from cloak.lattice import TYPE_LABEL, lattice_for, NO_PREPASS
@@ -14,6 +15,7 @@ from cloak.profile_match import PROFILE_BACKED_TYPES, match_spans_batch, span_ke
 from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE, placeholder_token, placeholder_type_token
 
 DIRECT_TYPES = set(DIRECT_TYPES)
+_EXPLICIT_NAME_LABELS = frozenset({"name", "first name", "last name"})
 
 
 def _is_role_phrase(text: str) -> bool:
@@ -33,6 +35,42 @@ def _is_role_phrase(text: str) -> bool:
     if len(toks) != 1:  # multi-word bare phrase is a proper name ("mary jane") -> keep PERSON
         return False
     return bool(wn.synsets(toks[0], pos=wn.NOUN))
+
+
+def prepare_spans_for_substitution(
+    text: str,
+    spans: list[Span],
+    *,
+    reject_demographic_other: bool = False,
+) -> tuple[list[Span], list[dict]]:
+    prepared: list[Span] = []
+    rejected: list[dict] = []
+    for source_span in spans:
+        span = replace(source_span)
+        if (
+            span.type == "PERSON"
+            and span.text[0].islower()
+            and span.raw_label not in _EXPLICIT_NAME_LABELS
+            and _is_role_phrase(span.text)
+        ):
+            proposed = relabel_dem(span.text)
+            if reject_demographic_other and proposed == "demographic-other":
+                rejected.append({
+                    "start": span.start,
+                    "end": span.end,
+                    "surface": span.text,
+                    "source": span.source,
+                    "raw_label": span.raw_label,
+                    "recognizer": span.recognizer,
+                    "score": span.score,
+                    "status": "post_detection_rejected",
+                    "reason": "qa_v2_forbidden_demographic_other",
+                    "proposed_runtime_type": proposed,
+                })
+                continue
+            span.type = proposed
+        prepared.append(span)
+    return prepared, rejected
 
 
 def _sentence_around(text: str, start: int, end: int) -> str:
@@ -64,6 +102,7 @@ def _fix_indefinite_articles(text: str) -> str:
 
 def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, list[dict]]:
     """Returns (doc_p, R). Spans must be non-overlapping (Detector dedupes)."""
+    spans, _rejected = prepare_spans_for_substitution(text, spans)
     # generic temporals ("daily", "these days", "summer") are not identifiers: substituting
     # them wrecks readability for zero privacy; only dated/aged DATETIMEs are processed
     spans = [s for s in spans if not (
@@ -71,9 +110,6 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             r"\d|january|february|march|april|may|june|july|august|september|october"
             r"|november|december|year[s]?[\s-]old|\b(?:last|next|previous|past)\b",
             s.text, re.IGNORECASE))]
-    for s in spans:  # a lowercase "PERSON" role noun (lawyer, patient) generalizes; a
-        if s.type == "PERSON" and s.text[0].islower() and _is_role_phrase(s.text):  # name stays
-            s.type = relabel_dem(s.text)
     spans = coref_chains(text, spans)
     # batched matcher pre-pass: one embed batch + wave-batched NLI for the whole doc
     # (docs/specs/substitutor-profile-match-retrieve-verify.md, Efficiency)
@@ -93,8 +129,19 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
         return placeholder_token(s.type, counters[tok])
 
     for s in sorted(spans, key=lambda s: -s.start):  # right-to-left keeps offsets valid
+        detector_provenance = (
+            dict(s.detector_provenance)
+            if s.detector_provenance is not None
+            else {
+                "source": s.source,
+                "raw_label": s.raw_label,
+                "recognizer": s.recognizer,
+                "score": s.score,
+            }
+        )
         entry = {"start": s.start, "end": s.end, "surface": s.text, "type": s.type,
-                 "chain": s.chain, "score": s.score}
+                 "chain": s.chain, "score": s.score,
+                 "detector_provenance": detector_provenance}
         skey = s.text.lower()
         if s.type in DIRECT_TYPES:
             ph = chain_ph.get(s.chain)

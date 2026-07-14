@@ -2,6 +2,7 @@
 import cloak.substitute as sub
 from cloak.detect import Span
 from cloak.profile_match import MatchResult, span_key
+from cloak.substitute import prepare_spans_for_substitution
 
 
 def _spans(text, *triples):
@@ -73,3 +74,78 @@ def test_repeat_surface_copies_match(monkeypatch):
                         lambda items, **kw: {span_key("diabetic", "health-condition"): m})
     _, R = sub.substitute(text, spans, tau=2.0)
     assert all(r["match"]["entry"] == "diabetes" for r in R)   # repeat reuses match too
+
+
+def test_explicit_native_name_label_bypasses_wordnet_role_retyping():
+    span = Span(0, 6, "andrew", "PERSON", 0.95, "gliner", raw_label="name")
+    prepared, rejected = prepare_spans_for_substitution(
+        "andrew arrived", [span], reject_demographic_other=True
+    )
+    assert [(row.text, row.type) for row in prepared] == [("andrew", "PERSON")]
+    assert rejected == []
+
+
+def test_qa_v2_runtime_contract_rejects_residual_demographic_fallback():
+    span = Span(
+        0,
+        7,
+        "patient",
+        "PERSON",
+        0.85,
+        "presidio",
+        raw_label="PERSON",
+        recognizer="SpacyRecognizer",
+    )
+    prepared, rejected = prepare_spans_for_substitution(
+        "patient arrived", [span], reject_demographic_other=True
+    )
+    assert prepared == []
+    assert rejected[0]["status"] == "post_detection_rejected"
+    assert rejected[0]["reason"] == "qa_v2_forbidden_demographic_other"
+    assert rejected[0]["proposed_runtime_type"] == "demographic-other"
+
+
+def test_substitution_record_preserves_winning_detector_provenance(monkeypatch):
+    provenance = {
+        "source": "gliner",
+        "raw_label": "name",
+        "score": 0.95,
+        "candidates": [{"status": "accepted", "surface": "Andrew"}],
+    }
+    span = Span(
+        0,
+        6,
+        "Andrew",
+        "PERSON",
+        0.95,
+        "gliner",
+        raw_label="name",
+        detector_provenance=provenance,
+    )
+    monkeypatch.setattr(sub, "coref_chains", lambda _text, rows: rows)
+
+    _doc_p, records = sub.substitute("Andrew arrived", [span])
+
+    assert records[0]["detector_provenance"] == provenance
+
+
+def test_substitution_record_synthesizes_missing_detector_provenance(monkeypatch):
+    span = Span(
+        0,
+        6,
+        "Andrew",
+        "PERSON",
+        0.95,
+        "gliner",
+        raw_label="name",
+    )
+    monkeypatch.setattr(sub, "coref_chains", lambda _text, rows: rows)
+
+    _doc_p, records = sub.substitute("Andrew arrived", [span])
+
+    assert records[0]["detector_provenance"] == {
+        "source": "gliner",
+        "raw_label": "name",
+        "recognizer": None,
+        "score": 0.95,
+    }
