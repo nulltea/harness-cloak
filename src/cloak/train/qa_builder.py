@@ -15,9 +15,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v7"
-RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 6}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r19"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v9"
+RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 7}
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r21"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -27,6 +27,56 @@ RELATION_TEACHER_MAX_RELATIONS = 12
 RELATION_TEACHER_GENERATION_CONFIG = {
     "reasoning": {"exclude": True},
 }
+_RELATION_RECORD_ITEM = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["relation", "arguments", "question", "accepted_answers",
+                 "scoring_contract"],
+    "properties": {
+        "relation": {"enum": [
+            "prescribed_with", "treated_with", "monitored_by",
+            "contraindicated_because_of", "causes_or_explains",
+            "referred_to", "has_status", "has_category",
+        ]},
+        "arguments": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["role", "kind", "span_label",
+                             "support_property", "literal"],
+                "properties": {
+                    "role": {"enum": ["subject", "object"]},
+                    "kind": {"enum": ["linked", "context"]},
+                    "span_label": {"type": ["string", "null"]},
+                    "support_property": {"type": ["string", "null"]},
+                    "literal": {"type": ["string", "null"]},
+                },
+            },
+        },
+        "question": {"type": "string"},
+        "accepted_answers": {
+            "type": "array", "minItems": 1,
+            "items": {"type": "string"},
+        },
+        "scoring_contract": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["kind", "match"],
+            "properties": {
+                "kind": {"const": "semantic_qa"},
+                "match": {"const": "fact_score"},
+            },
+        },
+    },
+}
+# Sectioned response (A/B spike 2026-07-14): a single mixed relation list let
+# the span-pair sub-task crowd out span<->literal proposals (0-3 literal per
+# draw); requiring the two lists separately yielded 4-6 literal proposals in
+# 3/3 draws. span_relations pairs two S-labels; context_relations pairs
+# exactly one S-label with one uncontrolled literal.
 RELATION_TEACHER_RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
@@ -35,56 +85,17 @@ RELATION_TEACHER_RESPONSE_FORMAT = {
         "schema": {
             "type": "object",
             "additionalProperties": False,
-            "required": ["relations", "candidate_accounting"],
+            "required": ["span_relations", "context_relations", "candidate_accounting"],
             "properties": {
-                "relations": {
+                "span_relations": {
                     "type": "array",
                     "maxItems": RELATION_TEACHER_MAX_RELATIONS,
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["relation", "arguments", "question", "accepted_answers",
-                                     "scoring_contract"],
-                        "properties": {
-                            "relation": {"enum": [
-                                "prescribed_with", "treated_with", "monitored_by",
-                                "contraindicated_because_of", "causes_or_explains",
-                                "referred_to", "has_status", "has_category",
-                            ]},
-                            "arguments": {
-                                "type": "array",
-                                "minItems": 2,
-                                "maxItems": 2,
-                                "items": {
-                                    "type": "object",
-                                    "additionalProperties": False,
-                                "required": ["role", "kind", "span_label",
-                                             "support_property", "literal"],
-                                "properties": {
-                                    "role": {"enum": ["subject", "object"]},
-                                    "kind": {"enum": ["linked", "context"]},
-                                    "span_label": {"type": ["string", "null"]},
-                                    "support_property": {"type": ["string", "null"]},
-                                    "literal": {"type": ["string", "null"]},
-                                },
-                                },
-                            },
-                            "question": {"type": "string"},
-                            "accepted_answers": {
-                                "type": "array", "minItems": 1,
-                                "items": {"type": "string"},
-                            },
-                            "scoring_contract": {
-                                "type": "object",
-                                "additionalProperties": False,
-                                "required": ["kind", "match"],
-                                "properties": {
-                                    "kind": {"const": "semantic_qa"},
-                                    "match": {"const": "fact_score"},
-                                },
-                            },
-                        },
-                    },
+                    "items": deepcopy(_RELATION_RECORD_ITEM),
+                },
+                "context_relations": {
+                    "type": "array",
+                    "maxItems": RELATION_TEACHER_MAX_RELATIONS,
+                    "items": deepcopy(_RELATION_RECORD_ITEM),
                 },
                 "candidate_accounting": {
                     "type": "array",
@@ -256,6 +267,36 @@ def _argument_relation_classes(runtime_type: str, surface: str) -> set[str]:
 
 
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
+# A conditional/hypothetical statement is not an asserted fact. The broadened
+# problem-block/plan-section anchors would otherwise ground the conditional PT
+# referral ("if symptoms continue ... possibly refer to physical therapy"),
+# which the authoritative reference itself states only conditionally.
+# The `if` arm requires a real conditional subject so the spoken disfluency
+# "if ... and prescribe some ultram" is not mistaken for a condition, and
+# "as needed"/"prn" are excluded (they modify dosing, not existence).
+_HEDGE_PATTERN = re.compile(
+    r"\b(?:possibly|possible|maybe|perhaps|might|consider|talk\s+about|discuss"
+    r"|if\s+(?:your|you|we|he|she|it|they|the|his|her|symptoms|there|needed))\b",
+    re.IGNORECASE,
+)
+
+
+def _relation_window_is_hedged(
+    document: str, arguments: Sequence[Mapping], occurrences: Mapping[str, Mapping],
+) -> bool:
+    """True if the source region spanning the arguments is conditional/hedged."""
+    bounds = []
+    for argument in arguments:
+        if argument["kind"] == "linked":
+            occurrence = occurrences[argument["occurrence_id"]]
+            bounds.append((int(occurrence["start"]), int(occurrence["end"])))
+        elif isinstance(argument.get("start"), int) and isinstance(argument.get("end"), int):
+            bounds.append((int(argument["start"]), int(argument["end"])))
+    if not bounds:
+        return False
+    lo = min(start for start, _ in bounds)
+    hi = max(end for _, end in bounds)
+    return _HEDGE_PATTERN.search(document[lo:hi]) is not None
 _CLAUSE_DELIMITER_PATTERN = re.compile(r"[\n.!?;]")
 _PLAN_SECTION_HEADING_PATTERN = re.compile(
     r"(?m)^(?P<title>[A-Za-z][A-Za-z0-9 /-]{0,96})\.\s*$"
@@ -423,11 +464,21 @@ class OpenRouterRelationTeacher:
                 raw_length=len(raw),
                 parser_message=str(error),
             ) from error
-        relations = payload.get("relations") if isinstance(payload, dict) else None
+        relations = None
+        if isinstance(payload, dict):
+            if isinstance(payload.get("span_relations"), list) and isinstance(
+                payload.get("context_relations"), list
+            ):
+                # Sectioned v8 reply; span pairs first so the shared cap
+                # cannot be consumed by literals alone.
+                relations = list(payload["span_relations"]) + list(payload["context_relations"])
+            elif isinstance(payload.get("relations"), list):
+                relations = payload["relations"]
         if not isinstance(relations, list):
             raise RelationTeacherResponseError(
                 "teacher_invalid_schema", raw_length=len(raw),
-                parser_message="relation teacher reply must contain a relations list",
+                parser_message="relation teacher reply must contain span_relations"
+                               " and context_relations lists",
             )
         accounting = payload.get("candidate_accounting") if isinstance(payload, dict) else None
         if not isinstance(accounting, list):
@@ -1198,6 +1249,38 @@ def _shared_plan_section(
     return candidates[0] if len(candidates) == 1 else None
 
 
+# One spoken assessment/plan discussion of a single problem. The doctor opens
+# the assessment, then discusses each problem in turn; a relation may connect
+# spans across the patient acknowledgments inside one such block, but never
+# across a problem switch. Spike-confirmed on D2N002
+# (monitored_by(arthritis -> autoimmune panel)).
+_PROBLEM_BLOCK_BOUNDARY = re.compile(
+    r"assessment and (?:my |the )?plan"
+    r"|for (?:your|the|his|her)\s+(?:\w+\s+)?problem"
+    r"|for (?:your|the|his|her)\s+(?:second|third|fourth|next|last|final)\b",
+    re.IGNORECASE,
+)
+
+
+def _problem_blocks(document: str) -> list[tuple[int, int]]:
+    cuts = sorted({m.start() for m in _PROBLEM_BLOCK_BOUNDARY.finditer(document)})
+    if not cuts:
+        return []
+    edges = [*cuts, len(document)]
+    return [(edges[i], edges[i + 1]) for i in range(len(edges) - 1)]
+
+
+def _shared_problem_block(
+    document: str, spans: Sequence[tuple[int, int]],
+) -> tuple[int, int] | None:
+    """The one problem-discussion block containing every source argument."""
+    candidates = [
+        block for block in _problem_blocks(document)
+        if all(block[0] <= start < end <= block[1] for start, end in spans)
+    ]
+    return candidates[0] if len(candidates) == 1 else None
+
+
 def _prompt_relation_class(relation_class: str) -> str:
     return {"treatment": "drug", "monitoring": "test"}.get(relation_class, relation_class)
 
@@ -1364,7 +1447,6 @@ def relation_teacher_response_format(
     """Bind strict wire fields to displayed labels, never internal IDs or answers."""
     response_format = deepcopy(RELATION_TEACHER_RESPONSE_FORMAT)
     schema = response_format["json_schema"]["schema"]
-    relation_item = schema["properties"]["relations"]["items"]
     inventory = relation_teacher_span_inventory(environment_document)
     labels = [row["span_label"] for row in inventory]
     support_properties = sorted({property_level for row in inventory for property_level in row["properties"]})
@@ -1389,26 +1471,32 @@ def relation_teacher_response_format(
             "properties": {"role": {"const": role}, "kind": {"const": kind}, **fields},
         }
 
-    # The compiler unconditionally rejects a relation with no linked argument
-    # (missing_linked_argument), so a zero-linked pair must be unrepresentable
-    # on the wire; the observed Nemotron reply emitted exactly that shape.
-    relation_item["properties"]["arguments"] = {
-        "anyOf": [
-            {
-                "type": "array",
-                "minItems": 2,
-                "maxItems": 2,
-                "prefixItems": [
-                    argument_branch("subject", subject_kind),
-                    argument_branch("object", object_kind),
-                ],
-                "items": False,
-            }
-            for subject_kind, object_kind in (
-                ("linked", "linked"), ("linked", "context"), ("context", "linked"),
-            )
-        ]
-    }
+    def pair_shapes(kind_pairs: tuple[tuple[str, str], ...]) -> dict:
+        return {
+            "anyOf": [
+                {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 2,
+                    "prefixItems": [
+                        argument_branch("subject", subject_kind),
+                        argument_branch("object", object_kind),
+                    ],
+                    "items": False,
+                }
+                for subject_kind, object_kind in kind_pairs
+            ]
+        }
+
+    # Zero-linked pairs stay unrepresentable (the compiler always rejects
+    # them), and each section binds its own argument structure: span pairs
+    # are label-only, context pairs carry exactly one uncontrolled literal.
+    schema["properties"]["span_relations"]["items"]["properties"]["arguments"] = (
+        pair_shapes((("linked", "linked"),))
+    )
+    schema["properties"]["context_relations"]["items"]["properties"]["arguments"] = (
+        pair_shapes((("linked", "context"), ("context", "linked")))
+    )
     ledger = schema["properties"]["candidate_accounting"]
     ledger["minItems"] = len(labels)
     ledger["maxItems"] = len(labels)
@@ -2275,6 +2363,7 @@ Find as many explicit, source-grounded, non-duplicate relations as the cap ({REL
 
 HOW TO INSPECT THE SOURCE
 Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. A repeated value has several S-labels: always use the S-label whose mention is inside the sentence that states the relation; the compiler grounds the relation at that exact mention. For an uncontrolled argument, quote its exact source text as a context literal.
+A relation may connect spans from different turns of the SAME problem discussion, the block where the doctor assesses and plans one problem, including short patient acknowledgments between the doctor's sentences (for example a condition named when the problem is introduced and a test ordered for it a sentence later). Never link spans from a different problem discussion or from unrelated small talk, and never assert a conditional or hypothetical statement ("if symptoms continue", "possibly", "we can consider") as a relation.
 
 PRIVACY-SAFE QA
 Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. An exact uncontrolled context literal may be an answer only when it is the measured fact.
@@ -2297,13 +2386,13 @@ EVIDENCE CARDS
 {chr(10).join(cards) or '(No span-local cards; inspect the source directly.)'}
 
 RESPONSE
-Each relation record contains: relation; a subject argument then an object argument; a question; accepted answers; the fixed scoring contract.
-An argument for a displayed span is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim.
-Every relation needs at least one linked S-label argument. Never quote a displayed span as a context literal. An uncontrolled argument is kind context with its exact source text as literal.
-Emit each distinct fact once, at the S-label inside the sentence that states the relation. Do not repeat the same fact for other S-labels of the same value.
-Example record: relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the joint condition?"; accepted answer "opioid analgesic".
-Example record with a literal: relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "synthroid" quoted from the relation sentence; accepted answer "synthroid".
-Return exactly one candidate_accounting row per S-label, with a short reason for every row. emitted means a relation record uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
+Return two relation lists. Each relation record contains: relation; a subject argument then an object argument; a question; accepted answers; the fixed scoring contract.
+span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim.
+context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span.
+Never quote a displayed span as a context literal. Emit each distinct fact once, in the list its argument kinds require, at the S-label inside the sentence that states the relation. Do not repeat the same fact for other S-labels of the same value.
+Example span_relations record: relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the joint condition?"; accepted answer "opioid analgesic".
+Example context_relations record: relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "synthroid" quoted from the relation sentence; accepted answer "synthroid".
+Return exactly one candidate_accounting row per S-label covering both lists, with a short reason for every row. emitted means a relation record in either list uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
 
 SOURCE DOCUMENT
 {document}"""
@@ -2520,10 +2609,15 @@ def _derived_relation_anchor(
         for argument in arguments
     ]
     plan_section = _shared_plan_section(document, argument_spans)
-    if plan_section is None:
-        return "", None, "invalid_evidence", None
-    left, right = plan_section
-    return document[left:right], plan_section, None, "plan_section"
+    if plan_section is not None:
+        return document[plan_section[0]:plan_section[1]], plan_section, None, "plan_section"
+    # Spoken transcript: the arguments may sit in different turns of one
+    # problem discussion (a patient acknowledgment between them). Ground within
+    # that block; the hedge guard and cue check in compilation still apply.
+    problem_block = _shared_problem_block(document, argument_spans)
+    if problem_block is not None:
+        return document[problem_block[0]:problem_block[1]], problem_block, None, "problem_block"
+    return "", None, "invalid_evidence", None
 
 
 def _relation_quote_has_direct_support(
@@ -2783,9 +2877,17 @@ def compile_relational_assertions(
             arguments,
             relation_contract,
             allow_adjacent_clauses=(uses_v4_arguments or proposal.get("evidence_window_id") is not None),
-            allow_plan_section=anchor_kind == "plan_section",
+            allow_plan_section=anchor_kind in {"plan_section", "problem_block"},
         ):
             reject("invalid_evidence")
+            continue
+        # A conditional/hypothetical statement is not an asserted fact at any
+        # anchor scope ("possibly refer to physical therapy" is hedged even in
+        # one clause); the tightened pattern clears the "if ..." disfluency.
+        if uses_v4_arguments and _relation_window_is_hedged(
+            document, arguments, occurrences
+        ):
+            reject("hedged_relation")
             continue
         if not _proposal_polarity_matches_frozen_occurrences(
             proposal, occurrence_ids, occurrences

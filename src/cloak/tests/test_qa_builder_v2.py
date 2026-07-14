@@ -1328,8 +1328,8 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
 
         def generate(self, prompt):
             captured["prompt"] = prompt
-            return ('{"relations": [{"relation": "treated_with"}], '
-                    '"candidate_accounting": []}')
+            return ('{"span_relations": [{"relation": "treated_with"}], '
+                    '"context_relations": [], "candidate_accounting": []}')
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret")
     monkeypatch.setenv("CLOAK_LLM_CACHE", "/tmp/qa-builder-test-cache")
@@ -1345,7 +1345,7 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["response_format"]["json_schema"]["strict"] is True
     assert captured["response_format"]["json_schema"]["schema"]["required"] == [
-        "relations", "candidate_accounting",
+        "span_relations", "context_relations", "candidate_accounting",
     ]
     # Token caps repeatedly produced empty/truncated teacher replies; the v5
     # contract sends none and only excludes the reasoning trace from the reply.
@@ -1355,13 +1355,13 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
         "provider": "openrouter",
         "model": "nvidia/nemotron-3-super-120b-a12b:free",
         "base_url": "https://openrouter.ai/api/v1",
-        "prompt_version": "qa-relation-teacher-v7",
-        "response_schema": {"type": "relation-qa-batch", "version": 6},
+        "prompt_version": "qa-relation-teacher-v9",
+        "response_schema": {"type": "relation-qa-batch", "version": 7},
         "response_format": qa_builder.RELATION_TEACHER_RESPONSE_FORMAT,
         "generation_config": {
             "reasoning": {"exclude": True},
         },
-        "revision": "qa-relation-teacher-r19",
+        "revision": "qa-relation-teacher-r21",
     }
     assert relations == [{"relation": "treated_with"}]
 

@@ -278,6 +278,22 @@ information-free for level-based QA. **Rejected alternatives:** rejecting on any
 the sanctioned level vocabulary); free rewriting of teacher QA by code (authorship violation —
 substitution uses only the teacher's selected level and the argument's frozen surface).
 
+**Multi-turn span-pair decision (2026-07-14, spike-confirmed).** Accepted: a within-problem-block
+anchor so a span pair may straddle patient acknowledgments in one assessment/plan discussion
+(`monitored_by(arthritis -> autoimmune panel)` — the panel is ordered to evaluate the arthritis a
+turn after it is named). The block is bounded by the assessment opener and each problem switch;
+it never bridges a switch. A live prompt spike showed the teacher proposes the pair under
+block-scope guidance and a deterministic block anchor grounds it, while the clause anchor rejects
+it. **Required co-decision — hedge guard:** broadening the anchor made the conditional PT referral
+("if symptoms continue ... possibly refer to physical therapy") reachable; since the authoritative
+reference states it conditionally, asserting it as fact violates the truth-source rule, so a
+conditional argument window is rejected as `hedged_relation` at every anchor scope. **Rejected:**
+gating the hedge guard to broad anchors only (the hedge is expressible in one clause too); a
+loose `if`/`as needed` match (blocks the real ultram prescription — the pattern requires a
+conditional subject after `if` and excludes dosing terms). Split span/literal calls remain
+rejected — the A/B and split spikes showed one sectioned call yields both axes at this doc's
+ceiling.
+
 **Coverage-extension decisions (2026-07-14 D2N002 audit).** Accepted: the closed procedure-form
 lexicon (dual condition/procedure class) plus the reversed `treated_with` indication connector
 "<procedure> for <condition>" — the polycystic-kidneys indication is explicit in both source and

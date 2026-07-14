@@ -1,3 +1,5 @@
+import json
+
 import pytest
 import cloak.train.qa_builder as qa_builder
 
@@ -113,34 +115,34 @@ def test_teacher_response_schema_binds_roles_and_candidate_ledger_to_inventory()
     environment = _environment(source)
     response_format = relation_teacher_response_format(environment, source)
     schema = response_format["json_schema"]["schema"]
-    arguments = schema["properties"]["relations"]["items"]["properties"]["arguments"]
+    arguments = schema["properties"]["context_relations"]["items"]["properties"]["arguments"]
     ledger = schema["properties"]["candidate_accounting"]
     expected_labels = [row["span_label"] for row in qa_builder.relation_teacher_span_inventory(environment)]
 
-    linked, context = arguments["anyOf"][1]["prefixItems"]
+    linked, context = arguments["anyOf"][0]["prefixItems"]
     assert linked["properties"]["role"]["const"] == "subject"
     assert context["properties"]["role"]["const"] == "object"
     assert linked["properties"]["kind"]["const"] == "linked"
     assert context["properties"]["kind"]["const"] == "context"
     assert linked["properties"]["literal"]["const"] is None
     assert context["properties"]["span_label"]["const"] is None
-    assert "evidence_window_id" not in schema["properties"]["relations"]["items"]["properties"]
+    assert "evidence_window_id" not in schema["properties"]["context_relations"]["items"]["properties"]
     assert ledger["minItems"] == ledger["maxItems"] == len(expected_labels)
     assert ledger["items"] is False
     assert [row["properties"]["candidate_label"]["const"] for row in ledger["prefixItems"]] == expected_labels
 
 
-def test_teacher_pin_reflects_v6_contract_and_uncapped_token_budgets():
+def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets():
     # Token caps repeatedly produced empty/truncated teacher replies: the r16
     # smoke's reasoning trace was cut mid-source-scan before three further
-    # explicit relations. The v6 contract carries no completion or reasoning
-    # cap; only the reasoning-trace exclusion remains, and the changed
-    # prompt/schema/config must repin caches.
+    # explicit relations. The contract carries no completion or reasoning
+    # cap; only the reasoning-trace exclusion remains, and the sectioned
+    # prompt/schema (v8/r20) must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v7"
-    assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 6
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r19"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v9"
+    assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 7
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r21"
 
 
 def test_prompt_worked_examples_show_safe_level_based_questions_and_answers():
@@ -173,6 +175,51 @@ def test_prompt_anchors_labels_to_the_relation_sentence_and_deduplicates_facts()
     assert "reason for every row" in prompt
 
 
+def test_sectioned_wire_schema_separates_span_and_context_relations():
+    # A/B spike (2026-07-14): the sectioned single call produced 4-6 literal
+    # proposals in 3/3 draws vs 0-3 under the mixed single list; the wire
+    # schema now requires span_relations (linked+linked only) and
+    # context_relations (exactly one linked + one literal).
+    source = "Hypothyroidism is treated with Synthroid."
+    environment = _environment(source)
+    schema = relation_teacher_response_format(environment, source)["json_schema"]["schema"]
+
+    assert schema["required"] == ["span_relations", "context_relations", "candidate_accounting"]
+    span_shapes = schema["properties"]["span_relations"]["items"]["properties"]["arguments"]["anyOf"]
+    context_shapes = schema["properties"]["context_relations"]["items"]["properties"]["arguments"]["anyOf"]
+    span_kinds = {
+        tuple(branch["properties"]["kind"]["const"] for branch in shape["prefixItems"])
+        for shape in span_shapes
+    }
+    context_kinds = {
+        tuple(branch["properties"]["kind"]["const"] for branch in shape["prefixItems"])
+        for shape in context_shapes
+    }
+    assert span_kinds == {("linked", "linked")}
+    assert context_kinds == {("linked", "context"), ("context", "linked")}
+
+
+def test_openrouter_teacher_parses_sectioned_relation_lists(monkeypatch):
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def generate(self, prompt, **kwargs):
+            return json.dumps({
+                "span_relations": [{"relation": "prescribed_with"}],
+                "context_relations": [{"relation": "monitored_by"}],
+                "candidate_accounting": [],
+            })
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test")
+    monkeypatch.setenv("CLOAK_LLM_CACHE", "/tmp/test-cache")
+    monkeypatch.setattr("cloak.llm.LLMClient", FakeClient)
+
+    proposals = OpenRouterRelationTeacher().propose("prompt")
+
+    assert [row["relation"] for row in proposals] == ["prescribed_with", "monitored_by"]
+
+
 def test_prompt_defines_the_response_record_fields_and_linked_argument_rule():
     # The observed Nemotron reasoning trace planned a text format ("format?
     # Not fully specified") and then fell into the all-context wire branch;
@@ -182,19 +229,23 @@ def test_prompt_defines_the_response_record_fields_and_linked_argument_rule():
 
     assert "span_label" in prompt
     assert "support_property" in prompt
-    assert "at least one linked" in prompt
+    assert "exactly one linked S-label argument" in prompt
     assert "verbatim" in prompt
     assert "Never quote a displayed span as a context literal" in prompt
-    assert "Example record" in prompt
+    assert "Example span_relations record" in prompt
+    assert "Example context_relations record" in prompt
 
 
 def test_response_schema_forbids_zero_linked_argument_pairs_and_fixes_roles():
     source = "Hypothyroidism is treated with Synthroid."
     environment = _environment(source)
     schema = relation_teacher_response_format(environment, source)["json_schema"]["schema"]
-    arguments = schema["properties"]["relations"]["items"]["properties"]["arguments"]
 
-    shapes = arguments["anyOf"]
+    shapes = [
+        shape
+        for section in ("span_relations", "context_relations")
+        for shape in schema["properties"][section]["items"]["properties"]["arguments"]["anyOf"]
+    ]
     kinds = [
         tuple(branch["properties"]["kind"]["const"] for branch in shape["prefixItems"])
         for shape in shapes
@@ -654,6 +705,135 @@ def test_linked_surface_in_qa_is_substituted_with_the_selected_level():
     assert accepted[0]["evidence"]["sanitized_qa"] is True
 
 
+_ASSESSMENT_BLOCK = (
+    "[doctor] so i just wan na go over my assessment and my plan .\n"
+    "[patient] mm-hmm .\n"
+    "[doctor] so for your knee pain , i think this is an acute exacerbation of your "
+    "arthritis . so i wan na prescribe some ultram .\n"
+    "[patient] okay .\n"
+    "[doctor] okay ? i also wan na go ahead and just order an autoimmune panel .\n"
+    "[patient] sure .\n"
+    "[doctor] for your second problem , your hypothyroidism , i wan na order a thyroid panel .\n"
+)
+
+
+def _assessment_environment():
+    src = _ASSESSMENT_BLOCK
+    arthritis = src.index("arthritis")
+    panel = src.index("autoimmune panel")
+    thyroid = src.index("hypothyroidism")
+    return src, {
+        "occurrences": [
+            {"occurrence_id": "arthritis", "decision_id": "d-arthritis", "surface": "arthritis", "start": arthritis, "end": arthritis + 9, "runtime_type": "health-condition"},
+            {"occurrence_id": "panel", "decision_id": "d-panel", "surface": "autoimmune panel", "start": panel, "end": panel + 16, "runtime_type": "medical-procedure"},
+            {"occurrence_id": "thyroid", "decision_id": "d-thyroid", "surface": "hypothyroidism", "start": thyroid, "end": thyroid + 14, "runtime_type": "health-condition"},
+        ],
+        "decisions": [
+            {"decision_id": "d-arthritis", "actions": [{"mode": "level", "legal": True, "entails": ["joint condition"]}]},
+            {"decision_id": "d-panel", "actions": [{"mode": "level", "legal": True, "entails": ["immunology panel"]}]},
+            {"decision_id": "d-thyroid", "actions": [{"mode": "level", "legal": True, "entails": ["endocrine condition"]}]},
+        ],
+    }
+
+
+def _span_pair(relation, subj, subj_level, obj, obj_level, question, answer):
+    return {
+        "relation": relation,
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": subj, "support_property": subj_level, "literal": None},
+            {"role": "object", "kind": "linked", "span_label": obj, "support_property": obj_level, "literal": None},
+        ],
+        "question": question,
+        "accepted_answers": [answer],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+
+def test_multiturn_span_pair_grounds_within_one_problem_block():
+    # D2N002's second true span pair: the autoimmune panel is ordered to
+    # evaluate the arthritis, but a patient turn sits between them. A
+    # within-problem-block anchor must ground it. S1=arthritis, S3=panel.
+    source, environment = _assessment_environment()
+    # source order: S1=arthritis, S2=autoimmune panel, S3=hypothyroidism.
+    proposal = _span_pair(
+        "monitored_by", "S1", "joint condition", "S2", "immunology panel",
+        "What testing was ordered to evaluate the joint condition?", "immunology panel",
+    )
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["relation"] == "monitored_by"
+    assert accepted[0]["occurrence_ids"] == ["arthritis", "panel"]
+
+
+def test_multiturn_anchor_rejects_link_across_a_problem_switch():
+    # arthritis (first problem) must not link to the thyroid panel ordered
+    # under "for your second problem".
+    source, environment = _assessment_environment()
+    thyroid_panel = source.index("thyroid panel")
+    environment["occurrences"].append(
+        {"occurrence_id": "tpanel", "decision_id": "d-tpanel", "surface": "thyroid panel",
+         "start": thyroid_panel, "end": thyroid_panel + 13, "runtime_type": "medical-procedure"})
+    environment["decisions"].append(
+        {"decision_id": "d-tpanel", "actions": [{"mode": "level", "legal": True, "entails": ["thyroid testing"]}]})
+    proposal = _span_pair(
+        "monitored_by", "S1", "joint condition", "S4", "thyroid testing",
+        "What panel was ordered for the joint condition?", "thyroid testing",
+    )
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert accepted == []
+    assert rejected[0]["detail_reason"] == "invalid_evidence"
+
+
+def test_problem_block_anchor_rejects_a_hedged_conditional_relation():
+    # The conditional PT referral ("if symptoms continue ... possibly referral")
+    # must not become an asserted fact even though both ends share the block.
+    source = (
+        "[doctor] so for your knee pain , this is your arthritis . "
+        "if your symptoms continue , we'll possibly refer you to physical therapy .\n"
+        "[patient] okay .\n"
+        "[doctor] for your second problem , your hypothyroidism .\n"
+    )
+    arthritis = source.index("arthritis")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "arthritis", "decision_id": "d-arthritis", "surface": "arthritis",
+            "start": arthritis, "end": arthritis + 9, "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-arthritis",
+            "actions": [{"mode": "level", "legal": True, "entails": ["joint condition"]}],
+        }],
+    }
+    proposal = {
+        "relation": "referred_to",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "joint condition", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None, "support_property": None, "literal": "physical therapy"},
+        ],
+        "question": "Which service was named for the joint condition?",
+        "accepted_answers": ["physical therapy"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert accepted == []
+    assert rejected[0]["detail_reason"] == "hedged_relation"
+
+
+def test_prompt_permits_within_problem_block_multiturn_links():
+    source, environment = _assessment_environment()
+    prompt = relation_teacher_prompt("d2", source, environment)
+
+    assert "SAME problem discussion" in prompt
+    assert "different problem discussion" in prompt
+    assert "conditional or hypothetical" in prompt
+
+
 def test_treated_with_accepts_procedure_form_condition_via_indication_connector():
     # D2N002 (and its reference verbatim): "you've had the kidney transplant a
     # few years ago for some polycystic kidneys". The transplant is detector-
@@ -813,16 +993,17 @@ def test_v4_prompt_and_schema_use_source_labels_not_internal_inventory():
 
     prompt = relation_teacher_prompt("d2", source, environment)
     schema = relation_teacher_response_format(environment, source)["json_schema"]["schema"]
-    argument_shapes = schema["properties"]["relations"]["items"]["properties"]["arguments"]["anyOf"]
+    argument_shapes = schema["properties"]["span_relations"]["items"]["properties"]["arguments"]["anyOf"]
 
     assert "[S1: Hypothyroidism | condition | levels: endocrine condition]" in prompt
     assert "[S2: Synthroid | drug | levels: thyroid medication]" in prompt
     assert "OCCURRENCE INVENTORY" not in prompt
     assert "SOURCE EVIDENCE WINDOWS" not in prompt
     assert '"occurrence_id"' not in prompt
-    assert "evidence_window_id" not in schema["properties"]["relations"]["items"]["properties"]
+    assert "evidence_window_id" not in schema["properties"]["span_relations"]["items"]["properties"]
     assert argument_shapes[0]["prefixItems"][0]["properties"]["span_label"]["enum"] == ["S1", "S2"]
-    assert argument_shapes[1]["prefixItems"][1]["properties"]["literal"]["type"] == "string"
+    context_shapes = schema["properties"]["context_relations"]["items"]["properties"]["arguments"]["anyOf"]
+    assert context_shapes[0]["prefixItems"][1]["properties"]["literal"]["type"] == "string"
     assert schema["properties"]["candidate_accounting"]["prefixItems"][0]["properties"]["candidate_label"]["const"] == "S1"
 
 

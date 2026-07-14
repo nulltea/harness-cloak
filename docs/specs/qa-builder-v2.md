@@ -363,6 +363,20 @@ searched within the clause or two adjacent clauses holding the arguments (an exp
 "ca n't take" legitimately precedes the subject), and a period inside a run ("if ... and
 prescribe") is a spoken hesitation marker, never a clause boundary.
 
+**Problem-block anchor (multi-turn span pairs).** A spoken assessment/plan discusses one problem
+across several turns; a true relation can straddle the patient acknowledgments inside it (a
+condition named when the problem is introduced, a test ordered for it a sentence later —
+`monitored_by(arthritis -> autoimmune panel)` in D2N002, spike-confirmed 2026-07-14). After the
+clause and plan-section anchors fail, the compiler grounds the relation in the one problem block
+containing every argument, bounded by the assessment opener and each "for your <next> problem"
+switch; it never bridges a problem switch or unrelated small talk, and the cue check still runs
+over the argument window. **Hedge guard:** because these broad anchors span conditional talk, a
+relation whose argument window is conditional/hypothetical ("if your symptoms continue",
+"possibly", "we can consider") is rejected as `hedged_relation` at every anchor scope — the
+authoritative reference states such plans conditionally, so asserting them as fact would violate
+the truth-source rule. The hedge match is tightened so the spoken "if ... and prescribe"
+disfluency and dosing "as needed" do not block a real prescription.
+
 Two closed extensions cover the clinical indication form. A detector-typed condition whose
 surface names a performed procedure (closed lexicon: transplant, surgery, -ectomy, -plasty,
 bypass, graft, replacement, repair) may also fill procedure slots, displayed to the teacher as

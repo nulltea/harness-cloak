@@ -104,6 +104,37 @@ overstate the truth source); the immunosuppressive link (needs the reference-gro
 logged as an open fork in the decision log); tylenol/WBC (detector coverage, tracked in the
 misclassification issue).
 
+## 2026-07-14 — architecture spikes + multi-turn span pairs (v8 sectioned, v9 problem-block)
+
+Three live spikes settled two forks (free-tier throttle made these slow; capped spikes at the
+minimum decisive sample):
+
+- **Sectioned vs mixed response (A/B, 3 draws A).** A single mixed relation list let the
+  span-pair sub-task crowd out span<->literal proposals (0-3/draw); requiring `span_relations`
+  and `context_relations` as separate wire arrays yielded 4-6 literal proposals in 3/3 draws with
+  span pairs held at the doc ceiling. Shipped as v8 (`span_relations`/`context_relations`,
+  parser unions span-first).
+- **Split calls (variant B, 1 draw, 2 calls).** A dedicated span<->literal call returned 1
+  literal proposal, below every sectioned draw, at double the call/throttle cost. Rejected;
+  span<->span on D2N002 is ceiling-bound so a dedicated call recovers nothing.
+- **Multi-turn span pairs (2 draws).** With block-scope guidance the teacher proposed
+  `monitored_by(arthritis -> autoimmune panel)` and a problem-block anchor grounded it, while the
+  production clause anchor rejected it (`invalid_evidence`). Shipped as v9: within-problem-block
+  anchor + hedge guard (the broadened anchor otherwise admits the conditional PT referral).
+
+Correction to the earlier ceiling audit: D2N002's span<->span ceiling is 2, not 1 —
+`arthritis -> ultram` (reachable) and `arthritis -> autoimmune panel` (was cross-turn-blocked,
+now reachable via the problem-block anchor). The "4-6" span pairs seen in one early draw were the
+same `arthritis -> ultram` fact re-emitted at four duplicate arthritis labels, collapsed by
+`duplicate_mention`, not four distinct facts.
+
+## Retry budget (2026-07-14)
+
+The OpenAI SDK honors OpenRouter's `Retry-After` (up to 60s) on every retry; stacking those with
+`max_retries=8` (production) or an outer zero-backoff loop (spikes) wasted minutes. Spikes now own
+retries (`max_retries=0`, `timeout=120`) under a 90s per-draw wall-clock budget so a throttled
+draw fails fast. Production `llm.py` keeps its patient 8-retry default for real training runs.
+
 **Open finding — provider draw variance.** `nvidia/nemotron-3-super-120b-a12b:free` is
 nondeterministic at `temperature=0.0` even with `seed`: identical prompts returned 6, 4, 1, 3,
 and 4 proposals of varying quality across draws. The production builder caches the first draw
