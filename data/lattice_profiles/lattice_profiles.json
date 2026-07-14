@@ -17653,15 +17653,26 @@
         "count": 4.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "l-thyroxine": 4.0,
+          "thyroid hormonal medication": 20,
+          "hormonal therapy agent": 800,
           "therapeutic agent": 100000.0
         },
         "level_grounding": {
-          "l-thyroxine": {
-            "member_set_ref": "openfda-ndc:pharm_class:l-Thyroxine [EPC]",
-            "selector": "openfda_ndc.pharm_class == 'l-Thyroxine [EPC]'",
-            "source_family": "openfda-pharm-class",
-            "status": "certifying"
+          "thyroid hormonal medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'thyroid hormonal medication' set from ATC class H03A (thyroid preparations), which contains ~4-6 distinct active-substance entries (levothyroxine, liothyronine, liotrix/combinations, desiccated thyroid); count widened to ~20 to include major internationally marketed brand/generic variants. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "WHO ATC/DDD Index, class H03A",
+            "selector": "Belongs to the thyroid hormone replacement therapy class (ATC H03A) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "hormonal therapy agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'hormonal therapy agent' set from a best-effort magnitude estimate spanning ATC groups covering thyroid (H03), sex hormones (G03), insulins (A10), systemic corticosteroids (H02), pituitary/hypothalamic hormones (H01), and other hormone-based therapeutics (e.g. calcitonin, PTH analogs, GnRH agonists); ingredient-level substance count across these groups is on the order of a few hundred, widened to ~800 to approximate distinct marketed formulations. Wide uncertainty (plausible range ~500-1500); not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "WHO ATC/DDD Index, groups G03/A10/H01/H02/H03",
+            "selector": "Belongs to the systemic hormonal therapy category (spanning multiple ATC groups) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           },
           "therapeutic agent": {
             "count_basis": "real-world-reference-estimate",
@@ -17673,7 +17684,8 @@
           }
         },
         "levels": [
-          "l-thyroxine",
+          "thyroid hormonal medication",
+          "hormonal therapy agent",
           "therapeutic agent"
         ],
         "source_ids": [
@@ -22936,44 +22948,6 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:actinomycosis"
-        ]
-      },
-      "acute exacerbation": {
-        "aliases": [
-          "acute worsening",
-          "flare up",
-          "acute flare"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "disease": 15000.0,
-          "exacerbation-prone disease family": 1.0
-        },
-        "level_grounding": {
-          "disease": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "disease",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "exacerbation-prone disease family": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'exacerbation-prone disease family' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "exacerbation-prone disease family",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "exacerbation-prone disease family",
-          "disease"
-        ],
-        "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:acute exacerbation"
         ]
       },
       "acute fracture": {
