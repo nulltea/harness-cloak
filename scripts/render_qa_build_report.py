@@ -87,6 +87,17 @@ def _relations(
     }
     kept_rows = [row for row in assertions if row.get("subtype") == "contextual_relation"]
 
+    # A kept relation's stored assertion carries the FINAL question/answers (after
+    # any leakage recolor); the teacher attempt carries the pre-recolor question.
+    # Match on (relation, answers) — stable across a subject-side recolor — so the
+    # report shows what the artifact actually holds, not the raw teacher question.
+    def _final_key(relation, answers):
+        return (relation, tuple(sorted(str(v) for v in answers or [])))
+    kept_final = {}
+    for row in kept_rows:
+        kept_final.setdefault(
+            _final_key(row.get("relation"), row.get("accepted_values")), row)
+
     def kept_span(question) -> list | None:
         for row in kept_rows:
             if row.get("question") == question:
@@ -120,18 +131,26 @@ def _relations(
     if attempts:
         lines = ["## Generated relations and semantic QA", ""]
         for attempt in attempts:
+            final = (kept_final.get(_final_key(attempt.get("relation"),
+                                               attempt.get("accepted_answers")))
+                     if attempt.get("status") == "kept" else None)
+            question = final.get("question") if final else attempt.get("question")
+            answers = final.get("accepted_values") if final else attempt.get("accepted_answers", [])
+            repair = (final or {}).get("evidence", {}).get("leakage_repair") if final else None
             span = (
                 rejected_spans.get(attempt.get("proposal_index"))
                 if attempt.get("status") == "rejected"
-                else kept_span(attempt.get("question"))
+                else kept_span(question)
             ) or argument_region(attempt.get("arguments"))
+            recolor = (f"  (recolored: {repair.get('from_level')} -> {repair.get('to_level')})"
+                       if repair else "")
             lines.extend([
                 f"### {attempt.get('relation') or 'invalid relation'}",
                 "",
                 f"- Status: {attempt.get('status', 'unknown')}",
                 f"- Reason: {attempt.get('reason', 'unknown')}",
-                f"- Question: {attempt.get('question')}",
-                f"- Accepted answers: {_json(attempt.get('accepted_answers', []))}",
+                f"- Question: {question}{recolor}",
+                f"- Accepted answers: {_json(answers)}",
                 *_source_region(source_text, span),
                 "- Scoring contract:", "", "```json",
                 _json(attempt.get("scoring_contract", {})), "```",
