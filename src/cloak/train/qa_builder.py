@@ -3369,6 +3369,43 @@ def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
     return assertions_view, qa_pairs_view
 
 
+def _frozen_semantic_chain(decision: Mapping, source_aliases: Sequence[str]) -> list[dict]:
+    """Freeze explicit entailment closure for one decision's lattice.
+
+    Ordered specific -> coarse: KEEP entails every level; a level entails itself
+    and every coarser level; placeholder entails nothing. This is a declaration
+    by the accepted lattice profile, not proven natural-language entailment; the
+    linked-answer scorer reads it instead of re-deriving from mutable profiles,
+    counts, or lexical similarity (docs/handoffs/2026-07-14-qa-reader-lattice-scoring.md).
+    """
+    levels = sorted(
+        (action for action in decision.get("actions", []) if action.get("mode") == "level"),
+        key=lambda action: float(action.get("coarseness_rank", 0.0)),
+    )
+    ordered_properties = [
+        canon(str(action["entails"][0]))
+        for action in levels
+        if action.get("entails")
+    ]
+    canonical_key = str(decision.get("canonical_key", ""))
+    keep_aliases = list(dict.fromkeys(
+        [canonical_key, *[str(alias) for alias in source_aliases]]
+    ))
+    chain = [{
+        "node": "keep",
+        "answer_aliases": [alias for alias in keep_aliases if alias],
+        "entailed_properties": list(ordered_properties),
+    }]
+    for index, prop in enumerate(ordered_properties):
+        chain.append({
+            "node": prop,
+            "answer_aliases": [prop],
+            "entailed_properties": ordered_properties[index:],
+        })
+    chain.append({"node": "placeholder", "answer_aliases": [], "entailed_properties": []})
+    return chain
+
+
 def freeze_ranker_environment(
     ranker_environment: Mapping,
     *,
@@ -3545,6 +3582,7 @@ def freeze_ranker_environment(
                         if alias not in protected_aliases:
                             protected_aliases.append(alias)
                 decision["protected_aliases"] = protected_aliases
+                decision["semantic_chain"] = _frozen_semantic_chain(decision, protected_aliases)
             frozen_document = {
                 "corpus": corpus,
                 "occurrences": occurrences,

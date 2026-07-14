@@ -1018,6 +1018,35 @@ def test_compile_artifact_rejects_invalid_scope_links():
         )
 
 
+def test_freeze_builds_semantic_chain_closure_with_source_aliases():
+    ranker_env = {
+        "corpora": {"clinical": {"d1": {"spans": [{
+            "surface": "kidney transplant", "type": "health-condition",
+            "start": 0, "end": 17, "aliases": ["renal transplant"],
+            "actions": [
+                {"fill": "solid organ transplant", "mode": "level", "aset": 50},
+                {"fill": "medical condition", "mode": "level", "aset": 5000},
+                {"fill": "kidney transplant", "mode": "level", "keep": True, "aset": 1},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }]}}}
+    }
+    frozen = freeze_ranker_environment(ranker_env)
+    chain = frozen["documents"]["d1"]["decisions"][0]["semantic_chain"]
+    by_node = {row["node"]: row for row in chain}
+
+    # KEEP entails the whole ordered chain; its aliases are the source + profile aliases.
+    assert by_node["keep"]["entailed_properties"] == ["solid organ transplant", "medical condition"]
+    assert set(by_node["keep"]["answer_aliases"]) == {"kidney transplant", "renal transplant"}
+    # a level entails itself and every coarser level only.
+    assert by_node["solid organ transplant"]["entailed_properties"] == [
+        "solid organ transplant", "medical condition"]
+    assert by_node["solid organ transplant"]["answer_aliases"] == ["solid organ transplant"]
+    assert by_node["medical condition"]["entailed_properties"] == ["medical condition"]
+    assert by_node["placeholder"]["entailed_properties"] == []
+    assert by_node["placeholder"]["answer_aliases"] == []
+
+
 def test_freeze_ranker_environment_maps_repeated_occurrences_to_one_decision():
     ranker_env = {
         "corpora": {
