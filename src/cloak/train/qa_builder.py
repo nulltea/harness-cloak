@@ -2462,6 +2462,14 @@ def _teacher_relation_arguments(
     return arguments, None
 
 
+def _normalize_teacher_text(value: str) -> str:
+    """Teacher answers/questions are inconsistently snake-cased
+    ("solid_organ_transplant"); the lexical fact scorer tokenizes an underscore
+    run as one token instead of its words, so map underscores to spaces and
+    collapse whitespace before storing and scoring."""
+    return re.sub(r"\s+", " ", str(value).replace("_", " ")).strip()
+
+
 def _substitute_linked_surfaces(
     text: str, arguments: Sequence[Mapping], occurrences: Mapping[str, Mapping],
 ) -> str:
@@ -2919,12 +2927,13 @@ def compile_relational_assertions(
                for occurrence_id in occurrence_ids):
             reject("invalid_property")
             continue
-        question = str(proposal.get("question", "")).strip()
+        question = _normalize_teacher_text(str(proposal.get("question", "")))
         if not question.endswith("?"):
             reject("invalid_question")
             continue
-        accepted_values = [str(value).strip() for value in proposal.get("accepted_answers", [])
-                           if str(value).strip()]
+        accepted_values = [_normalize_teacher_text(str(value))
+                           for value in proposal.get("accepted_answers", [])
+                           if _normalize_teacher_text(str(value))]
         # v1 migration: preserve old cached proposals, but new requests must author answers.
         if not accepted_values:
             answer_occurrence_id = str(proposal.get("answer_occurrence_id", ""))

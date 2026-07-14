@@ -882,6 +882,30 @@ def test_prompt_permits_within_problem_block_multiturn_links():
     assert "conditional or hypothetical" in prompt
 
 
+def test_accepted_answers_and_question_are_underscore_normalized():
+    # The teacher inconsistently snake-cases answers ("solid_organ_transplant");
+    # under lexical fact_score that tokenizes as one token vs three, so
+    # normalize underscores to spaces before storing/scoring.
+    source = "Hypothyroidism is treated with Synthroid."
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "condition", "support_property": "endocrine condition"},
+            {"role": "object", "kind": "linked", "occurrence_id": "drug", "support_property": "thyroid medication"},
+        ],
+        "question": "Which medication_class treats the endocrine disorder?",
+        "accepted_answers": ["hormone_replacement_therapy"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+        "evidence_quote": source,
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [proposal])
+
+    assert rejected == []
+    assert accepted[0]["accepted_values"] == ["hormone replacement therapy"]
+    assert accepted[0]["question"] == "Which medication class treats the endocrine disorder?"
+
+
 def test_prompt_prefers_the_most_specific_generalization_level():
     # The teacher was picking the vacuous root level (e.g. "medical condition")
     # as the answer, which discriminates nothing; the prompt must ask for the
