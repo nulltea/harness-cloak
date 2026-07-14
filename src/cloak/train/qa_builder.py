@@ -16,9 +16,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v14"
-RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 7}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r26"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v15"
+RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 8}
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r27"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -37,7 +37,8 @@ _RELATION_RECORD_ITEM = {
         "relation": {"enum": [
             "prescribed_with", "treated_with", "monitored_by",
             "contraindicated_because_of", "causes_or_explains",
-            "referred_to", "has_status", "has_category",
+            "referred_to",
+            "has_condition", "takes_medication", "underwent_procedure",
         ]},
         "arguments": {
             "type": "array",
@@ -148,8 +149,9 @@ RELATION_ONTOLOGY = (
     "contraindicated_because_of",
     "causes_or_explains",
     "referred_to",
-    "has_status",
-    "has_category",
+    "has_condition",
+    "takes_medication",
+    "underwent_procedure",
 )
 
 _RUNTIME_TYPE_CLASSES = {
@@ -184,8 +186,6 @@ _RELATION_ARGUMENT_CLASSES = {
     "contraindicated_because_of": (("treatment", "procedure"), ("condition",)),
     "causes_or_explains": (("condition",), ("condition", "symptom")),
     "referred_to": (("condition",), ("provider", "procedure")),
-    "has_status": (("condition", "symptom", "treatment", "procedure"), ("status",)),
-    "has_category": (("condition", "symptom", "treatment", "procedure"), ("category",)),
     # Person-anchored relations: the person is a placeholder-anchor subject with
     # no generalization level; the object is always the generalizable answer.
     "has_condition": (("person",), ("condition",)),
@@ -280,16 +280,6 @@ ACI_RELATION_CONTRACT = {
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
             r"referred\s+to\s+",
         ),
-    },
-    "has_status": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["has_status"],
-        "cues": ("has status", "status is"),
-        "connector_patterns": (r"\s+(?:has\s+status|status\s+is)\s+",),
-    },
-    "has_category": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["has_category"],
-        "cues": ("has category", "category is"),
-        "connector_patterns": (r"\s+(?:has\s+category|category\s+is)\s+",),
     },
     # Person-anchored. The person (subject) precedes the clinical span in the
     # HPI/problem framing ("<PERSON> ... with hypothyroidism", "<PERSON> is
@@ -1527,8 +1517,9 @@ def _window_pair_has_relation_shape(
         "contraindicated_because_of": r"\bcontraindicat\w*\b",
         "causes_or_explains": r"\b(?:causes?|explains?)\b",
         "referred_to": r"\brefer\w*\b",
-        "has_status": r"\bstatus\b",
-        "has_category": r"\bcategory\b",
+        "has_condition": r"\b(?:has|with|diagnos\w*|presents?|history)\b",
+        "takes_medication": r"\b(?:tak\w*|on|continu\w*|prescrib\w*|using)\b",
+        "underwent_procedure": r"\b(?:had|underwent|received)\b",
     }[relation]
     if subject_clause == object_clause:
         if abs(int(obj["start"]) - int(subject["end"])) > 320:
@@ -2545,8 +2536,6 @@ monitored_by: condition or diagnosis -> monitoring test, procedure, or provider;
 contraindicated_because_of: drug or procedure -> condition or diagnosis; require explicit contraindication.
 causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation.
 referred_to: condition or diagnosis -> provider or procedure; require explicit referral.
-has_status: clinical concept -> status; require an explicit status statement.
-has_category: clinical concept -> category; require an explicit classification statement.
 has_condition: person -> condition or diagnosis; the person has/presents with/is diagnosed with it.
 takes_medication: person -> drug; the person takes/is on/continues/was prescribed it.
 underwent_procedure: person -> medical procedure; the person had/underwent/received it.

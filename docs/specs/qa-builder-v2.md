@@ -468,31 +468,25 @@ Do not reverse it. Emit a relation only when the source explicitly supports it.
    condition or diagnosis → provider or procedure
    Use when the source explicitly refers the patient for that provider/procedure.
 
-7. has_status
-   clinical concept → status
-   Use an explicitly stated status only. An adapter must preregister an explicit source form that
-   connects the concept to the status; otherwise this type is expected to have zero coverage.
-
-8. has_category
-   clinical concept → category
-   Use an explicitly stated category/classification only. An adapter must preregister an explicit
-   source form that connects the concept to the category; otherwise this type is expected to have
-   zero coverage.
-
-9. has_condition
+7. has_condition
    person → condition or diagnosis
    Use when the source states the person has, presents with, or was diagnosed with the condition.
 
-10. takes_medication
-    person → drug
-    Use when the source states the person takes, is on, continues, or was prescribed the drug.
+8. takes_medication
+   person → drug
+   Use when the source states the person takes, is on, continues, or was prescribed the drug.
 
-11. underwent_procedure
-    person → medical procedure
-    Use when the source states the person had, underwent, or received the procedure.
+9. underwent_procedure
+   person → medical procedure
+   Use when the source states the person had, underwent, or received the procedure.
 ```
 
-Relations 9–11 anchor a generalizable clinical span to a **person**. The person is the subject
+The generic `has_status` (concept → status) and `has_category` (concept → category) relations
+were removed: their argument types are too vague, they had zero ACI coverage, and the teacher
+mis-selected `has_category` for genuine person→condition facts. Use the specific relation for the
+argument types instead.
+
+Relations 7–9 anchor a generalizable clinical span to a **person**. The person is the subject
 and the clinical span is always the object and the answer; the person is never the answer (it has
 no generalization level). These relations exist for coverage: a clinical span that participates in
 no condition↔drug↔procedure relation still earns a context assertion by anchoring to the person.
