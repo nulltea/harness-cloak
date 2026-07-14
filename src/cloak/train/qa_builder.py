@@ -3258,11 +3258,19 @@ def compile_relational_assertions(
             if not (occurrence.get("controlled", True)
                     and decisions.get(str(occurrence.get("decision_id")), {}).get("controlled", True)):
                 continue
+            # Generic type words ("medication(s)", "condition") are information-free
+            # placeholder labels, not a locator for a specific protected span: a
+            # question that says "certain medications" does not reveal the controlled
+            # drug "immunosuppressive medications" (only the discriminative token
+            # "immunosuppressive" would). Exempt them, singular and plural, alongside
+            # the legal levels.
+            type_words = _placeholder_meaning_tokens(str(occurrence.get("runtime_type", "")))
+            type_words = type_words | {f"{word}s" for word in type_words}
             level_tokens = frozenset(
                 token
                 for property_level in legal_properties.get(occurrence_id_value, ())
                 for token in _meaningful_tokens(property_level)
-            )
+            ) | type_words
             for term in _occurrence_protected_terms(occurrence):
                 protected_terms.append(term)
                 allowed_level_tokens[term] = allowed_level_tokens.get(term, frozenset()) | level_tokens
