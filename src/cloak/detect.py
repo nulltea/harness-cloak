@@ -3,7 +3,8 @@
 Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 """
 import re
-from dataclasses import dataclass, replace
+from collections.abc import Mapping, Sequence
+from dataclasses import asdict, dataclass, replace
 
 # Zero-shot label phrase -> TAB entity_type. Phrasing matters for GLiNER; tune only here.
 GLINER_LABELS = {
@@ -16,6 +17,59 @@ GLINER_LABELS = {
     "nationality, ethnicity, religion, profession or age": "DEM",
     "other identifying attribute or event": "MISC",
 }
+
+QA_V2_CLINICAL_LABELS = {
+    "condition": "health-condition",
+    "drug": "drug",
+    "medical process": "medical-procedure",
+    "location city": "LOC",
+    "location country": "LOC",
+    "location state": "LOC",
+    "name": "PERSON",
+    "first name": "PERSON",
+    "last name": "PERSON",
+    "age": "age",
+    "gender": "gender",
+    "marital status": "marital-status",
+    "organization medical facility": "organization-medical-facility",
+    "healthcare number": "CODE",
+    "medical code": "CODE",
+    "dose": "QUANTITY",
+}
+
+_SPLIT_CONTRACTION = re.compile(r"\b(?:wan|gon) na\b", re.IGNORECASE)
+_NATIVE_CLINICAL_CODE_LABELS = frozenset({"medical code", "healthcare number"})
+
+
+@dataclass(frozen=True)
+class NormalizationEvent:
+    start: int
+    end: int
+    surface: str
+    analysis_surface: str
+    rule: str = "clinical_split_contraction"
+
+
+def _clinical_presidio_view(text: str) -> tuple[str, list[NormalizationEvent]]:
+    events: list[NormalizationEvent] = []
+
+    def compact(match: re.Match) -> str:
+        surface = match.group(0)
+        analysis_surface = surface.replace(" ", "") + " "
+        events.append(NormalizationEvent(
+            match.start(), match.end(), surface, analysis_surface
+        ))
+        return analysis_surface
+
+    view = _SPLIT_CONTRACTION.sub(compact, text)
+    assert len(view) == len(text)
+    return view, events
+
+
+def _native_clinical_code_rejection(surface: str, raw_label: str | None) -> str | None:
+    if raw_label in _NATIVE_CLINICAL_CODE_LABELS and not re.search(r"[0-9]", surface):
+        return "clinical_code_without_identifier_shape"
+    return None
 
 # --- v7 fine-primary DEM: the detector targets these fine leaves; TAB-8's DEM is recovered by rolling
 # them up (FINE_TYPE_ROLLUP) only at eval. See research-wiki/training/2026-07-05-FT-detector-v7-dem-decompose.md.
@@ -242,6 +296,23 @@ class Span:
     score: float
     source: str    # "gliner" | "presidio" (spaCy NER) | "presidio-pattern"
     chain: int = -1  # coref chain id (set by coref_chains), -1 = unclustered
+    raw_label: str | None = None
+    recognizer: str | None = None
+    detector_provenance: dict | None = None
+
+
+@dataclass
+class DetectionResult:
+    spans: list[Span]
+    candidates: list[dict]
+    normalizations: list[NormalizationEvent]
+
+    def as_dict(self) -> dict:
+        return {
+            "accepted": [asdict(span) for span in self.spans],
+            "candidates": self.candidates,
+            "normalizations": [asdict(event) for event in self.normalizations],
+        }
 
 
 def _chunks(text: str, max_chars: int = 1200, max_words: int | None = None,
@@ -341,7 +412,7 @@ class Detector:
     # Stock fallback: gliner_model="urchade/gliner_small-v2.1".
     def __init__(self, gliner_model: str = "data/models/pii_gliner_multidomain/checkpoint-2479",
                  threshold: float = 0.3, batch_size: int = 16, fine_dem: bool = False,
-                 profile: str = "reddit"):
+                 profile: str = "reddit", label2type: Mapping[str, str] | None = None):
         import torch
         from gliner import GLiNER
         from presidio_analyzer import AnalyzerEngine
@@ -351,7 +422,8 @@ class Detector:
         # v7: fine-primary mode prompts the fine DEM leaves; else the coarse TAB-8. self.label2type maps a
         # predicted label phrase -> its (fine or coarse) type; the gate rolls fine types up via rollup_type.
         self.fine_dem = fine_dem
-        self.label2type = FINE_LABELS if fine_dem else GLINER_LABELS
+        default_labels = FINE_LABELS if fine_dem else GLINER_LABELS
+        self.label2type = dict(label2type) if label2type is not None else dict(default_labels)
         self.gliner = GLiNER.from_pretrained(gliner_model)
         self.max_words = _encoder_max_words(self.gliner)
         if torch.cuda.is_available():
@@ -378,47 +450,273 @@ class Detector:
                                   rf"(?i)\b(?:{_numword}[\s-]+){{1,6}}(?:dollars?|euros?|pounds?)\b", 0.6)]))
         self.labels = list(self.label2type)
 
+    def detect_many_with_diagnostics(self, texts: Sequence[str]) -> list[DetectionResult]:
+        documents = list(texts)
+        raw_by_document: list[list[Span]] = [[] for _text in documents]
+        chunks: list[tuple[int, int, str]] = []
+        for document_index, text in enumerate(documents):
+            if text.strip():
+                chunks.extend(
+                    (document_index, offset, chunk)
+                    for offset, chunk in _chunks(text, max_words=self.max_words)
+                )
+
+        if chunks:
+            chunk_outputs = self.gliner.batch_predict_entities(
+                [chunk for _document_index, _offset, chunk in chunks],
+                self.labels,
+                threshold=self.threshold,
+                batch_size=self.batch_size,
+            )
+            for (document_index, offset, _chunk), entities in zip(chunks, chunk_outputs):
+                for entity in entities:
+                    raw_label = entity["label"]
+                    raw_by_document[document_index].append(Span(
+                        offset + entity["start"],
+                        offset + entity["end"],
+                        entity["text"],
+                        self.label2type[raw_label],
+                        entity["score"],
+                        "gliner",
+                        raw_label=raw_label,
+                    ))
+
+        normalizations_by_document: list[list[NormalizationEvent]] = []
+        presidio_rejections_by_document: list[list[dict]] = [[] for _text in documents]
+        for document_index, text in enumerate(documents):
+            if self.profile.name == "clinical":
+                presidio_text, normalizations = _clinical_presidio_view(text)
+            else:
+                presidio_text, normalizations = text, []
+            normalizations_by_document.append(normalizations)
+            for result in self.presidio.analyze(text=presidio_text, language="en"):
+                recognizer = (result.recognition_metadata or {}).get("recognizer_name")
+                source = "presidio" if recognizer == "SpacyRecognizer" else "presidio-pattern"
+                source_fields = {
+                    "start": result.start,
+                    "end": result.end,
+                    "surface": text[result.start:result.end],
+                    "runtime_type": PRESIDIO_MAP.get(result.entity_type),
+                    "score": result.score,
+                    "source": source,
+                    "raw_label": result.entity_type,
+                    "recognizer": recognizer,
+                }
+                if result.entity_type not in PRESIDIO_MAP:
+                    presidio_rejections_by_document[document_index].append({
+                        **source_fields,
+                        "status": "rejected",
+                        "reason": "unmapped_presidio_entity",
+                        "winner": None,
+                    })
+                    continue
+                runtime_type = PRESIDIO_MAP[result.entity_type]
+                if self.fine_dem and runtime_type == "DEM":
+                    presidio_rejections_by_document[document_index].append({
+                        **source_fields,
+                        "status": "rejected",
+                        "reason": "fine_dem_presidio_dem_disabled",
+                        "winner": None,
+                    })
+                    continue
+                raw_by_document[document_index].append(Span(
+                    result.start,
+                    result.end,
+                    text[result.start:result.end],
+                    runtime_type,
+                    result.score,
+                    source,
+                    raw_label=result.entity_type,
+                    recognizer=recognizer,
+                ))
+
+        detection_results: list[DetectionResult] = []
+        for document_index, raw_spans in enumerate(raw_by_document):
+            candidates: list[dict] = list(presidio_rejections_by_document[document_index])
+            admitted: list[Span] = []
+            for span in raw_spans:
+                source_fields = {
+                    "start": span.start,
+                    "end": span.end,
+                    "surface": span.text,
+                    "runtime_type": span.type,
+                    "score": span.score,
+                    "source": span.source,
+                    "raw_label": span.raw_label,
+                    "recognizer": span.recognizer,
+                }
+                rejection = None
+                if not re.search(r"[A-Za-z0-9]", span.text):
+                    rejection = "non_alphanumeric_surface"
+                elif span.text.lower() in self.stop_words:
+                    rejection = "stop_word"
+                elif self.profile.name == "clinical" and span.source == "gliner":
+                    rejection = _native_clinical_code_rejection(span.text, span.raw_label)
+                if rejection is not None:
+                    candidates.append({
+                        **source_fields,
+                        "status": "rejected",
+                        "reason": rejection,
+                        "winner": None,
+                    })
+                else:
+                    admitted.append(span)
+
+            overlap_winners, overlap_rows = _dedupe_with_diagnostics(admitted)
+            candidates.extend(overlap_rows)
+            final_spans = overlap_winners
+            if self.profile.negative_filter:
+                final_spans = _apply_negative_filter(overlap_winners)
+                remaining = list(final_spans)
+                for winner in overlap_winners:
+                    matched_index = next((
+                        index for index, output in enumerate(remaining)
+                        if (
+                            output.start,
+                            output.end,
+                            output.text,
+                            output.score,
+                            output.source,
+                            output.raw_label,
+                            output.recognizer,
+                        ) == (
+                            winner.start,
+                            winner.end,
+                            winner.text,
+                            winner.score,
+                            winner.source,
+                            winner.raw_label,
+                            winner.recognizer,
+                        )
+                    ), None)
+                    row = next(row for row in overlap_rows if (
+                        row["status"] == "accepted"
+                        and row["start"] == winner.start
+                        and row["end"] == winner.end
+                        and row["source"] == winner.source
+                        and row["raw_label"] == winner.raw_label
+                    ))
+                    if matched_index is None:
+                        row.update(status="rejected", reason="negative_filter_rejection")
+                    else:
+                        output = remaining.pop(matched_index)
+                        if output.type != winner.type:
+                            row.update(
+                                reason="negative_filter_retype",
+                                result_runtime_type=output.type,
+                            )
+
+            for winner in final_spans:
+                winner.detector_provenance = {
+                    "source": winner.source,
+                    "raw_label": winner.raw_label,
+                    "recognizer": winner.recognizer,
+                    "score": winner.score,
+                    "candidates": [
+                        dict(row) for row in candidates
+                        if winner.start < row["end"] and row["start"] < winner.end
+                    ],
+                }
+            detection_results.append(DetectionResult(
+                spans=final_spans,
+                candidates=candidates,
+                normalizations=normalizations_by_document[document_index],
+            ))
+        return detection_results
+
+    def detect_with_diagnostics(self, text: str) -> DetectionResult:
+        return self.detect_many_with_diagnostics([text])[0]
+
     def detect(self, text: str) -> list[Span]:
-        spans = []
-        offsets, texts = zip(*_chunks(text, max_words=self.max_words)) if text.strip() else ((), ())
-        for off, ents in zip(offsets, self.gliner.batch_predict_entities(
-                list(texts), self.labels, threshold=self.threshold, batch_size=self.batch_size)):
-            spans += [Span(off + e["start"], off + e["end"], e["text"],
-                           self.label2type[e["label"]], e["score"], "gliner") for e in ents]
-        for r in self.presidio.analyze(text=text, language="en"):
-            if r.entity_type in PRESIDIO_MAP:
-                t = PRESIDIO_MAP[r.entity_type]
-                if self.fine_dem and t == "DEM":
-                    continue   # fine-dem: GLiNER's learned fine leaves own demographics; drop Presidio's
-                               # coarse NRP->DEM (keeps relabel_dem training/eval-only, inference pure-model).
-                rec = (r.recognition_metadata or {}).get("recognizer_name", "")
-                src = "presidio" if rec == "SpacyRecognizer" else "presidio-pattern"
-                spans.append(Span(r.start, r.end, text[r.start:r.end], t, r.score, src))
-        spans = [s for s in spans  # pure symbol/emoji spans or bare stop words: never identifiers
-                 if re.search(r"[A-Za-z0-9]", s.text) and s.text.lower() not in self.stop_words]
-        spans = _dedupe(spans)
-        if self.profile.negative_filter:
-            spans = _apply_negative_filter(spans)
-        return spans
+        return self.detect_with_diagnostics(text).spans
 
 
-def _dedupe(spans: list[Span]) -> list[Span]:
+def _dedupe_with_diagnostics(spans: list[Span]) -> tuple[list[Span], list[dict]]:
     """Overlap resolution. Same-type overlaps: keep the widest (extent disagreement over one
     entity). Cross-type conflicts: higher score wins; pattern-based Presidio hits (fixed regex
     scores 0.4-0.6, not comparable to GLiNER probabilities) get an effective floor of 0.9.
+
+    Return one disposition row per input candidate without changing the legacy resolver's exact
+    two-pass ordering. Accepted spans carry the source trace for downstream artifact attribution.
     """
     def eff(s: Span) -> float:
         return max(s.score, 0.9) if s.source == "presidio-pattern" else s.score
 
-    within_type: list[Span] = []
-    for s in sorted(spans, key=lambda s: (-(s.end - s.start), -s.score, s.start)):
-        if not any(s.type == o.type and s.start < o.end and o.start < s.end for o in within_type):
-            within_type.append(s)
-    out: list[Span] = []
-    for s in sorted(within_type, key=lambda s: (-eff(s), -(s.end - s.start), s.start)):
-        if not any(s.start < o.end and o.start < s.end for o in out):
-            out.append(s)
-    return sorted(out, key=lambda s: s.start)
+    def overlaps(a: Span, b: Span) -> bool:
+        return a.start < b.end and b.start < a.end
+
+    def source_fields(s: Span) -> dict:
+        return {
+            "start": s.start,
+            "end": s.end,
+            "surface": s.text,
+            "runtime_type": s.type,
+            "score": s.score,
+            "source": s.source,
+            "raw_label": s.raw_label,
+            "recognizer": s.recognizer,
+        }
+
+    indexed = list(enumerate(spans))
+    rows = [
+        {
+            **source_fields(span),
+            "status": None,
+            "reason": None,
+            "winner": None,
+        }
+        for span in spans
+    ]
+
+    within_type: list[tuple[int, Span]] = []
+    for index, span in sorted(
+        indexed,
+        key=lambda item: (-(item[1].end - item[1].start), -item[1].score, item[1].start),
+    ):
+        winner = next(
+            (other for other in within_type if span.type == other[1].type and overlaps(span, other[1])),
+            None,
+        )
+        if winner is None:
+            within_type.append((index, span))
+            continue
+        rows[index].update(
+            status="overlap_loser",
+            reason="same_type_wider_candidate",
+            winner=source_fields(winner[1]),
+        )
+
+    out: list[tuple[int, Span]] = []
+    for index, span in sorted(
+        within_type,
+        key=lambda item: (-eff(item[1]), -(item[1].end - item[1].start), item[1].start),
+    ):
+        winner = next((other for other in out if overlaps(span, other[1])), None)
+        if winner is None:
+            out.append((index, span))
+            continue
+        rows[index].update(
+            status="overlap_loser",
+            reason="cross_type_higher_effective_score",
+            winner=source_fields(winner[1]),
+        )
+
+    for index, winner in out:
+        rows[index].update(status="accepted", reason=None, winner=None)
+        winner.detector_provenance = {
+            "source": winner.source,
+            "raw_label": winner.raw_label,
+            "recognizer": winner.recognizer,
+            "score": winner.score,
+            "candidates": [dict(row) for span, row in zip(spans, rows) if overlaps(winner, span)],
+        }
+
+    winners = [span for _index, span in sorted(out, key=lambda item: item[1].start)]
+    return winners, rows
+
+
+def _dedupe(spans: list[Span]) -> list[Span]:
+    return _dedupe_with_diagnostics(spans)[0]
 
 
 def _apply_negative_filter(spans: list[Span]) -> list[Span]:

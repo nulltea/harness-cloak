@@ -1,5 +1,5 @@
 """_dedupe: same-type widest, cross-type score-first with a pattern-hit floor."""
-from cloak.detect import Span, _dedupe
+from cloak.detect import Span, _dedupe, _dedupe_with_diagnostics
 
 
 def _s(start, end, typ, score, source="gliner"):
@@ -34,3 +34,11 @@ def test_presidio_spacy_gets_no_floor():
 def test_non_overlapping_all_kept_start_sorted():
     a, b = _s(10, 20, "PERSON", 0.9), _s(0, 5, "CODE", 0.5)
     assert _dedupe([a, b]) == [b, a]
+
+
+def test_legacy_dedupe_projects_only_winners():
+    spans = [
+        Span(0, 6, "Andrew", "PERSON", 0.91, "gliner"),
+        Span(0, 6, "Andrew", "PERSON", 0.85, "presidio"),
+    ]
+    assert _dedupe(spans) == _dedupe_with_diagnostics(spans)[0]
