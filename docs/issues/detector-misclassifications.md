@@ -171,11 +171,32 @@ candidate accounting. This is not a QA-builder bug: QA cannot distinguish a find
 from its inputs (see below), so the fix belongs at the detector.
 
 **Two discriminators tested.**
-1. *GLiNER label schema (does not work).* Prompting GLiNER with added finding labels
-   (`symptom`, `physical examination finding`, `clinical sign`) alongside `condition` did not pull the
-   findings off `condition`: `edema`/`erythema`/`immunocompromised` still won `condition`; the finding
-   labels never cleared threshold. GLiNER (this model, zero-shot) does not separate finding from
-   diagnosis by label name. Spike: `scripts/spikes/detector_finding_label_split.py`.
+1. *GLiNER label schema (partial, not clean).* This model is zero-shot responsive — added labels do
+   fire correctly on appropriate spans (`symptom`→joint pain/fatigue/nausea, `clinical sign`→vital
+   signs/murmur, `disease`→arthritis/hypothyroidism/polycystic kidneys, `body part`→knees). But no
+   added label cleanly separates the four findings from all real diagnoses. Clean span-overlap
+   measurement (`/tmp/clean_measure.log`), best score per label:
+
+   | surface | condition | disease | symptom | clin.sign |
+   |---|---:|---:|---:|---:|
+   | arthritis | 0.575 | 0.771 | 0 | 0 |
+   | hypothyroidism | 0.692 | 0.681 | 0 | 0 |
+   | hyperthyroidism | 0.538 | **0.000** | 0 | 0 |
+   | kidney transplant | 0.000 | 0.000 | 0 | 0 |
+   | edema | 0.347 | 0.000 | 0 | 0 |
+   | erythema | 0.314 | 0.000 | 0 | 0 |
+   | immunocompromised | 0.544 | 0.000 | 0 | 0 |
+   | acute exacerbation | 0.355 | 0.000 | 0 | 0 |
+
+   `disease` rejects all four findings but also misses `hyperthyroidism` (0.000) — so a
+   `disease`-positive rule would drop a real diagnosis. `symptom`/`clinical sign` are zero on all eight
+   targets (they capture other spans). And adding probe labels destabilizes existing types
+   (`kidney transplant` flips `health-condition`→`medical process`). So the label-schema route is not a
+   clean separator. (An earlier spike reported this as "labels return 0.000 / no zero-shot"; that was a
+   measurement bug — an exact-surface-text filter that dropped entities on other span boundaries. The
+   corrected measurement above supersedes it.) Spikes:
+   `scripts/spikes/detector_finding_label_split.py` (superseded), inline clean re-measure in
+   `/tmp/clean_measure.log`.
 2. *Detector confidence (partial, and already frozen).* The frozen `detector_provenance.score`
    separates the low-confidence findings from diagnoses, but not perfectly:
 
