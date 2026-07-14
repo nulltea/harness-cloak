@@ -214,12 +214,18 @@ from its inputs (see below), so the fix belongs at the detector.
    diagnosis `hyperthyroidism` (0.736) are only 0.06 apart, so no single confidence threshold cleanly
    drops all four findings without risking real diagnoses on other documents.
 
-**Recommendation (detector lane).** Raise the `health-condition` admission threshold above the current
-`0.35` (≈0.5 clears the two worst findings, incl. the harmful `acute exacerbation`, with a 0.24+ margin
-to every real diagnosis on this doc) — or add a condition-specific confidence gate — so low-confidence
-findings never freeze as controlled decisions. This fixes both QA-v2 relation quality and the RL action
-space, and needs a matched-setting recall check on a wider slice before freezing the threshold (the
-finding/diagnosis confidence bands overlap near 0.68–0.74 and one document is not enough to set it).
-Until then the QA builder leaves these spans relation-eligible; `acute exacerbation` will keep competing
-with `arthritis` as a relation subject. Evidence artifacts: `/tmp/qa-v2-d2n002-newdet.json`,
-`/tmp/finding_split.log`.
+**Resolution (implemented 2026-07-14).** A `health-condition` admission gate at `0.5` was added to
+`prepare_spans_for_substitution` (`min_health_condition_score`, wired from the qa-v2 path in
+`build_arms_artifact.py` as `QA_V2_CLINICAL_MIN_CONDITION_SCORE = 0.5`, recorded in the detector
+pin). It rejects sub-threshold `health-condition` spans before they become controlled decisions, with
+an attributable `post_detection_rejected` record (`qa_v2_low_confidence_health_condition`), so both the
+QA relation space and the RL action space drop them. On D2N002 it drops `acute exacerbation` (0.382,
+the harmful one) and `immunocompromised` (0.410) while keeping `edema` (0.677), `erythema` (0.634), and
+every real diagnosis (min `hyperthyroidism` 0.736). Only `health-condition` is gated; other runtime
+types are untouched. **Still needs a matched-setting recall check on a wider clinical slice** before
+the 0.5 value is frozen — the finding/diagnosis confidence bands overlap near 0.63–0.74, so a real
+diagnosis on another document could score below 0.5 and be wrongly dropped. The GLiNER label-schema
+alternative was rejected (see the corrected evidence above and
+`research-wiki/experiments/detector-finding-vs-diagnosis-separation.md`). Evidence artifacts:
+`/tmp/qa-v2-d2n002-newdet.json` (pre-gate), `/tmp/qa-v2-d2n002-gated.json` (post-gate),
+`/tmp/clean_measure.log`.

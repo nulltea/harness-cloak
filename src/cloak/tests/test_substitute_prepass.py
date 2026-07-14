@@ -105,6 +105,41 @@ def test_qa_v2_runtime_contract_rejects_residual_demographic_fallback():
     assert rejected[0]["proposed_runtime_type"] == "demographic-other"
 
 
+def test_qa_v2_admission_gate_rejects_low_confidence_health_conditions():
+    # Exam-findings (edema/acute exacerbation) score low on GLiNER's `condition`
+    # label; a 0.5 admission gate on qa-v2 drops them before they become
+    # controlled decisions, while real diagnoses (>=0.5) survive.
+    finding = Span(0, 18, "acute exacerbation", "health-condition", 0.382, "gliner", raw_label="condition")
+    diag = Span(30, 39, "arthritis", "health-condition", 0.979, "gliner", raw_label="condition")
+    edema = Span(50, 55, "edema", "health-condition", 0.677, "gliner", raw_label="condition")
+    text = "acute exacerbation of the arthritis with edema."
+    prepared, rejected = prepare_spans_for_substitution(
+        text, [finding, diag, edema], min_health_condition_score=0.5
+    )
+
+    kept = {(r.text, r.type) for r in prepared}
+    assert ("arthritis", "health-condition") in kept
+    assert ("edema", "health-condition") in kept   # 0.677 >= 0.5
+    assert ("acute exacerbation", "health-condition") not in kept
+    row = next(r for r in rejected if r["surface"] == "acute exacerbation")
+    assert row["status"] == "post_detection_rejected"
+    assert row["reason"] == "qa_v2_low_confidence_health_condition"
+    assert row["score"] == 0.382
+
+
+def test_health_condition_gate_off_by_default():
+    # No gate unless a threshold is passed (legacy/RL behavior unchanged); only
+    # health-condition is gated, never other runtime types.
+    finding = Span(0, 18, "acute exacerbation", "health-condition", 0.382, "gliner", raw_label="condition")
+    drug = Span(20, 27, "aspirin", "drug", 0.10, "gliner", raw_label="drug")
+    prepared, rejected = prepare_spans_for_substitution("acute exacerbation aspirin.", [finding, drug])
+    assert [(r.text, r.type) for r in prepared] == [("acute exacerbation", "health-condition"), ("aspirin", "drug")]
+    assert rejected == []
+    # a low-confidence non-condition is not gated even when the threshold is set
+    prepared2, _ = prepare_spans_for_substitution("aspirin.", [drug], min_health_condition_score=0.5)
+    assert [(r.text, r.type) for r in prepared2] == [("aspirin", "drug")]
+
+
 def test_substitution_record_preserves_winning_detector_provenance(monkeypatch):
     provenance = {
         "source": "gliner",

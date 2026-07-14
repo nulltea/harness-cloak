@@ -31,6 +31,12 @@ CORPORA = ("clinical", "enron", "aeslc")
 LIMIT = 16
 QA_V2_CLINICAL_MODEL = "knowledgator/gliner-pii-large-v1.0"
 QA_V2_CLINICAL_THRESHOLD = 0.35
+# Health-condition admission gate: GLiNER's `condition` label fires at low
+# confidence on exam-findings/modifiers (edema/erythema/immunocompromised/acute
+# exacerbation ~0.38-0.68) vs real diagnoses (>=0.74); 0.5 drops the findings
+# that pollute relation candidates without touching diagnoses. See
+# research-wiki/experiments/detector-finding-vs-diagnosis-separation.md.
+QA_V2_CLINICAL_MIN_CONDITION_SCORE = 0.5
 QA_V2_CLINICAL_LABEL_SCHEMA = "knowledgator-native-clinical-v1"
 QA_V2_CONTROLLED_TYPES = frozenset({
     "LOC", "drug", "health-condition", "medical-procedure",
@@ -69,7 +75,7 @@ def action_table(
     text: str,
     R: list[dict],
     *,
-    controlled_types: frozenset[str] | None = None,
+    controlled_types: set[str] | frozenset[str] | None = None,
 ) -> dict:
     """Per unique quasi span: full action list (levels ∪ placeholder) with walk_risk + p6,
     computed in the SAME process as the walk so the walk's accepted level is consistent
@@ -165,10 +171,14 @@ def make_detector(args, profile: str):
             raise ValueError(
                 f"qa-v2-clinical requires a clinical profile, got {profile!r}"
             )
+        if args.detector_model or args.threshold is not None or args.fine_dem:
+            raise ValueError(
+                "qa-v2-clinical detector config cannot be combined with detector overrides"
+            )
         return Detector(
             gliner_model=QA_V2_CLINICAL_MODEL,
             threshold=QA_V2_CLINICAL_THRESHOLD,
-            profile="clinical",
+            profile=profile,
             label2type=QA_V2_CLINICAL_LABELS,
         )
     kwargs = {"fine_dem": args.fine_dem, "profile": profile}
@@ -181,7 +191,8 @@ def make_detector(args, profile: str):
 
 def document_entry_from_detection(text, detection, *, tau: float, qa_v2: bool) -> dict:
     spans, post_rejections = prepare_spans_for_substitution(
-        text, detection.spans, reject_demographic_other=qa_v2
+        text, detection.spans, reject_demographic_other=qa_v2,
+        min_health_condition_score=QA_V2_CLINICAL_MIN_CONDITION_SCORE if qa_v2 else None,
     )
     arms = build_arms(text, spans, tau)
     entry = {arm: [doc_p, records] for arm, (doc_p, records) in arms.items()}
@@ -207,6 +218,7 @@ def _detector_metadata(args, corpora: list[str]) -> dict:
             "config": "qa-v2-clinical",
             "model": QA_V2_CLINICAL_MODEL,
             "threshold": QA_V2_CLINICAL_THRESHOLD,
+            "min_health_condition_score": QA_V2_CLINICAL_MIN_CONDITION_SCORE,
             "label_schema": QA_V2_CLINICAL_LABEL_SCHEMA,
             "label_map": dict(QA_V2_CLINICAL_LABELS),
             "controlled_runtime_types": sorted(QA_V2_CONTROLLED_TYPES),
@@ -223,6 +235,11 @@ def _detector_metadata(args, corpora: list[str]) -> dict:
         "presidio": True,
         "profiles": profiles,
     }
+
+
+def detector_manifest(args, corpora: list[str]) -> dict:
+    """Public detector provenance manifest retained for artifact consumers."""
+    return _detector_metadata(args, corpora)
 
 
 def main():
@@ -257,7 +274,7 @@ def main():
     art["_meta"] = {
         "gate_fingerprint": span_gate.gate_fingerprint(),
         "profiles": {c: profile_for(c) for c in corpora},
-        "detector": _detector_metadata(args, corpora),
+        "detector": detector_manifest(args, corpora),
     }
     out.write_text(json.dumps(art, indent=1))
     print(f"wall {time.time()-t0:.0f}s -> {out}")

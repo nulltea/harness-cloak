@@ -42,11 +42,36 @@ def prepare_spans_for_substitution(
     spans: list[Span],
     *,
     reject_demographic_other: bool = False,
+    min_health_condition_score: float | None = None,
 ) -> tuple[list[Span], list[dict]]:
     prepared: list[Span] = []
     rejected: list[dict] = []
     for source_span in spans:
         span = replace(source_span)
+        # Low-confidence health-conditions are exam-findings/modifiers, not
+        # diagnoses (edema/erythema/immunocompromised/acute exacerbation score
+        # well below real diagnoses on GLiNER's `condition` label). Reject them
+        # before they become controlled decisions rather than freeze noise the
+        # relation teacher then anchors on. Only health-condition is gated;
+        # exp:detector-finding-vs-diagnosis-separation.
+        if (
+            min_health_condition_score is not None
+            and span.type == "health-condition"
+            and (span.score or 0.0) < min_health_condition_score
+        ):
+            rejected.append({
+                "start": span.start,
+                "end": span.end,
+                "surface": span.text,
+                "source": span.source,
+                "raw_label": span.raw_label,
+                "recognizer": span.recognizer,
+                "score": span.score,
+                "status": "post_detection_rejected",
+                "reason": "qa_v2_low_confidence_health_condition",
+                "min_health_condition_score": min_health_condition_score,
+            })
+            continue
         if (
             span.type == "PERSON"
             and span.text[0].islower()
