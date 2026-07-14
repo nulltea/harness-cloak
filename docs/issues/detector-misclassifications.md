@@ -103,9 +103,10 @@ classes on both the representative document and the complete local ACI slice. Ev
 as the [D2N002 gate artifact](../../results/clinical_detector_gate_aci_d2n002.json) and the
 [67-document ACI gate artifact](../../results/clinical_detector_gate_aci.json).
 
-Both artifacts pin `knowledgator/gliner-pii-large-v1.0` at threshold `0.35`, the native clinical
-label mapping, the clinical profile, and GLiNER plus Presidio composition. Each document carries a
-SHA-256 source hash. They were generated with one flattened detector batch per command:
+Both artifacts pin `knowledgator/gliner-pii-large-v1.0` at threshold `0.35`, label schema
+`knowledgator-native-clinical-v1` plus its exact `label_map`, the controlled runtime types, the
+clinical profile, and GLiNER plus Presidio composition. Each document carries a SHA-256 source hash.
+They were generated with one flattened detector batch per command:
 
 ```bash
 PYTHONPATH=src:scripts /home/timo/repos/agent-cloak/.venv/bin/python -u \

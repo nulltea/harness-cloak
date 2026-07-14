@@ -3,6 +3,8 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from cloak.detect import DetectionResult, NormalizationEvent, Span
 
 
@@ -154,6 +156,31 @@ def test_gate_passes_only_when_all_preregistered_counts_are_zero():
         "frozen_demographic_other": 0,
     }
     assert report["gate_pass"] is True
+
+
+def test_gate_detector_pin_uses_exact_native_schema_and_runtime_type_contract():
+    assert gate.DETECTOR_PIN["label_schema"] == "knowledgator-native-clinical-v1"
+    assert gate.DETECTOR_PIN["label_map"] == gate.QA_V2_CLINICAL_LABELS
+    assert gate.DETECTOR_PIN["controlled_runtime_types"] == sorted(
+        gate.QA_V2_CONTROLLED_TYPES
+    )
+    assert "controlled_types" not in gate.DETECTOR_PIN
+
+
+@pytest.mark.parametrize("corpus", ["aci", "clinical", "mts"])
+def test_gate_accepts_clinical_corpus_aliases(corpus, tmp_path):
+    args = gate.parse_args(["--corpus", corpus, "--out", str(tmp_path / "gate.json")])
+    assert args.corpus == corpus
+
+
+def test_gate_rejects_nonclinical_corpus(tmp_path):
+    with pytest.raises(SystemExit):
+        gate.parse_args([
+            "--corpus",
+            "enron",
+            "--out",
+            str(tmp_path / "gate.json"),
+        ])
 
 
 class FakeDetector:

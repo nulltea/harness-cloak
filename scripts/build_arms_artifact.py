@@ -17,7 +17,7 @@ from pathlib import Path
 import cloak.span_gate as span_gate
 from cloak.anonymity import aset_count
 from cloak.corpora import load_task_docs
-from cloak.detect import Detector, QA_V2_CLINICAL_LABELS
+from cloak.detect import Detector, FINE_LABELS, GLINER_LABELS, QA_V2_CLINICAL_LABELS
 from cloak.probe import fill_proximity, walk_risk
 from cloak.runtime_types import PLACEHOLDER_RE
 from cloak.substitute import prepare_spans_for_substitution
@@ -31,6 +31,7 @@ CORPORA = ("clinical", "enron", "aeslc")
 LIMIT = 16
 QA_V2_CLINICAL_MODEL = "knowledgator/gliner-pii-large-v1.0"
 QA_V2_CLINICAL_THRESHOLD = 0.35
+QA_V2_CLINICAL_LABEL_SCHEMA = "knowledgator-native-clinical-v1"
 QA_V2_CONTROLLED_TYPES = frozenset({
     "LOC", "drug", "health-condition", "medical-procedure",
 })
@@ -39,7 +40,7 @@ QA_V2_CONTROLLED_TYPES = frozenset({
 # go through the production "clinical" profile so RL artifacts see the same span gate as
 # deployment; the other corpora keep the historical "reddit" default.
 DEFAULT_PROFILE = "reddit"
-CORPUS_PROFILES = {"clinical": "clinical"}
+CORPUS_PROFILES = {"clinical": "clinical", "aci": "clinical", "mts": "clinical"}
 
 
 def profile_for(corpus: str) -> str:
@@ -132,6 +133,10 @@ def parse_args(argv=None):
         help="pinned detector preset (QA-v2 forbids model/threshold/schema overrides)",
     )
     args = ap.parse_args(argv)
+    corpora = [corpus.strip() for corpus in args.corpora.split(",")]
+    if any(not corpus for corpus in corpora):
+        ap.error("--corpora must contain non-empty comma-separated corpus names")
+    args.corpora = ",".join(corpora)
     if args.detector_config == "qa-v2-clinical":
         conflicts = []
         if args.detector_model:
@@ -145,11 +150,21 @@ def parse_args(argv=None):
                 "--detector-config qa-v2-clinical cannot be combined with "
                 + ", ".join(conflicts)
             )
+        nonclinical = [corpus for corpus in corpora if profile_for(corpus) != "clinical"]
+        if nonclinical:
+            ap.error(
+                "--detector-config qa-v2-clinical requires clinical corpora; got "
+                + ", ".join(nonclinical)
+            )
     return args
 
 
 def make_detector(args, profile: str):
     if args.detector_config == "qa-v2-clinical":
+        if profile != "clinical":
+            raise ValueError(
+                f"qa-v2-clinical requires a clinical profile, got {profile!r}"
+            )
         return Detector(
             gliner_model=QA_V2_CLINICAL_MODEL,
             threshold=QA_V2_CLINICAL_THRESHOLD,
@@ -192,8 +207,9 @@ def _detector_metadata(args, corpora: list[str]) -> dict:
             "config": "qa-v2-clinical",
             "model": QA_V2_CLINICAL_MODEL,
             "threshold": QA_V2_CLINICAL_THRESHOLD,
-            "label_schema": dict(QA_V2_CLINICAL_LABELS),
-            "controlled_types": sorted(QA_V2_CONTROLLED_TYPES),
+            "label_schema": QA_V2_CLINICAL_LABEL_SCHEMA,
+            "label_map": dict(QA_V2_CLINICAL_LABELS),
+            "controlled_runtime_types": sorted(QA_V2_CONTROLLED_TYPES),
             "presidio": True,
             "profiles": profiles,
         }
@@ -202,7 +218,8 @@ def _detector_metadata(args, corpora: list[str]) -> dict:
         "model": args.detector_model or "data/models/pii_gliner_multidomain/checkpoint-2479",
         "threshold": args.threshold if args.threshold is not None else 0.3,
         "label_schema": "fine-dem" if args.fine_dem else "tab-8",
-        "controlled_types": None,
+        "label_map": dict(FINE_LABELS if args.fine_dem else GLINER_LABELS),
+        "controlled_runtime_types": None,
         "presidio": True,
         "profiles": profiles,
     }

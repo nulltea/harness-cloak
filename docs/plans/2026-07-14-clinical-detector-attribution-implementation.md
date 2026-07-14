@@ -9,7 +9,7 @@ companion: 2026-07-14-clinical-detector-attribution-and-contract.md
 
 # Clinical Detector Attribution Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Execution record:** Per `AGENTS.md` and the user's explicit delegation request, Tasks 2–3 were handed together to the same sole GPT-5.6 Terra High implementation delegate; the primary agent performed final review. No per-task SDD subagent/reviewer loop was used. Steps retain checkbox (`- [ ]`) syntax as the implementation record.
 
 **Goal:** Make the pinned QA-v2 clinical detector attributable, remove the measured ACI misclassifications through offset-preserving and positive-type contracts, and enforce the corrected behavior with a durable real-data gate.
 
@@ -834,4 +834,4 @@ git commit -m "test(clinical): gate attributable detector outcomes"
 
 ## Final review and completion
 
-After all three task reviews pass, generate a whole-branch review package from merge base through `HEAD`, dispatch a fresh critical reviewer, and resolve every Critical or Important finding through one fix subagent and re-review. Then run the verification commands fresh, inspect both real artifacts again, and use the finishing-a-development-branch workflow. Do not merge, push, or open a pull request without a separate user request.
+The primary agent performs the whole-branch final review from merge base through `HEAD`; the sole implementation delegate resolves its findings directly. Then run the verification commands fresh, inspect both real artifacts again, and use the finishing-a-development-branch workflow. Do not merge, push, or open a pull request without a separate user request.

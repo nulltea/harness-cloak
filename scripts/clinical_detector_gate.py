@@ -9,8 +9,10 @@ from dataclasses import asdict
 from pathlib import Path
 
 from build_arms_artifact import (
+    QA_V2_CLINICAL_LABEL_SCHEMA,
     QA_V2_CLINICAL_MODEL,
     QA_V2_CLINICAL_THRESHOLD,
+    QA_V2_CONTROLLED_TYPES,
 )
 from cloak.corpora import load_task_docs
 from cloak.detect import Detector, QA_V2_CLINICAL_LABELS
@@ -37,7 +39,9 @@ DETECTOR_PIN = {
     "model": QA_V2_CLINICAL_MODEL,
     "threshold": QA_V2_CLINICAL_THRESHOLD,
     "profile": "clinical",
-    "label_schema": dict(QA_V2_CLINICAL_LABELS),
+    "label_schema": QA_V2_CLINICAL_LABEL_SCHEMA,
+    "label_map": dict(QA_V2_CLINICAL_LABELS),
+    "controlled_runtime_types": sorted(QA_V2_CONTROLLED_TYPES),
     "presidio": True,
 }
 
@@ -138,7 +142,7 @@ def evaluate_documents(rows: list[dict], detector) -> dict:
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser()
-    parser.add_argument("--corpus", default="aci")
+    parser.add_argument("--corpus", choices=("aci", "clinical", "mts"), default="aci")
     parser.add_argument("--doc-id", help="optional exact source document id")
     parser.add_argument("--limit", type=int, help="maximum selected documents")
     parser.add_argument("--out", required=True, help="JSON report path")

@@ -64,6 +64,87 @@ def test_qa_v2_clinical_preset_is_pinned_and_override_free(monkeypatch):
     }
 
 
+@pytest.mark.parametrize("corpus", ["clinical", "aci", "mts"])
+def test_qa_v2_clinical_preset_accepts_only_clinical_aliases(corpus):
+    mod = _module()
+
+    args = mod.parse_args([
+        "--corpora",
+        corpus,
+        "--detector-config",
+        "qa-v2-clinical",
+    ])
+
+    assert mod.profile_for(corpus) == "clinical"
+    assert args.corpora == corpus
+
+
+def test_qa_v2_clinical_preset_normalizes_comma_separated_corpora_once():
+    mod = _module()
+
+    args = mod.parse_args([
+        "--corpora",
+        "clinical, aci",
+        "--detector-config",
+        "qa-v2-clinical",
+    ])
+
+    assert args.corpora == "clinical,aci"
+    assert mod._detector_metadata(args, args.corpora.split(","))["profiles"] == {
+        "clinical": "clinical",
+        "aci": "clinical",
+    }
+
+
+def test_qa_v2_clinical_preset_rejects_nonclinical_corpus():
+    mod = _module()
+
+    with pytest.raises(SystemExit):
+        mod.parse_args([
+            "--corpora",
+            "enron",
+            "--detector-config",
+            "qa-v2-clinical",
+        ])
+
+
+def test_qa_v2_make_detector_rejects_nonclinical_profile():
+    mod = _module()
+    args = mod.parse_args([
+        "--corpora",
+        "clinical",
+        "--detector-config",
+        "qa-v2-clinical",
+    ])
+
+    with pytest.raises(ValueError, match="requires a clinical profile"):
+        mod.make_detector(args, "reddit")
+
+
+def test_detector_metadata_uses_schema_id_map_and_runtime_type_contract():
+    mod = _module()
+    qa_args = mod.parse_args([
+        "--corpora",
+        "aci",
+        "--detector-config",
+        "qa-v2-clinical",
+    ])
+    qa_metadata = mod._detector_metadata(qa_args, ["aci"])
+
+    assert qa_metadata["label_schema"] == "knowledgator-native-clinical-v1"
+    assert qa_metadata["label_map"] == mod.QA_V2_CLINICAL_LABELS
+    assert qa_metadata["controlled_runtime_types"] == sorted(mod.QA_V2_CONTROLLED_TYPES)
+    assert "controlled_types" not in qa_metadata
+
+    deployment_metadata = mod._detector_metadata(
+        mod.parse_args(["--corpora", "enron"]), ["enron"]
+    )
+    assert deployment_metadata["label_schema"] == "tab-8"
+    assert deployment_metadata["label_map"] == mod.GLINER_LABELS
+    assert deployment_metadata["controlled_runtime_types"] is None
+    assert "controlled_types" not in deployment_metadata
+
+
 @pytest.mark.parametrize(
     "override",
     [

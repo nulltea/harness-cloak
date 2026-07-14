@@ -8,7 +8,13 @@
   },
   "detector": {
     "config": "qa-v2-clinical",
-    "label_schema": {
+    "controlled_runtime_types": [
+      "LOC",
+      "drug",
+      "health-condition",
+      "medical-procedure"
+    ],
+    "label_map": {
       "age": "age",
       "condition": "health-condition",
       "dose": "QUANTITY",
@@ -26,6 +32,7 @@
       "name": "PERSON",
       "organization medical facility": "organization-medical-facility"
     },
+    "label_schema": "knowledgator-native-clinical-v1",
     "model": "knowledgator/gliner-pii-large-v1.0",
     "presidio": true,
     "profile": "clinical",
