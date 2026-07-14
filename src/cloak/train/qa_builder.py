@@ -4361,15 +4361,31 @@ def build_utility_artifact(
                         # S#, person P#) so a single compile stays consistent.
                         merged_relations, merged_ledger = [], []
                         for teacher_family in ("clinical", "person"):
-                            family_proposals = relation_teacher.propose(
-                                relation_teacher_prompt(
-                                    doc_id, source, environment_document,
-                                    family=teacher_family,
-                                ),
-                                response_format=relation_teacher_response_format(
-                                    environment_document, source, family=teacher_family,
-                                ),
-                            )
+                            try:
+                                family_proposals = relation_teacher.propose(
+                                    relation_teacher_prompt(
+                                        doc_id, source, environment_document,
+                                        family=teacher_family,
+                                    ),
+                                    response_format=relation_teacher_response_format(
+                                        environment_document, source, family=teacher_family,
+                                    ),
+                                )
+                            except RelationTeacherResponseError as family_error:
+                                # One family's failure (e.g. a free-tier no-choices
+                                # throttle) must not discard the other family's
+                                # relations. Record it and keep going.
+                                preserve_rejection(_rejection_record(
+                                    reason="generation_failed",
+                                    detail_reason=f"{teacher_family}_{family_error.code}",
+                                    attempt={"doc_id": doc_id, "family": teacher_family,
+                                             "error_code": family_error.code,
+                                             "definition_version": "contextual-relation-v1"},
+                                    evidence={"source": "relation_teacher",
+                                              "family": teacher_family,
+                                              "error_code": family_error.code},
+                                ), doc_id=doc_id)
+                                continue
                             merged_relations.extend(list(family_proposals))
                             merged_ledger.extend(family_proposals.candidate_accounting)
                         proposals = RelationTeacherProposals(merged_relations, merged_ledger)
