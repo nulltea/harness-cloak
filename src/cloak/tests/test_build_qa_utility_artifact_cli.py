@@ -397,7 +397,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     assert teacher.calls == 1
     assert artifact["teacher_pin"] == teacher.pin
     assert artifact["reader_pin"] == TEST_READER_PIN
-    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v8"
+    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v9"
     assert all(subtypes.count(subtype) > 0 for subtype in (
         "structure", "field", "content", "exact_relation", "semantic_property",
         "contextual_relation",

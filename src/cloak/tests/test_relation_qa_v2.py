@@ -140,9 +140,9 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     # prompt/schema (v8/r20) must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v13"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v14"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 7
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r25"
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r26"
 
 
 def test_prompt_worked_examples_are_source_independent_and_level_based():
@@ -1317,3 +1317,72 @@ def test_v4_compiler_uses_a_bounded_plan_section_anchor_for_treatment():
 
     assert rejected == []
     assert accepted[0]["evidence"]["source_span"]["quote_hash"] == qa_builder._stable_hash(source)
+
+
+def _person_anchor_environment(source):
+    hy = source.index("hypothyroidism")
+    return {
+        "occurrences": [
+            {"occurrence_id": "p1", "surface": "andrew", "start": source.index("andrew"),
+             "end": source.index("andrew") + 6, "runtime_type": "PERSON",
+             "anchor": True, "anchor_token": "<PERSON_1>", "controlled": False},
+            {"occurrence_id": "c1", "decision_id": "d-c", "surface": "hypothyroidism",
+             "start": hy, "end": hy + 14, "runtime_type": "health-condition", "controlled": True},
+        ],
+        "decisions": [
+            {"decision_id": "d-c", "runtime_type": "health-condition",
+             "canonical_key": "hypothyroidism", "controlled": True,
+             "actions": [{"mode": "level", "legal": True,
+                          "entails": ["thyroid gland disease", "endocrine system disease"]}]},
+        ],
+    }
+
+
+def test_person_anchored_relation_compiles_with_placeholder_anchor_subject():
+    source = "andrew has hypothyroidism ."
+    proposal = {
+        "relation": "has_condition",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": None, "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S2",
+             "support_property": "thyroid gland disease", "literal": None},
+        ],
+        "question": "Which condition does <PERSON_1> have?",
+        "accepted_answers": ["thyroid gland disease"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+    accepted, rejected = compile_relational_assertions(
+        "d", source, _person_anchor_environment(source), [proposal])
+
+    assert accepted, rejected
+    row = accepted[0]
+    assert row["relation"] == "has_condition"
+    assert row["answer_target"] == {
+        "kind": "linked_decision", "decision_id": "d-c",
+        "required_property": "thyroid gland disease"}
+    # anchor enters occurrence_ids (grounding) but carries no decision requirement
+    assert "p1" in row["occurrence_ids"] and "c1" in row["occurrence_ids"]
+    assert row["decision_requirements"] == {"d-c": "thyroid gland disease"}
+
+
+def test_person_anchor_cannot_be_the_answer():
+    source = "andrew has hypothyroidism ."
+    proposal = {
+        "relation": "has_condition",
+        "answer_role": "subject",  # person as the answer -> illegal
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": None, "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S2",
+             "support_property": "thyroid gland disease", "literal": None},
+        ],
+        "question": "Who has the thyroid gland disease?",
+        "accepted_answers": ["andrew"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+    accepted, rejected = compile_relational_assertions(
+        "d", source, _person_anchor_environment(source), [proposal])
+
+    assert accepted == []
+    assert any(r["detail_reason"] == "answer_is_anchor" for r in rejected)
