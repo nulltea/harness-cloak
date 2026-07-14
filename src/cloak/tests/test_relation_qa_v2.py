@@ -140,9 +140,9 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     # prompt/schema (v8/r20) must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v16"
-    assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 8
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r28"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v17"
+    assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 9
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r29"
 
 
 def test_prompt_worked_examples_are_source_independent_and_level_based():
@@ -1343,9 +1343,9 @@ def test_person_anchored_relation_compiles_with_placeholder_anchor_subject():
     proposal = {
         "relation": "has_condition",
         "arguments": [
-            {"role": "subject", "kind": "linked", "span_label": "S1",
+            {"role": "subject", "kind": "linked", "span_label": "P1",
              "support_property": None, "literal": None},
-            {"role": "object", "kind": "linked", "span_label": "S2",
+            {"role": "object", "kind": "linked", "span_label": "S1",
              "support_property": "thyroid gland disease", "literal": None},
         ],
         "question": "Which condition does <PERSON_1> have?",
@@ -1372,9 +1372,9 @@ def test_person_anchor_cannot_be_the_answer():
         "relation": "has_condition",
         "answer_role": "subject",  # person as the answer -> illegal
         "arguments": [
-            {"role": "subject", "kind": "linked", "span_label": "S1",
+            {"role": "subject", "kind": "linked", "span_label": "P1",
              "support_property": None, "literal": None},
-            {"role": "object", "kind": "linked", "span_label": "S2",
+            {"role": "object", "kind": "linked", "span_label": "S1",
              "support_property": "thyroid gland disease", "literal": None},
         ],
         "question": "Who has the thyroid gland disease?",

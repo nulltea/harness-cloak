@@ -16,9 +16,9 @@ from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
 RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v16"
-RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 8}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r28"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v17"
+RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r29"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -1286,8 +1286,17 @@ def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]
             "properties": properties,
         })
     rows.sort(key=lambda row: (row["start"], row["end"], row["occurrence_id"]))
-    for index, row in enumerate(rows, start=1):
-        row["span_label"] = f"S{index}"
+    # Clinical spans keep the S# namespace (source order, unaffected by anchors);
+    # person anchors get a separate P# namespace, so adding person relations never
+    # renumbers clinical labels and the two teacher calls share one label space.
+    clinical_index = anchor_index = 0
+    for row in rows:
+        if row.get("anchor"):
+            anchor_index += 1
+            row["span_label"] = f"P{anchor_index}"
+        else:
+            clinical_index += 1
+            row["span_label"] = f"S{clinical_index}"
     return rows
 
 
@@ -1533,15 +1542,29 @@ def _window_pair_has_relation_shape(
     return re.search(cue_patterns, object_text, re.IGNORECASE) is not None
 
 
+CLINICAL_RELATIONS = (
+    "prescribed_with", "treated_with", "monitored_by",
+    "contraindicated_because_of", "causes_or_explains", "referred_to",
+)
+PERSON_RELATIONS = ("has_condition", "takes_medication", "underwent_procedure")
+
+
 def relation_teacher_response_format(
-    environment_document: Mapping, document: str,
+    environment_document: Mapping, document: str, *, family: str = "clinical",
 ) -> dict:
-    """Bind strict wire fields to displayed labels, never internal IDs or answers."""
+    """Bind strict wire fields to displayed labels, never internal IDs or answers.
+    `family` restricts the relation enum and shown labels so each teacher call is
+    isolated to one relation family."""
     response_format = deepcopy(RELATION_TEACHER_RESPONSE_FORMAT)
     schema = response_format["json_schema"]["schema"]
     inventory = relation_teacher_span_inventory(environment_document)
-    labels = [row["span_label"] for row in inventory]
+    relations = list(PERSON_RELATIONS if family == "person" else CLINICAL_RELATIONS)
+    # Person relations reference person anchors (P#); clinical relations never do.
+    shown = inventory if family == "person" else [r for r in inventory if not r.get("anchor")]
+    labels = [row["span_label"] for row in shown]
     support_properties = sorted({property_level for row in inventory for property_level in row["properties"]})
+    for section in ("span_relations", "context_relations"):
+        schema["properties"][section]["items"]["properties"]["relation"]["enum"] = relations
     def argument_branch(role: str, kind: str) -> dict:
         fields = (
             {
@@ -2505,41 +2528,78 @@ def _relation_evidence_connects_selected_occurrences(
     )
 
 
-def relation_teacher_prompt(
-    doc_id: str,
-    document: str,
-    environment_document: Mapping,
-) -> str:
-    """Build the compact human-facing v4 relation-teacher prompt."""
-    del doc_id
-    inventory = relation_teacher_span_inventory(environment_document)
-    def _span_line(row: Mapping) -> str:
-        if row.get("anchor"):
-            # Person anchors are shown by their placeholder token (never the real
-            # name); they have no level and may only be a relation's person, never
-            # the answer.
-            return (f"[{row['span_label']}: {row['anchor_token']} | person "
-                    f"| anchor only: the person a relation is about, never the answer]")
-        return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
-                f"| levels: {'; '.join(row['properties'])}]")
-    spans = "\n".join(_span_line(row) for row in inventory) or "(No eligible controlled spans.)"
-    cards = []
-    redaction = _identity_redaction_map(environment_document)
-    for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
-        labels = [row["span_label"] for row in inventory if start <= row["start"] < row["end"] <= end]
-        if labels:
-            card_text = _redact_identity_text(document[start:end].strip(), redaction)
-            cards.append(f"E{index}: {card_text}\nLabels: {', '.join(labels)}")
-    relation_inventory = """prescribed_with: condition or diagnosis -> drug; explicit prescription/use only, never a procedure.
+CLINICAL_RELATION_INVENTORY = """prescribed_with: condition or diagnosis -> drug; explicit prescription/use only, never a procedure.
 treated_with: condition or diagnosis -> medical procedure; never a drug.
 monitored_by: condition or diagnosis -> monitoring test, procedure, or provider; require explicit monitoring/evaluation/follow-up, not proximity.
 contraindicated_because_of: drug or procedure -> condition or diagnosis; require explicit contraindication.
 causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation.
-referred_to: condition or diagnosis -> provider or procedure; require explicit referral.
-has_condition: person -> condition or diagnosis; the person has/presents with/is diagnosed with it.
+referred_to: condition or diagnosis -> provider or procedure; require explicit referral."""
+
+PERSON_RELATION_INVENTORY = """has_condition: person -> condition or diagnosis; the person has/presents with/is diagnosed with it.
 takes_medication: person -> drug; the person takes/is on/continues/was prescribed it.
 underwent_procedure: person -> medical procedure; the person had/underwent/received it.
-For has_condition, takes_medication, underwent_procedure the subject is a person anchor (a <PERSON_#> token span); the object is the generalizable clinical span and the only answer. The person is never the answer."""
+The subject is a person anchor (a P# / <PERSON_#> token span); the object is the generalizable clinical span and the only answer. The person is never the answer. Emit a person relation only for a clinical span that genuinely states the person's own condition/medication/procedure."""
+
+CLINICAL_WORKED_EXAMPLES = """Drug, never treated_with: source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
+Safe question: "Which medication category was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words.
+Procedure: "cataract treated with phacoemulsification" => treated_with (a procedure, not a drug).
+Monitoring: source "to follow the [S3: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => monitored_by(S3, context literal "hemoglobin A1c").
+Safe question: "What testing follows the metabolic disorder?" Accepted answer: "hemoglobin A1c" (an uncontrolled literal answer is the measured fact). A test mentioned elsewhere is not monitoring.
+Contraindication: source "you ca n't use beta-blockers because of your [S4: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S4). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition.
+Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words)."""
+
+PERSON_WORKED_EXAMPLES = """A person anchor (a P# / <PERSON_#> token span) is a linked anchor argument: its label as span_label, support_property null, only ever the subject, never the answer. Reference the person by its token in the question. Ask with the generic clinical word (condition / medication / procedure), never with the answer's specific level, or the question leaks the answer.
+takes_medication: source "[P1: <PERSON_9> | person | anchor only] is taking [S6: metformin | drug | levels: biguanide]" => takes_medication(P1, S6). Safe question: "Which medication is <PERSON_9> taking?" Accepted answer: "biguanide" (the drug's level). Wrong question: "Which biguanide is <PERSON_9> taking?" (names the answer level -> leak).
+has_condition: source "[P1: <PERSON_9> | person | anchor only] has [S8: psoriasis | condition | levels: skin disease]" => has_condition(P1, S8). Safe question: "Which condition does <PERSON_9> have?" Accepted answer: "skin disease". Do not write "Which skin disease does <PERSON_9> have?".
+underwent_procedure: source "[P1: <PERSON_9> | person | anchor only] had a [S10: cholecystectomy | medical procedure | levels: abdominal surgery]" => underwent_procedure(P1, S10). Safe question: "Which procedure did <PERSON_9> undergo?" Accepted answer: "abdominal surgery"."""
+
+
+def relation_teacher_prompt(
+    doc_id: str,
+    document: str,
+    environment_document: Mapping,
+    *,
+    family: str = "clinical",
+) -> str:
+    """Build the compact human-facing relation-teacher prompt for one relation
+    family. `clinical` offers condition/drug/procedure relations over clinical
+    spans (no person anchors shown); `person` offers only the person-anchored
+    relations, showing the anchors plus the clinical spans that are their answers.
+    Splitting the two families across separate calls keeps person relations from
+    crowding out or distracting from the clinical relations."""
+    del doc_id
+    inventory = relation_teacher_span_inventory(environment_document)
+    if family == "person":
+        shown = inventory  # clinical spans (as objects) + person anchors
+        relation_inventory = PERSON_RELATION_INVENTORY
+        worked_examples = PERSON_WORKED_EXAMPLES
+    else:
+        shown = [row for row in inventory if not row.get("anchor")]
+        relation_inventory = CLINICAL_RELATION_INVENTORY
+        worked_examples = CLINICAL_WORKED_EXAMPLES
+    shown_labels = {row["span_label"] for row in shown}
+    response_person_note = (
+        "\nA person anchor (a P# / <PERSON_#> span) is a linked argument carrying its"
+        " label as span_label with support_property null; it may only be the subject"
+        " of has_condition / takes_medication / underwent_procedure and is never the"
+        " answer. Put a relation with a person-anchor subject and a linked clinical"
+        " object in span_relations."
+        if family == "person" else ""
+    )
+    def _span_line(row: Mapping) -> str:
+        if row.get("anchor"):
+            return (f"[{row['span_label']}: {row['anchor_token']} | person "
+                    f"| anchor only: the person a relation is about, never the answer]")
+        return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
+                f"| levels: {'; '.join(row['properties'])}]")
+    spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
+    cards = []
+    redaction = _identity_redaction_map(environment_document)
+    for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
+        labels = [row["span_label"] for row in shown if start <= row["start"] < row["end"] <= end]
+        if labels:
+            card_text = _redact_identity_text(document[start:end].strip(), redaction)
+            cards.append(f"E{index}: {card_text}\nLabels: {', '.join(labels)}")
     return f"""TASK
 Find as many explicit, source-grounded, non-duplicate relations as the cap ({RELATION_TEACHER_MAX_RELATIONS}) permits. Prefer diversity only when supported. Abstain rather than inventing a fact.
 
@@ -2554,17 +2614,7 @@ RELATION INVENTORY
 {relation_inventory}
 
 WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy these entities — read this document's own source and spans)
-Drug, never treated_with: source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
-Safe question: "Which medication category was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words.
-Procedure: "cataract treated with phacoemulsification" => treated_with (a procedure, not a drug).
-Monitoring: source "to follow the [S3: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => monitored_by(S3, context literal "hemoglobin A1c").
-Safe question: "What testing follows the metabolic disorder?" Accepted answer: "hemoglobin A1c" (an uncontrolled literal answer is the measured fact). A test mentioned elsewhere is not monitoring.
-Contraindication: source "you ca n't use beta-blockers because of your [S4: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S4). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition.
-Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
-Person anchor (a <PERSON_#> token span) is a linked anchor argument: its token as span_label, support_property null, and it is only ever the subject of has_condition / takes_medication / underwent_procedure, never the answer. Reference the person by its token in the question. Ask with the generic clinical word (condition / medication / procedure), never with the answer's specific level, or the question leaks the answer.
-takes_medication: source "[S5: <PERSON_9> | person | anchor only] is taking [S6: metformin | drug | levels: biguanide]" => takes_medication(S5, S6). Safe question: "Which medication is <PERSON_9> taking?" Accepted answer: "biguanide" (the drug's level). Wrong question: "Which biguanide is <PERSON_9> taking?" (names the answer level -> leak).
-has_condition: source "[S7: <PERSON_9> | person | anchor only] has [S8: psoriasis | condition | levels: skin disease]" => has_condition(S7, S8). Safe question: "Which condition does <PERSON_9> have?" Accepted answer: "skin disease". Do not write "Which skin disease does <PERSON_9> have?".
-underwent_procedure: source "[S9: <PERSON_9> | person | anchor only] had a [S10: cholecystectomy | medical procedure | levels: abdominal surgery]" => underwent_procedure(S9, S10). Safe question: "Which procedure did <PERSON_9> undergo?" Accepted answer: "abdominal surgery".
+{worked_examples}
 
 DETECTED SPANS
 {spans}
@@ -2575,8 +2625,7 @@ EVIDENCE CARDS
 RESPONSE
 Return two relation lists. Each relation record contains: relation; a subject argument then an object argument; a question; accepted answers; the fixed scoring contract.
 span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim.
-context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span.
-A person anchor (a <PERSON_#> span) is a linked argument carrying its S-label as span_label with support_property null; it may only be the subject of has_condition / takes_medication / underwent_procedure and is never the answer. Put a relation with a person-anchor subject and a linked clinical object in span_relations.
+context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span.{response_person_note}
 Never quote a displayed span as a context literal. Emit each distinct fact once, in the list its argument kinds require, at the S-label inside the sentence that states the relation. Do not repeat the same fact for other S-labels of the same value.
 Example span_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the neurological disorder?"; accepted answer "triptan".
 Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "azithromycin" quoted from the relation sentence; accepted answer "azithromycin".
@@ -4305,12 +4354,25 @@ def build_utility_artifact(
                 prompt_hash = _stable_hash(prompt)
                 try:
                     if isinstance(relation_teacher, OpenRouterRelationTeacher):
-                        proposals = relation_teacher.propose(
-                            prompt,
-                            response_format=relation_teacher_response_format(
-                                environment_document, source,
-                            ),
-                        )
+                        # Two isolated calls: clinical relations, then the
+                        # person-anchored family, so person relations cannot crowd
+                        # out or distract from the clinical relations under one cap.
+                        # Merged into one proposal set; labels are disjoint (clinical
+                        # S#, person P#) so a single compile stays consistent.
+                        merged_relations, merged_ledger = [], []
+                        for teacher_family in ("clinical", "person"):
+                            family_proposals = relation_teacher.propose(
+                                relation_teacher_prompt(
+                                    doc_id, source, environment_document,
+                                    family=teacher_family,
+                                ),
+                                response_format=relation_teacher_response_format(
+                                    environment_document, source, family=teacher_family,
+                                ),
+                            )
+                            merged_relations.extend(list(family_proposals))
+                            merged_ledger.extend(family_proposals.candidate_accounting)
+                        proposals = RelationTeacherProposals(merged_relations, merged_ledger)
                     else:
                         proposals = relation_teacher.propose(prompt)
                     if isinstance(proposals, RelationTeacherProposals):
