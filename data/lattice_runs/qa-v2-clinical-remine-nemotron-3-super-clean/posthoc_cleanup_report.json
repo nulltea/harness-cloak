@@ -1,0 +1,224 @@
+{
+  "backup": "/home/timo/repos/agent-cloak/data/lattice_profiles/proposed/qa-v2-clinical-remine-nemotron-3-super-clean.proposed.json.pre-posthoc-cleanup.bak",
+  "count_updates": [
+    {
+      "new_count": 86.0,
+      "new_level": "blood collection procedure",
+      "old_count": 1.35,
+      "old_level": "blood collection procedure",
+      "source_surface": "blood draw",
+      "surface": "blood drawn"
+    },
+    {
+      "new_count": 2.0,
+      "new_level": "venipuncture",
+      "old_count": 1.0,
+      "old_level": "venipuncture",
+      "source_surface": "blood draw",
+      "surface": "blood drawn"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "medical procedure",
+      "old_count": 6.0,
+      "old_level": "medical procedure",
+      "source_surface": "abdominal exam",
+      "surface": "cervical x ray"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "medical procedure",
+      "old_count": 1.35,
+      "old_level": "Medical procedure",
+      "source_surface": "abdominal exam",
+      "surface": "diabetes treatment"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "diagnostic imaging procedure",
+      "old_count": 2.0,
+      "old_level": "diagnostic imaging procedure",
+      "source_surface": "arthrogram",
+      "surface": "follow up x ray"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "medical procedure",
+      "old_count": 6.0,
+      "old_level": "medical procedure",
+      "source_surface": "abdominal exam",
+      "surface": "gall bladder removed"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "administration, physiological systems and anatomical regions, introduction",
+      "old_count": 1.35,
+      "old_level": "administration, physiological systems and anatomical regions, introduction",
+      "source_surface": "dietary indiscretion",
+      "surface": "injection procedure"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "physical examination",
+      "old_count": 1.35,
+      "old_level": "physical examination",
+      "source_surface": "abdominal exam",
+      "surface": "lower extremity exam"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "diagnostic imaging procedure",
+      "old_count": 2.0,
+      "old_level": "diagnostic imaging procedure",
+      "source_surface": "arthrogram",
+      "surface": "lumbar spine x ray"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "medical procedure",
+      "old_count": 6.0,
+      "old_level": "medical procedure",
+      "source_surface": "abdominal exam",
+      "surface": "massage"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "medical procedure",
+      "old_count": 6.0,
+      "old_level": "medical procedure",
+      "source_surface": "abdominal exam",
+      "surface": "muscle exam"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "blood collection procedure",
+      "old_count": 1.35,
+      "old_level": "blood collection procedure",
+      "source_surface": "blood draw",
+      "surface": "routine blood tests"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "medical procedure",
+      "old_count": 6.0,
+      "old_level": "medical procedure",
+      "source_surface": "abdominal exam",
+      "surface": "screening colonoscopy"
+    },
+    {
+      "new_count": 86.0,
+      "new_level": "medical procedure",
+      "old_count": 6.0,
+      "old_level": "medical procedure",
+      "source_surface": "abdominal exam",
+      "surface": "tubes tied"
+    }
+  ],
+  "count_updates_applied": 14,
+  "diagnostic_ultrasound_levels_restored": [
+    {
+      "level": "diagnostic ultrasound",
+      "restored_count": 210.0,
+      "runtime_type": "medical-procedure",
+      "source_count_evidence": "Diagnostic ultrasound spans all anatomical regions; approx 210 distinct procedure types.",
+      "source_record_id": "medical-procedure:liver ultrasound:diagnostic ultrasound:accepted",
+      "surface": "liver ultrasound"
+    },
+    {
+      "level": "diagnostic ultrasound",
+      "restored_count": 210.0,
+      "runtime_type": "medical-procedure",
+      "source_count_evidence": "Reused canonical count from vocabulary slice",
+      "source_record_id": "medical-procedure:renal artery ultrasound:diagnostic ultrasound:accepted",
+      "surface": "renal artery ultrasound"
+    },
+    {
+      "level": "diagnostic ultrasound",
+      "restored_count": 210.0,
+      "runtime_type": "medical-procedure",
+      "source_count_evidence": "canonical_vocabulary_slice entry for diagnostic ultrasound",
+      "source_record_id": "medical-procedure:ultrasound elasto elastography:diagnostic ultrasound:accepted",
+      "surface": "ultrasound elasto elastography"
+    }
+  ],
+  "diagnostic_ultrasound_levels_restored_at": "2026-07-14T10:09:20.969563+00:00",
+  "diagnostic_ultrasound_levels_restored_count": 3,
+  "proposed_artifact": "/home/timo/repos/agent-cloak/data/lattice_profiles/proposed/qa-v2-clinical-remine-nemotron-3-super-clean.proposed.json",
+  "removed_count": 4,
+  "removed_rows": [
+    {
+      "levels": [
+        "alcohol use disorder",
+        "substance use disorder",
+        "disease"
+      ],
+      "runtime_type": "health-condition",
+      "surface": "alcohol user"
+    },
+    {
+      "levels": [
+        "congenital limb malformation family",
+        "genetic disorder"
+      ],
+      "runtime_type": "health-condition",
+      "surface": "dawn knots legs"
+    },
+    {
+      "levels": [
+        "diabetes mellitus",
+        "disease of anatomical entity"
+      ],
+      "runtime_type": "health-condition",
+      "surface": "diabetes high blood pressure"
+    },
+    {
+      "levels": [
+        "peripheral nerve injury",
+        "disease of anatomical entity"
+      ],
+      "runtime_type": "health-condition",
+      "surface": "bleeding loss of sensation nerve damage"
+    }
+  ],
+  "unsupported_low_count_levels_removed": [
+    {
+      "final_disposition": "restored_valid_abstraction_with_accepted_producer_count",
+      "level": "diagnostic ultrasound",
+      "old_count": 3.0,
+      "reason": "unsupported low broad count absent from canonical lattice_profiles.json count source",
+      "restored": true,
+      "restored_count": 210.0,
+      "runtime_type": "medical-procedure",
+      "surface": "liver ultrasound"
+    },
+    {
+      "final_disposition": "restored_valid_abstraction_with_accepted_producer_count",
+      "level": "diagnostic ultrasound",
+      "old_count": 3.0,
+      "reason": "unsupported low broad count absent from canonical lattice_profiles.json count source",
+      "restored": true,
+      "restored_count": 210.0,
+      "runtime_type": "medical-procedure",
+      "surface": "renal artery ultrasound"
+    },
+    {
+      "final_disposition": "restored_valid_abstraction_with_accepted_producer_count",
+      "level": "diagnostic ultrasound",
+      "old_count": 3.0,
+      "reason": "unsupported low broad count absent from canonical lattice_profiles.json count source",
+      "restored": true,
+      "restored_count": 210.0,
+      "runtime_type": "medical-procedure",
+      "surface": "ultrasound elasto elastography"
+    },
+    {
+      "level": "blood test",
+      "old_count": 1.35,
+      "reason": "unsupported low broad count absent from canonical lattice_profiles.json count source",
+      "runtime_type": "medical-procedure",
+      "surface": "routine blood tests"
+    }
+  ],
+  "unsupported_low_count_levels_removed_at": "2026-07-14T10:06:33.256357+00:00",
+  "unsupported_low_count_levels_removed_count": 4
+}
