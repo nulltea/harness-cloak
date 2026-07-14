@@ -534,6 +534,49 @@ def test_context_literal_resolving_onto_a_controlled_span_is_rejected_as_leakage
     assert rejected[0]["reason"] == "leakage"
 
 
+def test_context_literal_matching_an_uncontrolled_detected_span_is_rejected():
+    # The synthroid case: the drug is detected (so it is substituted to a
+    # placeholder at render) but has no lattice decision, so the teacher can
+    # only reference it as a context literal. That literal cannot survive the
+    # generalized/placeholder docs, so it is rejected up front rather than
+    # dying later at the three-point gate. (protected_context_literal does not
+    # catch it because the span is uncontrolled — no decision to resolve onto.)
+    source = "for your hypothyroidism , continue the synthroid ."
+    syn = source.index("synthroid")
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "hypo", "decision_id": "d-hypo", "surface": "hypothyroidism",
+             "start": source.index("hypothyroidism"), "end": source.index("hypothyroidism") + 14,
+             "runtime_type": "health-condition"},
+            # detected drug, uncontrolled (no lattice decision) but still
+            # substituted at render -> not caught by protected_context_literal
+            {"occurrence_id": "syn", "surface": "synthroid", "start": syn, "end": syn + 9,
+             "runtime_type": "drug", "controlled": False},
+        ],
+        "decisions": [
+            {"decision_id": "d-hypo", "actions": [{"mode": "level", "legal": True,
+                                                   "entails": ["thyroid gland disease"]}]},
+        ],
+    }
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": "thyroid gland disease", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None,
+             "support_property": None, "literal": "synthroid"},
+        ],
+        "question": "Which medication was continued for the thyroid gland disease?",
+        "accepted_answers": ["synthroid"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert accepted == []
+    assert rejected[0]["detail_reason"] == "literal_will_be_substituted"
+
+
 def test_contraindicated_because_of_accepts_explicit_cannot_take_wording():
     # D2N002 grounds the contraindication as "you ca n't take some of those
     # anti-inflammatory medications because of your kidney transplant"; the

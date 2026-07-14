@@ -2790,6 +2790,14 @@ def compile_relational_assertions(
         str(row["occurrence_id"]): row
         for row in environment_document.get("occurrences", [])
     }
+    # Token sets of every detected entity surface. A context-literal argument
+    # whose surface embeds one of these is a detected span that gets substituted
+    # at render (e.g. brand "synthroid" -> <DRUG_1>), so the literal cannot
+    # survive the generalized/placeholder docs and the relation is doomed.
+    substitutable_token_sets = [
+        tokens for occurrence in occurrences.values()
+        if (tokens := _meaningful_tokens(str(occurrence.get("surface", ""))))
+    ]
     decisions = {
         str(row["decision_id"]): row
         for row in environment_document.get("decisions", [])
@@ -2913,6 +2921,22 @@ def compile_relational_assertions(
             continue
         if not _relation_arguments_are_legal(relation, arguments, relation_contract):
             reject("invalid_argument_types")
+            continue
+        # A context literal that coincides with a detected entity will be
+        # substituted in the generalized/placeholder renders, so a literal
+        # answer target can never match there. Reject up front instead of
+        # emitting a relation that is guaranteed to fail the three-point gate;
+        # once the entity is lattice-resolvable it comes back as a linked arg.
+        if any(
+            argument.get("kind") == "context"
+            and argument.get("literal")
+            and any(
+                occurrence_tokens <= _meaningful_tokens(str(argument["literal"]))
+                for occurrence_tokens in substitutable_token_sets
+            )
+            for argument in arguments
+        ):
+            reject("literal_will_be_substituted")
             continue
         if not all(_argument_is_grounded(argument, document, evidence_span, occurrences)
                    for argument in arguments):
