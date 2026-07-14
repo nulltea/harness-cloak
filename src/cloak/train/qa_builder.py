@@ -3004,6 +3004,19 @@ def compile_relational_assertions(
             reject("duplicate_fact_group")
             continue
         fact_groups.add(fact_group)
+        # The answered argument (default: the object). A linked answer is scored
+        # by lattice entailment against its decision's frozen chain; a literal
+        # answer keeps lexical matching against the exact grounded span.
+        answer_role = str(proposal.get("answer_role", "object"))
+        answer_argument = arguments[0] if answer_role == "subject" else arguments[1]
+        if answer_argument["kind"] == "linked":
+            answer_target = {
+                "kind": "linked_decision",
+                "decision_id": str(occurrences[answer_argument["occurrence_id"]]["decision_id"]),
+                "required_property": answer_argument["support_property"],
+            }
+        else:
+            answer_target = {"kind": "literal", "expected_values": accepted_values}
         accepted.append({
             "family": "context",
             "scope": "linked",
@@ -3016,6 +3029,7 @@ def compile_relational_assertions(
             ]),
             "question": question,
             "accepted_values": accepted_values,
+            "answer_target": answer_target,
             "scoring_contract": scoring_contract,
             "decision_requirements": decision_requirements,
             "evidence": {
@@ -3734,6 +3748,10 @@ def build_utility_artifact(
     for doc_id, environment_document in frozen_environment.get("documents", {}).items():
         source = source_documents[doc_id]
         decisions = environment_document.get("decisions", [])
+        chain_by_decision = {
+            str(decision["decision_id"]): decision.get("semantic_chain", [])
+            for decision in decisions
+        }
         occurrences = {
             str(row["occurrence_id"]): row
             for row in environment_document.get("occurrences", [])
@@ -3831,6 +3849,7 @@ def build_utility_artifact(
                         stability_repetitions=stability_repetitions,
                         option_permutations=option_permutations,
                         stability_threshold=stability_threshold,
+                        chain_by_decision=chain_by_decision,
                     )
                 except Exception as error:
                     reject_context_candidate(
@@ -4229,6 +4248,55 @@ def _answer_score(answer: str, accepted_values: Sequence[str]) -> float:
     return max(fact_score(answer, value) for value in accepted_values)
 
 
+def _resolve_semantic_node(chain: Sequence[Mapping], answer: str) -> dict | None:
+    """Resolve a free-form reader answer to exactly one node in one decision's
+    frozen semantic chain, by its answer_aliases. Decision-scoped and lexical
+    (containment on meaningful tokens); ambiguous or unresolved -> None. A
+    protected source value resolves to KEEP locally without ever entering the
+    artifact's public answer golds."""
+    answer_tokens = _meaningful_tokens(answer)
+    if not answer_tokens:
+        return None
+    matches = [
+        node for node in chain
+        if any(
+            (alias_tokens := _meaningful_tokens(str(alias)))
+            and alias_tokens <= answer_tokens
+            for alias in node.get("answer_aliases") or []
+        )
+    ]
+    return dict(matches[0]) if len(matches) == 1 else None
+
+
+def _linked_answer_score(answer: str, chain: Sequence[Mapping], required_property: str) -> float:
+    """Binary credit iff the resolved node entails the required property. KEEP
+    and any supported generalization pass; coarser meanings and placeholder
+    fail. No token-F1 partial credit for a semantic band."""
+    node = _resolve_semantic_node(chain, answer)
+    if node is None:
+        return 0.0
+    return 1.0 if canon(str(required_property)) in {
+        canon(str(prop)) for prop in node.get("entailed_properties") or []
+    } else 0.0
+
+
+def _context_answer_score(
+    row: Mapping, answer: str, chain_by_decision: Mapping[str, Sequence[Mapping]],
+) -> float:
+    """Route a context answer to the linked (lattice-entailment) or literal
+    (lexical) scorer per the assertion's answer_target; fall back to legacy
+    accepted_values lexical scoring when no target is present."""
+    target = row.get("answer_target") or {}
+    if target.get("kind") == "linked_decision":
+        chain = chain_by_decision.get(str(target.get("decision_id")))
+        if not chain:
+            return 0.0
+        return _linked_answer_score(answer, chain, str(target.get("required_property", "")))
+    if target.get("kind") == "literal":
+        return _answer_score(answer, list(target.get("expected_values") or []))
+    return _answer_score(answer, list(row.get("accepted_values") or []))
+
+
 def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str:
     question = str(assertion["question"])
     options = [str(option) for option in assertion.get("options") or []]
@@ -4257,8 +4325,10 @@ def validate_context_assertions(
     stability_repetitions: int = 1,
     option_permutations: int = 1,
     stability_threshold: float = 1.0,
+    chain_by_decision: Mapping[str, Sequence[Mapping]] | None = None,
 ) -> tuple[list[dict], dict[str, dict]]:
     """Apply frozen repeated original/generalization/placeholder reader checks."""
+    chain_by_decision = chain_by_decision or {}
     rows = [row for row in assertions if row.get("family") == "context"]
     if stability_repetitions < 1 or option_permutations < 1:
         raise ValueError("reader stability repetitions and option permutations must be positive")
@@ -4281,11 +4351,10 @@ def validate_context_assertions(
             for row, original, representative, placeholder in zip(
                 rows, original_answers, representative_answers, placeholder_answers
             ):
-                values = list(row.get("accepted_values") or [])
                 scores = {
-                    "original": _answer_score(original, values),
-                    "representative": _answer_score(representative, values),
-                    "placeholder": _answer_score(placeholder, values),
+                    "original": _context_answer_score(row, original, chain_by_decision),
+                    "representative": _context_answer_score(row, representative, chain_by_decision),
+                    "placeholder": _context_answer_score(row, placeholder, chain_by_decision),
                 }
                 assertion_id = str(row.get("assertion_id") or _stable_hash(dict(row)))
                 trials_by_assertion[assertion_id].append({
@@ -4418,10 +4487,14 @@ def score_utility(
     if len(context_answers) != len(context_rows):
         raise ValueError("reader returned the wrong number of answers")
 
+    chain_by_decision = {
+        str(decision["decision_id"]): decision.get("semantic_chain", [])
+        for decision in artifact["documents"][doc_id].get("decisions", [])
+    }
     scores: dict[str, float] = {}
     for row, answer in zip(context_rows, context_answers):
-        scores[str(row["assertion_id"])] = _answer_score(
-            answer, list(row.get("accepted_values") or [])
+        scores[str(row["assertion_id"])] = _context_answer_score(
+            row, answer, chain_by_decision
         )
     parsed_output = _parse_aci_note(out_final)
     for row in assertions:

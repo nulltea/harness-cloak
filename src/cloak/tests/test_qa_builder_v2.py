@@ -828,6 +828,46 @@ def test_runtime_scores_context_assertions_in_one_reader_batch():
     assert result["utility"] == pytest.approx(1.0)
 
 
+def test_runtime_linked_answer_scored_by_lattice_entailment(monkeypatch):
+    chain = [
+        {"node": "keep", "answer_aliases": ["kidney transplant"],
+         "entailed_properties": ["solid organ transplant", "medical condition"]},
+        {"node": "solid organ transplant", "answer_aliases": ["solid organ transplant"],
+         "entailed_properties": ["solid organ transplant", "medical condition"]},
+        {"node": "medical condition", "answer_aliases": ["medical condition"],
+         "entailed_properties": ["medical condition"]},
+        {"node": "placeholder", "answer_aliases": [], "entailed_properties": []},
+    ]
+    artifact = {
+        "reader_pin": TEST_READER_PIN,
+        "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "decisions": [{"decision_id": "dec1", "semantic_chain": chain}]}},
+        "assertions": {
+            "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
+                   "question": "What history contraindicates those medications?",
+                   "answer_target": {"kind": "linked_decision", "decision_id": "dec1",
+                                     "required_property": "solid organ transplant"},
+                   "weight": 1.0},
+        },
+    }
+
+    def make_reader(answer):
+        def reader(questions, context):
+            return [answer]
+        _pin_reader(reader)
+        return reader
+
+    # KEEP source term and the supported level score full; coarser scores zero.
+    assert score_utility(artifact, "d1", doc_p="x", out_final="",
+                         reader=make_reader("kidney transplant"))["component_scores"]["c1"] == 1.0
+    assert score_utility(artifact, "d1", doc_p="x", out_final="",
+                         reader=make_reader("solid organ transplant"))["component_scores"]["c1"] == 1.0
+    assert score_utility(artifact, "d1", doc_p="x", out_final="",
+                         reader=make_reader("medical condition"))["component_scores"]["c1"] == 0.0
+    assert score_utility(artifact, "d1", doc_p="x", out_final="",
+                         reader=make_reader("NONE"))["component_scores"]["c1"] == 0.0
+
+
 def test_score_utility_rejects_missing_reader_pin_before_reader_call():
     calls = []
 

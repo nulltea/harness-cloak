@@ -882,6 +882,39 @@ def test_prompt_permits_within_problem_block_multiturn_links():
     assert "conditional or hypothetical" in prompt
 
 
+def _transplant_chain():
+    return [
+        {"node": "keep", "answer_aliases": ["kidney transplant", "renal transplant"],
+         "entailed_properties": ["solid organ transplant", "medical condition"]},
+        {"node": "solid organ transplant", "answer_aliases": ["solid organ transplant"],
+         "entailed_properties": ["solid organ transplant", "medical condition"]},
+        {"node": "medical condition", "answer_aliases": ["medical condition"],
+         "entailed_properties": ["medical condition"]},
+        {"node": "placeholder", "answer_aliases": [], "entailed_properties": []},
+    ]
+
+
+def test_linked_answer_score_rewards_keep_and_supported_generalization_only():
+    chain = _transplant_chain()
+    req = "solid organ transplant"
+    # KEEP (source + alias) and the exact supported level all get full credit.
+    assert qa_builder._linked_answer_score("kidney transplant", chain, req) == 1.0
+    assert qa_builder._linked_answer_score("renal transplant", chain, req) == 1.0
+    assert qa_builder._linked_answer_score("a solid organ transplant", chain, req) == 1.0
+    # coarser-than-required and placeholder/NONE get nothing.
+    assert qa_builder._linked_answer_score("medical condition", chain, req) == 0.0
+    assert qa_builder._linked_answer_score("NONE", chain, req) == 0.0
+    assert qa_builder._linked_answer_score("", chain, req) == 0.0
+
+
+def test_linked_answer_resolution_is_decision_scoped():
+    # A phrase that is not in this decision's chain does not resolve, even if it
+    # would be valid for some other decision.
+    chain = _transplant_chain()
+    assert qa_builder._resolve_semantic_node(chain, "hypothyroidism") is None
+    assert qa_builder._resolve_semantic_node(chain, "kidney transplant")["node"] == "keep"
+
+
 def test_accepted_answers_and_question_are_underscore_normalized():
     # The teacher inconsistently snake-cases answers ("solid_organ_transplant");
     # under lexical fact_score that tokenizes as one token vs three, so
