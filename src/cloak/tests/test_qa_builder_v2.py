@@ -921,14 +921,14 @@ def test_score_utility_rejects_mismatched_reader_pin_before_reader_call():
     assert calls == []
 
 
-def test_batched_context_reader_uses_one_model_request_for_all_questions():
+def test_batched_context_reader_issues_one_request_per_question():
     class Client:
         def __init__(self):
             self.prompts = []
 
         def generate(self, prompt):
             self.prompts.append(prompt)
-            return '{"answers":["endocrine condition","thyroid medication"]}'
+            return "endocrine condition" if len(self.prompts) == 1 else "thyroid medication"
 
     client = Client()
     reader = BatchedContextReader(client=client)
@@ -936,9 +936,11 @@ def test_batched_context_reader_uses_one_model_request_for_all_questions():
     answers = reader(["What condition category?", "What treatment category?"], "note")
 
     assert answers == ["endocrine condition", "thyroid medication"]
-    assert len(client.prompts) == 1
+    assert len(client.prompts) == 2
     assert "What condition category?" in client.prompts[0]
-    assert "What treatment category?" in client.prompts[0]
+    assert "What treatment category?" in client.prompts[1]
+    # each request carries exactly one question, not the whole batch
+    assert "What treatment category?" not in client.prompts[0]
 
 
 def test_default_reader_pin_constant_drives_default_reader_entry_points():
@@ -948,18 +950,19 @@ def test_default_reader_pin_constant_drives_default_reader_entry_points():
     assert qa_builder.read_context_batch.pin == qa_builder.DEFAULT_CONTEXT_READER_PIN
 
 
-@pytest.mark.parametrize("wire", [
-    '["endocrine condition"]',
-    '```json\n["endocrine condition"]\n```',
+@pytest.mark.parametrize("wire,expected", [
+    ("endocrine condition", "endocrine condition"),
+    ('"endocrine condition"', "endocrine condition"),
+    ("```\nendocrine condition\n```", "endocrine condition"),
+    ("NONE", ""),
+    ("none", ""),
 ])
-def test_batched_context_reader_accepts_exact_json_array_wire_variants(wire):
+def test_batched_context_reader_parses_plain_span_wire_variants(wire, expected):
     class Client:
         def generate(self, prompt):
             return wire
 
-    assert BatchedContextReader(client=Client())(["What category?"], "note") == [
-        "endocrine condition"
-    ]
+    assert BatchedContextReader(client=Client())(["What category?"], "note") == [expected]
 
 
 def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):

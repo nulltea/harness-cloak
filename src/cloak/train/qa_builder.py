@@ -1,6 +1,7 @@
 """QA-builder v2 artifact weighting, support anchors, validation, and scoring."""
 from __future__ import annotations
 
+import bisect
 import hashlib
 import json
 import os
@@ -122,9 +123,14 @@ RELATION_TEACHER_RESPONSE_FORMAT = {
         },
     },
 }
-CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v1"
-CONTEXT_READER_RESPONSE_SCHEMA = {"type": "answers-array", "version": 1}
-CONTEXT_READER_REVISION = "qa-reader-r2"
+CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v3"
+CONTEXT_READER_RESPONSE_SCHEMA = {"type": "single-span", "version": 2}
+CONTEXT_READER_REVISION = "qa-reader-r4"
+# The reader is given only the transcript turns covering an assertion's
+# arguments/evidence, plus this many neighbor turns each side, instead of the
+# whole document. Removes distractor spans (e.g. an unrelated drug elsewhere in
+# the note) that a small reader would otherwise return.
+CONTEXT_READER_TURN_WINDOW = 0
 DEFAULT_CONTEXT_READER_PIN = {
     "model": QA_MODEL,
     "endpoint": QA_BASE_URL,
@@ -177,6 +183,35 @@ _RELATION_ARGUMENT_CLASSES = {
     "has_status": (("condition", "symptom", "treatment", "procedure"), ("status",)),
     "has_category": (("condition", "symptom", "treatment", "procedure"), ("category",)),
 }
+# Human-facing answer-type words for the reader hint. Keyed by argument class.
+_CLASS_ANSWER_HINT = {
+    "condition": "medical condition",
+    "symptom": "symptom",
+    "treatment": "medication",
+    "procedure": "procedure",
+    "monitoring": "test or procedure",
+    "provider": "provider or specialist",
+    "status": "status",
+    "category": "category",
+}
+
+
+def _relation_answer_type_hint(relation: str, answer_role: str) -> str | None:
+    """The reader answer-type word for a relation's answered argument, derived
+    from the directional argument-class contract (deterministic, no inference).
+    A union of classes joins with ' or '; unknown relations -> no hint."""
+    classes = _RELATION_ARGUMENT_CLASSES.get(relation)
+    if not classes:
+        return None
+    role_classes = classes[0] if answer_role == "subject" else classes[1]
+    hints = [
+        _CLASS_ANSWER_HINT[cls] for cls in role_classes if cls in _CLASS_ANSWER_HINT
+    ]
+    if not hints:
+        return None
+    # de-duplicate while preserving order
+    seen = list(dict.fromkeys(hints))
+    return " or ".join(seen)
 ACI_RELATION_CONTRACT = {
     "prescribed_with": {
         "argument_classes": _RELATION_ARGUMENT_CLASSES["prescribed_with"],
@@ -490,7 +525,7 @@ class OpenRouterRelationTeacher:
 
 
 class BatchedContextReader:
-    """Pinned one-request reader for all context assertions on one document."""
+    """Pinned reader for context assertions — one model request per question."""
 
     @property
     def pin(self) -> dict:
@@ -507,36 +542,27 @@ class BatchedContextReader:
                 base_url=QA_BASE_URL,
                 api_key="x",
                 temperature=0.0,
-                max_tokens=512,
-                response_format={"type": "json_object"},
+                max_tokens=128,
                 extra_body={"chat_template_kwargs": {"enable_thinking": False}},
             )
         self._client = client
 
-    def __call__(self, questions: list[str], context: str) -> list[str]:
-        if not questions:
-            return []
+    def _read_one(self, question: str, context: str) -> str:
         prompt = (
-            "Answer every question using the document. Preserve semantic category and "
-            "function distinctions stated or entailed by the document. If an answer is not "
-            "supported, use NONE. Return only a JSON object with an answers array in the "
-            "same order as the questions.\n\n"
+            "Read the DOCUMENT and complete the REQUEST. Copy the answer span "
+            "exactly from the DOCUMENT — do not rephrase, summarize, or add words. "
+            "If the DOCUMENT does not answer it, reply with exactly NONE.\n\n"
             f"DOCUMENT:\n{context}\n\n"
-            f"QUESTIONS:\n{json.dumps(questions, indent=2)}"
+            f"REQUEST: {question}"
         )
         raw = self._client.generate(prompt).strip()
-        if raw.startswith("```json") and raw.endswith("```"):
-            raw = raw.removeprefix("```json").removesuffix("```").strip()
-        payload = json.loads(raw)
-        # The pinned llama-swap reader has returned both the requested object
-        # and a bare JSON array. Both are unambiguous wire encodings here;
-        # retain the exact cardinality check below rather than treating an
-        # otherwise valid reader result as infrastructure failure.
-        answers = payload.get("answers") if isinstance(payload, dict) else payload
-        if not isinstance(answers, list) or len(answers) != len(questions):
-            raise ValueError("context reader returned the wrong number of answers")
-        return ["" if str(answer).strip().upper() == "NONE" else str(answer).strip()
-                for answer in answers]
+        if raw.startswith("```") and raw.endswith("```"):
+            raw = raw.strip("`").strip()
+        raw = raw.strip().strip('"').strip("'").strip()
+        return "" if raw.upper() == "NONE" else raw
+
+    def __call__(self, questions: list[str], context: str) -> list[str]:
+        return [self._read_one(question, context) for question in questions]
 
 
 _batched_context_reader = None
@@ -3017,6 +3043,33 @@ def compile_relational_assertions(
             }
         else:
             answer_target = {"kind": "literal", "expected_values": accepted_values}
+        argument_spans = {
+            occurrence_id: [
+                int(occurrences[occurrence_id]["start"]),
+                int(occurrences[occurrence_id]["end"]),
+            ]
+            for occurrence_id in occurrence_ids
+        }
+        source_span = {
+            "start": evidence_span[0],
+            "end": evidence_span[1],
+            "quote_hash": _stable_hash(quote),
+        }
+        evidence = {
+            "authority": "source_document",
+            "proposal_hash": proposal_hash,
+            "sanitized_qa": sanitized_qa,
+            "source_span": source_span,
+            "argument_spans": argument_spans,
+            # Turn indices the answer depends on, resolved against the source now
+            # so gate and runtime excerpt the same turns without the source text.
+            "reader_turns": _source_turns_for_ranges(
+                document,
+                [(source_span["start"], source_span["end"])]
+                + [(span[0], span[1]) for span in argument_spans.values()],
+            ),
+            "arguments": arguments,
+        }
         accepted.append({
             "family": "context",
             "scope": "linked",
@@ -3030,26 +3083,10 @@ def compile_relational_assertions(
             "question": question,
             "accepted_values": accepted_values,
             "answer_target": answer_target,
+            "answer_type": _relation_answer_type_hint(relation, answer_role),
             "scoring_contract": scoring_contract,
             "decision_requirements": decision_requirements,
-            "evidence": {
-                "authority": "source_document",
-                "proposal_hash": proposal_hash,
-                "sanitized_qa": sanitized_qa,
-                "source_span": {
-                    "start": evidence_span[0],
-                    "end": evidence_span[1],
-                    "quote_hash": _stable_hash(quote),
-                },
-                "argument_spans": {
-                    occurrence_id: [
-                        int(occurrences[occurrence_id]["start"]),
-                        int(occurrences[occurrence_id]["end"]),
-                    ]
-                    for occurrence_id in occurrence_ids
-                },
-                "arguments": arguments,
-            },
+            "evidence": evidence,
         })
     return accepted, rejected
 
@@ -4265,7 +4302,12 @@ def _resolve_semantic_node(chain: Sequence[Mapping], answer: str) -> dict | None
             for alias in node.get("answer_aliases") or []
         )
     ]
-    return dict(matches[0]) if len(matches) == 1 else None
+    # A coarser level's words are often a subset of a finer level's answer
+    # (e.g. "analgesic" <= "opioid analgesic"), so several nodes can match. The
+    # chain is linear specific->coarse, so matches[0] is the finest match; finer
+    # entails coarser, making it the correct and strictest resolution.
+    # ponytail: assumes a linear chain (no sibling levels); revisit for a DAG.
+    return dict(matches[0]) if matches else None
 
 
 def _linked_answer_score(answer: str, chain: Sequence[Mapping], required_property: str) -> float:
@@ -4278,6 +4320,41 @@ def _linked_answer_score(answer: str, chain: Sequence[Mapping], required_propert
     return 1.0 if canon(str(required_property)) in {
         canon(str(prop)) for prop in node.get("entailed_properties") or []
     } else 0.0
+
+
+def _source_turns_for_ranges(
+    source: str, char_ranges: Sequence[tuple[int, int]],
+) -> list[int]:
+    """The newline-delimited turn indices of `source` that cover `char_ranges`
+    (offsets into `source`). Computed once at build time so the runtime scorer
+    can excerpt without ever seeing the source text."""
+    if not char_ranges:
+        return []
+    starts, position = [], 0
+    for line in source.splitlines(keepends=True):
+        starts.append(position)
+        position += len(line)
+    def line_of(offset: int) -> int:
+        return max(0, bisect.bisect_right(starts, offset) - 1)
+    turns: set[int] = set()
+    for start, end in char_ranges:
+        for index in range(line_of(start), line_of(max(start, end - 1)) + 1):
+            turns.add(index)
+    return sorted(turns)
+
+
+def _turn_excerpt(context: str, core_turns: Sequence[int], *, window: int) -> str:
+    """Slice `context` to the given turn indices plus `window` neighbor turns
+    each side. Empty `core_turns`, or indices past the end of `context`, fall
+    back to the full `context` so a diverged render is never mis-sliced."""
+    if not core_turns:
+        return context
+    lines = context.splitlines()
+    if max(core_turns) >= len(lines):
+        return context
+    low = max(0, min(core_turns) - window)
+    high = min(len(lines) - 1, max(core_turns) + window)
+    return "\n".join(lines[low:high + 1])
 
 
 def _context_answer_score(
@@ -4299,6 +4376,11 @@ def _context_answer_score(
 
 def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str:
     question = str(assertion["question"])
+    answer_type = assertion.get("answer_type")
+    if answer_type:
+        # The typed extraction directive rides in the reader-facing question
+        # only; the stored artifact question stays clean.
+        question = f"Extract the shortest {answer_type} span that answers: {question}"
     options = [str(option) for option in assertion.get("options") or []]
     if not options:
         return question
@@ -4338,12 +4420,19 @@ def validate_context_assertions(
     trials_by_assertion: dict[str, list[dict]] = defaultdict(list)
     for repetition in range(stability_repetitions):
         for permutation_index in range(option_permutations):
-            questions = [
-                _permuted_reader_question(row, permutation_index) for row in rows
-            ]
-            original_answers = list(reader(questions, original_context))
-            representative_answers = list(reader(questions, representative_context))
-            placeholder_answers = list(reader(questions, placeholder_context))
+            # Each assertion reads only the transcript turns covering its own
+            # arguments/evidence (same turn indices across all three renders),
+            # not the whole note.
+            original_answers, representative_answers, placeholder_answers = [], [], []
+            for row in rows:
+                question = _permuted_reader_question(row, permutation_index)
+                turns = (row.get("evidence") or {}).get("reader_turns") or []
+                original_answers += reader([question], _turn_excerpt(
+                    original_context, turns, window=CONTEXT_READER_TURN_WINDOW))
+                representative_answers += reader([question], _turn_excerpt(
+                    representative_context, turns, window=CONTEXT_READER_TURN_WINDOW))
+                placeholder_answers += reader([question], _turn_excerpt(
+                    placeholder_context, turns, window=CONTEXT_READER_TURN_WINDOW))
             if not all(len(answers) == len(rows) for answers in (
                 original_answers, representative_answers, placeholder_answers
             )):
