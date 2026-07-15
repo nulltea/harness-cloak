@@ -2644,28 +2644,6 @@ def _substitute_linked_surfaces(
     return substituted
 
 
-def _restore_linked_source_surfaces(
-    text: str, arguments: Sequence[Mapping], occurrences: Mapping[str, Mapping],
-) -> str:
-    """Inverse of _substitute_linked_surfaces, for the ORIGINAL-render reader check only:
-    put each linked argument's SOURCE surface back where its generalized support_property
-    stands, so the reader's question matches the original document's terms (the original
-    render still carries the source surfaces). The stored/published question stays
-    generalized -- the source surface may itself be protected -- so this is used solely to
-    query the reader against the original render, never emitted into the artifact."""
-    restored = text
-    for argument in arguments:
-        if argument.get("kind") != "linked":
-            continue
-        level = str(argument.get("support_property", ""))
-        surface = str(occurrences[argument["occurrence_id"]].get("surface", ""))
-        if level and surface:
-            restored = re.sub(
-                rf"(?<!\w){re.escape(level)}(?!\w)", surface, restored, flags=re.IGNORECASE,
-            )
-    return restored
-
-
 def _relation_arguments_are_legal(
     relation: str, arguments: Sequence[Mapping], relation_contract: Mapping[str, Mapping],
 ) -> bool:
@@ -3508,13 +3486,6 @@ def compile_relational_assertions(
                 for argument in arguments
             ]),
             "question": question,
-            # Source-term variant for the ORIGINAL-render reader check only (the original
-            # render carries source surfaces, not the generalized level in `question`).
-            # Never published -- the stored `question` stays generalized.
-            "reader_original_question": (
-                _restore_linked_source_surfaces(question, arguments, occurrences)
-                if uses_v4_arguments else question
-            ),
             "accepted_values": accepted_values,
             "answer_target": answer_target,
             "answer_type": _relation_answer_type_hint(relation, answer_role),
@@ -5023,10 +4994,8 @@ def _context_answer_score(
     return _answer_score(answer, list(row.get("accepted_values") or []))
 
 
-def _permuted_reader_question(
-    assertion: Mapping, permutation_index: int, question_override: str | None = None,
-) -> str:
-    question = str(question_override if question_override is not None else assertion["question"])
+def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str:
+    question = str(assertion["question"])
     answer_type = assertion.get("answer_type")
     if answer_type:
         # The typed extraction directive rides in the reader-facing question
@@ -5077,12 +5046,8 @@ def validate_context_assertions(
             original_answers, representative_answers, placeholder_answers = [], [], []
             for row in rows:
                 question = _permuted_reader_question(row, permutation_index)
-                # The original render carries source surfaces, so query it with the
-                # source-term question; representative/placeholder use the generalized one.
-                original_question = _permuted_reader_question(
-                    row, permutation_index, question_override=row.get("reader_original_question"))
                 turns = (row.get("evidence") or {}).get("reader_turns") or []
-                original_answers += reader([original_question], _turn_excerpt(
+                original_answers += reader([question], _turn_excerpt(
                     original_context, turns, window=CONTEXT_READER_TURN_WINDOW))
                 representative_answers += reader([question], _turn_excerpt(
                     representative_context, turns, window=CONTEXT_READER_TURN_WINDOW))
