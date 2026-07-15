@@ -329,8 +329,20 @@ def _question_is_conditional(question: str) -> bool:
 
 def _relation_window_is_hedged(
     document: str, arguments: Sequence[Mapping], occurrences: Mapping[str, Mapping],
+    relation: str | None = None,
 ) -> bool:
-    """True if the source region spanning the arguments is conditional/hedged."""
+    """True if the source region spanning the arguments is conditional/hedged.
+
+    tests_for is exempt: a diagnostic test's window is pervasively finding-hedged
+    ("a possible kidney stone", "there might be a question of a stone", "likely ...")
+    because uncertainty about the RESULT is the point -- yet the test was still performed,
+    so the relation is not conditional. Positional finding-hedge detection proved to be
+    whack-a-mole (finding hedges appear anywhere in the window), so the gate is skipped
+    for tests_for. It stays meaningful for prescribed_with / procedure_for, where
+    "might refer" / "might prescribe" genuinely mark a planned-vs-done action.
+    """
+    if relation == "tests_for":
+        return False
     bounds = []
     for argument in arguments:
         if argument["kind"] == "linked":
@@ -3287,7 +3299,7 @@ def compile_relational_assertions(
         # conditionally (may / might / would / if …). A hedged source paired with a
         # definite question is the actual false-assertion case and stays rejected.
         if (uses_v4_arguments
-                and _relation_window_is_hedged(document, arguments, occurrences)
+                and _relation_window_is_hedged(document, arguments, occurrences, relation)
                 and not _question_is_conditional(str(proposal.get("question", "")))):
             reject("hedged_relation")
             continue
