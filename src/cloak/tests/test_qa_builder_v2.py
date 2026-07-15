@@ -1393,7 +1393,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     }
 
 
-def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
+def test_openrouter_relation_teacher_uses_pinned_model(monkeypatch):
     captured = {}
 
     class FakeClient:
@@ -1412,7 +1412,7 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
     teacher = qa_builder.OpenRouterRelationTeacher()
     relations = teacher.propose("document prompt")
 
-    assert captured["model"] == "nvidia/nemotron-3-super-120b-a12b:free"
+    assert captured["model"] == "openai/gpt-oss-120b"
     assert captured["base_url"] == "https://openrouter.ai/api/v1"
     assert captured["api_key"] == "secret"
     assert captured["response_format"] == qa_builder.RELATION_TEACHER_RESPONSE_FORMAT
@@ -1424,10 +1424,14 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
     # Token caps repeatedly produced empty/truncated teacher replies; the v5
     # contract sends none and only excludes the reasoning trace from the reply.
     assert "max_tokens" not in captured
-    assert captured["extra_body"] == {"reasoning": {"exclude": True}}
+    assert captured["extra_body"] == {
+        "reasoning": {"exclude": True},
+        "provider": {"order": ["deepinfra/turbo"], "allow_fallbacks": False},
+    }
     assert teacher.pin == {
         "provider": "openrouter",
-        "model": "nvidia/nemotron-3-super-120b-a12b:free",
+        "model": "openai/gpt-oss-120b",
+        "routed_provider": "deepinfra/turbo",
         "base_url": "https://openrouter.ai/api/v1",
         "prompt_version": "qa-relation-teacher-v18",
         "response_schema": {"type": "relation-qa-batch", "version": 9},
@@ -1435,7 +1439,7 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
         "generation_config": {
             "reasoning": {"exclude": True},
         },
-        "revision": "qa-relation-teacher-r31",
+        "revision": "qa-relation-teacher-r32",
     }
     assert relations == [{"relation": "procedure_for"}]
 

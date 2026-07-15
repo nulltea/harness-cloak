@@ -14,11 +14,15 @@ from numbers import Real
 
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 
-RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
+RELATION_TEACHER_MODEL = "openai/gpt-oss-120b"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
+# Pin a reliable OpenRouter provider: the free Nemotron route was intermittently
+# empty/rate-limited/errored; deepinfra/turbo serves gpt-oss-120b with stable,
+# valid structured output. allow_fallbacks stays off so routing never drifts.
+RELATION_TEACHER_PROVIDER = "deepinfra/turbo"
 RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v18"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r31"
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -440,13 +444,15 @@ class RelationTeacherResponseError(ValueError):
 
 
 class OpenRouterRelationTeacher:
-    """Optional cached JSON relation proposer pinned to Nemotron on OpenRouter."""
+    """Optional cached JSON relation proposer pinned to gpt-oss-120b on OpenRouter,
+    routed to a fixed provider (deepinfra/turbo) for stable structured output."""
 
     @property
     def pin(self) -> dict:
         return {
             "provider": "openrouter",
             "model": RELATION_TEACHER_MODEL,
+            "routed_provider": RELATION_TEACHER_PROVIDER,
             "base_url": RELATION_TEACHER_BASE_URL,
             "prompt_version": RELATION_TEACHER_PROMPT_VERSION,
             "response_schema": deepcopy(RELATION_TEACHER_RESPONSE_SCHEMA),
@@ -470,7 +476,8 @@ class OpenRouterRelationTeacher:
             temperature=0.0,
             response_format=deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
             extra_body={
-                "reasoning": deepcopy(RELATION_TEACHER_GENERATION_CONFIG["reasoning"])
+                "reasoning": deepcopy(RELATION_TEACHER_GENERATION_CONFIG["reasoning"]),
+                "provider": {"order": [RELATION_TEACHER_PROVIDER], "allow_fallbacks": False},
             },
             single_flight=True,
         )
@@ -2458,14 +2465,14 @@ def _relation_evidence_connects_selected_occurrences(
 
 
 CLINICAL_RELATION_INVENTORY = """prescribed_with: condition or diagnosis -> drug; explicit prescription/use only, never a procedure.
-procedure_for: condition or diagnosis -> medical procedure; a therapeutic procedure or referral for the condition, including a past treatment the patient already had (e.g. a prior transplant or surgery). Never a drug.
+procedure_for: condition or diagnosis -> medical procedure; a therapeutic procedure or referral for the condition, including a past treatment the patient already had ("had the <procedure> for <condition>", a prior transplant/surgery in the history). Never a drug.
 tests_for: condition or diagnosis -> diagnostic or monitoring test/study; a test that discovers or monitors the condition — ordered to follow it, or whose result showed it. A test ordered or resulted while the doctor is assessing/planning one problem is linked to that problem's condition, even if the order sentence does not repeat the condition name; reject only a test from a different problem block or unrelated small talk. Use this (not procedure_for) for any lab, panel, imaging, or exam.
 contraindicated_because_of: drug or procedure -> condition or diagnosis; require explicit contraindication.
 causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation."""
 
 CLINICAL_WORKED_EXAMPLES = """Drug (prescribed_with, never a procedure): source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
-Safe question: "Which medication category was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words.
-Treatment procedure (procedure_for): "cataract treated with phacoemulsification" => procedure_for (a procedure, not a drug). Past treatment also counts: source "had the [S3: kidney transplant | procedure | levels: solid organ transplant] a few years ago for some [S4: polycystic kidneys | condition | levels: cystic kidney disease]" => procedure_for(S4, S3). Safe question: "What procedure was performed for the cystic kidney disease?" Accepted answer: "solid organ transplant".
+Safe question: "Which medication category was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words. WRONG (leaks the answer): "Which triptan was prescribed …" — never put the answer's level in the question; ask "Which medication category …" instead.
+Treatment procedure (procedure_for): "cataract treated with phacoemulsification" => procedure_for (a procedure, not a drug). Past treatment also counts: source "had the [S3: appendectomy | procedure | levels: abdominal surgery] years ago for [S4: appendicitis | condition | levels: abdominal inflammation]" => procedure_for(S4, S3). Safe question: "What procedure was performed for the abdominal inflammation?" Accepted answer: "abdominal surgery".
 Test (tests_for), monitoring OR discovery: source "to follow the [S5: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => tests_for(S5, context literal "hemoglobin A1c"). Safe question: "What test is used for the metabolic disorder?" Accepted answer: "hemoglobin A1c". A discovered finding counts too: "the ct shows a [S6: kidney stone | condition | levels: urinary tract stone]" => tests_for(S6, context literal "ct"). Use tests_for for any lab/panel/imaging/exam; a test merely mentioned elsewhere is not linked.
 Contraindication: source "you ca n't use beta-blockers because of your [S7: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S7). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition. The drug argument may be a drug-class phrase quoted as a context literal (e.g. "anti-inflammatory medications", "certain medications"), not only a specific drug name — emit the contraindication whenever the source says a drug or drug class cannot be used because of the condition.
 Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
@@ -2503,6 +2510,7 @@ A relation may connect spans from different turns of the SAME problem discussion
 
 PRIVACY-SAFE QA
 Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest (a level so generic it fits almost any concept measures nothing). An exact uncontrolled context literal may be an answer only when it is the measured fact.
+CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC category word only ("Which medication category …", "Which procedure …", "What test …", "What condition …"), then put the specific level in the accepted answer. Writing the answer's level into the question ("Which triptan was prescribed …" when the answer is "triptan") leaks it, and the relation is rejected. The question names the OTHER argument's level (or a generic word) and asks for the answered one.
 
 RELATION INVENTORY
 {relation_inventory}

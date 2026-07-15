@@ -142,7 +142,7 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
     assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v18"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 9
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r31"
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r32"
 
 
 def test_prompt_worked_examples_are_source_independent_and_level_based():
