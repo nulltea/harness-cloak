@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-14
+updated: 2026-07-15
 tags: [qa, reward-design, utility-components, context-preservation, credit-routing,
        interactive-ranker, spec]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
@@ -14,8 +14,10 @@ companion: [docs/specs/RL/interactive-ranker-v2.md,
 
 # QA builder v2 — context-preservation utility for interactive ranker v2
 
-**Status: normative design with an implemented ACI builder/scorer; empirical gates remain
-uncertified until the preregistered smoke and support runs complete.**
+**Status: normative design with a partially implemented ACI builder/scorer. The PERSON-relation
+path has been removed per the relation anti-goals below (the teacher now runs a single clinical
+span→span / span→literal call); empirical gates remain uncertified until the preregistered smoke
+and support runs complete.**
 
 QA builder v2 produces a small, frozen set of utility assertions that reward truthful
 generalization when it preserves useful context that a generic placeholder destroys. It also
@@ -467,31 +469,44 @@ Do not reverse it. Emit a relation only when the source explicitly supports it.
 6. referred_to
    condition or diagnosis → provider or procedure
    Use when the source explicitly refers the patient for that provider/procedure.
-
-7. has_condition
-   person → condition or diagnosis
-   Use when the source states the person has, presents with, or was diagnosed with the condition.
-
-8. takes_medication
-   person → drug
-   Use when the source states the person takes, is on, continues, or was prescribed the drug.
-
-9. underwent_procedure
-   person → medical procedure
-   Use when the source states the person had, underwent, or received the procedure.
 ```
 
-The generic `has_status` (concept → status) and `has_category` (concept → category) relations
-were removed: their argument types are too vague, they had zero ACI coverage, and the teacher
-mis-selected `has_category` for genuine person→condition facts. Use the specific relation for the
-argument types instead.
+#### Relation anti-goals
 
-Relations 7–9 anchor a generalizable clinical span to a **person**. The person is the subject
-and the clinical span is always the object and the answer; the person is never the answer (it has
-no generalization level). These relations exist for coverage: a clinical span that participates in
-no condition↔drug↔procedure relation still earns a context assertion by anchoring to the person.
-`age` is deliberately excluded — it is a demographic attribute, not a per-fact relation subject,
-and would only duplicate person-anchored facts with a weaker, non-disambiguating anchor.
+The relation graph measures explicit task-relevant dependencies; it is not a mechanism for giving
+every controlled decision a probe. A relation whose only purpose is to connect an otherwise
+uncovered span is out of scope. In particular:
+
+- `PERSON -> {condition, drug, procedure}` is not a contextual relation for the single-patient ACI
+  task. It produces generic holder questions such as "Which condition does `<PERSON_2>` have?"
+  that either duplicate a richer clinical relation or test only whether the reader can copy one
+  generalized clinical value from a person-local excerpt.
+- `{condition, drug, procedure} -> PERSON` is also excluded. In a single-patient interaction,
+  questions such as "Who has endocrine system disease?" have the same constant answer and collapse
+  to a fragile target-presence check. They add no ranker action, routing information, or
+  document-level utility evidence beyond the controlled clinical decision itself.
+- Agent questions such as "Who diagnosed, prescribed, or conducted this?" are unsupported unless
+  the authoritative source explicitly names and links that provider. A `[doctor]` speaker role is
+  not a PERSON identity, and the compiler must not infer an unnamed clinician.
+- Generic attribute-holder relations such as `PERSON -> {age, nationality, profession}` or their
+  inverse are not introduced merely to manufacture QA coverage. A new controlled type requires an
+  independently justified privacy/task role, a grounded generalization lattice and counts, reliable
+  detection, and an explicit task-relevant relation contract.
+- Generic `has_status` and `has_category` relations remain excluded. Their argument types are too
+  vague, they had zero ACI coverage, and they invite the teacher to relabel ordinary holder facts
+  instead of finding an explicit dependency.
+
+A future multi-party task adapter may define an ownership-scoping relation only after measured
+cross-person ambiguity demonstrates that it changes answer correctness. Such an adapter-specific
+extension does not enter the single-patient ACI inventory by default.
+
+Disconnection from this finite relation inventory does **not** establish that a decision is
+utility-irrelevant. It may reflect an isolated but task-important fact, an intentionally narrow
+ontology, detector gaps, or teacher/compiler abstention. Such a decision remains in the ranker
+environment, receives complete-document delivered utility and fallback credit, and is prioritized
+for one-decision counterfactuals. If placeholder and truthful generalization produce equal measured
+task utility, the count/privacy objective may correctly prefer placeholder; the builder must not
+pre-empt that outcome by fabricating a coverage relation or by assigning zero utility relevance.
 
 The prompt additionally requires semantic QA: questions and accepted answers must not copy a
 displayed controlled source span or alias. They should use the selected allowed generalization
@@ -509,36 +524,12 @@ The teacher cannot invent relation types, span labels, or unsupported source fac
 the contextual QA question, accepted semantic answer(s), and scoring contract for an otherwise
 compiled relation; deterministic code validates rather than templates that semantic content.
 
-Relation arguments have three disjoint forms. A **linked decision argument** is a controlled,
+Relation arguments have two disjoint forms. A **linked decision argument** is a controlled,
 frozen occurrence ID and carries a legal lattice-support property; it receives routing links and
 the joint representative-anchor check. A **context/literal argument** is an exact, typed,
 source-grounded span (for example a lab, physical therapy, status, or category) that is not a
-detector decision and never requires a lattice action. A **placeholder-anchor argument** is a
-controlled *identity* occurrence (PERSON, and any type that is placeholder-by-rule) that has no
-generalization level: it is never the answer and carries no `support_property`; it exists only to
-anchor the answer to a specific individual. All three forms require exact source evidence. Only
-linked and placeholder-anchor arguments enter `occurrence_ids`; only linked arguments carry a
-`decision_requirements` lattice action.
-
-**Identity-token anchoring (relations 9–11).** A person's surface differs across renders — the
-real name in the clear document, `<PERSON_2>` after substitution — and it has no level to
-reference. To give the reader a *stable* anchor, identity types are pre-substituted to their
-frozen placeholder tokens in **two** views: the teacher's source view and the gate's `original`
-reader context. The teacher therefore never sees the real name (a privacy benefit) and anchors
-its question on `<PERSON_2>`, which then appears identically in the original, representative,
-placeholder, and runtime `doc_p` contexts. This is faithful, not a hack: identity types are
-placeholder-by-rule, so the pipeline never emits the real name — the honest utility baseline is
-*clinical-clear, identity-anonymized*. The clinical object remains the only span that varies
-across the three gate renders, so the three-point gate still discriminates on the object
-(original ✓, representative ✓, all-placeholder ✗). The person→token assignment must be identical
-across the teacher view, all three gate contexts, and runtime, reusing the frozen
-occurrence→placeholder fills so the anchor never drifts. Because the anchor is a per-person token,
-multi-person documents disambiguate for free (each person is a distinct token); no patient-vs-
-provider role classification is required.
-
-Placeholder-anchor arguments are exempt from the `literal_will_be_substituted` guard (they are
-anchors by design, referenced by their placeholder token, not doomed literals), and the compiler
-must reject any relation that makes a placeholder-anchor argument the answer.
+detector decision and never requires a lattice action. Both forms require exact source evidence.
+Only linked arguments enter `occurrence_ids` and carry a `decision_requirements` lattice action.
 
 Every adapter must map each controlled runtime type that it exposes to one canonical relation
 class before prefiltering. In particular, `medical-procedure` maps to `procedure`; a missing map
@@ -849,9 +840,12 @@ dominant expected cost.
 3. **Build the ACI adapter.** Add deterministic structural extraction and eligibility filtering,
    one batched teacher relation request for each eligible document, representative generalization
    anchors, and context assertions scored on `doc_p`.
-4. **Switch credit.** Remove probe-count document filtering, activate linked/global/fallback
+4. **Retire holder relations.** Remove PERSON relation types, prompt/schema branches,
+   placeholder-anchor arguments, and their compiler/report paths without removing PERSON detection
+   or substitution from the shared privacy environment.
+5. **Switch credit.** Remove probe-count document filtering, activate linked/global/fallback
    routing, and prioritize uncovered decisions for counterfactuals.
-5. **Retire legacy surfaces.** Remove independent detection, generated-`out_p` QA, exactly-two
+6. **Retire legacy surfaces.** Remove independent detection, generated-`out_p` QA, exactly-two
    ladder probes, whole-document decision discovery, free-text dependencies, and separate probe
    artifacts after migration fixtures pass.
 
@@ -863,6 +857,8 @@ dominant expected cost.
 - missing-family fixtures retain the full reserved denominator, contribute zero absent-family
   numerator, and do not renormalize surviving weights;
 - teacher output cannot create or override IDs, gold, relation types, polarity, or aliases;
+- the relation prompt/schema reject PERSON holder relations and do not expose placeholder-anchor
+  arguments to the teacher;
 - every accepted relation resolves to exact source evidence and legal argument types;
 - assertions resolve to the adapter's authoritative source, while ceiling evidence is used only
   for feasibility diagnostics;
@@ -875,6 +871,9 @@ dominant expected cost.
 - a placeholder-restored symbolic relation can pass while its context assertion fails;
 - field assertions cannot re-enter through a schema aggregate;
 - repeated occurrences map one assertion once to one decision;
+- a controlled decision with no accepted relation remains in the environment, receives no
+  fabricated zero-score assertion, and remains eligible for document fallback and counterfactual
+  priority;
 - global credit reaches all decisions without duplicating linked assertions;
 - uncovered decisions receive complete-document fallback and counterfactual priority;
 - tested-pair evidence substitutes for provisional credit and the complete vector is rescored;

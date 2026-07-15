@@ -38,7 +38,6 @@ _RELATION_RECORD_ITEM = {
             "prescribed_with", "treated_with", "monitored_by",
             "contraindicated_because_of", "causes_or_explains",
             "referred_to",
-            "has_condition", "takes_medication", "underwent_procedure",
         ]},
         "arguments": {
             "type": "array",
@@ -149,9 +148,6 @@ RELATION_ONTOLOGY = (
     "contraindicated_because_of",
     "causes_or_explains",
     "referred_to",
-    "has_condition",
-    "takes_medication",
-    "underwent_procedure",
 )
 
 _RUNTIME_TYPE_CLASSES = {
@@ -172,10 +168,6 @@ _RUNTIME_TYPE_CLASSES = {
     "specialty": "provider",
     "status": "status",
     "category": "category",
-    # identity anchor: no generalization lattice, never an answer (person-first
-    # relations use it only to anchor a generalizable clinical span).
-    "person": "person",
-    "patient": "person",
 }
 _RELATION_ARGUMENT_CLASSES = {
     # Relation names are directional: condition/diagnosis first.  Medication is
@@ -186,11 +178,6 @@ _RELATION_ARGUMENT_CLASSES = {
     "contraindicated_because_of": (("treatment", "procedure"), ("condition",)),
     "causes_or_explains": (("condition",), ("condition", "symptom")),
     "referred_to": (("condition",), ("provider", "procedure")),
-    # Person-anchored relations: the person is a placeholder-anchor subject with
-    # no generalization level; the object is always the generalizable answer.
-    "has_condition": (("person",), ("condition",)),
-    "takes_medication": (("person",), ("treatment",)),
-    "underwent_procedure": (("person",), ("procedure",)),
 }
 # Human-facing answer-type words for the reader hint. Keyed by argument class.
 _CLASS_ANSWER_HINT = {
@@ -279,36 +266,6 @@ ACI_RELATION_CONTRACT = {
         "connector_patterns": (
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
             r"referred\s+to\s+",
-        ),
-    },
-    # Person-anchored. The person (subject) precedes the clinical span in the
-    # HPI/problem framing ("<PERSON> ... with hypothyroidism", "<PERSON> is
-    # taking synthroid", "<PERSON> had the kidney transplant").
-    "has_condition": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["has_condition"],
-        "cues": ("with", "has", "diagnosed with", "presents with", "history of"),
-        "connector_patterns": (
-            r"\s+(?:[\w',-]+\s+){0,10}?"
-            r"(?:with|has|diagnosed\s+with|presents?\s+with|history\s+of)\s+"
-            r"(?:a\s+|an\s+|the\s+|some\s+|his\s+|her\s+|significant\s+for\s+)*",
-        ),
-    },
-    "takes_medication": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["takes_medication"],
-        "cues": ("taking", "takes", "on the", "on", "continue", "prescribed", "using"),
-        "connector_patterns": (
-            r"\s+(?:[\w',-]+\s+){0,10}?"
-            r"(?:taking|takes|is\s+on|on\s+the|continue[ds]?\s+(?:you\s+)?on|"
-            r"prescribed|using)\s+(?:a\s+|an\s+|the\s+|some\s+|your\s+|his\s+|her\s+)*",
-        ),
-    },
-    "underwent_procedure": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["underwent_procedure"],
-        "cues": ("had", "underwent", "received", "have had", "has had"),
-        "connector_patterns": (
-            r"\s+(?:[\w',-]+\s+){0,10}?"
-            r"(?:had|underwent|received|have\s+had|has\s+had)\s+"
-            r"(?:a\s+|an\s+|the\s+|some\s+|your\s+|his\s+|her\s+)*",
         ),
     },
 }
@@ -1208,26 +1165,6 @@ def relation_context_candidates(document: str) -> list[dict]:
     ))
 
 
-def _identity_redaction_map(environment_document: Mapping) -> dict[str, str]:
-    """surface -> frozen placeholder token for every identity anchor occurrence,
-    so the teacher's source view shows <PERSON_2> instead of the real name."""
-    mapping: dict[str, str] = {}
-    for occurrence in environment_document.get("occurrences", []):
-        surface, token = occurrence.get("surface"), occurrence.get("anchor_token")
-        if occurrence.get("anchor") and surface and token:
-            mapping.setdefault(str(surface), str(token))
-    return mapping
-
-
-def _redact_identity_text(text: str, redaction: Mapping[str, str]) -> str:
-    """Replace identity surfaces with their tokens in a display string (longest
-    surface first, word-boundary, case-insensitive). Display only — never used
-    for offsets or grounding."""
-    for surface in sorted(redaction, key=len, reverse=True):
-        text = re.sub(rf"\b{re.escape(surface)}\b", redaction[surface], text, flags=re.IGNORECASE)
-    return text
-
-
 def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]:
     """Return prompt-safe, source-ordered controlled spans and private mappings.
 
@@ -1249,20 +1186,6 @@ def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]
             continue
         if not any(relation_class in classes for contract in _RELATION_ARGUMENT_CLASSES.values()
                    for classes in contract):
-            continue
-        # Placeholder-anchor (PERSON): no lattice, displayed by its frozen token.
-        if occurrence.get("anchor"):
-            rows.append({
-                "occurrence_id": str(occurrence["occurrence_id"]),
-                "surface": str(occurrence.get("surface", "")),
-                "start": start,
-                "end": end,
-                "runtime_type": str(occurrence.get("runtime_type", "")),
-                "relation_class": relation_class,
-                "properties": [],
-                "anchor": True,
-                "anchor_token": str(occurrence.get("anchor_token", "")),
-            })
             continue
         if not occurrence.get("controlled", True):
             continue
@@ -1286,17 +1209,8 @@ def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]
             "properties": properties,
         })
     rows.sort(key=lambda row: (row["start"], row["end"], row["occurrence_id"]))
-    # Clinical spans keep the S# namespace (source order, unaffected by anchors);
-    # person anchors get a separate P# namespace, so adding person relations never
-    # renumbers clinical labels and the two teacher calls share one label space.
-    clinical_index = anchor_index = 0
-    for row in rows:
-        if row.get("anchor"):
-            anchor_index += 1
-            row["span_label"] = f"P{anchor_index}"
-        else:
-            clinical_index += 1
-            row["span_label"] = f"S{clinical_index}"
+    for index, row in enumerate(rows, start=1):
+        row["span_label"] = f"S{index}"
     return rows
 
 
@@ -1526,9 +1440,6 @@ def _window_pair_has_relation_shape(
         "contraindicated_because_of": r"\bcontraindicat\w*\b",
         "causes_or_explains": r"\b(?:causes?|explains?)\b",
         "referred_to": r"\brefer\w*\b",
-        "has_condition": r"\b(?:has|with|diagnos\w*|presents?|history)\b",
-        "takes_medication": r"\b(?:tak\w*|on|continu\w*|prescrib\w*|using)\b",
-        "underwent_procedure": r"\b(?:had|underwent|received)\b",
     }[relation]
     if subject_clause == object_clause:
         if abs(int(obj["start"]) - int(subject["end"])) > 320:
@@ -1546,22 +1457,17 @@ CLINICAL_RELATIONS = (
     "prescribed_with", "treated_with", "monitored_by",
     "contraindicated_because_of", "causes_or_explains", "referred_to",
 )
-PERSON_RELATIONS = ("has_condition", "takes_medication", "underwent_procedure")
 
 
 def relation_teacher_response_format(
-    environment_document: Mapping, document: str, *, family: str = "clinical",
+    environment_document: Mapping, document: str,
 ) -> dict:
-    """Bind strict wire fields to displayed labels, never internal IDs or answers.
-    `family` restricts the relation enum and shown labels so each teacher call is
-    isolated to one relation family."""
+    """Bind strict wire fields to displayed labels, never internal IDs or answers."""
     response_format = deepcopy(RELATION_TEACHER_RESPONSE_FORMAT)
     schema = response_format["json_schema"]["schema"]
     inventory = relation_teacher_span_inventory(environment_document)
-    relations = list(PERSON_RELATIONS if family == "person" else CLINICAL_RELATIONS)
-    # Person relations reference person anchors (P#); clinical relations never do.
-    shown = inventory if family == "person" else [r for r in inventory if not r.get("anchor")]
-    labels = [row["span_label"] for row in shown]
+    relations = list(CLINICAL_RELATIONS)
+    labels = [row["span_label"] for row in inventory]
     support_properties = sorted({property_level for row in inventory for property_level in row["properties"]})
     for section in ("span_relations", "context_relations"):
         schema["properties"][section]["items"]["properties"]["relation"]["enum"] = relations
@@ -2535,11 +2441,6 @@ contraindicated_because_of: drug or procedure -> condition or diagnosis; require
 causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation.
 referred_to: condition or diagnosis -> provider or procedure; require explicit referral."""
 
-PERSON_RELATION_INVENTORY = """has_condition: person -> condition or diagnosis; the person has/presents with/is diagnosed with it.
-takes_medication: person -> drug; the person takes/is on/continues/was prescribed it.
-underwent_procedure: person -> medical procedure; the person had/underwent/received it.
-The subject is a person anchor (a P# / <PERSON_#> token span); the object is the generalizable clinical span and the only answer. The person is never the answer. Emit a person relation only for a clinical span that genuinely states the person's own condition/medication/procedure."""
-
 CLINICAL_WORKED_EXAMPLES = """Drug, never treated_with: source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
 Safe question: "Which medication category was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words.
 Procedure: "cataract treated with phacoemulsification" => treated_with (a procedure, not a drug).
@@ -2548,61 +2449,28 @@ Safe question: "What testing follows the metabolic disorder?" Accepted answer: "
 Contraindication: source "you ca n't use beta-blockers because of your [S4: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S4). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition.
 Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words)."""
 
-PERSON_WORKED_EXAMPLES = """A person anchor (a P# / <PERSON_#> token span) is a linked anchor argument: its label as span_label, support_property null, only ever the subject, never the answer. Reference the person by its token in the question. Ask with the generic clinical word (condition / medication / procedure), never with the answer's specific level, or the question leaks the answer.
-takes_medication: source "[P1: <PERSON_9> | person | anchor only] is taking [S6: metformin | drug | levels: biguanide]" => takes_medication(P1, S6). Safe question: "Which medication is <PERSON_9> taking?" Accepted answer: "biguanide" (the drug's level). Wrong question: "Which biguanide is <PERSON_9> taking?" (names the answer level -> leak).
-has_condition: source "[P1: <PERSON_9> | person | anchor only] has [S8: psoriasis | condition | levels: skin disease]" => has_condition(P1, S8). Safe question: "Which condition does <PERSON_9> have?" Accepted answer: "skin disease". Do not write "Which skin disease does <PERSON_9> have?".
-underwent_procedure: source "[P1: <PERSON_9> | person | anchor only] had a [S10: cholecystectomy | medical procedure | levels: abdominal surgery]" => underwent_procedure(P1, S10). Safe question: "Which procedure did <PERSON_9> undergo?" Accepted answer: "abdominal surgery"."""
-
 
 def relation_teacher_prompt(
     doc_id: str,
     document: str,
     environment_document: Mapping,
-    *,
-    family: str = "clinical",
 ) -> str:
-    """Build the compact human-facing relation-teacher prompt for one relation
-    family. `clinical` offers condition/drug/procedure relations over clinical
-    spans (no person anchors shown); `person` offers only the person-anchored
-    relations, showing the anchors plus the clinical spans that are their answers.
-    Splitting the two families across separate calls keeps person relations from
-    crowding out or distracting from the clinical relations."""
+    """Build the compact human-facing relation-teacher prompt for the clinical
+    relations over the controlled condition/drug/procedure spans."""
     del doc_id
     inventory = relation_teacher_span_inventory(environment_document)
-    if family == "person":
-        shown = inventory  # clinical spans (as objects) + person anchors
-        relation_inventory = PERSON_RELATION_INVENTORY
-        worked_examples = PERSON_WORKED_EXAMPLES
-    else:
-        shown = [row for row in inventory if not row.get("anchor")]
-        relation_inventory = CLINICAL_RELATION_INVENTORY
-        worked_examples = CLINICAL_WORKED_EXAMPLES
-    shown_labels = {row["span_label"] for row in shown}
-    response_person_note = (
-        "\nA person anchor (a P# / <PERSON_#> span) is a linked argument carrying its"
-        " label as span_label with support_property null; it may only be the subject"
-        " of has_condition / takes_medication / underwent_procedure and is never the"
-        " answer. Put a relation with a person-anchor subject and a linked clinical"
-        " object in span_relations."
-        if family == "person" else ""
-    )
+    shown = inventory
+    relation_inventory = CLINICAL_RELATION_INVENTORY
+    worked_examples = CLINICAL_WORKED_EXAMPLES
     def _span_line(row: Mapping) -> str:
-        if row.get("anchor"):
-            return (f"[{row['span_label']}: {row['anchor_token']} | person "
-                    f"| anchor only: the person a relation is about, never the answer]")
         return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
                 f"| levels: {'; '.join(row['properties'])}]")
     spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
     cards = []
-    # Only the person call needs identity tokens (its anchors). The clinical call
-    # never references a person, so it reads the raw source — byte-identical to the
-    # proven pre-person prompt, so person relations cannot perturb its output.
-    redaction = _identity_redaction_map(environment_document) if family == "person" else {}
     for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
         labels = [row["span_label"] for row in shown if start <= row["start"] < row["end"] <= end]
         if labels:
-            card_text = _redact_identity_text(document[start:end].strip(), redaction)
-            cards.append(f"E{index}: {card_text}\nLabels: {', '.join(labels)}")
+            cards.append(f"E{index}: {document[start:end].strip()}\nLabels: {', '.join(labels)}")
     return f"""TASK
 Find as many explicit, source-grounded, non-duplicate relations as the cap ({RELATION_TEACHER_MAX_RELATIONS}) permits. Prefer diversity only when supported. Abstain rather than inventing a fact.
 
@@ -2628,7 +2496,7 @@ EVIDENCE CARDS
 RESPONSE
 Return two relation lists. Each relation record contains: relation; a subject argument then an object argument; a question; accepted answers; the fixed scoring contract.
 span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim.
-context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span.{response_person_note}
+context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span.
 Never quote a displayed span as a context literal. Emit each distinct fact once, in the list its argument kinds require, at the S-label inside the sentence that states the relation. Do not repeat the same fact for other S-labels of the same value.
 Example span_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the neurological disorder?"; accepted answer "triptan".
 Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "azithromycin" quoted from the relation sentence; accepted answer "azithromycin".
@@ -2636,7 +2504,7 @@ Return exactly one candidate_accounting row per S-label covering both lists, wit
 FINAL CHECK before you return: reconcile the accounting against the two relation lists so they agree exactly. Every S-label you mark emitted MUST appear in an actual relation record in span_relations or context_relations, and every S-label used by a relation record MUST be marked emitted. Never mark a label emitted without including its relation record, and include every supported relation you identified — a fact named in the accounting but absent from the lists, or a relation you found but omitted, is an error to fix before returning.
 
 SOURCE DOCUMENT
-{_redact_identity_text(document, redaction)}"""
+{document}"""
 
 
 def _teacher_relation_arguments(
@@ -3184,18 +3052,12 @@ def compile_relational_assertions(
         ):
             reject("source_contradiction")
             continue
-        # Placeholder-anchor occurrences (PERSON) have no lattice level; they are
-        # exempt from the support-property check and never carry a decision.
-        anchor_ids = {
-            occurrence_id for occurrence_id in occurrence_ids
-            if (occurrences.get(occurrence_id) or {}).get("anchor")
-        }
         support = {argument["occurrence_id"]: argument["support_property"]
                    for argument in arguments
-                   if argument["kind"] == "linked" and argument["occurrence_id"] not in anchor_ids}
+                   if argument["kind"] == "linked"}
         if any(not support.get(occurrence_id)
                or support.get(occurrence_id) not in legal_properties.get(occurrence_id, set())
-               for occurrence_id in occurrence_ids if occurrence_id not in anchor_ids):
+               for occurrence_id in occurrence_ids):
             reject("invalid_property")
             continue
         question = _normalize_teacher_text(str(proposal.get("question", "")))
@@ -3285,7 +3147,7 @@ def compile_relational_assertions(
             continue
         decision_requirements = {
             str(occurrences[occurrence_id]["decision_id"]): support[occurrence_id]
-            for occurrence_id in occurrence_ids if occurrence_id not in anchor_ids
+            for occurrence_id in occurrence_ids
         }
         fact_group = (relation, tuple(
             (argument["kind"], argument.get("occurrence_id", canon(argument.get("literal", ""))))
@@ -3299,10 +3161,6 @@ def compile_relational_assertions(
         # by lattice entailment against its decision's frozen chain; a literal
         # answer keeps lexical matching against the exact grounded span.
         answer_argument = arguments[0] if answer_role == "subject" else arguments[1]
-        # A placeholder-anchor (PERSON) has no level and can never be the answer.
-        if answer_argument.get("occurrence_id") in anchor_ids:
-            reject("answer_is_anchor")
-            continue
         if answer_argument["kind"] == "linked":
             answer_target = {
                 "kind": "linked_decision",
@@ -3476,12 +3334,9 @@ def package_utility_artifact(
             missing = sorted(set(occurrence_ids) - set(occurrences))
             if missing:
                 raise ValueError(f"unknown occurrence links for {doc_id}: {missing}")
-            # Placeholder-anchor (PERSON) links are legitimately uncontrolled: they
-            # carry no decision and only anchor the generalizable answer.
             uncontrolled = sorted(
                 occurrence_id for occurrence_id in occurrence_ids
-                if not occurrences[occurrence_id].get("anchor")
-                and not occurrences[occurrence_id].get(
+                if not occurrences[occurrence_id].get(
                     "controlled", occurrences[occurrence_id].get("decision_id") is not None
                 )
             )
@@ -3893,10 +3748,6 @@ def freeze_ranker_environment(
                     "overlap_disposition": row.get("overlap_disposition", "accepted"),
                     "decision_id": decision["decision_id"] if decision is not None else None,
                     "controlled": decision is not None,
-                    # Identity placeholder-anchor: no lattice decision, referenced
-                    # by its frozen placeholder token (kept for teacher/gate).
-                    **({"anchor": True, "anchor_token": str(row.get("replacement", ""))}
-                       if row.get("anchor") else {}),
                 })
                 if decision is not None:
                     decision["occurrence_ids"].append(occurrence_id)
@@ -3923,28 +3774,16 @@ def freeze_ranker_environment(
     return frozen
 
 
-# Detected identity types kept as placeholder-anchors: no lattice, referenced by
-# their frozen placeholder token, only ever the non-answer anchor of a relation.
-_ANCHOR_RUNTIME_TYPES = frozenset({"person"})
-
-
-def _is_anchor_row(row: Mapping) -> bool:
-    return canon(str(row.get("type", ""))) in _ANCHOR_RUNTIME_TYPES
-
-
 def frozen_occurrences_from_arms(
     arms: Mapping,
     *,
     detector_provenance: Mapping | None = None,
 ) -> dict[str, list[dict]]:
     """Read frozen occurrence rows from an already-frozen arms artifact. Rows with
-    a lattice become controlled decisions; identity-anchor rows (PERSON) carry no
-    lattice and are surfaced with `anchor: True` for person-anchored relations."""
+    a lattice become controlled decisions."""
     def _row(row: Mapping) -> dict:
-        anchor = _is_anchor_row(row) and not row.get("lattice")
         return {
             **dict(row),
-            **({"anchor": True} if anchor else {}),
             **({
                 "detector_provenance": {
                     **dict(detector_provenance or {}),
@@ -3958,7 +3797,7 @@ def frozen_occurrences_from_arms(
     return {
         doc_id: [
             _row(row) for row in document["tau_walk"][1]
-            if row.get("lattice") or _is_anchor_row(row)
+            if row.get("lattice")
         ]
         for corpus, documents in arms.items()
         if corpus != "_meta"
@@ -4176,26 +4015,6 @@ def build_utility_artifact(
                 raise ValueError(f"decision {decision['decision_id']} has no legal placeholder")
             placeholder_vector[str(decision["decision_id"])] = str(placeholder["action_id"])
         placeholder_context = render_action_vector(doc_id, placeholder_vector)
-        # Identity-anonymized clear baseline for person-anchored relations: every
-        # clinical decision KEEP (clear), while identity types (PERSON) are
-        # placeholder-by-rule in the arms walk, so <PERSON_2> is the stable anchor
-        # across original/representative/placeholder. Only built when the document
-        # actually has identity anchors — otherwise the raw source is the baseline
-        # (inert for clinical-only documents).
-        if any(occurrence.get("anchor") for occurrence in occurrences.values()):
-            keep_vector = {}
-            for decision in decisions:
-                keep = next(
-                    (action for action in decision.get("actions", [])
-                     if action.get("legal", True) and action.get("mode") == "keep"),
-                    None,
-                )
-                if keep is None:
-                    raise ValueError(f"decision {decision['decision_id']} has no legal keep")
-                keep_vector[str(decision["decision_id"])] = str(keep["action_id"])
-            identity_context = render_action_vector(doc_id, keep_vector)
-        else:
-            identity_context = source
 
         def validate_candidate_rows(rows: Sequence[Mapping]) -> list[dict]:
             accepted_rows = []
@@ -4270,7 +4089,7 @@ def build_utility_artifact(
                 try:
                     validated, validation_evidence = validate_context_assertions(
                         [candidate],
-                        original_context=identity_context,
+                        original_context=source,
                         representative_context=representative_context,
                         placeholder_context=placeholder_context,
                         reader=reader,
@@ -4365,41 +4184,12 @@ def build_utility_artifact(
                 prompt_hash = _stable_hash(prompt)
                 try:
                     if isinstance(relation_teacher, OpenRouterRelationTeacher):
-                        # Two isolated calls: clinical relations, then the
-                        # person-anchored family, so person relations cannot crowd
-                        # out or distract from the clinical relations under one cap.
-                        # Merged into one proposal set; labels are disjoint (clinical
-                        # S#, person P#) so a single compile stays consistent.
-                        merged_relations, merged_ledger = [], []
-                        for teacher_family in ("clinical", "person"):
-                            try:
-                                family_proposals = relation_teacher.propose(
-                                    relation_teacher_prompt(
-                                        doc_id, source, environment_document,
-                                        family=teacher_family,
-                                    ),
-                                    response_format=relation_teacher_response_format(
-                                        environment_document, source, family=teacher_family,
-                                    ),
-                                )
-                            except RelationTeacherResponseError as family_error:
-                                # One family's failure (e.g. a free-tier no-choices
-                                # throttle) must not discard the other family's
-                                # relations. Record it and keep going.
-                                preserve_rejection(_rejection_record(
-                                    reason="generation_failed",
-                                    detail_reason=f"{teacher_family}_{family_error.code}",
-                                    attempt={"doc_id": doc_id, "family": teacher_family,
-                                             "error_code": family_error.code,
-                                             "definition_version": "contextual-relation-v1"},
-                                    evidence={"source": "relation_teacher",
-                                              "family": teacher_family,
-                                              "error_code": family_error.code},
-                                ), doc_id=doc_id)
-                                continue
-                            merged_relations.extend(list(family_proposals))
-                            merged_ledger.extend(family_proposals.candidate_accounting)
-                        proposals = RelationTeacherProposals(merged_relations, merged_ledger)
+                        proposals = relation_teacher.propose(
+                            prompt,
+                            response_format=relation_teacher_response_format(
+                                environment_document, source,
+                            ),
+                        )
                     else:
                         proposals = relation_teacher.propose(prompt)
                     if isinstance(proposals, RelationTeacherProposals):
