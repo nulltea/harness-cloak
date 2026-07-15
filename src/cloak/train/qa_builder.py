@@ -2762,7 +2762,12 @@ def _derived_relation_anchor(
     ]
     if not any(index is None for index in all_indices) and max(all_indices) - min(all_indices) <= 1:
         left, right = clauses[min(all_indices)][0], clauses[max(all_indices)][1]
-        return document[left:right], (left, right), None, "clause"
+        # A speaker-turn "clause" (dialogue, >=2 turn markers) can hold several period
+        # sub-clauses; the cue must be searched across the whole turn, not per sub-clause.
+        # _source_clause_spans (here) and the support-check's period regex otherwise
+        # disagree on clause boundaries, failing valid same-turn relations (Case 3).
+        kind = "speaker_turn" if len(_ACI_SPEAKER_TURN_PATTERN.findall(document)) >= 2 else "clause"
+        return document[left:right], (left, right), None, kind
     argument_spans = [
         (int(occurrences[argument["occurrence_id"]]["start"]),
          int(occurrences[argument["occurrence_id"]]["end"]))
@@ -3025,7 +3030,7 @@ def _remap_to_groundable_siblings(
             return False
         return _relation_quote_has_direct_support(
             relation, quote, args, relation_contract, allow_adjacent_clauses=True,
-            allow_plan_section=akind in {"plan_section", "problem_block"})
+            allow_plan_section=akind in {"plan_section", "problem_block", "speaker_turn"})
 
     if grounds(arguments):
         return arguments
@@ -3272,7 +3277,7 @@ def compile_relational_assertions(
             arguments,
             relation_contract,
             allow_adjacent_clauses=(uses_v4_arguments or proposal.get("evidence_window_id") is not None),
-            allow_plan_section=anchor_kind in {"plan_section", "problem_block"},
+            allow_plan_section=anchor_kind in {"plan_section", "problem_block", "speaker_turn"},
         ):
             reject("invalid_evidence")
             continue
@@ -4416,14 +4421,27 @@ def build_utility_artifact(
                         detail_reason="no_joint_representative_anchor",
                     )
                     continue
-                representative_context = render_action_vector(
-                    doc_id, anchor["action_vector"]
-                )
                 protected_terms = list(dict.fromkeys(
                     term
                     for occurrence in linked_occurrences
                     for term in _occurrence_protected_terms(occurrence)
                 ))
+                # Co-referent leak guard (Case 1): a DIFFERENT controlled decision whose
+                # surface contains a protected term as a whole word ("acid reflux" holds
+                # "reflux") is generalized in the deployed doc_p, but the isolation anchor
+                # KEEPs it -- spuriously surviving the identity. Hide those decisions here
+                # so both the leak check and the reader gate match deployment.
+                representative_vector = dict(anchor["action_vector"])
+                for decision in decisions:
+                    surface = str(decision.get("canonical_key") or "")
+                    if surface and any(
+                        canon(surface) != canon(term) and _contains(surface, term)
+                        for term in protected_terms
+                    ):
+                        hiding = _hiding_action_id(decision)
+                        if hiding is not None:
+                            representative_vector[str(decision["decision_id"])] = hiding
+                representative_context = render_action_vector(doc_id, representative_vector)
                 surviving_terms = [
                     term for term in protected_terms
                     if _contains(representative_context, term)
@@ -4786,6 +4804,25 @@ def build_utility_artifact(
         key: value for key, value in artifact.items() if key != "artifact_hash"
     })
     return artifact
+
+
+def _hiding_action_id(decision: Mapping) -> str | None:
+    """Action that hides a decision's surface for a leak-check render: the coarsest legal
+    generalization level, else a placeholder. None if neither exists (the decision stays
+    KEEP). Used to generalize a co-referent decision so its surface stops leaking a
+    related relation's protected identity."""
+    actions = [action for action in decision.get("actions", []) if action.get("legal", True)]
+    levels = [
+        action for action in actions
+        if action.get("mode") not in {"keep", "placeholder"}
+        and not action.get("source_identity")
+        and isinstance(action.get("coarseness_rank"), Real)
+        and not isinstance(action.get("coarseness_rank"), bool)
+    ]
+    if levels:
+        return str(max(levels, key=lambda action: float(action["coarseness_rank"]))["action_id"])
+    placeholder = next((action for action in actions if action.get("mode") == "placeholder"), None)
+    return str(placeholder["action_id"]) if placeholder else None
 
 
 def build_joint_representative_anchor(
