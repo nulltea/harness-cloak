@@ -1,5 +1,5 @@
 """_chunks: boundary placement and word-count cap."""
-from cloak.detect import _chunks
+from cloak.detect import _DEFAULT_MAX_CHARS, _chunks
 
 
 def _reassemble(text, chunks):
@@ -7,8 +7,8 @@ def _reassemble(text, chunks):
 
 
 def test_no_midword_cut():
-    # 1195 filler chars then a name: the old code hard-cut inside "Sarah"
-    text = "x" * 1195 + " Sarah Johnson was seen"
+    # filler just under one window then a name: the old code hard-cut inside "Sarah"
+    text = "x" * (_DEFAULT_MAX_CHARS - 5) + " Sarah Johnson was seen"
     chunks = list(_chunks(text))
     _reassemble(text, chunks)
     assert len(chunks) == 2
@@ -18,7 +18,7 @@ def test_no_midword_cut():
 
 
 def test_sentence_cut_still_preferred():
-    text = "y" * 900 + " Seen at the clinic. " + "z" * 400
+    text = "y" * (_DEFAULT_MAX_CHARS - 120) + " Seen at the clinic. " + "z" * 400
     chunks = list(_chunks(text))
     _reassemble(text, chunks)
     assert chunks[0][1].rstrip().endswith("clinic.")
@@ -51,7 +51,7 @@ def test_max_words_none_is_noop():
 def test_fallback_cut_overlaps_so_multiword_entity_survives():
     # cut falls between the name's words; the overlap window must re-present the whole name
     # as clean tokens (prefix ends on a word boundary — a glued token would defeat detection)
-    prefix = "word " * 238  # 1190 chars, no sentence breaks
+    prefix = "word " * ((_DEFAULT_MAX_CHARS - 10) // 5)  # just under one window, no sentence breaks
     text = prefix + "Sarah Johnson was seen in clinic today and follow-up was arranged."
     chunks = list(_chunks(text))
     _reassemble(text, chunks)

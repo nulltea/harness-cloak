@@ -316,7 +316,14 @@ class DetectionResult:
         }
 
 
-def _chunks(text: str, max_chars: int = 1200, max_words: int | None = None,
+# gliner-pii-large recall collapses on long, entity-dense windows: entities scoring 0.87-0.93
+# in isolation drop to ~0.05 or vanish inside a ~1200-char chunk (measured on ACI clinical notes).
+# 600 is the empirical recovery cliff (800 already loses repeated/tail mentions like a second-half
+# drug); sentence-aware cutting does NOT buy back larger windows — it is length-bound, not cut-quality.
+_DEFAULT_MAX_CHARS = 600
+
+
+def _chunks(text: str, max_chars: int = _DEFAULT_MAX_CHARS, max_words: int | None = None,
             overlap_chars: int = 200):
     """Split on line/sentence boundaries into ~max_chars windows; yield (offset, chunk).
 
