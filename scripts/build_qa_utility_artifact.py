@@ -89,6 +89,7 @@ def _action_renderer(
         choice = {}
         keep_markers = {}
         walk_rows = arms[corpus][doc_id]["tau_walk"][1]
+        generalized_fill_surface: dict[str, str] = {}
         for span in raw_document["spans"]:
             key = (str(span.get("type", "")), canon(str(span.get("surface", ""))))
             decision = decisions_by_key[key]
@@ -114,13 +115,41 @@ def _action_renderer(
                     and canon(str(row.get("surface", ""))) == str(decision["canonical_key"])
                 ])
                 fill = marker
+            else:
+                # A generalized/placeholder identity: record one raw-span surface so its
+                # OTHER occurrences (gate-dropped / text-anchored repeats) get the same
+                # fill applied below. KEEP decisions are excluded -- their markers are
+                # count-matched to walk rows, and KEEP preserves identity anyway.
+                generalized_fill_surface.setdefault(
+                    str(decision["decision_id"]), str(span["surface"]))
             choice[str(span["surface"]).lower()] = {
                 "mode": "level" if selected["mode"] in {"level", "keep"} else "placeholder",
                 "fill": fill,
             }
+        # P1: generalize EVERY occurrence of a generalized decision, not just the
+        # detector-admitted walk rows. A repeat mention the detector dropped locally
+        # (below the per-type gate) or that text-anchoring recovered would otherwise
+        # survive verbatim in doc_p -- a real identity leak. Universal: any repeated
+        # identity, any doc. Positions already in the walk are left to the walk.
+        walk_boxes = [(int(row["start"]), int(row["end"])) for row in walk_rows]
+        augmented_walk = list(walk_rows)
+        for occurrence in frozen_document.get("occurrences", []):
+            decision_id = occurrence.get("decision_id")
+            fill_surface = (generalized_fill_surface.get(str(decision_id))
+                            if decision_id is not None else None)
+            if fill_surface is None:
+                continue
+            start, end = int(occurrence["start"]), int(occurrence["end"])
+            if any(start < box_end and box_start < end for box_start, box_end in walk_boxes):
+                continue  # already covered by a detector walk row
+            augmented_walk.append({
+                "surface": fill_surface, "type": str(occurrence.get("runtime_type", "")),
+                "start": start, "end": end, "lattice": True,
+                "replacement": str(occurrence.get("surface", "")), "action": "generalize",
+            })
         rendered = assemble(
             source_documents[doc_id],
-            arms[corpus][doc_id]["tau_walk"][1],
+            augmented_walk,
             raw_document["spans"],
             choice,
         )[0]
