@@ -3136,7 +3136,23 @@ def compile_relational_assertions(
             for term in _occurrence_protected_terms(occurrence):
                 protected_terms.append(term)
                 allowed_level_tokens[term] = allowed_level_tokens.get(term, frozenset()) | level_tokens
-        if _question_leaks_protected_term(question, protected_terms, allowed_level_tokens):
+        # A relation publishes its own arguments' generalization levels, so a token
+        # from any argument level (e.g. "kidney" in the subject's "cystic kidney
+        # disease") is legitimately in the question even when it collides with a
+        # different argument's raw surface ("kidney transplant"). Pool the levels of
+        # the relation's argument occurrences and exempt them for the question check
+        # only — never the answer check, which must stay strict per answered argument.
+        argument_level_tokens = frozenset(
+            token
+            for occurrence_id in occurrence_ids
+            for property_level in legal_properties.get(occurrence_id, ())
+            for token in _meaningful_tokens(property_level)
+        )
+        question_allowed_tokens = {
+            term: tokens | argument_level_tokens
+            for term, tokens in allowed_level_tokens.items()
+        }
+        if _question_leaks_protected_term(question, protected_terms, question_allowed_tokens):
             reject("protected_locator")
             continue
         if proposal.get("arguments") is not None and any(

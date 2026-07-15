@@ -945,6 +945,82 @@ def test_treated_with_indication_grounds_inside_a_speaker_turn_anchor():
     assert accepted[0]["occurrence_ids"] == ["transplant"]
 
 
+def _kidney_environment(source):
+    # D2N002: both spans controlled. The subject's level "cystic kidney disease"
+    # shares the token "kidney" with the object's raw surface "kidney transplant".
+    kt = source.index("kidney transplant")
+    pk = source.index("polycystic kidneys")
+    return {
+        "occurrences": [
+            {"occurrence_id": "transplant", "decision_id": "d-transplant",
+             "surface": "kidney transplant", "start": kt, "end": kt + 17,
+             "runtime_type": "health-condition"},
+            {"occurrence_id": "poly", "decision_id": "d-poly",
+             "surface": "polycystic kidneys", "start": pk, "end": pk + 18,
+             "runtime_type": "health-condition"},
+        ],
+        "decisions": [
+            {"decision_id": "d-transplant", "actions": [{"mode": "level", "legal": True,
+             "entails": ["solid organ transplant", "medical condition"]}]},
+            {"decision_id": "d-poly", "actions": [{"mode": "level", "legal": True,
+             "entails": ["cystic kidney disease", "kidney disease"]}]},
+        ],
+    }
+
+
+_KIDNEY_SOURCE = (
+    "[doctor] okay . all right . now , i know that you've had the kidney transplant "
+    "a few years ago for some polycystic kidneys .\n[patient] mm-hmm .\n"
+)
+
+
+def test_protected_locator_exempts_a_sibling_arguments_level_token():
+    # The question's "kidney" comes from the subject's published level "cystic
+    # kidney disease", not from the object surface "kidney transplant". Pooling the
+    # relation's argument levels must let this privacy-safe relation compile.
+    environment = _kidney_environment(_KIDNEY_SOURCE)
+    proposal = {
+        "relation": "treated_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S2",
+             "support_property": "cystic kidney disease", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S1",
+             "support_property": "solid organ transplant", "literal": None},
+        ],
+        "question": "Which procedure was used to treat the cystic kidney disease?",
+        "accepted_answers": ["solid organ transplant"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+    accepted, rejected = compile_relational_assertions(
+        "d2", _KIDNEY_SOURCE, environment, [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["relation"] == "treated_with"
+
+
+def test_protected_locator_still_blocks_a_discriminative_surface_token():
+    # "polycystic" is in no legal level, so it never enters the argument pool and
+    # must still be rejected — the exemption only forgives published-level tokens.
+    environment = _kidney_environment(_KIDNEY_SOURCE)
+    proposal = {
+        "relation": "treated_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S2",
+             "support_property": "cystic kidney disease", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S1",
+             "support_property": "solid organ transplant", "literal": None},
+        ],
+        "question": "Which procedure was used for the polycystic condition?",
+        "accepted_answers": ["solid organ transplant"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+    accepted, rejected = compile_relational_assertions(
+        "d2", _KIDNEY_SOURCE, environment, [proposal])
+
+    assert accepted == []
+    assert any(r["detail_reason"] == "protected_locator" for r in rejected)
+
+
 def test_multiturn_anchor_rejects_link_across_a_problem_switch():
     # arthritis (first problem) must not link to the thyroid panel ordered
     # under "for your second problem".
