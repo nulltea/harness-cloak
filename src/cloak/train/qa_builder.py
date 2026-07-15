@@ -3696,12 +3696,86 @@ def _entity_key(surface: str, runtime_type: str) -> str:
     return canon(entry[0]) if entry else canon(surface)
 
 
+def _append_text_anchored_occurrences(
+    document_text: str, doc_id: str,
+    decisions_by_key: Mapping[tuple[str, str], dict], occurrences: list[dict],
+) -> None:
+    """Register exact-text occurrences of already-decided entities that the detector
+    dropped locally -- e.g. a repeat mention scored below the per-type admission gate
+    ('kidney stones' at 0.44 vs the 0.5 health-condition gate) even though the same
+    surface was admitted >=gate elsewhere in the document. Grounding can then anchor a
+    relation argument to the dropped mention.
+
+    Threshold-free: only surfaces that already back a *controlled decision in this
+    document* are propagated, so no new entity type or value is introduced -- the value
+    is confirmed sensitive; we only recover its other verbatim positions. Positions
+    already covered by an occurrence are skipped, so detected spans are never duplicated.
+    One compiled regex + one finditer pass over the document -> O(len(document)); the
+    per-match overlap test is O(#occurrences), tiny for a single note.
+    """
+    from cloak.lattice_profiles import singularize
+    if not document_text:
+        return
+    base_to_decision: dict[str, dict] = {}
+    decisions_by_id = {d["decision_id"]: d for d in decisions_by_key.values()}
+    for occ in occurrences:
+        decision_id = occ.get("decision_id")
+        if not occ.get("controlled") or decision_id is None:
+            continue
+        base = singularize(str(occ.get("surface", "")))
+        if len(base) >= 3:  # ponytail: skip 1-2 char bases ("ms","mi") -- match everything
+            base_to_decision.setdefault(base, decisions_by_id[decision_id])
+    if not base_to_decision:
+        return
+    # longest base first so "kidney stone" wins over "stone"; trailing s? folds plurals,
+    # hyphen/word guards keep "ct" out of "contract" and "stone" out of "stoned".
+    bases = sorted(base_to_decision, key=len, reverse=True)
+    pattern = re.compile(
+        r"(?<![\w-])(" + "|".join(re.escape(b) for b in bases) + r")s?(?![\w-])",
+        re.IGNORECASE,
+    )
+    covered = [
+        (int(o["start"]), int(o["end"])) for o in occurrences
+        if isinstance(o.get("start"), int) and isinstance(o.get("end"), int)
+    ]
+    for match in pattern.finditer(document_text):
+        start, end = match.start(), match.end()
+        if any(start < ce and cs < end for cs, ce in covered):
+            continue
+        decision = base_to_decision.get(singularize(match.group(1)))
+        if decision is None:
+            continue
+        surface = document_text[start:end]
+        occurrence_id = _stable_hash({
+            "doc_id": doc_id, "runtime_type": decision["runtime_type"],
+            "surface": surface, "start": start, "end": end,
+        })
+        occurrences.append({
+            "occurrence_id": occurrence_id,
+            "start": start, "end": end, "surface": surface, "aliases": [],
+            "runtime_type": decision["runtime_type"], "polarity": "unknown",
+            "detector_provenance": {
+                "source": "text_anchored", "anchored_to": decision["decision_id"]},
+            "overlap_disposition": "accepted",
+            "decision_id": decision["decision_id"], "controlled": True,
+        })
+        decision["occurrence_ids"].append(occurrence_id)
+        covered.append((start, end))
+
+
 def freeze_ranker_environment(
     ranker_environment: Mapping,
     *,
     occurrences_by_document: Mapping[str, Sequence[Mapping]] | None = None,
+    source_documents: Mapping[str, str] | None = None,
 ) -> dict:
-    """Migrate embedded ranker spans to stable occurrence/decision identities, without detection."""
+    """Migrate embedded ranker spans to stable occurrence/decision identities, without detection.
+
+    When ``source_documents`` is provided, exact-text repeats of an already-decided entity
+    that the detector dropped locally are recovered as occurrences (see
+    ``_append_text_anchored_occurrences``). Both callers pass the same source text so the
+    ``environment_hash`` stays identical between build and train.
+    """
     documents: dict[str, dict] = {}
     for corpus, per_document in ranker_environment.get("corpora", {}).items():
         for doc_id, document in per_document.items():
@@ -3871,6 +3945,9 @@ def freeze_ranker_environment(
                 })
                 if decision is not None:
                     decision["occurrence_ids"].append(occurrence_id)
+            if source_documents is not None and doc_id in source_documents:
+                _append_text_anchored_occurrences(
+                    source_documents[doc_id], doc_id, decisions_by_key, occurrences)
             occurrences_by_id = {
                 str(row["occurrence_id"]): row for row in occurrences
             }

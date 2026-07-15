@@ -154,13 +154,15 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
     occurrence_records = {
         doc_id: all_occurrence_records[doc_id] for doc_id in args.doc_id
     }
-    frozen_environment = freeze_ranker_environment(
-        environment, occurrences_by_document=occurrence_records
-    )
     rows = _source_rows(args.corpus, args.doc_id)
     if any(not doc_id.startswith("aci/") for doc_id in rows):
         raise SystemExit("the implemented task adapter currently supports ACI documents only")
     source_documents = {doc_id: row["text"] for doc_id, row in rows.items()}
+    frozen_environment = freeze_ranker_environment(
+        environment,
+        occurrences_by_document=occurrence_records,
+        source_documents=source_documents,
+    )
     references = {doc_id: row["gold_ref"] for doc_id, row in rows.items()}
     if relation_teacher is None and args.relation_teacher:
         relation_teacher = OpenRouterRelationTeacher()

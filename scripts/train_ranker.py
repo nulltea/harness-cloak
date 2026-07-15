@@ -931,6 +931,9 @@ def main():
                 freeze_ranker_environment(
                     env,
                     occurrences_by_document=frozen_occurrences_from_arms(art),
+                    # all corpora (texts is per-corpus-rebound above); keeps the frozen
+                    # environment_hash identical to build_qa_utility's source map.
+                    source_documents={d["id"]: d["text"] for d in docs},
                 ),
             )
             attached = attach_utility_artifact(docs, utility_artifact)

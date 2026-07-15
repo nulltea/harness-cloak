@@ -1138,6 +1138,55 @@ def test_freeze_ranker_environment_maps_repeated_occurrences_to_one_decision():
     assert keep["source_identity"] is True
 
 
+def test_freeze_text_anchors_dropped_repeat_mention():
+    # "kidney stones" is admitted once; a second verbatim mention (here the singular
+    # "kidney stone") was dropped by the detector's per-type admission gate and is absent
+    # from spans. With source text, freeze recovers it as an occurrence of the SAME
+    # decision -- threshold-free grounding, plural-folded, surface taken from the source.
+    text = "history of kidney stones and a later single kidney stone today"
+    i1 = text.index("kidney stones")
+    i2 = text.index("kidney stone", i1 + 13)
+    ranker_env = {"corpora": {"clinical": {"d1": {"spans": [
+        {"surface": "kidney stones", "type": "health-condition", "start": i1, "end": i1 + 13,
+         "actions": [
+             {"fill": "a chronic condition", "mode": "level", "aset": 100},
+             {"fill": "kidney stones", "mode": "level", "keep": True, "aset": 1},
+             {"fill": None, "mode": "placeholder"},
+         ]},
+    ]}}}}
+
+    frozen = freeze_ranker_environment(ranker_env, source_documents={"d1": text})
+    document = frozen["documents"]["d1"]
+    decision_id = document["decisions"][0]["decision_id"]
+
+    assert len(document["decisions"]) == 1
+    assert sorted(row["start"] for row in document["occurrences"]) == [i1, i2]
+    assert all(row["decision_id"] == decision_id for row in document["occurrences"])
+    anchored = next(row for row in document["occurrences"] if row["start"] == i2)
+    assert anchored["surface"] == "kidney stone"  # source text, not the decision surface
+    assert anchored["controlled"] is True
+    assert anchored["detector_provenance"]["source"] == "text_anchored"
+
+    # no source text -> no propagation (backward compatible)
+    plain = freeze_ranker_environment(ranker_env)
+    assert len(plain["documents"]["d1"]["occurrences"]) == 1
+
+
+def test_freeze_text_anchoring_does_not_invent_undecided_entities():
+    # "stone" is never a decision; a bare "stone" elsewhere must not be propagated, and a
+    # detected span's own position must not be duplicated.
+    text = "kidney stones today and a rolling stone gathers no moss"
+    i1 = text.index("kidney stones")
+    ranker_env = {"corpora": {"clinical": {"d1": {"spans": [
+        {"surface": "kidney stones", "type": "health-condition", "start": i1, "end": i1 + 13,
+         "actions": [{"fill": "a condition", "mode": "level", "aset": 100},
+                     {"fill": None, "mode": "placeholder"}]},
+    ]}}}}
+    frozen = freeze_ranker_environment(ranker_env, source_documents={"d1": text})
+    occurrences = frozen["documents"]["d1"]["occurrences"]
+    assert [row["start"] for row in occurrences] == [i1]  # no bare-"stone", no duplicate
+
+
 def test_freeze_ranker_environment_synthesizes_missing_keep_into_frozen_menu():
     ranker_env = {
         "corpora": {"clinical": {"d1": {"spans": [{
