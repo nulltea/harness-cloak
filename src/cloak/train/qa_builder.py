@@ -2686,27 +2686,40 @@ def _derived_relation_anchor(
     if any(index is None for index in linked_clause_indices):
         return "", None, "invalid_evidence_occurrence", None
     linked_plan_section = _shared_plan_section(document, linked_spans)
+    linked_problem_block = _shared_problem_block(document, linked_spans)
     context = next((argument for argument in arguments if argument["kind"] == "context"), None)
     if context is not None and context.get("start") is None:
         literal = str(context["literal"])
         matches = _exact_substring_starts(document, literal)
-        candidates = []
+
+        def _linked_gap(start: int, end: int) -> int:
+            return min(max(0, left - end, start - right) for left, right in linked_spans)
+
+        # A context literal grounds when it co-locates with the linked argument by
+        # adjacent clause OR within the one section the arguments share. That section is
+        # detected in either note format: the structured written-note plan
+        # (_shared_plan_section) or the spoken-dialogue problem block
+        # (_shared_problem_block) -- symmetric with the evidence-window logic below (P3).
+        # When several mentions of the literal qualify, pick the one nearest the linked
+        # argument: fewest clauses away, then fewest chars (P2, deterministic tie-break).
+        scored = []
         for start in matches:
             end = start + len(literal)
             literal_clause = clause_index(start, end)
             if literal_clause is None:
                 continue
-            all_indices = [*linked_clause_indices, literal_clause]
-            if max(all_indices) - min(all_indices) <= 1:
-                candidates.append((start, end))
-        if not candidates and linked_plan_section is not None:
-            candidates = [
-                (start, start + len(literal)) for start in matches
-                if linked_plan_section[0] <= start < start + len(literal) <= linked_plan_section[1]
-            ]
-        if len(candidates) != 1:
-            return "", None, "ambiguous_context_literal" if candidates else "unknown_context_literal", None
-        start, end = candidates[0]
+            clause_dist = min(abs(literal_clause - index) for index in linked_clause_indices)
+            in_clause_window = clause_dist <= 1
+            in_plan = (linked_plan_section is not None
+                       and linked_plan_section[0] <= start < end <= linked_plan_section[1])
+            in_block = (linked_problem_block is not None
+                        and linked_problem_block[0] <= start < end <= linked_problem_block[1])
+            if in_clause_window or in_plan or in_block:
+                scored.append((clause_dist, _linked_gap(start, end), start, end))
+        if not scored:
+            return "", None, "unknown_context_literal", None
+        scored.sort()
+        start, end = scored[0][2], scored[0][3]
         # A literal that lands on a protected controlled span is an S-label
         # smuggled past the linked contract; the teacher must reference it by
         # its label (leakage-scope rule).
@@ -2768,7 +2781,110 @@ def _derived_relation_anchor(
     return "", None, "invalid_evidence", None
 
 
+# Natural-language hypotheses for the NLI support fallback. Filled from the arguments'
+# roles (subject/object per _RELATION_ARGUMENT_CLASSES). Used ONLY as a union fallback to
+# the fixed cue/connector lexicon, so a valid relation phrased with an out-of-list
+# connector ("we have you on X for Y") is not rejected as invalid_evidence.
+RELATION_SUPPORT_HYPOTHESIS = {
+    "prescribed_with": "{object} is a medication prescribed for {subject}.",
+    "procedure_for": "{object} is a procedure or treatment for {subject}.",
+    "tests_for": "{object} is a test or scan used to investigate {subject}.",
+    "contraindicated_because_of": "{subject} must be avoided because of {object}.",
+    "causes_or_explains": "{subject} is caused or explained by {object}.",
+}
+
+
+def _relation_support_hypothesis(relation: str, arguments: Sequence[Mapping]) -> str | None:
+    """Fill the relation's NLI hypothesis from the arguments' subject/object surfaces."""
+    template = RELATION_SUPPORT_HYPOTHESIS.get(relation)
+    if template is None:
+        return None
+    by_role = {}
+    for argument in arguments:
+        text = str(argument.get("surface") or argument.get("literal") or "").strip()
+        if argument.get("role") and text:
+            by_role[str(argument["role"])] = text
+    if "subject" not in by_role or "object" not in by_role:
+        return None
+    return template.format(**by_role)
+
+
+def _relation_quote_has_semantic_support(
+    relation: str,
+    quote: str,
+    arguments: Sequence[Mapping],
+    relation_contract: Mapping[str, Mapping],
+    *,
+    allow_adjacent_clauses: bool = False,
+    allow_plan_section: bool = False,
+) -> bool:
+    """NLI fallback to the lexical cue check: both arguments present within the allowed
+    clause span, and the quote entails the relation hypothesis. Reuses the same
+    structural proximity gate so entailment is never judged across unrelated distant text."""
+    normalized = canon(quote)
+    clause_ranges = [
+        (match.start(), match.end())
+        for match in re.finditer(r"(?:[^\n.!?;]|\.(?=\.)|(?<=\.)\.)+", normalized)
+        if match.group().strip()
+    ]
+    if not clause_ranges:
+        return False
+    argument_clauses = []
+    for argument in arguments:
+        text = canon(str(argument.get("surface", argument.get("literal", ""))))
+        match = re.search(rf"(?<!\w){re.escape(text)}(?!\w)", normalized)
+        if match is None:
+            return False
+        clause = next((index for index, (left, right) in enumerate(clause_ranges)
+                       if left <= match.start() < right), None)
+        if clause is None:
+            return False
+        argument_clauses.append(clause)
+    clause_span = max(argument_clauses) - min(argument_clauses)
+    if not (clause_span == 0
+            or (clause_span == 1 and (allow_adjacent_clauses or allow_plan_section))
+            or allow_plan_section):
+        return False
+    hypothesis = _relation_support_hypothesis(relation, arguments)
+    if hypothesis is None:
+        return False
+    from cloak.lattice import nli_entails
+    return nli_entails(normalized, hypothesis)
+
+
 def _relation_quote_has_direct_support(
+    relation: str,
+    quote: str,
+    arguments: Sequence[Mapping],
+    relation_contract: Mapping[str, Mapping],
+    *,
+    allow_adjacent_clauses: bool = False,
+    allow_plan_section: bool = False,
+) -> bool:
+    """Direct support = a fixed cue/connector match OR (fallback) NLI entailment of the
+    relation hypothesis. The lexical check stays authoritative (DeBERTa-mnli can lack
+    clinical world knowledge); NLI only RESCUES valid relations whose connector is not in
+    the fixed lexicon ("we have you on X for Y") -- it never overrides a lexical accept."""
+    if _relation_quote_has_lexical_cue_support(
+        relation, quote, arguments, relation_contract,
+        allow_adjacent_clauses=allow_adjacent_clauses, allow_plan_section=allow_plan_section,
+    ):
+        return True
+    # NLI only rescues the lenient modes, where the lexical path already searches for a
+    # cue *inside the argument clause(s)* -- so NLI just widens that cue vocabulary. In
+    # strict single-clause mode the lexical path instead requires a clean directional
+    # connector (no intervening content); that precision guard against conjunction
+    # ambiguity ("Hypothyroidism and diabetes is treated with X") must stand, so NLI
+    # does not fire there.
+    if not (allow_adjacent_clauses or allow_plan_section):
+        return False
+    return _relation_quote_has_semantic_support(
+        relation, quote, arguments, relation_contract,
+        allow_adjacent_clauses=allow_adjacent_clauses, allow_plan_section=allow_plan_section,
+    )
+
+
+def _relation_quote_has_lexical_cue_support(
     relation: str,
     quote: str,
     arguments: Sequence[Mapping],
@@ -2934,6 +3050,47 @@ def _remap_to_groundable_siblings(
     return arguments
 
 
+def _promote_context_literals_on_detected_entities(
+    arguments: list[dict], proposal: Mapping,
+    occurrences: Mapping[str, Mapping], decisions: Mapping[str, Mapping],
+) -> tuple[list[dict], Mapping]:
+    """Fix B: a context literal that names a DETECTED (controlled) entity is an S-label the
+    teacher passed as free text. Promote it to a linked argument on that decision -- a
+    detected entity is substituted in doc_p (so its generalized level is a hideable
+    answer), whereas a bare literal survives verbatim and can never pass the floor gate.
+    Only promotes when the decision carries a legal generalization level; the co-locating
+    occurrence is then chosen by the normal sibling remap. Universal, deterministic."""
+    for argument in arguments:
+        if argument.get("kind") != "context" or not argument.get("literal"):
+            continue
+        literal_tokens = _meaningful_tokens(str(argument["literal"]))
+        if not literal_tokens:
+            continue
+        promoted = None
+        for occurrence_id, occurrence in occurrences.items():
+            if not occurrence.get("controlled", True):
+                continue
+            surface_tokens = _meaningful_tokens(str(occurrence.get("surface", "")))
+            if not surface_tokens or not surface_tokens <= literal_tokens:
+                continue
+            levels = _ordered_decision_levels(decisions.get(str(occurrence.get("decision_id")), {}))
+            if levels:
+                promoted = (occurrence_id, occurrence, levels[0])
+                break
+        if promoted is None:
+            continue
+        occurrence_id, occurrence, level = promoted
+        argument["kind"] = "linked"
+        argument["occurrence_id"] = occurrence_id
+        argument["surface"] = str(occurrence.get("surface", ""))
+        argument["runtime_type"] = str(occurrence.get("runtime_type", ""))
+        argument["support_property"] = level
+        argument.pop("literal", None)
+        if str(argument.get("role")) == str(proposal.get("answer_role", "object")):
+            proposal = {**proposal, "accepted_answers": [level]}
+    return arguments, proposal
+
+
 def compile_relational_assertions(
     doc_id: str,
     document: str,
@@ -3059,6 +3216,8 @@ def compile_relational_assertions(
         if argument_error is not None:
             reject(argument_error)
             continue
+        arguments, proposal = _promote_context_literals_on_detected_entities(
+            arguments, proposal, occurrences, decisions)
         occurrence_ids = [argument["occurrence_id"] for argument in arguments
                           if argument["kind"] == "linked"]
         if len(set(occurrence_ids)) != len(occurrence_ids):

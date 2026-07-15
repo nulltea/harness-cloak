@@ -501,9 +501,12 @@ def test_context_literal_is_typed_by_the_relation_slot_when_lexical_rules_cannot
     assert accepted[0]["occurrence_ids"] == ["condition"]
 
 
-def test_context_literal_resolving_onto_a_controlled_span_is_rejected_as_leakage():
-    # Spec: a literal that also resolves to a protected controlled span is
-    # rejected; the teacher must reference that span by its S-label instead.
+def test_context_literal_on_a_controlled_span_is_promoted_to_a_linked_argument():
+    # Fix B: a literal that also resolves to a DETECTED (controlled) span with a legal
+    # generalization level is promoted to a linked argument on that decision -- a detected
+    # entity is substituted in doc_p, so its generalized level is a hideable answer --
+    # instead of being rejected as leakage. (An uncontrolled span stays rejected: see the
+    # next test.)
     source = "for your arthritis , i will prescribe some ultram ."
     ultram_start = source.index("ultram")
     environment = {
@@ -529,9 +532,9 @@ def test_context_literal_resolving_onto_a_controlled_span_is_rejected_as_leakage
 
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
-    assert accepted == []
-    assert rejected[0]["detail_reason"] == "protected_context_literal"
-    assert rejected[0]["reason"] == "leakage"
+    assert len(accepted) == 1
+    assert accepted[0]["relation"] == "prescribed_with"
+    assert not any(r.get("detail_reason") == "protected_context_literal" for r in rejected)
 
 
 def test_context_literal_matching_an_uncontrolled_detected_span_is_rejected():
@@ -1064,8 +1067,10 @@ def test_tests_for_discovery_compiles():
     assert accepted[0]["answer_target"]["required_property"] == "urinary tract stone"
 
 
-def test_tests_for_requires_a_diagnostic_or_monitoring_cue():
-    # No order/monitor/show/found cue linking test and condition -> not grounded.
+def test_tests_for_grounds_via_semantic_support_when_cue_absent():
+    # "scheduled a ct scan for your kidney stone" carries no order/monitor/show cue, but
+    # the quote semantically entails the test<->condition relation, so the NLI support
+    # fallback grounds it (fixed cue lists drift; NLI covers valid out-of-list phrasing).
     source = "[doctor] we scheduled a ct scan for your kidney stone .\n[patient] okay .\n"
     environment = _ct_stone_environment(source)
     proposal = {
@@ -1083,8 +1088,8 @@ def test_tests_for_requires_a_diagnostic_or_monitoring_cue():
     }
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
-    assert accepted == []
-    assert any(r["detail_reason"] == "invalid_evidence" for r in rejected)
+    assert len(accepted) == 1
+    assert accepted[0]["relation"] == "tests_for"
 
 
 def test_grounds_via_same_value_sibling_when_teacher_names_history_mention():

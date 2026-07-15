@@ -7,6 +7,7 @@ Plan: docs/plans/2026-07-02-d1-prototype-implementation.md.
 import json
 import re
 from concurrent.futures import ThreadPoolExecutor
+from functools import lru_cache
 from pathlib import Path
 
 from cloak.runtime_types import (DOMAIN_RUNTIME_TYPES, PLACEHOLDER_ONLY_TYPES,
@@ -225,6 +226,7 @@ def wordnet_chain(phrase: str, depth: int = 3) -> list[str] | None:
 
 _nli = None
 NLI_MODEL = "MoritzLaurer/DeBERTa-v3-base-mnli-fever-anli"
+NLI_THRESH = 0.6
 
 
 def _nli_prep(entity: str, context: str, candidates: list[str]):
@@ -272,6 +274,24 @@ def nli_gate_batch(jobs: list[tuple[str, str, list[str]]],
 def nli_gate(entity: str, context: str, candidates: list[str], thresh: float = 0.6) -> list[str]:
     """Keep candidates where 'context' entails 'context with entity -> candidate'."""
     return [c for c, _ in nli_gate_batch([(entity, context, candidates)], thresh=thresh)[0]]
+
+
+@lru_cache(maxsize=4096)
+def nli_entails(premise: str, hypothesis: str, thresh: float = NLI_THRESH) -> bool:
+    """True if `premise` entails `hypothesis` on the shared MNLI pipeline. Used to verify a
+    relation is semantically supported by its evidence quote, replacing fixed cue lexicons.
+    Cached: the sibling-grounding search re-checks the same (premise, hypothesis) pairs."""
+    global _nli
+    if not premise.strip() or not hypothesis.strip():
+        return False
+    if _nli is None:
+        import torch
+        from transformers import pipeline
+        _nli = pipeline("text-classification", model=NLI_MODEL,
+                        device=0 if torch.cuda.is_available() else -1)
+    scores = _nli([{"text": premise, "text_pair": hypothesis}], top_k=None, truncation=True)[0]
+    entailment = next(score["score"] for score in scores if score["label"] == "entailment")
+    return entailment >= thresh
 
 
 # ---------- teacher cascade ----------
