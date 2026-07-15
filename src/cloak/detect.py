@@ -132,8 +132,9 @@ _PROFESSION = {"journalist","lawyer","doctor","nurse","teacher","engineer","judg
 def relabel_dem(surface):
     """TAB DEM span surface -> fine leaf key. Order matters (condition/orientation before the demonym sets,
     e.g. 'jewish' is religion not nationality). Unmatched -> demographic-other."""
+    from cloak.lattice_profiles import singularize
     s = surface.strip().lower()
-    sn = s.rstrip("s")                                              # crude singular (widows->widow)
+    sn = singularize(surface)                                       # shared plural fold
     if any(k in s for k in _CONDITION_KW):                          return "health-condition"
     if s in _ORIENTATION or "homosexual" in s:                      return "sexual-orientation"
     if s in _RELIGION:                                              return "religion"

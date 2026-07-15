@@ -3686,6 +3686,16 @@ def _frozen_semantic_chain(decision: Mapping, source_aliases: Sequence[str]) -> 
     return chain
 
 
+def _entity_key(surface: str, runtime_type: str) -> str:
+    """Canonical identity for a detected surface, shared by decision keys and occurrence
+    matching so plural/alias variants ("migraines"->"migraine", brand->generic) resolve to
+    one decision. Reuses the lattice profile resolver (single source of the plural fold);
+    falls back to canon() for surfaces with no profile row."""
+    from cloak.lattice_profiles import lookup_entry
+    entry = lookup_entry(surface, runtime_type)
+    return canon(entry[0]) if entry else canon(surface)
+
+
 def freeze_ranker_environment(
     ranker_environment: Mapping,
     *,
@@ -3822,11 +3832,20 @@ def freeze_ranker_environment(
                 if occurrences_by_document is not None and doc_id in occurrences_by_document
                 else document.get("spans", [])
             )
+            # Secondary index by profile-canonical identity so a plural/alias occurrence
+            # ("migraines", a brand name) still links to its decision even though the
+            # decision key stays the source surface (which KEEP semantics rely on).
+            decisions_by_entity: dict[tuple[str, str], dict] = {}
+            for (rtype, ckey), decision in decisions_by_key.items():
+                decisions_by_entity.setdefault((rtype, _entity_key(ckey, rtype)), decision)
             occurrences = []
             for row in occurrence_source:
                 runtime_type = str(row.get("type", row.get("runtime_type", "")))
                 surface = str(row.get("surface", ""))
-                decision = decisions_by_key.get((runtime_type, canon(surface)))
+                decision = (
+                    decisions_by_key.get((runtime_type, canon(surface)))
+                    or decisions_by_entity.get((runtime_type, _entity_key(surface, runtime_type)))
+                )
                 occurrence_id = _stable_hash({
                     "doc_id": doc_id,
                     "runtime_type": runtime_type,

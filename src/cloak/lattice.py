@@ -360,8 +360,9 @@ def is_type_name_phrase(fill: str) -> bool:
 
 
 def _fine_curated_chain(span_text: str, span_type: str) -> list[str] | None:
+    from cloak.lattice_profiles import singularize
     key = span_text.lower().strip()
-    key_sing = key.rstrip("s")
+    key_sing = singularize(span_text)
     maps = {
         "nationality": _NATIONALITY_LEVELS,
         "ethnicity": _ETHNICITY_LEVELS,

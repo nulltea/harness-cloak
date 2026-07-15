@@ -20,6 +20,24 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", str(text).strip().lower())
 
 
+def singularize(text: str) -> str:
+    """Fold a trailing plural 's' for surface-identity matching ('migraines' -> 'migraine',
+    'kidney stones' -> 'kidney stone'). Single source of truth for the plural fold that was
+    duplicated ad hoc as rstrip('s') in lattice.py and detect.py; keep all surface-identity
+    matching (detection, lattice resolution, the QA freeze) going through here."""
+    return _norm(text).rstrip("s")
+
+
+def _lookup(sub_index: dict, surface: str):
+    """Index lookup with a plural-fold fallback, so a plural surface resolves to its
+    singular profile row when there is no exact match."""
+    key = _norm(surface)
+    if key in sub_index:
+        return sub_index[key]
+    singular = singularize(surface)
+    return sub_index.get(singular) if singular != key else None
+
+
 def _is_type_name_phrase(fill: str) -> bool:
     from cloak.lattice import is_type_name_phrase
 
@@ -124,9 +142,8 @@ def _index_cached(path_s: str) -> dict:
 def lookup_entry(surface: str, runtime_type: str,
                  path: str | Path | None = None) -> tuple[str, list[str]] | None:
     """Resolve a surface to its profile row: (canonical, levels). None = no entry."""
-    key = _norm(surface)
     idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
-    got = idx["by_surface"].get(runtime_type, {}).get(key)
+    got = _lookup(idx["by_surface"].get(runtime_type, {}), surface)
     if got is None:
         return None
     canonical, levels = got
@@ -139,15 +156,13 @@ def lookup_levels(surface: str, runtime_type: str, path: str | Path | None = Non
 
 
 def lookup_count(fill: str, runtime_type: str, path: str | Path | None = None) -> float | None:
-    key = _norm(fill)
     idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
-    return idx["by_level"].get(runtime_type, {}).get(key)
+    return _lookup(idx["by_level"].get(runtime_type, {}), fill)
 
 
 def lookup_aliases(surface: str, runtime_type: str, path: str | Path | None = None) -> list[str]:
     """Surface-equivalent group for `surface`'s row: [canonical, *aliases]. These are alternative
     strings for the SAME exact value, so any of them satisfies a ladder rung the exact surface
     would (finest tier -> entails every rung). [] when there is no matching row."""
-    key = _norm(surface)
     idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
-    return list(idx["by_group"].get(runtime_type, {}).get(key, []))
+    return list(_lookup(idx["by_group"].get(runtime_type, {}), surface) or [])
