@@ -126,7 +126,7 @@ def test_artifact_views_project_complete_inspectable_records_without_mutation():
         "assertion_id": "component-contextual",
         "subtype": "contextual_relation",
         "group_id": "group-contextual",
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "question": "What treatment category is used?",
     }
     rejection = {
@@ -622,7 +622,7 @@ def test_builder_preserves_every_teacher_rejection_with_stable_summary():
     }
     source = "Hypothyroidism is treated with Synthroid."
     leaking = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -1402,7 +1402,7 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
 
         def generate(self, prompt):
             captured["prompt"] = prompt
-            return ('{"span_relations": [{"relation": "treated_with"}], '
+            return ('{"span_relations": [{"relation": "procedure_for"}], '
                     '"context_relations": [], "candidate_accounting": []}')
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "secret")
@@ -1435,9 +1435,9 @@ def test_openrouter_relation_teacher_uses_pinned_nemotron(monkeypatch):
         "generation_config": {
             "reasoning": {"exclude": True},
         },
-        "revision": "qa-relation-teacher-r30",
+        "revision": "qa-relation-teacher-r31",
     }
-    assert relations == [{"relation": "treated_with"}]
+    assert relations == [{"relation": "procedure_for"}]
 
 
 def test_openrouter_relation_teacher_requires_content_addressed_cache(monkeypatch):
@@ -1809,7 +1809,7 @@ def test_relation_prompt_exposes_only_source_labels_properties_and_source():
     assert "aci/D2N002" not in prompt
     assert "o-condition" not in prompt
     assert "an endocrine condition" in prompt
-    assert "treated_with" in prompt
+    assert "procedure_for" in prompt
     assert "evidence_window_id" not in prompt
     assert "SOURCE EVIDENCE WINDOWS" not in prompt
     assert "[S1: Hypothyroidism | condition | levels: an endocrine condition]" in prompt
@@ -1830,7 +1830,7 @@ def test_relation_teacher_properties_come_only_from_legal_entails():
     assert "teacher bait" not in prompt
 
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -1857,7 +1857,7 @@ def test_relation_teacher_properties_come_only_from_legal_entails():
 def test_contextual_relation_rejections_have_stable_ids_and_safe_evidence():
     source = "Hypothyroidism is treated with Synthroid."
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -1892,7 +1892,7 @@ def test_contextual_relation_rejections_have_stable_ids_and_safe_evidence():
 def test_contextual_relation_rejection_hashes_unknown_teacher_argument_ids():
     source = "Hypothyroidism is treated with Synthroid."
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "Hypothyroidism"],
         "evidence_quote": source,
     }
@@ -1916,7 +1916,7 @@ def test_contextual_relation_rejection_hashes_unknown_teacher_argument_ids():
 def test_relational_compiler_rejects_cross_sentence_false_link(source):
     proposal = {
         "subtype": "contextual_relation",
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -1941,7 +1941,7 @@ def test_relational_compiler_rejects_extra_entity_inside_connector():
     source = "Hypothyroidism and diabetes is treated with Synthroid."
     proposal = {
         "subtype": "contextual_relation",
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -1970,7 +1970,7 @@ def test_relational_compiler_rejects_answer_modifier_and_alias_leakage():
     def proposal(question):
         return {
             "subtype": "contextual_relation",
-            "relation": "treated_with",
+            "relation": "procedure_for",
             "argument_occurrence_ids": ["o-condition", "o-drug"],
             "support_properties": {
                 "o-condition": "an endocrine condition",
@@ -2002,7 +2002,7 @@ def test_relational_compiler_rejects_short_protected_alias_leakage(alias):
     environment["occurrences"][1]["aliases"] = [alias]
     proposal = {
         "subtype": "contextual_relation",
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -2027,7 +2027,7 @@ def test_relational_compiler_rejects_non_contextual_proposed_subtype():
     source = "Hypothyroidism is treated with Synthroid."
     proposal = {
         "subtype": "semantic_property",
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -2051,7 +2051,7 @@ def test_relational_compiler_rejects_non_contextual_proposed_subtype():
 def test_relational_compiler_derives_gold_and_links_from_frozen_inventory():
     source = "Hypothyroidism is treated with Synthroid."
     proposals = [{
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -2101,7 +2101,7 @@ def test_relational_compiler_requires_ambiguous_quote_start_and_binds_occurrence
          "surface": "Synthroid", "runtime_type": "drug"},
     ]
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["condition-second", "drug-second"],
         "support_properties": {
             "condition-second": "an endocrine condition",
@@ -2174,7 +2174,7 @@ def test_relational_compiler_rejects_wide_quote_using_unselected_duplicate_relat
         },
     ]
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["condition-unrelated", "drug"],
         "support_properties": {
             "condition-unrelated": "an endocrine condition",
@@ -2207,7 +2207,7 @@ def test_relational_compiler_rejects_wide_quote_using_unselected_duplicate_relat
 def test_relational_compiler_rejects_unfrozen_or_leaking_proposals(change, reason):
     source = "Hypothyroidism is treated with Synthroid."
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -2256,7 +2256,7 @@ def test_relational_compiler_requires_direct_noncontradictory_authoritative_evid
     source, proposal_change, reason
 ):
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -3064,7 +3064,7 @@ def test_package_rejects_duplicate_assertion_ids():
 def test_relational_compiler_rejects_illegal_argument_runtime_types():
     source = "Hypothyroidism is treated with arthritis."
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",
@@ -3181,7 +3181,7 @@ def test_builder_preserves_a_safe_teacher_response_failure_code():
 def test_relational_compiler_rejects_protected_locator_leakage():
     source = "Hypothyroidism is treated with Synthroid."
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": ["o-condition", "o-drug"],
         "support_properties": {
             "o-condition": "an endocrine condition",

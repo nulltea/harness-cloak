@@ -121,7 +121,7 @@ def _acceptance_reader(questions, context):
     }
     normalized_context = context.casefold()
 
-    def supports_treated_with_relation():
+    def supports_procedure_for_relation():
         return any(
             f"{condition}{cue}{treatment}" in normalized_context
             for condition in support["endocrine condition"]
@@ -137,7 +137,7 @@ def _acceptance_reader(questions, context):
             and "diagnosed condition" in normalized_question
         ):
             expected = "thyroid medication"
-            supported = supports_treated_with_relation()
+            supported = supports_procedure_for_relation()
         elif "condition category" in normalized_question:
             expected = "endocrine condition"
             supported = any(
@@ -363,7 +363,7 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
         for row in frozen_document["decisions"]
     }
     valid_proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "argument_occurrence_ids": [
             occurrences["health-condition"], occurrences["drug"],
         ],

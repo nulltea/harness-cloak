@@ -18,7 +18,7 @@ RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
 RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v18"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r30"
+RELATION_TEACHER_REVISION = "qa-relation-teacher-r31"
 RELATION_TEACHER_MAX_RELATIONS = 12
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
@@ -35,9 +35,8 @@ _RELATION_RECORD_ITEM = {
                  "scoring_contract"],
     "properties": {
         "relation": {"enum": [
-            "prescribed_with", "treated_with", "monitored_by",
+            "prescribed_with", "procedure_for", "tests_for",
             "contraindicated_because_of", "causes_or_explains",
-            "referred_to",
         ]},
         "arguments": {
             "type": "array",
@@ -143,11 +142,10 @@ READER_PIN_FIELDS = frozenset({
 })
 RELATION_ONTOLOGY = (
     "prescribed_with",
-    "treated_with",
-    "monitored_by",
+    "procedure_for",
+    "tests_for",
     "contraindicated_because_of",
     "causes_or_explains",
-    "referred_to",
 )
 
 _RUNTIME_TYPE_CLASSES = {
@@ -173,11 +171,14 @@ _RELATION_ARGUMENT_CLASSES = {
     # Relation names are directional: condition/diagnosis first.  Medication is
     # intentionally separate from a procedure performed to treat a condition.
     "prescribed_with": (("condition",), ("treatment",)),
-    "treated_with": (("condition",), ("procedure",)),
-    "monitored_by": (("condition",), ("monitoring", "procedure", "provider")),
+    # Therapeutic procedure or referral for a condition (incl. a past treatment).
+    # Object is procedure-class only: the detector emits no provider/specialty type,
+    # so a referral grounds via its procedure target (e.g. physical therapy).
+    "procedure_for": (("condition",), ("procedure",)),
+    # Diagnostic/monitoring test that discovers or monitors a condition.
+    "tests_for": (("condition",), ("monitoring", "procedure")),
     "contraindicated_because_of": (("treatment", "procedure"), ("condition",)),
     "causes_or_explains": (("condition",), ("condition", "symptom")),
-    "referred_to": (("condition",), ("provider", "procedure")),
 }
 # Human-facing answer-type words for the reader hint. Keyed by argument class.
 _CLASS_ANSWER_HINT = {
@@ -218,28 +219,42 @@ ACI_RELATION_CONTRACT = {
             r"\s+(?:(?:is|was)\s+)?treated\s+with\s+",
         ),
     },
-    "treated_with": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["treated_with"],
-        "definition": "a medical procedure used for a condition or diagnosis",
-        "cues": ("treated with",),
+    "procedure_for": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["procedure_for"],
+        "definition": "a therapeutic procedure or referral for a condition, including a past "
+                      "treatment the patient already had (e.g. a prior transplant/surgery)",
+        "cues": ("treated with", "treat", "treated", "referred to", "refer",
+                 "had", "underwent", "received", "status post", "history of"),
         "connector_patterns": (
+            # forward verbs: condition <treated with|referred to> procedure
             r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
-            r"treated\s+with\s+",
+            r"(?:treated\s+with|referred\s+to)\s+",
         ),
-        # Indication form, procedure textually first: "had the kidney
-        # transplant a few years ago for some polycystic kidneys" (verbatim in
-        # the D2N002 reference). Class gating already restricts this to a
-        # procedure-class object and condition-class subject.
+        # Past-treatment indication, procedure textually first: "had the kidney
+        # transplant a few years ago for some polycystic kidneys".
         "reversed_connector_patterns": (
             r"\s+(?:[\w',]+\s+){0,5}?for\s+(?:some\s+|your\s+|the\s+|a\s+|an\s+|his\s+|her\s+)?",
         ),
     },
-    "monitored_by": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["monitored_by"],
-        "cues": ("monitored by", "monitor", "check", "order"),
+    "tests_for": {
+        "argument_classes": _RELATION_ARGUMENT_CLASSES["tests_for"],
+        "definition": "a diagnostic or monitoring test/study that discovers or monitors a "
+                      "condition (a test ordered to follow it, or one whose result showed it)",
+        "cues": ("order", "ordered", "check", "monitor", "monitored by", "follow",
+                 "evaluate", "assess", "panel", "show", "shows", "showed", "reveal",
+                 "reveals", "revealed", "demonstrat", "notice", "found", "came back",
+                 "consistent with", "notable for", "significant for", "positive for"),
         "connector_patterns": (
-            r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
-            r"monitored\s+by\s+",
+            # forward monitoring: condition <monitored by|order|check|follow> test
+            r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?monitored\s+by\s+",
+            r"\s+(?:[\w',-]+\s+){0,6}?(?:order(?:ed|s)?|check(?:ed|s)?|monitor(?:ed|s)?|"
+            r"follow(?:ed|s)?|evaluat\w+|assess\w+)\s+(?:[\w',-]+\s+){0,3}?",
+        ),
+        # Reversed discovery, test textually first: "the ct shows a stone",
+        # "x-ray ... i do notice dorsal displacement", "biopsy came back as dcis".
+        "reversed_connector_patterns": (
+            r"\s+(?:[\w',-]+\s+){0,8}?(?:show(?:s|ed|n)?|reveal(?:s|ed)?|demonstrat\w+|"
+            r"notic\w+|found|came\s+back\w*|positive\s+for)\s+(?:[\w',-]+\s+){0,4}?",
         ),
     },
     "contraindicated_because_of": {
@@ -259,14 +274,6 @@ ACI_RELATION_CONTRACT = {
         "cues": ("causes", "explains", "due to", "secondary to", "caused by",
                  "explained by", "exacerbation of"),
         "connector_patterns": (r"\s+(?:causes|explains)\s+",),
-    },
-    "referred_to": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["referred_to"],
-        "cues": ("referred to", "refer"),
-        "connector_patterns": (
-            r"\s+(?:(?:is|was|are|were|has been|had been|is being|was being)\s+)?"
-            r"referred\s+to\s+",
-        ),
     },
 }
 # Closed procedure-form lexicon: detector-typed conditions whose surface names
@@ -300,6 +307,20 @@ _HEDGE_PATTERN = re.compile(
     r"|if\s+(?:your|you|we|he|she|it|they|the|his|her|symptoms|there|needed))\b",
     re.IGNORECASE,
 )
+
+
+# A conditional/planned relation is valid only when its QUESTION carries the
+# conditionality (so it is not asserted as already done).
+_CONDITIONAL_QUESTION_PATTERN = re.compile(
+    r"\b(?:may|might|could|would|possibl\w*|potential\w*|planned|plan\s+to|"
+    r"consider\w*|recommend\w*|in\s+the\s+future|future|if\s+\w+)\b",
+    re.IGNORECASE,
+)
+
+
+def _question_is_conditional(question: str) -> bool:
+    """True if the question is phrased as a conditional/future plan, not an assertion."""
+    return _CONDITIONAL_QUESTION_PATTERN.search(question or "") is not None
 
 
 def _relation_window_is_hedged(
@@ -1435,11 +1456,13 @@ def _window_pair_has_relation_shape(
         return False
     cue_patterns = {
         "prescribed_with": r"\b(?:prescrib\w*|continue\s+.{0,24}\bon\b|treated\s+with)\b",
-        "treated_with": r"\btreated\s+with\b",
-        "monitored_by": r"\b(?:monitor\w*|check\w*|order\w*)\b",
+        "procedure_for": r"\b(?:treated\s+with|treat\w*|refer\w*|had|underwent|received|"
+                         r"status\s+post|history\s+of)\b",
+        "tests_for": r"\b(?:monitor\w*|check\w*|order\w*|follow\w*|evaluat\w*|assess\w*|"
+                     r"panel|show\w*|reveal\w*|demonstrat\w*|notic\w*|found|came\s+back\w*|"
+                     r"consistent\s+with|positive\s+for)\b",
         "contraindicated_because_of": r"\bcontraindicat\w*\b",
         "causes_or_explains": r"\b(?:causes?|explains?)\b",
-        "referred_to": r"\brefer\w*\b",
     }[relation]
     if subject_clause == object_clause:
         if abs(int(obj["start"]) - int(subject["end"])) > 320:
@@ -1454,8 +1477,8 @@ def _window_pair_has_relation_shape(
 
 
 CLINICAL_RELATIONS = (
-    "prescribed_with", "treated_with", "monitored_by",
-    "contraindicated_because_of", "causes_or_explains", "referred_to",
+    "prescribed_with", "procedure_for", "tests_for",
+    "contraindicated_because_of", "causes_or_explains",
 )
 
 
@@ -2317,13 +2340,13 @@ def _aci_reference_authorizes_relation(
         return False
     first = canon(str(occurrences[occurrence_ids[0]].get("surface", "")))
     second = canon(str(occurrences[occurrence_ids[1]].get("surface", "")))
-    if relation == "treated_with":
+    if relation == "procedure_for":
         return any(
             canon(str(row["condition"])) == first
             and canon(str(row["treatment"])) == second
             for row in parsed_reference.get("plan_rows", [])
         )
-    if relation == "monitored_by":
+    if relation == "tests_for":
         return any(
             canon(str(row["condition"])) == first
             and canon(str(row["test"])) == second
@@ -2435,19 +2458,18 @@ def _relation_evidence_connects_selected_occurrences(
 
 
 CLINICAL_RELATION_INVENTORY = """prescribed_with: condition or diagnosis -> drug; explicit prescription/use only, never a procedure.
-treated_with: condition or diagnosis -> medical procedure; never a drug.
-monitored_by: condition or diagnosis -> monitoring test, procedure, or provider; require explicit monitoring/evaluation/follow-up, not proximity.
+procedure_for: condition or diagnosis -> medical procedure; a therapeutic procedure or referral for the condition, including a past treatment the patient already had (e.g. a prior transplant or surgery). Never a drug.
+tests_for: condition or diagnosis -> diagnostic or monitoring test/study; a test that discovers or monitors the condition — ordered to follow it, or whose result showed it. A test ordered or resulted while the doctor is assessing/planning one problem is linked to that problem's condition, even if the order sentence does not repeat the condition name; reject only a test from a different problem block or unrelated small talk. Use this (not procedure_for) for any lab, panel, imaging, or exam.
 contraindicated_because_of: drug or procedure -> condition or diagnosis; require explicit contraindication.
-causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation.
-referred_to: condition or diagnosis -> provider or procedure; require explicit referral."""
+causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation."""
 
-CLINICAL_WORKED_EXAMPLES = """Drug, never treated_with: source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
+CLINICAL_WORKED_EXAMPLES = """Drug (prescribed_with, never a procedure): source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
 Safe question: "Which medication category was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words.
-Procedure: "cataract treated with phacoemulsification" => treated_with (a procedure, not a drug).
-Monitoring: source "to follow the [S3: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => monitored_by(S3, context literal "hemoglobin A1c").
-Safe question: "What testing follows the metabolic disorder?" Accepted answer: "hemoglobin A1c" (an uncontrolled literal answer is the measured fact). A test mentioned elsewhere is not monitoring.
-Contraindication: source "you ca n't use beta-blockers because of your [S4: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S4). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition.
-Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words)."""
+Treatment procedure (procedure_for): "cataract treated with phacoemulsification" => procedure_for (a procedure, not a drug). Past treatment also counts: source "had the [S3: kidney transplant | procedure | levels: solid organ transplant] a few years ago for some [S4: polycystic kidneys | condition | levels: cystic kidney disease]" => procedure_for(S4, S3). Safe question: "What procedure was performed for the cystic kidney disease?" Accepted answer: "solid organ transplant".
+Test (tests_for), monitoring OR discovery: source "to follow the [S5: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => tests_for(S5, context literal "hemoglobin A1c"). Safe question: "What test is used for the metabolic disorder?" Accepted answer: "hemoglobin A1c". A discovered finding counts too: "the ct shows a [S6: kidney stone | condition | levels: urinary tract stone]" => tests_for(S6, context literal "ct"). Use tests_for for any lab/panel/imaging/exam; a test merely mentioned elsewhere is not linked.
+Contraindication: source "you ca n't use beta-blockers because of your [S7: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S7). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition. The drug argument may be a drug-class phrase quoted as a context literal (e.g. "anti-inflammatory medications", "certain medications"), not only a specific drug name — emit the contraindication whenever the source says a drug or drug class cannot be used because of the condition.
+Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
+Conditional plan (procedure_for / tests_for; allowed with a CONDITIONAL question): source "if symptoms persist , possibly refer to [S8: cardiac rehabilitation | procedure | levels: rehabilitation program]" while planning the [S9: heart failure | condition | levels: cardiac disorder] => procedure_for(S9, S8). Phrase it conditionally: "What procedure MAY the patient be referred to for the cardiac disorder?" Accepted answer: "rehabilitation program". A definite question ("What procedure was performed?") for a conditional plan is rejected."""
 
 
 def relation_teacher_prompt(
@@ -2476,7 +2498,8 @@ Find as many explicit, source-grounded, non-duplicate relations as the cap ({REL
 
 HOW TO INSPECT THE SOURCE
 Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. A repeated value has several S-labels: always use the S-label whose mention is inside the sentence that states the relation; the compiler grounds the relation at that exact mention. For an uncontrolled argument, quote its exact source text as a context literal.
-A relation may connect spans from different turns of the SAME problem discussion, the block where the doctor assesses and plans one problem, including short patient acknowledgments between the doctor's sentences (for example a condition named when the problem is introduced and a test ordered for it a sentence later). Never link spans from a different problem discussion or from unrelated small talk, and never assert a conditional or hypothetical statement ("if symptoms continue", "possibly", "we can consider") as a relation.
+A relation may connect spans from different turns of the SAME problem discussion, the block where the doctor assesses and plans one problem, including short patient acknowledgments between the doctor's sentences (for example a condition named when the problem is introduced and a test ordered for it a sentence later). Never link spans from a different problem discussion or from unrelated small talk. A conditional or planned statement ("possibly referral to physical therapy", "if symptoms continue we will order X") IS a valid relation, but you MUST phrase its question conditionally (may / might / would / if …) so you never assert it as already done — a conditional plan paired with a definite question is rejected.
+"Explicit" means the source states the relationship through this problem discussion; the subject and object need NOT appear in the same sentence. A drug or test named while the doctor is assessing/planning one problem is linked to that problem's condition even if its own sentence does not repeat the condition name.
 
 PRIVACY-SAFE QA
 Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest (a level so generic it fits almost any concept measures nothing). An exact uncontrolled context literal may be an answer only when it is the measured fact.
@@ -2495,9 +2518,9 @@ EVIDENCE CARDS
 
 RESPONSE
 Return two relation lists. Each relation record contains: relation; a subject argument then an object argument; a question; accepted answers; the fixed scoring contract.
-span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim.
-context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span.
-Never quote a displayed span as a context literal. Emit each distinct fact once, in the list its argument kinds require, at the S-label inside the sentence that states the relation. Do not repeat the same fact for other S-labels of the same value.
+span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim. Subject and object MUST be two DIFFERENT S-labels — never the same label twice.
+context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span. Put the two arguments in the relation's DIRECTIONAL order (subject then object), which is NOT always the linked one first: for tests_for the linked condition is the subject and the test literal is the object, but for contraindicated_because_of the drug/drug-class literal is the SUBJECT and the linked condition is the OBJECT. Match the direction in the relation inventory, not the order the spans appear in text.
+Never quote a displayed span as a context literal. Emit each distinct fact EXACTLY ONCE, in the single list its argument kinds require — never emit both a span-pair and a context version of the same fact, and never emit the same fact under a different S-label of the same value. A fact whose second argument is an uncontrolled literal (a test name, a drug class) belongs ONLY in context_relations; do not force it into span_relations by reusing the linked label as both arguments.
 Example span_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication category was prescribed for the neurological disorder?"; accepted answer "triptan".
 Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "azithromycin" quoted from the relation sentence; accepted answer "azithromycin".
 Return exactly one candidate_accounting row per S-label covering both lists, with a short reason for every row. emitted means a relation record in either list uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
@@ -2858,6 +2881,51 @@ def _relation_quote_has_direct_support(
     return any(re.search(re.escape(cue), normalized[local_left:local_right]) for cue in cues)
 
 
+def _remap_to_groundable_siblings(
+    document, arguments, occurrences, context_by_id, relation, relation_contract,
+):
+    """A repeated controlled value has several occurrences (S-labels); the teacher
+    sometimes names one (e.g. a history-list mention) that does not sit in the
+    relation sentence, so grounding fails. Every occurrence of the same value shares
+    one decision, so swap each linked argument to the same-decision occurrence that
+    actually grounds with the other argument. Support/levels/answer_target are keyed
+    by decision and are unchanged; only the grounding mention moves."""
+    from itertools import product
+
+    def grounds(args) -> bool:
+        quote, span, err, akind = _derived_relation_anchor(
+            document, args, occurrences, context_by_id, relation, relation_contract)
+        if err is not None:
+            return False
+        if not all(_argument_is_grounded(a, document, span, occurrences) for a in args):
+            return False
+        return _relation_quote_has_direct_support(
+            relation, quote, args, relation_contract, allow_adjacent_clauses=True,
+            allow_plan_section=akind in {"plan_section", "problem_block"})
+
+    if grounds(arguments):
+        return arguments
+    linked_idx = [i for i, a in enumerate(arguments) if a.get("kind") == "linked"]
+    if not linked_idx:
+        return arguments
+    sibling_lists = []
+    for i in linked_idx:
+        decision_id = (occurrences.get(arguments[i]["occurrence_id"]) or {}).get("decision_id")
+        siblings = [oid for oid, occ in occurrences.items()
+                    if decision_id is not None and occ.get("decision_id") == decision_id]
+        sibling_lists.append(siblings or [arguments[i]["occurrence_id"]])
+    for combo in product(*sibling_lists):
+        if len(set(combo)) != len(combo):
+            continue
+        trial = [dict(a) for a in arguments]
+        for j, i in enumerate(linked_idx):
+            trial[i]["occurrence_id"] = combo[j]
+            trial[i]["surface"] = str(occurrences[combo[j]].get("surface", ""))
+        if grounds(trial):
+            return trial
+    return arguments
+
+
 def compile_relational_assertions(
     doc_id: str,
     document: str,
@@ -2967,7 +3035,7 @@ def compile_relational_assertions(
         # Cached v1 proposals conflated drug and procedure under treated_with.
         # Migrate only that old wire shape to the directional v2 relation; a v2
         # proposal labelled treated_with with a drug still fails its type contract.
-        if proposal.get("arguments") is None and relation == "treated_with":
+        if proposal.get("arguments") is None and relation in {"treated_with", "procedure_for"}:
             legacy_ids = [str(value) for value in proposal.get("argument_occurrence_ids", [])]
             if len(legacy_ids) == 2 and legacy_ids[1] in occurrences and (
                 _RUNTIME_TYPE_CLASSES.get(canon(str(occurrences[legacy_ids[1]].get("runtime_type", ""))))
@@ -2990,6 +3058,13 @@ def compile_relational_assertions(
             continue
         uses_v4_arguments = any("span_label" in argument or "literal" in argument
                                 for argument in proposal.get("arguments") or [])
+        if uses_v4_arguments:
+            # A repeated value's mislabeled occurrence (history-list S-label instead
+            # of the relation sentence) still grounds via a same-decision sibling.
+            arguments = _remap_to_groundable_siblings(
+                document, arguments, occurrences, context_by_id, relation, relation_contract)
+            occurrence_ids = [argument["occurrence_id"] for argument in arguments
+                              if argument["kind"] == "linked"]
         anchor_kind = None
         if uses_v4_arguments:
             quote, evidence_span, evidence_error, anchor_kind = _derived_relation_anchor(
@@ -3034,12 +3109,14 @@ def compile_relational_assertions(
         ):
             reject("invalid_evidence")
             continue
-        # A conditional/hypothetical statement is not an asserted fact at any
-        # anchor scope ("possibly refer to physical therapy" is hedged even in
-        # one clause); the tightened pattern clears the "if ..." disfluency.
-        if uses_v4_arguments and _relation_window_is_hedged(
-            document, arguments, occurrences
-        ):
+        # A conditional/planned statement ("possibly refer to physical therapy",
+        # "if symptoms persist, order X") is a real contextual fact, but must not be
+        # asserted as already done: allow it only when the question is itself phrased
+        # conditionally (may / might / would / if …). A hedged source paired with a
+        # definite question is the actual false-assertion case and stays rejected.
+        if (uses_v4_arguments
+                and _relation_window_is_hedged(document, arguments, occurrences)
+                and not _question_is_conditional(str(proposal.get("question", "")))):
             reject("hedged_relation")
             continue
         if not _proposal_polarity_matches_frozen_occurrences(

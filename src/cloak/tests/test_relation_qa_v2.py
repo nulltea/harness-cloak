@@ -51,19 +51,19 @@ def test_teacher_authored_relation_qa_is_preserved_and_drug_is_prescribed_not_tr
     assert accepted[0]["decision_requirements"] == {"d-condition": "endocrine condition", "d-drug": "thyroid medication"}
 
 
-def test_treated_with_rejects_drug_and_context_argument_stays_unlinked():
+def test_procedure_for_rejects_drug_and_context_argument_stays_unlinked():
     source = "Hypothyroidism is treated with Synthroid. Arthritis was referred to physical therapy."
     environment = _environment(source)
     arthritis_start = source.index("Arthritis")
     environment["occurrences"].append({"occurrence_id": "arthritis", "decision_id": "d-arthritis", "surface": "Arthritis", "start": arthritis_start, "end": arthritis_start + 9, "runtime_type": "health-condition"})
     environment["decisions"].append({"decision_id": "d-arthritis", "actions": [{"mode": "level", "legal": True, "entails": ["joint condition"]}]})
-    bad = {**_proposal(source), "relation": "treated_with"}
+    bad = {**_proposal(source), "relation": "procedure_for"}
     physical = next(
         candidate for candidate in relation_context_candidates(source)
         if candidate["literal"] == "physical therapy"
     )
     context = {
-        "relation": "referred_to",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "occurrence_id": "arthritis", "support_property": "joint condition"},
             {"role": "object", "kind": "context", "context_candidate_id": physical["context_candidate_id"]},
@@ -88,7 +88,7 @@ def test_prompt_requests_exhaustive_accounting_and_teacher_semantic_qa():
     assert "candidate_accounting" in prompt
     assert "accepted answers" in prompt
     assert "prescribed_with" in prompt
-    assert "treated_with: condition or diagnosis -> medical procedure" in prompt
+    assert "procedure_for: condition or diagnosis -> medical procedure" in prompt
     assert "EVIDENCE CARDS" in prompt
 
 
@@ -142,7 +142,7 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
     assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v18"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 9
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r30"
+    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r31"
 
 
 def test_prompt_worked_examples_are_source_independent_and_level_based():
@@ -172,13 +172,13 @@ def test_prompt_anchors_labels_to_the_relation_sentence_and_deduplicates_facts()
     # The v5 live smoke paired literals with the FIRST label of a value
     # (S1/S2) instead of the label at the relation sentence, and spent 10 of
     # 12 slots on per-label copies of the same facts, crowding out
-    # monitored_by. Answers used controlled surfaces ("ultram") instead of
+    # tests_for. Answers used controlled surfaces ("ultram") instead of
     # levels.
     source = "Hypothyroidism is treated with Synthroid."
     prompt = relation_teacher_prompt("d2", source, _environment(source))
 
     assert "sentence that states the relation" in prompt
-    assert "Emit each distinct fact once" in prompt
+    assert "Emit each distinct fact" in prompt
     assert "duplicate_mention" in prompt
     assert "listed levels, never its source text" in prompt
     assert "reason for every row" in prompt
@@ -216,7 +216,7 @@ def test_openrouter_teacher_parses_sectioned_relation_lists(monkeypatch):
         def generate(self, prompt, **kwargs):
             return json.dumps({
                 "span_relations": [{"relation": "prescribed_with"}],
-                "context_relations": [{"relation": "monitored_by"}],
+                "context_relations": [{"relation": "tests_for"}],
                 "candidate_accounting": [],
             })
 
@@ -226,7 +226,7 @@ def test_openrouter_teacher_parses_sectioned_relation_lists(monkeypatch):
 
     proposals = OpenRouterRelationTeacher().propose("prompt")
 
-    assert [row["relation"] for row in proposals] == ["prescribed_with", "monitored_by"]
+    assert [row["relation"] for row in proposals] == ["prescribed_with", "tests_for"]
 
 
 def test_prompt_defines_the_response_record_fields_and_linked_argument_rule():
@@ -286,7 +286,7 @@ def test_context_argument_must_reference_inventory_candidate():
         "decisions": [{"decision_id": "d-arthritis", "actions": [{"mode": "level", "legal": True, "entails": ["joint condition"]}]}],
     }
     proposal = {
-        "relation": "referred_to",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "occurrence_id": "arthritis", "support_property": "joint condition"},
             {"role": "object", "kind": "context", "context_candidate_id": "not-inventory"},
@@ -343,7 +343,7 @@ def test_evidence_window_allows_adjacent_condition_then_ordered_context_with_cue
         if {"condition", labs["context_candidate_id"]}.issubset(row["candidate_ids"])
     )
     proposal = {
-        "relation": "monitored_by",
+        "relation": "tests_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "occurrence_id": "condition", "support_property": "endocrine condition"},
             {"role": "object", "kind": "context", "context_candidate_id": labs["context_candidate_id"]},
@@ -357,7 +357,7 @@ def test_evidence_window_allows_adjacent_condition_then_ordered_context_with_cue
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
     assert rejected == []
-    assert accepted[0]["relation"] == "monitored_by"
+    assert accepted[0]["relation"] == "tests_for"
 
 
 def test_openrouter_teacher_requires_complete_candidate_accounting(monkeypatch):
@@ -895,18 +895,18 @@ def test_multiturn_span_pair_grounds_within_one_problem_block():
     source, environment = _assessment_environment()
     # source order: S1=arthritis, S2=autoimmune panel, S3=hypothyroidism.
     proposal = _span_pair(
-        "monitored_by", "S1", "joint condition", "S2", "immunology panel",
+        "tests_for", "S1", "joint condition", "S2", "immunology panel",
         "What testing was ordered to evaluate the joint condition?", "immunology panel",
     )
 
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
     assert rejected == []
-    assert accepted[0]["relation"] == "monitored_by"
+    assert accepted[0]["relation"] == "tests_for"
     assert accepted[0]["occurrence_ids"] == ["arthritis", "panel"]
 
 
-def test_treated_with_indication_grounds_inside_a_speaker_turn_anchor():
+def test_procedure_for_indication_grounds_inside_a_speaker_turn_anchor():
     # D2N002: "you've had the kidney transplant a few years ago for some
     # polycystic kidneys" sits in one doctor turn with preamble, so the anchor
     # re-splits into >2 sub-clauses. The reversed indication connector must be
@@ -928,7 +928,7 @@ def test_treated_with_indication_grounds_inside_a_speaker_turn_anchor():
         }],
     }
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "polycystic kidneys"},
             {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "solid organ transplant", "literal": None},
@@ -941,7 +941,7 @@ def test_treated_with_indication_grounds_inside_a_speaker_turn_anchor():
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
     assert rejected == []
-    assert accepted[0]["relation"] == "treated_with"
+    assert accepted[0]["relation"] == "procedure_for"
     assert accepted[0]["occurrence_ids"] == ["transplant"]
 
 
@@ -980,7 +980,7 @@ def test_protected_locator_exempts_a_sibling_arguments_level_token():
     # relation's argument levels must let this privacy-safe relation compile.
     environment = _kidney_environment(_KIDNEY_SOURCE)
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "span_label": "S2",
              "support_property": "cystic kidney disease", "literal": None},
@@ -995,7 +995,7 @@ def test_protected_locator_exempts_a_sibling_arguments_level_token():
         "d2", _KIDNEY_SOURCE, environment, [proposal])
 
     assert rejected == [], rejected
-    assert accepted[0]["relation"] == "treated_with"
+    assert accepted[0]["relation"] == "procedure_for"
 
 
 def test_protected_locator_still_blocks_a_discriminative_surface_token():
@@ -1003,7 +1003,7 @@ def test_protected_locator_still_blocks_a_discriminative_surface_token():
     # must still be rejected — the exemption only forgives published-level tokens.
     environment = _kidney_environment(_KIDNEY_SOURCE)
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "span_label": "S2",
              "support_property": "cystic kidney disease", "literal": None},
@@ -1021,6 +1021,179 @@ def test_protected_locator_still_blocks_a_discriminative_surface_token():
     assert any(r["detail_reason"] == "protected_locator" for r in rejected)
 
 
+def _ct_stone_environment(source):
+    ct = source.index("ct scan"); ks = source.index("kidney stone")
+    return {
+        "occurrences": [
+            {"occurrence_id": "ct", "decision_id": "d-ct", "surface": "ct scan",
+             "start": ct, "end": ct + 7, "runtime_type": "medical-procedure"},
+            {"occurrence_id": "stone", "decision_id": "d-stone", "surface": "kidney stone",
+             "start": ks, "end": ks + 12, "runtime_type": "health-condition"},
+        ],
+        "decisions": [
+            {"decision_id": "d-ct", "actions": [{"mode": "level", "legal": True,
+             "entails": ["imaging study"]}]},
+            {"decision_id": "d-stone", "actions": [{"mode": "level", "legal": True,
+             "entails": ["urinary tract stone"]}]},
+        ],
+    }
+
+
+def test_tests_for_discovery_compiles():
+    # condition <- diagnostic test that discovered it (reversed "shows" form).
+    # S1 = ct scan (test, earlier), S2 = kidney stone (condition, later).
+    source = "[doctor] we did a ct scan and it shows a kidney stone .\n[patient] okay .\n"
+    environment = _ct_stone_environment(source)
+    proposal = {
+        "relation": "tests_for",
+        "answer_role": "subject",  # the discovered finding is the answer
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S2",
+             "support_property": "urinary tract stone", "literal": None},   # condition (finding)
+            {"role": "object", "kind": "linked", "span_label": "S1",
+             "support_property": "imaging study", "literal": None},          # diagnostic test
+        ],
+        "question": "What did the imaging study reveal?",
+        "accepted_answers": ["urinary tract stone"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["relation"] == "tests_for"
+    assert accepted[0]["answer_target"]["required_property"] == "urinary tract stone"
+
+
+def test_tests_for_requires_a_diagnostic_or_monitoring_cue():
+    # No order/monitor/show/found cue linking test and condition -> not grounded.
+    source = "[doctor] we scheduled a ct scan for your kidney stone .\n[patient] okay .\n"
+    environment = _ct_stone_environment(source)
+    proposal = {
+        "relation": "tests_for",
+        "answer_role": "subject",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S2",
+             "support_property": "urinary tract stone", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S1",
+             "support_property": "imaging study", "literal": None},
+        ],
+        "question": "What did the imaging study reveal?",
+        "accepted_answers": ["urinary tract stone"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert accepted == []
+    assert any(r["detail_reason"] == "invalid_evidence" for r in rejected)
+
+
+def test_grounds_via_same_value_sibling_when_teacher_names_history_mention():
+    # arthritis appears twice (same decision): a history-list mention far from the
+    # drug, and the prescribe-sentence mention. The teacher names the history one;
+    # the compiler must remap to the sibling that grounds with ultram.
+    source = ("[doctor] past medical history includes arthritis , noted years ago .\n"
+              "[patient] okay .\n"
+              "[doctor] your heart sounds normal and your blood pressure is fine .\n"
+              "[patient] good .\n"
+              "[doctor] now for your arthritis , i will prescribe ultram .\n")
+    a1 = source.index("arthritis")
+    a2 = source.index("arthritis", a1 + 1)
+    ul = source.index("ultram")
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "arth-hist", "decision_id": "d-arth", "surface": "arthritis",
+             "start": a1, "end": a1 + 9, "runtime_type": "health-condition"},
+            {"occurrence_id": "arth-plan", "decision_id": "d-arth", "surface": "arthritis",
+             "start": a2, "end": a2 + 9, "runtime_type": "health-condition"},
+            {"occurrence_id": "ultram", "decision_id": "d-ultram", "surface": "ultram",
+             "start": ul, "end": ul + 6, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-arth", "actions": [{"mode": "level", "legal": True,
+             "entails": ["bone inflammation disease"]}]},
+            {"decision_id": "d-ultram", "actions": [{"mode": "level", "legal": True,
+             "entails": ["opioid analgesic"]}]},
+        ],
+    }
+    # S1 = arth-hist (earliest), S2 = arth-plan, S3 = ultram; teacher names S1 (history).
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": "bone inflammation disease", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S3",
+             "support_property": "opioid analgesic", "literal": None},
+        ],
+        "question": "Which medication category was prescribed for the bone inflammation disease?",
+        "accepted_answers": ["opioid analgesic"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["relation"] == "prescribed_with"
+    # remapped to the plan-sentence sibling, not the history mention
+    assert "arth-plan" in accepted[0]["occurrence_ids"]
+    assert "arth-hist" not in accepted[0]["occurrence_ids"]
+
+
+def _conditional_referral_environment(source):
+    ar = source.index("arthritis"); pt = source.index("physical therapy")
+    return {
+        "occurrences": [
+            {"occurrence_id": "arth", "decision_id": "d-arth", "surface": "arthritis",
+             "start": ar, "end": ar + 9, "runtime_type": "health-condition"},
+            {"occurrence_id": "pt", "decision_id": "d-pt", "surface": "physical therapy",
+             "start": pt, "end": pt + 16, "runtime_type": "medical-procedure"},
+        ],
+        "decisions": [
+            {"decision_id": "d-arth", "actions": [{"mode": "level", "legal": True,
+             "entails": ["musculoskeletal system disease"]}]},
+            {"decision_id": "d-pt", "actions": [{"mode": "level", "legal": True,
+             "entails": ["manual therapy"]}]},
+        ],
+    }
+
+
+_CONDITIONAL_SOURCE = ("[doctor] for your arthritis , if symptoms continue we'll "
+                       "possibly refer you to physical therapy .\n[patient] okay .\n")
+
+
+def _conditional_referral_proposal(question):
+    return {
+        "relation": "procedure_for",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": "musculoskeletal system disease", "literal": None},
+            {"role": "object", "kind": "linked", "span_label": "S2",
+             "support_property": "manual therapy", "literal": None},
+        ],
+        "question": question,
+        "accepted_answers": ["manual therapy"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+
+def test_conditional_relation_kept_with_conditional_question():
+    env = _conditional_referral_environment(_CONDITIONAL_SOURCE)
+    proposal = _conditional_referral_proposal(
+        "What procedure may the patient be referred to for the musculoskeletal system disease?")
+    accepted, rejected = compile_relational_assertions("d2", _CONDITIONAL_SOURCE, env, [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["relation"] == "procedure_for"
+
+
+def test_conditional_relation_rejected_with_definite_question():
+    env = _conditional_referral_environment(_CONDITIONAL_SOURCE)
+    proposal = _conditional_referral_proposal(
+        "What procedure was performed for the musculoskeletal system disease?")
+    accepted, rejected = compile_relational_assertions("d2", _CONDITIONAL_SOURCE, env, [proposal])
+
+    assert accepted == []
+    assert any(r["detail_reason"] == "hedged_relation" for r in rejected)
+
+
 def test_multiturn_anchor_rejects_link_across_a_problem_switch():
     # arthritis (first problem) must not link to the thyroid panel ordered
     # under "for your second problem".
@@ -1032,7 +1205,7 @@ def test_multiturn_anchor_rejects_link_across_a_problem_switch():
     environment["decisions"].append(
         {"decision_id": "d-tpanel", "actions": [{"mode": "level", "legal": True, "entails": ["thyroid testing"]}]})
     proposal = _span_pair(
-        "monitored_by", "S1", "joint condition", "S4", "thyroid testing",
+        "tests_for", "S1", "joint condition", "S4", "thyroid testing",
         "What panel was ordered for the joint condition?", "thyroid testing",
     )
 
@@ -1063,7 +1236,7 @@ def test_problem_block_anchor_rejects_a_hedged_conditional_relation():
         }],
     }
     proposal = {
-        "relation": "referred_to",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "joint condition", "literal": None},
             {"role": "object", "kind": "context", "span_label": None, "support_property": None, "literal": "physical therapy"},
@@ -1085,7 +1258,8 @@ def test_prompt_permits_within_problem_block_multiturn_links():
 
     assert "SAME problem discussion" in prompt
     assert "different problem discussion" in prompt
-    assert "conditional or hypothetical" in prompt
+    assert "conditional or planned statement" in prompt
+    assert "phrase its question conditionally" in prompt
 
 
 def _transplant_chain():
@@ -1155,10 +1329,10 @@ def test_prompt_prefers_the_most_specific_generalization_level():
     assert "not the broadest" in prompt
 
 
-def test_treated_with_accepts_procedure_form_condition_via_indication_connector():
+def test_procedure_for_accepts_procedure_form_condition_via_indication_connector():
     # D2N002 (and its reference verbatim): "you've had the kidney transplant a
     # few years ago for some polycystic kidneys". The transplant is detector-
-    # typed health-condition, so treated_with's procedure slot needs the
+    # typed health-condition, so procedure_for's procedure slot needs the
     # closed procedure-form lexicon; the "<procedure> for <condition>"
     # indication form needs a reversed connector.
     source = "you've had the kidney transplant a few years ago for some polycystic kidneys ."
@@ -1175,7 +1349,7 @@ def test_treated_with_accepts_procedure_form_condition_via_indication_connector(
         }],
     }
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "polycystic kidneys"},
             {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "solid organ transplant", "literal": None},
@@ -1188,7 +1362,7 @@ def test_treated_with_accepts_procedure_form_condition_via_indication_connector(
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
     assert rejected == []
-    assert accepted[0]["relation"] == "treated_with"
+    assert accepted[0]["relation"] == "procedure_for"
     assert accepted[0]["occurrence_ids"] == ["transplant"]
 
 
@@ -1214,7 +1388,7 @@ def test_prompt_displays_dual_class_for_procedure_form_conditions():
 
 def test_plain_condition_still_cannot_fill_the_procedure_slot():
     # The dual class applies only to the closed procedure-form lexicon; an
-    # ordinary condition surface must keep failing treated_with's object slot.
+    # ordinary condition surface must keep failing procedure_for's object slot.
     source = "the knee pain was managed for some arthritis ."
     arthritis_start = source.index("arthritis")
     environment = {
@@ -1229,7 +1403,7 @@ def test_plain_condition_still_cannot_fill_the_procedure_slot():
         }],
     }
     proposal = {
-        "relation": "treated_with",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "context", "span_label": None, "support_property": None, "literal": "knee pain"},
             {"role": "object", "kind": "linked", "span_label": "S1", "support_property": "joint condition", "literal": None},
@@ -1342,7 +1516,7 @@ def test_v4_compiler_derives_anchor_and_resolves_exact_context_literal():
         }],
     }
     proposal = {
-        "relation": "monitored_by",
+        "relation": "tests_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "endocrine condition", "literal": None},
             {"role": "object", "kind": "context", "span_label": None, "support_property": None, "literal": "thyroid labs"},
@@ -1355,7 +1529,7 @@ def test_v4_compiler_derives_anchor_and_resolves_exact_context_literal():
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
     assert rejected == []
-    assert accepted[0]["relation"] == "monitored_by"
+    assert accepted[0]["relation"] == "tests_for"
     assert accepted[0]["evidence"]["source_span"]["start"] == 0
     assert accepted[0]["evidence"]["source_span"]["end"] == len(source)
 

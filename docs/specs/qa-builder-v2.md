@@ -275,18 +275,18 @@ prescribe [S2: Ultram | drug | levels: opioid analgesic] …”
 Relation: prescribed_with(S1, S2)
 Safe QA: “Which medication category was prescribed for the joint condition?”
 Accepted answer: “opioid analgesic”
-Never call this treated_with.
+Never call this procedure_for.
 
-Example B — explicit monitoring
+Example B — explicit monitoring/diagnostic test
 Source: “… To follow the [S3: thyroid condition | condition | levels: endocrine condition],
 order thyroid labs …”
-Relation: monitored_by(S3, "thyroid labs")
+Relation: tests_for(S3, "thyroid labs")
 Safe QA: “What follow-up testing was ordered for the endocrine condition?”
 Accepted answer: “thyroid labs”
 
 Example C — do not infer a relation
 Source: “… autoimmune panel …” with no explicit linked condition or purpose.
-Action: do not emit monitored_by merely because the test is present.
+Action: do not emit tests_for merely because the test is present.
 ```
 
 **Teacher input.** The prompt contains the full source document plus compact, readable
@@ -368,21 +368,25 @@ prescribe") is a spoken hesitation marker, never a clause boundary.
 **Problem-block anchor (multi-turn span pairs).** A spoken assessment/plan discusses one problem
 across several turns; a true relation can straddle the patient acknowledgments inside it (a
 condition named when the problem is introduced, a test ordered for it a sentence later —
-`monitored_by(arthritis -> autoimmune panel)` in D2N002, spike-confirmed 2026-07-14). After the
+`tests_for(arthritis -> autoimmune panel)` in D2N002, spike-confirmed 2026-07-14). After the
 clause and plan-section anchors fail, the compiler grounds the relation in the one problem block
 containing every argument, bounded by the assessment opener and each "for your <next> problem"
 switch; it never bridges a problem switch or unrelated small talk, and the cue check still runs
-over the argument window. **Hedge guard:** because these broad anchors span conditional talk, a
-relation whose argument window is conditional/hypothetical ("if your symptoms continue",
-"possibly", "we can consider") is rejected as `hedged_relation` at every anchor scope — the
-authoritative reference states such plans conditionally, so asserting them as fact would violate
-the truth-source rule. The hedge match is tightened so the spoken "if ... and prescribe"
+over the argument window. A repeated controlled value has several occurrences (S-labels); the
+teacher may name one (e.g. a past-medical-history mention) that is not in the relation sentence,
+so the compiler retries grounding at the same-decision sibling occurrence that co-locates with
+the other argument — the teacher's choice among duplicate labels does not affect grounding.
+**Conditional relations:** a relation whose argument window is conditional/planned ("if your
+symptoms continue", "possibly", "we can consider") is a valid contextual fact, but is kept only
+when its question is phrased conditionally (may / might / would / if …); a conditional plan
+paired with a definite question is rejected as `hedged_relation`, since asserting it as fact would
+violate the truth-source rule. The hedge match is tightened so the spoken "if ... and prescribe"
 disfluency and dosing "as needed" do not block a real prescription.
 
 Two closed extensions cover the clinical indication form. A detector-typed condition whose
 surface names a performed procedure (closed lexicon: transplant, surgery, -ectomy, -plasty,
 bypass, graft, replacement, repair) may also fill procedure slots, displayed to the teacher as
-`condition/procedure`; an ordinary condition surface may not. And `treated_with` accepts the
+`condition/procedure`; an ordinary condition surface may not. And `procedure_for` accepts the
 reversed indication connector "<procedure> for <condition>" within one clause ("had the kidney
 transplant a few years ago for some polycystic kidneys" — stated verbatim in the D2N002
 reference). Class gating keeps the generic word "for" inert for every other argument pairing. Cards help the teacher navigate; they neither limit search nor
@@ -445,30 +449,35 @@ Do not reverse it. Emit a relation only when the source explicitly supports it.
    Example: “arthritis … prescribe Ultram” → arthritis prescribed_with Ultram.
    Do not use for a procedure.
 
-2. treated_with
+2. procedure_for
    condition or diagnosis → medical procedure
-   Use when a procedure is used to treat the condition.
-   Example: “stone treated with lithotripsy” → kidney stone treated_with lithotripsy.
-   Never use for a drug.
+   A therapeutic procedure or referral for the condition, including a past treatment the
+   patient already had (a prior transplant/surgery). Merges the former treated_with and
+   referred_to. Example: “had the kidney transplant for polycystic kidneys” →
+   procedure_for(polycystic kidneys, kidney transplant). Never use for a drug.
 
-3. monitored_by
-   condition or diagnosis → monitoring test, monitoring procedure, or provider
-   Use when the source says the condition is monitored, evaluated, checked, or followed by it.
-   Example: “to follow the thyroid condition, order thyroid labs” → condition monitored_by
-   thyroid labs. Do not infer monitoring from proximity or a test that appears elsewhere.
+3. tests_for
+   condition or diagnosis → diagnostic or monitoring test/study
+   A test that discovers or monitors the condition — ordered to follow it, or whose result
+   showed it. Merges the former monitored_by and the diagnostic-yield relation. Use for any
+   lab, panel, imaging, or exam. Example: “order thyroid labs” → tests_for(hypothyroidism,
+   “thyroid labs”); “the CT shows a stone” → tests_for(kidney stone, “ct”). A test ordered
+   while assessing one problem is linked to that problem's condition even if its sentence does
+   not repeat the condition name; do not link a test from a different problem block.
 
 4. contraindicated_because_of
    drug or procedure → condition or diagnosis
    Use only when the source explicitly states the treatment/procedure cannot be used because of
-   the condition.
+   the condition. The drug argument may be a drug-class phrase quoted as a context literal
+   (e.g. “anti-inflammatory medications”), not only a specific drug name.
 
 5. causes_or_explains
    condition or diagnosis → condition or symptom
    Use only for an explicit causal or explanatory statement.
 
-6. referred_to
-   condition or diagnosis → provider or procedure
-   Use when the source explicitly refers the patient for that provider/procedure.
+A conditional or planned relation (“possibly refer to physical therapy”, “if symptoms persist,
+order X”) is valid, but its question must be phrased conditionally (may / might / would / if …)
+so it is never asserted as already done; a conditional plan with a definite question is rejected.
 ```
 
 #### Relation anti-goals
@@ -674,7 +683,7 @@ assertions:
     scope: linked | global
     subtype: semantic_property | contextual_relation | content | field | exact_relation
     occurrence_ids: [occ:...]
-    relation: monitored_by
+    relation: tests_for
     expected_values: [...]
     group_id: fact-or-relation:...
     weight: <derived from frozen family/group budgets>
