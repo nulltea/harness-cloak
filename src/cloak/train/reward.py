@@ -18,14 +18,11 @@ import re
 from cloak.extract import invert
 from cloak.lattice import NLI_MODEL
 
-QA_MODEL = "gemma 4 (E4B)"  # SERVED generative reader (llama-swap :8060). Qwen3.5-0.8B was too
-                            # weak: on generalized renders it returned dose fragments ("50
-                            # milligrams") instead of the category answer ("opioid analgesic").
-# — re-pin 2026-07-06 (roberta-base-squad2 -> Qwen3.5-0.8B): the extractive reader abstained ~40%
-# on relational / section-structured notes (FM1); a grounded generative whole-doc reader fixes it.
-# Served, not local torch: Qwen3.5 is hybrid-attention and its fla/causal-conv1d kernels don't
-# build on ROCm; llama.cpp serves it fast and prompt-caches the shared note prefix server-side.
-# temp0/greedy (deterministic), non-thinking, batched via pmap (workers match -np 6).
+QA_MODEL = "gemma 4 (E4B)"  # THE context reader -- the SINGLE definition. Every reader path
+                            # (DEFAULT_CONTEXT_READER_PIN, BatchedContextReader) imports this;
+                            # do not hardcode a reader model elsewhere or add a per-call reader
+                            # override. Served generative whole-doc reader on llama-swap :8060,
+                            # temp0/greedy, non-thinking, batched via pmap (workers match -np 6).
 QA_BASE_URL = "http://localhost:8060/v1"
 QA_PROMPT = ("Answer the question using ONLY the note below. Reply with the shortest exact "
              "answer copied from the note (a name, value, number, or phrase). If the note does "

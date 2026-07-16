@@ -16096,7 +16096,9 @@
         ]
       },
       "fluoxetine": {
-        "aliases": [],
+        "aliases": [
+          "prozac"
+        ],
         "count": 20.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -17551,7 +17553,9 @@
         ]
       },
       "levmetamfetamine": {
-        "aliases": [],
+        "aliases": [
+          "inhaler"
+        ],
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -19526,7 +19530,9 @@
         ]
       },
       "omeprazole magnesium": {
-        "aliases": [],
+        "aliases": [
+          "omeprazole"
+        ],
         "count": 30.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -33481,6 +33487,56 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:gonorrhea"
+        ]
+      },
+      "gout": {
+        "aliases": [
+          "gouty arthritis",
+          "podagra",
+          "urate arthropathy"
+        ],
+        "count": 18.0,
+        "entry_origin": "manual-doid-grounded",
+        "level_counts": {
+          "arthritis": 18.0,
+          "connective tissue disease": 884.0,
+          "joint disease": 571.0,
+          "joint inflammation disease": 26.0
+        },
+        "level_grounding": {
+          "arthritis": {
+            "member_set_ref": "doid:is_a_descendants:DOID:848",
+            "selector": "doid.is_a_descendants(DOID:848)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "connective tissue disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:65",
+            "selector": "doid.is_a_descendants(DOID:65)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "joint disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:0080001",
+            "selector": "doid.is_a_descendants(DOID:0080001)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "joint inflammation disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:3342",
+            "selector": "doid.is_a_descendants(DOID:3342)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "arthritis",
+          "joint inflammation disease",
+          "joint disease",
+          "connective tissue disease"
+        ],
+        "source_ids": [
+          "manual:health-condition:gout:doid-13189"
         ]
       },
       "gray hair": {

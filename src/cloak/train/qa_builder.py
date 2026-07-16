@@ -1917,17 +1917,29 @@ def _question_leaks_protected_term(
     protected_terms: Sequence[str],
     allowed_tokens_by_term: Mapping[str, frozenset[str]] | None = None,
 ) -> bool:
-    """Full-term containment always leaks; token overlap leaks unless the
-    token belongs to the decision's declared legal generalization levels,
-    which the spec directs questions and answers to use verbatim."""
-    if any(_contains(question, term) for term in protected_terms if term):
-        return True
+    """Token overlap leaks only on a term's DISCRIMINATIVE tokens -- those not in its authorized
+    publishable set (`allowed_tokens_by_term`: its declared legal generalization levels + placeholder
+    labels, minus any level identical to the raw surface, filtered by the caller), which the spec
+    directs questions and answers to use verbatim. Full-term containment leaks too, EXCEPT a single
+    fully-authorized token: a detected drug SURFACE "medication" (a placeholder word) or a condition
+    surface "diabetes" whose token rides its own published coarser level "diabetes mellitus" is not an
+    identity locator. A short alias ("Li","AF" -> empty meaningful set) and any multi-token surface are
+    never exempt, so authorized tokens cannot recompose into a sensitive identity. The caller must drop
+    a level equal to the surface from `allowed` so a raw brand ("Synthroid") whose only authorization
+    would be a surface-echoing level stays discriminative and is rejected."""
+    allowed = allowed_tokens_by_term or {}
     question_tokens = _meaningful_tokens(question)
-    return any(
-        (_meaningful_tokens(term) - (allowed_tokens_by_term or {}).get(term, frozenset()))
-        & question_tokens
-        for term in protected_terms
-    )
+    for term in protected_terms:
+        if not term:
+            continue
+        term_tokens = _meaningful_tokens(term)
+        discriminative = term_tokens - allowed.get(term, frozenset())
+        single_authorized = len(term_tokens) == 1 and not discriminative
+        if _contains(question, term) and not single_authorized:
+            return True
+        if discriminative & question_tokens:
+            return True
+    return False
 
 
 def _sentence_at(document: str, position: int) -> str:
@@ -2466,6 +2478,29 @@ def _exact_substring_starts(document: str, quote: str) -> list[int]:
     return starts
 
 
+def _source_literal_spans(document: str, literal: str) -> list[tuple[int, int]]:
+    """Source `(start, end)` spans matching `literal` under case-fold + whitespace-collapse
+    equivalence at token boundaries. Offsets index the ORIGINAL document, so the matched text
+    is exactly ``document[start:end]`` -- a context literal resolved through this and then written
+    back as its source substring still satisfies the exact-source grounding contract
+    (`_argument_is_grounded`). Only orthographic casing and inter-token whitespace are equated;
+    a different token sequence, synonym, abbreviation, or reordering never matches.
+
+    ponytail: `re.IGNORECASE` (not full Unicode case-fold) and ASCII `\\w` boundaries suit the
+    ASCII clinical corpus; move to str.casefold + an explicit offset map only if non-ASCII
+    literals appear."""
+    tokens = str(literal).split()
+    if not tokens:
+        return []
+    core = r"\s+".join(re.escape(token) for token in tokens)
+    # (?<!\w)/(?!\w) are token-boundary guards that, unlike \b, still match when the literal's
+    # first/last char is non-word ("(MRI)", "C++") -- \b there fails to find an exact source
+    # occurrence, a grounding regression from the prior exact-substring lookup.
+    pattern = r"(?<!\w)" + core + r"(?!\w)"
+    return [(match.start(), match.end())
+            for match in re.finditer(pattern, document, re.IGNORECASE)]
+
+
 def _resolve_relation_evidence_span(
     document: str,
     quote: str,
@@ -2795,7 +2830,11 @@ def _derived_relation_anchor(
     context = next((argument for argument in arguments if argument["kind"] == "context"), None)
     if context is not None and context.get("start") is None:
         literal = str(context["literal"])
-        matches = _exact_substring_starts(document, literal)
+        # Source spans under case/whitespace equivalence (not exact substring): the teacher
+        # routinely re-cases a literal ("MRI" for source "mri", "hemoglobin A1c" for "a1c").
+        # Each span indexes the original document, so grounding stays exact once the literal
+        # is written back as its source substring below.
+        matches = _source_literal_spans(document, literal)
 
         def _linked_gap(start: int, end: int) -> int:
             return min(max(0, left - end, start - right) for left, right in linked_spans)
@@ -2808,8 +2847,7 @@ def _derived_relation_anchor(
         # When several mentions of the literal qualify, pick the one nearest the linked
         # argument: fewest clauses away, then fewest chars (P2, deterministic tie-break).
         scored = []
-        for start in matches:
-            end = start + len(literal)
+        for start, end in matches:
             literal_clause = clause_index(start, end)
             if literal_clause is None:
                 continue
@@ -2836,9 +2874,13 @@ def _derived_relation_anchor(
             for occurrence in occurrences.values()
         ):
             return "", None, "protected_context_literal", None
+        # Ground against the exact source substring, which may differ from the teacher
+        # spelling only by case/whitespace; identify the typed candidate by the resolved
+        # source span rather than the teacher's spelling.
+        context["literal"] = document[start:end]
+        literal = context["literal"]
         typed = [row for row in context_candidates.values()
-                 if row.get("literal") == literal and int(row.get("start", -1)) == start
-                 and int(row.get("end", -1)) == end]
+                 if int(row.get("start", -1)) == start and int(row.get("end", -1)) == end]
         if typed:
             if len(typed) != 1:
                 return "", None, "untyped_context_literal", None
@@ -3758,14 +3800,20 @@ def compile_relational_assertions(
             # the legal levels.
             type_words = _placeholder_meaning_tokens(str(occurrence.get("runtime_type", "")))
             type_words = type_words | {f"{word}s" for word in type_words}
-            level_tokens = frozenset(
-                token
-                for property_level in legal_properties.get(occurrence_id_value, ())
-                for token in _meaningful_tokens(property_level)
-            ) | type_words
+            levels = list(legal_properties.get(occurrence_id_value, ()))
             for term in _occurrence_protected_terms(occurrence):
+                # A level identical to the raw surface is not a real generalization (a broken
+                # lattice could entail the surface itself); drop it so a raw brand's ONLY
+                # authorization can't be a surface-echoing level. A genuine coarser level that
+                # merely shares a token (surface "diabetes" in level "diabetes mellitus") stays.
+                term_level_tokens = frozenset(
+                    token
+                    for property_level in levels
+                    if canon(property_level) != canon(term)
+                    for token in _meaningful_tokens(property_level)
+                ) | type_words
                 protected_terms.append(term)
-                allowed_level_tokens[term] = allowed_level_tokens.get(term, frozenset()) | level_tokens
+                allowed_level_tokens[term] = allowed_level_tokens.get(term, frozenset()) | term_level_tokens
         # A relation publishes its own arguments' generalization levels, so a token
         # from any argument level (e.g. "kidney" in the subject's "cystic kidney
         # disease") is legitimately in the question even when it collides with a
@@ -3785,6 +3833,10 @@ def compile_relational_assertions(
         if _question_leaks_protected_term(question, protected_terms, question_allowed_tokens):
             reject("protected_locator")
             continue
+        # The answer check stays strict per answered argument: it uses each protected term's OWN
+        # levels/placeholders (allowed_level_tokens), NOT the pooled argument levels -- pooling could
+        # authorize an UNRELATED protected identity whose surface token happens to appear in some
+        # argument's level.
         if proposal.get("arguments") is not None and any(
             _question_leaks_protected_term(answer, protected_terms, allowed_level_tokens)
             for answer in accepted_values

@@ -1782,3 +1782,48 @@ def test_compile_relations_deduplicates_same_fact_across_sibling_occurrences():
 
     assert len(accepted) == 1
     assert [row["detail_reason"] for row in rejected] == ["duplicate_fact_group"]
+
+
+def test_source_literal_spans_equates_case_and_whitespace_only():
+    # FM2: the teacher re-cases/re-spaces a literal; the resolver maps to the exact source
+    # span so grounding stays exact, but never matches a different token sequence.
+    document = "please order an mri today, and recheck   hemoglobin a1c next month."
+    assert [document[s:e] for s, e in qa_builder._source_literal_spans(document, "MRI")] == ["mri"]
+    assert [document[s:e] for s, e in
+            qa_builder._source_literal_spans(document, "hemoglobin A1c")] == ["hemoglobin a1c"]
+    # collapsed whitespace variant still resolves to the real (multi-space) source span
+    assert [document[s:e] for s, e in
+            qa_builder._source_literal_spans(document, "hemoglobin   a1c")] == ["hemoglobin a1c"]
+    # a genuinely absent / different token never matches
+    assert qa_builder._source_literal_spans(document, "ultrasound") == []
+    assert qa_builder._source_literal_spans(document, "mri scan") == []
+    # non-word-edge literals must still resolve (regression that \b would have broken)
+    punct = "the (MRI) and C++ were noted; a1c-panel drawn."
+    assert [punct[s:e] for s, e in qa_builder._source_literal_spans(punct, "(MRI)")] == ["(MRI)"]
+    assert [punct[s:e] for s, e in qa_builder._source_literal_spans(punct, "C++")] == ["C++"]
+    # a hyphen-prefixed fragment must NOT match a longer hyphenated token
+    assert qa_builder._source_literal_spans(punct, "a1c-") == []
+
+
+def test_protected_term_generic_category_word_is_not_a_leak():
+    leaks = qa_builder._question_leaks_protected_term
+    # "medication" is a detected drug SURFACE (protected term) AND a drug placeholder word ->
+    # a question using the generic slot word is not an identity leak.
+    allowed = {"medication": frozenset({"medication", "drug", "treatment"})}
+    assert leaks("Which medication was prescribed for the mood disorder?",
+                 ["medication"], allowed) is False
+    # a single-token surface riding its own published COARSER level is safe: "diabetes" is
+    # authorized because the level "diabetes mellitus" contributes {diabetes, mellitus}.
+    assert leaks("Which medication was prescribed for the diabetes mellitus?",
+                 ["diabetes"], {"diabetes": frozenset({"diabetes", "mellitus", "condition"})}) is False
+    # defect-2: a raw brand whose only would-be authorization is a level EQUAL to the surface is
+    # rejected -- the caller drops that level from `allowed`, so "Synthroid" stays discriminative.
+    assert leaks("Which Synthroid dose was used?", ["Synthroid"],
+                 {"Synthroid": frozenset({"medication"})}) is True   # surface-echoing level excluded upstream
+    # a raw brand/name token stays discriminative and still leaks
+    assert leaks("Which medication like prozac was prescribed?", ["prozac"], allowed) is True
+    # a short alias tokenizes to nothing (sub-3-char) and is never exempted
+    assert leaks("Which AF treatment is used?", ["AF"], {"AF": frozenset()}) is True
+    # a multi-token raw surface is never exempted, even if each token is authorized
+    assert leaks("Was this seen by john smith?", ["john smith"],
+                 {"john smith": frozenset({"john", "smith"})}) is True
