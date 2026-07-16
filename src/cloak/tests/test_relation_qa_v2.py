@@ -607,16 +607,21 @@ def test_leakage_repair_recolors_subject_side_and_preserves_answer_floor():
 
     assert result is not None
     new_question, values, args, repair = result
-    assert repair["kind"] == "subject_level_recolor" and repair["floor_lowered"] is False
-    assert repair["to_level"] == "endocrine system disease"
-    assert "endocrine system disease" in new_question and "thyroid gland disease" not in new_question
+    # strict repair: recolor the locator to the coarser level AND strip the answer's own token
+    # ("medication") from the question -- no generic-word whitelist. Answer floor unchanged.
+    assert repair["kind"] == "strict_answer_token_strip" and repair["floor_lowered"] is False
+    assert repair["locator_to"] == "endocrine system disease"
+    assert new_question == "Which was prescribed for the endocrine system disease?"
+    assert "thyroid gland disease" not in new_question and "medication" not in new_question
     assert values == ["thyroid hormonal medication"]  # answer floor unchanged
-    assert not qa_builder._question_leaks_answer(new_question, values[0], ["health-condition", "drug"])
+    assert not qa_builder._question_leaks_answer(new_question, values[0], "")  # strict, no exempt
 
 
-def test_leakage_repair_answer_side_fallback_lowers_floor():
-    # Subject has no alternative legal level, so the only way to clear the
-    # collision is to coarsen the answer -> flagged floor_lowered.
+def test_leakage_repair_never_coarsens_the_answer_floor_rejects_instead():
+    # The locator "thyroid gland disease" leaks "thyroid" and has NO coarser legal level, so the
+    # only tokens strippable are outside the locator ("medication") -- which cannot clear the
+    # in-locator "thyroid" leak. The repair must NOT coarsen the answer floor (that path is
+    # retired); it returns None and the caller rejects honestly.
     decisions = {
         "d-hypo": {"actions": [{"mode": "level", "legal": True, "entails": ["thyroid gland disease"]}]},
         "d-syn": {"actions": [{"mode": "level", "legal": True,
@@ -637,11 +642,7 @@ def test_leakage_repair_answer_side_fallback_lowers_floor():
         ["health-condition", "drug"], decisions, occurrences,
     )
 
-    assert result is not None
-    new_question, values, args, repair = result
-    assert repair["kind"] == "answer_level_recolor" and repair["floor_lowered"] is True
-    assert values == ["hormonal therapy agent"]
-    assert new_question == question  # question untouched on answer-side repair
+    assert result is None  # no floor-lowering fallback; reject honestly
 
 
 def test_leakage_repair_returns_none_when_no_legal_recoloring_clears_it():
@@ -841,7 +842,9 @@ def test_linked_surface_in_qa_is_substituted_with_the_selected_level():
     accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [proposal])
 
     assert rejected == []
-    assert accepted[0]["question"] == "Which medication was prescribed for the endocrine condition?"
+    # sanitize swaps the protected surface for the subject level; then the strict leak repair
+    # strips the answer's own token "medication" from the question (answer = "thyroid medication").
+    assert accepted[0]["question"] == "Which was prescribed for the endocrine condition?"
     assert accepted[0]["accepted_values"] == ["thyroid medication"]
     assert accepted[0]["evidence"]["sanitized_qa"] is True
 

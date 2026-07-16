@@ -1785,30 +1785,62 @@ def _repair_leaked_relation(
     decisions: Mapping[str, Mapping],
     occurrences: Mapping[str, Mapping],
 ) -> tuple[str, list[str], list[dict], dict] | None:
-    """Clear a *lexical* answer-leakage collision by recoloring levels within the
-    already-legal set, without inventing anything. `answer_leakage` fires when the
-    question shares a meaningful token with the answer; for entities whose
-    condition and drug levels share a word (e.g. "thyroid gland disease" vs
-    "thyroid hormonal medication") a genuine relation is blocked by naming alone.
+    """Clear a lexical answer-leakage WITHOUT any generic-word whitelist and WITHOUT lowering the
+    answer floor. `answer_leakage` fires when the question shares a meaningful token with the
+    accepted answer. The answer is taken CANONICALLY from the selected answer argument (its
+    support_property if linked, else its literal) -- never from teacher prose.
 
-    Strategy, in order:
-      1. Subject-side: rewrite the question's reference to the non-answer argument
-         to a coarser legal level that shares no token with the answer. Preserves
-         the answer floor (the measured quantity is unchanged) — preferred.
-      2. Answer-side (last resort): coarsen the answer to a legal level that shares
-         no token with the question. This *lowers the utility floor*, so it is
-         flagged floor_lowered in the repair record.
-    Returns (question, accepted_values, arguments, repair) or None if no legal
-    recoloring clears the collision (then the caller rejects honestly)."""
-    values = list(accepted_values)
-
-    def leaks(q: str, vals: Sequence[str]) -> bool:
-        return any(_question_leaks_answer(q, v, answer_exempt_types) for v in vals)
-
+    Repair, composed per candidate locator level (current, then coarser legal levels):
+      * recolor the LOCATOR (non-answer argument) reference in the question to that level, then
+      * strip every answer-overlapping token that lies OUTSIDE the (recolored) locator span,
+        preserving the locator span verbatim -- no medication/procedure/diagnostic exemptions,
+      * normalize whitespace/articles/punctuation.
+    Accept the first candidate whose result no longer leaks and is still a well-formed question.
+    The answer level is never coarsened (the measured floor is preserved), so floor_lowered is
+    always False. Returns (question, accepted_values, arguments, repair) or None (caller rejects
+    honestly, then the three-point gate is the backstop for vague/non-context-dependent wording)."""
     object_index = 0 if answer_role == "subject" else 1
     args = [dict(argument) for argument in arguments]
     answer_arg = args[object_index]
     other_arg = args[1 - object_index]
+
+    # canonical answer strings: the answer argument's own level (linked) or literal (context)
+    if answer_arg.get("kind") == "linked" and answer_arg.get("support_property"):
+        answer_values = [str(answer_arg["support_property"])]
+    elif answer_arg.get("literal"):
+        answer_values = [str(answer_arg["literal"])]
+    else:
+        answer_values = list(accepted_values)
+    answer_tokens: set[str] = set()
+    for value in answer_values:
+        answer_tokens |= _meaningful_tokens(value)
+    if not answer_tokens:
+        return None
+
+    def leaks(text: str) -> bool:  # strict: no generic-word exemption
+        return bool(answer_tokens & _meaningful_tokens(text))
+
+    def strip_outside(text: str, protect: tuple[int, int] | None) -> str:
+        # remove every answer-token occurrence not inside the protected [start, end) span
+        out, cursor = [], 0
+        for match in re.finditer(r"\w+", text):
+            token = match.group(0)
+            keep = True
+            if _meaningful_tokens(token) & answer_tokens:
+                if not (protect and match.start() < protect[1] and protect[0] < match.end()):
+                    keep = False
+            if keep:
+                out.append(text[cursor:match.end()])
+            else:
+                out.append(text[cursor:match.start()])  # drop the token, keep separators
+            cursor = match.end()
+        out.append(text[cursor:])
+        joined = "".join(out)
+        joined = re.sub(r"\b([Aa]n?|[Tt]he)\b(?=\s*(?:\?|$|\s\b(?:was|were|is|are|for)\b))", "",
+                        joined)  # dangling article left by a stripped noun
+        joined = re.sub(r"\s+", " ", joined)
+        joined = re.sub(r"\s+([?.,])", r"\1", joined).strip()
+        return joined
 
     def levels(argument: Mapping) -> list[str]:
         if argument.get("kind") != "linked":
@@ -1816,31 +1848,34 @@ def _repair_leaked_relation(
         occurrence = occurrences.get(argument.get("occurrence_id")) or {}
         return _ordered_decision_levels(decisions.get(str(occurrence.get("decision_id"))) or {})
 
-    # 1) subject-side recolor: swap the question's non-answer level reference
     current = _normalize_teacher_text(str(other_arg.get("support_property") or ""))
-    if current:
-        pattern = re.compile(re.escape(current), re.IGNORECASE)
-        for candidate in levels(other_arg):
-            if canon(candidate) == canon(current):
-                continue
-            new_question = pattern.sub(candidate, question)
-            if new_question != question and not leaks(new_question, values):
-                other_arg["support_property"] = candidate
-                repair = {"kind": "subject_level_recolor", "argument_role": other_arg.get("role"),
-                          "from_level": current, "to_level": candidate, "floor_lowered": False}
-                return new_question, values, args, repair
-
-    # 2) answer-side recolor (last resort): coarsen the answer level
-    for candidate in levels(answer_arg):
-        if any(canon(candidate) == canon(v) for v in values):
-            continue
-        if not leaks(question, [candidate]):
-            answer_arg["support_property"] = candidate
-            repair = {"kind": "answer_level_recolor", "argument_role": answer_arg.get("role"),
-                      "from_level": values[0] if values else "", "to_level": candidate,
-                      "floor_lowered": True}
-            return question, [candidate], args, repair
-
+    candidate_locators = [current] + [
+        level for level in levels(other_arg) if canon(level) != canon(current)
+    ]
+    for locator in candidate_locators:
+        recolored = question
+        if current and locator != current:
+            recolored = re.compile(re.escape(current), re.IGNORECASE).sub(locator, recolored)
+        span = re.search(re.escape(locator), recolored, re.IGNORECASE) if locator else None
+        protect = (span.start(), span.end()) if span else None
+        repaired = strip_outside(recolored, protect)
+        # well-formed: non-empty, still an interrogative, still references the locator
+        well_formed = (
+            repaired
+            and repaired.endswith("?")
+            and len(_meaningful_tokens(repaired)) >= 3
+            and (not locator or locator.lower() in repaired.lower())
+        )
+        if repaired != question and well_formed and not leaks(repaired):
+            if locator != current:
+                other_arg["support_property"] = locator
+            repair = {
+                "kind": "strict_answer_token_strip",
+                "argument_role": other_arg.get("role"),
+                "locator_from": current, "locator_to": locator,
+                "floor_lowered": False,
+            }
+            return repaired, list(accepted_values), args, repair
     return None
 
 
@@ -3390,7 +3425,9 @@ def compile_relational_assertions(
         )
         answer_role = str(proposal.get("answer_role", "object"))
         leakage_repair = None
-        if any(_question_leaks_answer(question, answer, answer_exempt_types)
+        # Strict leak detection: no generic-word whitelist. Any answer-token overlap triggers
+        # the (whitelist-free, floor-preserving) repair; the exempt list is retired.
+        if any(_question_leaks_answer(question, answer, "")
                for answer in accepted_values):
             repaired = _repair_leaked_relation(
                 question, accepted_values, arguments, answer_role,
@@ -5163,11 +5200,10 @@ def _context_answer_score(
 
 def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str:
     question = str(assertion["question"])
-    answer_type = assertion.get("answer_type")
-    if answer_type:
-        # The typed extraction directive rides in the reader-facing question
-        # only; the stored artifact question stays clean.
-        question = f"Extract the shortest {answer_type} span that answers: {question}"
+    # NOTE: the relation answer_type prefix ("Extract the shortest <type> span ...") is
+    # deliberately NOT applied -- it reintroduced a hardcoded type cue that could re-leak the
+    # answer's type word after the stored question was repaired. The reader's base prompt already
+    # asks for the shortest exact answer span.
     options = [str(option) for option in assertion.get("options") or []]
     if not options:
         return question
