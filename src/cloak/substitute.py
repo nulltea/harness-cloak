@@ -10,6 +10,7 @@ from dataclasses import replace
 
 from cloak.detect import Detector, Span, coref_chains, relabel_dem
 from cloak.lattice import TYPE_LABEL, lattice_for, NO_PREPASS
+from cloak.lattice_profiles import lookup_entry
 from cloak.probe import walk_risk
 from cloak.profile_match import PROFILE_BACKED_TYPES, match_spans_batch, span_key
 from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE, placeholder_token, placeholder_type_token
@@ -181,6 +182,16 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             k = span_key(s.text, s.type)
             prop = proposals[k] if k in proposals else NO_PREPASS
             lattice = lattice_for(s.text, s.type, sent, proposal=prop)
+            # Is this a controllable entity at all? Profiled = it has a lattice-profile entry
+            # OR the prepass produced a real (non-placeholder) generalization for it. An
+            # UNPROFILED detection (neither) is detector-only evidence -- keep it EXACT rather
+            # than mint a junk placeholder for a possible false positive. A profiled entity that
+            # merely FAILED to resolve this mention (abstain / all-over-tau) is NOT unprofiled:
+            # it must still be hidden. (user rule 2026-07-16; matches freeze controlled=False.)
+            profiled = (
+                any(not PLACEHOLDER_RE.fullmatch(c) for c in lattice)
+                or lookup_entry(s.text, s.type) is not None
+            )
             m = proposals.get(k)
             if m is not None:
                 entry["match"] = ({"kind": "exact", "entry": m.entry} if m.kind == "exact" else
@@ -207,7 +218,15 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
                 if r < tau:
                     chosen, risk = cand, r
                     break
-            if chosen is None:
+            if chosen is None and not profiled:
+                # unprofiled detection: no real generalization level exists. Leave EXACT and
+                # uncontrolled -- the ranker never rewrites it, so it gets no action, risk, or
+                # privacy credit, and its exact text survives every scored render (a literal
+                # answer can rest on it). Prevents false-positive detections from becoming
+                # destructive junk placeholders that contaminate utility scoring and training.
+                entry.update(action="keep", replacement=s.text, risk=0.0,
+                             lattice=lattice, uncontrolled=True)
+            elif chosen is None:
                 # exhausted (every level over tau or claimed): generic typed placeholder —
                 # risk 0 by construction; tau becomes a hard guarantee, never the old
                 # over-budget floor. Spec §3.3-2.
@@ -262,7 +281,8 @@ if __name__ == "__main__":
     # generalizations, one coref chain for placeholders (same chain shares its token)
     rep_owner = {}
     for r in R:
-        owner = r["surface"].lower() if r["action"] == "generalize" else f"chain:{r['chain']}"
+        owner = (r["surface"].lower() if r["action"] in ("generalize", "keep")
+                 else f"chain:{r['chain']}")
         prev = rep_owner.setdefault(r["replacement"].lower(), owner)
         assert prev == owner, (r["replacement"], prev, owner)
     # tau is a hard guarantee: every shipped generalization is under budget

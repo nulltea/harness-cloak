@@ -184,3 +184,35 @@ def test_substitution_record_synthesizes_missing_detector_provenance(monkeypatch
         "recognizer": None,
         "score": 0.95,
     }
+
+
+def test_unprofiled_detection_is_kept_exact_not_placeholdered(monkeypatch):
+    # A detected span with no real generalization level (unprofiled, e.g. "physical therapy"
+    # with no lattice entry) must stay EXACT and uncontrolled -- never a junk placeholder.
+    text = "we may refer you to physical therapy for it ."
+    spans = _spans(text, ("physical therapy", "medical-procedure"))
+    monkeypatch.setattr(sub, "coref_chains", lambda t, s: s)
+    monkeypatch.setattr(sub, "walk_risk", lambda *a, **k: 0.0)
+    monkeypatch.setattr(sub, "match_spans_batch", lambda items, **k: {})
+    monkeypatch.setattr(sub, "lattice_for", lambda *a, **k: [])  # no real level -> unprofiled
+    doc_p, R = sub.substitute(text, spans, tau=2.0)
+    entry = next(r for r in R if r["surface"].lower() == "physical therapy")
+    assert entry["action"] == "keep"
+    assert entry["replacement"] == "physical therapy"
+    assert entry.get("uncontrolled") is True
+    assert "physical therapy" in doc_p          # exact -- not <MEDICAL_PROCEDURE_n>
+    assert "<MEDICAL_PROCEDURE" not in doc_p
+
+
+def test_exhausted_profiled_span_still_placeholdered(monkeypatch):
+    # A PROFILED span whose only real level is over-tau still placeholders (unchanged).
+    text = "he has some rare_condition today ."
+    spans = _spans(text, ("rare_condition", "health-condition"))
+    monkeypatch.setattr(sub, "coref_chains", lambda t, s: s)
+    monkeypatch.setattr(sub, "walk_risk", lambda *a, **k: 5.0)  # over any tau
+    monkeypatch.setattr(sub, "match_spans_batch", lambda items, **k: {})
+    monkeypatch.setattr(sub, "lattice_for", lambda *a, **k: ["some disorder"])  # real level exists
+    doc_p, R = sub.substitute(text, spans, tau=1.0)
+    entry = next(r for r in R if r["surface"].lower() == "rare_condition")
+    assert entry["action"] == "placeholder"
+    assert entry.get("exhausted") is True

@@ -209,6 +209,8 @@ def _partition_R(R: list[dict]) -> tuple[dict[str, list[dict]], dict[str, list[d
     ph: dict[str, list[dict]] = {}
     gen: dict[str, list[dict]] = {}
     for e in R:
+        if e["action"] == "keep":
+            continue  # uncontrolled span left exact in doc_p -- nothing to un-perturb
         (ph if e["action"] == "placeholder" else gen).setdefault(e["replacement"], []).append(e)
     return ph, gen
 
