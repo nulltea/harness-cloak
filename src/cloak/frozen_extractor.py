@@ -929,7 +929,7 @@ def _resolved_tier0_group_count(out_p: str, R: list[dict], residue: list[dict]) 
         1
         for replacement, entries in grouped.items()
         if entries
-        and str(entries[0].get("action", "")) != "placeholder"
+        and str(entries[0].get("action", "")) not in ("placeholder", "keep")
         and not any(_retains_generalization(entry) for entry in entries)
         and replacement not in unresolved_replacements
     )
