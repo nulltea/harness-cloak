@@ -1675,3 +1675,110 @@ def test_lattice_level_suspect_probe_silent_when_no_level_reads(monkeypatch):
         chain_by_decision={}, reader_threshold=1.0,
     )
     assert result is None
+
+
+def test_relation_support_opportunities_counts_distinct_compiler_shaped_facts():
+    source = "Hypothyroidism is treated with Synthroid."
+
+    opportunities = qa_builder.relation_support_opportunities(source, _environment(source))
+
+    assert [(row["relation"], row["scope"]) for row in opportunities] == [
+        ("prescribed_with", "span_span"),
+    ]
+
+
+def test_relation_escalation_trigger_uses_manifest_policy_per_scope():
+    policy = {
+        "version": "structural-opportunity-v1",
+        "min_opportunities": {"span_span": 2, "span_literal": 2},
+        "coverage_fraction": {"span_span": 0.8, "span_literal": 0.5},
+        "scope_caps": {"span_span": 6, "span_literal": 6},
+    }
+
+    targets = qa_builder.relation_escalation_targets(
+        {"span_span": 4, "span_literal": 1}, policy,
+    )
+
+    assert targets == {"span_span": 4, "span_literal": 0}
+    assert qa_builder.needs_relation_escalation(
+        {"span_span": 3, "span_literal": 0}, targets,
+    )
+    assert not qa_builder.needs_relation_escalation(
+        {"span_span": 4, "span_literal": 0}, targets,
+    )
+
+
+def test_merge_kept_relations_prefers_primary_and_keeps_single_teacher_facts():
+    occurrences = {
+        "condition": {"decision_id": "d-condition"},
+        "drug": {"decision_id": "d-drug"},
+    }
+    primary = {
+        "relation": "prescribed_with",
+        "question": "primary question?",
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "condition"},
+            {"role": "object", "kind": "linked", "occurrence_id": "drug"},
+        ]},
+    }
+    secondary_duplicate = {**primary, "question": "secondary duplicate?"}
+    secondary_only = {
+        "relation": "tests_for",
+        "question": "secondary only?",
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "condition"},
+            {"role": "object", "kind": "context", "literal": "thyroid labs"},
+        ]},
+    }
+
+    merged, disposition = qa_builder.merge_kept_relation_rows(
+        [primary], [secondary_duplicate, secondary_only], occurrences,
+    )
+
+    assert [row["question"] for row in merged] == ["primary question?", "secondary only?"]
+    assert disposition == {"primary_only": 0, "primary_preferred": 1, "secondary_only": 1}
+
+
+def test_compile_relations_deduplicates_same_fact_across_sibling_occurrences():
+    source = "Hypothyroidism is treated with Synthroid. Hypothyroidism is treated with Synthroid."
+    first_condition = source.index("Hypothyroidism")
+    first_drug = source.index("Synthroid")
+    second_condition = source.index("Hypothyroidism", first_condition + 1)
+    second_drug = source.index("Synthroid", first_drug + 1)
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "c1", "decision_id": "condition", "surface": "Hypothyroidism", "start": first_condition, "end": first_condition + 14, "runtime_type": "health-condition"},
+            {"occurrence_id": "d1", "decision_id": "drug", "surface": "Synthroid", "start": first_drug, "end": first_drug + 9, "runtime_type": "drug"},
+            {"occurrence_id": "c2", "decision_id": "condition", "surface": "Hypothyroidism", "start": second_condition, "end": second_condition + 14, "runtime_type": "health-condition"},
+            {"occurrence_id": "d2", "decision_id": "drug", "surface": "Synthroid", "start": second_drug, "end": second_drug + 9, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "condition", "actions": [{"mode": "level", "legal": True, "entails": ["endocrine condition"]}]},
+            {"decision_id": "drug", "actions": [{"mode": "level", "legal": True, "entails": ["thyroid medication"]}]},
+        ],
+    }
+    first = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "c1", "support_property": "endocrine condition"},
+            {"role": "object", "kind": "linked", "occurrence_id": "d1", "support_property": "thyroid medication"},
+        ],
+        "question": "Which drug was prescribed for the endocrine condition?",
+        "accepted_answers": ["thyroid medication"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+        "evidence_quote": "Hypothyroidism is treated with Synthroid.",
+        "evidence_start": first_condition,
+    }
+    second = {
+        **first,
+        "arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "c2", "support_property": "endocrine condition"},
+            {"role": "object", "kind": "linked", "occurrence_id": "d2", "support_property": "thyroid medication"},
+        ],
+        "evidence_start": second_condition,
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [first, second])
+
+    assert len(accepted) == 1
+    assert [row["detail_reason"] for row in rejected] == ["duplicate_fact_group"]

@@ -3493,3 +3493,77 @@ def test_compute_review_flags_classifies_missing_generalization_and_rejections()
     by_class = {f["code"]: f["fix_class"] for f in flags["d1"]}
     assert by_class["ledger_inconsistent"] == "teacher_redraw"
     assert by_class["representative_unreadable"] == "reader"
+
+
+def test_manifest_pinned_relation_escalation_calls_secondary_and_records_provenance(monkeypatch):
+    source = "Hypothyroidism is treated with Synthroid."
+    frozen = {"environment_hash": "env-v1", "documents": {"d1": _relation_environment()}}
+    candidate = {
+        "family": "context", "scope": "linked", "subtype": "contextual_relation",
+        "relation": "prescribed_with", "occurrence_ids": ["o-condition", "o-drug"],
+        "group_id": "relation:thyroid", "question": "Which drug was prescribed?",
+        "accepted_values": ["thyroid medication"],
+        "decision_requirements": {
+            "d-condition": "an endocrine condition",
+            "d-drug": "a thyroid medication",
+        },
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-condition"},
+            {"role": "object", "kind": "linked", "occurrence_id": "o-drug"},
+        ], "reader_turns": []},
+    }
+
+    class Adapter:
+        def deterministic_candidates(self, *args):
+            return []
+
+        def compile_relations(self, *args):
+            return [candidate], []
+
+    class Teacher:
+        def __init__(self, rows, pin):
+            self.rows, self.pin, self.calls = rows, pin, 0
+
+        def propose(self, prompt):
+            self.calls += 1
+            return self.rows
+
+    primary = Teacher([], {"model": "gpt"})
+    secondary = Teacher([{"proposal": "secondary"}], {"model": "nemotron"})
+    monkeypatch.setattr(qa_builder, "_relation_quote_has_semantic_support", lambda *args, **kwargs: False)
+
+    artifact = build_utility_artifact(
+        frozen,
+        Adapter(),
+        {"d1": source},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "relation_escalation_policy": {
+                "version": "structural-opportunity-v1",
+                "min_opportunities": {"span_span": 1, "span_literal": 2},
+                "coverage_fraction": {"span_span": 1.0, "span_literal": 1.0},
+                "scope_caps": {"span_span": 6, "span_literal": 6},
+            },
+        },
+        pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
+        reader=_pin_reader(
+            lambda questions, context: [
+                "NONE" if context == "placeholder" else "thyroid medication"
+                for _ in questions
+            ]
+        ),
+        render_action_vector=lambda doc_id, vector: (
+            "placeholder" if any(value.endswith("placeholder") for value in vector.values())
+            else "thyroid medication"
+        ),
+        relation_teacher=primary,
+        secondary_relation_teacher=secondary,
+    )
+
+    assert primary.calls == secondary.calls == 1
+    assert artifact["relation_escalation"]["d1"]["triggered"] is True
+    assert artifact["relation_escalation"]["d1"]["secondary_status"] in {"kept", "abstained"}
+    assert [row["teacher_id"] for row in artifact["relation_teacher_runs"]["d1"]] == [
+        "gpt_oss", "nemotron",
+    ]
+    assert artifact["relation_generation"]["d1"][0]["teacher_id"] == "nemotron"

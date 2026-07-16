@@ -9,7 +9,7 @@ import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
 from copy import deepcopy
-from math import isfinite
+from math import ceil, isfinite
 from numbers import Real
 
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
@@ -20,6 +20,7 @@ RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
 # empty/rate-limited/errored; deepinfra/turbo serves gpt-oss-120b with stable,
 # valid structured output. allow_fallbacks stays off so routing never drifts.
 RELATION_TEACHER_PROVIDER = "deepinfra/turbo"
+NEMOTRON_RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v20"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
 RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
@@ -458,24 +459,36 @@ class RelationTeacherResponseError(ValueError):
 
 
 class OpenRouterRelationTeacher:
-    """Optional cached JSON relation proposer pinned to gpt-oss-120b on OpenRouter,
-    routed to a fixed provider (deepinfra/turbo) for stable structured output."""
+    """Optional cached JSON relation proposer with an explicit OpenRouter route."""
 
     @property
     def pin(self) -> dict:
-        return {
+        pin = {
             "provider": "openrouter",
-            "model": RELATION_TEACHER_MODEL,
-            "routed_provider": RELATION_TEACHER_PROVIDER,
-            "base_url": RELATION_TEACHER_BASE_URL,
-            "prompt_version": RELATION_TEACHER_PROMPT_VERSION,
+            "model": self._model,
+            "routed_provider": self._routed_provider,
+            "base_url": self._base_url,
+            "prompt_version": self._prompt_version,
             "response_schema": deepcopy(RELATION_TEACHER_RESPONSE_SCHEMA),
             "response_format": deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
-            "generation_config": deepcopy(RELATION_TEACHER_GENERATION_CONFIG),
-            "revision": RELATION_TEACHER_REVISION,
+            "generation_config": deepcopy(self._generation_config),
+            "revision": self._revision,
         }
+        if self._allow_fallbacks or self._routed_provider is None:
+            pin["allow_fallbacks"] = self._allow_fallbacks
+        return pin
 
-    def __init__(self):
+    def __init__(
+        self,
+        *,
+        model: str = RELATION_TEACHER_MODEL,
+        routed_provider: str | None = RELATION_TEACHER_PROVIDER,
+        allow_fallbacks: bool = False,
+        base_url: str = RELATION_TEACHER_BASE_URL,
+        generation_config: Mapping | None = None,
+        prompt_version: str = RELATION_TEACHER_PROMPT_VERSION,
+        revision: str = RELATION_TEACHER_REVISION,
+    ):
         from cloak.llm import LLMClient
 
         api_key = os.getenv("OPENROUTER_API_KEY")
@@ -483,15 +496,27 @@ class OpenRouterRelationTeacher:
             raise ValueError("OPENROUTER_API_KEY is required for relation escalation")
         if not os.getenv("CLOAK_LLM_CACHE"):
             raise ValueError("CLOAK_LLM_CACHE is required for relation escalation")
+        self._model = str(model)
+        self._routed_provider = routed_provider
+        self._allow_fallbacks = bool(allow_fallbacks)
+        self._base_url = str(base_url)
+        self._generation_config = deepcopy(
+            RELATION_TEACHER_GENERATION_CONFIG if generation_config is None else generation_config
+        )
+        self._prompt_version = str(prompt_version)
+        self._revision = str(revision)
+        provider_config = {"allow_fallbacks": self._allow_fallbacks}
+        if self._routed_provider:
+            provider_config["order"] = [self._routed_provider]
         self._client = LLMClient(
-            RELATION_TEACHER_MODEL,
-            base_url=RELATION_TEACHER_BASE_URL,
+            self._model,
+            base_url=self._base_url,
             api_key=api_key,
             temperature=0.0,
             response_format=deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
             extra_body={
-                "reasoning": deepcopy(RELATION_TEACHER_GENERATION_CONFIG["reasoning"]),
-                "provider": {"order": [RELATION_TEACHER_PROVIDER], "allow_fallbacks": False},
+                "reasoning": deepcopy(self._generation_config["reasoning"]),
+                "provider": provider_config,
             },
             single_flight=True,
         )
@@ -3135,6 +3160,276 @@ def _remap_to_groundable_siblings(
     return arguments
 
 
+_RELATION_ESCALATION_SCOPES = ("span_span", "span_literal")
+
+
+def _relation_scope(arguments: Sequence[Mapping]) -> str:
+    linked_count = sum(argument.get("kind") == "linked" for argument in arguments)
+    if linked_count == 2:
+        return "span_span"
+    if linked_count == 1:
+        return "span_literal"
+    raise ValueError("relation requires one or two linked arguments")
+
+
+def _relation_fact_key(
+    relation: str, arguments: Sequence[Mapping], occurrences: Mapping[str, Mapping],
+) -> tuple:
+    """Decision-level directional identity for one relation fact.
+
+    Evidence occurrences may differ between repeated mentions, but the ranker acts
+    once per decision.  A context literal remains a literal identity because it has
+    no ranker decision and may legitimately be an exact answer.
+    """
+    identities = []
+    for argument in arguments:
+        if argument.get("kind") == "linked":
+            occurrence = occurrences.get(str(argument.get("occurrence_id")))
+            if occurrence is None or occurrence.get("decision_id") is None:
+                raise ValueError("linked relation argument has no decision")
+            identity = ("linked_decision", str(occurrence["decision_id"]))
+        elif argument.get("kind") == "context":
+            literal = canon(str(argument.get("literal", "")))
+            if not literal:
+                raise ValueError("context relation argument has no literal")
+            identity = ("context_literal", literal)
+        else:
+            raise ValueError("unknown relation argument kind")
+        identities.append(identity)
+    return (str(relation), *identities)
+
+
+def _compiled_relation_fact_key(candidate: Mapping, occurrences: Mapping[str, Mapping]) -> tuple:
+    arguments = list(dict(candidate.get("evidence") or {}).get("arguments") or [])
+    if len(arguments) != 2:
+        raise ValueError("compiled relation has no two-argument evidence")
+    return _relation_fact_key(str(candidate.get("relation", "")), arguments, occurrences)
+
+
+def _remap_to_lexically_groundable_siblings(
+    document: str,
+    arguments: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+    context_by_id: Mapping[str, Mapping],
+    relation: str,
+    relation_contract: Mapping[str, Mapping],
+) -> list[dict]:
+    """Cheap sibling remap for the escalation ledger; never calls NLI."""
+    from itertools import product
+
+    def grounds(trial: Sequence[Mapping]) -> bool:
+        quote, span, error, anchor_kind = _derived_relation_anchor(
+            document, list(trial), occurrences, context_by_id, relation, relation_contract,
+        )
+        return (
+            error is None
+            and span is not None
+            and all(_argument_is_grounded(argument, document, span, occurrences)
+                    for argument in trial)
+            and _relation_quote_has_lexical_cue_support(
+                relation, quote, trial, relation_contract,
+                allow_adjacent_clauses=True,
+                allow_plan_section=anchor_kind in {"plan_section", "problem_block", "speaker_turn"},
+            )
+        )
+
+    initial = [dict(argument) for argument in arguments]
+    if grounds(initial):
+        return initial
+    linked_indices = [index for index, argument in enumerate(initial)
+                      if argument.get("kind") == "linked"]
+    sibling_lists = []
+    for index in linked_indices:
+        decision_id = (occurrences.get(initial[index]["occurrence_id"]) or {}).get("decision_id")
+        siblings = [occurrence_id for occurrence_id, occurrence in occurrences.items()
+                    if decision_id is not None and occurrence.get("decision_id") == decision_id]
+        sibling_lists.append(siblings or [initial[index]["occurrence_id"]])
+    for sibling_ids in product(*sibling_lists):
+        if len(set(sibling_ids)) != len(sibling_ids):
+            continue
+        trial = [dict(argument) for argument in initial]
+        for index, occurrence_id in zip(linked_indices, sibling_ids):
+            trial[index]["occurrence_id"] = occurrence_id
+            trial[index]["surface"] = str(occurrences[occurrence_id].get("surface", ""))
+        if grounds(trial):
+            return trial
+    return initial
+
+
+def relation_support_opportunities(
+    document: str,
+    environment_document: Mapping,
+    *,
+    relation_contract: Mapping[str, Mapping] = ACI_RELATION_CONTRACT,
+) -> list[dict]:
+    """Enumerate conservative, source-supported relation opportunities.
+
+    This is deliberately a structural lower-bound signal for teacher escalation,
+    never an assertion generator.  It shares compiler argument typing, anchors,
+    sibling remapping, and lexical evidence checks, but avoids the NLI fallback so
+    target calculation remains local, deterministic, and cheap.
+    """
+    occurrences = {
+        str(row["occurrence_id"]): row
+        for row in environment_document.get("occurrences", [])
+        if row.get("occurrence_id") is not None
+    }
+    contexts = {
+        str(row["context_candidate_id"]): row
+        for row in relation_context_candidates(document)
+    }
+    linked = [
+        {
+            "kind": "linked",
+            "occurrence_id": str(row["occurrence_id"]),
+            "surface": str(row["surface"]),
+            "runtime_type": str(row["runtime_type"]),
+            "support_property": str(row["properties"][0]),
+        }
+        for row in relation_teacher_span_inventory(environment_document)
+        if row.get("properties")
+    ]
+    context = [
+        {
+            "kind": "context",
+            "literal": str(row["literal"]),
+            "runtime_type": str(row["runtime_type"]),
+            "start": int(row["start"]),
+            "end": int(row["end"]),
+            "context_candidate_id": str(row["context_candidate_id"]),
+        }
+        for row in contexts.values()
+    ]
+    opportunities: dict[tuple, dict] = {}
+    for relation in relation_contract:
+        for subject_template in [*linked, *context]:
+            for object_template in [*linked, *context]:
+                if subject_template is object_template:
+                    continue
+                arguments = [
+                    {"role": "subject", **subject_template},
+                    {"role": "object", **object_template},
+                ]
+                if not any(argument["kind"] == "linked" for argument in arguments):
+                    continue
+                if not _relation_arguments_are_legal(relation, arguments, relation_contract):
+                    continue
+                if (
+                    subject_template["kind"] == object_template["kind"] == "linked"
+                    and occurrences[subject_template["occurrence_id"]].get("decision_id")
+                    == occurrences[object_template["occurrence_id"]].get("decision_id")
+                ):
+                    continue
+                arguments = _remap_to_lexically_groundable_siblings(
+                    document, arguments, occurrences, contexts, relation, relation_contract,
+                )
+                quote, span, error, anchor_kind = _derived_relation_anchor(
+                    document, arguments, occurrences, contexts, relation, relation_contract,
+                )
+                if error is not None or span is None:
+                    continue
+                if not all(_argument_is_grounded(argument, document, span, occurrences)
+                           for argument in arguments):
+                    continue
+                if not _relation_quote_has_lexical_cue_support(
+                    relation, quote, arguments, relation_contract,
+                    allow_adjacent_clauses=True,
+                    allow_plan_section=anchor_kind in {"plan_section", "problem_block", "speaker_turn"},
+                ):
+                    continue
+                key = _relation_fact_key(relation, arguments, occurrences)
+                opportunities.setdefault(key, {
+                    "relation": relation,
+                    "scope": _relation_scope(arguments),
+                    "fact_key": key,
+                    "anchor_kind": anchor_kind,
+                })
+    return [opportunities[key] for key in sorted(opportunities)]
+
+
+def _validate_relation_escalation_policy(policy: Mapping | None) -> dict | None:
+    """Validate a fully manifest-pinned escalation policy; absent means disabled."""
+    if policy is None:
+        return None
+    if not isinstance(policy, Mapping):
+        raise ValueError("relation_escalation_policy must be a mapping")
+    required = {"version", "min_opportunities", "coverage_fraction", "scope_caps"}
+    if set(policy) != required or not str(policy.get("version", "")).strip():
+        raise ValueError("relation_escalation_policy must pin version and all target fields")
+    normalized = {"version": str(policy["version"])}
+    for field in ("min_opportunities", "coverage_fraction", "scope_caps"):
+        values = policy[field]
+        if not isinstance(values, Mapping) or set(values) != set(_RELATION_ESCALATION_SCOPES):
+            raise ValueError(f"relation_escalation_policy.{field} must cover every relation scope")
+        normalized[field] = dict(values)
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in normalized["min_opportunities"].values()
+    ):
+        raise ValueError("relation escalation min_opportunities must be non-negative integers")
+    if any(
+        not isinstance(value, Real) or not 0.0 < float(value) <= 1.0
+        for value in normalized["coverage_fraction"].values()
+    ):
+        raise ValueError("relation escalation coverage_fraction must be in (0, 1]")
+    if any(
+        isinstance(value, bool) or not isinstance(value, int) or value < 0
+        for value in normalized["scope_caps"].values()
+    ) or sum(normalized["scope_caps"].values()) > RELATION_TEACHER_MAX_RELATIONS:
+        raise ValueError("relation escalation scope_caps must be non-negative and fit the relation cap")
+    return normalized
+
+
+def relation_escalation_targets(
+    opportunity_counts: Mapping[str, int], policy: Mapping,
+) -> dict[str, int]:
+    """Manifest-pinned target count by relation scope."""
+    validated = _validate_relation_escalation_policy(policy)
+    if validated is None:
+        raise ValueError("relation escalation policy is required")
+    return {
+        scope: (
+            0 if int(opportunity_counts.get(scope, 0)) < validated["min_opportunities"][scope]
+            else min(
+                validated["scope_caps"][scope],
+                ceil(validated["coverage_fraction"][scope] * int(opportunity_counts.get(scope, 0))),
+            )
+        )
+        for scope in _RELATION_ESCALATION_SCOPES
+    }
+
+
+def needs_relation_escalation(
+    kept_counts: Mapping[str, int], targets: Mapping[str, int],
+) -> bool:
+    return any(
+        int(kept_counts.get(scope, 0)) < int(targets.get(scope, 0))
+        for scope in _RELATION_ESCALATION_SCOPES
+    )
+
+
+def merge_kept_relation_rows(
+    primary_rows: Sequence[Mapping],
+    secondary_rows: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+) -> tuple[list[dict], dict[str, int]]:
+    """Merge post-gate rows by fact identity, retaining the primary formulation."""
+    primary_by_key: dict[tuple, dict] = {}
+    for row in primary_rows:
+        primary_by_key.setdefault(_compiled_relation_fact_key(row, occurrences), dict(row))
+    secondary_by_key: dict[tuple, dict] = {}
+    for row in secondary_rows:
+        secondary_by_key.setdefault(_compiled_relation_fact_key(row, occurrences), dict(row))
+    merged = list(primary_by_key.values())
+    merged.extend(row for key, row in secondary_by_key.items() if key not in primary_by_key)
+    disposition = {
+        "primary_only": sum(key not in secondary_by_key for key in primary_by_key),
+        "primary_preferred": sum(key in secondary_by_key for key in primary_by_key),
+        "secondary_only": sum(key not in primary_by_key for key in secondary_by_key),
+    }
+    return merged, disposition
+
+
 def _promote_context_literals_on_detected_entities(
     arguments: list[dict], proposal: Mapping,
     occurrences: Mapping[str, Mapping], decisions: Mapping[str, Mapping],
@@ -3500,10 +3795,7 @@ def compile_relational_assertions(
             str(occurrences[occurrence_id]["decision_id"]): support[occurrence_id]
             for occurrence_id in occurrence_ids
         }
-        fact_group = (relation, tuple(
-            (argument["kind"], argument.get("occurrence_id", canon(argument.get("literal", ""))))
-            for argument in arguments
-        ))
+        fact_group = _relation_fact_key(relation, arguments, occurrences)
         if fact_group in fact_groups:
             reject("duplicate_fact_group")
             continue
@@ -4396,6 +4688,7 @@ def build_utility_artifact(
     reader: Callable[[list[str], str], Sequence[str]],
     render_action_vector: Callable[[str, Mapping[str, str]], str],
     relation_teacher: OpenRouterRelationTeacher | None = None,
+    secondary_relation_teacher: OpenRouterRelationTeacher | None = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation."""
     reader_pin = _validated_build_reader_pin(reader, pins)
@@ -4413,9 +4706,17 @@ def build_utility_artifact(
     stability_repetitions = int(threshold_manifest.get("reader_stability_repetitions", 1))
     option_permutations = int(threshold_manifest.get("reader_option_permutations", 1))
     stability_threshold = float(threshold_manifest.get("reader_stability_threshold", 1.0))
+    escalation_policy = (
+        _validate_relation_escalation_policy(
+            threshold_manifest.get("relation_escalation_policy")
+        ) if secondary_relation_teacher is not None else None
+    )
+    escalation_enabled = escalation_policy is not None and relation_teacher is not None
     candidates_by_document: dict[str, list[dict]] = {}
     candidate_accounting_by_document: dict[str, list[dict]] = {}
     relation_generation_by_document: dict[str, list[dict]] = {}
+    relation_teacher_runs_by_document: dict[str, list[dict]] = {}
+    relation_escalation_by_document: dict[str, dict] = {}
     rejection_records: list[dict] = []
 
     def preserve_rejection(record_value: Mapping, *, doc_id: str) -> None:
@@ -4694,6 +4995,7 @@ def build_utility_artifact(
             and row.get("subtype") == "contextual_relation"
             for row in accepted
         )
+        pre_teacher_accepted = list(accepted)
         if relation_teacher is not None and relation_teacher_span_inventory(environment_document):
             if relation_teacher is None:
                 preserve_rejection(_rejection_record(
@@ -4714,6 +5016,28 @@ def build_utility_artifact(
             else:
                 prompt = relation_teacher_prompt(doc_id, source, environment_document)
                 prompt_hash = _stable_hash(prompt)
+                if escalation_enabled:
+                    opportunities = relation_support_opportunities(source, environment_document)
+                    opportunity_counts = {
+                        scope: sum(row["scope"] == scope for row in opportunities)
+                        for scope in _RELATION_ESCALATION_SCOPES
+                    }
+                    escalation_targets = relation_escalation_targets(
+                        opportunity_counts, escalation_policy,
+                    )
+                    relation_escalation_by_document[doc_id] = {
+                        "policy_version": escalation_policy["version"],
+                        "opportunity_counts": opportunity_counts,
+                        "opportunity_fact_key_hashes": [
+                            _stable_hash(row["fact_key"]) for row in opportunities
+                        ],
+                        "targets": escalation_targets,
+                        "primary_kept_counts": {},
+                        "triggered": False,
+                        "secondary_status": "not_needed",
+                    }
+                primary_accepted_relations: list[dict] = []
+                primary_proposal_count = 0
                 try:
                     if isinstance(relation_teacher, OpenRouterRelationTeacher):
                         proposals = relation_teacher.propose(
@@ -4724,6 +5048,7 @@ def build_utility_artifact(
                         )
                     else:
                         proposals = relation_teacher.propose(prompt)
+                    primary_proposal_count = len(proposals)
                     if isinstance(proposals, RelationTeacherProposals):
                         try:
                             candidate_accounting_by_document[doc_id] = (
@@ -4756,6 +5081,18 @@ def build_utility_artifact(
                                 "reason": "invalid_teacher_candidate_accounting",
                                 "detail": str(error),
                             }]
+                    if escalation_enabled:
+                        relation_teacher_runs_by_document.setdefault(doc_id, []).append({
+                            "teacher_id": "gpt_oss",
+                            "run_id": "primary",
+                            "prompt_hash": prompt_hash,
+                            "teacher_pin_hash": _stable_hash(getattr(relation_teacher, "pin", {})),
+                            "proposal_count": len(proposals),
+                            "candidate_accounting": deepcopy(
+                                candidate_accounting_by_document.get(doc_id, [])
+                            ),
+                            "status": "proposed" if proposals else "abstained",
+                        })
                     if not proposals:
                         preserve_rejection(_rejection_record(
                             reason="not_generated",
@@ -4785,6 +5122,9 @@ def build_utility_artifact(
                             "status": "rejected",
                             "reason": "uncompiled",
                         } for proposal_index, proposal in enumerate(proposals)]
+                        if escalation_enabled:
+                            for attempt in relation_attempts:
+                                attempt.update({"teacher_id": "gpt_oss", "run_id": "primary"})
                         relation_candidates, relation_rejections = (
                             task_adapter.compile_relations(
                                 doc_id, source, environment_document, proposals
@@ -4795,6 +5135,10 @@ def build_utility_artifact(
                             relation_candidate["evidence"] = {
                                 **dict(relation_candidate.get("evidence") or {}),
                                 "prompt_hash": prompt_hash,
+                                **(
+                                    {"teacher_id": "gpt_oss", "run_id": "primary"}
+                                    if escalation_enabled else {}
+                                ),
                             }
                         attempts_by_proposal_hash = {
                             _stable_hash(proposal): attempt
@@ -4818,6 +5162,7 @@ def build_utility_artifact(
                         accepted_relations = validate_candidate_rows(
                             [dict(row) for row in relation_candidates]
                         )
+                        primary_accepted_relations = accepted_relations
                         for row in accepted_relations:
                             attempt = attempts_by_proposal_hash.get(
                                 row.get("evidence", {}).get("proposal_hash")
@@ -4833,6 +5178,10 @@ def build_utility_artifact(
                                     "status": "rejected",
                                     "reason": rejection.get("detail_reason", rejection.get("reason")),
                                 })
+                        if escalation_enabled:
+                            relation_teacher_runs_by_document[doc_id][-1]["status"] = (
+                                "kept" if accepted_relations else "rejected"
+                            )
                         relation_generation_by_document[doc_id] = relation_attempts
                         accepted.extend(accepted_relations)
                         contextual_relation_count = sum(
@@ -4842,6 +5191,7 @@ def build_utility_artifact(
                         )
                         if (
                             contextual_relation_count < min_contextual_relations
+                            and not escalation_enabled
                             and (
                                 accepted_relations
                                 or not relation_candidates and not relation_rejections
@@ -4881,6 +5231,17 @@ def build_utility_artifact(
                         if isinstance(error, RelationTeacherResponseError)
                         else "teacher_generation_failed"
                     )
+                    if escalation_enabled:
+                        relation_teacher_runs_by_document.setdefault(doc_id, []).append({
+                            "teacher_id": "gpt_oss",
+                            "run_id": "primary",
+                            "prompt_hash": prompt_hash,
+                            "teacher_pin_hash": _stable_hash(getattr(relation_teacher, "pin", {})),
+                            "proposal_count": primary_proposal_count,
+                            "candidate_accounting": [],
+                            "status": "failed",
+                            "error_code": error_code,
+                        })
                     preserve_rejection(_rejection_record(
                         reason="generation_failed",
                         detail_reason=error_code,
@@ -4918,6 +5279,213 @@ def build_utility_artifact(
                             ),
                         },
                     ), doc_id=doc_id)
+                if escalation_enabled:
+                    escalation = relation_escalation_by_document[doc_id]
+                    primary_accepted_relations, _ = merge_kept_relation_rows(
+                        primary_accepted_relations, [], occurrences,
+                    )
+                    primary_counts = {
+                        scope: sum(
+                            _relation_scope(
+                                list(dict(row.get("evidence") or {}).get("arguments") or [])
+                            ) == scope
+                            for row in primary_accepted_relations
+                        )
+                        for scope in _RELATION_ESCALATION_SCOPES
+                    }
+                    escalation["primary_kept_counts"] = primary_counts
+                    if needs_relation_escalation(primary_counts, escalation["targets"]):
+                        escalation["triggered"] = True
+                        secondary_accounting: list[dict] = []
+                        secondary_attempts: list[dict] = []
+                        secondary_accepted: list[dict] = []
+                        secondary_proposal_count = 0
+                        try:
+                            if isinstance(secondary_relation_teacher, OpenRouterRelationTeacher):
+                                secondary_proposals = secondary_relation_teacher.propose(
+                                    prompt,
+                                    response_format=relation_teacher_response_format(
+                                        environment_document, source,
+                                    ),
+                                )
+                            else:
+                                secondary_proposals = secondary_relation_teacher.propose(prompt)
+                            secondary_proposal_count = len(secondary_proposals)
+                            if isinstance(secondary_proposals, RelationTeacherProposals):
+                                try:
+                                    secondary_accounting = _validated_candidate_accounting(
+                                        secondary_proposals.candidate_accounting,
+                                        environment_document, source,
+                                    )
+                                except ValueError as error:
+                                    secondary_accounting = [{
+                                        "state": "ledger_inconsistent",
+                                        "reason": "invalid_teacher_candidate_accounting",
+                                        "detail": str(error),
+                                    }]
+                            relation_teacher_runs_by_document.setdefault(doc_id, []).append({
+                                "teacher_id": "nemotron",
+                                "run_id": "secondary",
+                                "prompt_hash": prompt_hash,
+                                "teacher_pin_hash": _stable_hash(
+                                    getattr(secondary_relation_teacher, "pin", {})
+                                ),
+                                "proposal_count": secondary_proposal_count,
+                                "candidate_accounting": deepcopy(secondary_accounting),
+                                "status": "proposed" if secondary_proposals else "abstained",
+                            })
+                            if secondary_proposals:
+                                secondary_attempts = [{
+                                    "proposal_index": proposal_index,
+                                    "relation": proposal.get("relation"),
+                                    "arguments": proposal.get("arguments"),
+                                    "question": proposal.get("question"),
+                                    "accepted_answers": proposal.get("accepted_answers"),
+                                    "scoring_contract": proposal.get("scoring_contract"),
+                                    "status": "rejected",
+                                    "reason": "uncompiled",
+                                    "teacher_id": "nemotron",
+                                    "run_id": "secondary",
+                                } for proposal_index, proposal in enumerate(secondary_proposals)]
+                                secondary_candidates, secondary_rejections = task_adapter.compile_relations(
+                                    doc_id, source, environment_document, secondary_proposals,
+                                )
+                                secondary_candidates = [dict(row) for row in secondary_candidates]
+                                for candidate in secondary_candidates:
+                                    candidate["evidence"] = {
+                                        **dict(candidate.get("evidence") or {}),
+                                        "prompt_hash": prompt_hash,
+                                        "teacher_id": "nemotron",
+                                        "run_id": "secondary",
+                                    }
+                                attempts_by_proposal_hash = {
+                                    _stable_hash(proposal): attempt
+                                    for proposal, attempt in zip(secondary_proposals, secondary_attempts)
+                                }
+                                attempts_by_candidate_hash = {
+                                    _stable_hash(candidate): attempts_by_proposal_hash.get(
+                                        candidate.get("evidence", {}).get("proposal_hash")
+                                    )
+                                    for candidate in secondary_candidates
+                                }
+                                for rejection in secondary_rejections:
+                                    rejection = dict(rejection)
+                                    rejection["evidence"] = {
+                                        **dict(rejection.get("evidence") or {}),
+                                        "teacher_id": "nemotron",
+                                        "run_id": "secondary",
+                                    }
+                                    preserve_rejection(rejection, doc_id=doc_id)
+                                    proposal_index = rejection.get("proposal_index")
+                                    if isinstance(proposal_index, int) and proposal_index < len(secondary_attempts):
+                                        secondary_attempts[proposal_index].update({
+                                            "status": "rejected",
+                                            "reason": rejection.get("detail_reason", rejection.get("reason")),
+                                        })
+                                rejection_count_before_validation = len(rejection_records)
+                                secondary_accepted = validate_candidate_rows(secondary_candidates)
+                                for row in secondary_accepted:
+                                    attempt = attempts_by_proposal_hash.get(
+                                        row.get("evidence", {}).get("proposal_hash")
+                                    )
+                                    if attempt is not None:
+                                        attempt.update({"status": "kept", "reason": "accepted"})
+                                for rejection in rejection_records[rejection_count_before_validation:]:
+                                    rejection["evidence"] = {
+                                        **dict(rejection.get("evidence") or {}),
+                                        "teacher_id": "nemotron",
+                                        "run_id": "secondary",
+                                    }
+                                    attempt = attempts_by_candidate_hash.get(
+                                        rejection.get("evidence", {}).get("candidate_hash")
+                                    )
+                                    if attempt is not None:
+                                        attempt.update({
+                                            "status": "rejected",
+                                            "reason": rejection.get("detail_reason", rejection.get("reason")),
+                                        })
+                                relation_teacher_runs_by_document[doc_id][-1]["status"] = (
+                                    "kept" if secondary_accepted else "rejected"
+                                )
+                            relation_generation_by_document.setdefault(doc_id, []).extend(secondary_attempts)
+                            escalation["secondary_status"] = (
+                                "kept" if secondary_accepted else "abstained"
+                            )
+                        except Exception as error:
+                            error_code = (
+                                error.code if isinstance(error, RelationTeacherResponseError)
+                                else "teacher_generation_failed"
+                            )
+                            relation_teacher_runs_by_document.setdefault(doc_id, []).append({
+                                "teacher_id": "nemotron",
+                                "run_id": "secondary",
+                                "prompt_hash": prompt_hash,
+                                "teacher_pin_hash": _stable_hash(
+                                    getattr(secondary_relation_teacher, "pin", {})
+                                ),
+                                "proposal_count": secondary_proposal_count,
+                                "candidate_accounting": deepcopy(secondary_accounting),
+                                "status": "failed",
+                                "error_code": error_code,
+                            })
+                            escalation["secondary_status"] = error_code
+                            preserve_rejection(_rejection_record(
+                                reason="generation_failed",
+                                detail_reason=error_code,
+                                attempt={
+                                    "doc_id": doc_id,
+                                    "prompt_hash": prompt_hash,
+                                    "teacher_id": "nemotron",
+                                    "run_id": "secondary",
+                                    "definition_version": "contextual-relation-v1",
+                                },
+                                evidence={
+                                    "source": "relation_teacher",
+                                    "prompt_hash": prompt_hash,
+                                    "teacher_id": "nemotron",
+                                    "run_id": "secondary",
+                                    "error_type": type(error).__name__,
+                                    "error_code": error_code,
+                                },
+                            ), doc_id=doc_id)
+                        merged_relations, disposition = merge_kept_relation_rows(
+                            primary_accepted_relations, secondary_accepted, occurrences,
+                        )
+                        accepted = pre_teacher_accepted + merged_relations
+                        contextual_relation_count = sum(
+                            row.get("family") == "context"
+                            and row.get("subtype") == "contextual_relation"
+                            for row in accepted
+                        )
+                        escalation["secondary_kept_counts"] = {
+                            scope: sum(
+                                _relation_scope(
+                                    list(dict(row.get("evidence") or {}).get("arguments") or [])
+                                ) == scope
+                                for row in secondary_accepted
+                            )
+                            for scope in _RELATION_ESCALATION_SCOPES
+                        }
+                        escalation["merge_disposition"] = disposition
+                        escalation["merged_kept_counts"] = {
+                            scope: sum(
+                                _relation_scope(
+                                    list(dict(row.get("evidence") or {}).get("arguments") or [])
+                                ) == scope
+                                for row in merged_relations
+                            )
+                            for scope in _RELATION_ESCALATION_SCOPES
+                        }
+                    else:
+                        escalation["secondary_kept_counts"] = {
+                            scope: 0 for scope in _RELATION_ESCALATION_SCOPES
+                        }
+                        escalation["merge_disposition"] = {
+                            "primary_only": len(primary_accepted_relations),
+                            "primary_preferred": 0,
+                            "secondary_only": 0,
+                        }
+                        escalation["merged_kept_counts"] = dict(primary_counts)
         elif relation_teacher is not None:
             preserve_rejection(_rejection_record(
                 reason="not_generated",
@@ -4934,16 +5502,29 @@ def build_utility_artifact(
             ), doc_id=doc_id)
         candidates_by_document[doc_id] = accepted
 
+    artifact_pins = {
+        **dict(pins),
+        "reader_pin": reader_pin,
+        "threshold_manifest": dict(threshold_manifest),
+    }
+    if escalation_enabled:
+        primary_pin = getattr(relation_teacher, "pin", None)
+        secondary_pin = getattr(secondary_relation_teacher, "pin", None)
+        if not all(isinstance(value, Mapping) and value for value in (primary_pin, secondary_pin)):
+            raise ValueError("enabled relation escalation requires explicit primary and secondary pins")
+        artifact_pins.update({
+            "relation_teacher_pins": {
+                "primary": dict(primary_pin),
+                "secondary": dict(secondary_pin),
+            },
+            "relation_escalation_policy": dict(escalation_policy),
+        })
     artifact = package_utility_artifact(
         frozen_environment,
         candidates_by_document,
         family_budgets=family_budgets,
         structural_cap=threshold_manifest.get("structural_cap"),
-        pins={
-            **dict(pins),
-            "reader_pin": reader_pin,
-            "threshold_manifest": dict(threshold_manifest),
-        },
+        pins=artifact_pins,
     )
     summary_by_reason: dict[str, int] = defaultdict(int)
     for record in rejection_records:
@@ -4954,6 +5535,9 @@ def build_utility_artifact(
     }
     artifact["relation_candidate_accounting"] = candidate_accounting_by_document
     artifact["relation_generation"] = relation_generation_by_document
+    if escalation_enabled:
+        artifact["relation_teacher_runs"] = relation_teacher_runs_by_document
+        artifact["relation_escalation"] = relation_escalation_by_document
     # Diagnostic classification of the finished artifact. Deterministic from its
     # contents, so it is included in the hashed payload (keeps the downstream
     # gate's hash recompute consistent) without adding entropy.

@@ -4,12 +4,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from collections.abc import Mapping
 from pathlib import Path
 
 from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
     AciTaskAdapter,
+    NEMOTRON_RELATION_TEACHER_MODEL,
     OpenRouterRelationTeacher,
     artifact_views,
     build_utility_artifact,
@@ -185,7 +187,10 @@ def _action_renderer(
     return render
 
 
-def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) -> dict:
+def build_from_files(
+    args, *, relation_teacher=None, secondary_relation_teacher=None,
+    reader=read_context_batch,
+) -> dict:
     manifest = json.loads(Path(args.threshold_manifest).read_text())
     family_budgets = manifest.get("family_budgets")
     if not isinstance(family_budgets, dict) or set(family_budgets) != {"context", "delivered"}:
@@ -213,14 +218,33 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         source_documents=source_documents,
     )
     references = {doc_id: row["gold_ref"] for doc_id, row in rows.items()}
-    if relation_teacher is None and args.relation_teacher:
+    escalation_requested = bool(
+        getattr(args, "relation_teacher_escalation", False)
+        or os.getenv("CLOAK_RELATION_TEACHER_ESCALATION") == "1"
+    )
+    if relation_teacher is None and (args.relation_teacher or escalation_requested):
         relation_teacher = OpenRouterRelationTeacher()
+    escalation_configured = bool(
+        escalation_requested and manifest.get("relation_escalation_policy") is not None
+    )
+    if secondary_relation_teacher is None and escalation_configured:
+        secondary_relation_teacher = OpenRouterRelationTeacher(
+            model=NEMOTRON_RELATION_TEACHER_MODEL,
+            routed_provider=None,
+            allow_fallbacks=True,
+        )
     teacher_pin = None
     if relation_teacher is not None:
         raw_teacher_pin = getattr(relation_teacher, "pin", None)
         if not isinstance(raw_teacher_pin, Mapping) or not raw_teacher_pin:
             raise ValueError("relation teacher requires an explicit non-empty pin")
         teacher_pin = dict(raw_teacher_pin)
+    secondary_teacher_pin = None
+    if secondary_relation_teacher is not None:
+        raw_secondary_pin = getattr(secondary_relation_teacher, "pin", None)
+        if not isinstance(raw_secondary_pin, Mapping) or not raw_secondary_pin:
+            raise ValueError("secondary relation teacher requires an explicit non-empty pin")
+        secondary_teacher_pin = dict(raw_secondary_pin)
 
     pins = {
         key: value for key, value in manifest.items()
@@ -240,6 +264,14 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
         "source_hashes": {doc_id: _hash(text) for doc_id, text in source_documents.items()},
         "reference_hashes": {doc_id: _hash(text) for doc_id, text in references.items()},
     })
+    if escalation_configured and secondary_teacher_pin is not None:
+        pins.update({
+            "relation_teacher_pins": {
+                "primary": teacher_pin,
+                "secondary": secondary_teacher_pin,
+            },
+            "relation_escalation_policy": dict(manifest["relation_escalation_policy"]),
+        })
     return build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
@@ -251,6 +283,9 @@ def build_from_files(args, *, relation_teacher=None, reader=read_context_batch) 
             environment, frozen_environment, arms, args.corpus, source_documents
         ),
         relation_teacher=relation_teacher,
+        secondary_relation_teacher=(
+            secondary_relation_teacher if escalation_configured else None
+        ),
     )
 
 
@@ -265,7 +300,15 @@ def parse_args(argv=None):
     parser.add_argument(
         "--relation-teacher",
         action="store_true",
-        help="allow one cached Nemotron/OpenRouter proposal call per under-supported document",
+        help="enable the primary cached GPT-OSS relation teacher",
+    )
+    parser.add_argument(
+        "--relation-teacher-escalation",
+        action="store_true",
+        help=(
+            "with a manifest relation_escalation_policy, conditionally call the "
+            "cached Nemotron secondary teacher after GPT-OSS"
+        ),
     )
     return parser.parse_args(argv)
 
@@ -281,10 +324,16 @@ def write_artifacts(artifact: dict, output: Path) -> tuple[Path, Path]:
     return assertions_output, qa_pairs_output
 
 
-def main(argv=None, *, relation_teacher=None, reader=read_context_batch):
+def main(
+    argv=None, *, relation_teacher=None, secondary_relation_teacher=None,
+    reader=read_context_batch,
+):
     args = parse_args(argv)
     artifact = build_from_files(
-        args, relation_teacher=relation_teacher, reader=reader
+        args,
+        relation_teacher=relation_teacher,
+        secondary_relation_teacher=secondary_relation_teacher,
+        reader=reader,
     )
     output = Path(args.out)
     assertions_output, qa_pairs_output = write_artifacts(artifact, output)
