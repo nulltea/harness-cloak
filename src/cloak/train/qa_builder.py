@@ -1241,6 +1241,7 @@ def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]
             continue
         rows.append({
             "occurrence_id": str(occurrence["occurrence_id"]),
+            "decision_id": str(occurrence.get("decision_id")),
             "surface": str(occurrence.get("surface", "")),
             "start": start,
             "end": end,
@@ -1249,9 +1250,20 @@ def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]
             "properties": properties,
         })
     rows.sort(key=lambda row: (row["start"], row["end"], row["occurrence_id"]))
-    for index, row in enumerate(rows, start=1):
+    # One S-label per DECISION, not per occurrence: a term mentioned N times (e.g. "knee"
+    # ×8) must not flood the inventory N times -- it distracts the teacher's draw and makes
+    # it unstable to detector recall. Keep the earliest occurrence as the representative;
+    # compile-time grounding remap resolves to the best sibling occurrence of the decision.
+    deduped, seen = [], set()
+    for row in rows:
+        key = row["decision_id"] or f"occ:{row['occurrence_id']}"
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+    for index, row in enumerate(deduped, start=1):
         row["span_label"] = f"S{index}"
-    return rows
+    return deduped
 
 
 def _source_clause_spans(document: str) -> list[tuple[int, int]]:

@@ -1120,13 +1120,15 @@ def test_grounds_via_same_value_sibling_when_teacher_names_history_mention():
              "entails": ["opioid analgesic"]}]},
         ],
     }
-    # S1 = arth-hist (earliest), S2 = arth-plan, S3 = ultram; teacher names S1 (history).
+    # Inventory is one label per decision: S1 = arthritis (represented by the earliest
+    # occurrence arth-hist), S2 = ultram. The teacher can only name S1, which resolves to
+    # the history mention; the compiler must remap to the plan-sentence sibling to ground.
     proposal = {
         "relation": "prescribed_with",
         "arguments": [
             {"role": "subject", "kind": "linked", "span_label": "S1",
              "support_property": "bone inflammation disease", "literal": None},
-            {"role": "object", "kind": "linked", "span_label": "S3",
+            {"role": "object", "kind": "linked", "span_label": "S2",
              "support_property": "opioid analgesic", "literal": None},
         ],
         "question": "Which medication category was prescribed for the bone inflammation disease?",
