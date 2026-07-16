@@ -1359,6 +1359,22 @@ _PROBLEM_BLOCK_BOUNDARY = re.compile(
     re.IGNORECASE,
 )
 
+# A clinical problem discussion routinely states the condition in the exam/HPI and its
+# treatment/test in that problem's plan, with assessment, rationale, acknowledgment, and
+# order clauses in between (measured: muscle-strain->meloxicam spans 7 clauses across the
+# exam->plan transition). Twelve keeps that local pattern eligible while remaining a strict
+# anti-document-wide cap; a PROBLEM SWITCH (below) still hard-stops the bridge.
+_CROSS_CLAUSE_ANCHOR_MAX_DISTANCE = 12
+
+# A PROBLEM SWITCH (moving to a different problem) blocks a cross-clause bridge; the
+# exam->plan transition of the SAME problem ("assessment and plan", "for your first
+# problem") does not -- clinical notes routinely state the condition in the exam/HPI and
+# its treatment/test in that problem's plan.
+_PROBLEM_SWITCH_BOUNDARY = re.compile(
+    r"for (?:your|the|his|her)\s+(?:second|third|fourth|fifth|sixth|next|last|final)\b",
+    re.IGNORECASE,
+)
+
 
 def _problem_blocks(document: str) -> list[tuple[int, int]]:
     cuts = sorted({m.start() for m in _PROBLEM_BLOCK_BOUNDARY.finditer(document)})
@@ -2945,7 +2961,9 @@ def _derived_relation_anchor(
     context_candidates: Mapping[str, Mapping],
     relation: str,
     relation_contract: Mapping[str, Mapping],
-) -> tuple[str, tuple[int, int] | None, str | None, str | None]:
+) -> tuple[
+    str, tuple[int, int] | None, list[tuple[int, int]] | None, str | None, str | None,
+]:
     """Resolve a v4 literal after deriving a source-local anchor from linked spans."""
     clauses = _source_clause_spans(document)
 
@@ -2955,15 +2973,18 @@ def _derived_relation_anchor(
 
     linked = [argument for argument in arguments if argument["kind"] == "linked"]
     if not linked:
-        return "", None, "missing_linked_argument", None
-    linked_spans = [
-        (int(occurrences[argument["occurrence_id"]]["start"]),
-         int(occurrences[argument["occurrence_id"]]["end"]))
-        for argument in linked
-    ]
+        return "", None, None, "missing_linked_argument", None
+    try:
+        linked_spans = [
+            (int(occurrences[argument["occurrence_id"]]["start"]),
+             int(occurrences[argument["occurrence_id"]]["end"]))
+            for argument in linked
+        ]
+    except (KeyError, TypeError, ValueError):
+        return "", None, None, "invalid_evidence_occurrence", None
     linked_clause_indices = [clause_index(start, end) for start, end in linked_spans]
     if any(index is None for index in linked_clause_indices):
-        return "", None, "invalid_evidence_occurrence", None
+        return "", None, None, "invalid_evidence_occurrence", None
     linked_plan_section = _shared_plan_section(document, linked_spans)
     linked_problem_block = _shared_problem_block(document, linked_spans)
     context = next((argument for argument in arguments if argument["kind"] == "context"), None)
@@ -2999,7 +3020,7 @@ def _derived_relation_anchor(
             if in_clause_window or in_plan or in_block:
                 scored.append((clause_dist, _linked_gap(start, end), start, end))
         if not scored:
-            return "", None, "unknown_context_literal", None
+            return "", None, None, "unknown_context_literal", None
         scored.sort()
         start, end = scored[0][2], scored[0][3]
         # A literal that lands on a protected controlled span is an S-label
@@ -3012,7 +3033,7 @@ def _derived_relation_anchor(
             and start < int(occurrence["end"]) and int(occurrence["start"]) < end
             for occurrence in occurrences.values()
         ):
-            return "", None, "protected_context_literal", None
+            return "", None, None, "protected_context_literal", None
         # Ground against the exact source substring, which may differ from the teacher
         # spelling only by case/whitespace; identify the typed candidate by the resolved
         # source span rather than the teacher's spelling.
@@ -3022,7 +3043,7 @@ def _derived_relation_anchor(
                  if int(row.get("start", -1)) == start and int(row.get("end", -1)) == end]
         if typed:
             if len(typed) != 1:
-                return "", None, "untyped_context_literal", None
+                return "", None, None, "untyped_context_literal", None
             context.update({
                 "runtime_type": str(typed[0]["runtime_type"]),
                 "context_candidate_id": str(typed[0]["context_candidate_id"]),
@@ -3037,15 +3058,18 @@ def _derived_relation_anchor(
             slot_classes = relation_contract[relation]["argument_classes"][slot_index]
             context["runtime_type"] = slot_classes[0]
         context.update({"start": start, "end": end})
-    all_indices = [
-        clause_index(
-            int(occurrences[argument["occurrence_id"]]["start"])
-            if argument["kind"] == "linked" else int(argument["start"]),
-            int(occurrences[argument["occurrence_id"]]["end"])
-            if argument["kind"] == "linked" else int(argument["end"]),
-        )
-        for argument in arguments
-    ]
+    try:
+        all_indices = [
+            clause_index(
+                int(occurrences[argument["occurrence_id"]]["start"])
+                if argument["kind"] == "linked" else int(argument["start"]),
+                int(occurrences[argument["occurrence_id"]]["end"])
+                if argument["kind"] == "linked" else int(argument["end"]),
+            )
+            for argument in arguments
+        ]
+    except (KeyError, TypeError, ValueError):
+        return "", None, None, "invalid_evidence_occurrence", None
     if not any(index is None for index in all_indices) and max(all_indices) - min(all_indices) <= 1:
         left, right = clauses[min(all_indices)][0], clauses[max(all_indices)][1]
         # A speaker-turn "clause" (dialogue, >=2 turn markers) can hold several period
@@ -3053,7 +3077,7 @@ def _derived_relation_anchor(
         # _source_clause_spans (here) and the support-check's period regex otherwise
         # disagree on clause boundaries, failing valid same-turn relations (Case 3).
         kind = "speaker_turn" if len(_ACI_SPEAKER_TURN_PATTERN.findall(document)) >= 2 else "clause"
-        return document[left:right], (left, right), None, kind
+        return document[left:right], (left, right), None, None, kind
     argument_spans = [
         (int(occurrences[argument["occurrence_id"]]["start"]),
          int(occurrences[argument["occurrence_id"]]["end"]))
@@ -3062,14 +3086,49 @@ def _derived_relation_anchor(
     ]
     plan_section = _shared_plan_section(document, argument_spans)
     if plan_section is not None:
-        return document[plan_section[0]:plan_section[1]], plan_section, None, "plan_section"
+        return document[plan_section[0]:plan_section[1]], plan_section, None, None, "plan_section"
     # Spoken transcript: the arguments may sit in different turns of one
     # problem discussion (a patient acknowledgment between them). Ground within
     # that block; the hedge guard and cue check in compilation still apply.
     problem_block = _shared_problem_block(document, argument_spans)
     if problem_block is not None:
-        return document[problem_block[0]:problem_block[1]], problem_block, None, "problem_block"
-    return "", None, "invalid_evidence", None
+        return document[problem_block[0]:problem_block[1]], problem_block, None, None, "problem_block"
+    # No explicit problem marker is common in short encounter summaries. Permit
+    # only a local span->span bridge: all argument clauses must fit the global
+    # cap and no assessment/problem switch may occur between the source spans.
+    if len(linked) == len(arguments):
+        first_index, last_index = min(linked_clause_indices), max(linked_clause_indices)
+        first_span, last_span = min(linked_spans), max(linked_spans)
+        boundary = _PROBLEM_SWITCH_BOUNDARY.search(document, first_span[1], last_span[0])
+        # Do not bridge past a same-decision mention. The sibling remapper must
+        # get the chance to select that closer occurrence, rather than treating
+        # an earlier history mention as evidence for a later plan clause.
+        def is_intervening_sibling(index: int, argument: Mapping, occurrence: Mapping) -> bool:
+            start, end = occurrence.get("start"), occurrence.get("end")
+            return (
+                isinstance(start, int) and isinstance(end, int)
+                and occurrence.get("decision_id") == occurrences[argument["occurrence_id"]].get("decision_id")
+                and (start, end) != linked_spans[index]
+                and first_span[1] <= start < end <= last_span[0]
+            )
+
+        intervening_sibling = any(
+            is_intervening_sibling(index, argument, occurrence)
+            for index, argument in enumerate(linked)
+            for occurrence in occurrences.values()
+        )
+        if (last_index - first_index <= _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE
+                and boundary is None and not intervening_sibling):
+            clause_ranges = [clauses[index] for index in sorted(set(linked_clause_indices))]
+            quote = "\n".join(document[left:right].strip() for left, right in clause_ranges)
+            if not quote:
+                return "", None, None, "invalid_evidence", None
+            # The contiguous envelope remains the stable integrity locator.
+            # Consumers that render reader context must use clause_ranges so
+            # elided middle clauses are never sent as evidence.
+            envelope = (clause_ranges[0][0], clause_ranges[-1][1])
+            return quote, envelope, clause_ranges, None, "stitched_clauses"
+    return "", None, None, "invalid_evidence", None
 
 
 # Natural-language hypotheses for the NLI support fallback. Filled from the arguments'
@@ -3151,6 +3210,7 @@ def _relation_quote_has_direct_support(
     *,
     allow_adjacent_clauses: bool = False,
     allow_plan_section: bool = False,
+    require_lexical_cue: bool = False,
 ) -> bool:
     """Direct support = a fixed cue/connector match OR (fallback) NLI entailment of the
     relation hypothesis. The lexical check stays authoritative (DeBERTa-mnli can lack
@@ -3161,6 +3221,8 @@ def _relation_quote_has_direct_support(
         allow_adjacent_clauses=allow_adjacent_clauses, allow_plan_section=allow_plan_section,
     ):
         return True
+    if require_lexical_cue:
+        return False
     # NLI only rescues the lenient modes, where the lexical path already searches for a
     # cue *inside the argument clause(s)* -- so NLI just widens that cue vocabulary. In
     # strict single-clause mode the lexical path instead requires a clean directional
@@ -3308,7 +3370,7 @@ def _remap_to_groundable_siblings(
     from itertools import product
 
     def grounds(args) -> bool:
-        quote, span, err, akind = _derived_relation_anchor(
+        quote, span, _, err, akind = _derived_relation_anchor(
             document, args, occurrences, context_by_id, relation, relation_contract)
         if err is not None:
             return False
@@ -3316,7 +3378,8 @@ def _remap_to_groundable_siblings(
             return False
         return _relation_quote_has_direct_support(
             relation, quote, args, relation_contract, allow_adjacent_clauses=True,
-            allow_plan_section=akind in {"plan_section", "problem_block", "speaker_turn"})
+            allow_plan_section=akind in {"plan_section", "problem_block", "speaker_turn"},
+            require_lexical_cue=akind == "stitched_clauses")
 
     if grounds(arguments):
         return arguments
@@ -3399,7 +3462,7 @@ def _remap_to_lexically_groundable_siblings(
     from itertools import product
 
     def grounds(trial: Sequence[Mapping]) -> bool:
-        quote, span, error, anchor_kind = _derived_relation_anchor(
+        quote, span, _, error, anchor_kind = _derived_relation_anchor(
             document, list(trial), occurrences, context_by_id, relation, relation_contract,
         )
         return (
@@ -3504,7 +3567,7 @@ def relation_support_opportunities(
                 arguments = _remap_to_lexically_groundable_siblings(
                     document, arguments, occurrences, contexts, relation, relation_contract,
                 )
-                quote, span, error, anchor_kind = _derived_relation_anchor(
+                quote, span, _, error, anchor_kind = _derived_relation_anchor(
                     document, arguments, occurrences, contexts, relation, relation_contract,
                 )
                 if error is not None or span is None:
@@ -4026,8 +4089,9 @@ def compile_relational_assertions(
             occurrence_ids = [argument["occurrence_id"] for argument in arguments
                               if argument["kind"] == "linked"]
         anchor_kind = None
+        anchor_clause_ranges = None
         if uses_v4_arguments:
-            quote, evidence_span, evidence_error, anchor_kind = _derived_relation_anchor(
+            quote, evidence_span, anchor_clause_ranges, evidence_error, anchor_kind = _derived_relation_anchor(
                 document, arguments, occurrences, context_by_id,
                 relation, relation_contract,
             )
@@ -4066,6 +4130,7 @@ def compile_relational_assertions(
             relation_contract,
             allow_adjacent_clauses=(uses_v4_arguments or proposal.get("evidence_window_id") is not None),
             allow_plan_section=anchor_kind in {"plan_section", "problem_block", "speaker_turn"},
+            require_lexical_cue=anchor_kind == "stitched_clauses",
         ):
             reject("invalid_evidence")
             continue
@@ -4256,7 +4321,7 @@ def compile_relational_assertions(
         source_span = {
             "start": evidence_span[0],
             "end": evidence_span[1],
-            "quote_hash": _stable_hash(quote),
+            "quote_hash": _stable_hash(document[evidence_span[0]:evidence_span[1]]),
         }
         evidence = {
             "authority": "source_document",
@@ -4268,11 +4333,13 @@ def compile_relational_assertions(
             # so gate and runtime excerpt the same turns without the source text.
             "reader_turns": _source_turns_for_ranges(
                 document,
-                [(source_span["start"], source_span["end"])]
+                list(anchor_clause_ranges or [(source_span["start"], source_span["end"])])
                 + [(span[0], span[1]) for span in argument_spans.values()],
             ),
             "arguments": arguments,
         }
+        if anchor_clause_ranges is not None:
+            evidence["source_clause_ranges"] = [list(span) for span in anchor_clause_ranges]
         if leakage_repair is not None:
             evidence["leakage_repair"] = leakage_repair
         if competing_answers:  # ambiguity monitor (computed above, pre-gate); diagnostic only

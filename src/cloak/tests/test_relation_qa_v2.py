@@ -40,6 +40,119 @@ def _proposal(source):
     }
 
 
+def _cross_clause_anchor_inputs(source):
+    condition = "Muscle strain"
+    medication = "Meloxicam"
+    condition_start = source.index(condition)
+    medication_start = source.index(medication)
+    occurrences = {
+        "condition": {
+            "occurrence_id": "condition", "decision_id": "d-condition",
+            "surface": condition, "start": condition_start,
+            "end": condition_start + len(condition), "runtime_type": "health-condition",
+        },
+        "medication": {
+            "occurrence_id": "medication", "decision_id": "d-medication",
+            "surface": medication, "start": medication_start,
+            "end": medication_start + len(medication), "runtime_type": "drug",
+        },
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "condition",
+         "surface": condition, "runtime_type": "health-condition",
+         "support_property": "muscle injury"},
+        {"role": "object", "kind": "linked", "occurrence_id": "medication",
+         "surface": medication, "runtime_type": "drug",
+         "support_property": "anti-inflammatory medication"},
+    ]
+    return arguments, occurrences
+
+
+def _cross_clause_anchor(source):
+    arguments, occurrences = _cross_clause_anchor_inputs(source)
+    return (*qa_builder._derived_relation_anchor(
+        source, arguments, occurrences, {}, "prescribed_with", qa_builder.ACI_RELATION_CONTRACT,
+    ), arguments, occurrences)
+
+
+def test_cross_clause_span_anchor_stitches_argument_clauses_and_reader_turns():
+    source = (
+        "Muscle strain was assessed.\n"
+        "The patient denies fever.\n"
+        "Meloxicam was prescribed for pain."
+    )
+    quote, span, clause_ranges, error, kind, arguments, _ = _cross_clause_anchor(source)
+
+    assert error is None and kind == "stitched_clauses"
+    assert "denies fever" not in quote
+    assert quote == "Muscle strain was assessed.\nMeloxicam was prescribed for pain."
+    assert span == (0, len(source))
+    clauses = qa_builder._source_clause_spans(source)
+    assert clause_ranges == [clauses[0], clauses[2]]
+    assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 2]
+    assert qa_builder._relation_quote_has_lexical_cue_support(
+        "prescribed_with", quote, arguments, qa_builder.ACI_RELATION_CONTRACT,
+        allow_adjacent_clauses=True,
+    )
+
+
+def test_cross_clause_span_anchor_rejects_problem_switch_marker():
+    source = (
+        "Muscle strain was assessed. "
+        "For your next problem, the patient denies fever. "
+        "Meloxicam was prescribed for pain."
+    )
+    _, span, clause_ranges, error, kind, _, _ = _cross_clause_anchor(source)
+
+    assert span is None and clause_ranges is None
+    assert error == "invalid_evidence" and kind is None
+
+
+def test_cross_clause_span_anchor_bridges_the_exam_to_plan_transition():
+    # The condition is stated in the exam and its drug in that problem's plan -- the
+    # "assessment and plan" / "for your first problem" transition of the SAME problem must
+    # NOT block the bridge (only a switch to a different problem does).
+    source = (
+        "Muscle strain was assessed.\n"
+        "So let's go over my assessment and my plan.\n"
+        "For your first problem, Meloxicam was prescribed for pain."
+    )
+    quote, span, clause_ranges, error, kind, _, _ = _cross_clause_anchor(source)
+
+    assert error is None and kind == "stitched_clauses"
+    assert span is not None and clause_ranges is not None
+    assert "assessment and my plan" not in quote  # the transition clause is elided, not sent
+
+
+def test_cross_clause_span_anchor_rejects_pairs_beyond_global_distance():
+    source = "Muscle strain was assessed. " + " ".join(
+        f"Unrelated clause {index}." for index in range(qa_builder._CROSS_CLAUSE_ANCHOR_MAX_DISTANCE)
+    ) + " Meloxicam was prescribed for pain."
+    _, span, clause_ranges, error, kind, _, _ = _cross_clause_anchor(source)
+
+    assert span is None and clause_ranges is None
+    assert error == "invalid_evidence" and kind is None
+
+
+def test_cross_clause_stitch_without_relation_cue_fails_support_check():
+    source = (
+        "Muscle strain was assessed.\n"
+        "The patient denies fever.\n"
+        "Meloxicam appears in the medication list."
+    )
+    quote, _, _, error, kind, arguments, _ = _cross_clause_anchor(source)
+
+    assert error is None and kind == "stitched_clauses"
+    assert not qa_builder._relation_quote_has_lexical_cue_support(
+        "prescribed_with", quote, arguments, qa_builder.ACI_RELATION_CONTRACT,
+        allow_adjacent_clauses=True,
+    )
+    assert not qa_builder._relation_quote_has_direct_support(
+        "prescribed_with", quote, arguments, qa_builder.ACI_RELATION_CONTRACT,
+        allow_adjacent_clauses=True, require_lexical_cue=True,
+    )
+
+
 def test_teacher_authored_relation_qa_is_preserved_and_drug_is_prescribed_not_treated():
     source = "Hypothyroidism is treated with Synthroid."
     accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [_proposal(source)])
