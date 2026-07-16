@@ -11,7 +11,6 @@ from pathlib import Path
 from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
     AciTaskAdapter,
-    NEMOTRON_RELATION_TEACHER_MODEL,
     OpenRouterRelationTeacher,
     artifact_views,
     build_utility_artifact,
@@ -218,21 +217,19 @@ def build_from_files(
         source_documents=source_documents,
     )
     references = {doc_id: row["gold_ref"] for doc_id, row in rows.items()}
-    escalation_requested = bool(
-        getattr(args, "relation_teacher_escalation", False)
-        or os.getenv("CLOAK_RELATION_TEACHER_ESCALATION") == "1"
+    gleaning_requested = bool(
+        getattr(args, "relation_teacher_gleaning", False)
+        or os.getenv("CLOAK_RELATION_TEACHER_GLEANING") == "1"
     )
-    if relation_teacher is None and (args.relation_teacher or escalation_requested):
+    if relation_teacher is None and (args.relation_teacher or gleaning_requested):
         relation_teacher = OpenRouterRelationTeacher()
     escalation_configured = bool(
-        escalation_requested and manifest.get("relation_escalation_policy") is not None
+        gleaning_requested and manifest.get("relation_escalation_policy") is not None
     )
+    # The gleaning+repair pass reuses the primary GPT-OSS teacher config; the second
+    # call differs only by prompt (relation_repair_prompt), so it is a distinct cache key.
     if secondary_relation_teacher is None and escalation_configured:
-        secondary_relation_teacher = OpenRouterRelationTeacher(
-            model=NEMOTRON_RELATION_TEACHER_MODEL,
-            routed_provider=None,
-            allow_fallbacks=True,
-        )
+        secondary_relation_teacher = OpenRouterRelationTeacher()
     teacher_pin = None
     if relation_teacher is not None:
         raw_teacher_pin = getattr(relation_teacher, "pin", None)
@@ -303,11 +300,12 @@ def parse_args(argv=None):
         help="enable the primary cached GPT-OSS relation teacher",
     )
     parser.add_argument(
-        "--relation-teacher-escalation",
+        "--relation-teacher-gleaning",
         action="store_true",
         help=(
-            "with a manifest relation_escalation_policy, conditionally call the "
-            "cached Nemotron secondary teacher after GPT-OSS"
+            "with a manifest relation_escalation_policy, conditionally run one "
+            "GPT-OSS gleaning+repair pass after the primary GPT-OSS build "
+            "(targets ambiguous / fixable-rejected / missed relations)"
         ),
     )
     return parser.parse_args(argv)

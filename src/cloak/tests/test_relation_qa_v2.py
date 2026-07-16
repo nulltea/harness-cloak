@@ -1899,6 +1899,40 @@ def test_gleaning_targets_classifies_by_taxonomy():
     assert fx["reason"] == "invalid_evidence" and "anchor" in fx["hint"].lower()
 
 
+def test_gleaning_targets_never_drops_a_fixable_reject_without_compiled_args():
+    # Real rejections often carry no evidence.arguments (e.g. invalid_evidence whose args never
+    # grounded). The conservative rule forbids a false-negative: they must still be targets.
+    ambiguous = {"relation": "procedure_for", "detail_reason": "protected_answer",
+                 "rejection_id": "sha256:aaa",
+                 "evidence": {"answer_competing": ["right upper quadrant ultrasound"]}}
+    fixable = {"relation": "prescribed_with", "detail_reason": "invalid_evidence",
+               "rejection_id": "sha256:bbb", "evidence": {}}
+    legit = {"relation": "tests_for", "detail_reason": "source_contradiction",
+             "rejection_id": "sha256:ccc", "evidence": {}}
+
+    targets = qa_builder._gleaning_targets("", [], [ambiguous, fixable, legit], [], {})
+    kinds = {t["kind"] for t in targets}
+
+    assert "ambiguous" in kinds and "fixable" in kinds
+    assert all(t["fact_key"][0] == "reject" for t in targets)  # keyed by rejection identity
+    assert not any(t.get("reason") == "source_contradiction" for t in targets)
+    assert len(targets) == 2  # legitimate reject excluded, both fixable/ambiguous kept
+
+
+def test_rejection_safe_arguments_strips_raw_source_echo():
+    args = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "o1",
+         "surface": "hypothyroidism", "support_property": "an endocrine condition"},
+        {"role": "object", "kind": "context", "literal": "dietary modifications",
+         "runtime_type": "medical-procedure", "start": 5, "end": 9},
+    ]
+    safe = qa_builder._rejection_safe_arguments(args)
+    blob = json.dumps(safe).casefold()
+    assert "hypothyroidism" not in blob and "dietary modifications" not in blob
+    assert safe[0]["occurrence_id"] == "o1" and safe[0]["support_property"] == "an endocrine condition"
+    assert safe[1]["runtime_type"] == "medical-procedure"  # non-source identity preserved
+
+
 def test_relation_repair_prompt_restricts_to_targets_and_lists_hints():
     # reflux + dietary(target) + heart-failure/ace(non-target) in the same doc; the repair prompt
     # must show only the target's spans/cards and a REPAIR TARGETS line with the fix hint.

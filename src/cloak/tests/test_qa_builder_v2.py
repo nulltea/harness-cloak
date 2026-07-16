@@ -3529,7 +3529,7 @@ def test_manifest_pinned_relation_escalation_calls_secondary_and_records_provena
             return self.rows
 
     primary = Teacher([], {"model": "gpt"})
-    secondary = Teacher([{"proposal": "secondary"}], {"model": "nemotron"})
+    secondary = Teacher([{"proposal": "secondary"}], {"model": "gpt-oss-repair"})
     monkeypatch.setattr(qa_builder, "_relation_quote_has_semantic_support", lambda *args, **kwargs: False)
 
     artifact = build_utility_artifact(
@@ -3564,6 +3564,15 @@ def test_manifest_pinned_relation_escalation_calls_secondary_and_records_provena
     assert artifact["relation_escalation"]["d1"]["triggered"] is True
     assert artifact["relation_escalation"]["d1"]["secondary_status"] in {"kept", "abstained"}
     assert [row["teacher_id"] for row in artifact["relation_teacher_runs"]["d1"]] == [
-        "gpt_oss", "nemotron",
+        "gpt_oss", "gpt_oss",
     ]
-    assert artifact["relation_generation"]["d1"][0]["teacher_id"] == "nemotron"
+    assert [row["run_id"] for row in artifact["relation_teacher_runs"]["d1"]] == [
+        "primary", "gleaning",
+    ]
+    assert artifact["relation_generation"]["d1"][0]["teacher_id"] == "gpt_oss"
+    assert artifact["relation_generation"]["d1"][0]["run_id"] == "gleaning"
+    gleaning = artifact["relation_gleaning"]["d1"]
+    assert gleaning["triggered"] is True
+    assert gleaning["target_count"] >= 1
+    assert gleaning["repair_prompt_hash"] is not None
+    assert sum(gleaning["target_kinds"].values()) == gleaning["target_count"]

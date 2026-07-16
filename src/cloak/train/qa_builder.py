@@ -20,7 +20,6 @@ RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
 # empty/rate-limited/errored; deepinfra/turbo serves gpt-oss-120b with stable,
 # valid structured output. allow_fallbacks stays off so routing never drifts.
 RELATION_TEACHER_PROVIDER = "deepinfra/turbo"
-NEMOTRON_RELATION_TEACHER_MODEL = "nvidia/nemotron-3-super-120b-a12b:free"
 RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v20"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
 RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
@@ -3580,6 +3579,20 @@ _GLEANING_MISSED_HINT = (
 )
 _GLEANING_TARGET_PRIORITY = {"ambiguous": 3, "fixable": 2, "missed": 1}
 
+# Fields of a compiled relation argument that echo raw source text. Rejection records are
+# shareable diagnostics, so these are stripped before an argument identity is stamped onto one;
+# occurrence_id / support_property / runtime_type carry enough for the fact key and repair prompt.
+_ARGUMENT_RAW_SOURCE_FIELDS = frozenset({"surface", "literal"})
+
+
+def _rejection_safe_arguments(arguments: Sequence[Mapping]) -> list[dict]:
+    """Identity fields of `arguments` minus any raw-source echo (surface/literal)."""
+    return [
+        {key: value for key, value in dict(argument).items()
+         if key not in _ARGUMENT_RAW_SOURCE_FIELDS}
+        for argument in arguments
+    ]
+
 
 def _gleaning_targets(
     document: str,
@@ -3623,6 +3636,13 @@ def _gleaning_targets(
     }
     targets: dict[tuple, dict] = {}
 
+    def _fallback_key(row: Mapping) -> tuple:
+        # Conservative: a fixable/ambiguous reject whose arguments never compiled (e.g.
+        # invalid_evidence with no grounded args) must still be a target -- never a
+        # false-negative -- so key it by its own rejection identity when the fact key is None.
+        return ("reject", str(row.get("rejection_id") or row.get("attempt_hash")
+                             or row.get("proposal_hash") or _stable_hash(dict(row))))
+
     def _add(key: tuple | None, kind: str, **extra) -> None:
         if key is None:
             return
@@ -3640,14 +3660,14 @@ def _gleaning_targets(
                 competing = _answer_competing_surfaces(
                     document, subject, answer, target, occurrences)
         if competing:
-            _add(_fact_key(row), "ambiguous", relation=row.get("relation"),
+            _add(_fact_key(row) or _fallback_key(row), "ambiguous", relation=row.get("relation"),
                  hint=_GLEANING_AMBIGUOUS_HINT, competing=competing, arguments=_args(row))
 
     # fixable: a rejection whose reason is in the FIXABLE taxonomy
     for row in rejections:
         reason = str(row.get("detail_reason") or row.get("reason") or "")
         if reason in _GLEANING_FIXABLE_REASONS:
-            _add(_fact_key(row), "fixable", relation=row.get("relation"),
+            _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
                  reason=reason, hint=_GLEANING_FIX_HINTS[reason], arguments=_args(row))
 
     # missed: a source-supported opportunity the teacher never proposed
@@ -3931,6 +3951,8 @@ def compile_relational_assertions(
             }
             if competing_answers:  # ambiguity monitor, recorded even for pre-gate rejects
                 evidence["answer_competing"] = competing_answers
+            if grounded_arguments:  # compiled arg identity, so gleaning can key/repair the reject
+                evidence["arguments"] = _rejection_safe_arguments(grounded_arguments)
             record = _rejection_record(
                 reason=_stable_rejection_reason(reason),
                 detail_reason=reason,
@@ -3944,11 +3966,17 @@ def compile_relational_assertions(
             )
             record["proposal_index"] = index
             record["proposal_hash"] = proposal_hash
+            if grounded_relation:
+                record["relation"] = grounded_relation
             rejected.append(record)
 
         # Ambiguity monitor accumulator (diagnostic only): set once the relation is grounded,
         # so it is recorded whether the relation is later kept or rejected at any gate.
         competing_answers: list[str] = []
+        # Compiled relation/arguments accumulators: filled as soon as they resolve, so a later
+        # reject() carries the identity gleaning needs (fact key + repair-prompt arguments).
+        grounded_relation: str | None = None
+        grounded_arguments: list[dict] = []
 
         if index >= RELATION_TEACHER_MAX_RELATIONS:
             reject("relation_cap_exceeded")
@@ -3972,6 +4000,7 @@ def compile_relational_assertions(
         if relation not in relation_contract:
             reject("invalid_relation")
             continue
+        grounded_relation = relation
         arguments, argument_error = _teacher_relation_arguments(
             proposal, occurrences, context_by_id, span_labels
         )
@@ -3980,6 +4009,7 @@ def compile_relational_assertions(
             continue
         arguments, proposal = _promote_context_literals_on_detected_entities(
             arguments, proposal, occurrences, decisions)
+        grounded_arguments = arguments
         occurrence_ids = [argument["occurrence_id"] for argument in arguments
                           if argument["kind"] == "linked"]
         if len(set(occurrence_ids)) != len(occurrence_ids):
@@ -3992,6 +4022,7 @@ def compile_relational_assertions(
             # of the relation sentence) still grounds via a same-decision sibling.
             arguments = _remap_to_groundable_siblings(
                 document, arguments, occurrences, context_by_id, relation, relation_contract)
+            grounded_arguments = arguments
             occurrence_ids = [argument["occurrence_id"] for argument in arguments
                               if argument["kind"] == "linked"]
         anchor_kind = None
@@ -5196,9 +5227,13 @@ def build_utility_artifact(
             "subtype": candidate.get("subtype"),
             "occurrence_ids": list(candidate.get("occurrence_ids") or []),
         }
-        competing_answers = (candidate.get("evidence") or {}).get("answer_competing")
+        candidate_evidence = candidate.get("evidence") or {}
+        competing_answers = candidate_evidence.get("answer_competing")
         if competing_answers:  # carry the ambiguity monitor through to the rejection record
             evidence["answer_competing"] = competing_answers
+        candidate_arguments = candidate_evidence.get("arguments")
+        if candidate_arguments:  # compiled arg identity, so gleaning can key/repair the reject
+            evidence["arguments"] = _rejection_safe_arguments(candidate_arguments)
         if anchor is not None:
             evidence.update({
                 "joint_anchor_action_vector": anchor["action_vector"],
@@ -5212,12 +5247,15 @@ def build_utility_artifact(
             evidence["error_type"] = error_type
         if extra_evidence is not None:
             evidence.update(dict(extra_evidence))
-        preserve_rejection(_rejection_record(
+        candidate_record = _rejection_record(
             reason=reason,
             detail_reason=detail_reason,
             attempt=attempt,
             evidence=evidence,
-        ), doc_id=doc_id)
+        )
+        if candidate.get("relation"):
+            candidate_record["relation"] = candidate.get("relation")
+        preserve_rejection(candidate_record, doc_id=doc_id)
 
     for doc_id, environment_document in frozen_environment.get("documents", {}).items():
         source = source_documents[doc_id]
@@ -5718,8 +5756,39 @@ def build_utility_artifact(
                         for scope in _RELATION_ESCALATION_SCOPES
                     }
                     escalation["primary_kept_counts"] = primary_counts
-                    if needs_relation_escalation(primary_counts, escalation["targets"]):
+                    gleaning_targets = _gleaning_targets(
+                        source,
+                        primary_accepted_relations,
+                        [r for r in rejection_records if r.get("doc_id") == doc_id],
+                        opportunities,
+                        occurrences,
+                    )
+                    escalation["gleaning"] = {
+                        "target_count": len(gleaning_targets),
+                        "target_kinds": {
+                            kind: sum(t["kind"] == kind for t in gleaning_targets)
+                            for kind in ("ambiguous", "fixable", "missed")
+                        },
+                        "targets": [
+                            {
+                                "kind": t["kind"],
+                                "relation": t.get("relation"),
+                                "reason": t.get("reason"),
+                                "hint": t.get("hint"),
+                                "fact_key_hash": _stable_hash(t["fact_key"]),
+                            }
+                            for t in gleaning_targets
+                        ],
+                        "returned_count": 0,
+                        "repair_prompt_hash": None,
+                    }
+                    if gleaning_targets:
                         escalation["triggered"] = True
+                        repair_prompt = relation_repair_prompt(
+                            doc_id, source, environment_document, gleaning_targets,
+                        )
+                        repair_prompt_hash = _stable_hash(repair_prompt)
+                        escalation["gleaning"]["repair_prompt_hash"] = repair_prompt_hash
                         secondary_accounting: list[dict] = []
                         secondary_attempts: list[dict] = []
                         secondary_accepted: list[dict] = []
@@ -5727,13 +5796,13 @@ def build_utility_artifact(
                         try:
                             if isinstance(secondary_relation_teacher, OpenRouterRelationTeacher):
                                 secondary_proposals = secondary_relation_teacher.propose(
-                                    prompt,
+                                    repair_prompt,
                                     response_format=relation_teacher_response_format(
                                         environment_document, source,
                                     ),
                                 )
                             else:
-                                secondary_proposals = secondary_relation_teacher.propose(prompt)
+                                secondary_proposals = secondary_relation_teacher.propose(repair_prompt)
                             secondary_proposal_count = len(secondary_proposals)
                             if isinstance(secondary_proposals, RelationTeacherProposals):
                                 try:
@@ -5748,9 +5817,9 @@ def build_utility_artifact(
                                         "detail": str(error),
                                     }]
                             relation_teacher_runs_by_document.setdefault(doc_id, []).append({
-                                "teacher_id": "nemotron",
-                                "run_id": "secondary",
-                                "prompt_hash": prompt_hash,
+                                "teacher_id": "gpt_oss",
+                                "run_id": "gleaning",
+                                "prompt_hash": repair_prompt_hash,
                                 "teacher_pin_hash": _stable_hash(
                                     getattr(secondary_relation_teacher, "pin", {})
                                 ),
@@ -5768,8 +5837,8 @@ def build_utility_artifact(
                                     "scoring_contract": proposal.get("scoring_contract"),
                                     "status": "rejected",
                                     "reason": "uncompiled",
-                                    "teacher_id": "nemotron",
-                                    "run_id": "secondary",
+                                    "teacher_id": "gpt_oss",
+                                    "run_id": "gleaning",
                                 } for proposal_index, proposal in enumerate(secondary_proposals)]
                                 secondary_candidates, secondary_rejections = task_adapter.compile_relations(
                                     doc_id, source, environment_document, secondary_proposals,
@@ -5778,9 +5847,9 @@ def build_utility_artifact(
                                 for candidate in secondary_candidates:
                                     candidate["evidence"] = {
                                         **dict(candidate.get("evidence") or {}),
-                                        "prompt_hash": prompt_hash,
-                                        "teacher_id": "nemotron",
-                                        "run_id": "secondary",
+                                        "prompt_hash": repair_prompt_hash,
+                                        "teacher_id": "gpt_oss",
+                                        "run_id": "gleaning",
                                     }
                                 attempts_by_proposal_hash = {
                                     _stable_hash(proposal): attempt
@@ -5796,8 +5865,8 @@ def build_utility_artifact(
                                     rejection = dict(rejection)
                                     rejection["evidence"] = {
                                         **dict(rejection.get("evidence") or {}),
-                                        "teacher_id": "nemotron",
-                                        "run_id": "secondary",
+                                        "teacher_id": "gpt_oss",
+                                        "run_id": "gleaning",
                                     }
                                     preserve_rejection(rejection, doc_id=doc_id)
                                     proposal_index = rejection.get("proposal_index")
@@ -5817,8 +5886,8 @@ def build_utility_artifact(
                                 for rejection in rejection_records[rejection_count_before_validation:]:
                                     rejection["evidence"] = {
                                         **dict(rejection.get("evidence") or {}),
-                                        "teacher_id": "nemotron",
-                                        "run_id": "secondary",
+                                        "teacher_id": "gpt_oss",
+                                        "run_id": "gleaning",
                                     }
                                     attempt = attempts_by_candidate_hash.get(
                                         rejection.get("evidence", {}).get("candidate_hash")
@@ -5841,9 +5910,9 @@ def build_utility_artifact(
                                 else "teacher_generation_failed"
                             )
                             relation_teacher_runs_by_document.setdefault(doc_id, []).append({
-                                "teacher_id": "nemotron",
-                                "run_id": "secondary",
-                                "prompt_hash": prompt_hash,
+                                "teacher_id": "gpt_oss",
+                                "run_id": "gleaning",
+                                "prompt_hash": repair_prompt_hash,
                                 "teacher_pin_hash": _stable_hash(
                                     getattr(secondary_relation_teacher, "pin", {})
                                 ),
@@ -5858,16 +5927,16 @@ def build_utility_artifact(
                                 detail_reason=error_code,
                                 attempt={
                                     "doc_id": doc_id,
-                                    "prompt_hash": prompt_hash,
-                                    "teacher_id": "nemotron",
-                                    "run_id": "secondary",
+                                    "prompt_hash": repair_prompt_hash,
+                                    "teacher_id": "gpt_oss",
+                                    "run_id": "gleaning",
                                     "definition_version": "contextual-relation-v1",
                                 },
                                 evidence={
                                     "source": "relation_teacher",
-                                    "prompt_hash": prompt_hash,
-                                    "teacher_id": "nemotron",
-                                    "run_id": "secondary",
+                                    "prompt_hash": repair_prompt_hash,
+                                    "teacher_id": "gpt_oss",
+                                    "run_id": "gleaning",
                                     "error_type": type(error).__name__,
                                     "error_code": error_code,
                                 },
@@ -5875,6 +5944,7 @@ def build_utility_artifact(
                         merged_relations, disposition = merge_kept_relation_rows(
                             primary_accepted_relations, secondary_accepted, occurrences,
                         )
+                        escalation["gleaning"]["returned_count"] = len(secondary_accepted)
                         accepted = pre_teacher_accepted + merged_relations
                         contextual_relation_count = sum(
                             row.get("family") == "context"
@@ -5962,6 +6032,15 @@ def build_utility_artifact(
     if escalation_enabled:
         artifact["relation_teacher_runs"] = relation_teacher_runs_by_document
         artifact["relation_escalation"] = relation_escalation_by_document
+        artifact["relation_gleaning"] = {
+            doc_id: {
+                "triggered": record.get("triggered", False),
+                "secondary_status": record.get("secondary_status"),
+                "merge_disposition": record.get("merge_disposition"),
+                **(record.get("gleaning") or {}),
+            }
+            for doc_id, record in relation_escalation_by_document.items()
+        }
     # Diagnostic classification of the finished artifact. Deterministic from its
     # contents, so it is included in the hashed payload (keeps the downstream
     # gate's hash recompute consistent) without adding entropy.
