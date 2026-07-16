@@ -271,6 +271,115 @@ def nli_gate_batch(jobs: list[tuple[str, str, list[str]]],
     return approved
 
 
+def nli_entry_certify_batch(
+    jobs: list[tuple[str, str, str, str]],
+) -> list[tuple[float, float] | None]:
+    """Score semantic-entry membership against a structurally supplied root.
+
+    Each job is ``(surface, context, canonical_entry, type_root_level)``.  The
+    first score tests whether the source sentence entails the canonical entry;
+    the second is the same sentence's type-root baseline.  A malformed or
+    unformable job returns ``None`` so callers can fail closed per candidate.
+    """
+    global _nli
+    prepared, pairs, owners = [None] * len(jobs), [], []
+    for index, (entity, context, canonical, root) in enumerate(jobs):
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (entity, context, canonical, root)):
+            continue
+        pattern = re.compile(re.escape(entity), re.IGNORECASE)
+        sentence = next(
+            (part for part in re.split(r"(?<=[.!?])\s+", context) if pattern.search(part)),
+            context,
+        )
+        if not pattern.search(sentence):
+            continue
+        hypotheses = [pattern.sub(candidate, sentence, count=1)
+                      for candidate in (canonical, root)]
+        if any(re.search(r"\b(\w{3,}) \1\b", hypothesis, re.IGNORECASE)
+               for hypothesis in hypotheses):
+            continue
+        prepared[index] = (sentence, hypotheses)
+        for kind, hypothesis in enumerate(hypotheses):
+            pairs.append({"text": sentence, "text_pair": hypothesis})
+            owners.append((index, kind))
+    if not pairs:
+        return [None] * len(jobs)
+    if _nli is None:
+        import torch
+        from transformers import pipeline
+        _nli = pipeline("text-classification", model=NLI_MODEL,
+                        device=0 if torch.cuda.is_available() else -1)
+    outs = _nli(pairs, top_k=None, truncation=True)
+    if not isinstance(outs, list) or len(outs) != len(pairs):
+        return [None] * len(jobs)
+    scores: list[list[float | None]] = [[None, None] for _ in jobs]
+    for (index, kind), labels in zip(owners, outs):
+        try:
+            score = next(row["score"] for row in labels if row["label"] == "entailment")
+            score = float(score)
+        except (KeyError, StopIteration, TypeError, ValueError):
+            return [None] * len(jobs)
+        if not 0.0 <= score <= 1.0:
+            return [None] * len(jobs)
+        scores[index][kind] = score
+    return [
+        (float(values[0]), float(values[1]))
+        if prepared[index] is not None and None not in values else None
+        for index, values in enumerate(scores)
+    ]
+
+
+def nli_entry_reverse_entailment_batch(
+    jobs: list[tuple[str, str, str]],
+) -> list[float | None]:
+    """Score whether a canonical entry entails the source surface in context.
+
+    A high score means the retrieved canonical is a hyponym of the source and
+    must veto semantic matching: generalization requires source -> entry, not
+    entry -> source.  The score uses the same shared NLI model and threshold as
+    the forward membership gate.
+    """
+    global _nli
+    pairs, owners = [], []
+    for index, (entity, context, canonical) in enumerate(jobs):
+        if not all(isinstance(value, str) and value.strip()
+                   for value in (entity, context, canonical)):
+            continue
+        pattern = re.compile(re.escape(entity), re.IGNORECASE)
+        sentence = next(
+            (part for part in re.split(r"(?<=[.!?])\s+", context) if pattern.search(part)),
+            context,
+        )
+        if not pattern.search(sentence):
+            continue
+        canonical_sentence = pattern.sub(canonical, sentence, count=1)
+        if re.search(r"\b(\w{3,}) \1\b", canonical_sentence, re.IGNORECASE):
+            continue
+        pairs.append({"text": canonical_sentence, "text_pair": sentence})
+        owners.append(index)
+    if not pairs:
+        return [None] * len(jobs)
+    if _nli is None:
+        import torch
+        from transformers import pipeline
+        _nli = pipeline("text-classification", model=NLI_MODEL,
+                        device=0 if torch.cuda.is_available() else -1)
+    outs = _nli(pairs, top_k=None, truncation=True)
+    if not isinstance(outs, list) or len(outs) != len(pairs):
+        return [None] * len(jobs)
+    scores: list[float | None] = [None] * len(jobs)
+    for index, labels in zip(owners, outs):
+        try:
+            score = float(next(row["score"] for row in labels if row["label"] == "entailment"))
+        except (KeyError, StopIteration, TypeError, ValueError):
+            return [None] * len(jobs)
+        if not 0.0 <= score <= 1.0:
+            return [None] * len(jobs)
+        scores[index] = score
+    return scores
+
+
 def nli_gate(entity: str, context: str, candidates: list[str], thresh: float = 0.6) -> list[str]:
     """Keep candidates where 'context' entails 'context with entity -> candidate'."""
     return [c for c, _ in nli_gate_batch([(entity, context, candidates)], thresh=thresh)[0]]
@@ -514,6 +623,14 @@ def lattice_for(span_text: str, span_type: str, context: str = "",
         if m is NO_PREPASS:
             from cloak.profile_match import match_profile_entry
             m = match_profile_entry(span_text, span_type, context)
+        if m is None and proposal is not NO_PREPASS:
+            # The batched profile matcher made an explicit fail-closed decision.
+            # Do not silently replace it with a curated/cache lattice: for a
+            # profile-backed type that would turn one semantic abstention into a
+            # controllable rewrite through a different authority.
+            from cloak.profile_match import PROFILE_BACKED_TYPES
+            if span_type in PROFILE_BACKED_TYPES:
+                return _with_placeholder(span_text, span_type, [])
         if m is not None:
             got, deterministic = m.levels, True  # certified upstream; do not re-gate
         elif span_type == "LOC":

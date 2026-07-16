@@ -13,6 +13,7 @@ def _clear_module_state():
     pm._PROPOSAL_CACHE.clear()
     pm._WARNED_INDEX_PATHS.clear()
     pm.load_embindex.cache_clear()
+    pm._profile_certification_stats.cache_clear()
     yield
 
 # Deterministic stub embeddings (dim=3). Unknown strings map to a far vector.
@@ -41,16 +42,19 @@ def _artifact():
                 "diabetes": {
                     "aliases": ["diabetes mellitus"],
                     "levels": ["endocrine condition", "chronic condition"],
+                    "level_counts": {"endocrine condition": 1000.0, "chronic condition": 100.0},
                     "count": 1000.0,
                 },
                 "hypothyroidism": {
                     "aliases": [],
                     "levels": ["thyroid condition", "endocrine condition"],
+                    "level_counts": {"thyroid condition": 100.0, "endocrine condition": 1000.0},
                     "count": 500.0,
                 },
                 "asthma": {
                     "aliases": [],
-                    "levels": ["respiratory condition"],
+                    "levels": ["respiratory condition", "medical condition"],
+                    "level_counts": {"respiratory condition": 100.0, "medical condition": 5000.0},
                     "count": 300.0,
                 },
             },
@@ -122,6 +126,8 @@ def test_semantic_hit_via_variant(tmp_path):
     m = pm.match_profile_entry(
         "diabetic", "health-condition", "She is diabetic.",
         profiles_path=pp, index_path=ip, embed_fn=stub_embed, nli_fn=_approve_all,
+        entry_certify_batch_fn=_entry_certify_accept,
+        entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed,
     )
     assert m is not None
     assert m.kind == "semantic"
@@ -231,6 +237,8 @@ def test_second_candidate_approved_when_first_refused(tmp_path):
     m = pm.match_profile_entry(
         "endocrine disorder", "health-condition", "She has an endocrine disorder.",
         profiles_path=pp, index_path=ip, embed_fn=stub_embed, nli_fn=nli_thyroid_only,
+        entry_certify_batch_fn=_entry_certify_accept,
+        entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed,
     )
     assert m is not None
     assert m.entry == "hypothyroidism"
@@ -284,7 +292,9 @@ def test_batch_mixed_exact_semantic_abstain(tmp_path):
         ("diabetes", "health-condition", "dup key, second context"), # dedup: one key
     ]
     got = match_spans_batch(items, profiles_path=profiles, index_path=index,
-                            embed_fn=embed, nli_batch_fn=nli_batch)
+                            embed_fn=embed, nli_batch_fn=nli_batch,
+                            entry_certify_batch_fn=_entry_certify_accept,
+                            entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed)
     assert set(got) == {span_key("diabetes", "health-condition"),
                         span_key("diabetic", "health-condition"),
                         span_key("gibberish zz", "health-condition")}
@@ -306,7 +316,9 @@ def test_batch_wave2_second_candidate(tmp_path):
 
     got = match_spans_batch([("endocrine disorder", "health-condition", "She has an endocrine disorder.")],
                             profiles_path=profiles, index_path=index,
-                            embed_fn=stub_embed, nli_batch_fn=nli_batch)
+                            embed_fn=stub_embed, nli_batch_fn=nli_batch,
+                            entry_certify_batch_fn=_entry_certify_accept,
+                            entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed)
     m = got[span_key("endocrine disorder", "health-condition")]
     assert m is not None and len(waves) == 2   # second-best entry won in wave 2
     assert m.entry == "hypothyroidism"
@@ -402,3 +414,254 @@ def test_nli_failure_degrades_fail_closed(tmp_path, caplog):
     assert got[span_key("diabetes", "health-condition")].kind == "exact"   # unaffected
     assert got[span_key("diabetic", "health-condition")] is None           # abstain, no raise
     assert sum("exact-only" in r.message for r in caplog.records) == 1     # warn once
+
+
+def _entry_certify_accept(jobs):
+    return [(0.95, 0.10) for _ in jobs]
+
+
+def _entry_reverse_not_entailed(jobs):
+    return [0.10 for _ in jobs]
+
+
+def test_semantic_root_only_approval_abstains(tmp_path):
+    artifact = {
+        "schema_version": 1, "created": "test", "sources": {}, "profiles": {
+            "health-condition": {
+                "alpha": {"aliases": [], "levels": ["medical condition"],
+                          "level_counts": {"medical condition": 1000.0}, "count": 10.0},
+                "beta": {"aliases": [], "levels": ["medical condition"],
+                         "level_counts": {"medical condition": 1000.0}, "count": 10.0},
+            },
+        },
+    }
+    profiles = tmp_path / "root-only.json"
+    profiles.write_text(json.dumps(artifact))
+    index = pm.build_embindex(
+        profiles,
+        embed_fn=lambda texts: np.array([[1.0, 0.0] for _ in texts], dtype=np.float32),
+    )
+
+    got = match_spans_batch(
+        [("generic finding", "health-condition", "The generic finding was documented.")],
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=lambda texts: np.array([[1.0, 0.0] for _ in texts], dtype=np.float32),
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=_entry_certify_accept,
+    )
+
+    assert got[span_key("generic finding", "health-condition")] is None
+
+
+def test_root_only_approval_abstains_when_root_is_not_universal(tmp_path):
+    artifact = {
+        "schema_version": 1, "created": "test", "sources": {}, "profiles": {
+            "health-condition": {
+                "knees": {"aliases": [], "levels": ["medical condition"],
+                          "level_counts": {"medical condition": 1000.0}, "count": 10.0},
+                "diabetes": {"aliases": [], "levels": ["endocrine condition", "medical condition"],
+                             "level_counts": {"endocrine condition": 20.0, "medical condition": 1000.0},
+                             "count": 20.0},
+                "asthma": {"aliases": [], "levels": ["respiratory condition"],
+                           "level_counts": {"respiratory condition": 20.0}, "count": 20.0},
+            },
+        },
+    }
+    profiles = tmp_path / "non-universal-root.json"
+    profiles.write_text(json.dumps(artifact))
+    index = pm.build_embindex(
+        profiles,
+        embed_fn=lambda texts: np.array([[1.0, 0.0] if text == "knees" else [0.0, 1.0]
+                                         for text in texts], dtype=np.float32),
+    )
+
+    got = match_spans_batch(
+        [("right knee", "health-condition", "The right knee was examined.")],
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=lambda texts: np.array([[1.0, 0.0]], dtype=np.float32),
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=_entry_certify_accept,
+    )
+
+    assert got[span_key("right knee", "health-condition")] is None
+
+
+def test_anonymity_floor_is_not_discriminative_in_a_multi_root_type(tmp_path):
+    artifact = {
+        "schema_version": 1, "created": "test", "sources": {}, "profiles": {
+            "health-condition": {
+                "knees": {"aliases": [], "levels": ["medical condition"],
+                          "level_counts": {"medical condition": 500000.0}, "count": 10.0},
+                "entry-a": {"aliases": [], "levels": ["disease of anatomical entity"],
+                            "level_counts": {"disease of anatomical entity": 1000.0}, "count": 10.0},
+                "entry-b": {"aliases": [], "levels": ["disease of anatomical entity"],
+                            "level_counts": {"disease of anatomical entity": 1000.0}, "count": 10.0},
+                "entry-c": {"aliases": [], "levels": ["disease of anatomical entity"],
+                            "level_counts": {"disease of anatomical entity": 1000.0}, "count": 10.0},
+                "reflux": {"aliases": [],
+                           "levels": ["gastrointestinal condition", "medical condition"],
+                           "level_counts": {"gastrointestinal condition": 400.0,
+                                            "medical condition": 500000.0}, "count": 10.0},
+            },
+        },
+    }
+    profiles = tmp_path / "multi-root-anonymity.json"
+    profiles.write_text(json.dumps(artifact))
+    index = pm.build_embindex(
+        profiles,
+        embed_fn=lambda texts: np.array(
+            [[1.0, 0.0] if text == "knees" else
+             [0.0, 1.0] if text == "reflux" else
+             [0.0, -1.0] for text in texts],
+            dtype=np.float32,
+        ),
+    )
+
+    def embed(texts):
+        return np.array(
+            [[1.0, 0.0] if text == "right knee" else [0.0, 1.0] for text in texts],
+            dtype=np.float32,
+        )
+
+    floor = match_spans_batch(
+        [("right knee", "health-condition", "The right knee was examined.")],
+        profiles_path=profiles, index_path=index, embed_fn=embed,
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=_entry_certify_accept,
+        entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed,
+    )
+    specific = match_spans_batch(
+        [("acid reflux", "health-condition", "The acid reflux was discussed.")],
+        profiles_path=profiles, index_path=index,
+        embed_fn=lambda texts: np.array([[0.0, 1.0]], dtype=np.float32),
+        nli_batch_fn=lambda jobs: [[("gastrointestinal condition", 0.95)] for _ in jobs],
+        entry_certify_batch_fn=_entry_certify_accept,
+        entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed,
+    )
+
+    assert floor[span_key("right knee", "health-condition")] is None
+    assert specific[span_key("acid reflux", "health-condition")].entry == "reflux"
+
+
+@pytest.mark.parametrize(
+    ("surface", "canonical"),
+    [("imaging", "radiography"), ("palpation", "bimanual pelvic exam")],
+)
+def test_broader_surface_cannot_certify_narrower_profile_entry(tmp_path, surface, canonical):
+    artifact = {
+        "schema_version": 1, "created": "test", "sources": {}, "profiles": {
+            "medical-procedure": {
+                canonical: {"aliases": [], "levels": ["diagnostic procedure", "medical procedure"],
+                            "level_counts": {"diagnostic procedure": 50.0, "medical procedure": 1000.0},
+                            "count": 50.0},
+                "other procedure": {"aliases": [], "levels": ["therapeutic procedure", "medical procedure"],
+                                    "level_counts": {"therapeutic procedure": 50.0, "medical procedure": 1000.0},
+                                    "count": 50.0},
+            },
+        },
+    }
+    profiles = tmp_path / f"{surface}.json"
+    profiles.write_text(json.dumps(artifact))
+    index = pm.build_embindex(
+        profiles,
+        embed_fn=lambda texts: np.array([[1.0, 0.0] if text == canonical else [0.0, 1.0]
+                                         for text in texts], dtype=np.float32),
+    )
+    got = match_spans_batch(
+        [(surface, "medical-procedure", f"The {surface} was ordered.")],
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=lambda texts: np.array([[1.0, 0.0]], dtype=np.float32),
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=lambda jobs: [(0.10, 0.10) for _ in jobs],
+    )
+
+    assert got[span_key(surface, "medical-procedure")] is None
+
+
+def test_true_semantic_variant_passes_entry_and_specificity_certification(tmp_path):
+    profiles, index = _build(tmp_path, "entry-certify")
+    got = match_spans_batch(
+        [("diabetic", "health-condition", "She is diabetic.")],
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=stub_embed,
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=_entry_certify_accept,
+        entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed,
+    )
+
+    match = got[span_key("diabetic", "health-condition")]
+    assert match is not None and match.entry == "diabetes"
+    assert match.levels == ["endocrine condition", "chronic condition"]
+
+
+def test_semantic_match_is_vetoed_when_canonical_entails_surface(tmp_path):
+    profiles, index = _build(tmp_path, "reverse-veto")
+    got = match_spans_batch(
+        [("palpation", "health-condition", "The palpation was documented.")],
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=lambda texts: np.array([[1.0, 0.0, 0.0]], dtype=np.float32),
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=_entry_certify_accept,
+        entry_reverse_entailment_batch_fn=lambda jobs: [0.95 for _ in jobs],
+    )
+
+    assert got[span_key("palpation", "health-condition")] is None
+
+
+def test_semantic_matching_abstains_on_missing_statistics_or_malformed_entry_scores(tmp_path):
+    artifact = _artifact()
+    artifact["profiles"]["health-condition"]["diabetes"].pop("level_counts")
+    profiles = tmp_path / "missing-stats.json"
+    profiles.write_text(json.dumps(artifact))
+    index = pm.build_embindex(profiles, embed_fn=stub_embed)
+    common = dict(
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=stub_embed,
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+    )
+    missing_stats = match_spans_batch(
+        [("diabetic", "health-condition", "She is diabetic.")],
+        entry_certify_batch_fn=_entry_certify_accept,
+        **common,
+    )
+    valid_profiles, valid_index = _build(tmp_path, "malformed-scores")
+    malformed_scores = match_spans_batch(
+        [("diabetic", "health-condition", "She is diabetic.")],
+        entry_certify_batch_fn=lambda jobs: ["malformed" for _ in jobs],
+        profiles_path=valid_profiles,
+        index_path=valid_index,
+        embed_fn=stub_embed,
+        nli_batch_fn=common["nli_batch_fn"],
+    )
+
+    assert missing_stats[span_key("diabetic", "health-condition")] is None
+    assert malformed_scores[span_key("diabetic", "health-condition")] is None
+
+
+def test_explicit_profile_match_abstention_bypasses_lattice_fallback(monkeypatch):
+    from cloak import lattice
+
+    monkeypatch.setattr(
+        lattice, "_fine_curated_chain",
+        lambda *args: pytest.fail("explicit semantic abstention must not reach curated fallback"),
+    )
+
+    levels = lattice.lattice_for(
+        "unprofiled condition", "health-condition", "The unprofiled condition is noted.",
+        proposal=None,
+    )
+
+    assert len(levels) == 1 and levels[0].startswith("<HEALTH_CONDITION_")
