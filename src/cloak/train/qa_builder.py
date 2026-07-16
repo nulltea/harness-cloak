@@ -24,6 +24,8 @@ RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v20"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
 RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
 RELATION_TEACHER_MAX_RELATIONS = 12
+# Retry an empty (HTTP-200, no choices/content) teacher reply before failing -- transient.
+_TEACHER_EMPTY_RETRIES = 3
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
 # broke the teacher: completion caps returned empty replies, and the r16
 # smoke's 1,024-token reasoning cap truncated the source scan mid-document,
@@ -497,10 +499,16 @@ class OpenRouterRelationTeacher:
     def propose(
         self, prompt: str, *, response_format: Mapping | None = None,
     ) -> RelationTeacherProposals:
-        raw = self._client.generate(
-            prompt,
-            **({"response_format": dict(response_format)} if response_format else {}),
-        )
+        fmt = {"response_format": dict(response_format)} if response_format else {}
+        # An OpenRouter HTTP-200 with no choices/content is a TRANSIENT provider condition
+        # (observed intermittently on both gpt-oss and the free routes). Retry it like a
+        # throttle before giving up -- refresh=True forces a fresh call so a non-cached empty
+        # is never reused. The SDK already retries 429/5xx underneath; this covers empty-200.
+        raw = ""
+        for attempt in range(_TEACHER_EMPTY_RETRIES + 1):
+            raw = self._client.generate(prompt, **({"refresh": True} if attempt else {}), **fmt)
+            if raw and raw.strip():
+                break
         if not raw or not raw.strip():
             # `LLMClient` deliberately does not cache an OpenRouter HTTP-200 reply
             # with no choices/content.  Do not turn that provider condition into a

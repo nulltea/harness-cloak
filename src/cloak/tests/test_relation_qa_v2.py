@@ -378,13 +378,16 @@ def test_openrouter_teacher_requires_complete_candidate_accounting(monkeypatch):
     assert proposals.candidate_accounting == []
 
 
-def test_openrouter_teacher_reports_an_empty_provider_completion_explicitly(monkeypatch):
+def test_openrouter_teacher_retries_empty_then_reports_it_explicitly(monkeypatch):
+    calls = []
+
     class FakeClient:
         def __init__(self, *args, **kwargs):
             self.last_completion_state = {"outcome": "no_choices"}
 
-        def generate(self, prompt):
-            return ""
+        def generate(self, prompt, **kwargs):
+            calls.append(kwargs.get("refresh", False))
+            return ""  # persistently empty -> retries exhaust, then raise
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test")
     monkeypatch.setenv("CLOAK_LLM_CACHE", "/tmp/test-cache")
@@ -392,6 +395,27 @@ def test_openrouter_teacher_reports_an_empty_provider_completion_explicitly(monk
 
     with pytest.raises(ValueError, match="teacher_no_choices"):
         OpenRouterRelationTeacher().propose("prompt")
+    # empty is retried (refresh=True) before giving up, like a throttle
+    assert len(calls) == qa_builder._TEACHER_EMPTY_RETRIES + 1
+    assert calls == [False] + [True] * qa_builder._TEACHER_EMPTY_RETRIES
+
+
+def test_openrouter_teacher_recovers_when_a_retry_returns_content(monkeypatch):
+    class FakeClient:
+        def __init__(self, *args, **kwargs):
+            self.last_completion_state = {"outcome": "no_choices"}
+            self.n = 0
+
+        def generate(self, prompt, **kwargs):
+            self.n += 1
+            return "" if self.n == 1 else json.dumps(
+                {"span_relations": [], "context_relations": [], "candidate_accounting": []})
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test")
+    monkeypatch.setenv("CLOAK_LLM_CACHE", "/tmp/test-cache")
+    monkeypatch.setattr("cloak.llm.LLMClient", FakeClient)
+    # first reply empty, retry returns valid content -> no error
+    OpenRouterRelationTeacher().propose("prompt")
 
 
 def test_openrouter_teacher_accepts_a_document_bound_response_schema(monkeypatch):
