@@ -232,3 +232,27 @@ def test_unprofiled_non_generalizable_type_is_placeholdered_not_kept(monkeypatch
     entry = next(r for r in R if r["surface"].lower() == "dragon")
     assert entry["action"] == "placeholder"
     assert "dragon" not in doc_p
+
+
+def test_keep_surface_reserved_blocks_colliding_generalization(monkeypatch):
+    # P0 regression: "acid reflux" generalizes to "gastrointestinal condition", while a separate
+    # unprofiled span literally IS "gastrointestinal condition" (kept exact). The generalization
+    # must NOT also emit that exact string -- a shared replacement would make replacement-keyed
+    # un-perturb restore the kept span to "acid reflux", corrupting out_final.
+    text = "he has acid reflux and also a gastrointestinal condition today ."
+    spans = _spans(text, ("acid reflux", "health-condition"),
+                   ("gastrointestinal condition", "health-condition"))
+    monkeypatch.setattr(sub, "coref_chains", lambda t, s: s)
+    monkeypatch.setattr(sub, "walk_risk", lambda *a, **k: 0.0)
+    monkeypatch.setattr(sub, "match_spans_batch", lambda items, **k: {})
+    monkeypatch.setattr(sub, "lattice_for",
+                        lambda surface, *a, **k: ["gastrointestinal condition"]
+                        if surface.lower() == "acid reflux" else [])
+    monkeypatch.setattr(sub, "lookup_entry",
+                        lambda surface, *a, **k: ("acid reflux", ["gastrointestinal condition"])
+                        if surface.lower() == "acid reflux" else None)
+    doc_p, R = sub.substitute(text, spans, tau=2.0)
+    reps = {r["surface"].lower(): r for r in R}
+    assert reps["gastrointestinal condition"]["action"] == "keep"
+    assert reps["acid reflux"]["replacement"] != "gastrointestinal condition"  # forced off it
+    assert len({r["replacement"] for r in R}) == len(R)                        # no shared fill

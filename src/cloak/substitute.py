@@ -154,6 +154,21 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
         counters[tok] = counters.get(tok, 0) + 1
         return placeholder_token(s.type, counters[tok])
 
+    # Reserve the exact surfaces that will be KEPT (unprofiled generalizable detections) so no
+    # generalization fill below can equal one. A shared string would make replacement-keyed
+    # un-perturb restore the kept span to the generalized entity's source, corrupting out_final
+    # (e.g. "acid reflux"->"gastrointestinal condition" colliding with a kept literal
+    # "gastrointestinal condition"). A generalization whose fill collides falls to placeholder.
+    for s in spans:
+        if s.type in DIRECT_TYPES or s.type not in PROFILE_BACKED_TYPES:
+            continue
+        _sent = _sentence_around(text, s.start, s.end)
+        _lat = lattice_for(s.text, s.type, _sent,
+                           proposal=proposals.get(span_key(s.text, s.type), NO_PREPASS))
+        if (not any(not PLACEHOLDER_RE.fullmatch(c) for c in _lat)
+                and lookup_entry(s.text, s.type) is None):
+            used.setdefault(s.text.lower(), f"__keep__:{s.text.lower()}")
+
     for s in sorted(spans, key=lambda s: -s.start):  # right-to-left keeps offsets valid
         detector_provenance = (
             dict(s.detector_provenance)
@@ -243,7 +258,8 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
                 entry.update(action="generalize", replacement=chosen, lattice=lattice,
                              risk=round(risk, 4))
             by_surface[skey] = {k2: entry[k2] for k2 in
-                                ("action", "replacement", "risk", "lattice", "match")
+                                ("action", "replacement", "risk", "lattice", "match",
+                                 "uncontrolled")
                                 if k2 in entry}
         out = out[:s.start] + entry["replacement"] + out[s.end:]
         record.append(entry)

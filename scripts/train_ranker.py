@@ -196,6 +196,13 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
             counters[typ] = max(counters.get(typ, 0), int(idx))
     ph_by_surface: dict[str, str] = {}
     used: dict[str, str] = {}
+    # Reserve KEEP surfaces from the walk (uncontrolled exact spans, e.g. "physical therapy"):
+    # a decision fill equal to one would share a replacement string with a kept span, so
+    # replacement-keyed un-perturb would restore the kept span to the decision's source and
+    # corrupt out_final. Reserving them makes such a fill trip the injectivity guard below.
+    for e in R_walk:
+        if e.get("action") == "keep":
+            used.setdefault(str(e["replacement"]).lower(), f"__keep__:{str(e['surface']).lower()}")
     fills: dict[str, dict] = {}
 
     def placeholder(skey: str, typ: str) -> str:
