@@ -252,7 +252,9 @@ def resolve_missing_drug_aliases(
             aliases.append(key)
             fixed[surface] = canonical
     if fixed:
-        profile_path.write_text(json.dumps(artifact, indent=1))
+        # canonical profile serialization (matches scripts/build_lattice_profiles.py) so a
+        # persisted alias is a minimal diff, not a whole-file reformat.
+        profile_path.write_text(json.dumps(artifact, indent=2, sort_keys=True))
         _load_cached.cache_clear()
         _index_cached.cache_clear()
     return fixed

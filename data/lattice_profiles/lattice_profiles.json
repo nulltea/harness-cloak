@@ -16194,7 +16194,9 @@
         ]
       },
       "furosemide": {
-        "aliases": [],
+        "aliases": [
+          "lasix"
+        ],
         "count": 6.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -17667,19 +17669,11 @@
         "count": 4.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "thyroid hormonal medication": 20,
           "hormonal therapy agent": 800,
-          "therapeutic agent": 100000.0
+          "therapeutic agent": 100000.0,
+          "thyroid hormonal medication": 20
         },
         "level_grounding": {
-          "thyroid hormonal medication": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'thyroid hormonal medication' set from ATC class H03A (thyroid preparations), which contains ~4-6 distinct active-substance entries (levothyroxine, liothyronine, liotrix/combinations, desiccated thyroid); count widened to ~20 to include major internationally marketed brand/generic variants. Not derived from this run's per-entry counts; still not certifying.",
-            "member_set_ref": "WHO ATC/DDD Index, class H03A",
-            "selector": "Belongs to the thyroid hormone replacement therapy class (ATC H03A) in the canonical vocabulary.",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
           "hormonal therapy agent": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'hormonal therapy agent' set from a best-effort magnitude estimate spanning ATC groups covering thyroid (H03), sex hormones (G03), insulins (A10), systemic corticosteroids (H02), pituitary/hypothalamic hormones (H01), and other hormone-based therapeutics (e.g. calcitonin, PTH analogs, GnRH agonists); ingredient-level substance count across these groups is on the order of a few hundred, widened to ~800 to approximate distinct marketed formulations. Wide uncertainty (plausible range ~500-1500); not derived from this run's per-entry counts; still not certifying.",
@@ -17693,6 +17687,14 @@
             "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
             "member_set_ref": null,
             "selector": "Belongs to the therapeutic agent category in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "thyroid hormonal medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'thyroid hormonal medication' set from ATC class H03A (thyroid preparations), which contains ~4-6 distinct active-substance entries (levothyroxine, liothyronine, liotrix/combinations, desiccated thyroid); count widened to ~20 to include major internationally marketed brand/generic variants. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "WHO ATC/DDD Index, class H03A",
+            "selector": "Belongs to the thyroid hormone replacement therapy class (ATC H03A) in the canonical vocabulary.",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
@@ -19792,6 +19794,40 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:pancrelipase"
+        ]
+      },
+      "pantoprazole": {
+        "aliases": [
+          "protonix"
+        ],
+        "count": 30.0,
+        "entry_origin": "manual-clinical-fix",
+        "level_counts": {
+          "medication": 10999.97,
+          "proton pump inhibitor": 30.0
+        },
+        "level_grounding": {
+          "medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "FDA NDC",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "proton pump inhibitor": {
+            "member_set_ref": "openfda-ndc:pharm_class:Proton Pump Inhibitor [EPC]",
+            "selector": "openfda_ndc.pharm_class == 'Proton Pump Inhibitor [EPC]'",
+            "source_family": "openfda-pharm-class",
+            "status": "certifying"
+          }
+        },
+        "levels": [
+          "proton pump inhibitor",
+          "medication"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:esomeprazole"
         ]
       },
       "paroxetine": {
@@ -25552,12 +25588,18 @@
         "count": 26.0,
         "entry_origin": "observed-surface",
         "level_counts": {
+          "connective tissue disease": 884.0,
           "joint disease": 571.0,
           "joint inflammation disease": 26.0,
-          "connective tissue disease": 884.0,
           "musculoskeletal system disease": 1356.0
         },
         "level_grounding": {
+          "connective tissue disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:65",
+            "selector": "doid.is_a_descendants(DOID:65)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
           "joint disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:0080001",
             "selector": "doid.is_a_descendants(DOID:0080001)",
@@ -25567,12 +25609,6 @@
           "joint inflammation disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:3342",
             "selector": "doid.is_a_descendants(DOID:3342)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "connective tissue disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:65",
-            "selector": "doid.is_a_descendants(DOID:65)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
@@ -39314,14 +39350,20 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "arthritis": 18.0,
+          "connective tissue disease": 884.0,
           "joint disease": 571.0,
-          "joint inflammation disease": 26.0,
-          "connective tissue disease": 884.0
+          "joint inflammation disease": 26.0
         },
         "level_grounding": {
           "arthritis": {
             "member_set_ref": "doid:is_a_descendants:DOID:848",
             "selector": "doid.is_a_descendants(DOID:848)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "connective tissue disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:65",
+            "selector": "doid.is_a_descendants(DOID:65)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
@@ -39334,12 +39376,6 @@
           "joint inflammation disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:3342",
             "selector": "doid.is_a_descendants(DOID:3342)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "connective tissue disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:65",
-            "selector": "doid.is_a_descendants(DOID:65)",
             "source_family": "doid-is-a",
             "status": "certifying"
           }
@@ -41870,14 +41906,20 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "arthritis": 18.0,
+          "connective tissue disease": 884.0,
           "joint disease": 571.0,
-          "joint inflammation disease": 26.0,
-          "connective tissue disease": 884.0
+          "joint inflammation disease": 26.0
         },
         "level_grounding": {
           "arthritis": {
             "member_set_ref": "doid:is_a_descendants:DOID:848",
             "selector": "doid.is_a_descendants(DOID:848)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "connective tissue disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:65",
+            "selector": "doid.is_a_descendants(DOID:65)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
@@ -41890,12 +41932,6 @@
           "joint inflammation disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:3342",
             "selector": "doid.is_a_descendants(DOID:3342)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "connective tissue disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:65",
-            "selector": "doid.is_a_descendants(DOID:65)",
             "source_family": "doid-is-a",
             "status": "certifying"
           }

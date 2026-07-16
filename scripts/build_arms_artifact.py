@@ -18,6 +18,7 @@ import cloak.span_gate as span_gate
 from cloak.anonymity import aset_count
 from cloak.corpora import load_task_docs
 from cloak.detect import Detector, FINE_LABELS, GLINER_LABELS, QA_V2_CLINICAL_LABELS
+from cloak.lattice_profiles import resolve_missing_drug_aliases
 from cloak.probe import fill_proximity, walk_risk
 from cloak.runtime_types import PLACEHOLDER_RE
 from cloak.substitute import prepare_spans_for_substitution
@@ -261,6 +262,16 @@ def main():
         for d in docs:
             if qa_v2:
                 detection = det.detect_with_diagnostics(d["text"])
+                # Safe auto data-fix BEFORE the lattice chain bakes: alias an unprofiled brand
+                # drug onto its existing generic profile entry (openFDA NDC), persisting to
+                # lattice_profiles.json. Strict (no invented entries/levels, no ambiguous brand),
+                # so the bake below resolves e.g. a brand to its generic's levels instead of
+                # leaving it unprofiled. Clears the profile cache so this doc's bake sees the fix.
+                fixed = resolve_missing_drug_aliases(
+                    {span.text for span in detection.spans if span.type == "drug"}
+                )
+                if fixed:
+                    print(f"  [{d['id']}] resolved drug aliases -> {fixed}", flush=True)
                 entry = document_entry_from_detection(d["text"], detection, tau=TAU, qa_v2=True)
             else:
                 arms = build_arms(d["text"], det.detect(d["text"]), TAU)
