@@ -537,47 +537,46 @@ def test_context_literal_on_a_controlled_span_is_promoted_to_a_linked_argument()
     assert not any(r.get("detail_reason") == "protected_context_literal" for r in rejected)
 
 
-def test_context_literal_matching_an_uncontrolled_detected_span_is_rejected():
-    # The synthroid case: the drug is detected (so it is substituted to a
-    # placeholder at render) but has no lattice decision, so the teacher can
-    # only reference it as a context literal. That literal cannot survive the
-    # generalized/placeholder docs, so it is rejected up front rather than
-    # dying later at the three-point gate. (protected_context_literal does not
-    # catch it because the span is uncontrolled — no decision to resolve onto.)
-    source = "for your hypothyroidism , continue the synthroid ."
-    syn = source.index("synthroid")
+def test_context_literal_on_uncontrolled_detected_span_is_allowed():
+    # An UNCONTROLLED detected span (controlled False / no decision, e.g. "physical therapy"
+    # with no lattice entry) is detector evidence, not a ranker-controlled span: it carries no
+    # action and is NEVER rewritten in any scored render, so the literal survives verbatim and
+    # is a valid answer. The literal_will_be_substituted guard must NOT fire on it (it fires
+    # only for controlled surfaces the ranker actually substitutes); the three-point gate then
+    # decides. Uses a procedure with no decision to mirror the physical-therapy case.
+    source = "for your arthritis , we may refer you to physical therapy ."
+    pt = source.index("physical therapy")
     environment = {
         "occurrences": [
-            {"occurrence_id": "hypo", "decision_id": "d-hypo", "surface": "hypothyroidism",
-             "start": source.index("hypothyroidism"), "end": source.index("hypothyroidism") + 14,
+            {"occurrence_id": "arth", "decision_id": "d-arth", "surface": "arthritis",
+             "start": source.index("arthritis"), "end": source.index("arthritis") + 9,
              "runtime_type": "health-condition"},
-            # detected drug, uncontrolled (no lattice decision) but still
-            # substituted at render -> not caught by protected_context_literal
-            {"occurrence_id": "syn", "surface": "synthroid", "start": syn, "end": syn + 9,
-             "runtime_type": "drug", "controlled": False},
+            # detected procedure, uncontrolled (no lattice decision) -> not rewritten at render
+            {"occurrence_id": "pt", "surface": "physical therapy", "start": pt, "end": pt + 16,
+             "runtime_type": "medical-procedure", "controlled": False},
         ],
         "decisions": [
-            {"decision_id": "d-hypo", "actions": [{"mode": "level", "legal": True,
-                                                   "entails": ["thyroid gland disease"]}]},
+            {"decision_id": "d-arth", "actions": [{"mode": "level", "legal": True,
+                                                   "entails": ["joint inflammation disease"]}]},
         ],
     }
     proposal = {
-        "relation": "prescribed_with",
+        "relation": "procedure_for",
         "arguments": [
             {"role": "subject", "kind": "linked", "span_label": "S1",
-             "support_property": "thyroid gland disease", "literal": None},
+             "support_property": "joint inflammation disease", "literal": None},
             {"role": "object", "kind": "context", "span_label": None,
-             "support_property": None, "literal": "synthroid"},
+             "support_property": None, "literal": "physical therapy"},
         ],
-        "question": "Which medication was continued for the thyroid gland disease?",
-        "accepted_answers": ["synthroid"],
+        "question": "What procedure may be referred for the joint inflammation disease?",
+        "accepted_answers": ["physical therapy"],
         "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
     }
 
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
-    assert accepted == []
-    assert rejected[0]["detail_reason"] == "literal_will_be_substituted"
+    # the uncontrolled literal must NOT be rejected as will-be-substituted
+    assert not any(r["detail_reason"] == "literal_will_be_substituted" for r in rejected)
 
 
 def test_leakage_repair_recolors_subject_side_and_preserves_answer_floor():

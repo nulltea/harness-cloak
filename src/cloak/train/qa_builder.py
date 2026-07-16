@@ -3147,13 +3147,17 @@ def compile_relational_assertions(
         str(row["occurrence_id"]): row
         for row in environment_document.get("occurrences", [])
     }
-    # Token sets of every detected entity surface. A context-literal argument
-    # whose surface embeds one of these is a detected span that gets substituted
-    # at render (e.g. brand "synthroid" -> <DRUG_1>), so the literal cannot
-    # survive the generalized/placeholder docs and the relation is doomed.
+    # Token sets of surfaces the RANKER REWRITES in a scored render -- i.e. controlled spans
+    # carrying a decision (e.g. brand "synthroid" -> <DRUG_1>). A context-literal argument whose
+    # surface embeds one of these can't survive the generalized/placeholder docs, so the relation
+    # is doomed. Detector-only evidence (controlled False / no decision, e.g. "physical therapy"
+    # when it has no lattice entry) is NEVER rewritten -- the literal survives verbatim and is a
+    # safe answer -- so it must NOT count here (the guard was over-firing on it).
     substitutable_token_sets = [
         tokens for occurrence in occurrences.values()
-        if (tokens := _meaningful_tokens(str(occurrence.get("surface", ""))))
+        if occurrence.get("controlled", True)
+        and occurrence.get("decision_id") is not None
+        and (tokens := _meaningful_tokens(str(occurrence.get("surface", ""))))
     ]
     decisions = {
         str(row["decision_id"]): row
