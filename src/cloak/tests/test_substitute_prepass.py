@@ -216,3 +216,19 @@ def test_exhausted_profiled_span_still_placeholdered(monkeypatch):
     entry = next(r for r in R if r["surface"].lower() == "rare_condition")
     assert entry["action"] == "placeholder"
     assert entry.get("exhausted") is True
+
+
+def test_unprofiled_non_generalizable_type_is_placeholdered_not_kept(monkeypatch):
+    # An unprofiled hit of a NON-generalizable type (not in PROFILE_BACKED_TYPES, e.g. gender)
+    # must still be placeholdered -- keep-exact is only for generalizable profile types.
+    text = "the dragon said hello ."
+    spans = _spans(text, ("dragon", "gender"))
+    monkeypatch.setattr(sub, "coref_chains", lambda t, s: s)
+    monkeypatch.setattr(sub, "walk_risk", lambda *a, **k: 0.0)
+    monkeypatch.setattr(sub, "match_spans_batch", lambda items, **k: {})
+    monkeypatch.setattr(sub, "lattice_for", lambda *a, **k: [])
+    monkeypatch.setattr(sub, "lookup_entry", lambda *a, **k: None)  # unprofiled surface
+    doc_p, R = sub.substitute(text, spans, tau=2.0)
+    entry = next(r for r in R if r["surface"].lower() == "dragon")
+    assert entry["action"] == "placeholder"
+    assert "dragon" not in doc_p

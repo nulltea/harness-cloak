@@ -218,12 +218,15 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
                 if r < tau:
                     chosen, risk = cand, r
                     break
-            if chosen is None and not profiled:
-                # unprofiled detection: no real generalization level exists. Leave EXACT and
-                # uncontrolled -- the ranker never rewrites it, so it gets no action, risk, or
-                # privacy credit, and its exact text survives every scored render (a literal
-                # answer can rest on it). Prevents false-positive detections from becoming
+            if chosen is None and not profiled and s.type in PROFILE_BACKED_TYPES:
+                # UNPROFILED detection of a GENERALIZABLE type (one that lattice_profiles backs:
+                # drug/health-condition/medical-procedure/org/loc/...): no real level exists, so
+                # leave it EXACT and uncontrolled -- the ranker never rewrites it, it gets no
+                # action/risk/privacy credit, and its text survives every scored render (a literal
+                # answer can rest on it). Prevents detector false positives from becoming
                 # destructive junk placeholders that contaminate utility scoring and training.
+                # NON-generalizable types (PERSON/CODE via DIRECT_TYPES already, plus gender/age/
+                # marital-status/... not in PROFILE_BACKED_TYPES) must still be placeholdered.
                 entry.update(action="keep", replacement=s.text, risk=0.0,
                              lattice=lattice, uncontrolled=True)
             elif chosen is None:
