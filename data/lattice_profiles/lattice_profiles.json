@@ -25552,19 +25552,19 @@
         "count": 26.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "bone disease": 571.0,
-          "bone inflammation disease": 26.0,
+          "joint disease": 571.0,
+          "joint inflammation disease": 26.0,
           "connective tissue disease": 884.0,
           "musculoskeletal system disease": 1356.0
         },
         "level_grounding": {
-          "bone disease": {
+          "joint disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:0080001",
             "selector": "doid.is_a_descendants(DOID:0080001)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "bone inflammation disease": {
+          "joint inflammation disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:3342",
             "selector": "doid.is_a_descendants(DOID:3342)",
             "source_family": "doid-is-a",
@@ -25586,8 +25586,8 @@
           }
         },
         "levels": [
-          "bone inflammation disease",
-          "bone disease",
+          "joint inflammation disease",
+          "joint disease",
           "connective tissue disease",
           "musculoskeletal system disease"
         ],
@@ -39314,8 +39314,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "arthritis": 18.0,
-          "bone disease": 571.0,
-          "bone inflammation disease": 26.0,
+          "joint disease": 571.0,
+          "joint inflammation disease": 26.0,
           "connective tissue disease": 884.0
         },
         "level_grounding": {
@@ -39325,13 +39325,13 @@
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "bone disease": {
+          "joint disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:0080001",
             "selector": "doid.is_a_descendants(DOID:0080001)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "bone inflammation disease": {
+          "joint inflammation disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:3342",
             "selector": "doid.is_a_descendants(DOID:3342)",
             "source_family": "doid-is-a",
@@ -39346,8 +39346,8 @@
         },
         "levels": [
           "arthritis",
-          "bone inflammation disease",
-          "bone disease",
+          "joint inflammation disease",
+          "joint disease",
           "connective tissue disease"
         ],
         "source_ids": [
@@ -41870,8 +41870,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "arthritis": 18.0,
-          "bone disease": 571.0,
-          "bone inflammation disease": 26.0,
+          "joint disease": 571.0,
+          "joint inflammation disease": 26.0,
           "connective tissue disease": 884.0
         },
         "level_grounding": {
@@ -41881,13 +41881,13 @@
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "bone disease": {
+          "joint disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:0080001",
             "selector": "doid.is_a_descendants(DOID:0080001)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "bone inflammation disease": {
+          "joint inflammation disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:3342",
             "selector": "doid.is_a_descendants(DOID:3342)",
             "source_family": "doid-is-a",
@@ -41902,8 +41902,8 @@
         },
         "levels": [
           "arthritis",
-          "bone inflammation disease",
-          "bone disease",
+          "joint inflammation disease",
+          "joint disease",
           "connective tissue disease"
         ],
         "source_ids": [
