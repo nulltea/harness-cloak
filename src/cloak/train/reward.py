@@ -18,7 +18,9 @@ import re
 from cloak.extract import invert
 from cloak.lattice import NLI_MODEL
 
-QA_MODEL = "Qwen3.5-0.8B"   # SERVED generative reader (llama-swap :8060, UD-Q8_K_XL GGUF, -np 6)
+QA_MODEL = "gemma 4 (E4B)"  # SERVED generative reader (llama-swap :8060). Qwen3.5-0.8B was too
+                            # weak: on generalized renders it returned dose fragments ("50
+                            # milligrams") instead of the category answer ("opioid analgesic").
 # — re-pin 2026-07-06 (roberta-base-squad2 -> Qwen3.5-0.8B): the extractive reader abstained ~40%
 # on relational / section-structured notes (FM1); a grounded generative whole-doc reader fixes it.
 # Served, not local torch: Qwen3.5 is hybrid-attention and its fla/causal-conv1d kernels don't
