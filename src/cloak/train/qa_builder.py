@@ -2606,6 +2606,29 @@ Safe question: "What history rules out the use of that drug class?" Accepted ans
 Conditional plan (procedure_for / tests_for; allowed with a CONDITIONAL question): source "if symptoms persist , possibly refer to [S8: cardiac rehabilitation | procedure | levels: rehabilitation program]" while planning the [S9: heart failure | condition | levels: cardiac disorder] => procedure_for(S9, S8). Phrase it conditionally: "What procedure MAY the patient be referred to for the cardiac disorder?" Accepted answer: "rehabilitation program". A definite question ("What procedure was performed?") for a conditional plan is rejected."""
 
 
+def _relation_evidence_cards(
+    document: str, environment_document: Mapping, shown: Sequence[Mapping],
+) -> list[dict]:
+    """Per-clause evidence cards: each source clause holding >=1 shown S-label, with the labels
+    tagged in it. A value mentioned in several clauses carries its ONE S-label in every clause its
+    occurrences fall in. Shared by the primary teacher prompt and the gleaning repair prompt."""
+    label_by_decision = {str(row["decision_id"]): row["span_label"] for row in shown}
+    occ_spans = sorted(
+        (int(occ["start"]), int(occ["end"]), label_by_decision[str(occ.get("decision_id"))])
+        for occ in environment_document.get("occurrences", [])
+        if isinstance(occ.get("start"), int) and isinstance(occ.get("end"), int)
+        and str(occ.get("decision_id")) in label_by_decision
+    )
+    cards = []
+    for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
+        labels = list(dict.fromkeys(
+            label for (s, e, label) in occ_spans if start <= s < e <= end))
+        if labels:
+            cards.append({"index": index, "start": start, "end": end, "labels": labels,
+                          "text": document[start:end].strip()})
+    return cards
+
+
 def relation_teacher_prompt(
     doc_id: str,
     document: str,
@@ -2627,19 +2650,10 @@ def relation_teacher_prompt(
     # clauses; tag that label in EVERY clause any of its occurrences fall in, so a relation
     # stated at a non-earliest mention (e.g. arthritis named in the plan sentence, not just
     # the history list) still co-locates with its partner in the card.
-    label_by_decision = {str(row["decision_id"]): row["span_label"] for row in shown}
-    occ_spans = sorted(
-        (int(occ["start"]), int(occ["end"]), label_by_decision[str(occ.get("decision_id"))])
-        for occ in environment_document.get("occurrences", [])
-        if isinstance(occ.get("start"), int) and isinstance(occ.get("end"), int)
-        and str(occ.get("decision_id")) in label_by_decision
-    )
-    cards = []
-    for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
-        labels = list(dict.fromkeys(
-            label for (s, e, label) in occ_spans if start <= s < e <= end))
-        if labels:
-            cards.append(f"E{index}: {document[start:end].strip()}\nLabels: {', '.join(labels)}")
+    cards = [
+        f"E{card['index']}: {card['text']}\nLabels: {', '.join(card['labels'])}"
+        for card in _relation_evidence_cards(document, environment_document, shown)
+    ]
     return f"""TASK
 Find as many explicit, source-grounded, non-duplicate relations as the cap ({RELATION_TEACHER_MAX_RELATIONS}) permits. Prefer diversity only when supported. Abstain rather than inventing a fact.
 
@@ -2673,6 +2687,132 @@ Example span_relations record (illustrative, unrelated entities): relation presc
 Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "azithromycin" quoted from the relation sentence; accepted answer "azithromycin".
 Return exactly one candidate_accounting row per S-label covering both lists, with a short reason for every row. emitted means a relation record in either list uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
 FINAL CHECK before you return: reconcile the accounting against the two relation lists so they agree exactly. Every S-label you mark emitted MUST appear in an actual relation record in span_relations or context_relations, and every S-label used by a relation record MUST be marked emitted. Never mark a label emitted without including its relation record, and include every supported relation you identified — a fact named in the accounting but absent from the lists, or a relation you found but omitted, is an error to fix before returning.
+
+SOURCE DOCUMENT
+{document}"""
+
+
+def relation_repair_prompt(
+    doc_id: str,
+    document: str,
+    environment_document: Mapping,
+    targets: Sequence[Mapping],
+) -> str:
+    """Second-pass gleaning+repair prompt: same privacy/response contract as the primary, but the
+    DETECTED SPANS and EVIDENCE CARDS are restricted to the clauses relevant to `targets`, and a
+    REPAIR TARGETS section names each target with its per-reason fix hint. Kept relations and
+    100%-legitimate rejections are not shown. The primary prompt is untouched (cache-safe)."""
+    del doc_id
+    inventory = relation_teacher_span_inventory(environment_document)
+    label_by_decision = {str(row["decision_id"]): row["span_label"] for row in inventory}
+    occ_by_id = {
+        str(row["occurrence_id"]): row
+        for row in environment_document.get("occurrences", [])
+        if row.get("occurrence_id") is not None
+    }
+
+    def _arg_label(argument: Mapping) -> str | None:
+        if argument.get("kind") == "linked":
+            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
+            return label_by_decision.get(str(occurrence.get("decision_id")))
+        return None
+
+    def _arg_span(argument: Mapping) -> tuple[int, int] | None:
+        if argument.get("kind") == "linked":
+            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
+            if isinstance(occurrence.get("start"), int):
+                return int(occurrence["start"]), int(occurrence["end"])
+        elif isinstance(argument.get("start"), int):
+            return int(argument["start"]), int(argument["end"])
+        return None
+
+    target_labels: set[str] = set()
+    target_ranges: list[tuple[int, int]] = []
+    for target in targets:
+        for argument in target.get("arguments") or []:
+            label = _arg_label(argument)
+            if label:
+                target_labels.add(label)
+            span = _arg_span(argument)
+            if span:
+                target_ranges.append(span)
+        evidence_span = target.get("evidence_span")
+        if evidence_span and len(evidence_span) == 2:
+            target_ranges.append((int(evidence_span[0]), int(evidence_span[1])))
+
+    def _card_kept(card: Mapping) -> bool:
+        if set(card["labels"]) & target_labels:
+            return True
+        return any(not (hi <= card["start"] or card["end"] <= lo) for lo, hi in target_ranges)
+
+    kept_cards = [card for card in _relation_evidence_cards(document, environment_document, inventory)
+                  if _card_kept(card)]
+    leftover_labels = {label for card in kept_cards for label in card["labels"]}
+    # DETECTED SPANS restricted to labels still present in the leftover cards.
+    shown = [row for row in inventory if row["span_label"] in leftover_labels]
+
+    def _span_line(row: Mapping) -> str:
+        return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
+                f"| levels: {'; '.join(row['properties'])}]")
+
+    spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
+    cards = "\n".join(
+        f"E{card['index']}: {card['text']}\nLabels: {', '.join(card['labels'])}"
+        for card in kept_cards
+    ) or "(No span-local cards; inspect the source directly.)"
+
+    def _arg_desc(argument: Mapping | None) -> str:
+        if argument is None:
+            return "?"
+        if argument.get("kind") == "linked":
+            return _arg_label(argument) or "?"
+        return f'context literal "{argument.get("literal", "")}"'
+
+    target_lines = []
+    for target in targets:
+        arguments = target.get("arguments") or []
+        subject = next((a for a in arguments if a.get("role") == "subject"), None)
+        obj = next((a for a in arguments if a.get("role") == "object"), None)
+        detail = str(target.get("hint", ""))
+        if target.get("reason"):
+            detail = f"(previously rejected: {target['reason']}) {detail}"
+        target_lines.append(
+            f"- [{target.get('relation', '?')}] {_arg_desc(subject)} -> {_arg_desc(obj)} "
+            f"| {str(target.get('kind', '')).upper()}: {detail}")
+    repair_targets = "\n".join(target_lines) or "(No targets.)"
+
+    relation_inventory = CLINICAL_RELATION_INVENTORY
+    worked_examples = CLINICAL_WORKED_EXAMPLES
+    return f"""TASK
+REPAIR + GLEAN pass over one clinical note. A first pass already ran. Below are ONLY the relations to fix or recover — kept relations and legitimately-rejected ones are omitted. Address EACH listed target: fix the noted problem (rewrite/re-anchor/disambiguate) or emit the missed relation if the source supports it; abstain on any target you cannot support from the source. Do NOT re-emit relations that are not listed. Same output schema and privacy rules as the first pass.
+
+HOW TO INSPECT THE SOURCE
+Read the full source. Evidence cards and detected spans are restricted to the listed targets — they are navigation aids, not pair gates. Use S-labels for linked controlled arguments (one label per value, tagged in every clause it appears in); quote an uncontrolled argument's exact source text as a context literal. A relation may connect spans across turns of the SAME problem discussion (short patient acknowledgments between the doctor's sentences are fine), never across different problems or small talk. A conditional/planned statement IS a valid relation but its question MUST be phrased conditionally (may / might / would / if …).
+
+PRIVACY-SAFE QA
+Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest. An exact uncontrolled context literal may be an answer only when it is the measured fact.
+CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC answer-type word only for the argument being asked ("Which medication …", "Which procedure …", "What test …", "What condition …") — never "category", "type", "class", or "kind" — then put the specific level in the accepted answer. The question names the OTHER argument's level (or a generic word) and asks for the answered one.
+
+RELATION INVENTORY
+{relation_inventory}
+
+WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy these entities)
+{worked_examples}
+
+DETECTED SPANS (only those relevant to the targets)
+{spans}
+
+EVIDENCE CARDS (only clauses relevant to the targets)
+{cards}
+
+REPAIR TARGETS (address only these; each is ambiguous / fixable / missed)
+{repair_targets}
+
+RESPONSE
+Return two relation lists with the same records as the first pass: relation; a subject then an object argument; a question; accepted answers; the fixed scoring contract.
+span_relations: subject and object both displayed spans, each kind linked with span_label + one listed level as support_property; the two labels MUST differ.
+context_relations: exactly one linked S-label argument and one uncontrolled context argument whose literal is exact source text (not any displayed span), in the relation's DIRECTIONAL order per the inventory.
+Emit each distinct fact EXACTLY ONCE. Return exactly one candidate_accounting row per shown S-label with a short reason (emitted / duplicate_mention / exhausted_no_relation / unsupported) referencing labels and levels only. Return only the structured response.
 
 SOURCE DOCUMENT
 {document}"""
@@ -3385,8 +3525,139 @@ def relation_support_opportunities(
                     "scope": _relation_scope(arguments),
                     "fact_key": key,
                     "anchor_kind": anchor_kind,
+                    # carried for the gleaning "missed" evidence card (unused by escalation counts)
+                    "arguments": deepcopy(arguments),
+                    "evidence_span": list(span),
                 })
     return [opportunities[key] for key in sorted(opportunities)]
+
+
+# Gleaning+repair rejection taxonomy (approved 2026-07-16, docs/plans/qa-relation-gleaning-repair.md).
+# A rejected relation is a repair target iff its reason is FIXABLE by re-authoring the proposal;
+# every other reason is 100% legitimate (genuine absence/invalidity), data-owned, reader-owned, or
+# infra/malformed and is EXCLUDED. `three_point_gate_failed` is NOT here: it is fixable only when the
+# relation is ambiguous (answer_competing), which the ambiguous-target rule already catches; its
+# lattice_level_suspect / representative_unreadable variants are data/reader-owned (excluded).
+_GLEANING_FIX_HINTS: dict[str, str] = {
+    "invalid_evidence":
+        "Subject and object are stated in the same problem discussion but not the same clause; anchor "
+        "the relation at the mention where they co-locate (the entity may be named again nearby).",
+    "invalid_evidence_occurrence":
+        "Anchor the relation at the specific mention where the subject and object co-locate.",
+    "protected_locator":
+        "Rephrase the question to reference the other argument only by its listed generalization "
+        "level, never a raw source surface.",
+    "protected_answer":
+        "Give the accepted answer as one of the answered argument's listed generalization levels, "
+        "not a raw source surface.",
+    "answer_leakage":
+        "Rewrite the question so it shares no meaningful word with the accepted answer.",
+    "hedged_relation":
+        "The source states this conditionally/as a plan; phrase the question conditionally "
+        "(may / might / would / if) so it is not asserted as already done.",
+    "literal_will_be_substituted":
+        "That literal is a detected controlled span; reference it by its S-label as a linked argument.",
+    "placeholder_answerable":
+        "The answer is recoverable even at the placeholder floor; choose a more specific, "
+        "discriminative answer level.",
+    "floor_answerable":
+        "The answer is recoverable even at the placeholder floor; choose a more specific, "
+        "discriminative answer level.",
+    "invalid_question":
+        "Re-author a well-formed question that asks for the answered argument with a generic slot word.",
+    "invalid_property":
+        "Use one of the answered argument's listed generalization levels as the accepted answer.",
+}
+_GLEANING_FIXABLE_REASONS = frozenset(_GLEANING_FIX_HINTS)
+_GLEANING_AMBIGUOUS_HINT = (
+    "More than one candidate answer of this type appears in the subject's problem discussion, so a "
+    "free-form reader cannot uniquely answer. Re-author the question so exactly one answer is correct "
+    "(add a distinguishing detail from the source), or abstain if it cannot be made unique."
+)
+_GLEANING_MISSED_HINT = (
+    "This subject/object pair is source-supported (see its evidence card) but no relation was emitted "
+    "for it. Emit the relation if the source states it, else leave it."
+)
+_GLEANING_TARGET_PRIORITY = {"ambiguous": 3, "fixable": 2, "missed": 1}
+
+
+def _gleaning_targets(
+    document: str,
+    kept_relations: Sequence[Mapping],
+    rejections: Sequence[Mapping],
+    opportunities: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+) -> list[dict]:
+    """Compute the gleaning+repair target set from the primary pass (diagnostic/planning only).
+
+    Targets, deduplicated by decision-level fact key with priority ambiguous > fixable > missed:
+      * ambiguous  -- a kept OR rejected relation with a co-valid same-type answer in scope;
+      * fixable    -- a rejection whose reason is in the FIXABLE taxonomy;
+      * missed     -- a source-supported opportunity the teacher never proposed.
+    `kept_relations`/`rejections` must carry `evidence.arguments` (compiled form). Conservative:
+    only certainly-legitimate reasons are dropped, so a fixable relation is never silently excluded.
+    """
+    def _args(row: Mapping) -> list[dict]:
+        return list((row.get("evidence") or {}).get("arguments") or [])
+
+    def _fact_key(row: Mapping) -> tuple | None:
+        args = _args(row)
+        if len(args) != 2:
+            return None
+        try:
+            return _relation_fact_key(str(row.get("relation", "")), args, occurrences)
+        except ValueError:
+            return None
+
+    def _subject_and_answer(row: Mapping) -> tuple[Mapping | None, Mapping | None, Mapping]:
+        args = _args(row)
+        if len(args) != 2:
+            return None, None, {}
+        role = str(row.get("answer_role") or "object")
+        answer = args[0] if role == "subject" else args[1]
+        subject = args[1] if role == "subject" else args[0]
+        return subject, answer, (row.get("answer_target") or {})
+
+    proposed_keys = {
+        key for row in [*kept_relations, *rejections] if (key := _fact_key(row)) is not None
+    }
+    targets: dict[tuple, dict] = {}
+
+    def _add(key: tuple | None, kind: str, **extra) -> None:
+        if key is None:
+            return
+        existing = targets.get(key)
+        if existing and _GLEANING_TARGET_PRIORITY[existing["kind"]] >= _GLEANING_TARGET_PRIORITY[kind]:
+            return
+        targets[key] = {"fact_key": key, "kind": kind, **extra}
+
+    # ambiguous: any kept or rejected relation with a co-valid same-type answer in the subject's block
+    for row in [*kept_relations, *rejections]:
+        competing = list((row.get("evidence") or {}).get("answer_competing") or [])
+        if not competing:
+            subject, answer, target = _subject_and_answer(row)
+            if subject is not None and answer is not None:
+                competing = _answer_competing_surfaces(
+                    document, subject, answer, target, occurrences)
+        if competing:
+            _add(_fact_key(row), "ambiguous", relation=row.get("relation"),
+                 hint=_GLEANING_AMBIGUOUS_HINT, competing=competing, arguments=_args(row))
+
+    # fixable: a rejection whose reason is in the FIXABLE taxonomy
+    for row in rejections:
+        reason = str(row.get("detail_reason") or row.get("reason") or "")
+        if reason in _GLEANING_FIXABLE_REASONS:
+            _add(_fact_key(row), "fixable", relation=row.get("relation"),
+                 reason=reason, hint=_GLEANING_FIX_HINTS[reason], arguments=_args(row))
+
+    # missed: a source-supported opportunity the teacher never proposed
+    for opportunity in opportunities:
+        if opportunity.get("fact_key") not in proposed_keys:
+            _add(opportunity.get("fact_key"), "missed", relation=opportunity.get("relation"),
+                 hint=_GLEANING_MISSED_HINT, arguments=list(opportunity.get("arguments") or []),
+                 evidence_span=opportunity.get("evidence_span"))
+
+    return [targets[key] for key in sorted(targets, key=repr)]
 
 
 def _validate_relation_escalation_policy(policy: Mapping | None) -> dict | None:
@@ -3513,6 +3784,65 @@ def _promote_context_literals_on_detected_entities(
     return arguments, proposal
 
 
+def _answer_competing_surfaces(
+    document: str,
+    subject_argument: Mapping,
+    answer_argument: Mapping,
+    answer_target: Mapping,
+    occurrences: Mapping[str, Mapping],
+) -> list[str]:
+    """MONITOR (diagnostic only, never rejects): surfaces of OTHER controlled entities that share
+    the answered argument's runtime_type and sit in the SAME clinical problem block(s) as the
+    subject condition, but belong to a different decision than the answer. A non-empty result means
+    the probe "which <type> for <subject>?" has more than one co-valid answer where the reader looks,
+    so a free-form reader may name a different (also-valid) one -- the non-deterministic utility
+    signal to surface. Scope is the subject DECISION's problem block(s) (not the narrow relation
+    anchor): the reader reads the whole problem, so a competitor anywhere in it can be surfaced.
+    Deterministic: derived only from frozen detections + source problem-block segmentation."""
+    if answer_argument.get("kind") == "linked":
+        answer_type = canon(str(occurrences.get(answer_argument.get("occurrence_id"), {})
+                                 .get("runtime_type", "")))
+        answer_decision = str(answer_target.get("decision_id") or "")
+    else:
+        answer_type = canon(str(answer_argument.get("runtime_type", "")))
+        answer_decision = ""  # a context literal has no decision to exclude by
+    if not answer_type or subject_argument.get("kind") != "linked":
+        return []
+    subject_decision = str(
+        occurrences.get(subject_argument.get("occurrence_id"), {}).get("decision_id") or "")
+    if not subject_decision:
+        return []
+    blocks = _problem_blocks(document)
+
+    def block_of(start: int, end: int) -> tuple[int, int] | None:
+        return next(((lo, hi) for lo, hi in blocks if lo <= start and end <= hi), None)
+
+    scope_ranges = {
+        block_of(int(o["start"]), int(o["end"]))
+        for o in occurrences.values()
+        if str(o.get("decision_id") or "") == subject_decision
+        and isinstance(o.get("start"), int) and isinstance(o.get("end"), int)
+    }
+    scope_ranges.discard(None)
+    if not scope_ranges:  # no problem-block structure -> whole document
+        scope_ranges = {(0, len(document))}
+    competing: dict[str, str] = {}
+    for occurrence in occurrences.values():
+        if not occurrence.get("controlled", True):
+            continue
+        if canon(str(occurrence.get("runtime_type", ""))) != answer_type:
+            continue
+        start, end = occurrence.get("start"), occurrence.get("end")
+        if not (isinstance(start, int) and isinstance(end, int)):
+            continue
+        if not any(lo <= start and end <= hi for lo, hi in scope_ranges):
+            continue
+        decision = str(occurrence.get("decision_id") or "")
+        if decision and decision != answer_decision:
+            competing[decision] = str(occurrence.get("surface", ""))
+    return sorted(competing.values())
+
+
 def compile_relational_assertions(
     doc_id: str,
     document: str,
@@ -3599,6 +3929,8 @@ def compile_relational_assertions(
                 "evidence_quote_hash": _stable_hash(quote),
                 "evidence_span": list(quote_span) if quote_span is not None else None,
             }
+            if competing_answers:  # ambiguity monitor, recorded even for pre-gate rejects
+                evidence["answer_competing"] = competing_answers
             record = _rejection_record(
                 reason=_stable_rejection_reason(reason),
                 detail_reason=reason,
@@ -3613,6 +3945,10 @@ def compile_relational_assertions(
             record["proposal_index"] = index
             record["proposal_hash"] = proposal_hash
             rejected.append(record)
+
+        # Ambiguity monitor accumulator (diagnostic only): set once the relation is grounded,
+        # so it is recorded whether the relation is later kept or rejected at any gate.
+        competing_answers: list[str] = []
 
         if index >= RELATION_TEACHER_MAX_RELATIONS:
             reject("relation_cap_exceeded")
@@ -3702,6 +4038,21 @@ def compile_relational_assertions(
         ):
             reject("invalid_evidence")
             continue
+        # Ambiguity monitor (diagnostic only): the relation is now grounded, so record any co-valid
+        # same-type answer in the subject's problem block(s). Set here -- before the leak/gate checks
+        # -- so it is preserved whether the relation is later kept or rejected at ANY gate. Never
+        # affects accept/reject or reward.
+        _answer_role_mon = str(proposal.get("answer_role", "object"))
+        _answer_arg_mon = arguments[0] if _answer_role_mon == "subject" else arguments[1]
+        _subject_arg_mon = arguments[1] if _answer_role_mon == "subject" else arguments[0]
+        _answer_scope_target = (
+            {"decision_id": str(occurrences[_answer_arg_mon["occurrence_id"]]["decision_id"])}
+            if _answer_arg_mon.get("kind") == "linked"
+            and _answer_arg_mon.get("occurrence_id") in occurrences
+            else {}
+        )
+        competing_answers = _answer_competing_surfaces(
+            document, _subject_arg_mon, _answer_arg_mon, _answer_scope_target, occurrences)
         # A conditional/planned statement ("possibly refer to physical therapy",
         # "if symptoms persist, order X") is a real contextual fact, but must not be
         # asserted as already done: allow it only when the question is itself phrased
@@ -3893,6 +4244,8 @@ def compile_relational_assertions(
         }
         if leakage_repair is not None:
             evidence["leakage_repair"] = leakage_repair
+        if competing_answers:  # ambiguity monitor (computed above, pre-gate); diagnostic only
+            evidence["answer_competing"] = competing_answers
         accepted.append({
             "family": "context",
             "scope": "linked",
@@ -4721,6 +5074,22 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
                 "floor_lowered_repair", "compile", "ontology_review", "info",
                 {"from_level": repair.get("from_level"), "to_level": repair.get("to_level")}))
 
+    # ambiguity MONITOR: a relation whose answered type has >1 co-valid answer in scope. The
+    # free-form reader can name a different (also-valid) one -> non-deterministic utility signal.
+    # Diagnostic only (info); reported for kept relations and gate-rejected ones alike.
+    for row in (artifact.get("assertions") or {}).values():
+        competing = (row.get("evidence") or {}).get("answer_competing")
+        if competing:
+            flags[str(row.get("doc_id"))].append(_review_flag(
+                "relation_answer_ambiguous", "compile", "ambiguity", "info",
+                {"relation": row.get("relation"), "competing_answers": competing}))
+    for record in (artifact.get("rejections") or {}).get("records") or []:
+        competing = (record.get("evidence") or {}).get("answer_competing")
+        if competing:
+            flags[str(record.get("doc_id"))].append(_review_flag(
+                "relation_answer_ambiguous", "gate", "ambiguity", "info",
+                {"detail_reason": record.get("detail_reason"), "competing_answers": competing}))
+
     # teacher self-report inconsistency -> the draw is unreliable, re-run it
     for doc_id, rows in (artifact.get("relation_candidate_accounting") or {}).items():
         if any(isinstance(r, Mapping) and r.get("state") == "ledger_inconsistent" for r in rows):
@@ -4827,6 +5196,9 @@ def build_utility_artifact(
             "subtype": candidate.get("subtype"),
             "occurrence_ids": list(candidate.get("occurrence_ids") or []),
         }
+        competing_answers = (candidate.get("evidence") or {}).get("answer_competing")
+        if competing_answers:  # carry the ambiguity monitor through to the rejection record
+            evidence["answer_competing"] = competing_answers
         if anchor is not None:
             evidence.update({
                 "joint_anchor_action_vector": anchor["action_vector"],

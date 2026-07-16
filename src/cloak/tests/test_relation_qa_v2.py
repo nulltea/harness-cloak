@@ -1827,3 +1827,116 @@ def test_protected_term_generic_category_word_is_not_a_leak():
     # a multi-token raw surface is never exempted, even if each token is authorized
     assert leaks("Was this seen by john smith?", ["john smith"],
                  {"john smith": frozenset({"john", "smith"})}) is True
+
+
+def test_answer_competing_surfaces_flags_multi_procedure_scope():
+    # Ambiguity monitor: reflux's problem block holds two controlled procedures, so the answered
+    # one ("dietary modifications") has a co-valid competitor ("ultrasound") a free-form reader
+    # could name instead. Scope is the subject decision's problem block. Deterministic, diagnostic.
+    doc = ("for your first problem , your reflux , get an ultrasound and continue dietary "
+           "modifications . for your second problem , your arthritis , order an autoimmune panel .")
+    def span(sub): return (doc.index(sub), doc.index(sub) + len(sub))
+    rs, re_ = span("reflux"); us, ue = span("ultrasound")
+    ds, de = span("dietary modifications"); ps, pe = span("autoimmune panel")
+    occ = {
+        "reflux": {"occurrence_id": "reflux", "decision_id": "d-reflux", "runtime_type": "health-condition",
+                   "controlled": True, "surface": "reflux", "start": rs, "end": re_},
+        "us": {"occurrence_id": "us", "decision_id": "d-us", "runtime_type": "medical-procedure",
+               "controlled": True, "surface": "ultrasound", "start": us, "end": ue},
+        "diet": {"occurrence_id": "diet", "decision_id": "d-diet", "runtime_type": "medical-procedure",
+                 "controlled": True, "surface": "dietary modifications", "start": ds, "end": de},
+        "panel": {"occurrence_id": "panel", "decision_id": "d-panel", "runtime_type": "medical-procedure",
+                  "controlled": True, "surface": "autoimmune panel", "start": ps, "end": pe},
+    }
+    subj = {"kind": "linked", "occurrence_id": "reflux"}
+    answer_arg = {"kind": "linked", "occurrence_id": "diet"}
+    target = {"kind": "linked_decision", "decision_id": "d-diet"}
+    f = qa_builder._answer_competing_surfaces
+    # ultrasound is in reflux's block; the arthritis-block panel is NOT counted (different problem)
+    assert f(doc, subj, answer_arg, target, occ) == ["ultrasound"]
+    # sole procedure in the subject block -> no competitor
+    assert f(doc, subj, answer_arg, target, {k: occ[k] for k in ("reflux", "diet", "panel")}) == []
+
+
+def test_gleaning_targets_classifies_by_taxonomy():
+    occ = {n: {"occurrence_id": n, "decision_id": f"d-{n}", "runtime_type": t,
+               "controlled": True, "surface": n, "start": s, "end": s + 5}
+           for n, t, s in [("reflux", "health-condition", 0), ("diet", "medical-procedure", 20),
+                           ("us", "medical-procedure", 50), ("hf", "health-condition", 70),
+                           ("ace", "drug", 90)]}
+
+    def rel(subj, obj):
+        return [{"role": "subject", "kind": "linked", "occurrence_id": subj, "support_property": "x"},
+                {"role": "object", "kind": "linked", "occurrence_id": obj, "support_property": "y"}]
+
+    ambiguous = {"relation": "procedure_for", "detail_reason": "protected_answer",
+                 "evidence": {"arguments": rel("reflux", "diet"), "answer_competing": ["ultrasound"]}}
+    fixable = {"relation": "prescribed_with", "detail_reason": "invalid_evidence",
+               "evidence": {"arguments": rel("hf", "ace")}}
+    legit = {"relation": "tests_for", "detail_reason": "no_task_role_cue",
+             "evidence": {"arguments": rel("hf", "us")}}
+    both = {"relation": "tests_for", "detail_reason": "invalid_evidence",  # fixable AND ambiguous
+            "evidence": {"arguments": rel("reflux", "us"), "answer_competing": ["dietary modifications"]}}
+    opp_key = qa_builder._relation_fact_key("prescribed_with", rel("reflux", "ace"), occ)
+    opportunities = [{"relation": "prescribed_with", "fact_key": opp_key,
+                      "arguments": rel("reflux", "ace"), "evidence_span": [0, 100]}]
+
+    targets = qa_builder._gleaning_targets(
+        "", [], [ambiguous, fixable, legit, both], opportunities, occ)
+    by = {(t["relation"], t["kind"]) for t in targets}
+
+    assert ("procedure_for", "ambiguous") in by            # answer_competing -> ambiguous
+    assert ("prescribed_with", "fixable") in by            # invalid_evidence -> fixable
+    assert ("prescribed_with", "missed") in by             # opportunity never proposed -> missed
+    assert ("tests_for", "ambiguous") in by                # dedup priority: ambiguous beats fixable
+    assert ("tests_for", "fixable") not in by
+    # no_task_role_cue is 100% legitimate -> never a target
+    assert not any(t["relation"] == "tests_for" and t["kind"] == "fixable" for t in targets)
+    assert all(t.get("reason") != "no_task_role_cue" for t in targets)
+    amb = next(t for t in targets if t["kind"] == "ambiguous" and t["relation"] == "procedure_for")
+    assert amb["competing"] == ["ultrasound"] and "uniquely" in amb["hint"].lower()
+    fx = next(t for t in targets if t["kind"] == "fixable")
+    assert fx["reason"] == "invalid_evidence" and "anchor" in fx["hint"].lower()
+
+
+def test_relation_repair_prompt_restricts_to_targets_and_lists_hints():
+    # reflux + dietary(target) + heart-failure/ace(non-target) in the same doc; the repair prompt
+    # must show only the target's spans/cards and a REPAIR TARGETS line with the fix hint.
+    # non-target entities chosen to NOT appear in the worked-examples text
+    source = ("for your first problem , your reflux , continue dietary modifications . "
+              "for your second problem , your insomnia , continue the zolpidem .")
+    def sp(x): return source.index(x)
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "reflux", "decision_id": "d-reflux", "surface": "reflux",
+             "start": sp("reflux"), "end": sp("reflux") + 6, "runtime_type": "health-condition"},
+            {"occurrence_id": "diet", "decision_id": "d-diet", "surface": "dietary modifications",
+             "start": sp("dietary modifications"), "end": sp("dietary modifications") + 21,
+             "runtime_type": "medical-procedure"},
+            {"occurrence_id": "ins", "decision_id": "d-ins", "surface": "insomnia",
+             "start": sp("insomnia"), "end": sp("insomnia") + 8, "runtime_type": "health-condition"},
+            {"occurrence_id": "zol", "decision_id": "d-zol", "surface": "zolpidem",
+             "start": sp("zolpidem"), "end": sp("zolpidem") + 8, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-reflux", "actions": [{"mode": "level", "legal": True, "entails": ["gastrointestinal condition"]}]},
+            {"decision_id": "d-diet", "actions": [{"mode": "level", "legal": True, "entails": ["dietary intervention"]}]},
+            {"decision_id": "d-ins", "actions": [{"mode": "level", "legal": True, "entails": ["sleep disorder"]}]},
+            {"decision_id": "d-zol", "actions": [{"mode": "level", "legal": True, "entails": ["sedative"]}]},
+        ],
+    }
+    inv = {str(r["decision_id"]): r["span_label"] for r in qa_builder.relation_teacher_span_inventory(environment)}
+    target = {"kind": "ambiguous", "relation": "procedure_for", "hint": "make it uniquely answerable",
+              "arguments": [
+                  {"role": "subject", "kind": "linked", "occurrence_id": "reflux"},
+                  {"role": "object", "kind": "linked", "occurrence_id": "diet"}]}
+    prompt = qa_builder.relation_repair_prompt("d", source, environment, [target])
+
+    assert "REPAIR TARGETS" in prompt and "procedure_for" in prompt
+    assert "make it uniquely answerable" in prompt and "AMBIGUOUS" in prompt
+    # the target's spans are shown; the non-target insomnia/zolpidem block is excluded
+    assert inv["d-reflux"] in prompt and inv["d-diet"] in prompt
+    assert "insomnia" not in prompt.split("SOURCE DOCUMENT")[0]  # only in the source, not spans/cards
+    assert "zolpidem" not in prompt.split("SOURCE DOCUMENT")[0]
+    # safety-critical privacy instruction survives
+    assert "the QUESTION must never contain the accepted answer" in prompt
