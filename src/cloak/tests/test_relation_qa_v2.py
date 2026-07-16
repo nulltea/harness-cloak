@@ -1574,3 +1574,76 @@ def test_v4_compiler_uses_a_bounded_plan_section_anchor_for_treatment():
     assert accepted[0]["evidence"]["source_span"]["quote_hash"] == qa_builder._stable_hash(source)
 
 
+
+
+def test_lattice_level_suspect_probe_flags_coarser_readable(monkeypatch):
+    """The coarser-level diagnostic: a relation whose fine locator level is unreadable but a
+    coarser legal level in the same chain reads -> report the offending surface + levels."""
+    import cloak.train.qa_builder as qb
+
+    decisions = [{
+        "decision_id": "d1", "canonical_key": "arthritis", "runtime_type": "health-condition",
+        "actions": [
+            {"action_id": "fine", "mode": "level", "legal": True, "coarseness_rank": 0.0,
+             "fill": "joint inflammation disease",
+             "entails": ["joint inflammation disease", "musculoskeletal system disease"]},
+            {"action_id": "coarse", "mode": "level", "legal": True, "coarseness_rank": 1.0,
+             "fill": "musculoskeletal system disease",
+             "entails": ["musculoskeletal system disease"]},
+        ],
+    }]
+    candidate = {
+        "question": "Which medication was prescribed for the joint inflammation disease?",
+        "decision_requirements": {"d1": "joint inflammation disease"},
+        "evidence": {"reader_turns": [0]},
+    }
+    fill_by_action = {a["action_id"]: a["fill"] for a in decisions[0]["actions"]}
+
+    def render(doc_id, vector):
+        return f"note: patient with {fill_by_action[vector['d1']]} takes a drug"
+
+    # reader only extracts once the COARSE level is what got rendered
+    def reader(questions, context):
+        return ["opioid analgesic" if "musculoskeletal system disease" in context else ""]
+
+    monkeypatch.setattr(qb, "_turn_excerpt", lambda ctx, turns, window=0: ctx)
+    monkeypatch.setattr(qb, "_context_answer_score", lambda row, ans, chain: 1.0 if ans else 0.0)
+
+    result = qb._diagnose_coarser_readable(
+        candidate, decisions, [],
+        doc_id="aci/TEST", render_action_vector=render, reader=reader,
+        chain_by_decision={}, reader_threshold=1.0,
+    )
+    assert result is not None
+    assert result["surface"] == "arthritis"
+    assert result["unreadable_level"] == "joint inflammation disease"
+    assert result["readable_coarser_level"] == "musculoskeletal system disease"
+
+
+def test_lattice_level_suspect_probe_silent_when_no_level_reads(monkeypatch):
+    """No coarser level reads -> genuine reader limit, not a data issue -> no suspect."""
+    import cloak.train.qa_builder as qb
+
+    decisions = [{
+        "decision_id": "d1", "canonical_key": "arthritis", "runtime_type": "health-condition",
+        "actions": [
+            {"action_id": "fine", "mode": "level", "legal": True, "coarseness_rank": 0.0,
+             "fill": "joint inflammation disease",
+             "entails": ["joint inflammation disease", "musculoskeletal system disease"]},
+            {"action_id": "coarse", "mode": "level", "legal": True, "coarseness_rank": 1.0,
+             "fill": "musculoskeletal system disease", "entails": ["musculoskeletal system disease"]},
+        ],
+    }]
+    candidate = {
+        "question": "Which medication was prescribed for the joint inflammation disease?",
+        "decision_requirements": {"d1": "joint inflammation disease"},
+        "evidence": {"reader_turns": [0]},
+    }
+    monkeypatch.setattr(qb, "_turn_excerpt", lambda ctx, turns, window=0: ctx)
+    monkeypatch.setattr(qb, "_context_answer_score", lambda row, ans, chain: 0.0)
+    result = qb._diagnose_coarser_readable(
+        candidate, decisions, [], doc_id="aci/TEST",
+        render_action_vector=lambda d, v: "x", reader=lambda q, c: [""],
+        chain_by_decision={}, reader_threshold=1.0,
+    )
+    assert result is None

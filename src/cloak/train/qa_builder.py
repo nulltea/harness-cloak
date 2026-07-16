@@ -4077,6 +4077,41 @@ def freeze_ranker_environment(
                         "actions": actions,
                         "action_menu_hash": action_menu_hash,
                     }
+            # KEEP action semantics intentionally remain keyed by each source surface
+            # above. Once those menus are complete, aliases that resolve to the same
+            # lattice entry can share the first decision -- but only when their
+            # non-KEEP choices are indistinguishable. Redirecting the surface keys
+            # preserves the KEEP construction invariant while making every occurrence
+            # receive the shared decision_id below.
+            def non_keep_menu(decision: Mapping) -> tuple:
+                entries = []
+                for action in decision["actions"]:
+                    if action["mode"] == "keep":
+                        continue
+                    if action["mode"] == "level":
+                        entries.append((
+                            "level", action.get("fill"),
+                            float(action["coarseness_rank"]),
+                        ))
+                    else:
+                        entries.append(("placeholder", action.get("fill")))
+                return tuple(sorted(entries))
+
+            keys_by_entity: dict[tuple[str, str], list[tuple[str, str]]] = {}
+            for decision_key in decisions_by_key:
+                runtime_type, source_key = decision_key
+                keys_by_entity.setdefault(
+                    (runtime_type, _entity_key(source_key, runtime_type)), []
+                ).append(decision_key)
+            for decision_keys in keys_by_entity.values():
+                primary = decisions_by_key[decision_keys[0]]
+                primary_menu = non_keep_menu(primary)
+                if all(
+                    non_keep_menu(decisions_by_key[decision_key]) == primary_menu
+                    for decision_key in decision_keys[1:]
+                ):
+                    for decision_key in decision_keys[1:]:
+                        decisions_by_key[decision_key] = primary
             occurrence_source = (
                 occurrences_by_document[doc_id]
                 if occurrences_by_document is not None and doc_id in occurrences_by_document
@@ -4127,7 +4162,11 @@ def freeze_ranker_environment(
             occurrences_by_id = {
                 str(row["occurrence_id"]): row for row in occurrences
             }
-            for decision in decisions_by_key.values():
+            decisions_by_id = {
+                decision["decision_id"]: decision
+                for decision in decisions_by_key.values()
+            }
+            for decision in decisions_by_id.values():
                 protected_aliases = []
                 for occurrence_id in decision["occurrence_ids"]:
                     for alias in occurrences_by_id[occurrence_id]["aliases"]:
@@ -4138,7 +4177,7 @@ def freeze_ranker_environment(
             frozen_document = {
                 "corpus": corpus,
                 "occurrences": occurrences,
-                "decisions": list(decisions_by_key.values()),
+                "decisions": list(decisions_by_id.values()),
             }
             frozen_document["environment_document_hash"] = _stable_hash(frozen_document)
             documents[doc_id] = frozen_document
@@ -4233,10 +4272,25 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
                 "placeholder_answerable", "gate", "ontology_review", "info", {}))
         elif reason == "three_point_gate_failed":
             scores = (evidence.get("validation") or {}).get("scores") or {}
-            if (scores.get("original", 0.0) >= 1.0
+            probe = evidence.get("lattice_probe")
+            if isinstance(probe, Mapping) and probe.get("readable_coarser_level"):
+                # a COARSER legal level in the same chain reads -> the chosen fine level,
+                # not the relation, is the problem. almost always bad data in
+                # lattice_profiles.json (mis-grounded/mislabeled level). points at the
+                # exact entry to fix.
+                flags[doc_id].append(_review_flag(
+                    "lattice_level_suspect", "gate", "data_lattice", "warn",
+                    {"surface": probe.get("surface"),
+                     "runtime_type": probe.get("runtime_type"),
+                     "unreadable_level": probe.get("unreadable_level"),
+                     "readable_coarser_level": probe.get("readable_coarser_level"),
+                     "chain": probe.get("chain"),
+                     "scores": scores}))
+            elif (scores.get("original", 0.0) >= 1.0
                     and scores.get("representative", 0.0) < 1.0
                     and scores.get("placeholder", 1.0) < 1.0):
-                # original answerable, generalized form not -> reader capability
+                # original answerable, generalized form not, no coarser level reads
+                # either -> genuine reader capability limit, not a data issue
                 flags[doc_id].append(_review_flag(
                     "representative_unreadable", "gate", "reader", "warn",
                     {"scores": scores}))
@@ -4505,17 +4559,35 @@ def build_utility_artifact(
                             if evidence_row["scores"]["placeholder"] >= reader_threshold
                             else "unsupported"
                         )
+                    detail_reason = (
+                        "reader_unstable" if reason == "unstable"
+                        else "placeholder_answerable" if reason == "floor_answerable"
+                        else "three_point_gate_failed"
+                    )
+                    extra_evidence = None
+                    scores = evidence_row.get("scores") or {}
+                    if (detail_reason == "three_point_gate_failed"
+                            and scores.get("original", 0.0) >= reader_threshold
+                            and scores.get("representative", 0.0) < reader_threshold):
+                        # relation supported, generalized level not -> is the CHOSEN
+                        # level the problem (a coarser one in the chain reads)? if so it's
+                        # very likely a lattice_profiles.json data issue -- surface it.
+                        suspect = _diagnose_coarser_readable(
+                            candidate, decisions, protected_terms,
+                            doc_id=doc_id, render_action_vector=render_action_vector,
+                            reader=reader, chain_by_decision=chain_by_decision,
+                            reader_threshold=reader_threshold,
+                        )
+                        if suspect is not None:
+                            extra_evidence = {"lattice_probe": suspect}
                     reject_context_candidate(
                         doc_id=doc_id,
                         candidate=candidate,
                         reason=reason,
-                        detail_reason=(
-                            "reader_unstable" if reason == "unstable"
-                            else "placeholder_answerable" if reason == "floor_answerable"
-                            else "three_point_gate_failed"
-                        ),
+                        detail_reason=detail_reason,
                         anchor=anchor,
                         validation=evidence_row,
+                        extra_evidence=extra_evidence,
                     )
                     continue
                 row = dict(candidate)
@@ -4897,6 +4969,72 @@ def build_joint_representative_anchor(
         "action_vector": action_vector,
         "action_vector_hash": _stable_hash(action_vector),
     }
+
+
+def _diagnose_coarser_readable(
+    candidate: Mapping,
+    decisions: Sequence[Mapping],
+    protected_terms: Sequence[str],
+    *,
+    doc_id: str,
+    render_action_vector: Callable[[str, Mapping[str, str]], str],
+    reader: Callable[[list[str], str], Sequence[str]],
+    chain_by_decision: Mapping[str, Sequence[Mapping]],
+    reader_threshold: float,
+) -> dict | None:
+    """Lattice-data diagnostic. A relation failed the 3-point gate while genuinely supported
+    (original readable, representative not). Coarsen the LOCATOR argument (the linked level
+    named in the question) one legal level at a time and re-read the representative render.
+    If a coarser level in the same chain reads, the chosen fine level -- not the relation -- is
+    the problem: usually a bad/mis-grounded entry in lattice_profiles.json. Read-only: returns
+    the offending surface + unreadable level + first readable coarser level + chain, or None.
+    Does NOT change the verdict; it only fires the `lattice_level_suspect` review flag."""
+    question = str(candidate.get("question") or "")
+    requirements = dict(candidate.get("decision_requirements") or {})
+    if not question or not requirements:
+        return None
+    decisions_by_id = {str(d["decision_id"]): d for d in decisions}
+    turns = (candidate.get("evidence") or {}).get("reader_turns") or []
+    for decision_id, level in requirements.items():
+        # the LOCATOR is the linked argument whose level is spelled in the question
+        if not level or str(level).lower() not in question.lower():
+            continue
+        decision = decisions_by_id.get(str(decision_id))
+        if decision is None:
+            continue
+        levels = _ordered_decision_levels(decision)  # finest -> coarsest
+        if level not in levels:
+            continue
+        for coarser in levels[levels.index(level) + 1:]:
+            probe = dict(candidate)
+            probe["decision_requirements"] = {**requirements, decision_id: coarser}
+            probe["question"] = re.sub(re.escape(str(level)), coarser, question, flags=re.IGNORECASE)
+            try:
+                probe_anchor = build_joint_representative_anchor(probe, decisions)
+            except ValueError:
+                continue
+            probe_vector = dict(probe_anchor["action_vector"])
+            for other in decisions:  # mirror the deployed co-referent leak guard
+                surface = str(other.get("canonical_key") or "")
+                if surface and any(
+                    canon(surface) != canon(term) and _contains(surface, term)
+                    for term in protected_terms
+                ):
+                    hiding = _hiding_action_id(other)
+                    if hiding is not None:
+                        probe_vector[str(other["decision_id"])] = hiding
+            probe_context = render_action_vector(doc_id, probe_vector)
+            answer = reader([_permuted_reader_question(probe, 0)], _turn_excerpt(
+                probe_context, turns, window=CONTEXT_READER_TURN_WINDOW))[0]
+            if _context_answer_score(probe, answer, chain_by_decision) >= reader_threshold:
+                return {
+                    "surface": str(decision.get("canonical_key") or ""),
+                    "runtime_type": str(decision.get("runtime_type") or ""),
+                    "unreadable_level": str(level),
+                    "readable_coarser_level": str(coarser),
+                    "chain": list(levels),
+                }
+    return None
 
 
 def _answer_score(answer: str, accepted_values: Sequence[str]) -> float:

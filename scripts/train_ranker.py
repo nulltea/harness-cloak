@@ -179,11 +179,11 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
     """doc_p and rollout R from per-surface choices; exactly reproduces the deployed
     substitute() surface forms (casing at the decision occurrence, article cleanup).
 
-    Injectivity is guaranteed UPSTREAM by the dynamic sampling mask (rollout_reward) —
-    a collision here is a bug, not an input. Placeholder tokens: reuse the artifact's
-    token when the walk also placeholder'd that surface (exact BC reproduction);
-    otherwise mint fresh tokens seeded ABOVE the artifact's max index per type, so
-    rollout tokens can never collide with the artifact's direct-identifier tokens.
+    A generalized fill is injective across policy decisions, but aliases controlled by
+    the same decision may share it. Such an alias group is explicitly marked in R as
+    retained generalization: replacement-keyed inversion must leave it generalized,
+    because a free-text remote output cannot safely map identical fill mentions back to
+    their distinct source surfaces. Placeholder tokens remain per-surface unique.
     """
     art_ph = {e["surface"].lower(): e["replacement"] for e in R_walk
               if e["action"] == "placeholder"}
@@ -211,14 +211,23 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
     for s in spans:  # decision spans, walk order (deterministic)
         skey = s["surface"].lower()
         c = choice[skey]
+        decision_id = str(c.get("decision_id") or s.get("decision_id") or skey)
         if c["mode"] == "level":
             fill = _case_adjust(c["fill"], text, s["start"])
-            assert used.setdefault(fill.lower(), skey) == skey, \
-                f"injectivity violated at assemble: {fill!r}"  # masked upstream
-            fills[skey] = {"replacement": fill, "action": "generalize"}
+            claimed_by = used.setdefault(fill.lower(), decision_id)
+            if claimed_by != decision_id:
+                raise AssertionError(f"injectivity violated at assemble: {fill!r}")
+            fills[skey] = {
+                "replacement": fill,
+                "action": "generalize",
+                "decision_id": decision_id,
+            }
         else:
-            fills[skey] = {"replacement": placeholder(skey, s["type"]),
-                           "action": "placeholder"}
+            fills[skey] = {
+                "replacement": placeholder(skey, s["type"]),
+                "action": "placeholder",
+                "decision_id": decision_id,
+            }
 
     out, R = text, []
     seen: dict[tuple[str, str], dict] = {}
@@ -232,8 +241,10 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
         # token — per-occurrence typing wins, exactly as in substitute()
         if skey in fills and e.get("lattice"):
             rep, act = fills[skey]["replacement"], fills[skey]["action"]
+            decision_id = fills[skey]["decision_id"]
         else:
             rep, act = e["replacement"], e["action"]
+            decision_id = None
         start, end = e["start"], e["end"]
         out = out[:start] + rep + out[end:]
         # right-to-left: every already-recorded span lies to the right of this edit, so all
@@ -249,6 +260,8 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
         if key not in seen:
             seen[key] = {"surface": e["surface"], "type": e["type"],
                          "action": act, "replacement": rep}
+            if decision_id is not None:
+                seen[key]["decision_id"] = decision_id
             R.append(seen[key])
         spans_rec.append({"box": [start, start + len(rep)], "entry": seen[key]})
 
@@ -265,6 +278,20 @@ def assemble(text: str, R_walk: list[dict], spans: list[dict],
             assert out[s0:s1] == entry["replacement"], (
                 f"fill_spans invariant: doc_p[{s0}:{s1}]={out[s0:s1]!r} != "
                 f"{entry['replacement']!r}")
+
+    shared_groups: dict[tuple[str, str], list[dict]] = {}
+    for entry in R:
+        decision_id = entry.get("decision_id")
+        if entry["action"] != "generalize" or decision_id is None:
+            continue
+        shared_groups.setdefault(
+            (str(decision_id), str(entry["replacement"]).casefold()),
+            [],
+        ).append(entry)
+    for entries in shared_groups.values():
+        if len({str(entry["surface"]).casefold() for entry in entries}) > 1:
+            for entry in entries:
+                entry["restore_policy"] = "retain_generalization"
     return out, R
 
 
@@ -296,14 +323,17 @@ def floor_walk_choice(spans):
     """THE floor-walk baseline choice with the walk-order collision rule (first-come keeps
     the fill, later colliders fall back to placeholder) — shared by ExIt, the support scan,
     and any baseline consumer, so the gate certifies the same baseline training uses."""
-    used, choice = set(), {}
+    used, choice = {}, {}
     for s in spans:
         a = s["actions"][s["bc_action"]]
-        if a["mode"] == "level" and a["fill"].lower() in used:
+        decision_id = str(s.get("decision_id") or s["surface"].lower())
+        if (a["mode"] == "level"
+                and a["fill"].lower() in used
+                and used[a["fill"].lower()] != decision_id):
             a = s["actions"][next(i for i, x in enumerate(s["actions"])
                                   if x["mode"] == "placeholder")]
         if a["mode"] == "level":
-            used.add(a["fill"].lower())
+            used.setdefault(a["fill"].lower(), decision_id)
         choice[s["surface"].lower()] = a
     return choice
 
@@ -328,17 +358,19 @@ def sample_rollout(doc, span_rows, feats, policy, greedy=False):
     Returns (choice, logps, ph_rate, doc_p, R, legals) — no reward computed here. `legals`
     is the per-span DYNAMIC legal set actually sampled from (walk order), so entropy/KL can
     be scored over the masks the policy really used, not the static floor-legal sets."""
-    used: set[str] = set()
+    used: dict[str, str] = {}
     choice, logps, legals, n_level = {}, [], [], 0
     for i, (s, f) in enumerate(zip(span_rows, feats)):
         policy.set_context(_ctx_of(doc, i))
+        decision_id = str(s.get("decision_id") or s["surface"].lower())
         legal_dyn = [j for j in s["legal"]
                      if s["actions"][j]["mode"] == "placeholder"
-                     or s["actions"][j]["fill"].lower() not in used]
+                     or s["actions"][j]["fill"].lower() not in used
+                     or used[s["actions"][j]["fill"].lower()] == decision_id]
         a_idx, lp = policy.sample(f, legal_dyn, greedy=greedy)
         a = s["actions"][a_idx]
         if a["mode"] == "level":
-            used.add(a["fill"].lower())
+            used.setdefault(a["fill"].lower(), decision_id)
             n_level += 1
         choice[s["surface"].lower()] = a
         logps.append(lp)

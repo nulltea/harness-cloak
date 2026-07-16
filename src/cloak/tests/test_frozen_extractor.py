@@ -185,6 +185,35 @@ def test_extract_deterministic_only_matches_invert_for_exact_fill():
     assert stats["extractor_version"] == fx.extractor_version()
 
 
+def test_extract_retains_shared_decision_generalization_without_models():
+    R = [
+        {
+            "action": "generalize",
+            "surface": "acid reflux",
+            "replacement": "gastrointestinal condition",
+            "type": "health-condition",
+            "decision_id": "dec-gerd",
+            "restore_policy": "retain_generalization",
+        },
+        {
+            "action": "generalize",
+            "surface": "reflux",
+            "replacement": "gastrointestinal condition",
+            "type": "health-condition",
+            "decision_id": "dec-gerd",
+            "restore_policy": "retain_generalization",
+        },
+    ]
+    out_p = "Gastrointestinal condition and gastrointestinal condition."
+
+    text, stats = fx.extract(None, R, out_p, models=None)
+
+    assert text == out_p
+    assert stats["gen_retained"] == 1
+    assert stats["gen_absent"] == 0
+    assert stats["entries"] == []
+
+
 def test_extract_records_residue_entries_as_no_model_abstains(monkeypatch):
     residue = [
         {"surface": "Boston", "replacement": "a city in Massachusetts", "type": "LOC"},

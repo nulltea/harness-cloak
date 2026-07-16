@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
+from cloak.extract import invert
 from cloak.train.qa_builder import _stable_hash
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
@@ -64,6 +65,126 @@ def _doc():
                         "lattice": ["a biguanide"]}],
             "raw_spans": raw, "spans": spans, "feats": feats,
             "probes_train": [{"surface": "metformin", "question": "What drug?"}]}
+
+
+def test_assemble_retains_shared_alias_generalization_without_wrong_restoration():
+    text = "Acid reflux and reflux."
+    first_end = len("Acid reflux")
+    second_start = text.rindex("reflux")
+    actions = [
+        {"mode": "level", "fill": "gastrointestinal condition", "aset": 100.0,
+         "p6": 0.5, "walk_risk": 0.0},
+        {"mode": "placeholder", "fill": None, "p6": 0.0, "walk_risk": 0.0},
+    ]
+    spans = [
+        {"surface": "Acid reflux", "type": "health-condition", "start": 0,
+         "end": first_end, "decision_id": "dec-gerd", "actions": actions},
+        {"surface": "reflux", "type": "health-condition", "start": second_start,
+         "end": second_start + len("reflux"), "decision_id": "dec-gerd", "actions": actions},
+    ]
+    walk = [
+        {"surface": "Acid reflux", "type": "health-condition", "start": 0,
+         "end": first_end, "lattice": ["gastrointestinal condition"],
+         "action": "generalize", "replacement": "gastrointestinal condition"},
+        {"surface": "reflux", "type": "health-condition", "start": second_start,
+         "end": second_start + len("reflux"), "lattice": ["gastrointestinal condition"],
+         "action": "generalize", "replacement": "gastrointestinal condition"},
+    ]
+    choice = {
+        "acid reflux": {**actions[0], "decision_id": "dec-gerd"},
+        "reflux": {**actions[0], "decision_id": "dec-gerd"},
+    }
+
+    doc_p, replacements = tr.assemble(text, walk, spans, choice)
+    out_final, stats = invert(doc_p, replacements)
+
+    assert doc_p == "Gastrointestinal condition and gastrointestinal condition."
+    assert out_final == doc_p
+    assert stats["gen_retained"] == 1
+    assert all(entry["restore_policy"] == "retain_generalization" for entry in replacements)
+
+
+def test_assemble_rejects_shared_fill_across_different_decisions():
+    text = "Acid reflux and reflux."
+    first_end = len("Acid reflux")
+    second_start = text.rindex("reflux")
+    actions = [{"mode": "level", "fill": "gastrointestinal condition", "aset": 100.0,
+                "p6": 0.5, "walk_risk": 0.0}]
+    spans = [
+        {"surface": "Acid reflux", "type": "health-condition", "start": 0,
+         "end": first_end, "decision_id": "dec-acid", "actions": actions},
+        {"surface": "reflux", "type": "health-condition", "start": second_start,
+         "end": second_start + len("reflux"), "decision_id": "dec-reflux", "actions": actions},
+    ]
+    walk = [
+        {"surface": row["surface"], "type": row["type"], "start": row["start"],
+         "end": row["end"], "lattice": ["gastrointestinal condition"],
+         "action": "generalize", "replacement": "gastrointestinal condition"}
+        for row in spans
+    ]
+    choice = {
+        row["surface"].lower(): {**actions[0], "decision_id": row["decision_id"]}
+        for row in spans
+    }
+
+    with pytest.raises(AssertionError, match="injectivity violated"):
+        tr.assemble(text, walk, spans, choice)
+
+
+def test_sample_rollout_allows_shared_decision_fill_but_masks_other_decisions():
+    class FirstLegalPolicy:
+        def __init__(self):
+            self.legals = []
+
+        def set_context(self, context):
+            del context
+
+        def sample(self, features, legal, greedy=False):
+            del features, greedy
+            self.legals.append(list(legal))
+            return legal[0], torch.tensor(0.0)
+
+    text = "Acid reflux and reflux with gastritis."
+    starts = [
+        text.index("Acid reflux"),
+        text.index("reflux", len("Acid reflux")),
+        text.index("gastritis"),
+    ]
+    surfaces = ["Acid reflux", "reflux", "gastritis"]
+    decision_ids = ["dec-gerd", "dec-gerd", "dec-gastritis"]
+    actions = [
+        {"mode": "level", "fill": "gastrointestinal condition", "aset": 100.0,
+         "p6": 0.5, "walk_risk": 0.0},
+        {"mode": "placeholder", "fill": None, "p6": 0.0, "walk_risk": 0.0},
+    ]
+    spans = [
+        {"surface": surface, "type": "health-condition", "start": start,
+         "end": start + len(surface), "decision_id": decision_id, "actions": actions,
+         "legal": [0, 1]}
+        for surface, start, decision_id in zip(surfaces, starts, decision_ids)
+    ]
+    walk = [
+        {"surface": row["surface"], "type": row["type"], "start": row["start"],
+         "end": row["end"], "lattice": ["gastrointestinal condition"],
+         "action": "generalize", "replacement": "gastrointestinal condition"}
+        for row in spans
+    ]
+    doc = {"text": text, "R_walk": walk}
+    policy = FirstLegalPolicy()
+
+    choice, _logps, _ph_rate, doc_p, replacements, legals = tr.sample_rollout(
+        doc, spans, [None, None, None], policy,
+    )
+
+    assert policy.legals == [[0, 1], [0, 1], [1]]
+    assert legals == policy.legals
+    assert choice["gastritis"]["mode"] == "placeholder"
+    assert doc_p.lower().count("gastrointestinal condition") == 2
+    assert all(
+        entry.get("restore_policy") == "retain_generalization"
+        for entry in replacements
+        if entry["action"] == "generalize"
+    )
 
 
 def test_inert_floors_make_all_actions_legal_but_bc_skips_keep_original():

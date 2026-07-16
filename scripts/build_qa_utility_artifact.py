@@ -82,10 +82,26 @@ def _action_renderer(
     def render(doc_id: str, action_vector: dict[str, str]) -> str:
         raw_document = raw_documents[doc_id]
         frozen_document = frozen_environment["documents"][doc_id]
+        decisions_by_id = {
+            str(row["decision_id"]): row
+            for row in frozen_document["decisions"]
+        }
         decisions_by_key = {
             (str(row["runtime_type"]), str(row["canonical_key"])): row
             for row in frozen_document["decisions"]
         }
+        decision_surfaces = {}
+        for occurrence in frozen_document["occurrences"]:
+            decision_id = occurrence.get("decision_id")
+            decision = decisions_by_id.get(str(decision_id))
+            if decision is None:
+                continue
+            key = (
+                str(occurrence["runtime_type"]),
+                canon(str(occurrence["surface"])),
+            )
+            decisions_by_key.setdefault(key, decision)
+            decision_surfaces.setdefault(str(decision_id), set()).add(key)
         choice = {}
         keep_markers = {}
         walk_rows = arms[corpus][doc_id]["tau_walk"][1]
@@ -112,7 +128,10 @@ def _action_renderer(
                     for row in sorted(walk_rows, key=lambda row: int(row["start"]))
                     if row.get("lattice")
                     and str(row.get("type", "")) == str(decision["runtime_type"])
-                    and canon(str(row.get("surface", ""))) == str(decision["canonical_key"])
+                    and (
+                        str(row.get("type", "")),
+                        canon(str(row.get("surface", ""))),
+                    ) in decision_surfaces.get(str(decision["decision_id"]), set())
                 ])
                 fill = marker
             else:
@@ -125,6 +144,7 @@ def _action_renderer(
             choice[str(span["surface"]).lower()] = {
                 "mode": "level" if selected["mode"] in {"level", "keep"} else "placeholder",
                 "fill": fill,
+                "decision_id": str(decision["decision_id"]),
             }
         # P1: generalize EVERY occurrence of a generalized decision, not just the
         # detector-admitted walk rows. A repeat mention the detector dropped locally

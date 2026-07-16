@@ -1138,6 +1138,48 @@ def test_freeze_ranker_environment_maps_repeated_occurrences_to_one_decision():
     assert keep["source_identity"] is True
 
 
+def test_freeze_merges_canonical_aliases_only_when_nonkeep_menus_match(monkeypatch):
+    entity_keys = {
+        "acid reflux": "gastroesophageal reflux disease",
+        "gerd": "gastroesophageal reflux disease",
+        "biliary reflux": "biliary reflux disease",
+        "duodenogastric reflux": "biliary reflux disease",
+    }
+    monkeypatch.setattr(
+        qa_builder,
+        "_entity_key",
+        lambda surface, runtime_type: entity_keys.get(qa_builder.canon(surface), qa_builder.canon(surface)),
+    )
+
+    def span(surface, start, level_fill):
+        return {
+            "surface": surface, "type": "health-condition", "start": start,
+            "end": start + len(surface), "actions": [
+                {"fill": level_fill, "mode": "level", "aset": 100},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }
+
+    ranker_env = {"corpora": {"clinical": {"d1": {"spans": [
+        span("acid reflux", 0, "a digestive condition"),
+        span("GERD", 20, "a digestive condition"),
+        span("biliary reflux", 40, "a reflux condition"),
+        span("duodenogastric reflux", 60, "a digestive disorder"),
+    ]}}}}
+
+    document = freeze_ranker_environment(ranker_env)["documents"]["d1"]
+    decision_by_surface = {
+        row["surface"]: row["decision_id"] for row in document["occurrences"]
+    }
+
+    assert len(document["decisions"]) == 3
+    assert decision_by_surface["acid reflux"] == decision_by_surface["GERD"]
+    assert (
+        decision_by_surface["biliary reflux"]
+        != decision_by_surface["duodenogastric reflux"]
+    )
+
+
 def test_freeze_text_anchors_dropped_repeat_mention():
     # "kidney stones" is admitted once; a second verbatim mention (here the singular
     # "kidney stone") was dropped by the detector's per-type admission gate and is absent

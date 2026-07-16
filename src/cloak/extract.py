@@ -213,9 +213,16 @@ def _partition_R(R: list[dict]) -> tuple[dict[str, list[dict]], dict[str, list[d
     return ph, gen
 
 
+def _retains_generalization(entry: dict) -> bool:
+    return (
+        entry.get("action") != "placeholder"
+        and entry.get("restore_policy") == "retain_generalization"
+    )
+
+
 def _base_stats() -> dict:
     return {"ph_swapped": 0, "gen_exact": 0, "gen_fuzzy": 0, "gen_semantic": 0,
-            "gen_absent": 0, "ph_residue": 0}
+            "gen_absent": 0, "gen_retained": 0, "ph_residue": 0}
 
 
 def _finalize(text: str, stats: dict) -> tuple[str, dict]:
@@ -230,7 +237,12 @@ def _rule_prepass(out_p: str, R: list[dict], *, semantic: bool) -> tuple[str, di
     text = out_p
     stats = _base_stats()
     residue = []
-    ph, gen = _partition_R(R)
+    retained = [entry for entry in R if _retains_generalization(entry)]
+    stats["gen_retained"] = len({
+        str(entry.get("replacement", "")).casefold()
+        for entry in retained
+    })
+    ph, gen = _partition_R([entry for entry in R if not _retains_generalization(entry)])
 
     # Remote sometimes echoes placeholders with brackets stripped (bare
     # HEALTH_CONDITION_2 in prose/note lines). Match bracketed <X> and bare X (word-

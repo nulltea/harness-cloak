@@ -15,7 +15,7 @@ import threading
 
 import numpy as np
 
-from cloak.extract import _finalize, _rule_prepass
+from cloak.extract import _finalize, _retains_generalization, _rule_prepass
 from cloak.reconstruct import _value_compatible
 from cloak.runtime_types import PLACEHOLDER_RE
 from cloak.substitute import _fix_indefinite_articles
@@ -930,6 +930,7 @@ def _resolved_tier0_group_count(out_p: str, R: list[dict], residue: list[dict]) 
         for replacement, entries in grouped.items()
         if entries
         and str(entries[0].get("action", "")) != "placeholder"
+        and not any(_retains_generalization(entry) for entry in entries)
         and replacement not in unresolved_replacements
     )
     swapped_placeholder_groups = sum(
