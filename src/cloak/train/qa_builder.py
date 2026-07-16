@@ -6262,18 +6262,40 @@ def _source_turns_for_ranges(
     return sorted(turns)
 
 
+_TURN_EXCERPT_ELISION = "[...]"
+
+
 def _turn_excerpt(context: str, core_turns: Sequence[int], *, window: int) -> str:
-    """Slice `context` to the given turn indices plus `window` neighbor turns
-    each side. Empty `core_turns`, or indices past the end of `context`, fall
-    back to the full `context` so a diverged render is never mis-sliced."""
+    """Surgically stitch `context` to the given turn indices (each plus `window`
+    neighbor turns), eliding non-adjacent gaps rather than spanning first-to-last.
+
+    Adjacent/overlapping turn windows merge into one region (so a co-located
+    relation reads exactly as before); a relation whose turns sit far apart reads
+    only its relevant regions joined by an elision marker -- the middle text is
+    not handed to the reader. Empty `core_turns`, or indices past the end of
+    `context`, fall back to the full `context` so a diverged render is never
+    mis-sliced."""
     if not core_turns:
         return context
     lines = context.splitlines()
     if max(core_turns) >= len(lines):
         return context
-    low = max(0, min(core_turns) - window)
-    high = min(len(lines) - 1, max(core_turns) + window)
-    return "\n".join(lines[low:high + 1])
+    windows = sorted(
+        (max(0, turn - window), min(len(lines) - 1, turn + window))
+        for turn in set(core_turns)
+    )
+    merged: list[list[int]] = []
+    for low, high in windows:
+        if merged and low <= merged[-1][1] + 1:  # touching/overlapping -> one region, no gap
+            merged[-1][1] = max(merged[-1][1], high)
+        else:
+            merged.append([low, high])
+    parts: list[str] = []
+    for index, (low, high) in enumerate(merged):
+        if index:
+            parts.append(_TURN_EXCERPT_ELISION)  # a real gap was skipped between regions
+        parts.extend(lines[low:high + 1])
+    return "\n".join(parts)
 
 
 def _context_answer_score(

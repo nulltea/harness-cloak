@@ -1858,6 +1858,21 @@ def test_answer_competing_surfaces_flags_multi_procedure_scope():
     assert f(doc, subj, answer_arg, target, {k: occ[k] for k in ("reflux", "diet", "panel")}) == []
 
 
+def test_turn_excerpt_stitches_discontiguous_turns_and_elides_the_gap():
+    ctx = "\n".join(f"t{i}" for i in range(10))
+    # adjacent turns merge into one contiguous region (no elision) -- co-located relation unchanged
+    assert qa_builder._turn_excerpt(ctx, [2, 3], window=0) == "t2\nt3"
+    # far-apart turns are stitched surgically: only the two regions, gap elided (not t3..t6)
+    out = qa_builder._turn_excerpt(ctx, [2, 7], window=0)
+    assert out == f"t2\n{qa_builder._TURN_EXCERPT_ELISION}\nt7"
+    assert "t4" not in out and "t5" not in out  # the noisy middle is never handed to the reader
+    # windows that bridge the gap re-merge into one region (no elision)
+    assert qa_builder._turn_excerpt(ctx, [2, 4], window=1) == "t1\nt2\nt3\nt4\nt5"
+    # empty / out-of-range falls back to the full context (diverged-render safety)
+    assert qa_builder._turn_excerpt(ctx, [], window=0) == ctx
+    assert qa_builder._turn_excerpt(ctx, [99], window=0) == ctx
+
+
 def test_gleaning_targets_classifies_by_taxonomy():
     occ = {n: {"occurrence_id": n, "decision_id": f"d-{n}", "runtime_type": t,
                "controlled": True, "surface": n, "start": s, "end": s + 5}
