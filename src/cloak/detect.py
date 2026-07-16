@@ -175,18 +175,6 @@ _NOISE_KEEP_TOKENS = frozenset({
     "cad", "cva", "gerd", "copd", "cf", "chf", "dvt", "uti", "tia", "ckd", "mi",
     "ms", "ra", "ed", "tb", "af", "paraldehyde",
 })
-_NOISE_LAB_PATTERN = re.compile(r"\b(panel|assay|titer|titre|screen|culture|antibody test|serology)\b")
-_NOISE_LAB_TESTS = frozenset({
-    # pt is intentionally included as prothrombin time, despite physical-therapy ambiguity.
-    "cbc", "bmp", "cmp", "bnp", "psa", "hcg", "afp", "ldh", "bun", "pcr", "tsh", "esr",
-    "inr", "ua", "hba1c", "a1c", "pt", "ptt", "crp", "troponin", "ferritin",
-    "amylase", "lipase", "transaminase", "aminotransferase", "phosphatase",
-})
-_NOISE_IMAGING_DIAGNOSTICS = frozenset({
-    "mri", "ct", "ct scan", "cat scan", "ecg", "ekg", "eeg", "emg", "ncs", "x ray", "xray",
-    "chest x ray", "ultrasound", "echo", "echocardiogram", "angiogram", "mammogram", "dexa",
-    "pet", "pet scan",
-})
 _NOISE_DEVICE_PATTERN = re.compile(
     r"\b(wrap|wraps|bandage|gauze|tape|swab|kit|dressing|brace|splint|sponge|applicator|"
     r"cloth|wipe|wipes|pump|pumps|catheter|catheters|stent|stents|pacemaker|pacemakers|"
@@ -237,10 +225,16 @@ def _noise_runtime_type(text: str) -> str:
 
 
 def is_noise_span(surface: str, runtime_type: str) -> bool:
-    """True iff `surface` is confirmed lab/imaging/device/anatomy/legal-admin/junk noise.
+    """True iff `surface` is confirmed device/anatomy/legal-admin/junk noise.
 
     KEEP wins first; unmatched surfaces fail open. The predicate defensively normalizes raw
     input and only applies to the queue families this filter was designed for.
+
+    Labs / imaging / diagnostic tests are deliberately NOT denied: they are legitimate
+    medical-procedure entities (a relation answer, e.g. tests_for(condition -> "x-ray")), and
+    a surface-set deny list matched real single-token tests ("x-ray", "cbc") while letting the
+    multi-word form ("follow-up x-ray") through -- an inconsistent filter that dropped valid
+    relations. The short-abbreviation floor below still drops <=2-char tokens ("ct", "pt").
     """
     runtime_type = _noise_runtime_type(runtime_type)
     if runtime_type not in _NOISE_FILTER_TYPES:
@@ -251,10 +245,6 @@ def is_noise_span(surface: str, runtime_type: str) -> bool:
     compact = _compact_abbreviation(s)
     if compact in _NOISE_KEEP_TOKENS or any(p.search(s) or p.search(compact) for p in _NOISE_KEEP_PATTERNS):
         return False
-    if _NOISE_LAB_PATTERN.search(s) or s in _NOISE_LAB_TESTS or compact in _NOISE_LAB_TESTS:
-        return True
-    if s in _NOISE_IMAGING_DIAGNOSTICS or compact in _NOISE_IMAGING_DIAGNOSTICS:
-        return True
     if _NOISE_DEVICE_PATTERN.search(s) or s in _NOISE_DEVICE_SUPPLIES or compact in _NOISE_DEVICE_SUPPLIES:
         return True
     if s in _NOISE_ANATOMY:

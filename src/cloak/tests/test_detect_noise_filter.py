@@ -57,14 +57,22 @@ def test_strip_dose_suffix(surface, expected):
 @pytest.mark.parametrize(
     ("surface", "runtime_type", "expected"),
     [
-        ("cbc", "medical-procedure", True),
+        # labs / imaging / tests are no longer denied -- they are valid medical procedures
+        ("cbc", "medical-procedure", False),
         ("cbc", "PERSON", False),
         ("appendectomy", "medical-procedure", False),
-        ("mri", "drug", True),
+        ("mri", "drug", False),
+        ("x-ray", "medical-procedure", False),
+        ("ultrasound", "medical-procedure", False),
+        ("a1c", "medical-procedure", False),
+        ("lipase", "medical-procedure", False),
+        ("amylase", "drug", False),
         ("metformin", "drug", False),
+        # devices / anatomy / legal / junk / short-abbreviation floor still deny
         ("ace wrap", "drug", True),
         ("arm", "health-condition", True),
         ("ap", "health-condition", True),
+        ("ct", "medical-procedure", True),   # <=2-char short-abbreviation floor still drops it
         ("120 80", "health-condition", True),
         ("limonene", "drug", True),
         ("asthma", "health-condition", False),
@@ -73,8 +81,6 @@ def test_strip_dose_suffix(surface, expected):
         ("parkinsons disease", "health-condition", False),
         ("chronic obstructive pulmonary disease", "health-condition", False),
         ("increase", "medical-procedure", False),
-        ("lipase", "medical-procedure", True),
-        ("amylase", "drug", True),
         ("stent", "drug", True),
         ("pacemaker", "drug", True),
     ],
@@ -94,13 +100,13 @@ def test_noise_filter_profile_gating():
 
 def test_reddit_profile_leaves_noise_category_spans_in():
     det = _fake_detector("reddit")
-    spans = det.detect("cbc")
-    assert [(s.text, s.type) for s in spans] == [("cbc", "drug")]
+    spans = det.detect("iud")  # device noise; reddit's negative_filter is off, so it survives
+    assert [(s.text, s.type) for s in spans] == [("iud", "drug")]
 
 
 def test_clinical_profile_drops_noise_category_spans():
     det = _fake_detector("clinical")
-    assert det.detect("cbc") == []
+    assert det.detect("iud") == []  # devices are still denied; labs/imaging no longer are
 
 
 def _fake_detector(profile: str) -> Detector:
