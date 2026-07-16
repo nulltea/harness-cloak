@@ -1,6 +1,7 @@
 """Dataset-backed generalization lattice cache loader."""
 import json
 import re
+import zipfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -9,6 +10,16 @@ from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES, RUNTIME_TYPES
 # Main lattice source (user decision 2026-07-08): the producer-merged artifact, which carries
 # per-level `level_counts`. fine_lattice_profiles.json is the legacy dataset-backed cache.
 DEFAULT_PROFILE_PATH = Path("data/lattice_profiles/lattice_profiles.json")
+# openFDA NDC drug dataset (brand -> active ingredient) for safe brand-alias resolution.
+DEFAULT_NDC_PATH = Path("data/lattice_sources/raw/drug/openfda_ndc.json.zip")
+# Salt/hydrate suffix tokens stripped so a brand's active ingredient matches the profile's
+# base entry ("pantoprazole sodium" -> "pantoprazole", "atorvastatin trihydrate" -> ...).
+_DRUG_SALT_TOKENS = frozenset({
+    "sodium", "calcium", "hydrochloride", "hcl", "sulfate", "magnesium", "potassium",
+    "bitartrate", "besylate", "maleate", "mesylate", "succinate", "tartrate", "fumarate",
+    "citrate", "phosphate", "acetate", "hydrobromide", "hydrate", "monohydrate",
+    "dihydrate", "trihydrate",
+})
 SCHEMA_VERSION = 1
 
 
@@ -166,3 +177,82 @@ def lookup_aliases(surface: str, runtime_type: str, path: str | Path | None = No
     would (finest tier -> entails every rung). [] when there is no matching row."""
     idx = _index_cached(str(path or DEFAULT_PROFILE_PATH))
     return list(_lookup(idx["by_group"].get(runtime_type, {}), surface) or [])
+
+
+def _drug_base_ingredient(name: str) -> str:
+    """Strip salt/hydrate suffix tokens so an NDC ingredient or profile canonical reduces to
+    its base drug name ('pantoprazole sodium' -> 'pantoprazole')."""
+    return " ".join(t for t in _norm(name).split() if t not in _DRUG_SALT_TOKENS)
+
+
+@lru_cache(maxsize=2)
+def _ndc_brand_ingredient_index(path_s: str) -> dict:
+    """Map each brand token / ingredient (from SINGLE-active-ingredient openFDA NDC records) to
+    the set of base ingredients it denotes. Combination products (multi-ingredient) are excluded
+    -- they are inherently ambiguous. A token resolving to >1 base ingredient is ambiguous too."""
+    path = Path(path_s)
+    if not path.exists():
+        return {}
+    with zipfile.ZipFile(path) as archive:
+        with archive.open(archive.namelist()[0]) as handle:
+            records = json.load(handle).get("results", [])
+    token_to_bases: dict[str, set[str]] = {}
+    for record in records:
+        ingredients = record.get("active_ingredients") or []
+        if len(ingredients) != 1:
+            continue
+        base = _drug_base_ingredient(ingredients[0].get("name") or "")
+        if not base:
+            continue
+        brand = _norm(record.get("brand_name") or "")
+        for token in set(brand.split()) | {base}:
+            token_to_bases.setdefault(token, set()).add(base)
+    return {token: frozenset(bases) for token, bases in token_to_bases.items()}
+
+
+def resolve_drug_generic(surface: str, ndc_path: str | Path | None = None) -> str | None:
+    """Resolve a drug surface (usually a brand) to its single base ingredient via openFDA NDC.
+    None when absent or AMBIGUOUS (combination product, or a brand reused across ingredients) --
+    strict by design, so a wrong alias is never invented."""
+    index = _ndc_brand_ingredient_index(str(ndc_path or DEFAULT_NDC_PATH))
+    bases = index.get(_norm(surface))
+    return next(iter(bases)) if bases and len(bases) == 1 else None
+
+
+def resolve_missing_drug_aliases(
+    surfaces,
+    *,
+    profile_path: str | Path | None = None,
+    ndc_path: str | Path | None = None,
+) -> dict[str, str]:
+    """SAFE auto data-fix. For each drug surface with no profile entry, resolve its base
+    ingredient via openFDA NDC; if that ingredient ALREADY EXISTS as a drug profile entry with
+    levels, add the surface as an alias to that entry and persist the profile. Never invents
+    entries or levels and never resolves an ambiguous brand. Returns {surface: canonical} of the
+    aliases added; unresolved surfaces are left untouched (still flagged for review)."""
+    profile_path = Path(profile_path or DEFAULT_PROFILE_PATH)
+    artifact = json.loads(profile_path.read_text())
+    drugs = artifact.get("profiles", {}).get("drug", {})
+    base_to_canonical = {
+        _drug_base_ingredient(canonical): canonical
+        for canonical, row in drugs.items()
+        if row.get("levels") or row.get("level_counts")
+    }
+    fixed: dict[str, str] = {}
+    for surface in surfaces:
+        key = _norm(surface)
+        if not key or lookup_entry(surface, "drug", profile_path) is not None:
+            continue  # unknown/blank or already resolvable
+        base = resolve_drug_generic(surface, ndc_path)
+        canonical = base_to_canonical.get(base) if base else None
+        if canonical is None or _norm(canonical) == key:
+            continue  # generic absent from profile, or surface already is the canonical
+        aliases = drugs[canonical].setdefault("aliases", [])
+        if key not in {_norm(a) for a in aliases}:
+            aliases.append(key)
+            fixed[surface] = canonical
+    if fixed:
+        profile_path.write_text(json.dumps(artifact, indent=1))
+        _load_cached.cache_clear()
+        _index_cached.cache_clear()
+    return fixed
