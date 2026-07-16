@@ -71,13 +71,34 @@ Returns run through the identical compile + 3-point gate. Merge into the kept se
 `_relation_fact_key` **dedup** (drop a return that duplicates a kept relation even though its
 evidence wasn't sent — the user's dedup hedge). Reuse `merge_kept_relation_rows`.
 
-## Units
+## Units (all done — commit 89e25ba)
 - U1 `_gleaning_targets(...)` — taxonomy + missed-ledger + ambiguous → target list. Unit-tested.
 - U2 `relation_repair_prompt(...)` — filtered cards + repair/hint section.
 - U3 wire into `build_utility_artifact` (replace the escalation branch); gpt-oss repair teacher; max 1.
 - U4 CLI/manifest: `--relation-teacher-gleaning` (retire the nemotron secondary construction).
 - U5 provenance: `relation_gleaning` record (targets, hints, returns, merge disposition).
-- U6 tests: units + e2e on aci/D2N006 (should glean the reflux↔ultrasound ambiguity + any missed).
+- U6 tests: units (201 pass) + e2e on aci/D2N006 (1 paid gpt-oss repair call).
+
+### Real-data fix found during U6
+Rejections carry argument identity as `argument_occurrence_ids`/`occurrence_ids`, not the compiled
+`evidence.arguments` that only kept rows had — so `_gleaning_targets` computed no fact key for any
+rejection and **silently dropped every fixable/ambiguous target** (a false-negative). Fixed at the two
+reject paths by stamping the compiled arguments + resolved relation (sanitized to drop raw
+`surface`/`literal`, since rejections are shareable diagnostics), plus a conservative fallback that
+keys an argument-less fixable/ambiguous reject by its rejection id so it is never dropped.
+
+## Results (e2e aci/D2N006, 1 paid gpt-oss repair call)
+Mechanism verified end-to-end: `triggered=True`, 18 targets (3 ambiguous, 15 missed), repair call
+returned 6 proposals, re-gate + merge-dedup + `relation_gleaning` provenance all correct.
+**Net-new kept relations: 0.** The reflux↔ultrasound relation *was* re-proposed and rejected **again**
+at `protected_answer` (same reason as the primary pass); the other proposals hit `protected_locator`×2,
+`three_point_gate_failed`×2, and 1 duplicate of a primary-kept relation (`secondary_only=0`).
+
+Finding (empirical-honesty): **reprompting does not fix a gate-driven rejection.** The reflux↔ultrasound
+answer is a context literal with no lattice level, so the "recolor to a level" hint has nothing to
+recolor to. Implication: `protected_answer`/`protected_locator` for *context-literal* answers is not
+teacher-fixable and should likely move to EXCLUDE (wastes a repair slot; not a correctness bug —
+including it is conservative). Left in FIXABLE pending a decision.
 
 ## Risks
 - False-negatives in the taxonomy → mitigated by conservative default (marginal→include).
