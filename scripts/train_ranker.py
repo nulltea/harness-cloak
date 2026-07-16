@@ -326,11 +326,16 @@ def derive_spans(raw_spans, floors, corpus, device):
     return spans, feats
 
 
-def floor_walk_choice(spans):
+def floor_walk_choice(spans, keep_surfaces=()):
     """THE floor-walk baseline choice with the walk-order collision rule (first-come keeps
     the fill, later colliders fall back to placeholder) — shared by ExIt, the support scan,
-    and any baseline consumer, so the gate certifies the same baseline training uses."""
+    and any baseline consumer, so the gate certifies the same baseline training uses.
+
+    keep_surfaces reserves uncontrolled exact-span replacements so a baseline level whose fill
+    equals one falls to placeholder (else a shared fill corrupts replacement-keyed un-perturb)."""
     used, choice = {}, {}
+    for surface in keep_surfaces:
+        used.setdefault(str(surface).lower(), f"__keep__:{str(surface).lower()}")
     for s in spans:
         a = s["actions"][s["bc_action"]]
         decision_id = str(s.get("decision_id") or s["surface"].lower())
@@ -366,6 +371,12 @@ def sample_rollout(doc, span_rows, feats, policy, greedy=False):
     is the per-span DYNAMIC legal set actually sampled from (walk order), so entropy/KL can
     be scored over the masks the policy really used, not the static floor-legal sets."""
     used: dict[str, str] = {}
+    # reserve KEEP surfaces (uncontrolled exact spans in the walk) so the dynamic mask below
+    # excludes any level whose fill equals one -- a shared fill would corrupt replacement-keyed
+    # un-perturb (restore the kept span to the decision's source).
+    for e in doc.get("R_walk", []):
+        if e.get("action") == "keep":
+            used.setdefault(str(e["replacement"]).lower(), f"__keep__:{str(e['surface']).lower()}")
     choice, logps, legals, n_level = {}, [], [], 0
     for i, (s, f) in enumerate(zip(span_rows, feats)):
         policy.set_context(_ctx_of(doc, i))
@@ -533,7 +544,8 @@ def exit_round(docs, policy, *, G, rt_workers, seed):
         # rule resolves colliding fills to placeholder), per spec Phase 2: a rollout is a
         # winner only if it strictly beats the floor-walk round-trip reward. Injective by
         # construction, so assemble() can no longer collide.
-        bc_choice = floor_walk_choice(doc["spans"])
+        bc_choice = floor_walk_choice(doc["spans"], keep_surfaces=[
+            e["replacement"] for e in doc.get("R_walk", []) if e.get("action") == "keep"])
         doc_p, R = assemble(doc["text"], doc["R_walk"], doc["spans"], bc_choice)
         job = _roundtrip_job(doc, doc_p, R)
         jobs.append(job)
