@@ -20,7 +20,7 @@ RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
 # empty/rate-limited/errored; deepinfra/turbo serves gpt-oss-120b with stable,
 # valid structured output. allow_fallbacks stays off so routing never drifts.
 RELATION_TEACHER_PROVIDER = "deepinfra/turbo"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v19"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v20"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
 RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
 RELATION_TEACHER_MAX_RELATIONS = 12
@@ -2519,16 +2519,29 @@ def relation_teacher_prompt(
         return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
                 f"| levels: {'; '.join(row['properties'])}]")
     spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
+    # Evidence cards annotate each source clause with the S-labels appearing in it. The
+    # inventory carries ONE label per decision, but a value may be mentioned in several
+    # clauses; tag that label in EVERY clause any of its occurrences fall in, so a relation
+    # stated at a non-earliest mention (e.g. arthritis named in the plan sentence, not just
+    # the history list) still co-locates with its partner in the card.
+    label_by_decision = {str(row["decision_id"]): row["span_label"] for row in shown}
+    occ_spans = sorted(
+        (int(occ["start"]), int(occ["end"]), label_by_decision[str(occ.get("decision_id"))])
+        for occ in environment_document.get("occurrences", [])
+        if isinstance(occ.get("start"), int) and isinstance(occ.get("end"), int)
+        and str(occ.get("decision_id")) in label_by_decision
+    )
     cards = []
     for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
-        labels = [row["span_label"] for row in shown if start <= row["start"] < row["end"] <= end]
+        labels = list(dict.fromkeys(
+            label for (s, e, label) in occ_spans if start <= s < e <= end))
         if labels:
             cards.append(f"E{index}: {document[start:end].strip()}\nLabels: {', '.join(labels)}")
     return f"""TASK
 Find as many explicit, source-grounded, non-duplicate relations as the cap ({RELATION_TEACHER_MAX_RELATIONS}) permits. Prefer diversity only when supported. Abstain rather than inventing a fact.
 
 HOW TO INSPECT THE SOURCE
-Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. A repeated value has several S-labels: always use the S-label whose mention is inside the sentence that states the relation; the compiler grounds the relation at that exact mention. For an uncontrolled argument, quote its exact source text as a context literal.
+Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. A value mentioned several times has ONE S-label; the evidence cards show every clause it appears in, so use that single label for the relation and the compiler grounds it at the mention inside the sentence that states the relation. For an uncontrolled argument, quote its exact source text as a context literal.
 A relation may connect spans from different turns of the SAME problem discussion, the block where the doctor assesses and plans one problem, including short patient acknowledgments between the doctor's sentences (for example a condition named when the problem is introduced and a test ordered for it a sentence later). Never link spans from a different problem discussion or from unrelated small talk. A conditional or planned statement ("possibly referral to physical therapy", "if symptoms continue we will order X") IS a valid relation, but you MUST phrase its question conditionally (may / might / would / if …) so you never assert it as already done — a conditional plan paired with a definite question is rejected.
 "Explicit" means the source states the relationship through this problem discussion; the subject and object need NOT appear in the same sentence. A drug or test named while the doctor is assessing/planning one problem is linked to that problem's condition even if its own sentence does not repeat the condition name.
 
