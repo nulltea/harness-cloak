@@ -392,14 +392,15 @@ def propose_with_llama_swap_node(state: ProducerState) -> ProducerState:
         [{**proposal, "item_id": item.get("item_id"), "retry_attempt": int(item.get("retry_attempt", 0)), "model_used": model}],
     )
     candidates = extract_candidate_levels(proposal)
-    surface_confidence = proposal.get("surface_confidence")
-    if surface_confidence:
-        # a per-item field on the raw proposal, not per-level -- attached to every extracted
-        # candidate here rather than threaded through extract_candidate_levels's several
-        # payload-schema branches, so gate_candidates can act on it uniformly regardless of
-        # which schema variant the model actually returned.
-        for candidate in candidates:
-            candidate.setdefault("surface_confidence", surface_confidence)
+    # per-item fields on the raw proposal, not per-level -- attached to every extracted
+    # candidate here rather than threaded through extract_candidate_levels's several
+    # payload-schema branches, so gate_candidates can act on them uniformly regardless of
+    # which schema variant the model actually returned.
+    for field in ("surface_confidence", "type_membership"):
+        value = proposal.get(field)
+        if value:
+            for candidate in candidates:
+                candidate.setdefault(field, value)
     return {"current_candidates": candidates}
 
 

@@ -1,11 +1,12 @@
 {
   "_comment": "Best-effort real-world magnitude anchors for common/recurring drug generalization tiers, used by src/cloak/lattice_producer/coherence.py to keep per-level counts internally consistent across a run. Not certifying counts (the deterministic compiler in reference_sources.py handles those); this is a fallback anchor for tiers that recur across many entries where the raw per-entry corpus median has no real signal to separate genuinely different categories. Promoted from scripts/spikes/clean_drug_health_lattice_coherence.py.",
   "_sources": {
-    "chemical substance": "CAS Registry: >230-290M unique substances (cas.org)",
-    "pharmaceutical compound": "ChEMBL 36 (2025): 2.8M distinct bioactive compounds (EMBL-EBI)",
+    "_semantics": "Counts are RUNTIME-TYPE-CONDITIONAL anonymity-set sizes: the number of distinct drug-type entities that belong to the tier, matching the producer prompt's count_semantics_instruction. NOT the tier's class-universe size -- the CAS registry (~250M substances) or ChEMBL (~2.8M bioactive compounds) count chemicals, not drugs, and using them here once inflated broad rungs by 4-5 orders of magnitude.",
+    "chemical substance": "every drug is a chemical substance; conditional count ~ all distinct drug/supplement substances, DrugBank (~17k drugs) + supplement space -> ~25,000",
+    "pharmaceutical compound": "DrugBank: ~17,000 drug entries incl. experimental/discontinued",
+    "therapeutic agent": "order-of-magnitude estimate between medication and pharmaceutical compound tiers",
     "medication": "FDA Orange Book: ~11,000+ approved drug products (OTC+Rx combined)",
     "prescription medication": "FDA Orange Book: ~1,300-1,500 unique approved active ingredients",
-    "therapeutic agent": "order-of-magnitude estimate between medication and pharmaceutical compound tiers",
     "other entries": "rough counts of distinct approved members of that pharmacologic class, from general pharmacology/clinical knowledge, not a specific registry lookup"
   },
   "anchors": {
@@ -48,8 +49,8 @@
     "botanical_drug": 1000,
     "prescription medication": 1500,
     "medication": 11000,
-    "therapeutic agent": 100000,
-    "pharmaceutical compound": 2800000,
-    "chemical substance": 250000000
+    "therapeutic agent": 15000,
+    "pharmaceutical compound": 17000,
+    "chemical substance": 25000
   }
 }

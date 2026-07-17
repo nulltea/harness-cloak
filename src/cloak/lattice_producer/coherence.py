@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import math
 import re
 import statistics
 from collections import defaultdict
@@ -100,6 +101,17 @@ def load_reference_anchors(runtime_type: str) -> dict[str, float]:
         return {}
     data = json.loads(path.read_text())
     return {str(k): float(v) for k, v in data.get("anchors", {}).items()}
+
+
+def runtime_type_count_ceiling(runtime_type: str) -> float:
+    """Largest plausible anonymity-set size for a runtime type: the broadest known real-world
+    magnitude (type root anchor or largest reference anchor). The 1e6 fallback encodes the
+    packet's own count semantics -- an anonymity set in the millions is always wrong."""
+    values = [float(value) for value in load_reference_anchors(runtime_type).values()]
+    root = runtime_type_root_anchor(runtime_type)
+    if root is not None:
+        values.append(float(root["count"]))
+    return max(values) if values else 1_000_000.0
 
 
 def build_variant_map(runtime_type: str) -> dict[str, str]:
@@ -224,6 +236,32 @@ def _rank_order(rank: dict[str, float], baseline: dict[str, float], anchored: se
     return sorted(rank, key=lambda label: (slot_of(label), rank[label], baseline.get(label, 1.0)))
 
 
+def ladder_structural_defects(row: dict[str, Any]) -> list[str]:
+    """Post-normalization mirror of the QA audit's structural ladder rules
+    (cloak.train.qa_audit._ladder_issue_codes), applied to a profile row. Gates validate
+    candidates BEFORE this pass rewrites counts, so a defect introduced here used to persist
+    silently and only surface later as a downstream environment/QA audit event."""
+    levels = row.get("levels") or []
+    if len(levels) < 2:
+        return ["fewer_than_two_real_levels"]
+    counts = row.get("level_counts") or {}
+    values: list[float] = []
+    for level in levels:
+        try:
+            value = float(counts.get(level))
+        except (TypeError, ValueError):
+            return ["missing_or_invalid_level_count"]
+        if not math.isfinite(value) or value <= 0:
+            return ["missing_or_invalid_level_count"]
+        values.append(value)
+    defects = []
+    if any(right < left for left, right in zip(values, values[1:])):
+        defects.append("nonmonotone_level_counts")
+    if values[-1] <= values[0]:
+        defects.append("no_anonymity_expansion")
+    return defects
+
+
 def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[str, Any]:
     """Mutates `entries` (a runtime type's profiles dict) in place: canonicalizes/dedupes each
     entry's levels chain, resolves one coherent count per canonical label for the whole set of
@@ -271,20 +309,37 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
             "duplicate_levels_dropped": dedup_drops,
             "entries_reordered_to_corpus_consensus": 0,
             "anchored_labels": [],
+            "structural_defects": {key: defects for key, row in entries.items()
+                                   if (defects := ladder_structural_defects(row))},
             "same_count_collisions": [],
         }
 
-    # Corpus-membership counts: each level's baseline count is the number of DISTINCT entries whose
-    # generalization chain contains it -- a real anonymity-set-within-corpus size, not the model's
-    # fabricated per-item number. Raw membership is NOT itself monotone up a chain (a mid tier can
-    # be carried by more entries than a broader tier the reorder places above it); monotonicity is
-    # enforced by the existing _rank_order + _weighted_pava isotonic pass below, which may pool
-    # violating neighbors into a weighted mean. Certifying/anchored counts still override below.
     membership: dict[str, set[str]] = defaultdict(set)
     for entry_key, chain in canonical_by_entry.items():
         for canon in chain:
             membership[canon].add(entry_key)
-    baseline = {canon: float(len(members)) for canon, members in membership.items()}
+
+    # Baseline value per canonical label: the corpus MEDIAN of the gate-checked model-proposed
+    # counts, when at least one is plausible (within the runtime type's real-world ceiling).
+    # That is an actual anonymity-set estimate; the previous corpus-membership baseline (number
+    # of entries in THIS run carrying the label) is a run-composition statistic that assigned
+    # every unique nearest rung count 1.0 -- an anonymity set of one, i.e. a rung that uniquely
+    # identifies its entry -- and manufactured the 1 -> 79115 degenerate ladders the QA audits
+    # then flagged. Membership survives only as the PAVA weight and as the fallback for labels
+    # whose model counts are all missing/implausible (pre-gate legacy artifacts).
+    # Monotonicity is still enforced by _rank_order + _weighted_pava below;
+    # certifying/anchored counts still override below.
+    ceiling = runtime_type_count_ceiling(runtime_type)
+    baseline: dict[str, float] = {}
+    count_basis: dict[str, str] = {}
+    for canon, members in membership.items():
+        plausible = [value for value in raw_counts_by_canonical.get(canon, []) if 0 < value <= ceiling]
+        if plausible:
+            baseline[canon] = float(statistics.median(plausible))
+            count_basis[canon] = "model-proposed-corpus-median"
+        else:
+            baseline[canon] = float(len(members))
+            count_basis[canon] = "corpus-membership"
     weight = {canon: float(len(members)) for canon, members in membership.items()}
 
     references = load_reference_anchors(runtime_type)
@@ -343,13 +398,21 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
                         f"(see data/lattice_sources/reference/), not derived from this run's "
                         f"per-entry counts; still not certifying"
                     )
+                elif count_basis.get(canon) == "model-proposed-corpus-median":
+                    grounding["count_basis"] = "model-proposed-corpus-median"
+                    grounding["count_evidence"] = (
+                        f"'{canon}' count is the corpus median of gate-checked model-proposed "
+                        f"anonymity-set counts for this label, adjusted for monotonicity by "
+                        f"isotonic pooling where chain order disagreed; not certifying"
+                    )
                 else:
                     grounding["count_basis"] = "corpus-membership"
                     grounding["count_evidence"] = (
-                        f"'{canon}' count is a corpus-membership anonymity-set size (number of "
-                        f"distinct entries in this run whose generalization chain includes it), "
-                        f"adjusted for monotonicity by isotonic pooling where chain order "
-                        f"disagreed; not certifying"
+                        f"'{canon}' count is a corpus-membership fallback (number of distinct "
+                        f"entries in this run whose generalization chain includes it; no "
+                        f"plausible model-proposed count was available), adjusted for "
+                        f"monotonicity by isotonic pooling where chain order disagreed; not "
+                        f"certifying"
                     )
             new_groundings[canon] = grounding
 
@@ -361,6 +424,17 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
             row["count"] = new_level_counts[deduped[0]]
 
     root_report = apply_runtime_type_root_anchor(entries, runtime_type)
+
+    # No silent persistence of a structurally broken ladder: annotate the row and report it,
+    # so review happens at production time instead of as a later environment/QA audit event.
+    structural_defects: dict[str, list[str]] = {}
+    for key, row in entries.items():
+        defects = ladder_structural_defects(row)
+        if defects:
+            row["ladder_defects"] = defects
+            structural_defects[key] = defects
+        else:
+            row.pop("ladder_defects", None)
 
     same_count_collisions = []
     for key, row in entries.items():
@@ -379,6 +453,7 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
         "entries_reordered_to_corpus_consensus": reordered_count,
         "anchored_labels": sorted(anchored_labels),
         **root_report,
+        "structural_defects": structural_defects,
         "same_count_collisions": same_count_collisions,
     }
 

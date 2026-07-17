@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from cloak.lattice import is_type_name_phrase
+from cloak.lattice_producer.coherence import runtime_type_count_ceiling
 from cloak.lattice_producer.vocabulary import CanonicalVocabulary
 from cloak.runtime_types import FORCED_PLACEHOLDER_TYPES, PLACEHOLDER_RE
 
@@ -157,6 +158,7 @@ def gate_candidates(
     surface_key = surface.replace(" ", "")
     short_ambiguous_surface = bool(surface_key) and len(surface_key) <= 4 and not (vocabulary and vocabulary.has_exact(surface))
     floor = float(CHAIN_BREADTH_FLOORS.get(str(runtime_type), 100.0))
+    count_ceiling = runtime_type_count_ceiling(str(runtime_type))
     for candidate in candidates:
         level = str(candidate.get("level", "")).strip()
         record = {**candidate, "item_id": item.get("item_id"), "runtime_type": runtime_type}
@@ -176,6 +178,11 @@ def gate_candidates(
             continue
         grounding_status = (candidate.get("level_grounding") or {}).get("status")
         if _is_model_proposed(candidate):
+            # the model's channel to dispute the queued runtime_type instead of fabricating a
+            # ladder for a mis-typed surface (e.g. "abdominal ct" queued as health-condition)
+            if candidate.get("type_membership") == "mismatch":
+                diagnostics.append({**record, "reason": "type_membership_mismatch"})
+                continue
             if candidate.get("surface_confidence") in {"low", "ambiguous"} or short_ambiguous_surface:
                 diagnostics.append({**record, "reason": "low_confidence_surface"})
                 continue
@@ -193,6 +200,13 @@ def gate_candidates(
                 continue
             if not _has_model_evidence(candidate):
                 diagnostics.append({**record, "reason": "missing_model_evidence"})
+                continue
+            # absolute magnitude sanity: the prompt says counts in the millions are always
+            # wrong, but until now nothing enforced it (2.8e6 "pharmaceutical compound" rows
+            # reached the persisted artifact). Ceiling = broadest known real-world magnitude
+            # for the runtime type, 1e6 fallback.
+            if float(candidate.get("level_count", 0.0) or 0.0) > count_ceiling:
+                diagnostics.append({**record, "reason": "implausible_count", "count_ceiling": count_ceiling})
                 continue
             if flat_model_counts and (not generic_only_model_chain or model_positions.get(id(candidate), 0) == 0):
                 diagnostics.append({**record, "reason": "flat_model_counts"})

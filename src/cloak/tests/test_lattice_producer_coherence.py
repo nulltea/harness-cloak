@@ -132,9 +132,48 @@ def test_empty_entries_return_zeroed_report_without_crashing() -> None:
     assert report["same_count_collisions"] == []
 
 
+def test_plausible_model_counts_survive_as_corpus_median_not_membership():
+    # the corpus-membership baseline used to assign every unique nearest rung count 1.0 (an
+    # anonymity set of ONE -- a rung that uniquely identifies its entry) and manufactured the
+    # 1 -> 79115 degenerate ladders. Gate-checked plausible model counts must survive as the
+    # corpus median instead.
+    entries = {
+        "e1": {"levels": ["lincosamide antibacterial", "unanchored broad tier"],
+                "level_counts": {"lincosamide antibacterial": 14.0, "unanchored broad tier": 900.0},
+                "level_grounding": {}},
+        "e2": {"levels": ["macrolide antibacterial", "unanchored broad tier"],
+                "level_counts": {"macrolide antibacterial": 12.0, "unanchored broad tier": 1100.0},
+                "level_grounding": {}},
+    }
+    normalize_runtime_type(entries, "drug")
+    # each nearest rung keeps its own plausible model count, not membership 1.0
+    assert entries["e1"]["level_counts"]["lincosamide antibacterial"] == 14.0
+    assert entries["e2"]["level_counts"]["macrolide antibacterial"] == 12.0
+    # the shared broad tier resolves to the corpus median of its plausible model counts
+    assert entries["e1"]["level_counts"]["unanchored broad tier"] == 1000.0
+    grounding = entries["e1"]["level_grounding"]["unanchored broad tier"]
+    assert grounding["count_basis"] == "model-proposed-corpus-median"
+
+
+def test_structural_defects_are_annotated_not_silently_persisted():
+    entries = {
+        "lonely": {"levels": ["single rung"], "level_counts": {"single rung": 30.0},
+                   "level_grounding": {}},
+        "healthy": {"levels": ["nsaid", "analgesic"],
+                    "level_counts": {"nsaid": 20.0, "analgesic": 150.0},
+                    "level_grounding": {}},
+    }
+    report = normalize_runtime_type(entries, "drug")
+    assert report["structural_defects"]["lonely"] == ["fewer_than_two_real_levels"]
+    assert entries["lonely"]["ladder_defects"] == ["fewer_than_two_real_levels"]
+    assert "ladder_defects" not in entries["healthy"]
+    assert "healthy" not in report["structural_defects"]
+
+
 def test_counts_are_corpus_membership_sizes():
     # 3 entries; "broad" is carried by all 3, "mid" by 2, each specific by 1.
-    # model-reported counts are deliberately nonsense (prevalence-scale) and must be overwritten.
+    # model-reported counts are deliberately nonsense (prevalence-scale, all above the
+    # runtime-type ceiling) so the corpus-membership FALLBACK must overwrite them.
     entries = {
         "e1": {"levels": ["alpha", "mid", "broad"],
                 "level_counts": {"alpha": 9e9, "mid": 5e8, "broad": 8e9},

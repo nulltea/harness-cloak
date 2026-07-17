@@ -111,6 +111,41 @@ def _level_guidance_for(runtime_type: str) -> str:
     return _TYPE_LEVEL_GUIDANCE.get(runtime_type, _DEFAULT_LEVEL_GUIDANCE)
 
 
+# Reason-specific repair instructions. The generic text stays as the fallback for any future
+# reprocess_reason without a bespoke entry.
+_DEFAULT_REPROCESS_INSTRUCTION = (
+    "This entry is being reprocessed from audit evidence: verify the diagnostic against "
+    "the marked context and source-backed candidates. Do not blindly copy the existing "
+    "profile or assume the audit is correct; address the stated failure while preserving "
+    "truthful levels and anonymity-set count semantics."
+)
+_REPROCESS_INSTRUCTIONS: dict[str, str] = {
+    "missing_profile_reference_backed": (
+        "Repair task: this surface appeared in a real document, a trusted local source resolves "
+        "it, but no profile exists. Verify from marked_context_sentence that it names ONE stable "
+        "real-world referent of this runtime_type, then build the ladder from that referent's "
+        "truthful hierarchy. If the context leaves several referents equally plausible, set "
+        "surface_confidence to \"low\" or \"ambiguous\" instead of picking one."
+    ),
+    "missing_profile_type_entailed": (
+        "Repair task: this surface appeared in a real document with no existing profile. First "
+        "verify from marked_context_sentence that it names ONE stable real-world referent of "
+        "this runtime_type. If it is a generic class mention, detector residue, or has several "
+        "equally plausible referents, set surface_confidence to \"low\" or \"ambiguous\" "
+        "instead of inventing a ladder."
+    ),
+    "lattice_structure_or_utility_failure": (
+        "Repair task: this existing profile failed in use. current_profile is the ladder under "
+        "repair; repair_findings lists the observed failures (e.g. a level a reader could not "
+        "use while a coarser level in the same chain worked, non-monotone or jumpy counts, a "
+        "degenerate one-rung menu). Rebuild the ladder truthfully: re-phrase, replace, or "
+        "re-position the failing rungs and add genuine intermediate tiers. Propose fresh counts "
+        "per count_semantics_instruction -- do not copy current_profile's levels or counts "
+        "unchanged, and do not fix counts by flattening the ladder."
+    ),
+}
+
+
 def assemble_context_packet(
     item: dict[str, Any],
     *,
@@ -151,7 +186,13 @@ def assemble_context_packet(
         "marked_context_sentence": item.get("marked_context_sentence", ""),
         "type_policy": "Produce truthful grammatical generalization levels only; never emit placeholders or direct identifiers.",
         "allowed_outputs": "Strict JSON with entry aliases and ordered candidate levels. Each level must include a proposed_count, count_evidence, selector, and rationale. Counts are review evidence, not certifying source-backed counts.",
-        "required_proposal_fields": ["aliases", "candidates", "surface_confidence"],
+        "required_proposal_fields": ["aliases", "candidates", "surface_confidence", "type_membership"],
+        "type_membership_instruction": (
+            "type_membership must be \"confirmed\" or \"mismatch\". Report \"mismatch\" when the "
+            "surface does not denote an entity of runtime_type at all (e.g. a procedure name or "
+            "report artifact queued as a health condition) -- never invent a ladder for a "
+            "mis-typed surface."
+        ),
         "surface_confidence_instruction": (
             "surface_confidence must be \"high\", \"low\", or \"ambiguous\". A short (<=4 character) "
             "or multi-referent clinical/domain abbreviation must be marked \"low\" or \"ambiguous\" "
@@ -179,6 +220,31 @@ def assemble_context_packet(
         "category_slice": [],
         "forbidden_outputs": ["type-name phrases", "original surface leaks", "direct identifiers"],
     }
+    if item.get("reprocess_reason"):
+        reason = str(item["reprocess_reason"])
+        packet["reprocess_reason"] = reason
+        packet["reprocess_hint"] = str(item.get("reprocess_hint", ""))
+        packet["reprocess_instruction"] = _REPROCESS_INSTRUCTIONS.get(reason, _DEFAULT_REPROCESS_INSTRUCTION)
+        findings = item.get("repair_findings")
+        if isinstance(findings, list) and findings:
+            packet["repair_findings"] = findings[:5]
+        # A ladder repair must see the ladder it is repairing -- nearby_profile_rows truncates
+        # levels and omits counts, which are exactly what a structure/utility failure is about.
+        current_row = entries.get(str(item.get("canonical_value") or "")) or entries.get(surface)
+        if isinstance(current_row, dict) and current_row.get("levels"):
+            groundings = current_row.get("level_grounding") or {}
+            packet["current_profile"] = {
+                "canonical_value": str(item.get("canonical_value") or surface),
+                "aliases": [str(alias) for alias in current_row.get("aliases", [])][:6],
+                "levels": list(current_row.get("levels", [])),
+                "level_counts": dict(current_row.get("level_counts") or {}),
+                "count": current_row.get("count"),
+                "level_grounding_status": {
+                    level: (grounding or {}).get("status")
+                    for level, grounding in groundings.items()
+                    if isinstance(grounding, dict)
+                },
+            }
     if item.get("retry_attempt"):
         packet["retry_attempt"] = int(item.get("retry_attempt", 0))
         packet["previous_rejection_feedback"] = list(item.get("rejection_feedback", []))
@@ -320,8 +386,15 @@ def propose_with_llama_swap(
     else:
         api_key = os.environ.get("OPENAI_API_KEY", "local")
     client = OpenAI(base_url=base_url, api_key=api_key)
+    repair_preamble = (
+        "REPAIR MODE: this item reprocesses audit evidence. Read reprocess_instruction, "
+        "repair_findings, and current_profile in the packet before proposing.\n"
+        if packet.get("reprocess_reason")
+        else ""
+    )
     prompt = (
-        "Return strict JSON only. Propose a reviewable lattice profile row for this item. "
+        repair_preamble
+        + "Return strict JSON only. Propose a reviewable lattice profile row for this item. "
         "Include aliases for the entry, then AT LEAST TWO ordered candidate levels from nearest "
         "to broadest. Follow the packet's level_guidance (specific to this runtime_type) for how "
         "specific the nearest level must be, and count_semantics_instruction for proposed_count. "

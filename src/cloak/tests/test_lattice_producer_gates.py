@@ -49,6 +49,34 @@ def test_gate_flags_count_disagreement_on_reused_exact_label(tmp_path):
     assert any(d.get("reason") == "count_disagreement" for d in res.diagnostics)
 
 
+def test_gate_flags_implausible_count_above_runtime_type_ceiling(tmp_path):
+    out = tmp_path / "proposed.json"
+    out.write_text('{"profiles": {"drug": {}}}')
+    item = {"runtime_type": "drug", "surface": "ibuprofen", "aliases": ["advil"]}
+    # 24.5e6 "medication"-style counts reached the persisted artifact before this gate existed;
+    # any model count above the runtime type's broadest real-world magnitude is implausible.
+    res = gate_candidates(
+        item,
+        [_model_cand("nonsteroidal anti-inflammatory drug", 300), _model_cand("systemic agent", 24_500_000)],
+        proposed_out=str(out),
+    )
+    flagged = [d for d in res.diagnostics if d.get("reason") == "implausible_count"]
+    assert [d["level"] for d in flagged] == ["systemic agent"]
+    assert all(0 < d["count_ceiling"] < 24_500_000 for d in flagged)
+
+
+def test_gate_diverts_type_membership_mismatch_instead_of_accepting_ladder(tmp_path):
+    out = tmp_path / "proposed.json"
+    out.write_text('{"profiles": {"health-condition": {}}}')
+    item = {"runtime_type": "health-condition", "surface": "abdominal ct", "aliases": ["abdominal ct scan"]}
+    candidates = [_model_cand("abdominal imaging finding", 30), _model_cand("medical condition", 900)]
+    for candidate in candidates:
+        candidate["type_membership"] = "mismatch"
+    res = gate_candidates(item, candidates, proposed_out=str(out))
+    assert not res.accepted
+    assert {d["reason"] for d in res.diagnostics} == {"type_membership_mismatch"}
+
+
 def test_gate_flags_item_with_single_level(tmp_path):
     out = tmp_path / "proposed.json"
     out.write_text('{"profiles": {"drug": {}}}')
@@ -427,7 +455,7 @@ def test_gate_accepts_exact_canonical_label_without_reused_flag():
     item = {"item_id": "d2", "runtime_type": "drug", "surface": "ibuprofen", "aliases": [], "eligible": False}
     # count matched to the recorded anchor magnitude so the new count-agreement gate doesn't fire;
     # this test is about reuse of the exact label, not count disagreement.
-    candidates = [_drug_candidate("pharmaceutical compound", level_count=2_800_000.0)]
+    candidates = [_drug_candidate("pharmaceutical compound", level_count=17_000.0)]
 
     result = gate_candidates(item, candidates)
 

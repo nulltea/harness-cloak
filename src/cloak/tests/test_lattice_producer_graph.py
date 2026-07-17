@@ -108,7 +108,7 @@ def test_dynamic_vocabulary_makes_item_two_see_item_ones_accepted_label(monkeypa
                 },
                 {
                     "level": "renal system therapeutic",
-                    "proposed_count": 30000,
+                    "proposed_count": 15000,
                     "count_evidence": "Estimated from clinical formulary references.",
                     "selector": "model-domain-cluster:renal",
                     "rationale": "Broader truthful generalization for this entry.",

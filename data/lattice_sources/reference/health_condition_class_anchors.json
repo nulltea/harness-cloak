@@ -1,8 +1,9 @@
 {
   "_comment": "Best-effort real-world magnitude anchors for common/recurring health-condition generalization tiers, used by src/cloak/lattice_producer/coherence.py to keep per-level counts internally consistent across a run. Not certifying counts (Fix Area 2's DOID loader in reference_sources.py supplies real, certifying chains where a DOID match exists); this is a fallback anchor for the ceiling tiers above DOID's own root and for entries with no DOID match. Promoted from scripts/spikes/clean_drug_health_lattice_coherence.py.",
   "_sources": {
-    "medical condition": "ICD-10-CM FY2026: 74,719 billable diagnosis codes (icd10data.com/CMS); used here as the practical broadest catch-all bucket, larger than any subordinate anchor by design",
-    "clinical finding": "SNOMED CT: ~371,000 concepts total; Clinical Finding is its largest single hierarchy, commonly cited at roughly a third to half of the total",
+    "_semantics": "Counts are RUNTIME-TYPE-CONDITIONAL anonymity-set sizes: the number of distinct health-condition entities in the tier, matching the producer prompt's count_semantics_instruction -- NOT the tier's ontology-universe size. The previous 500,000 'medical condition' value did not even match its own cited source and inflated the root rung.",
+    "medical condition": "ICD-10-CM FY2026: 74,719 billable diagnosis codes (icd10data.com/CMS); the practical broadest catch-all bucket, larger than any subordinate anchor by design",
+    "clinical finding": "conditional estimate: distinct commonly-named findings that appear as condition-type entities; kept below the 'medical condition' catch-all to preserve the corpus tier order",
     "mental health condition / psychiatric disorder": "DSM-5: ~300 distinct diagnosable mental disorders",
     "genetic disorder": "OMIM: similar order to Orphanet's rare-disease count",
     "rare disease": "Orphanet: >7,000 catalogued rare diseases",
@@ -32,7 +33,7 @@
     "clinical sign": 500,
     "disease": 15000,
     "disease entity": 15000,
-    "clinical finding": 150000,
-    "medical condition": 500000
+    "clinical finding": 60000,
+    "medical condition": 75000
   }
 }

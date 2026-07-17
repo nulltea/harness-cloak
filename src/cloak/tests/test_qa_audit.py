@@ -93,6 +93,41 @@ def test_environment_audit_does_not_misclassify_admission_rejects_or_direct_rows
     assert "female" not in coarse_surfaces
 
 
+def test_environment_audit_scores_unprofiled_span_for_repair_routing():
+    document = "Physical therapy was recommended."
+    start = document.index("Physical therapy")
+    arms = {
+        "aci": {
+            "aci/D1": {
+                "tau_walk": [document, [{
+                    "surface": "Physical therapy", "type": "medical-procedure",
+                    "start": start, "end": start + len("Physical therapy"),
+                    "action": "keep", "uncontrolled": True,
+                    "lattice": ["<MEDICAL_PROCEDURE_1>"],
+                    "profile_match": {"outcome": "abstained", "reason": "no_certified_match"},
+                }]],
+                "detector_diagnostics": {"accepted": [{
+                    "text": "Physical therapy", "type": "medical-procedure",
+                    "start": start, "end": start + len("Physical therapy"),
+                }], "post_detection_rejections": []},
+            },
+        },
+    }
+
+    audit = build_legacy_environment_audit(
+        arms,
+        source_documents={"aci/D1": document},
+        self_type_nli_batch_fn=lambda jobs: [[(candidates[0], 0.8)] for _surface, _context, candidates in jobs],
+        semantic_embed_fn=lambda texts: [[1.0] for _ in texts],
+        pair_nli_batch_fn=lambda jobs: [],
+    )
+
+    diagnostic = next(event for event in audit["events"]
+                      if event["code"] == "unprofiled_self_type_diagnostic")
+    assert diagnostic["evidence"]["prep_filtered"] is False
+    assert diagnostic["evidence"]["source_excerpt"] == document
+
+
 def test_environment_audit_joins_post_rejection_by_raw_detector_label():
     arms = _arms()
     document = arms["aci"]["aci/D1"]
