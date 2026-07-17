@@ -1363,8 +1363,8 @@ _PROBLEM_BLOCK_BOUNDARY = re.compile(
 # A clinical problem discussion routinely states the condition in the exam/HPI and its
 # treatment/test in that problem's plan, with assessment, rationale, acknowledgment, and
 # order clauses in between (measured: muscle-strain->meloxicam spans 7 clauses across the
-# exam->plan transition). Twelve keeps that local pattern eligible while remaining a strict
-# anti-document-wide cap; a PROBLEM SWITCH (below) still hard-stops the bridge.
+# exam->plan transition). Twelve is the pre-registered soft diagnostic boundary: distant
+# pairs remain reader-gated, while a PROBLEM SWITCH (below) still hard-stops the bridge.
 _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE = 12
 
 # A PROBLEM SWITCH (moving to a different problem) blocks a cross-clause bridge; the
@@ -1375,6 +1375,40 @@ _PROBLEM_SWITCH_BOUNDARY = re.compile(
     r"for (?:your|the|his|her)\s+(?:second|third|fourth|fifth|sixth|next|last|final)\b",
     re.IGNORECASE,
 )
+
+
+def _argument_clause_ranges(
+    clauses: Sequence[tuple[int, int]], indices: Sequence[int | None],
+) -> list[tuple[int, int]] | None:
+    """Return the distinct source clauses containing relation arguments."""
+    if any(index is None or index < 0 or index >= len(clauses) for index in indices):
+        return None
+    return [clauses[index] for index in sorted(set(indices)) if index is not None]
+
+
+def _soft_cross_clause_cap_diagnostic(
+    document: str, spans: Sequence[tuple[int, int]],
+) -> dict | None:
+    """Record, but never reject, a relation whose source arguments exceed the
+    cross-clause locality operating point. The reader gate remains authoritative."""
+    clauses = _source_clause_spans(document)
+    if not clauses or not spans:
+        return None
+    indices = [
+        next((index for index, (left, right) in enumerate(clauses)
+              if left <= start < end <= right), None)
+        for start, end in spans
+    ]
+    if any(index is None for index in indices):
+        return None
+    distance = max(indices) - min(indices)
+    if distance <= _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE:
+        return None
+    return {
+        "kind": "soft_cross_clause_cap_exceeded",
+        "clause_distance": distance,
+        "soft_cap": _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE,
+    }
 
 
 def _problem_blocks(document: str) -> list[tuple[int, int]]:
@@ -1803,10 +1837,14 @@ def _placeholder_meaning_tokens(runtime_type: str) -> set[str]:
 
 
 def _question_leaks_answer(
-    question: str, answer: str, runtime_type: str | Sequence[str],
+    question: str,
+    answer: str,
+    runtime_type: str | Sequence[str],
+    *,
+    extra_exempt_tokens: Sequence[str] = (),
 ) -> bool:
     types = [runtime_type] if isinstance(runtime_type, str) else list(runtime_type)
-    exempt: set[str] = set()
+    exempt = set(extra_exempt_tokens)
     for type_value in types:
         exempt |= _placeholder_meaning_tokens(type_value)
     answer_tokens = _meaningful_tokens(answer) - exempt
@@ -3039,6 +3077,21 @@ def _derived_relation_anchor(
         if scored:
             scored.sort()
             start, end = scored[0][2], scored[0][3]
+            # Co-located via the shared plan/problem section but NOT an adjacent
+            # clause: anchor surgically to [linked clause, literal clause] instead
+            # of the whole section. Handing the reader the entire multi-problem
+            # section buries which condition the literal pairs with (it answers
+            # empty), so mirror the span->span stitch and elide the middle. The
+            # adjacent case (<=1 clause) keeps its single-region quote below.
+            literal_clause = clause_index(start, end)
+            if literal_clause is not None:
+                nearest_linked = min(
+                    linked_clause_indices, key=lambda index: abs(index - literal_clause)
+                )
+                if abs(literal_clause - nearest_linked) > 1:
+                    stitched_context_clause_ranges = [
+                        clauses[index] for index in sorted({nearest_linked, literal_clause})
+                    ]
         else:
             # No explicit plan/problem marker is common in encounter summaries. Mirror the
             # span->span bridge for one uncontrolled literal. A repeated linked value is
@@ -3068,8 +3121,6 @@ def _derived_relation_anchor(
                         if linked_clause is None:
                             continue
                         clause_dist = abs(literal_clause - linked_clause)
-                        if clause_dist > _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE:
-                            continue
                         first_end, last_start = (
                             (linked_end, start) if linked_end <= start else (end, linked_start)
                         )
@@ -3168,16 +3219,33 @@ def _derived_relation_anchor(
     ]
     plan_section = _shared_plan_section(document, argument_spans)
     if plan_section is not None:
+        reader_ranges = _argument_clause_ranges(clauses, all_indices)
+        # Keep the full plan envelope for source integrity and support checks, but
+        # do not hand unrelated plan rows to the reader when the arguments are
+        # separated within it. The persisted ranges are source clauses, so the
+        # runtime still excerpts the corresponding stable turn indices after render.
+        if reader_ranges is not None and len(reader_ranges) > 1:
+            return (
+                document[plan_section[0]:plan_section[1]], plan_section,
+                reader_ranges, None, "plan_section",
+            )
         return document[plan_section[0]:plan_section[1]], plan_section, None, None, "plan_section"
     # Spoken transcript: the arguments may sit in different turns of one
     # problem discussion (a patient acknowledgment between them). Ground within
     # that block; the hedge guard and cue check in compilation still apply.
     problem_block = _shared_problem_block(document, argument_spans)
     if problem_block is not None:
+        reader_ranges = _argument_clause_ranges(clauses, all_indices)
+        if reader_ranges is not None and len(reader_ranges) > 1:
+            return (
+                document[problem_block[0]:problem_block[1]], problem_block,
+                reader_ranges, None, "problem_block",
+            )
         return document[problem_block[0]:problem_block[1]], problem_block, None, None, "problem_block"
     # No explicit problem marker is common in short encounter summaries. Permit
-    # only a local span->span bridge: all argument clauses must fit the global
-    # cap and no assessment/problem switch may occur between the source spans.
+    # a span->span bridge subject to no assessment/problem switch between the
+    # source spans. Distance beyond the global soft cap is recorded downstream,
+    # rather than silently discarding a reader-verifiable relation.
     if len(linked) == len(arguments):
         first_index, last_index = min(linked_clause_indices), max(linked_clause_indices)
         first_span, last_span = min(linked_spans), max(linked_spans)
@@ -3199,9 +3267,10 @@ def _derived_relation_anchor(
             for index, argument in enumerate(linked)
             for occurrence in occurrences.values()
         )
-        if (last_index - first_index <= _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE
-                and boundary is None and not intervening_sibling):
-            clause_ranges = [clauses[index] for index in sorted(set(linked_clause_indices))]
+        if boundary is None and not intervening_sibling:
+            clause_ranges = _argument_clause_ranges(clauses, linked_clause_indices)
+            if clause_ranges is None:
+                return "", None, None, "invalid_evidence", None
             quote = "\n".join(document[left:right].strip() for left, right in clause_ranges)
             if not quote:
                 return "", None, None, "invalid_evidence", None
@@ -4326,14 +4395,6 @@ def compile_relational_assertions(
             ]
             sanitized_qa = (sanitized_question, sanitized_values) != (question, accepted_values)
             question, accepted_values = sanitized_question, sanitized_values
-        # Placeholder-label tokens of the linked argument types ("medication",
-        # "condition") are information-free for level-based QA; only the v4
-        # contract exempts them so cached legacy replies keep their outcomes.
-        answer_exempt_types = (
-            [argument["runtime_type"] for argument in arguments
-             if argument["kind"] == "linked"]
-            if uses_v4_arguments else ""
-        )
         answer_role = str(proposal.get("answer_role", "object"))
         # A context literal is uncontrolled and can never be a valid gated answer (it survives the
         # placeholder render -> placeholder_answerable). For a relation pairing one linked span with
@@ -4344,10 +4405,33 @@ def compile_relational_assertions(
         _context_args = [argument for argument in arguments if argument.get("kind") == "context"]
         if len(_linked_args) == 1 and len(_context_args) == 1:
             answer_role = str(_linked_args[0].get("role") or "object")
+        answer_argument = arguments[0] if answer_role == "subject" else arguments[1]
+        # Placeholder-label tokens for the answered linked argument (for
+        # example, "medication") are generic question syntax, not answer
+        # leakage.
+        answer_exempt_types = (
+            str(answer_argument.get("runtime_type", ""))
+            if answer_argument.get("kind") == "linked" else ""
+        )
+        # A linked answer is scored only against its selected support_property.
+        # Derive the stored accepted value from that same authoritative value
+        # rather than letting teacher prose affect privacy gates or artifact
+        # semantics. Teacher answers remain required by the wire contract and
+        # authoritative only for literal/legacy answer targets.
+        if answer_argument.get("kind") == "linked":
+            accepted_values = [str(answer_argument["support_property"])]
+        answer_type_hint = _relation_answer_type_hint(relation, answer_role)
         leakage_repair = None
-        # Strict leak detection: no generic-word whitelist. Any answer-token overlap triggers
-        # the (whitelist-free, floor-preserving) repair; the exempt list is retired.
-        if any(_question_leaks_answer(question, answer, "")
+        # Generic answer-type words are derived from the answered runtime type's
+        # placeholder contract (for example, "medication" in a question whose
+        # canonical linked answer is "thyroid medication"). Every remaining
+        # overlap is discriminative and still triggers the strict repair.
+        if any(_question_leaks_answer(
+                question,
+                answer,
+                answer_exempt_types,
+                extra_exempt_tokens=_meaningful_tokens(answer_type_hint or ""),
+        )
                for answer in accepted_values):
             repaired = _repair_leaked_relation(
                 question, accepted_values, arguments, answer_role,
@@ -4361,6 +4445,9 @@ def compile_relational_assertions(
             question, accepted_values, arguments, leakage_repair = repaired
             support = {argument["occurrence_id"]: argument["support_property"]
                        for argument in arguments if argument["kind"] == "linked"}
+            answer_argument = arguments[0] if answer_role == "subject" else arguments[1]
+            if answer_argument.get("kind") == "linked":
+                accepted_values = [str(answer_argument["support_property"])]
         protected_terms = []
         allowed_level_tokens: dict[str, frozenset[str]] = {}
         for occurrence_id_value, occurrence in occurrences.items():
@@ -4408,14 +4495,16 @@ def compile_relational_assertions(
         if _question_leaks_protected_term(question, protected_terms, question_allowed_tokens):
             reject("protected_locator")
             continue
-        # The answer check stays strict per answered argument: it uses each protected term's OWN
-        # levels/placeholders (allowed_level_tokens), NOT the pooled argument levels -- pooling could
-        # authorize an UNRELATED protected identity whose surface token happens to appear in some
-        # argument's level.
-        if proposal.get("arguments") is not None and any(
+        # Only literal/legacy answer golds are teacher-authored text and need this raw-surface
+        # leak check. Linked answer golds above are local lattice properties and never enter the
+        # remote question/context; checking them against unrelated split decisions can reject a
+        # valid property solely because another occurrence has a bad lattice resolution.
+        if (proposal.get("arguments") is not None
+                and answer_argument.get("kind") != "linked"
+                and any(
             _question_leaks_protected_term(answer, protected_terms, allowed_level_tokens)
             for answer in accepted_values
-        ):
+        )):
             reject("protected_answer")
             continue
         decision_requirements = {
@@ -4430,7 +4519,6 @@ def compile_relational_assertions(
         # The answered argument (default: the object). A linked answer is scored
         # by lattice entailment against its decision's frozen chain; a literal
         # answer keeps lexical matching against the exact grounded span.
-        answer_argument = arguments[0] if answer_role == "subject" else arguments[1]
         if answer_argument["kind"] == "linked":
             answer_target = {
                 "kind": "linked_decision",
@@ -4446,6 +4534,23 @@ def compile_relational_assertions(
             ]
             for occurrence_id in occurrence_ids
         }
+        source_argument_ranges = [
+            (
+                int(occurrences[argument["occurrence_id"]]["start"]),
+                int(occurrences[argument["occurrence_id"]]["end"]),
+            )
+            if argument["kind"] == "linked" else (
+                int(argument["start"]), int(argument["end"]),
+            )
+            for argument in arguments
+        ]
+        soft_cap_diagnostic = _soft_cross_clause_cap_diagnostic(
+            document, source_argument_ranges,
+        )
+        reader_clauses = (
+            _source_reader_clause_refs(document, source_argument_ranges)
+            if anchor_kind == "speaker_turn" else []
+        )
         source_span = {
             "start": evidence_span[0],
             "end": evidence_span[1],
@@ -4468,6 +4573,10 @@ def compile_relational_assertions(
         }
         if anchor_clause_ranges is not None:
             evidence["source_clause_ranges"] = [list(span) for span in anchor_clause_ranges]
+        if reader_clauses:
+            evidence["reader_clauses"] = reader_clauses
+        if soft_cap_diagnostic is not None:
+            evidence["anchor_diagnostics"] = [soft_cap_diagnostic]
         if leakage_repair is not None:
             evidence["leakage_repair"] = leakage_repair
         if competing_answers:  # ambiguity monitor (computed above, pre-gate); diagnostic only
@@ -6350,7 +6459,6 @@ def _diagnose_coarser_readable(
     if not question or not requirements:
         return None
     decisions_by_id = {str(d["decision_id"]): d for d in decisions}
-    turns = (candidate.get("evidence") or {}).get("reader_turns") or []
     for decision_id, level in requirements.items():
         # the LOCATOR is the linked argument whose level is spelled in the question
         if not level or str(level).lower() not in question.lower():
@@ -6380,8 +6488,10 @@ def _diagnose_coarser_readable(
                     if hiding is not None:
                         probe_vector[str(other["decision_id"])] = hiding
             probe_context = render_action_vector(doc_id, probe_vector)
-            answer = reader([_permuted_reader_question(probe, 0)], _turn_excerpt(
-                probe_context, turns, window=CONTEXT_READER_TURN_WINDOW))[0]
+            answer = reader(
+                [_permuted_reader_question(probe, 0)],
+                _reader_excerpt(probe_context, candidate.get("evidence") or {}),
+            )[0]
             if _context_answer_score(probe, answer, chain_by_decision) >= reader_threshold:
                 return {
                     "surface": str(decision.get("canonical_key") or ""),
@@ -6460,21 +6570,113 @@ def _source_turns_for_ranges(
 _TURN_EXCERPT_ELISION = "[...]"
 
 
-def _turn_excerpt(context: str, core_turns: Sequence[int], *, window: int) -> str:
+def _line_clause_spans(line: str) -> list[tuple[int, int]]:
+    """Return delimiter-terminated clause spans relative to one rendered turn."""
+    spans, left = [], 0
+    for delimiter in _CLAUSE_DELIMITER_PATTERN.finditer(line):
+        right = delimiter.end()
+        if line[left:right].strip():
+            spans.append((left, right))
+        left = right
+    if line[left:].strip():
+        spans.append((left, len(line)))
+    return spans
+
+
+def _source_reader_clause_refs(
+    source: str, char_ranges: Sequence[tuple[int, int]],
+) -> list[dict[str, int]]:
+    """Pin source argument clauses by turn-local ordinal for a long speaker turn.
+
+    Absolute source offsets cannot be reused after a generalized render changes span
+    lengths. The ordinal is safe only when the rendered turn has the same delimiter
+    shape; `_turn_excerpt` otherwise falls back to that full turn.
+    """
+    if not char_ranges:
+        return []
+    lines = source.splitlines(keepends=True)
+    line_starts, position = [], 0
+    for line in lines:
+        line_starts.append(position)
+        position += len(line)
+    refs: set[tuple[int, int, int]] = set()
+    for start, end in char_ranges:
+        if not (0 <= start < end <= len(source)):
+            return []
+        for turn, line_start in enumerate(line_starts):
+            line_end = line_start + len(lines[turn])
+            if end <= line_start:
+                break
+            if start >= line_end:
+                continue
+            spans = _line_clause_spans(lines[turn])
+            for clause, (left, right) in enumerate(spans):
+                absolute_left, absolute_right = line_start + left, line_start + right
+                if absolute_left < end and start < absolute_right:
+                    refs.add((turn, clause, len(spans)))
+    return [
+        {"turn": turn, "clause": clause, "turn_clause_count": count}
+        for turn, clause, count in sorted(refs)
+    ]
+
+
+def _turn_excerpt(
+    context: str,
+    core_turns: Sequence[int],
+    *,
+    window: int,
+    core_clauses: Sequence[Mapping[str, object]] = (),
+) -> str:
     """Surgically stitch `context` to the given turn indices (each plus `window`
     neighbor turns), eliding non-adjacent gaps rather than spanning first-to-last.
 
     Adjacent/overlapping turn windows merge into one region (so a co-located
     relation reads exactly as before); a relation whose turns sit far apart reads
     only its relevant regions joined by an elision marker -- the middle text is
-    not handed to the reader. Empty `core_turns`, or indices past the end of
-    `context`, fall back to the full `context` so a diverged render is never
-    mis-sliced."""
+    not handed to the reader. Optional turn-local clause pins narrow a long
+    speaker turn further; a changed delimiter shape falls back to that full turn.
+    Empty `core_turns`, or indices past the end of `context`, fall back to the
+    full `context` so a diverged render is never mis-sliced."""
     if not core_turns:
         return context
     lines = context.splitlines()
     if max(core_turns) >= len(lines):
         return context
+    pinned_clauses: dict[int, set[int]] = defaultdict(set)
+    pinned_counts: dict[int, int] = {}
+    for ref in core_clauses:
+        try:
+            turn = int(ref["turn"])
+            clause = int(ref["clause"])
+            count = int(ref["turn_clause_count"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (0 <= turn < len(lines) and 0 <= clause < count):
+            continue
+        if turn in pinned_counts and pinned_counts[turn] != count:
+            pinned_clauses.pop(turn, None)
+            pinned_counts.pop(turn, None)
+            continue
+        pinned_counts[turn] = count
+        pinned_clauses[turn].add(clause)
+
+    def excerpt_line(turn: int) -> str:
+        clauses = pinned_clauses.get(turn)
+        if not clauses:
+            return lines[turn]
+        spans = _line_clause_spans(lines[turn])
+        if len(spans) != pinned_counts.get(turn) or max(clauses) >= len(spans):
+            return lines[turn]
+        parts: list[str] = []
+        previous = None
+        for clause in sorted(clauses):
+            if previous is not None and clause > previous + 1:
+                parts.append(_TURN_EXCERPT_ELISION)
+            left, right = spans[clause]
+            parts.append(lines[turn][left:right].strip())
+            previous = clause
+        return "\n".join(part for part in parts if part)
+
     windows = sorted(
         (max(0, turn - window), min(len(lines) - 1, turn + window))
         for turn in set(core_turns)
@@ -6489,8 +6691,22 @@ def _turn_excerpt(context: str, core_turns: Sequence[int], *, window: int) -> st
     for index, (low, high) in enumerate(merged):
         if index:
             parts.append(_TURN_EXCERPT_ELISION)  # a real gap was skipped between regions
-        parts.extend(lines[low:high + 1])
+        parts.extend(excerpt_line(turn) for turn in range(low, high + 1))
     return "\n".join(parts)
+
+
+def _reader_excerpt(context: str, evidence: Mapping) -> str:
+    """Render an assertion's pinned reader evidence, preserving old artifacts."""
+    turns = evidence.get("reader_turns") or []
+    clauses = evidence.get("reader_clauses") or []
+    if clauses:
+        return _turn_excerpt(
+            context,
+            turns,
+            window=CONTEXT_READER_TURN_WINDOW,
+            core_clauses=clauses,
+        )
+    return _turn_excerpt(context, turns, window=CONTEXT_READER_TURN_WINDOW)
 
 
 def _context_answer_score(
@@ -6561,13 +6777,13 @@ def validate_context_assertions(
             original_answers, representative_answers, placeholder_answers = [], [], []
             for row in rows:
                 question = _permuted_reader_question(row, permutation_index)
-                turns = (row.get("evidence") or {}).get("reader_turns") or []
-                original_answers += reader([question], _turn_excerpt(
-                    original_context, turns, window=CONTEXT_READER_TURN_WINDOW))
-                representative_answers += reader([question], _turn_excerpt(
-                    representative_context, turns, window=CONTEXT_READER_TURN_WINDOW))
-                placeholder_answers += reader([question], _turn_excerpt(
-                    placeholder_context, turns, window=CONTEXT_READER_TURN_WINDOW))
+                reader_evidence = row.get("evidence") or {}
+                original_answers += reader([question], _reader_excerpt(
+                    original_context, reader_evidence))
+                representative_answers += reader([question], _reader_excerpt(
+                    representative_context, reader_evidence))
+                placeholder_answers += reader([question], _reader_excerpt(
+                    placeholder_context, reader_evidence))
             if not all(len(answers) == len(rows) for answers in (
                 original_answers, representative_answers, placeholder_answers
             )):
@@ -6711,9 +6927,9 @@ def score_utility(
     context_answers = []
     for row in context_rows:
         question = _permuted_reader_question(row, 0)
-        turns = (row.get("evidence") or {}).get("reader_turns") or []
+        reader_evidence = row.get("evidence") or {}
         context_answers += reader(
-            [question], _turn_excerpt(doc_p, turns, window=CONTEXT_READER_TURN_WINDOW)
+            [question], _reader_excerpt(doc_p, reader_evidence)
         )
     if len(context_answers) != len(context_rows):
         raise ValueError("reader returned the wrong number of answers")

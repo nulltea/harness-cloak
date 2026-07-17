@@ -146,14 +146,19 @@ def test_cross_clause_span_anchor_bridges_the_exam_to_plan_transition():
     assert "assessment and my plan" not in quote  # the transition clause is elided, not sent
 
 
-def test_cross_clause_span_anchor_rejects_pairs_beyond_global_distance():
+def test_cross_clause_span_anchor_keeps_pairs_beyond_soft_global_distance():
     source = "Muscle strain was assessed. " + " ".join(
         f"Unrelated clause {index}." for index in range(qa_builder._CROSS_CLAUSE_ANCHOR_MAX_DISTANCE)
     ) + " Meloxicam was prescribed for pain."
-    _, span, clause_ranges, error, kind, _, _ = _cross_clause_anchor(source)
+    quote, span, clause_ranges, error, kind, _, _ = _cross_clause_anchor(source)
 
-    assert span is None and clause_ranges is None
-    assert error == "invalid_evidence" and kind is None
+    assert error is None and kind == "stitched_clauses"
+    assert span == (0, len(source))
+    assert "Unrelated clause 0" not in quote
+    assert clause_ranges == [
+        qa_builder._source_clause_spans(source)[0],
+        qa_builder._source_clause_spans(source)[-1],
+    ]
 
 
 def test_cross_clause_stitch_without_relation_cue_fails_support_check():
@@ -195,14 +200,146 @@ def test_cross_clause_context_anchor_stitches_linked_and_literal_clauses():
     assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 2]
 
 
-def test_cross_clause_context_anchor_rejects_literal_beyond_global_distance():
+def test_cross_clause_context_anchor_keeps_literal_beyond_soft_global_distance():
     source = "Distal phalanx fracture was assessed. " + " ".join(
         f"Unrelated clause {index}." for index in range(qa_builder._CROSS_CLAUSE_ANCHOR_MAX_DISTANCE)
     ) + " Follow-up x-ray was ordered."
-    _, span, clause_ranges, error, kind, _, _ = _cross_clause_context_anchor(source)
+    quote, span, clause_ranges, error, kind, _, _ = _cross_clause_context_anchor(source)
 
-    assert span is None and clause_ranges is None
-    assert error == "unknown_context_literal" and kind is None
+    assert error is None and kind == "stitched_clauses"
+    assert span == (0, len(source))
+    assert "Unrelated clause 0" not in quote
+    assert clause_ranges == [
+        qa_builder._source_clause_spans(source)[0],
+        qa_builder._source_clause_spans(source)[-1],
+    ]
+
+
+def test_plan_section_anchor_narrows_reader_turns_to_argument_clauses():
+    source = (
+        "Arthritis.\n"
+        "• Medical Reasoning: Symptoms have worsened.\n"
+        "• Additional Testing: The patient denies fever.\n"
+        "• Medical Treatment: Meloxicam was prescribed for arthritis.\n"
+    )
+    arthritis = source.index("Arthritis")
+    meloxicam = source.index("Meloxicam")
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "condition",
+         "surface": "Arthritis", "runtime_type": "health-condition",
+         "support_property": "joint condition"},
+        {"role": "object", "kind": "linked", "occurrence_id": "medication",
+         "surface": "Meloxicam", "runtime_type": "drug",
+         "support_property": "anti-inflammatory medication"},
+    ]
+    occurrences = {
+        "condition": {"occurrence_id": "condition", "decision_id": "d-condition",
+                      "surface": "Arthritis", "start": arthritis, "end": arthritis + 9,
+                      "runtime_type": "health-condition"},
+        "medication": {"occurrence_id": "medication", "decision_id": "d-medication",
+                       "surface": "Meloxicam", "start": meloxicam, "end": meloxicam + 9,
+                       "runtime_type": "drug"},
+    }
+
+    quote, span, clause_ranges, error, kind = qa_builder._derived_relation_anchor(
+        source, arguments, occurrences, {}, "prescribed_with", qa_builder.ACI_RELATION_CONTRACT,
+    )
+
+    assert error is None and kind == "plan_section"
+    assert span == (0, len(source))
+    assert "patient denies fever" in quote  # full envelope remains source evidence
+    assert clause_ranges == [
+        qa_builder._source_clause_spans(source)[0],
+        qa_builder._source_clause_spans(source)[3],
+    ]
+    assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 3]
+
+
+def test_problem_block_anchor_narrows_reader_turns_to_argument_turns():
+    source = (
+        "[doctor] assessment and plan for your first problem, arthritis is active.\n"
+        "[patient] okay.\n"
+        "[doctor] meloxicam was prescribed for arthritis.\n"
+        "[doctor] for your second problem, hypothyroidism.\n"
+    )
+    arthritis = source.index("arthritis")
+    meloxicam = source.index("meloxicam")
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "arthritis",
+         "surface": "arthritis", "runtime_type": "health-condition",
+         "support_property": "joint condition"},
+        {"role": "object", "kind": "linked", "occurrence_id": "meloxicam",
+         "surface": "meloxicam", "runtime_type": "drug",
+         "support_property": "anti-inflammatory medication"},
+    ]
+    occurrences = {
+        "arthritis": {"occurrence_id": "arthritis", "decision_id": "d-arthritis",
+                      "surface": "arthritis", "start": arthritis, "end": arthritis + 9,
+                      "runtime_type": "health-condition"},
+        "meloxicam": {"occurrence_id": "meloxicam", "decision_id": "d-meloxicam",
+                       "surface": "meloxicam", "start": meloxicam, "end": meloxicam + 9,
+                       "runtime_type": "drug"},
+    }
+
+    quote, span, clause_ranges, error, kind = qa_builder._derived_relation_anchor(
+        source, arguments, occurrences, {}, "prescribed_with", qa_builder.ACI_RELATION_CONTRACT,
+    )
+
+    assert error is None and kind == "problem_block"
+    assert span == qa_builder._shared_problem_block(source, [
+        (arthritis, arthritis + 9), (meloxicam, meloxicam + 9),
+    ])
+    assert "[patient] okay" in quote  # full envelope remains source evidence
+    assert clause_ranges == [
+        qa_builder._source_clause_spans(source)[0],
+        qa_builder._source_clause_spans(source)[2],
+    ]
+    assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 2]
+
+
+def test_compile_records_beyond_soft_cross_clause_cap_without_rejecting():
+    source = "Muscle strain was assessed. " + " ".join(
+        f"Unrelated clause {index}." for index in range(qa_builder._CROSS_CLAUSE_ANCHOR_MAX_DISTANCE)
+    ) + " Meloxicam was prescribed for Muscle strain."
+    condition_start = source.index("Muscle strain")
+    medication_start = source.index("Meloxicam")
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "condition", "decision_id": "d-condition",
+             "surface": "Muscle strain", "start": condition_start,
+             "end": condition_start + len("Muscle strain"), "runtime_type": "health-condition"},
+            {"occurrence_id": "medication", "decision_id": "d-medication",
+             "surface": "Meloxicam", "start": medication_start,
+             "end": medication_start + len("Meloxicam"), "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-condition", "actions": [{"mode": "level", "legal": True,
+                "entails": ["muscle injury"]}]},
+            {"decision_id": "d-medication", "actions": [{"mode": "level", "legal": True,
+                "entails": ["anti-inflammatory medication"]}]},
+        ],
+    }
+    proposal = {
+        "relation": "prescribed_with",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": "muscle injury"},
+            {"role": "object", "kind": "linked", "span_label": "S2",
+             "support_property": "anti-inflammatory medication"},
+        ],
+        "question": "What medication category was prescribed for the muscle injury?",
+        "accepted_answers": ["anti-inflammatory medication"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == []
+    assert accepted[0]["evidence"]["anchor_diagnostics"] == [{
+        "kind": "soft_cross_clause_cap_exceeded",
+        "clause_distance": qa_builder._CROSS_CLAUSE_ANCHOR_MAX_DISTANCE + 1,
+        "soft_cap": qa_builder._CROSS_CLAUSE_ANCHOR_MAX_DISTANCE,
+    }]
 
 
 def test_cross_clause_context_anchor_rejects_problem_switch_before_literal():
@@ -322,14 +459,14 @@ def test_bounded_stitched_relation_reaches_reader_gate_without_lexical_cue():
     ]
 
 
-def test_teacher_authored_relation_qa_is_preserved_and_drug_is_prescribed_not_treated():
+def test_linked_relation_gold_is_derived_from_selected_property():
     source = "Hypothyroidism is treated with Synthroid."
     accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [_proposal(source)])
 
     assert rejected == []
     assert accepted[0]["relation"] == "prescribed_with"
     assert accepted[0]["question"] == _proposal(source)["question"]
-    assert accepted[0]["accepted_values"] == ["hormone replacement therapy"]
+    assert accepted[0]["accepted_values"] == ["thyroid medication"]
     assert accepted[0]["decision_requirements"] == {"d-condition": "endocrine condition", "d-drug": "thyroid medication"}
 
 
@@ -634,8 +771,8 @@ def test_evidence_window_allows_adjacent_condition_then_ordered_context_with_cue
             {"role": "subject", "kind": "linked", "occurrence_id": "condition", "support_property": "endocrine condition"},
             {"role": "object", "kind": "context", "context_candidate_id": labs["context_candidate_id"]},
         ],
-        "question": "Which testing modality was ordered for the endocrine condition?",
-        "accepted_answers": ["laboratory evaluation"],
+        "question": "For what medical condition were thyroid labs ordered?",
+        "accepted_answers": ["endocrine condition"],
         "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
         "evidence_window_id": window["evidence_window_id"],
     }
@@ -1052,6 +1189,36 @@ def test_multi_sentence_turn_anchors_search_cues_in_the_argument_clauses():
 
     assert rejected == []
     assert accepted[0]["relation"] == "contraindicated_because_of"
+    evidence = accepted[0]["evidence"]
+    assert evidence["reader_clauses"] == qa_builder._source_reader_clause_refs(source, [
+        (source.index("anti-inflammatory medications"),
+         source.index("anti-inflammatory medications") + len("anti-inflammatory medications")),
+        (transplant_start, transplant_start + len("kidney transplant")),
+    ])
+    excerpt = qa_builder._reader_excerpt(source, evidence)
+    assert "you are doing well" not in excerpt
+    assert "let us move on" not in excerpt
+
+
+def test_turn_excerpt_narrows_a_long_speaker_turn_to_pinned_clauses():
+    source = (
+        "[doctor] unrelated intake detail . arthritis is active . unrelated review detail . "
+        "meloxicam was prescribed for arthritis . unrelated closing detail .\n[patient] okay ."
+    )
+    arthritis = source.index("arthritis")
+    meloxicam = source.index("meloxicam")
+
+    clauses = qa_builder._source_reader_clause_refs(
+        source,
+        [(arthritis, arthritis + len("arthritis")), (meloxicam, meloxicam + len("meloxicam"))],
+    )
+    excerpt = qa_builder._turn_excerpt(source, [0], window=0, core_clauses=clauses)
+
+    assert "arthritis is active" in excerpt
+    assert "meloxicam was prescribed" in excerpt
+    assert "unrelated intake detail" not in excerpt
+    assert "unrelated review detail" not in excerpt
+    assert "unrelated closing detail" not in excerpt
 
 
 def test_causes_or_explains_accepts_explicit_exacerbation_attribution():
@@ -1082,8 +1249,8 @@ def test_causes_or_explains_accepts_explicit_exacerbation_attribution():
             {"role": "subject", "kind": "linked", "span_label": "S1", "support_property": "bone inflammation disease", "literal": None},
             {"role": "object", "kind": "context", "span_label": None, "support_property": None, "literal": "knee pain"},
         ],
-        "question": "What symptom is attributed to the bone inflammation disease?",
-        "accepted_answers": ["knee pain"],
+        "question": "What medical condition explains knee pain?",
+        "accepted_answers": ["bone inflammation disease"],
         "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
     }
 
@@ -1152,9 +1319,9 @@ def test_linked_surface_in_qa_is_substituted_with_the_selected_level():
     accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [proposal])
 
     assert rejected == []
-    # sanitize swaps the protected surface for the subject level; then the strict leak repair
-    # strips the answer's own token "medication" from the question (answer = "thyroid medication").
-    assert accepted[0]["question"] == "Which was prescribed for the endocrine condition?"
+    # Sanitize swaps the protected surface for the subject level. The relation-contract-derived
+    # generic answer word "medication" remains legal for the canonical linked answer.
+    assert accepted[0]["question"] == "Which medication was prescribed for the endocrine condition?"
     assert accepted[0]["accepted_values"] == ["thyroid medication"]
     assert accepted[0]["evidence"]["sanitized_qa"] is True
 
@@ -1219,6 +1386,11 @@ def test_multiturn_span_pair_grounds_within_one_problem_block():
     assert rejected == []
     assert accepted[0]["relation"] == "tests_for"
     assert accepted[0]["occurrence_ids"] == ["arthritis", "panel"]
+    assert accepted[0]["evidence"]["reader_turns"] == [2, 4]
+    assert accepted[0]["evidence"]["source_clause_ranges"] == [
+        list(qa_builder._source_clause_spans(source)[2]),
+        list(qa_builder._source_clause_spans(source)[4]),
+    ]
 
 
 def test_procedure_for_indication_grounds_inside_a_speaker_turn_anchor():
@@ -1419,6 +1591,56 @@ def test_context_literal_relation_compiles_with_linked_subject_answer():
         "required_property": "metabolic disorder",
     }
     assert accepted[0]["accepted_values"] == ["metabolic disorder"]
+
+
+def test_linked_answer_ignores_unrelated_split_surface_in_protected_answer_check():
+    source = (
+        "[doctor] type 2 diabetes requires hemoglobin a1c monitoring .\n"
+        "[doctor] lastly , what about your diabetes ?\n"
+    )
+    type_two_start = source.index("type 2 diabetes")
+    diabetes_start = source.index("diabetes", type_two_start + len("type 2 diabetes"))
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "type-two", "decision_id": "d-type-two",
+             "surface": "type 2 diabetes", "start": type_two_start,
+             "end": type_two_start + len("type 2 diabetes"),
+             "runtime_type": "health-condition"},
+            {"occurrence_id": "diabetes-mention", "decision_id": "d-diabetes-mention",
+             "surface": "diabetes", "start": diabetes_start,
+             "end": diabetes_start + len("diabetes"),
+             "runtime_type": "health-condition"},
+        ],
+        "decisions": [
+            {"decision_id": "d-type-two", "actions": [{"mode": "level", "legal": True,
+             "entails": ["diabetes mellitus", "medical condition"]}]},
+            {"decision_id": "d-diabetes-mention", "actions": [{"mode": "level", "legal": True,
+             "entails": ["glucose metabolism disease", "disease of metabolism"]}]},
+        ],
+    }
+    proposal = {
+        "relation": "tests_for",
+        "answer_role": "subject",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": "diabetes mellitus", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None,
+             "support_property": None, "literal": "hemoglobin a1c"},
+        ],
+        "question": "For what medical condition was hemoglobin a1c monitored?",
+        "accepted_answers": ["diabetes mellitus"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["accepted_values"] == ["diabetes mellitus"]
+    assert accepted[0]["answer_target"] == {
+        "kind": "linked_decision",
+        "decision_id": "d-type-two",
+        "required_property": "diabetes mellitus",
+    }
 
 
 def test_tests_for_grounds_via_semantic_support_when_cue_absent():
@@ -1656,10 +1878,9 @@ def test_linked_answer_resolution_is_decision_scoped():
     assert qa_builder._resolve_semantic_node(chain, "kidney transplant")["node"] == "keep"
 
 
-def test_accepted_answers_and_question_are_underscore_normalized():
-    # The teacher inconsistently snake-cases answers ("solid_organ_transplant");
-    # under lexical fact_score that tokenizes as one token vs three, so
-    # normalize underscores to spaces before storing/scoring.
+def test_linked_teacher_answers_do_not_override_canonical_gold():
+    # Linked answers are scored against their selected lattice property, not
+    # teacher-authored lexical answer text.
     source = "Hypothyroidism is treated with Synthroid."
     proposal = {
         "relation": "prescribed_with",
@@ -1676,7 +1897,7 @@ def test_accepted_answers_and_question_are_underscore_normalized():
     accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [proposal])
 
     assert rejected == []
-    assert accepted[0]["accepted_values"] == ["hormone replacement therapy"]
+    assert accepted[0]["accepted_values"] == ["thyroid medication"]
     assert accepted[0]["question"] == "Which medication class treats the endocrine disorder?"
 
 
@@ -1928,6 +2149,11 @@ def test_v4_compiler_uses_a_bounded_plan_section_anchor_for_treatment():
 
     assert rejected == []
     assert accepted[0]["evidence"]["source_span"]["quote_hash"] == qa_builder._stable_hash(source)
+    assert accepted[0]["evidence"]["reader_turns"] == [0, 3]
+    assert accepted[0]["evidence"]["source_clause_ranges"] == [
+        list(qa_builder._source_clause_spans(source)[0]),
+        list(qa_builder._source_clause_spans(source)[3]),
+    ]
 
 
 
