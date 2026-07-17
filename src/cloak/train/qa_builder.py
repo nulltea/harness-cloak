@@ -20,7 +20,7 @@ RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
 # empty/rate-limited/errored; deepinfra/turbo serves gpt-oss-120b with stable,
 # valid structured output. allow_fallbacks stays off so routing never drifts.
 RELATION_TEACHER_PROVIDER = "deepinfra/turbo"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v20"
+RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v21"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
 RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
 RELATION_TEACHER_MAX_RELATIONS = 12
@@ -63,6 +63,7 @@ _RELATION_RECORD_ITEM = {
             },
         },
         "question": {"type": "string"},
+        "answer_role": {"enum": ["subject", "object"]},
         "accepted_answers": {
             "type": "array", "minItems": 1,
             "items": {"type": "string"},
@@ -2615,9 +2616,9 @@ causes_or_explains: condition or diagnosis -> condition or symptom; require expl
 CLINICAL_WORKED_EXAMPLES = """Drug (prescribed_with, never a procedure): source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
 Safe question: "Which medication was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words; ask for the answered argument with a generic answer-type word (never "category"/"type"/"class"/"kind"). WRONG (leaks the answer): "Which triptan was prescribed …" — never put the answer's level in the question; ask "Which medication …" instead.
 Treatment procedure (procedure_for): "cataract treated with phacoemulsification" => procedure_for (a procedure, not a drug). Past treatment also counts: source "had the [S3: appendectomy | procedure | levels: abdominal surgery] years ago for [S4: appendicitis | condition | levels: abdominal inflammation]" => procedure_for(S4, S3). Safe question: "What procedure was performed for the abdominal inflammation?" Accepted answer: "abdominal surgery".
-Test (tests_for), monitoring OR discovery: source "to follow the [S5: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => tests_for(S5, context literal "hemoglobin A1c"). Safe question: "What test is used for the metabolic disorder?" Accepted answer: "hemoglobin A1c". A discovered finding counts too: "the ct shows a [S6: kidney stone | condition | levels: urinary tract stone]" => tests_for(S6, context literal "ct"). Use tests_for for any lab/panel/imaging/exam; a test merely mentioned elsewhere is not linked.
+Test (tests_for), monitoring OR discovery: source "to follow the [S5: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => tests_for(S5, context literal "hemoglobin A1c"). QA orientation is literal -> linked span (ask for the condition, not the test). Safe question: "For what medical condition was hemoglobin A1c ordered?" Accepted answer: "metabolic disorder". A discovered finding counts too: "the ct shows a [S6: kidney stone | condition | levels: urinary tract stone]" => tests_for(S6, context literal "ct"). Use tests_for for any lab/panel/imaging/exam; a test merely mentioned elsewhere is not linked.
 Contraindication: source "you ca n't use beta-blockers because of your [S7: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S7). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition. The drug argument may be a drug-class phrase quoted as a context literal (e.g. "anti-inflammatory medications", "certain medications"), not only a specific drug name — emit the contraindication whenever the source says a drug or drug class cannot be used because of the condition.
-Safe question: "What history rules out the use of that drug class?" Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
+Safe question: "What medical condition makes beta-blockers unsuitable?" Set answer_role to object. Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
 Conditional plan (procedure_for / tests_for; allowed with a CONDITIONAL question): source "if symptoms persist , possibly refer to [S8: cardiac rehabilitation | procedure | levels: rehabilitation program]" while planning the [S9: heart failure | condition | levels: cardiac disorder] => procedure_for(S9, S8). Phrase it conditionally: "What procedure MAY the patient be referred to for the cardiac disorder?" Accepted answer: "rehabilitation program". A definite question ("What procedure was performed?") for a conditional plan is rejected."""
 
 
@@ -2678,8 +2679,8 @@ A relation may connect spans from different turns of the SAME problem discussion
 "Explicit" means the source states the relationship through this problem discussion; the subject and object need NOT appear in the same sentence. A drug or test named while the doctor is assessing/planning one problem is linked to that problem's condition even if its own sentence does not repeat the condition name.
 
 PRIVACY-SAFE QA
-Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest (a level so generic it fits almost any concept measures nothing). An exact uncontrolled context literal may be an answer only when it is the measured fact.
-CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC answer-type word only for the argument being asked ("Which medication …", "Which procedure …", "What test …", "What condition …") — never "category", "type", "class", or "kind", since the original render may hold a named entity rather than an explicit category — then put the specific level in the accepted answer. Writing the answer's level into the question ("Which triptan was prescribed …" when the answer is "triptan") leaks it, and the relation is rejected. The question names the OTHER argument's level (or a generic word) and asks for the answered one.
+Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest (a level so generic it fits almost any concept measures nothing).
+CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC answer-type word only for the argument being asked ("Which medication …", "Which procedure …", "What test …", "What condition …") — never "category", "type", "class", or "kind", since the original render may hold a named entity rather than an explicit category — then put the specific level in the accepted answer. Writing the answer's level into the question ("Which triptan was prescribed …" when the answer is "triptan") leaks it, and the relation is rejected. For two linked spans, ask for the object span as usual. For exactly one linked span plus one uncontrolled context literal, the QA orientation is ALWAYS literal -> linked span: use the literal verbatim as the locator in the question, make the linked span's listed level the accepted answer, and set answer_role to that linked argument's subject/object role. This changes QA orientation only, never the directional relation fact. Never use PERSON as the locator.
 
 RELATION INVENTORY
 {relation_inventory}
@@ -2694,12 +2695,12 @@ EVIDENCE CARDS
 {chr(10).join(cards) or '(No span-local cards; inspect the source directly.)'}
 
 RESPONSE
-Return two relation lists. Each relation record contains: relation; a subject argument then an object argument; a question; accepted answers; the fixed scoring contract.
+Return two relation lists. Each relation record contains: relation; a subject argument then an object argument; a question; answer_role (subject or object); accepted answers; the fixed scoring contract.
 span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim. Subject and object MUST be two DIFFERENT S-labels — never the same label twice.
-context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span. Put the two arguments in the relation's DIRECTIONAL order (subject then object), which is NOT always the linked one first: for tests_for the linked condition is the subject and the test literal is the object, but for contraindicated_because_of the drug/drug-class literal is the SUBJECT and the linked condition is the OBJECT. Match the direction in the relation inventory, not the order the spans appear in text.
+context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span. Put the two arguments in the relation's DIRECTIONAL order (subject then object), which is NOT always the linked one first: for tests_for the linked condition is the subject and the test literal is the object, but for contraindicated_because_of the drug/drug-class literal is the SUBJECT and the linked condition is the OBJECT. Match the direction in the relation inventory, not the order the spans appear in text. Then set answer_role to the linked argument's role: the literal is the question locator and the linked span's support_property is the accepted answer.
 Never quote a displayed span as a context literal. Emit each distinct fact EXACTLY ONCE, in the single list its argument kinds require — never emit both a span-pair and a context version of the same fact, and never emit the same fact under a different S-label of the same value. A fact whose second argument is an uncontrolled literal (a test name, a drug class) belongs ONLY in context_relations; do not force it into span_relations by reusing the linked label as both arguments.
 Example span_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication was prescribed for the neurological disorder?"; accepted answer "triptan".
-Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level; object context literal "azithromycin" quoted from the relation sentence; accepted answer "azithromycin".
+Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level as support_property; object context literal "azithromycin" quoted from the relation sentence; answer_role subject; question "For what medical condition was azithromycin prescribed?"; accepted answer the listed S3 condition level.
 Return exactly one candidate_accounting row per S-label covering both lists, with a short reason for every row. emitted means a relation record in either list uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
 FINAL CHECK before you return: reconcile the accounting against the two relation lists so they agree exactly. Every S-label you mark emitted MUST appear in an actual relation record in span_relations or context_relations, and every S-label used by a relation record MUST be marked emitted. Never mark a label emitted without including its relation record, and include every supported relation you identified — a fact named in the accounting but absent from the lists, or a relation you found but omitted, is an error to fix before returning.
 
@@ -2805,8 +2806,8 @@ HOW TO INSPECT THE SOURCE
 Read the full source. Evidence cards and detected spans are restricted to the listed targets — they are navigation aids, not pair gates. Use S-labels for linked controlled arguments (one label per value, tagged in every clause it appears in); quote an uncontrolled argument's exact source text as a context literal. A relation may connect spans across turns of the SAME problem discussion (short patient acknowledgments between the doctor's sentences are fine), never across different problems or small talk. A conditional/planned statement IS a valid relation but its question MUST be phrased conditionally (may / might / would / if …).
 
 PRIVACY-SAFE QA
-Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest. An exact uncontrolled context literal may be an answer only when it is the measured fact.
-CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC answer-type word only for the argument being asked ("Which medication …", "Which procedure …", "What test …", "What condition …") — never "category", "type", "class", or "kind" — then put the specific level in the accepted answer. The question names the OTHER argument's level (or a generic word) and asks for the answered one.
+Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest.
+CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC answer-type word only for the argument being asked ("Which medication …", "Which procedure …", "What test …", "What condition …") — never "category", "type", "class", or "kind" — then put the specific level in the accepted answer. For two linked spans, ask for the object span. For exactly one linked span plus one uncontrolled context literal, use the literal verbatim as the question locator, make the linked span's listed level the accepted answer, and set answer_role to the linked argument's subject/object role. This changes QA orientation only, never the directional relation fact. Never use PERSON as the locator.
 
 RELATION INVENTORY
 {relation_inventory}
@@ -2824,9 +2825,9 @@ REPAIR TARGETS (address only these; each is ambiguous / fixable / missed)
 {repair_targets}
 
 RESPONSE
-Return two relation lists with the same records as the first pass: relation; a subject then an object argument; a question; accepted answers; the fixed scoring contract.
+Return two relation lists with the same records as the first pass: relation; a subject then an object argument; a question; answer_role; accepted answers; the fixed scoring contract.
 span_relations: subject and object both displayed spans, each kind linked with span_label + one listed level as support_property; the two labels MUST differ.
-context_relations: exactly one linked S-label argument and one uncontrolled context argument whose literal is exact source text (not any displayed span), in the relation's DIRECTIONAL order per the inventory.
+context_relations: exactly one linked S-label argument and one uncontrolled context argument whose literal is exact source text (not any displayed span), in the relation's DIRECTIONAL order per the inventory. Set answer_role to the linked argument's role: the literal is the question locator and the linked support_property is the accepted answer.
 Emit each distinct fact EXACTLY ONCE. Return exactly one candidate_accounting row per shown S-label with a short reason (emitted / duplicate_mention / exhausted_no_relation / unsupported) referencing labels and levels only. Return only the structured response.
 
 SOURCE DOCUMENT
@@ -4216,6 +4217,15 @@ def compile_relational_assertions(
             if uses_v4_arguments else ""
         )
         answer_role = str(proposal.get("answer_role", "object"))
+        # A context literal is uncontrolled and can never be a valid gated answer (it survives the
+        # placeholder render -> placeholder_answerable). For a relation pairing one linked span with
+        # one context literal, the answer is ALWAYS the linked span, so force answer_role to the
+        # linked argument's role regardless of the teacher's (frequently omitted) answer_role. The
+        # prompt steers the literal-locator question; this enforces the matching answer direction.
+        _linked_args = [argument for argument in arguments if argument.get("kind") == "linked"]
+        _context_args = [argument for argument in arguments if argument.get("kind") == "context"]
+        if len(_linked_args) == 1 and len(_context_args) == 1:
+            answer_role = str(_linked_args[0].get("role") or "object")
         leakage_repair = None
         # Strict leak detection: no generic-word whitelist. Any answer-token overlap triggers
         # the (whitelist-free, floor-preserving) repair; the exempt list is retired.

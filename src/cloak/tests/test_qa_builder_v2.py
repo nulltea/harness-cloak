@@ -1524,7 +1524,7 @@ def test_openrouter_relation_teacher_uses_pinned_model(monkeypatch):
         "model": "openai/gpt-oss-120b",
         "routed_provider": "deepinfra/turbo",
         "base_url": "https://openrouter.ai/api/v1",
-        "prompt_version": "qa-relation-teacher-v20",
+        "prompt_version": "qa-relation-teacher-v21",
         "response_schema": {"type": "relation-qa-batch", "version": 9},
         "response_format": qa_builder.RELATION_TEACHER_RESPONSE_FORMAT,
         "generation_config": {

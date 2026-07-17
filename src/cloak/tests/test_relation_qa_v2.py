@@ -253,7 +253,7 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     # prompt/schema (v8/r20) must repin caches.
     assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
     assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v20"
+    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v21"
     assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 9
     assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r32"
 
@@ -272,6 +272,9 @@ def test_prompt_worked_examples_are_source_independent_and_level_based():
 
     assert 'Safe question: "Which medication was prescribed for the neurological disorder?"' in prompt
     assert 'Accepted answer: "triptan"' in prompt
+    assert 'Safe question: "For what medical condition was hemoglobin A1c ordered?"' in prompt
+    assert 'Accepted answer: "metabolic disorder"' in prompt
+    assert "answer_role to the linked argument's role" in prompt
     assert "never the source words" in prompt
     # The example scenario is independent of any document's spans.
     for example_entity in ("migraine", "sumatriptan", "cataract", "diabetes", "asthma", "beta-blockers"):
@@ -356,6 +359,7 @@ def test_prompt_defines_the_response_record_fields_and_linked_argument_rule():
     assert "Never quote a displayed span as a context literal" in prompt
     assert "Example span_relations record" in prompt
     assert "Example context_relations record" in prompt
+    assert "answer_role subject" in prompt
 
 
 def test_response_schema_forbids_zero_linked_argument_pairs_and_fixes_roles():
@@ -1204,6 +1208,48 @@ def test_tests_for_discovery_compiles():
     assert rejected == [], rejected
     assert accepted[0]["relation"] == "tests_for"
     assert accepted[0]["answer_target"]["required_property"] == "urinary tract stone"
+
+
+def test_context_literal_relation_compiles_with_linked_subject_answer():
+    source = "[doctor] for diabetes, hemoglobin A1c was ordered .\n"
+    diabetes_start = source.index("diabetes")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "diabetes", "decision_id": "d-diabetes",
+            "surface": "diabetes", "start": diabetes_start,
+            "end": diabetes_start + len("diabetes"),
+            "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-diabetes",
+            "actions": [{"mode": "level", "legal": True,
+                         "entails": ["metabolic disorder"]}],
+        }],
+    }
+    proposal = {
+        "relation": "tests_for",
+        # answer_role deliberately OMITTED (the real teacher frequently does): the compiler must
+        # still force the linked condition as the answer, since the uncontrolled literal can never be.
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": "metabolic disorder", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None,
+             "support_property": None, "literal": "hemoglobin A1c"},
+        ],
+        "question": "For what medical condition was hemoglobin A1c ordered?",
+        "accepted_answers": ["metabolic disorder"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["answer_target"] == {
+        "kind": "linked_decision",
+        "decision_id": "d-diabetes",
+        "required_property": "metabolic disorder",
+    }
+    assert accepted[0]["accepted_values"] == ["metabolic disorder"]
 
 
 def test_tests_for_grounds_via_semantic_support_when_cue_absent():
