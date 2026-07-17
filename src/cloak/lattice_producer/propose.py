@@ -374,6 +374,10 @@ def propose_with_llama_swap(
         "item_id": item.get("item_id"),
         "context_packet_hash": packet["context_packet_hash"],
     }
+    if is_openrouter(base_url) and os.environ.get("OPENROUTER_PROVIDER"):
+        # a provider/quantization pin changes which weights answer -- never share cache entries
+        # across pins (unpinned runs keep their historical cache keys)
+        identity["openrouter_provider"] = os.environ["OPENROUTER_PROVIDER"]
     cache_key = _hash_payload(identity)
     cache_dir = Path(os.environ.get("CLOAK_LLM_CACHE", "data/llm_cache"))
     cache_file = _cache_path(cache_dir, cache_key)
@@ -410,6 +414,15 @@ def propose_with_llama_swap(
     if is_openrouter(base_url):
         # OpenRouter's reasoning knob (not the local llama-swap thinking_budget_tokens field).
         request_kwargs["extra_body"] = {"reasoning": {"enabled": True}}
+        # optional endpoint pin, e.g. OPENROUTER_PROVIDER="deepinfra/bf16" -> DeepInfra bf16
+        # only, no fallback to other providers/quantizations
+        provider = os.environ.get("OPENROUTER_PROVIDER", "")
+        if provider:
+            slug, _, quantization = provider.partition("/")
+            routing: dict[str, Any] = {"order": [slug], "allow_fallbacks": False}
+            if quantization:
+                routing["quantizations"] = [quantization]
+            request_kwargs["extra_body"]["provider"] = routing
     elif thinking_budget_tokens >= 0:
         request_kwargs["extra_body"] = {"thinking_budget_tokens": thinking_budget_tokens}
     response = _create_with_retry(client, model=model, request_kwargs=request_kwargs)
