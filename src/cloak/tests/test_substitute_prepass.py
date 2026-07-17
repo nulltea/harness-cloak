@@ -25,6 +25,20 @@ def test_prepass_feeds_lattice_and_records_match(monkeypatch):
 
     def fake_batch(items, **kw):
         submitted.extend(items)
+        kw["trace_out"].update({
+            span_key("diabetic", "health-condition"): {
+                "outcome": "semantic", "reason": "semantic_certified",
+                "candidate_attempts": [],
+            },
+            span_key("aspirin", "drug"): {
+                "outcome": "exact", "reason": "exact_entry",
+                "candidate_attempts": [],
+            },
+            span_key("insulin", "drug"): {
+                "outcome": "abstained", "reason": "retrieval_empty",
+                "candidate_attempts": [],
+            },
+        })
         return {
             span_key("diabetic", "health-condition"):
                 MatchResult(["endocrine condition"], "semantic", False, 0.84,
@@ -44,6 +58,7 @@ def test_prepass_feeds_lattice_and_records_match(monkeypatch):
     assert by_surface["diabetic"]["replacement"] == "endocrine condition"
     assert by_surface["aspirin"]["match"] == {"kind": "exact", "entry": "aspirin"}
     assert "match" not in by_surface["insulin"]   # abstain: placeholder, no provenance
+    assert by_surface["insulin"]["profile_match"]["reason"] == "retrieval_empty"
     assert by_surface["insulin"]["replacement"].startswith("<DRUG_")
 
 
@@ -193,13 +208,20 @@ def test_unprofiled_detection_is_kept_exact_not_placeholdered(monkeypatch):
     spans = _spans(text, ("physical therapy", "medical-procedure"))
     monkeypatch.setattr(sub, "coref_chains", lambda t, s: s)
     monkeypatch.setattr(sub, "walk_risk", lambda *a, **k: 0.0)
-    monkeypatch.setattr(sub, "match_spans_batch", lambda items, **k: {})
+    def abstaining_matcher(items, **kw):
+        kw["trace_out"][span_key("physical therapy", "medical-procedure")] = {
+            "outcome": "abstained", "reason": "no_discriminative_level",
+            "candidate_attempts": [],
+        }
+        return {}
+    monkeypatch.setattr(sub, "match_spans_batch", abstaining_matcher)
     monkeypatch.setattr(sub, "lattice_for", lambda *a, **k: [])  # no real level -> unprofiled
     doc_p, R = sub.substitute(text, spans, tau=2.0)
     entry = next(r for r in R if r["surface"].lower() == "physical therapy")
     assert entry["action"] == "keep"
     assert entry["replacement"] == "physical therapy"
     assert entry.get("uncontrolled") is True
+    assert entry["profile_match"]["reason"] == "no_discriminative_level"
     assert "physical therapy" in doc_p          # exact -- not <MEDICAL_PROCEDURE_n>
     assert "<MEDICAL_PROCEDURE" not in doc_p
 

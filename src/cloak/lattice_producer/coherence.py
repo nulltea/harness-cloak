@@ -37,6 +37,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from cloak.lattice_producer.reference_sources import runtime_type_root_anchor
+
 DEFAULT_ANCHOR_PATHS = {
     "drug": Path("data/lattice_sources/reference/drug_class_anchors.json"),
     "health-condition": Path("data/lattice_sources/reference/health_condition_class_anchors.json"),
@@ -110,6 +112,51 @@ def build_variant_map(runtime_type: str) -> dict[str, str]:
 
 def canonicalize(level: str, variant_map: dict[str, str]) -> str:
     return variant_map.get(_norm(level), level.strip())
+
+
+def apply_runtime_type_root_anchor(entries: dict[str, Any], runtime_type: str) -> dict[str, int]:
+    """Update the source-derived global root without perturbing narrower rungs.
+
+    This is deliberately separate from the isotonic pass: a global root must not change how
+    corpus membership estimates are pooled for labels below it.  The helper doubles as a safe
+    migration for an already-normalized artifact.
+    """
+    anchor = runtime_type_root_anchor(runtime_type)
+    if anchor is None:
+        return {"root_levels_added": 0, "root_levels_updated": 0}
+
+    root_label = canonicalize(str(anchor["level"]), build_variant_map(runtime_type))
+    root_count = float(anchor["count"])
+    added = 0
+    updated = 0
+    for row in entries.values():
+        levels = list(row.get("levels") or [])
+        if not levels:
+            continue
+        if root_label in levels:
+            levels.remove(root_label)
+            updated += 1
+        else:
+            added += 1
+        levels.append(root_label)
+        row["levels"] = levels
+        level_counts = dict(row.get("level_counts") or {})
+        level_counts[root_label] = root_count
+        row["level_counts"] = level_counts
+        groundings = dict(row.get("level_grounding") or row.get("level_groundings") or {})
+        grounding = dict(groundings.get(root_label) or {})
+        grounding.update({
+            "status": grounding.get("status", "model-proposed"),
+            "source_family": anchor["source_family"],
+            "selector": anchor["selector"],
+            "member_set_ref": None,
+            "count_basis": anchor["count_basis"],
+            "count_evidence": anchor["count_evidence"],
+        })
+        groundings[root_label] = grounding
+        row["level_grounding"] = groundings
+        row.pop("level_groundings", None)
+    return {"root_levels_added": added, "root_levels_updated": updated}
 
 
 def _average_depth_rank(canonical_chains: list[list[str]]) -> dict[str, float]:
@@ -313,6 +360,8 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
         if deduped:
             row["count"] = new_level_counts[deduped[0]]
 
+    root_report = apply_runtime_type_root_anchor(entries, runtime_type)
+
     same_count_collisions = []
     for key, row in entries.items():
         counts_seen: dict[float, list[str]] = defaultdict(list)
@@ -329,6 +378,7 @@ def normalize_runtime_type(entries: dict[str, Any], runtime_type: str) -> dict[s
         "duplicate_levels_dropped": dedup_drops,
         "entries_reordered_to_corpus_consensus": reordered_count,
         "anchored_labels": sorted(anchored_labels),
+        **root_report,
         "same_count_collisions": same_count_collisions,
     }
 

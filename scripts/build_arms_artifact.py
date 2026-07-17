@@ -311,7 +311,7 @@ def main():
     qa_v2 = args.detector_config == "qa-v2-clinical"
     detectors: dict[str, Detector] = {}   # one detector per distinct profile (reuses the load)
     art = {}
-    source_documents = {}
+    source_documents: dict[str, str] = {}
     for corpus in corpora:
         profile = profile_for(corpus)
         det = detectors.setdefault(profile, None)

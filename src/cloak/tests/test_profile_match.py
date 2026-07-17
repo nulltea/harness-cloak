@@ -171,6 +171,45 @@ def test_empty_context_returns_none_without_nli(tmp_path):
     assert called["nli"] is False
 
 
+def test_batch_trace_records_exact_semantic_and_abstention(tmp_path):
+    profiles, index = _build(tmp_path, "trace")
+    trace = {}
+    got = match_spans_batch(
+        [
+            ("diabetes", "health-condition", "Patient has diabetes."),
+            ("diabetic", "health-condition", "She is diabetic."),
+            ("unprofiled finding", "health-condition", ""),
+        ],
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=stub_embed,
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=_entry_certify_accept,
+        entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed,
+        trace_out=trace,
+    )
+
+    exact_key = span_key("diabetes", "health-condition")
+    semantic_key = span_key("diabetic", "health-condition")
+    abstained_key = span_key("unprofiled finding", "health-condition")
+    assert got[exact_key] is not None and got[semantic_key] is not None
+    assert got[abstained_key] is None
+    assert trace[exact_key] == {
+        "runtime_type": "health-condition",
+        "surface_key": "diabetes",
+        "outcome": "exact",
+        "reason": "exact_entry",
+        "candidate_attempts": [],
+        "entry": "diabetes",
+        "levels": ["endocrine condition", "chronic condition"],
+    }
+    assert trace[semantic_key]["outcome"] == "semantic"
+    assert trace[semantic_key]["reason"] == "semantic_certified"
+    assert trace[semantic_key]["candidate_attempts"][-1]["status"] == "accepted"
+    assert trace[abstained_key]["reason"] == "no_context"
+
+
 def test_missing_index_degrades_to_exact_only(tmp_path):
     pm.load_embindex.cache_clear()
     pp = tmp_path / "noindex.json"
@@ -601,6 +640,24 @@ def test_true_semantic_variant_passes_entry_and_specificity_certification(tmp_pa
     match = got[span_key("diabetic", "health-condition")]
     assert match is not None and match.entry == "diabetes"
     assert match.levels == ["endocrine condition", "chronic condition"]
+
+
+def test_strong_entry_membership_survives_near_root_baseline(tmp_path):
+    profiles, index = _build(tmp_path, "near-root-membership")
+
+    got = match_spans_batch(
+        [("diabetic", "health-condition", "She is diabetic.")],
+        profiles_path=profiles,
+        index_path=index,
+        embed_fn=stub_embed,
+        nli_batch_fn=lambda jobs: [[(level, 0.95) for level in levels]
+                                   for _, _, levels in jobs],
+        entry_certify_batch_fn=lambda jobs: [(0.974, 0.891) for _ in jobs],
+        entry_reverse_entailment_batch_fn=_entry_reverse_not_entailed,
+    )
+
+    match = got[span_key("diabetic", "health-condition")]
+    assert match is not None and match.entry == "diabetes"
 
 
 def test_semantic_match_is_vetoed_when_canonical_entails_surface(tmp_path):

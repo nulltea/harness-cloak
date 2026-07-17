@@ -12,7 +12,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Callable
+from typing import Callable, MutableMapping
 
 import numpy as np
 
@@ -26,7 +26,7 @@ NLI_THRESH = 0.6
 # One globally pinned operating point for semantic profile certification.  This
 # is deliberately shared across runtime types and callers: it is a membership
 # test, not a per-type utility/privacy calibration knob.
-ENTRY_ROOT_MARGIN = 0.15
+ENTRY_ROOT_MARGIN = 0.075
 # A level must be materially below this runtime type's broadest anonymity
 # class to establish semantic-entry specificity.  This is one global pinned
 # operating point, never a per-type/model/privacy calibration.
@@ -266,7 +266,9 @@ def _warn_exact_only(index_path: str, reason: str) -> None:
 
 def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=None,
                       nli_batch_fn=None, entry_certify_batch_fn=None,
-                      entry_reverse_entailment_batch_fn=None) -> dict[tuple[str, str], "MatchResult | None"]:
+                      entry_reverse_entailment_batch_fn=None,
+                      trace_out: MutableMapping[tuple[str, str], dict] | None = None,
+                      ) -> dict[tuple[str, str], "MatchResult | None"]:
     """Document-level pre-pass: one embed batch for uncached misses, wave-batched NLI.
     Returns an entry for every submitted span_key; None = abstain (fail closed)."""
     profiles_path = Path(profiles_path or lp.DEFAULT_PROFILE_PATH)
@@ -279,24 +281,52 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
         todo.setdefault(span_key(span_text, runtime_type), (span_text, context))
 
     out: dict[tuple[str, str], MatchResult | None] = {}
+    traces: dict[tuple[str, str], dict] = {}
+
+    def trace(key: tuple[str, str], **values) -> dict:
+        row = traces.setdefault(key, {
+            "runtime_type": key[0],
+            "surface_key": key[1],
+            "outcome": "abstained",
+            "reason": "no_exact_entry",
+            "candidate_attempts": [],
+        })
+        row.update(values)
+        return row
+
+    def flush_trace() -> None:
+        if trace_out is not None:
+            trace_out.update(traces)
     misses: list[tuple[tuple[str, str], str, str]] = []  # (key, span_text, context)
     for key, (span_text, context) in todo.items():
         got = lp.lookup_entry(span_text, key[0], profiles_path)
         if got:
             out[key] = MatchResult(list(got[1]), "exact", True, 1.0, got[0])
+            trace(key, outcome="exact", reason="exact_entry", entry=got[0],
+                  levels=list(got[1]))
         else:
             out[key] = None
             if context:
                 misses.append((key, span_text, context))
+            else:
+                trace(key, reason="no_context")
     if not misses:
+        flush_trace()
         return out
 
     index = load_embindex(str(index_path), str(profiles_path))
     if index is None:
         _warn_exact_only(str(index_path), "index missing or stale")
+        for key, _, _ in misses:
+            trace(key, reason="index_unavailable")
+        flush_trace()
         return out
+    unsupported_types = [key for key, _, _ in misses if key[0] not in index.types]
+    for key in unsupported_types:
+        trace(key, reason="no_type_index")
     misses = [(k, s, c) for k, s, c in misses if k[0] in index.types]
     if not misses:
+        flush_trace()
         return out
 
     # cap-clear BEFORE computing uncached, so any of this batch's keys wiped here get
@@ -315,13 +345,23 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
             vecs = _l2norm(embed_fn([s for _, s in uncached]))
         except Exception:
             _warn_exact_only(str(index_path), "embedding model failed")
+            for key, _, _ in misses:
+                trace(key, reason="embedding_failure")
+            flush_trace()
             return out
         try:
             for (k, _), q in zip(uncached, vecs):
                 _PROPOSAL_CACHE[(str(index_path), k[0], k[1])] = _retrieve(index, k[0], q)
         except Exception:
             _warn_exact_only(str(index_path), "embedding output failed retrieval")
+            for key, _, _ in misses:
+                trace(key, reason="retrieval_failure")
+            flush_trace()
             return out
+
+    for key, _, _ in misses:
+        if not _PROPOSAL_CACHE.get((str(index_path), key[0], key[1])):
+            trace(key, reason="retrieval_empty")
 
     if nli_batch_fn is None:
         from cloak.lattice import nli_gate_batch
@@ -343,7 +383,19 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
                 canonical, sim = cands[wave]
                 stats = _profile_certification_stats(str(profiles_path), k[0])
                 levels = lp.lookup_levels(canonical, k[0], profiles_path)
-                if stats is None or not levels or not stats.discriminative_levels_by_entry.get(canonical):
+                attempt = {"entry": canonical, "similarity": round(sim, 6)}
+                trace(k)["candidate_attempts"].append(attempt)
+                if stats is None:
+                    attempt["status"] = "profile_statistics_invalid"
+                    trace(k, reason="profile_statistics_invalid")
+                    continue
+                if not levels:
+                    attempt["status"] = "profile_levels_missing"
+                    trace(k, reason="profile_levels_missing")
+                    continue
+                if not stats.discriminative_levels_by_entry.get(canonical):
+                    attempt["status"] = "no_discriminative_level"
+                    trace(k, reason="no_discriminative_level")
                     continue
                 jobs.append((s, c, levels))
                 owners.append((k, s, c, canonical, sim, stats))
@@ -353,92 +405,157 @@ def match_spans_batch(items, *, profiles_path=None, index_path=None, embed_fn=No
             results = nli_batch_fn(jobs)
         except Exception:  # certifier failure degrades like embed failure: abstain, never raise
             _warn_exact_only(str(index_path), "nli certifier failed")
+            for key, _, _, _ in unresolved:
+                trace(key, reason="nli_certifier_failure")
+            flush_trace()
             return out
         if not isinstance(results, (list, tuple)) or len(results) != len(owners):
             _warn_exact_only(str(index_path), "nli certifier returned malformed results")
+            for key, _, _, _ in unresolved:
+                trace(key, reason="nli_certifier_malformed")
+            flush_trace()
             return out
         entry_jobs, accepted = [], []
         for owner, approved in zip(owners, results):
             k, surface, context, canonical, sim, stats = owner
             if not isinstance(approved, (list, tuple)):
                 _warn_exact_only(str(index_path), "nli certifier returned malformed results")
+                for key, _, _, _ in unresolved:
+                    trace(key, reason="nli_certifier_malformed")
+                flush_trace()
                 return out
             valid_approved: list[tuple[str, float | None]] = []
             candidate_levels = set(lp.lookup_levels(canonical, k[0], profiles_path) or [])
             for item in approved:
                 if not isinstance(item, (list, tuple)) or len(item) != 2:
                     _warn_exact_only(str(index_path), "nli certifier returned malformed results")
+                    for key, _, _, _ in unresolved:
+                        trace(key, reason="nli_certifier_malformed")
+                    flush_trace()
                     return out
                 level, score = item
                 if not isinstance(level, str) or level not in candidate_levels:
                     _warn_exact_only(str(index_path), "nli certifier returned malformed results")
+                    for key, _, _, _ in unresolved:
+                        trace(key, reason="nli_certifier_malformed")
+                    flush_trace()
                     return out
                 if score is not None:
                     try:
                         score = float(score)
                     except (TypeError, ValueError):
                         _warn_exact_only(str(index_path), "nli certifier returned malformed results")
+                        for key, _, _, _ in unresolved:
+                            trace(key, reason="nli_certifier_malformed")
+                        flush_trace()
                         return out
                     if not math.isfinite(score) or not 0.0 <= score <= 1.0:
                         _warn_exact_only(str(index_path), "nli certifier returned malformed results")
+                        for key, _, _, _ in unresolved:
+                            trace(key, reason="nli_certifier_malformed")
+                        flush_trace()
                         return out
                 valid_approved.append((level, score))
             discriminative = stats.discriminative_levels_by_entry[canonical]
             if valid_approved and any(lp._norm(level) in discriminative for level, _ in valid_approved):
+                trace(k)["candidate_attempts"][-1].update({
+                    "approved_levels": [level for level, _ in valid_approved],
+                    "approved_scores": [score for _, score in valid_approved],
+                })
                 entry_jobs.append((surface, context, canonical, stats.root_level))
                 accepted.append((owner, valid_approved))
+            else:
+                trace(k)["candidate_attempts"][-1]["status"] = "nli_no_approved_discriminative_level"
+                trace(k, reason="nli_no_approved_discriminative_level")
         if not entry_jobs:
             continue
         try:
             entry_scores = entry_certify_batch_fn(entry_jobs)
         except Exception:
             _warn_exact_only(str(index_path), "entry-membership certifier failed")
+            for owner, _ in accepted:
+                trace(owner[0], reason="entry_certifier_failure")
+            flush_trace()
             return out
         if not isinstance(entry_scores, (list, tuple)) or len(entry_scores) != len(accepted):
             _warn_exact_only(str(index_path), "entry-membership certifier returned malformed scores")
+            for owner, _ in accepted:
+                trace(owner[0], reason="entry_certifier_malformed")
+            flush_trace()
             return out
         reverse_jobs = [(owner[1], owner[2], owner[3]) for owner, _ in accepted]
         try:
             reverse_scores = entry_reverse_entailment_batch_fn(reverse_jobs)
         except Exception:
             _warn_exact_only(str(index_path), "reverse-entailment certifier failed")
+            for owner, _ in accepted:
+                trace(owner[0], reason="reverse_entailment_failure")
+            flush_trace()
             return out
         if not isinstance(reverse_scores, (list, tuple)) or len(reverse_scores) != len(accepted):
             _warn_exact_only(str(index_path), "reverse-entailment certifier returned malformed scores")
+            for owner, _ in accepted:
+                trace(owner[0], reason="reverse_entailment_malformed")
+            flush_trace()
             return out
         resolved = set()
         for (owner, approved), scores, reverse_score in zip(accepted, entry_scores, reverse_scores):
             if (not isinstance(scores, (list, tuple)) or len(scores) != 2):
                 _warn_exact_only(str(index_path), "entry-membership certifier returned malformed scores")
+                trace(owner[0], reason="entry_certifier_malformed")
+                flush_trace()
                 return out
             try:
                 entry_score, root_score = (float(scores[0]), float(scores[1]))
             except (TypeError, ValueError):
                 _warn_exact_only(str(index_path), "entry-membership certifier returned malformed scores")
+                trace(owner[0], reason="entry_certifier_malformed")
+                flush_trace()
                 return out
             if (not math.isfinite(entry_score) or not math.isfinite(root_score) or
                     not 0.0 <= entry_score <= 1.0 or not 0.0 <= root_score <= 1.0):
                 _warn_exact_only(str(index_path), "entry-membership certifier returned malformed scores")
+                trace(owner[0], reason="entry_certifier_malformed")
+                flush_trace()
                 return out
             try:
                 reverse_score = float(reverse_score)
             except (TypeError, ValueError):
                 _warn_exact_only(str(index_path), "reverse-entailment certifier returned malformed scores")
+                trace(owner[0], reason="reverse_entailment_malformed")
+                flush_trace()
                 return out
             if not math.isfinite(reverse_score) or not 0.0 <= reverse_score <= 1.0:
                 _warn_exact_only(str(index_path), "reverse-entailment certifier returned malformed scores")
+                trace(owner[0], reason="reverse_entailment_malformed")
+                flush_trace()
                 return out
-            if entry_score < NLI_THRESH or entry_score - root_score < ENTRY_ROOT_MARGIN:
+            attempt = trace(owner[0])["candidate_attempts"][-1]
+            attempt.update({"entry_score": entry_score, "root_score": root_score,
+                            "reverse_entailment_score": reverse_score})
+            if entry_score < NLI_THRESH:
+                attempt["status"] = "entry_membership_rejected"
+                trace(owner[0], reason="entry_membership_rejected")
+                continue
+            if entry_score - root_score < ENTRY_ROOT_MARGIN:
+                attempt["status"] = "entry_margin_rejected"
+                trace(owner[0], reason="entry_margin_rejected")
                 continue
             if reverse_score >= NLI_THRESH:
+                attempt["status"] = "reverse_entailment_veto"
+                trace(owner[0], reason="reverse_entailment_veto")
                 continue
             k, _, _, canonical, sim, _ = owner
             nli = None if any(score is None for _, score in approved) else max(score for _, score in approved)
             out[k] = MatchResult([level for level, _ in approved], "semantic", False, sim, canonical, nli=nli)
+            attempt["status"] = "accepted"
+            trace(k, outcome="semantic", reason="semantic_certified", entry=canonical,
+                  levels=[level for level, _ in approved], similarity=round(sim, 6), nli=nli)
             resolved.add(k)
         unresolved = [u for u in unresolved if u[0] not in resolved]
         if not unresolved:
             break
+    flush_trace()
     return out
 
 

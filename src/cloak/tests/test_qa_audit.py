@@ -129,6 +129,127 @@ def test_environment_audit_distinguishes_unattributed_walk_drops_from_match_abst
     }
 
 
+def test_legacy_environment_audit_logs_cross_profile_ladders_and_self_type_scores(tmp_path):
+    document = "The patient has type 2 diabetes. The diabetes is monitored."
+    specific = "type 2 diabetes"
+    general = "diabetes"
+    specific_start = document.index(specific)
+    general_start = document.rindex(general)
+    arms = {
+        "aci": {
+            "aci/D1": {
+                "tau_walk": [document, [
+                    {
+                        "surface": specific, "type": "health-condition",
+                        "start": specific_start, "end": specific_start + len(specific),
+                        "action": "placeholder", "replacement": "<HEALTH_CONDITION_1>",
+                        "lattice": ["diabetes mellitus", "medical condition"],
+                        "match": {"entry": "type 2 diabetes"},
+                        "profile_match": {"outcome": "exact", "reason": "exact_entry"},
+                    },
+                    {
+                        "surface": general, "type": "health-condition",
+                        "start": general_start, "end": general_start + len(general),
+                        "action": "placeholder", "replacement": "<HEALTH_CONDITION_2>",
+                        "lattice": ["glucose metabolism disease", "medical condition"],
+                        "match": {"entry": "diabetes"},
+                        "profile_match": {"outcome": "exact", "reason": "exact_entry"},
+                    },
+                ]],
+                "detector_diagnostics": {"accepted": [], "post_detection_rejections": []},
+            },
+        },
+    }
+    profiles = {
+        "schema_version": 1, "created": "test", "sources": {}, "profiles": {
+            "health-condition": {
+                "type 2 diabetes": {
+                    "aliases": [], "count": 10.0,
+                    "levels": ["diabetes mellitus", "medical condition"],
+                    "level_counts": {"diabetes mellitus": 1000.0, "medical condition": 100000.0},
+                },
+                "diabetes": {
+                    "aliases": [], "count": 20.0,
+                    "levels": ["glucose metabolism disease", "medical condition"],
+                    "level_counts": {"glucose metabolism disease": 500.0, "medical condition": 100000.0},
+                },
+            },
+        },
+    }
+    profile_path = tmp_path / "profiles.json"
+    profile_path.write_text(json.dumps(profiles))
+
+    def fake_embed(texts):
+        assert texts == [specific, general]
+        return [[1.0, 0.0], [0.9, 0.1]]
+
+    def pair_nli(jobs):
+        return [[(candidates[0], 0.9)] if surface == specific else []
+                for surface, _context, candidates in jobs]
+
+    def self_type_nli(jobs):
+        return [[(candidates[0], 0.2)] for _surface, _context, candidates in jobs]
+
+    audit = build_legacy_environment_audit(
+        arms,
+        source_documents={"aci/D1": document},
+        profiles_path=profile_path,
+        semantic_embed_fn=fake_embed,
+        pair_nli_batch_fn=pair_nli,
+        self_type_nli_batch_fn=self_type_nli,
+    )
+    ladder = next(observation for observation in audit["observations"]
+                  if observation["code"] == "controlled_ladder_metrics"
+                  and observation["entity_refs"]["surface"] == specific)
+    assert ladder["evidence"]["first_level_log10_jump"] == 2.0
+    assert ladder["evidence"]["count_monotone"] is True
+    assert "controlled_ladder_issue" not in {
+        event["code"] for event in audit["events"]
+    }
+    candidate = next(event for event in audit["events"]
+                     if event["code"] == "cross_profile_coreference_candidate")
+    assert candidate["evidence"]["candidate_kind"] == "specific_to_general_candidate"
+    assert candidate["entity_refs"]["left_surface"] == specific
+    self_type = [event for event in audit["events"]
+                 if event["code"] == "controlled_self_type_diagnostic"]
+    assert len(self_type) == 2
+    assert {event["evidence"]["self_type_score"] for event in self_type} == {0.2}
+
+
+def test_ladder_metrics_become_review_events_only_for_structural_failures(tmp_path):
+    profiles = {
+        "schema_version": 1, "created": "test", "sources": {}, "profiles": {
+            "health-condition": {
+                "bad ladder": {
+                    "aliases": [], "count": 2.0,
+                    "levels": ["narrow condition", "broad condition"],
+                    "level_counts": {"narrow condition": 100.0, "broad condition": 10.0},
+                },
+            },
+        },
+    }
+    profile_path = tmp_path / "profiles.json"
+    profile_path.write_text(json.dumps(profiles))
+    arms = {
+        "aci": {
+            "aci/D1": {
+                "tau_walk": ["Bad ladder.", [{
+                    "surface": "Bad ladder", "type": "health-condition", "start": 0, "end": 10,
+                    "lattice": ["narrow condition", "broad condition"],
+                    "match": {"entry": "bad ladder"},
+                    "profile_match": {"outcome": "exact", "reason": "exact_entry"},
+                }]],
+                "detector_diagnostics": {"accepted": [], "post_detection_rejections": []},
+            },
+        },
+    }
+
+    audit = build_legacy_environment_audit(arms, profiles_path=profile_path)
+    assert len(audit["observations"]) == 1
+    issue = next(event for event in audit["events"] if event["code"] == "controlled_ladder_issue")
+    assert issue["evidence"]["issues"] == ["nonmonotone_level_counts"]
+
+
 def test_qa_audit_normalizes_rejections_and_soft_cross_clause_risk(tmp_path):
     environment_audit = build_legacy_environment_audit(_arms())
     artifact = {
@@ -172,7 +293,11 @@ def test_qa_audit_normalizes_rejections_and_soft_cross_clause_risk(tmp_path):
         audit, dotted_output,
     )
     assert json.loads(json_path.read_text())["audit_hash"] == audit["audit_hash"]
-    assert len(jsonl_path.read_text().splitlines()) == len(audit["events"])
+    jsonl_records = [json.loads(line) for line in jsonl_path.read_text().splitlines()]
+    assert len(jsonl_records) == len(audit["events"]) + len(audit["observations"])
+    assert {record["record_kind"] for record in jsonl_records} == {
+        "event", *( ["observation"] if audit["observations"] else [] )
+    }
     assert "soft_cross_clause_cap_exceeded" in markdown_path.read_text()
     assert dotted_json_path.name == "artifact.arms.environment-audit.json"
     assert dotted_jsonl_path.name == "artifact.arms.environment-audit.jsonl"

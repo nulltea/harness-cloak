@@ -1,0 +1,56 @@
+{
+  "n_docs": 15,
+  "doc_ids": [
+    "aci/D2N050",
+    "aci/D2N054",
+    "aci/D2N006",
+    "aci/D2N034",
+    "aci/D2N062",
+    "aci/D2N033",
+    "aci/D2N032",
+    "aci/D2N026",
+    "aci/D2N059",
+    "aci/D2N051",
+    "aci/D2N066",
+    "aci/D2N020",
+    "aci/D2N031",
+    "aci/D2N023",
+    "aci/D2N038"
+  ],
+  "type_totals": {
+    "health-condition": 161,
+    "DATETIME": 142,
+    "medical-procedure": 95,
+    "drug": 87,
+    "PERSON": 70,
+    "profession": 52,
+    "CODE": 29,
+    "QUANTITY": 25,
+    "organization-medical-facility": 7,
+    "gender": 7,
+    "LOC": 4,
+    "marital-status": 3,
+    "age": 2,
+    "ethnicity": 1,
+    "religion": 1
+  },
+  "extra_type_hits": {
+    "profession": 52,
+    "ethnicity": 1,
+    "religion": 1
+  },
+  "docs_with_extra_and_generalizable": [
+    "aci/D2N050",
+    "aci/D2N054",
+    "aci/D2N034",
+    "aci/D2N033",
+    "aci/D2N026",
+    "aci/D2N059",
+    "aci/D2N051",
+    "aci/D2N066",
+    "aci/D2N020",
+    "aci/D2N031",
+    "aci/D2N023",
+    "aci/D2N038"
+  ]
+}

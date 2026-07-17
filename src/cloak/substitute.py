@@ -239,7 +239,8 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
     # (docs/specs/substitutor-profile-match-retrieve-verify.md, Efficiency)
     items = [(s.text, s.type, _sentence_around(text, s.start, s.end))
              for s in spans if s.type in PROFILE_BACKED_TYPES]
-    proposals = match_spans_batch(items) if items else {}
+    profile_match_traces: dict[tuple[str, str], dict] = {}
+    proposals = match_spans_batch(items, trace_out=profile_match_traces) if items else {}
     counters: dict[str, int] = {}
     chain_ph: dict[int, str] = {}
     used: dict[str, str] = {}          # replacement canon -> surface canon (injectivity of R)
@@ -295,6 +296,14 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
             k = span_key(s.text, s.type)
             prop = proposals[k] if k in proposals else NO_PREPASS
             lattice = lattice_for(s.text, s.type, sent, proposal=prop)
+            if s.type in PROFILE_BACKED_TYPES:
+                entry["profile_match"] = dict(profile_match_traces.get(k, {
+                    "runtime_type": s.type,
+                    "surface_key": k[1],
+                    "outcome": "abstained",
+                    "reason": "trace_unavailable",
+                    "candidate_attempts": [],
+                }))
             # Is this a controllable entity at all? Profiled = it has a lattice-profile entry
             # OR the prepass produced a real (non-placeholder) generalization for it. An
             # UNPROFILED detection (neither) is detector-only evidence -- keep it EXACT rather
@@ -357,6 +366,7 @@ def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, li
                              risk=round(risk, 4))
             by_surface[skey] = {k2: entry[k2] for k2 in
                                 ("action", "replacement", "risk", "lattice", "match",
+                                 "profile_match",
                                  "uncontrolled")
                                 if k2 in entry}
         out = out[:s.start] + entry["replacement"] + out[s.end:]

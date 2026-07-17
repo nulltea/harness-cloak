@@ -96,6 +96,7 @@ def build_from_files(
     environment = json.loads(Path(args.env).read_text())
     arms = json.loads(Path(args.arms).read_text())
     arms_meta = dict(arms.pop("_meta", {}) or {})
+    environment_audit = dict(arms_meta.get("environment_audit", {}) or {})
     detector_pin = dict(arms_meta.get("detector", {}) or {})
     rows = _source_rows(args.corpus, args.doc_id)
     if any(not doc_id.startswith("aci/") for doc_id in rows):

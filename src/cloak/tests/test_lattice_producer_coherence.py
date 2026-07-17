@@ -1,4 +1,8 @@
-from cloak.lattice_producer.coherence import normalize_coherence, normalize_runtime_type
+from cloak.lattice_producer.coherence import (
+    apply_runtime_type_root_anchor,
+    normalize_coherence,
+    normalize_runtime_type,
+)
 
 
 def _row(levels, counts, groundings=None, count=None):
@@ -183,3 +187,35 @@ def test_normalize_coherence_covers_every_runtime_type_in_artifact() -> None:
     # "medication" is a real-world anchor (11,000) -- it overrides the fabricated 100.0, which
     # is exactly the point of anchoring, not a bug in this assertion's original expectation.
     assert artifact["profiles"]["drug"]["aspirin"]["level_counts"]["medication"] == 11000.0
+
+
+def test_medical_procedure_normalization_anchors_and_completes_type_root() -> None:
+    entries = {
+        "abdominal exam": _row(
+            ["abdominal physical examination", "physical examination", "medical procedure"],
+            {
+                "abdominal physical examination": 1.0,
+                "physical examination": 86.0,
+                "medical procedure": 86.0,
+            },
+        ),
+        "autoimmune panel": _row(
+            ["autoimmune serology panel", "immunology laboratory panel"],
+            {
+                "autoimmune serology panel": 1.0,
+                "immunology laboratory panel": 86.0,
+            },
+        ),
+    }
+
+    apply_runtime_type_root_anchor(entries, "medical-procedure")
+
+    root_counts = {row["level_counts"]["medical procedure"] for row in entries.values()}
+    assert len(root_counts) == 1
+    assert next(iter(root_counts)) > 86.0
+    assert entries["abdominal exam"]["level_counts"]["physical examination"] == 86.0
+    assert entries["autoimmune panel"]["level_counts"]["immunology laboratory panel"] == 86.0
+    for row in entries.values():
+        assert row["levels"][-1] == "medical procedure"
+        assert row["level_grounding"]["medical procedure"]["source_family"] == "icd10pcs-universe"
+        assert row["level_grounding"]["medical procedure"]["count_basis"] == "real-world-reference-estimate"

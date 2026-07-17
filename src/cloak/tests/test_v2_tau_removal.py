@@ -151,7 +151,7 @@ def test_v2_freeze_render_and_audit_are_invariant_to_legacy_tau_policy():
 
 def test_legacy_substitute_still_honors_tau(monkeypatch):
     span = Span(0, 7, "Aspirin", "drug", 0.9, "test")
-    monkeypatch.setattr("cloak.substitute.match_spans_batch", lambda items: {})
+    monkeypatch.setattr("cloak.substitute.match_spans_batch", lambda items, **_kwargs: {})
     monkeypatch.setattr("cloak.substitute.lookup_entry", lambda *args: object())
     monkeypatch.setattr(
         "cloak.substitute.lattice_for",

@@ -149,6 +149,55 @@ and is **stable** (a completed run's version never renumbers, unlike plan/phase 
 in a filename, cross-reference, or discussion is correct. This exception is narrow: it does **not** license
 plan/phase/requirement/arm identifiers (`P7`, `D1`, `Arm B`) anywhere.
 
+## Picking the right models for subagent driven development and review
+
+Choose by the task's judgment and integration risk, not by a global intelligence ranking. The entries below are defaults; escalate after evidence that the assigned model is not meeting the bar. Do not downgrade a task merely to save cost.
+
+| Model | Thinking effort | Default use | Do not use for |
+|---|---|---|---|
+| GPT-5.6 Sol | High | Architecture, research/design decisions, and critical whole-change reviews | Any implementation |
+| GPT-5.6 Sol | Medium | Critical implementation with difficult integration, correctness, or security/privacy judgment | Straightforward changes with a complete specification |
+| GPT-5.6 Terra | High | Most implementation work: multi-file features, debugging, and integrations | Purely mechanical edits |
+| GPT-5.6 Terra | Medium | Clear-spec mechanical edits, focused refactors, and small migrations | Work requiring substantial design or review judgment |
+| GPT-5.5 | High | Mechanical edits and bounded, self-contained Codex CLI work | Architecture, critical review, or ambiguous implementation |
+| `claude-opus-4-8` via `$delegate-to-claude` | High | Claude-side implementation or review when its judgment is useful, especially after a Codex result needs an independent view | Mechanical work that Terra Medium or GPT-5.5 High can complete directly |
+| `claude-fable-5` via `$delegate-to-claude` | High | Exceptional architecture, research, or implementation judgment after Sol/Opus has proved insufficient | Routine implementation, default review, or bulk work |
+
+How to apply:
+
+- **Never request thinking effort above `High`, and never enable fast mode (service_tier: priority)**.
+- Select effort explicitly. Default to GPT-5.6 Terra High for implementation; use Terra Medium or GPT-5.5 High only when the change is genuinely mechanical and fully specified.
+- Reserve GPT-5.6 Sol High for critical reviews only. Use Sol Medium for critical implementation rather than treating Sol High as the general escalation tier.
+- Use `$superpowers:subagent-driven-development` for large implementation tasks. Assign an explicit model and effort to every subagent according to this table; use its task-level review gates rather than parallel ad-hoc implementers.
+- For Claude review or implementation work, use `$delegate-to-claude` with the local `claude-code-mcp` server. Specify the Claude model, keep the task bounded, allow only the permissions needed for its mode, and review the resulting diff before accepting it.
+- A model that misses requirements, produces weak reasoning, or needs repeated correction should be escalated and its output redone. Quality and verified results outrank cost.
+
+## Completion claims for model/evaluation pipelines
+
+Do not claim a component is implemented from interfaces, schemas, mocks, or
+synthetic fixtures alone.
+
+Before claiming completion:
+1. Run the agreed representative sample end to end.
+2. Inspect and report the actual generated artifacts.
+3. Show counts and examples for every required output family.
+4. Distinguish implemented, stubbed, rejected, and unvalidated behavior.
+5. Treat generations errors or zero useful accepted outputs as an implementation failure, even if
+   schemas and tests pass.
+
+### Real-data validation gate
+
+Synthetic tests verify implementation consistency, not design validity.
+
+For ML, reward, evaluation, and data-generation components:
+
+- Define a representative real-data case and falsifiable success criteria before implementation.
+- Run the smallest end-to-end real-data slice before expanding the implementation.
+- Test each component on representative successful and failure cases, and verify that it accepts or rewards the successful case while rejecting or penalizing the failure case.
+- Expected outputs must not be produced by the same templates, prompts, or assumptions being evaluated.
+- Empty, trivial, circular, or unusable real outputs mean the component is incomplete, regardless of passing tests.
+- Never claim completion without a successful real-data run. If an external call requires approval, report the component as unvalidated until approved and run.
+
 ## Delegation means one implementation handoff
 
 When I say **delegate** a development task to a named model and effort, hand the full requested

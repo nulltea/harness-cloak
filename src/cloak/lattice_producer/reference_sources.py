@@ -319,6 +319,42 @@ def load_icd10pcs_index(zip_path: str = str(DEFAULT_ICD10PCS_ZIP)) -> dict[str, 
 
 
 @lru_cache(maxsize=4)
+def procedure_universe_root_anchor(zip_path: str = str(DEFAULT_ICD10PCS_ZIP)) -> dict[str, Any] | None:
+    """Return the source-derived broadest procedure rung for coherence normalization.
+
+    ICD-10-PCS does not cover every free-text clinical procedure, so this is a transparent
+    reference magnitude rather than a certifying membership claim for an individual profile.
+    It nevertheless prevents a procedure root from collapsing to the small current-run
+    membership count that is appropriate only for ungrounded intermediate labels.
+    """
+    codes = {
+        row.code
+        for row in _parse_icd10pcs_rows(zip_path)
+        if not row.is_header and len(row.code) == 7
+    }
+    if not codes:
+        return None
+    return {
+        "level": "medical procedure",
+        "count": float(len(codes)),
+        "source_family": "icd10pcs-universe",
+        "selector": "icd10pcs.billable_7_character_code",
+        "count_basis": "real-world-reference-estimate",
+        "count_evidence": (
+            "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a "
+            "broad reference magnitude; this does not certify individual free-text profiles"
+        ),
+    }
+
+
+def runtime_type_root_anchor(runtime_type: str) -> dict[str, Any] | None:
+    """Return an optional source-derived global root for a runtime type."""
+    if str(runtime_type or "") == "medical-procedure":
+        return procedure_universe_root_anchor()
+    return None
+
+
+@lru_cache(maxsize=4)
 def _icd10pcs_description_index(zip_path: str = str(DEFAULT_ICD10PCS_ZIP)) -> dict[str, str]:
     """normalized short/long description (of a full, non-header code) -> that 7-char code.
 

@@ -98,15 +98,25 @@ def _whole_word_contains(left: str, right: str) -> bool:
     return bool(left_tokens and right_tokens and (left_tokens <= right_tokens or right_tokens <= left_tokens))
 
 
-def _finalize(version: str, events: list[dict[str, object]], *, metadata: Mapping[str, object] | None = None) -> dict:
+def _finalize(
+    version: str,
+    events: list[dict[str, object]],
+    *,
+    observations: list[dict[str, object]] | None = None,
+    metadata: Mapping[str, object] | None = None,
+) -> dict:
     events = sorted(events, key=lambda row: (
         str(row["doc_id"]), str(row["stage"]), str(row["code"]), str(row["event_id"]),
+    ))
+    observations = sorted(observations or [], key=lambda row: (
+        str(row["doc_id"]), str(row["stage"]), str(row["code"]), str(row["observation_id"]),
     ))
     summary_by_code = dict(sorted(Counter(str(row["code"]) for row in events).items()))
     summary_by_action = dict(sorted(Counter(str(row["recommended_action"]) for row in events).items()))
     payload = {
         "version": version,
         "events": events,
+        "observations": observations,
         "summary_by_code": summary_by_code,
         "summary_by_action": summary_by_action,
         "metadata": dict(metadata or {}),
@@ -185,6 +195,44 @@ def _ladder_diagnostic(row: Mapping[str, object], profiles: Mapping[str, object]
             if counts and counts[-1] is not None and profile_count is not None else None
         ),
     }
+
+
+def _ladder_issue_codes(ladder: Mapping[str, object]) -> list[str]:
+    """Return only structural ladder defects; low entry support is observational."""
+    levels = ladder.get("levels")
+    counts = ladder.get("level_counts")
+    if not isinstance(levels, list) or len(levels) < 2:
+        return ["fewer_than_two_real_levels"]
+    if not ladder.get("level_count_complete"):
+        return ["missing_or_invalid_level_count"]
+    if not ladder.get("count_monotone"):
+        return ["nonmonotone_level_counts"]
+    try:
+        profile_count = float(ladder.get("profile_count"))
+        coarsest_count = float(counts[-1]) if isinstance(counts, list) else float("nan")
+    except (TypeError, ValueError, IndexError):
+        return ["missing_or_invalid_profile_count"]
+    if not math.isfinite(profile_count) or profile_count <= 0.0:
+        return ["missing_or_invalid_profile_count"]
+    if not math.isfinite(coarsest_count) or coarsest_count <= profile_count:
+        return ["no_anonymity_expansion"]
+    return []
+
+
+def _ladder_observation(
+    *, doc_id: str, row: Mapping[str, object], ladder: Mapping[str, object]
+) -> dict[str, object]:
+    payload = {
+        "doc_id": doc_id,
+        "stage": "freeze",
+        "code": "controlled_ladder_metrics",
+        "entity_refs": {
+            "surface": row.get("surface"), "runtime_type": row.get("type"),
+            "entry": ladder.get("entry"),
+        },
+        "evidence": dict(ladder),
+    }
+    return {"observation_id": _stable_hash(payload), **payload}
 
 
 def _semantic_pair_candidates(rows: list[dict[str, object]], *, embed_fn=None) -> tuple[list[dict], str | None]:
@@ -382,6 +430,7 @@ def build_environment_audit(
             }
         arms = v2_arms
     events: list[dict[str, object]] = []
+    observations: list[dict[str, object]] = []
     profile_path = Path(profiles_path or lp.DEFAULT_PROFILE_PATH)
     try:
         profiles = lp.load_profiles(profile_path)
@@ -508,13 +557,19 @@ def build_environment_audit(
             source_document = (source_documents or {}).get(stable_doc_id)
             for row in profile_decisions.values():
                 ladder = _ladder_diagnostic(row, profiles)
-                events.append(_event(
-                    doc_id=stable_doc_id, stage="freeze", code="controlled_ladder_diagnostic",
-                    severity="info", fix_class="investigate",
-                    entity_refs={"surface": row.get("surface"), "runtime_type": row.get("type"),
-                                 "entry": ladder.get("entry")},
-                    evidence=ladder, recommended_action="investigate",
+                observations.append(_ladder_observation(
+                    doc_id=stable_doc_id, row=row, ladder=ladder,
                 ))
+                issue_codes = _ladder_issue_codes(ladder)
+                if issue_codes:
+                    events.append(_event(
+                        doc_id=stable_doc_id, stage="freeze", code="controlled_ladder_issue",
+                        severity="warn", fix_class="data_lattice",
+                        entity_refs={"surface": row.get("surface"), "runtime_type": row.get("type"),
+                                     "entry": ladder.get("entry")},
+                        evidence={**ladder, "issues": issue_codes},
+                        recommended_action="investigate",
+                    ))
                 if isinstance(source_document, str):
                     context = _source_excerpt(source_document, row.get("start"), row.get("end"))
                     match = row.get("match") if isinstance(row.get("match"), Mapping) else {}
@@ -614,13 +669,18 @@ def build_environment_audit(
                           "source_excerpt": score.get("context")},
                 recommended_action="investigate",
             ))
-    return _finalize(ENVIRONMENT_AUDIT_VERSION, _coalesce_occurrence_events(events), metadata={
+    return _finalize(
+        ENVIRONMENT_AUDIT_VERSION,
+        _coalesce_occurrence_events(events),
+        observations=observations,
+        metadata={
         "arms_meta": dict(arms.get("_meta") or {}) if isinstance(arms.get("_meta"), Mapping) else {},
         "environment_hash": v2_environment_hash,
         "profiles_path": str(profile_path),
         "nli_diagnostics_enabled": source_documents is not None,
         **diagnostics_metadata,
-    })
+        },
+    )
 
 
 def build_legacy_environment_audit(arms: Mapping[str, object], **kwargs) -> dict:
@@ -767,6 +827,7 @@ def audit_markdown(audit: Mapping[str, object]) -> str:
         f"# {audit.get('version', 'qa-audit')}", "",
         f"- Audit hash: `{audit.get('audit_hash', '')}`",
         f"- Events: `{len(audit.get('events') or [])}`", "",
+        f"- Passive observations: `{len(audit.get('observations') or [])}`", "",
         "## Summary", "",
     ]
     for code, count in (audit.get("summary_by_code") or {}).items():
@@ -789,7 +850,7 @@ def audit_markdown(audit: Mapping[str, object]) -> str:
 
 
 def write_audit_sidecars(audit: Mapping[str, object], output: Path) -> tuple[Path, Path, Path]:
-    """Write full JSON, one-event-per-line JSONL, and a readable Markdown report."""
+    """Write full JSON, typed event/observation JSONL, and a readable Markdown report."""
     # ``output`` is a logical report stem and may itself contain dot-separated
     # labels (for example ``artifact.arms.environment-audit``). Appending avoids
     # replacing the source artifact's suffix and accidentally overwriting it.
@@ -797,9 +858,14 @@ def write_audit_sidecars(audit: Mapping[str, object], output: Path) -> tuple[Pat
     jsonl_path = output.with_name(output.name + ".jsonl")
     markdown_path = output.with_name(output.name + ".md")
     json_path.write_text(json.dumps(audit, indent=1, default=str))
+    jsonl_records = (
+        [{"record_kind": "event", **event} for event in audit.get("events") or []]
+        + [{"record_kind": "observation", **observation}
+           for observation in audit.get("observations") or []]
+    )
     jsonl_path.write_text("".join(
-        json.dumps(event, sort_keys=True, default=str) + "\n"
-        for event in audit.get("events") or []
+        json.dumps(record, sort_keys=True, default=str) + "\n"
+        for record in jsonl_records
     ))
     markdown_path.write_text(audit_markdown(audit))
     return json_path, jsonl_path, markdown_path

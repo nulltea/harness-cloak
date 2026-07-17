@@ -10464,37 +10464,41 @@
         ]
       },
       "acetaminophen": {
-        "aliases": [],
-        "count": 150.0,
+        "aliases": [
+          "tylenol",
+          "paracetamol",
+          "APAP"
+        ],
+        "count": 12.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "analgesic": 150.0,
-          "medication": 10999.97
+          "non-opioid analgesic": 60,
+          "analgesic": 150.0
         },
         "level_grounding": {
-          "analgesic": {
+          "non-opioid analgesic": {
             "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "FDA Orange Book",
+            "count_evidence": "'non-opioid analgesic' set from ATC class N02B (other analgesics and antipyretics: paracetamol N02BE, salicylic acid derivatives N02BA, pyrazolones N02BB, anilides, combinations), which contains on the order of 40-70 distinct active-substance/combination entries. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "WHO ATC/DDD Index, class N02B",
+            "selector": "Belongs to the non-opioid analgesic/antipyretic category (ATC N02B) in the canonical vocabulary.",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "medication": {
+          "analgesic": {
             "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "count_evidence": "'analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying. Value held at 150 to match the shared anchor used in the 'vicodin' entry — confirm this is the intended fixed anchor across all analgesic-terminating entries.",
             "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
+            "selector": "analgesic",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
         },
         "levels": [
-          "analgesic",
-          "medication"
+          "non-opioid analgesic",
+          "analgesic"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:drug:acetaminophen"
+          "producer:drug-health-procedure-nemotron-3-super:drug:tylenol"
         ]
       },
       "achillea millefolium whole": {
@@ -22377,25 +22381,33 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:abacavir allergy"
         ]
       },
-      "abdomen": {
+      "abdominal distension": {
         "aliases": [
-          "belly",
-          "stomach area",
-          "ventral cavity",
-          "midsection"
+          "abdominal bloating",
+          "distended abdomen",
+          "abdominal swelling"
         ],
         "count": 400.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "gastrointestinal condition": 400.0,
+          "gastrointestinal symptom": 120,
+          "gastrointestinal condition": 900,
           "medical condition": 500000.0
         },
         "level_grounding": {
+          "gastrointestinal symptom": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'gastrointestinal symptom' set from ICD-10 Chapter XVIII (R10-R19, symptoms/signs involving the digestive system and abdomen), which contains on the order of 80-150 distinct coded symptom entities (e.g. abdominal pain, distension, dyspepsia, nausea, GI hemorrhage signs, bowel habit changes). Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 Chapter XVIII, R10-R19",
+            "selector": "Belongs to the digestive-system symptom/sign category (ICD-10 R10-R19) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
           "gastrointestinal condition": {
             "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'gastrointestinal condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
+            "count_evidence": "'gastrointestinal condition' set from ICD-10 Chapter XI (K00-K95, diseases of the digestive system), widened to include the symptom-level subset above; ICD-10-CM lists roughly 700-900 distinct three/four-character category-level GI diagnoses across K00-K95 plus R10-R19. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 Chapter XI (K00-K95) + Chapter XVIII (R10-R19)",
+            "selector": "Belongs to the gastrointestinal disease/condition category (ICD-10 K00-K95, extended to include related symptoms) in the canonical vocabulary.",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
@@ -22409,11 +22421,12 @@
           }
         },
         "levels": [
+          "gastrointestinal symptom",
           "gastrointestinal condition",
           "medical condition"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:abdomen"
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:abdominal-distension"
         ]
       },
       "abdominal ct": {
@@ -27073,10 +27086,18 @@
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "medical condition": 500000.0,
-          "physiological state": 1.0
+          "general/systemic symptom": 150,
+          "medical condition": 500000.0
         },
         "level_grounding": {
+          "general/systemic symptom": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'general/systemic symptom' set from ICD-10 Chapter XVIII, general symptoms and signs (R50-R69: fever, malaise/fatigue, pain not elsewhere classified, edema, syncope, etc.), which contains on the order of 100-200 distinct coded entities. Body aches/generalized myalgia falls here (R52, M79.1) as an ill-defined systemic symptom rather than a diagnosed disease. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 Chapter XVIII, R50-R69",
+            "selector": "Belongs to the general/systemic symptom category (ICD-10 R50-R69) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
           "medical condition": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
@@ -27084,18 +27105,10 @@
             "selector": "medical condition",
             "source_family": "model-proposed",
             "status": "model-proposed"
-          },
-          "physiological state": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'physiological state' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "physiological state",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
           }
         },
         "levels": [
-          "physiological state",
+          "general/systemic symptom",
           "medical condition"
         ],
         "source_ids": [
@@ -29112,29 +29125,49 @@
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "chronic disease": 100.0,
-          "lumbar pain disorder": 1.0
+          "lumbar pain disorder": 1.0,
+          "spinal pain disorder (dorsalgia)": 12,
+          "chronic pain disorder": 90,
+          "chronic disease": 100.0
         },
         "level_grounding": {
-          "chronic disease": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'chronic disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
+          "lumbar pain disorder": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'lumbar pain disorder' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying. FLAGGED: size-1 anonymity set for a very common clinical complaint — strongly suggests other chronic-back-pain-related surface forms in the corpus are failing to chain through this node, rather than a genuine singleton. Recommend prioritizing for upstream investigation.",
+            "member_set_ref": "ICD-10 M54.5 (low back pain)",
+            "selector": "Belongs to the lumbar-specific chronic pain subcategory (ICD-10 M54.5) in the canonical vocabulary.",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "lumbar pain disorder": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'lumbar pain disorder' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+          "spinal pain disorder (dorsalgia)": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'spinal pain disorder' set from ICD-10 category M54 (dorsalgia), which contains ~9-12 distinct coded subcategories spanning cervicalgia, sciatica, lumbago with sciatica, low back pain, thoracic spine pain, and other/unspecified dorsalgia. This is the general 'back pain' scope — note the entry's own aliases (e.g. 'chronic dorsalgia', 'long-term back pain') indicate the intended entity is this general category, not the lumbar-only subset. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 M54",
+            "selector": "Belongs to the general spinal pain/dorsalgia category (ICD-10 M54) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "chronic pain disorder": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'chronic pain disorder' set from ICD-10 category G89 (pain not elsewhere classified, chronic pain codes) plus chronic musculoskeletal pain categories, on the order of 70-100 distinct coded chronic pain entities across body regions. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 G89 + chronic musculoskeletal pain codes",
+            "selector": "Belongs to the chronic pain disorder category (spanning ICD-10 G89 and related chronic musculoskeletal pain codes) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "chronic disease": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'chronic disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying. FLAGGED: value of 100 appears too low for a top-level 'chronic disease' anchor — real-world chronic disease categories (diabetes, cardiovascular disease, COPD, arthritis, CKD, autoimmune conditions, most cancers, etc.) plausibly number in the thousands. Left unchanged pending confirmation this is an intentional shared anchor rather than an uncalibrated placeholder.",
             "member_set_ref": null,
-            "selector": "ICD-10 Chapter XIII (M54)",
+            "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
         },
         "levels": [
           "lumbar pain disorder",
+          "spinal pain disorder (dorsalgia)",
+          "chronic pain disorder",
           "chronic disease"
         ],
         "source_ids": [
@@ -30891,35 +30924,55 @@
           "terminal phalanx break",
           "finger or toe bone fracture",
           "distal digit fracture",
-          "distal phalanx fracture",
           "tuft fracture",
           "fracture of distal phalanx"
         ],
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "disease of anatomical entity": 9162.0,
-          "phalangeal fracture": 1.0
+          "phalangeal fracture": 1.0,
+          "hand/foot bone fracture": 40,
+          "fracture, unspecified site": 300,
+          "disease of anatomical entity": 9162.0
         },
         "level_grounding": {
-          "disease of anatomical entity": {
-            "count_evidence": "derived from canonical vocabulary slice count for disease of anatomical entity",
+          "phalangeal fracture": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'phalangeal fracture' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying. FLAGGED: size-1 anonymity set — check whether other phalanx-fracture variants (proximal, middle, hand vs. foot) are failing to chain through this node upstream.",
             "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
+            "selector": "phalangeal fracture",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "phalangeal fracture": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'phalangeal fracture' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+          "hand/foot bone fracture": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'hand/foot bone fracture' set from ICD-10 categories S62 (fracture at wrist/hand level) and S92 (fracture of foot, except ankle), which together contain on the order of 30-50 distinct four/five-character coded fracture entities across phalanges, metacarpals/metatarsals, carpals/tarsals. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 S62, S92",
+            "selector": "Belongs to the hand/foot skeletal fracture category (ICD-10 S62/S92) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "fracture, unspecified site": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'fracture, unspecified site' set from ICD-10 Chapter XIX fracture categories (S02, S12, S22, S32, S42, S52, S62, S72, S82, S92, T02, T08-T14), which together contain on the order of 250-350 distinct coded fracture site/type entities. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 Chapter XIX, fracture (S/T) codes",
+            "selector": "Belongs to the general fracture category (ICD-10 Chapter XIX, S/T fracture codes) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "disease of anatomical entity": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'disease of anatomical entity' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying. NOTE: original grounding for this node was missing 'count_basis' and used non-standard evidence wording and a generic selector — corrected here to match the schema used elsewhere; verify against other entries sharing this top-level node.",
             "member_set_ref": null,
-            "selector": "orthopedic literature survey",
+            "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
         },
         "levels": [
           "phalangeal fracture",
+          "hand/foot bone fracture",
+          "fracture, unspecified site",
           "disease of anatomical entity"
         ],
         "source_ids": [
@@ -33669,50 +33722,6 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:gynecomastia"
         ]
       },
-      "hair growth": {
-        "aliases": [
-          "hypertrichosis",
-          "hirsutism",
-          "follicular proliferation",
-          "excessive hair growth",
-          "physiological hair growth"
-        ],
-        "count": 38.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "disease of anatomical entity": 9162.0,
-          "hair disease": 38.0,
-          "integumentary system disease": 644.0
-        },
-        "level_grounding": {
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "hair disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:421",
-            "selector": "doid.is_a_descendants(DOID:421)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "integumentary system disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:16",
-            "selector": "doid.is_a_descendants(DOID:16)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "hair disease",
-          "integumentary system disease",
-          "disease of anatomical entity"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:hair growth"
-        ]
-      },
       "hallux rigidus": {
         "aliases": [
           "big toe arthritis",
@@ -33796,47 +33805,6 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:head injury"
         ]
       },
-      "head on collision": {
-        "aliases": [
-          "head-on crash",
-          "frontal vehicular impact",
-          "direct collision injury",
-          "head on collision",
-          "frontal impact crash",
-          "head-on motor vehicle collision"
-        ],
-        "count": 231.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "central nervous system disease": 231.0,
-          "nervous system disease": 3033.0
-        },
-        "level_grounding": {
-          "central nervous system disease": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'central nervous system disease' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "corpus-adjusted-from-certifying-source"
-          },
-          "nervous system disease": {
-            "count_basis": "corpus-adjusted-from-certifying-source",
-            "count_evidence": "'nervous system disease' has a real source-backed count (3033.0) that required a small adjustment (3032.99) to stay monotone with the rest of this run's chains; flag for manual review",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "corpus-adjusted-from-certifying-source"
-          }
-        },
-        "levels": [
-          "central nervous system disease",
-          "nervous system disease"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:head on collision"
-        ]
-      },
       "headache": {
         "aliases": [
           "cephalgia",
@@ -33876,240 +33844,9 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:headache"
         ]
       },
-      "headaches": {
-        "aliases": [
-          "headache",
-          "cephalgia",
-          "head pain",
-          "headache disorder"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "nervous system disease": 3033.0,
-          "primary headache disorder": 1.0
-        },
-        "level_grounding": {
-          "nervous system disease": {
-            "count_basis": "corpus-adjusted-from-certifying-source",
-            "count_evidence": "'nervous system disease' has a real source-backed count (3033.0) that required a small adjustment (3032.99) to stay monotone with the rest of this run's chains; flag for manual review",
-            "member_set_ref": null,
-            "selector": "category: nervous system disease",
-            "source_family": "model-proposed",
-            "status": "corpus-adjusted-from-certifying-source"
-          },
-          "primary headache disorder": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'primary headache disorder' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "is_a: primary headache disorder",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "primary headache disorder",
-          "nervous system disease"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:headaches"
-        ]
-      },
-      "health conditions": {
-        "aliases": [
-          "clinical states",
-          "medical statuses",
-          "health statuses",
-          "physiological conditions",
-          "medical ailments",
-          "health problems",
-          "medical issues",
-          "health concerns",
-          "clinical conditions",
-          "wellness problems",
-          "wellness issues",
-          "medical concerns",
-          "physical ailments",
-          "general health complaints"
-        ],
-        "count": 250.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "clinical health state": 250.0,
-          "medical condition": 500000.0
-        },
-        "level_grounding": {
-          "clinical health state": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'clinical health state' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_match",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "medical condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_match",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "clinical health state",
-          "medical condition"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:health conditions",
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:health problems"
-        ]
-      },
-      "healthy": {
-        "aliases": [
-          "well",
-          "normal",
-          "non-pathological",
-          "sound"
-        ],
-        "count": 150000.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "clinical finding": 150000.0,
-          "medical condition": 500000.0
-        },
-        "level_grounding": {
-          "clinical finding": {
-            "count_evidence": "reused canonical label count",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "medical condition": {
-            "count_evidence": "reused canonical label count",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "clinical finding",
-          "medical condition"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:healthy"
-        ]
-      },
-      "heart": {
-        "aliases": [
-          "cardiac",
-          "cardiovascular",
-          "heart organ"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "cardiomyopathy": 1.0,
-          "disease of anatomical entity": 9162.0
-        },
-        "level_grounding": {
-          "cardiomyopathy": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'cardiomyopathy' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "expert curation",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "disease of anatomical entity": {
-            "count_evidence": "canonical vocabulary slice provides count for this label",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "cardiomyopathy",
-          "disease of anatomical entity"
-        ],
-        "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:heart"
-        ]
-      },
-      "heart bypass": {
-        "aliases": [
-          "coronary artery bypass graft",
-          "cabg",
-          "coronary bypass surgery",
-          "bypass graft procedure",
-          "bypass surgery"
-        ],
-        "count": 270.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "heart disease": 270.0,
-          "medical condition": 500000.0
-        },
-        "level_grounding": {
-          "heart disease": {
-            "count_evidence": "canonical_vocabulary_slice entry for heart disease: count 270.0",
-            "member_set_ref": null,
-            "selector": "heart disease",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "medical condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "medical condition",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "heart disease",
-          "medical condition"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:heart bypass"
-        ]
-      },
-      "heart disease": {
-        "aliases": [],
-        "count": 390.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "disease of anatomical entity": 9162.0,
-          "thoracic disease": 390.0
-        },
-        "level_grounding": {
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "thoracic disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:0060118",
-            "selector": "doid.is_a_descendants(DOID:0060118)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "thoracic disease",
-          "disease of anatomical entity"
-        ],
-        "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:heart disease"
-        ]
-      },
       "heart problems": {
         "aliases": [
+          "heart disease",
           "cardiac issues",
           "cardiac problems",
           "cardiovascular issues",
@@ -38498,44 +38235,6 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:multiple trauma"
         ]
       },
-      "muscle aches": {
-        "aliases": [
-          "myalgia",
-          "muscle pain",
-          "muscular discomfort",
-          "generalized muscle soreness"
-        ],
-        "count": 57.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "disease of anatomical entity": 9162.0,
-          "muscle strain injury": 57.0
-        },
-        "level_grounding": {
-          "disease of anatomical entity": {
-            "count_evidence": "9162.0",
-            "member_set_ref": null,
-            "selector": "disease of anatomical entity",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "muscle strain injury": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'muscle strain injury' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "muscle strain injury",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "muscle strain injury",
-          "disease of anatomical entity"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:muscle aches"
-        ]
-      },
       "muscular sprain": {
         "aliases": [
           "muscle injury",
@@ -41225,44 +40924,6 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:renal artery stenosis"
-        ]
-      },
-      "residual arthritis": {
-        "aliases": [
-          "post-traumatic arthritis",
-          "traumatic arthritis",
-          "post-injury arthritis"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "inflammatory condition": 400.0,
-          "post-traumatic arthritis": 1.0
-        },
-        "level_grounding": {
-          "inflammatory condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'inflammatory condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "Canonical vocabulary",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "post-traumatic arthritis": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'post-traumatic arthritis' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "MeSH hierarchy",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "post-traumatic arthritis",
-          "inflammatory condition"
-        ],
-        "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:residual arthritis"
         ]
       },
       "respiratory impairment": {
@@ -44128,7 +43789,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "abdominal physical examination": 1.0,
-          "medical procedure": 86.0,
+          "medical procedure": 79115.0,
           "physical examination": 86.0
         },
         "level_grounding": {
@@ -44141,11 +43802,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           },
           "physical examination": {
@@ -44179,7 +43840,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "clinical laboratory test": 86.0,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "clinical laboratory test": {
@@ -44191,11 +43852,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "canonical_vocabulary",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -44219,16 +43880,16 @@
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "medical procedure": 86.0,
+          "medical procedure": 79115.0,
           "non-pharmacologic therapy": 1.0
         },
         "level_grounding": {
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           },
           "non-pharmacologic therapy": {
@@ -44259,7 +43920,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "activity-based functional test": 1.0,
-          "clinical laboratory test": 86.0
+          "clinical laboratory test": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "activity-based functional test": {
@@ -44277,11 +43939,20 @@
             "selector": "clinical laboratory test",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "activity-based functional test",
-          "clinical laboratory test"
+          "clinical laboratory test",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:activity test"
@@ -44298,16 +43969,16 @@
         "count": 86.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "medical procedure": 86.0,
+          "medical procedure": 79115.0,
           "other procedures, physiological systems and anatomical regions, other procedures": 86.0
         },
         "level_grounding": {
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice label match",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           },
           "other procedures, physiological systems and anatomical regions, other procedures": {
@@ -44336,7 +44007,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "ENT surgical procedure": 1.0,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "ENT surgical procedure": {
@@ -44348,11 +44019,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "canonical label",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -44374,7 +44045,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "adjuvant chemotherapy": 1.0,
-          "chemotherapy": 1.35
+          "chemotherapy": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "adjuvant chemotherapy": {
@@ -44392,11 +44064,20 @@
             "selector": "procedure class",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "adjuvant chemotherapy",
-          "chemotherapy"
+          "chemotherapy",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:adjunct chemotherapy"
@@ -44414,7 +44095,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "aerobic exercise procedure": 1.0,
-          "physical rehabilitation procedure": 86.0
+          "physical rehabilitation procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "aerobic exercise procedure": {
@@ -44432,11 +44114,20 @@
             "selector": "procedure_category",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "aerobic exercise procedure",
-          "physical rehabilitation procedure"
+          "physical rehabilitation procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:aerobic workout"
@@ -44452,16 +44143,16 @@
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "medical procedure": 86.0,
+          "medical procedure": 79115.0,
           "postoperative care": 1.0
         },
         "level_grounding": {
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "['canonical_vocabulary_slice']",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           },
           "postoperative care": {
@@ -44492,7 +44183,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "geriatric assessment procedure": 1.0,
-          "preventive medicine procedure": 86.0
+          "preventive medicine procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "geriatric assessment procedure": {
@@ -44510,11 +44202,20 @@
             "selector": "is_a",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "geriatric assessment procedure",
-          "preventive medicine procedure"
+          "preventive medicine procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:aging process"
@@ -44533,7 +44234,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "emergency medical services": 1.0,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "emergency medical services": {
@@ -44545,11 +44246,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "procedure taxonomy v3.2",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -44575,7 +44276,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "annual preventive visit": 1.0,
-          "preventive visit": 86.0
+          "preventive visit": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "annual preventive visit": {
@@ -44593,11 +44295,20 @@
             "selector": "CPT preventive medicine visit code range",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "annual preventive visit",
-          "preventive visit"
+          "preventive visit",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:annual visit"
@@ -44613,7 +44324,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "cardiac valve replacement": 1.0,
-          "heart and great vessels, replacement": 1.35
+          "heart and great vessels, replacement": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "cardiac valve replacement": {
@@ -44631,11 +44343,20 @@
             "selector": "canonical_category",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "cardiac valve replacement",
-          "heart and great vessels, replacement"
+          "heart and great vessels, replacement",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:aortic valve replacement"
@@ -44651,7 +44372,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "anatomical regions, general, removal": 1.35,
-          "appendectomy": 1.0
+          "appendectomy": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "anatomical regions, general, removal": {
@@ -44669,11 +44391,20 @@
             "selector": "label",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "appendectomy",
-          "anatomical regions, general, removal"
+          "anatomical regions, general, removal",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:appendix out"
@@ -44691,7 +44422,8 @@
         "level_counts": {
           "arthrography": 1.0,
           "diagnostic imaging procedure": 86.0,
-          "musculoskeletal imaging procedure": 86.0
+          "musculoskeletal imaging procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "arthrography": {
@@ -44717,12 +44449,21 @@
             "selector": "RadLex IDs for musculoskeletal imaging; CPT ranges 73000-73999.",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "arthrography",
           "musculoskeletal imaging procedure",
-          "diagnostic imaging procedure"
+          "diagnostic imaging procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:arthrogram"
@@ -44739,7 +44480,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "autoimmune serology panel": 1.0,
-          "immunology laboratory panel": 86.0
+          "immunology laboratory panel": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "autoimmune serology panel": {
@@ -44757,11 +44499,20 @@
             "selector": "immunology laboratory panel",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "autoimmune serology panel",
-          "immunology laboratory panel"
+          "immunology laboratory panel",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:autoimmune panel"
@@ -44779,7 +44530,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "lumbar spine pain evaluation procedure": 1.0,
-          "spinal evaluation procedure": 86.0
+          "spinal evaluation procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "lumbar spine pain evaluation procedure": {
@@ -44797,11 +44549,20 @@
             "selector": "spinal evaluation procedure",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "lumbar spine pain evaluation procedure",
-          "spinal evaluation procedure"
+          "spinal evaluation procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:back pain evaluation"
@@ -44821,7 +44582,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "orthopedic surgery": 86.0,
-          "spinal surgery": 1.0
+          "spinal surgery": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "orthopedic surgery": {
@@ -44839,11 +44601,20 @@
             "selector": "most specific procedure class that includes all back surgeries",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "spinal surgery",
-          "orthopedic surgery"
+          "orthopedic surgery",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:back surgeries"
@@ -44860,7 +44631,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "adhesive bandage application": 1.0,
-          "wound dressing procedures": 86.0
+          "wound dressing procedures": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "adhesive bandage application": {
@@ -44878,11 +44650,20 @@
             "selector": "CPT/HCPCS procedure code set",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "adhesive bandage application",
-          "wound dressing procedures"
+          "wound dressing procedures",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:band aid"
@@ -44900,7 +44681,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "biopsy": 86.0,
-          "breast biopsy": 1.0
+          "breast biopsy": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "biopsy": {
@@ -44918,11 +44700,20 @@
             "selector": "procedure class specificity",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "breast biopsy",
-          "biopsy"
+          "biopsy",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:benign breast biopsy"
@@ -44941,7 +44732,8 @@
         "level_counts": {
           "bimanual pelvic exam": 1.0,
           "clinical exam": 86.0,
-          "pelvic exam": 86.0
+          "pelvic exam": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "bimanual pelvic exam": {
@@ -44967,12 +44759,21 @@
             "selector": "CPT/HCPCS code set",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "bimanual pelvic exam",
           "pelvic exam",
-          "clinical exam"
+          "clinical exam",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:bimanual exam"
@@ -44990,7 +44791,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "bloodborne pathogen exposure evaluation and prophylaxis": 1.0,
-          "bloodborne pathogen-related procedures": 86.0
+          "bloodborne pathogen-related procedures": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "bloodborne pathogen exposure evaluation and prophylaxis": {
@@ -45008,11 +44810,20 @@
             "selector": "procedure category",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "bloodborne pathogen exposure evaluation and prophylaxis",
-          "bloodborne pathogen-related procedures"
+          "bloodborne pathogen-related procedures",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:blood born pathogen exposure"
@@ -45031,7 +44842,8 @@
         "level_counts": {
           "blood collection procedure": 86.0,
           "phlebotomy": 86.0,
-          "venipuncture": 2.0
+          "venipuncture": 2.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "blood collection procedure": {
@@ -45057,12 +44869,21 @@
             "selector": "CPT/ICD-10-PCS procedure code set",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "venipuncture",
           "phlebotomy",
-          "blood collection procedure"
+          "blood collection procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:blood draw",
@@ -45081,7 +44902,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "clinical exam": 86.0,
-          "sphygmomanometry": 1.0
+          "sphygmomanometry": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "clinical exam": {
@@ -45099,11 +44921,20 @@
             "selector": "procedure_class:sphygmomanometry",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "sphygmomanometry",
-          "clinical exam"
+          "clinical exam",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:blood pressure"
@@ -45125,7 +44956,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "blood collection procedure": 86.0,
-          "venipuncture": 2.0
+          "venipuncture": 2.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "blood collection procedure": {
@@ -45143,11 +44975,20 @@
             "selector": "expert knowledge",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "venipuncture",
-          "blood collection procedure"
+          "blood collection procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:blood test",
@@ -45168,7 +45009,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "blood collection procedure": 86.0,
-          "clinical exam": 86.0
+          "clinical exam": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "blood collection procedure": {
@@ -45186,11 +45028,20 @@
             "selector": "label match",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "blood collection procedure",
-          "clinical exam"
+          "clinical exam",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:blood tests"
@@ -45207,7 +45058,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "breastfeeding support procedure": 1.0,
-          "maternal infant feeding procedure": 86.0
+          "maternal infant feeding procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "breastfeeding support procedure": {
@@ -45225,11 +45077,20 @@
             "selector": "CPT procedure codes",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "breastfeeding support procedure",
-          "maternal infant feeding procedure"
+          "maternal infant feeding procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:breastfed"
@@ -45247,7 +45108,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "inhalation therapy": 86.0,
-          "nebulizer treatment": 1.0
+          "nebulizer treatment": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "inhalation therapy": {
@@ -45265,11 +45127,20 @@
             "selector": "CPT procedure codes",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "nebulizer treatment",
-          "inhalation therapy"
+          "inhalation therapy",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:breathing treatments"
@@ -45287,7 +45158,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "capillary refill test": 1.0,
-          "peripheral vascular assessment procedures": 86.0
+          "peripheral vascular assessment procedures": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "capillary refill test": {
@@ -45305,11 +45177,20 @@
             "selector": "includes",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "capillary refill test",
-          "peripheral vascular assessment procedures"
+          "peripheral vascular assessment procedures",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:brisk capillary refill"
@@ -45328,7 +45209,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "heart and great vessels, bypass": 86.0,
-          "right ventricle to coronary artery bypass": 1.0
+          "right ventricle to coronary artery bypass": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "heart and great vessels, bypass": {
@@ -45346,11 +45228,20 @@
             "selector": "Root operation Bypass, body part Right Ventricle, approach Open",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "right ventricle to coronary artery bypass",
-          "heart and great vessels, bypass"
+          "heart and great vessels, bypass",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:bypass right ventricle to coronary circulation open approach"
@@ -45368,7 +45259,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "carotid artery surgery": 86.0,
-          "carotid endarterectomy": 1.0
+          "carotid endarterectomy": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "carotid artery surgery": {
@@ -45386,11 +45278,20 @@
             "selector": "ICD-10-PCS code enumeration",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "carotid endarterectomy",
-          "carotid artery surgery"
+          "carotid artery surgery",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:carotid sinus surgery"
@@ -45410,7 +45311,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "ocular lens surgery": 86.0,
-          "phacoemulsification": 1.0
+          "phacoemulsification": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "ocular lens surgery": {
@@ -45428,52 +45330,23 @@
             "selector": "procedure_class",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "phacoemulsification",
-          "ocular lens surgery"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:cataract surgery"
-        ]
-      },
-      "cervical x ray": {
-        "aliases": [
-          "cervical spine x-ray",
-          "cervical radiograph",
-          "c-spine x-ray"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "medical procedure": 86.0,
-          "spinal radiography": 1.0
-        },
-        "level_grounding": {
-          "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "spinal radiography": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'spinal radiography' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "procedure_class",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "spinal radiography",
+          "ocular lens surgery",
           "medical procedure"
         ],
         "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:cervical x ray"
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:cataract surgery"
         ]
       },
       "change bandage on abdominal wall": {
@@ -45488,7 +45361,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "placement procedure": 86.0,
-          "placement, anatomical regions, change": 1.0
+          "placement, anatomical regions, change": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "placement procedure": {
@@ -45506,11 +45380,20 @@
             "selector": "icd10pcs.prefix(2W0)",
             "source_family": "icd10pcs-prefix",
             "status": "corpus-adjusted-from-certifying-source"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "placement, anatomical regions, change",
-          "placement procedure"
+          "placement procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:change bandage on abdominal wall"
@@ -45526,7 +45409,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "antineoplastic drug administration": 1.0,
-          "drug therapy administration": 1.35
+          "drug therapy administration": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "antineoplastic drug administration": {
@@ -45544,11 +45428,20 @@
             "selector": "drug_therapy_administration",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "antineoplastic drug administration",
-          "drug therapy administration"
+          "drug therapy administration",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:chemotherapy"
@@ -45566,7 +45459,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "obstetric delivery": 86.0,
-          "vaginal delivery": 1.0
+          "vaginal delivery": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "obstetric delivery": {
@@ -45584,11 +45478,20 @@
             "selector": "vaginal delivery",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "vaginal delivery",
-          "obstetric delivery"
+          "obstetric delivery",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:childbirth"
@@ -45608,7 +45511,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "crutch-assisted ambulation": 1.0,
-          "mobility aid procedure": 86.0
+          "mobility aid procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "crutch-assisted ambulation": {
@@ -45626,11 +45530,20 @@
             "selector": "procedure_taxonomy",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "crutch-assisted ambulation",
-          "mobility aid procedure"
+          "mobility aid procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:crutches"
@@ -45648,7 +45561,7 @@
           "Incretin-based therapy": 1.35,
           "Pharmacotherapy": 1.35,
           "Pharmacotherapy for diabetes": 1.35,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "GLP-1 receptor agonist administration": {
@@ -45684,11 +45597,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -45714,7 +45627,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "fluid replacement therapy": 86.0,
-          "oral rehydration therapy administration": 1.0
+          "oral rehydration therapy administration": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "fluid replacement therapy": {
@@ -45732,136 +45646,23 @@
             "selector": "WHO-EML",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "oral rehydration therapy administration",
-          "fluid replacement therapy"
+          "fluid replacement therapy",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:diarrhea"
-        ]
-      },
-      "diet changes": {
-        "aliases": [
-          "nutritional modification",
-          "dietary adjustment",
-          "regimen alteration",
-          "food pattern shift",
-          "diet modification",
-          "dietary change"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "dietary intervention": 86.0,
-          "therapeutic diet prescription": 1.0
-        },
-        "level_grounding": {
-          "dietary intervention": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'dietary intervention' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "source_ids: mined-clinical:aci/D2N001, D2N003, D2N012, D2N021",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "therapeutic diet prescription": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'therapeutic diet prescription' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "source_ids: mined-clinical:aci/D2N003, D2N012, D2N021",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "therapeutic diet prescription",
-          "dietary intervention"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:diet changes"
-        ]
-      },
-      "dietary indiscretion": {
-        "aliases": [
-          "dietary noncompliance",
-          "dietary violation",
-          "unauthorized eating",
-          "dietary breach",
-          "dietary indiscretion"
-        ],
-        "count": 86.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "administration, physiological systems and anatomical regions, introduction": 86.0,
-          "dietary intervention": 86.0
-        },
-        "level_grounding": {
-          "administration, physiological systems and anatomical regions, introduction": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'administration, physiological systems and anatomical regions, introduction' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "dietary intervention": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'dietary intervention' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "dietary intervention",
-          "administration, physiological systems and anatomical regions, introduction"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:dietary indiscretion"
-        ]
-      },
-      "do not resuscitate order": {
-        "aliases": [
-          "dnr order",
-          "dnr directive",
-          "do not resuscitate directive",
-          "dnr",
-          "do-not-resuscitate order",
-          "no code order"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "life-sustaining treatment order": 86.0,
-          "resuscitation status order": 1.0
-        },
-        "level_grounding": {
-          "life-sustaining treatment order": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'life-sustaining treatment order' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "SNOMED CT 2023",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "resuscitation status order": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'resuscitation status order' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "ICD-10-PCS 2023",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "resuscitation status order",
-          "life-sustaining treatment order"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:do not resuscitate order"
         ]
       },
       "drainage of intracranial epidural space open approach": {
@@ -45876,7 +45677,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "central nervous system and cranial nerves, drainage": 86.0,
-          "intracranial epidural space drainage": 1.0
+          "intracranial epidural space drainage": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "central nervous system and cranial nerves, drainage": {
@@ -45894,11 +45696,20 @@
             "selector": "ICD-10-PCS: 009U0ZZ",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "intracranial epidural space drainage",
-          "central nervous system and cranial nerves, drainage"
+          "central nervous system and cranial nerves, drainage",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:drainage of intracranial epidural space open approach"
@@ -45917,7 +45728,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "echocardiography": 86.0,
-          "transthoracic echocardiography": 1.0
+          "transthoracic echocardiography": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "echocardiography": {
@@ -45935,11 +45747,20 @@
             "selector": "SNOMED-CT",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "transthoracic echocardiography",
-          "echocardiography"
+          "echocardiography",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:echocardiogram"
@@ -45958,7 +45779,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "exacerbation management procedure": 1.0,
-          "symptom management procedure": 86.0
+          "symptom management procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "exacerbation management procedure": {
@@ -45976,11 +45798,20 @@
             "selector": "taxonomic mapping",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "exacerbation management procedure",
-          "symptom management procedure"
+          "symptom management procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:exacerbations"
@@ -45998,7 +45829,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "annual financial reporting procedure": 1.0,
-          "financial data processing procedure": 86.0
+          "financial data processing procedure": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "annual financial reporting procedure": {
@@ -46016,53 +45848,23 @@
             "selector": "count_distinct(procedure_name) where procedure_category='financial data processing'",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "annual financial reporting procedure",
-          "financial data processing procedure"
+          "financial data processing procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:fiscal year end data"
-        ]
-      },
-      "follow up x ray": {
-        "aliases": [
-          "follow-up x-ray",
-          "follow up radiograph",
-          "post-procedure x-ray",
-          "follow-up imaging"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "diagnostic imaging procedure": 86.0,
-          "follow-up radiography": 1.0
-        },
-        "level_grounding": {
-          "diagnostic imaging procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'diagnostic imaging procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "UMLS CUI for diagnostic imaging; CPT 70000-79999 range.",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "follow-up radiography": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'follow-up radiography' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "taxonomy",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "follow-up radiography",
-          "diagnostic imaging procedure"
-        ],
-        "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:follow up x ray"
         ]
       },
       "gall bladder removed": {
@@ -46075,7 +45877,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "cholecystectomy": 1.0,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "cholecystectomy": {
@@ -46087,11 +45889,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -46113,7 +45915,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "cardiac catheterization": 1.0,
-          "cardiovascular catheterization": 86.0
+          "cardiovascular catheterization": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "cardiac catheterization": {
@@ -46131,11 +45934,20 @@
             "selector": "ICD-10-PCS",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "cardiac catheterization",
-          "cardiovascular catheterization"
+          "cardiovascular catheterization",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:heart catheterization"
@@ -46151,7 +45963,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "blood chemistry test": 1.35,
-          "glycated hemoglobin measurement": 1.0
+          "glycated hemoglobin measurement": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "blood chemistry test": {
@@ -46169,11 +45982,20 @@
             "selector": "assay_method",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "glycated hemoglobin measurement",
-          "blood chemistry test"
+          "blood chemistry test",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:hemoglobin a1c"
@@ -46192,7 +46014,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "physical rehabilitation and diagnostic audiology, rehabilitation, motor treatment": 86.0,
-          "therapeutic exercise program": 1.0
+          "therapeutic exercise program": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "physical rehabilitation and diagnostic audiology, rehabilitation, motor treatment": {
@@ -46210,11 +46033,20 @@
             "selector": "therapeutic exercise program",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "therapeutic exercise program",
-          "physical rehabilitation and diagnostic audiology, rehabilitation, motor treatment"
+          "physical rehabilitation and diagnostic audiology, rehabilitation, motor treatment",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:home exercise program"
@@ -46233,7 +46065,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "home-based nutritional intervention": 86.0,
-          "home-based snacking provision": 1.0
+          "home-based snacking provision": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "home-based nutritional intervention": {
@@ -46251,11 +46084,20 @@
             "selector": "mined-clinical:mts/59",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "home-based snacking provision",
-          "home-based nutritional intervention"
+          "home-based nutritional intervention",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:home snacking"
@@ -46273,7 +46115,8 @@
         "level_counts": {
           "administration, physiological systems and anatomical regions, introduction": 86.0,
           "intravenous injection": 1.0,
-          "parenteral injection": 1.35
+          "parenteral injection": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "administration, physiological systems and anatomical regions, introduction": {
@@ -46299,12 +46142,21 @@
             "selector": "parenteral injection",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "intravenous injection",
           "parenteral injection",
-          "administration, physiological systems and anatomical regions, introduction"
+          "administration, physiological systems and anatomical regions, introduction",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:injection procedure"
@@ -46327,7 +46179,8 @@
         "level_counts": {
           "lower joints, replacement": 2.0,
           "lower joints, revision": 1.35,
-          "total knee arthroplasty": 1.35
+          "total knee arthroplasty": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "lower joints, replacement": {
@@ -46353,12 +46206,21 @@
             "selector": "procedure_class",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "total knee arthroplasty",
           "lower joints, revision",
-          "lower joints, replacement"
+          "lower joints, replacement",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:knee replacement",
@@ -46377,7 +46239,8 @@
         "level_counts": {
           "abdominal ultrasound": 1.35,
           "diagnostic ultrasound": 210.0,
-          "hepatic ultrasound": 1.35
+          "hepatic ultrasound": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "abdominal ultrasound": {
@@ -46404,12 +46267,21 @@
             "selector": "taxonomy_match",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "hepatic ultrasound",
           "abdominal ultrasound",
-          "diagnostic ultrasound"
+          "diagnostic ultrasound",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:liver ultrasound"
@@ -46425,7 +46297,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "lower extremity physical examination": 1.0,
-          "physical examination": 86.0
+          "physical examination": 86.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "lower extremity physical examination": {
@@ -46443,53 +46316,23 @@
             "selector": "standard physical exam taxonomy",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "lower extremity physical examination",
-          "physical examination"
+          "physical examination",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:lower extremity exam"
-        ]
-      },
-      "lumbar spine x ray": {
-        "aliases": [
-          "lumbar spine radiograph",
-          "lumbar spine x-ray",
-          "ls spine x-ray",
-          "lumbar spinal x-ray"
-        ],
-        "count": 1.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "diagnostic imaging procedure": 86.0,
-          "lumbar spine radiography procedure": 1.0
-        },
-        "level_grounding": {
-          "diagnostic imaging procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'diagnostic imaging procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "UMLS CUI for diagnostic imaging; CPT 70000-79999 range.",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "lumbar spine radiography procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'lumbar spine radiography procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "procedure_modality: radiography; anatomic_region: lumbar spine",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "lumbar spine radiography procedure",
-          "diagnostic imaging procedure"
-        ],
-        "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:lumbar spine x ray"
         ]
       },
       "massage": {
@@ -46502,7 +46345,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "manual therapy": 1.0,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "manual therapy": {
@@ -46514,11 +46357,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -46540,7 +46383,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "manual muscle testing": 1.0,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "manual muscle testing": {
@@ -46552,11 +46395,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -46577,7 +46420,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "facial plastic surgery": 1.35,
-          "rhinoplasty": 1.0
+          "rhinoplasty": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "facial plastic surgery": {
@@ -46595,11 +46439,20 @@
             "selector": "procedure_class",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "rhinoplasty",
-          "facial plastic surgery"
+          "facial plastic surgery",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:nose job"
@@ -46617,7 +46470,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "custom shoe insert fitting": 1.0,
-          "durable medical equipment fitting": 1.35
+          "durable medical equipment fitting": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "custom shoe insert fitting": {
@@ -46635,11 +46489,20 @@
             "selector": "DME_classification_estimate",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "custom shoe insert fitting",
-          "durable medical equipment fitting"
+          "durable medical equipment fitting",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:orthotic"
@@ -46655,7 +46518,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "point-of-care diagnostic test": 1.35,
-          "rapid antigen test for SARS-CoV-2": 1.0
+          "rapid antigen test for SARS-CoV-2": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "point-of-care diagnostic test": {
@@ -46673,11 +46537,20 @@
             "selector": "procedure class",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "rapid antigen test for SARS-CoV-2",
-          "point-of-care diagnostic test"
+          "point-of-care diagnostic test",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:rapid covid test"
@@ -46693,7 +46566,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "abdominal ultrasound": 1.35,
-          "diagnostic ultrasound": 210.0
+          "diagnostic ultrasound": 210.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "abdominal ultrasound": {
@@ -46712,11 +46586,20 @@
             "selector": "Label match to canonical_vocabulary_slice entry",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "abdominal ultrasound",
-          "diagnostic ultrasound"
+          "diagnostic ultrasound",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:renal artery ultrasound"
@@ -46732,7 +46615,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "breast lumpectomy": 1.0,
-          "skin and breast, excision": 1.35
+          "skin and breast, excision": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "breast lumpectomy": {
@@ -46750,11 +46634,20 @@
             "selector": "procedure category: skin and breast, excision",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "breast lumpectomy",
-          "skin and breast, excision"
+          "skin and breast, excision",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:right breast lumpectomy"
@@ -46770,7 +46663,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "rotator cuff repair": 1.0,
-          "shoulder surgery": 1.35
+          "shoulder surgery": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "rotator cuff repair": {
@@ -46788,11 +46682,20 @@
             "selector": "CPT code range for shoulder",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "rotator cuff repair",
-          "shoulder surgery"
+          "shoulder surgery",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:rotator cuff repaired"
@@ -46809,7 +46712,7 @@
         "level_counts": {
           "colonoscopy": 1.0,
           "lower gastrointestinal endoscopy": 1.35,
-          "medical procedure": 86.0
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "colonoscopy": {
@@ -46829,11 +46732,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           }
         },
@@ -46856,7 +46759,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "orthopedic immobilization procedure": 1.35,
-          "upper extremity splinting": 1.0
+          "upper extremity splinting": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "orthopedic immobilization procedure": {
@@ -46874,11 +46778,20 @@
             "selector": "taxonomy-match",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "upper extremity splinting",
-          "orthopedic immobilization procedure"
+          "orthopedic immobilization procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:sling"
@@ -46894,7 +46807,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "saphenous vein stripping": 1.0,
-          "vein stripping": 1.35
+          "vein stripping": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "saphenous vein stripping": {
@@ -46912,11 +46826,20 @@
             "selector": "procedure:vein_stripping",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "saphenous vein stripping",
-          "vein stripping"
+          "vein stripping",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:stripping of veins"
@@ -46932,7 +46855,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "female sterilization": 1.35,
-          "medical procedure": 86.0,
+          "medical procedure": 79115.0,
           "tubal ligation": 1.0
         },
         "level_grounding": {
@@ -46945,11 +46868,11 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'medical procedure' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS procedure taxonomy",
-            "source_family": "model-proposed",
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
             "status": "model-proposed"
           },
           "tubal ligation": {
@@ -46981,7 +46904,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "diagnostic ultrasound": 210.0,
-          "hepatic ultrasound": 1.35
+          "hepatic ultrasound": 1.35,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "diagnostic ultrasound": {
@@ -47000,11 +46924,20 @@
             "selector": "canonical_vocabulary_slice[label='hepatic ultrasound']",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "hepatic ultrasound",
-          "diagnostic ultrasound"
+          "diagnostic ultrasound",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:ultrasound elasto elastography"
@@ -47020,7 +46953,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "core needle biopsy": 1.35,
-          "ultrasound-guided core needle biopsy": 1.0
+          "ultrasound-guided core needle biopsy": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "core needle biopsy": {
@@ -47038,11 +46972,20 @@
             "selector": "SNOMED-CT: 442083009",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "ultrasound-guided core needle biopsy",
-          "core needle biopsy"
+          "core needle biopsy",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:ultrasound guided core needle biopsy"
@@ -47057,7 +47000,8 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "lesion excision procedure": 1.35,
-          "wide local excision": 1.0
+          "wide local excision": 1.0,
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "lesion excision procedure": {
@@ -47075,11 +47019,20 @@
             "selector": "marked_context_sentence",
             "source_family": "model-proposed",
             "status": "model-proposed"
+          },
+          "medical procedure": {
+            "status": "model-proposed",
+            "source_family": "icd10pcs-universe",
+            "selector": "icd10pcs.billable_7_character_code",
+            "member_set_ref": null,
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
           }
         },
         "levels": [
           "wide local excision",
-          "lesion excision procedure"
+          "lesion excision procedure",
+          "medical procedure"
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:wide local incision"
