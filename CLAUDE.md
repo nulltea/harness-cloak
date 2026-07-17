@@ -165,6 +165,7 @@ How to apply:
 - Cost is a tie-breaker only; when axes conflict for anything that ships, intelligence > taste > cost.
 - Bulk/mechanical work (clear-spec implementation, data analysis, migrations): sonnet-5.
 - Reviews (specs, code, findings): default to `/auto-review-loop` (drives codex gpt-5.5) for the actual review pass; opus-4.8 as a Claude-side second opinion when a Codex round-trip is overkill.
+- **Prompt engineering / LLM-prompt tweaks (teacher/system prompts, few-shot worked examples, instruction wording): do NOT delegate to Codex — it is worse at this, writing verbose prompts that don't generalize.** Author prompt strings yourself (opus-4.8). Codex may implement the surrounding code, but keep the prompt text in your hands; if Codex touches any prompt string, review and trim it for brevity + generalization before committing.
 - fable-5 subagents: rarest case only. Try sonnet-5/opus-4.8 first; reach for fable-5 only when a task specifically demands its top intelligence+taste combo and nothing else will do — it is not a routine reviewer or default subagent choice.
 - Manual research (WebFetch, research-lit, web search): sonnet-5 for plain retrieval/summarization; opus-4.8 once the task requires judging or weighing findings (relevance, credibility, which result matters).
 - Never use Haiku.
