@@ -75,6 +75,28 @@ def _cross_clause_anchor(source):
     ), arguments, occurrences)
 
 
+def _cross_clause_context_anchor(source, literal="follow-up x-ray"):
+    condition = "Distal phalanx fracture"
+    condition_start = source.index(condition)
+    occurrences = {
+        "condition": {
+            "occurrence_id": "condition", "decision_id": "d-condition",
+            "surface": condition, "start": condition_start,
+            "end": condition_start + len(condition), "runtime_type": "health-condition",
+        },
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "condition",
+         "surface": condition, "runtime_type": "health-condition",
+         "support_property": "finger or toe bone fracture"},
+        {"role": "object", "kind": "context", "literal": literal,
+         "runtime_type": "", "start": None, "end": None},
+    ]
+    return (*qa_builder._derived_relation_anchor(
+        source, arguments, occurrences, {}, "tests_for", qa_builder.ACI_RELATION_CONTRACT,
+    ), arguments, occurrences)
+
+
 def test_cross_clause_span_anchor_stitches_argument_clauses_and_reader_turns():
     source = (
         "Muscle strain was assessed.\n"
@@ -151,6 +173,67 @@ def test_cross_clause_stitch_without_relation_cue_fails_support_check():
         "prescribed_with", quote, arguments, qa_builder.ACI_RELATION_CONTRACT,
         allow_adjacent_clauses=True, require_lexical_cue=True,
     )
+
+
+def test_cross_clause_context_anchor_stitches_linked_and_literal_clauses():
+    source = (
+        "Distal phalanx fracture was assessed.\n"
+        "The patient denies fever.\n"
+        "Follow-up x-ray was ordered."
+    )
+    quote, span, clause_ranges, error, kind, arguments, _ = _cross_clause_context_anchor(source)
+
+    assert error is None and kind == "stitched_clauses"
+    assert "denies fever" not in quote
+    assert quote == "Distal phalanx fracture was assessed.\nFollow-up x-ray was ordered."
+    assert span == (0, len(source))
+    assert clause_ranges == [
+        qa_builder._source_clause_spans(source)[0],
+        qa_builder._source_clause_spans(source)[2],
+    ]
+    assert arguments[1]["literal"] == "Follow-up x-ray"
+    assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 2]
+
+
+def test_cross_clause_context_anchor_rejects_literal_beyond_global_distance():
+    source = "Distal phalanx fracture was assessed. " + " ".join(
+        f"Unrelated clause {index}." for index in range(qa_builder._CROSS_CLAUSE_ANCHOR_MAX_DISTANCE)
+    ) + " Follow-up x-ray was ordered."
+    _, span, clause_ranges, error, kind, _, _ = _cross_clause_context_anchor(source)
+
+    assert span is None and clause_ranges is None
+    assert error == "unknown_context_literal" and kind is None
+
+
+def test_cross_clause_context_anchor_rejects_problem_switch_before_literal():
+    source = (
+        "Distal phalanx fracture was assessed. "
+        "For your next problem, the patient denies fever. "
+        "Follow-up x-ray was ordered."
+    )
+    _, span, clause_ranges, error, kind, _, _ = _cross_clause_context_anchor(source)
+
+    assert span is None and clause_ranges is None
+    assert error == "unknown_context_literal" and kind is None
+
+
+def test_cross_clause_context_anchor_picks_nearest_qualifying_literal_occurrence():
+    source = (
+        "Distal phalanx fracture was assessed. "
+        "The patient denies fever. "
+        "Follow-up x-ray was ordered first. "
+        "The patient was given instructions. "
+        "Follow-up x-ray was ordered later."
+    )
+    _, _, clause_ranges, error, kind, arguments, _ = _cross_clause_context_anchor(source)
+
+    first_xray = source.index("Follow-up x-ray")
+    assert error is None and kind == "stitched_clauses"
+    assert arguments[1]["start"] == first_xray
+    assert clause_ranges == [
+        qa_builder._source_clause_spans(source)[0],
+        qa_builder._source_clause_spans(source)[2],
+    ]
 
 
 def test_teacher_authored_relation_qa_is_preserved_and_drug_is_prescribed_not_treated():

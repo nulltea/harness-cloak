@@ -2989,6 +2989,7 @@ def _derived_relation_anchor(
     linked_plan_section = _shared_plan_section(document, linked_spans)
     linked_problem_block = _shared_problem_block(document, linked_spans)
     context = next((argument for argument in arguments if argument["kind"] == "context"), None)
+    stitched_context_clause_ranges: list[tuple[int, int]] | None = None
     if context is not None and context.get("start") is None:
         literal = str(context["literal"])
         # Source spans under case/whitespace equivalence (not exact substring): the teacher
@@ -3020,10 +3021,48 @@ def _derived_relation_anchor(
                         and linked_problem_block[0] <= start < end <= linked_problem_block[1])
             if in_clause_window or in_plan or in_block:
                 scored.append((clause_dist, _linked_gap(start, end), start, end))
-        if not scored:
-            return "", None, None, "unknown_context_literal", None
-        scored.sort()
-        start, end = scored[0][2], scored[0][3]
+        if scored:
+            scored.sort()
+            start, end = scored[0][2], scored[0][3]
+        else:
+            # No explicit plan/problem marker is common in encounter summaries. Mirror the
+            # span->span bridge for one uncontrolled literal: select the nearest literal
+            # occurrence only when it remains local, does not cross a problem switch, and
+            # does not skip a closer same-decision mention of the linked argument.
+            stitched = []
+            for start, end in matches:
+                literal_clause = clause_index(start, end)
+                if literal_clause is None:
+                    continue
+                for linked_index, (linked_start, linked_end) in enumerate(linked_spans):
+                    linked_clause = linked_clause_indices[linked_index]
+                    clause_dist = abs(literal_clause - linked_clause)
+                    if clause_dist > _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE:
+                        continue
+                    first_end, last_start = (
+                        (linked_end, start) if linked_end <= start else (end, linked_start)
+                    )
+                    if _PROBLEM_SWITCH_BOUNDARY.search(document, first_end, last_start) is not None:
+                        continue
+                    linked_argument = linked[linked_index]
+                    linked_decision = occurrences[linked_argument["occurrence_id"]].get("decision_id")
+                    if any(
+                        occurrence.get("decision_id") == linked_decision
+                        and isinstance(occurrence.get("start"), int)
+                        and isinstance(occurrence.get("end"), int)
+                        and (int(occurrence["start"]), int(occurrence["end"])) != (linked_start, linked_end)
+                        and first_end <= int(occurrence["start"]) < int(occurrence["end"]) <= last_start
+                        for occurrence in occurrences.values()
+                    ):
+                        continue
+                    stitched.append((clause_dist, _linked_gap(start, end), start, end, linked_clause, literal_clause))
+            if not stitched:
+                return "", None, None, "unknown_context_literal", None
+            stitched.sort()
+            _, _, start, end, linked_clause, literal_clause = stitched[0]
+            stitched_context_clause_ranges = [
+                clauses[index] for index in sorted({linked_clause, literal_clause})
+            ]
         # A literal that lands on a protected controlled span is an S-label
         # smuggled past the linked contract; the teacher must reference it by
         # its label (leakage-scope rule).
@@ -3059,6 +3098,17 @@ def _derived_relation_anchor(
             slot_classes = relation_contract[relation]["argument_classes"][slot_index]
             context["runtime_type"] = slot_classes[0]
         context.update({"start": start, "end": end})
+        if stitched_context_clause_ranges is not None:
+            quote = "\n".join(
+                document[left:right].strip() for left, right in stitched_context_clause_ranges
+            )
+            if not quote:
+                return "", None, None, "invalid_evidence", None
+            envelope = (
+                stitched_context_clause_ranges[0][0],
+                stitched_context_clause_ranges[-1][1],
+            )
+            return quote, envelope, stitched_context_clause_ranges, None, "stitched_clauses"
     try:
         all_indices = [
             clause_index(
