@@ -2990,13 +2990,24 @@ def _derived_relation_anchor(
     linked_problem_block = _shared_problem_block(document, linked_spans)
     context = next((argument for argument in arguments if argument["kind"] == "context"), None)
     stitched_context_clause_ranges: list[tuple[int, int]] | None = None
-    if context is not None and context.get("start") is None:
+    if context is not None:
         literal = str(context["literal"])
         # Source spans under case/whitespace equivalence (not exact substring): the teacher
         # routinely re-cases a literal ("MRI" for source "mri", "hemoglobin A1c" for "a1c").
         # Each span indexes the original document, so grounding stays exact once the literal
         # is written back as its source substring below.
-        matches = _source_literal_spans(document, literal)
+        if context.get("start") is None:
+            matches = _source_literal_spans(document, literal)
+        else:
+            try:
+                resolved_start = int(context["start"])
+                resolved_end = int(context["end"])
+            except (KeyError, TypeError, ValueError):
+                return "", None, None, "invalid_evidence_occurrence", None
+            if not (0 <= resolved_start < resolved_end <= len(document)
+                    and document[resolved_start:resolved_end] == literal):
+                return "", None, None, "invalid_evidence_occurrence", None
+            matches = [(resolved_start, resolved_end)]
 
         def _linked_gap(start: int, end: int) -> int:
             return min(max(0, left - end, start - right) for left, right in linked_spans)
@@ -3026,40 +3037,56 @@ def _derived_relation_anchor(
             start, end = scored[0][2], scored[0][3]
         else:
             # No explicit plan/problem marker is common in encounter summaries. Mirror the
-            # span->span bridge for one uncontrolled literal: select the nearest literal
-            # occurrence only when it remains local, does not cross a problem switch, and
-            # does not skip a closer same-decision mention of the linked argument.
+            # span->span bridge for one uncontrolled literal. A repeated linked value is
+            # grounded at its nearest same-decision occurrence rather than rejected for
+            # having a closer sibling: action identity remains decision-level, while the
+            # source evidence uses the occurrence that actually co-locates with the literal.
             stitched = []
             for start, end in matches:
                 literal_clause = clause_index(start, end)
                 if literal_clause is None:
                     continue
-                for linked_index, (linked_start, linked_end) in enumerate(linked_spans):
-                    linked_clause = linked_clause_indices[linked_index]
-                    clause_dist = abs(literal_clause - linked_clause)
-                    if clause_dist > _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE:
-                        continue
-                    first_end, last_start = (
-                        (linked_end, start) if linked_end <= start else (end, linked_start)
+                for linked_index, linked_argument in enumerate(linked):
+                    decision_id = occurrences[linked_argument["occurrence_id"]].get("decision_id")
+                    siblings = sorted(
+                        (
+                            (str(occurrence_id), occurrence)
+                            for occurrence_id, occurrence in occurrences.items()
+                            if decision_id is not None and occurrence.get("decision_id") == decision_id
+                            and isinstance(occurrence.get("start"), int)
+                            and isinstance(occurrence.get("end"), int)
+                        ),
+                        key=lambda row: (int(row[1]["start"]), int(row[1]["end"]), row[0]),
                     )
-                    if _PROBLEM_SWITCH_BOUNDARY.search(document, first_end, last_start) is not None:
-                        continue
-                    linked_argument = linked[linked_index]
-                    linked_decision = occurrences[linked_argument["occurrence_id"]].get("decision_id")
-                    if any(
-                        occurrence.get("decision_id") == linked_decision
-                        and isinstance(occurrence.get("start"), int)
-                        and isinstance(occurrence.get("end"), int)
-                        and (int(occurrence["start"]), int(occurrence["end"])) != (linked_start, linked_end)
-                        and first_end <= int(occurrence["start"]) < int(occurrence["end"]) <= last_start
-                        for occurrence in occurrences.values()
-                    ):
-                        continue
-                    stitched.append((clause_dist, _linked_gap(start, end), start, end, linked_clause, literal_clause))
+                    for occurrence_id, occurrence in siblings:
+                        linked_start, linked_end = int(occurrence["start"]), int(occurrence["end"])
+                        linked_clause = clause_index(linked_start, linked_end)
+                        if linked_clause is None:
+                            continue
+                        clause_dist = abs(literal_clause - linked_clause)
+                        if clause_dist > _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE:
+                            continue
+                        first_end, last_start = (
+                            (linked_end, start) if linked_end <= start else (end, linked_start)
+                        )
+                        if _PROBLEM_SWITCH_BOUNDARY.search(document, first_end, last_start) is not None:
+                            continue
+                        char_gap = max(0, linked_start - end, start - linked_end)
+                        stitched.append((
+                            clause_dist, char_gap, start, end, linked_index, occurrence_id,
+                            linked_clause, literal_clause,
+                        ))
             if not stitched:
                 return "", None, None, "unknown_context_literal", None
             stitched.sort()
-            _, _, start, end, linked_clause, literal_clause = stitched[0]
+            _, _, start, end, linked_index, occurrence_id, linked_clause, literal_clause = stitched[0]
+            linked_argument = linked[linked_index]
+            occurrence = occurrences[occurrence_id]
+            linked_argument.update({
+                "occurrence_id": occurrence_id,
+                "surface": str(occurrence.get("surface", "")),
+                "runtime_type": str(occurrence.get("runtime_type", "")),
+            })
             stitched_context_clause_ranges = [
                 clauses[index] for index in sorted({linked_clause, literal_clause})
             ]
@@ -3427,10 +3454,14 @@ def _remap_to_groundable_siblings(
             return False
         if not all(_argument_is_grounded(a, document, span, occurrences) for a in args):
             return False
+        # A literal->linked probe is judged by the later three-point reader
+        # gate, not a lexical/NLI relation parser. Exact literal grounding and
+        # the anchor's locality constraints still prevent document-wide pairs.
+        if sum(argument.get("kind") == "linked" for argument in args) == 1:
+            return True
         return _relation_quote_has_direct_support(
             relation, quote, args, relation_contract, allow_adjacent_clauses=True,
-            allow_plan_section=akind in {"plan_section", "problem_block", "speaker_turn"},
-            require_lexical_cue=akind == "stitched_clauses")
+            allow_plan_section=akind in {"plan_section", "problem_block", "speaker_turn"})
 
     if grounds(arguments):
         return arguments
@@ -4174,15 +4205,23 @@ def compile_relational_assertions(
                    for argument in arguments):
             reject("invalid_evidence_occurrence")
             continue
-        if not _relation_quote_has_direct_support(
-            relation,
-            quote,
-            arguments,
-            relation_contract,
-            allow_adjacent_clauses=(uses_v4_arguments or proposal.get("evidence_window_id") is not None),
-            allow_plan_section=anchor_kind in {"plan_section", "problem_block", "speaker_turn"},
-            require_lexical_cue=anchor_kind == "stitched_clauses",
-        ):
+        # Literal->linked probes are task-native reader tests. Their semantic
+        # acceptance is the three-point reader gate; lexical and NLI cue gates
+        # are brittle across informal and new-domain text. Exact literal
+        # grounding plus the anchor's locality constraints remain mandatory.
+        is_literal_probe = (
+            sum(argument.get("kind") == "linked" for argument in arguments) == 1
+            and sum(argument.get("kind") == "context" for argument in arguments) == 1
+        )
+        if (not is_literal_probe
+                and not _relation_quote_has_direct_support(
+                    relation,
+                    quote,
+                    arguments,
+                    relation_contract,
+                    allow_adjacent_clauses=(uses_v4_arguments or proposal.get("evidence_window_id") is not None),
+                    allow_plan_section=anchor_kind in {"plan_section", "problem_block", "speaker_turn"},
+                )):
             reject("invalid_evidence")
             continue
         # Ambiguity monitor (diagnostic only): the relation is now grounded, so record any co-valid

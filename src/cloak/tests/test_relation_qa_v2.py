@@ -236,6 +236,92 @@ def test_cross_clause_context_anchor_picks_nearest_qualifying_literal_occurrence
     ]
 
 
+def test_cross_clause_context_anchor_reanchors_to_nearest_same_decision_sibling():
+    source = (
+        "Distal phalanx fracture was identified. "
+        "The patient denies fever. "
+        "The diagnosis remains distal phalanx fracture. "
+        "Follow-up x-ray was scheduled."
+    )
+    first = source.index("Distal phalanx fracture")
+    second = source.index("distal phalanx fracture", first + 1)
+    occurrences = {
+        "fracture-early": {
+            "occurrence_id": "fracture-early", "decision_id": "d-fracture",
+            "surface": "Distal phalanx fracture", "start": first,
+            "end": first + len("Distal phalanx fracture"), "runtime_type": "health-condition",
+        },
+        "fracture-plan": {
+            "occurrence_id": "fracture-plan", "decision_id": "d-fracture",
+            "surface": "distal phalanx fracture", "start": second,
+            "end": second + len("distal phalanx fracture"), "runtime_type": "health-condition",
+        },
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "fracture-early",
+         "surface": "Distal phalanx fracture", "runtime_type": "health-condition",
+         "support_property": "finger bone fracture"},
+        {"role": "object", "kind": "context", "literal": "follow-up x-ray",
+         "runtime_type": "", "start": None, "end": None},
+    ]
+
+    first_anchor = qa_builder._derived_relation_anchor(
+        source, arguments, occurrences, {}, "tests_for", qa_builder.ACI_RELATION_CONTRACT,
+    )
+    second_anchor = qa_builder._derived_relation_anchor(
+        source, arguments, occurrences, {}, "tests_for", qa_builder.ACI_RELATION_CONTRACT,
+    )
+
+    assert first_anchor[3] is None and first_anchor[4] == "stitched_clauses"
+    assert second_anchor[3] is None and second_anchor[4] == "clause"
+    assert arguments[0]["occurrence_id"] == "fracture-plan"
+    assert "diagnosis remains distal phalanx fracture" in second_anchor[0]
+    assert "Follow-up x-ray was scheduled" in second_anchor[0]
+
+
+def test_bounded_stitched_relation_reaches_reader_gate_without_lexical_cue():
+    source = (
+        "Distal phalanx fracture was identified. "
+        "The patient denies fever. "
+        "Follow-up x-ray was discussed."
+    )
+    fracture_start = source.index("Distal phalanx fracture")
+    environment = {
+        "occurrences": [{
+            "occurrence_id": "fracture", "decision_id": "d-fracture",
+            "surface": "Distal phalanx fracture", "start": fracture_start,
+            "end": fracture_start + len("Distal phalanx fracture"),
+            "runtime_type": "health-condition",
+        }],
+        "decisions": [{
+            "decision_id": "d-fracture",
+            "actions": [{"mode": "level", "legal": True,
+                         "entails": ["finger bone fracture"]}],
+        }],
+    }
+    proposal = {
+        "relation": "tests_for",
+        "answer_role": "subject",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": "S1",
+             "support_property": "finger bone fracture", "literal": None},
+            {"role": "object", "kind": "context", "span_label": None,
+             "support_property": None, "literal": "follow-up x-ray"},
+        ],
+        "question": "For what medical condition was follow-up x-ray discussed?",
+        "accepted_answers": ["finger bone fracture"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+    accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["evidence"]["source_clause_ranges"] == [
+        list(qa_builder._source_clause_spans(source)[0]),
+        list(qa_builder._source_clause_spans(source)[2]),
+    ]
+
+
 def test_teacher_authored_relation_qa_is_preserved_and_drug_is_prescribed_not_treated():
     source = "Hypothyroidism is treated with Synthroid."
     accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [_proposal(source)])
