@@ -2262,7 +2262,38 @@ def test_gleaning_targets_never_drops_a_fixable_reject_without_compiled_args():
     assert len(targets) == 2  # legitimate reject excluded, both fixable/ambiguous kept
 
 
-def test_rejection_safe_arguments_strips_raw_source_echo():
+def test_gleaning_targets_flags_mispaired_context_literal_for_repair():
+    # A literal->linked relation the grounding/reader could not confirm for its paired condition
+    # (three_point_gate_failed / unknown_context_literal) becomes a fixable repair target carrying the
+    # literal, so the teacher can re-pair it -- never silently re-paired here.
+    def rel(reason, literal):
+        return {"relation": "tests_for", "detail_reason": reason, "rejection_id": "sha256:" + reason,
+                "evidence": {"arguments": [
+                    {"role": "subject", "kind": "linked", "occurrence_id": "chf",
+                     "support_property": "heart disease"},
+                    {"role": "object", "kind": "context", "literal": literal},
+                ]}}
+    # a span->span three_point_gate_failed must NOT be treated as a mispaired literal
+    span_span = {"relation": "tests_for", "detail_reason": "three_point_gate_failed",
+                 "rejection_id": "sha256:ss", "evidence": {"arguments": [
+                     {"role": "subject", "kind": "linked", "occurrence_id": "a", "support_property": "x"},
+                     {"role": "object", "kind": "linked", "occurrence_id": "b", "support_property": "y"}]}}
+    occ = {"chf": {"occurrence_id": "chf", "decision_id": "d-chf"}}
+    targets = qa_builder._gleaning_targets(
+        "", [],
+        [rel("three_point_gate_failed", "hemoglobin A1c"),
+         rel("unknown_context_literal", "ct scan"), span_span],
+        [], occ)
+    mis = [t for t in targets if t.get("reason") == "mispaired_context_literal"]
+    assert len(mis) == 2  # both the reader-failed and the ungroundable literal->linked cases only
+    for t in mis:
+        assert t["kind"] == "fixable"
+        assert any(a.get("kind") == "context" and a.get("literal") for a in t.get("arguments") or [])
+    # the span->span three_point_gate_failed produced no mispaired target
+    assert len(targets) == 2
+
+
+def test_rejection_safe_arguments_strips_controlled_surface_keeps_uncontrolled_literal():
     args = [
         {"role": "subject", "kind": "linked", "occurrence_id": "o1",
          "surface": "hypothyroidism", "support_property": "an endocrine condition"},
@@ -2271,9 +2302,13 @@ def test_rejection_safe_arguments_strips_raw_source_echo():
     ]
     safe = qa_builder._rejection_safe_arguments(args)
     blob = json.dumps(safe).casefold()
-    assert "hypothyroidism" not in blob and "dietary modifications" not in blob
+    # a linked argument's controlled surface is stripped (protected leak)...
+    assert "hypothyroidism" not in blob
     assert safe[0]["occurrence_id"] == "o1" and safe[0]["support_property"] == "an endocrine condition"
-    assert safe[1]["runtime_type"] == "medical-procedure"  # non-source identity preserved
+    # ...but a context argument's UNCONTROLLED literal is retained (needed to re-pair a mispaired
+    # literal in the gleaning repair pass; it is kept verbatim in doc_p, so not a protected leak).
+    assert safe[1]["literal"] == "dietary modifications"
+    assert safe[1]["runtime_type"] == "medical-procedure"
 
 
 def test_relation_repair_prompt_restricts_to_targets_and_lists_hints():

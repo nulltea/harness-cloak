@@ -2752,6 +2752,10 @@ def relation_repair_prompt(
             span = _arg_span(argument)
             if span:
                 target_ranges.append(span)
+            # A context literal may have been grounded at the WRONG occurrence (mispaired target);
+            # show every clause the literal actually appears in so the teacher can re-pair it.
+            if argument.get("kind") == "context" and argument.get("literal"):
+                target_ranges.extend(_source_literal_spans(document, str(argument["literal"])))
         evidence_span = target.get("evidence_span")
         if evidence_span and len(evidence_span) == 2:
             target_ranges.append((int(evidence_span[0]), int(evidence_span[1])))
@@ -3722,12 +3726,23 @@ _GLEANING_MISSED_HINT = (
     "This subject/object pair is source-supported (see its evidence card) but no relation was emitted "
     "for it. Emit the relation if the source states it, else leave it."
 )
+# A literal->linked relation whose literal could not be confirmed for the paired condition: the
+# literal is likely attached to the wrong problem. Its real evidence clauses are shown so the teacher
+# can re-pair it. (Reason not in _GLEANING_FIX_HINTS: it is detected structurally below, not by reason.)
+_MISPAIRED_LITERAL_REASONS = frozenset({"unknown_context_literal", "three_point_gate_failed"})
+_GLEANING_MISPAIRED_HINT = (
+    "This test/procedure literal was paired with a condition the source does not state it is for. Find "
+    "where the literal appears in the source and re-pair it with THAT problem's condition (see its "
+    "evidence cards), or abstain if no condition is actually stated for it."
+)
 _GLEANING_TARGET_PRIORITY = {"ambiguous": 3, "fixable": 2, "missed": 1}
 
-# Fields of a compiled relation argument that echo raw source text. Rejection records are
-# shareable diagnostics, so these are stripped before an argument identity is stamped onto one;
-# occurrence_id / support_property / runtime_type carry enough for the fact key and repair prompt.
-_ARGUMENT_RAW_SOURCE_FIELDS = frozenset({"surface", "literal"})
+# A linked argument's `surface` is a controlled entity's raw source text; rejection records are
+# shareable diagnostics, so it is stripped before an argument identity is stamped onto one
+# (occurrence_id / support_property / runtime_type carry the fact key). A context argument's
+# `literal` is UNCONTROLLED source text (kept verbatim in doc_p by definition), so it is NOT a
+# protected leak and is retained -- the gleaning repair pass needs it to name a mispaired literal.
+_ARGUMENT_RAW_SOURCE_FIELDS = frozenset({"surface"})
 
 
 def _rejection_safe_arguments(arguments: Sequence[Mapping]) -> list[dict]:
@@ -3814,6 +3829,20 @@ def _gleaning_targets(
         if reason in _GLEANING_FIXABLE_REASONS:
             _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
                  reason=reason, hint=_GLEANING_FIX_HINTS[reason], arguments=_args(row))
+
+    # mispaired context literal: a literal->linked relation the grounding/reader could not confirm for
+    # the paired condition. Structural detection (one linked + one context arg), so the failed relation
+    # goes back to the teacher with the literal's real evidence to re-pair -- not silently re-paired here.
+    for row in rejections:
+        reason = str(row.get("detail_reason") or row.get("reason") or "")
+        if reason not in _MISPAIRED_LITERAL_REASONS:
+            continue
+        args = _args(row)
+        linked = [a for a in args if a.get("kind") == "linked"]
+        context = [a for a in args if a.get("kind") == "context" and a.get("literal")]
+        if len(linked) == 1 and len(context) == 1:
+            _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
+                 reason="mispaired_context_literal", hint=_GLEANING_MISPAIRED_HINT, arguments=args)
 
     # missed: a source-supported opportunity the teacher never proposed
     for opportunity in opportunities:
