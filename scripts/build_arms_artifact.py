@@ -20,8 +20,13 @@ from cloak.corpora import load_task_docs
 from cloak.detect import Detector, FINE_LABELS, GLINER_LABELS, QA_V2_CLINICAL_LABELS
 from cloak.lattice_profiles import resolve_missing_drug_aliases
 from cloak.probe import fill_proximity, walk_risk
-from cloak.runtime_types import PLACEHOLDER_RE
-from cloak.substitute import prepare_spans_for_substitution
+from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE
+from cloak.substitute import freeze_policy_free_candidates, prepare_spans_for_substitution
+from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
+from cloak.train.qa_builder import (
+    freeze_v2_environment_from_legacy_arms,
+    legacy_arms_ranker_environment,
+)
 
 sys.path.append(str(Path(__file__).resolve().parent / "spikes"))
 from surrogate_validation import build_arms  # noqa: E402
@@ -118,6 +123,61 @@ def action_table(
     return table
 
 
+def v2_action_table(
+    text: str,
+    records: list[dict],
+    *,
+    controlled_types: set[str] | frozenset[str],
+) -> dict:
+    """Policy-free QA/Ranker-v2 menus from a historical frozen record.
+
+    The compatibility read is limited to identity, offsets, lattice levels, and
+    profile counts. It never observes the legacy selected action, tau outcome,
+    risk, exhaustion, proximity, floors, or behavior-clone label.
+    """
+    table, seen = {}, set()
+    for row in sorted(records, key=lambda value: int(value["start"])):
+        key = (str(row.get("type", "")), str(row.get("surface", "")).casefold())
+        if (key in seen or row.get("uncontrolled") or
+                (row.get("type") not in controlled_types and row.get("type") not in DIRECT_TYPES)):
+            continue
+        levels = [
+            level for level in row.get("lattice", [])
+            if isinstance(level, str) and not PLACEHOLDER_RE.fullmatch(level)
+        ]
+        if not levels and row.get("type") not in DIRECT_TYPES:
+            continue
+        seen.add(key)
+        runtime_type = str(row["type"])
+        actions = [
+            {
+                "fill": level,
+                "mode": "level",
+                "aset": round(aset_count(
+                    level, runtime_type, str(row["surface"]), strict=True,
+                ), 4),
+                "legal": True,
+            }
+            for level in levels
+        ]
+        placeholder_action = {
+            "fill": None,
+            "mode": "placeholder",
+            "placeholder_type": runtime_type,
+            "legal": True,
+        }
+        if runtime_type in DIRECT_TYPES:
+            placeholder_action["forced_placeholder"] = True
+        actions.append(placeholder_action)
+        table["|".join(key)] = {
+            "surface": row["surface"], "type": runtime_type,
+            "start": row["start"], "end": row["end"],
+            "sent": _sent_around(text, row["start"], row["end"]),
+            "actions": actions,
+        }
+    return table
+
+
 def parse_args(argv=None):
     ap = argparse.ArgumentParser()
     ap.add_argument("--n-docs", type=int, default=LIMIT,
@@ -195,15 +255,14 @@ def document_entry_from_detection(text, detection, *, tau: float, qa_v2: bool) -
         text, detection.spans, reject_demographic_other=qa_v2,
         min_health_condition_score=QA_V2_CLINICAL_MIN_CONDITION_SCORE if qa_v2 else None,
     )
-    arms = build_arms(text, spans, tau)
-    entry = {arm: [doc_p, records] for arm, (doc_p, records) in arms.items()}
-    if qa_v2 and any(
-        row.get("type") == "demographic-other"
-        for _doc_p, records in entry.values()
-        if isinstance(records, list)
-        for row in records
-    ):
-        raise ValueError("qa-v2-clinical cannot freeze demographic-other")
+    if qa_v2:
+        records = freeze_policy_free_candidates(text, spans)
+        if any(row.get("type") == "demographic-other" for row in records):
+            raise ValueError("qa-v2-clinical cannot freeze demographic-other")
+        entry = {"v2_occurrences": records}
+    else:
+        arms = build_arms(text, spans, tau)
+        entry = {arm: [doc_p, records] for arm, (doc_p, records) in arms.items()}
     diagnostic = detection.as_dict()
     entry["detector_diagnostics"] = {
         **diagnostic,
@@ -252,6 +311,7 @@ def main():
     qa_v2 = args.detector_config == "qa-v2-clinical"
     detectors: dict[str, Detector] = {}   # one detector per distinct profile (reuses the load)
     art = {}
+    source_documents = {}
     for corpus in corpora:
         profile = profile_for(corpus)
         det = detectors.setdefault(profile, None)
@@ -260,6 +320,7 @@ def main():
         docs = load_task_docs(corpus, args.n_docs)
         art[corpus] = {}
         for d in docs:
+            source_documents[d["id"]] = d["text"]
             if qa_v2:
                 detection = det.detect_with_diagnostics(d["text"])
                 # Safe auto data-fix BEFORE the lattice chain bakes: alias an unprofiled brand
@@ -277,9 +338,15 @@ def main():
                 arms = build_arms(d["text"], det.detect(d["text"]), TAU)
                 entry = {arm: [doc_p, R] for arm, (doc_p, R) in arms.items()}
             controlled_types = QA_V2_CONTROLLED_TYPES if qa_v2 else None
-            entry["action_table"] = action_table(
-                d["text"], entry["tau_walk"][1], controlled_types=controlled_types
-            )
+            if qa_v2:
+                entry["v2_action_table"] = v2_action_table(
+                    d["text"], entry["v2_occurrences"],
+                    controlled_types=QA_V2_CONTROLLED_TYPES,
+                )
+            else:
+                entry["action_table"] = action_table(
+                    d["text"], entry["tau_walk"][1], controlled_types=controlled_types
+                )
             art[corpus][d["id"]] = entry
         print(f"[{corpus}] {len(docs)} docs (profile={profile}) {time.time()-t0:.0f}s", flush=True)
     art["_meta"] = {
@@ -287,8 +354,44 @@ def main():
         "profiles": {c: profile_for(c) for c in corpora},
         "detector": detector_manifest(args, corpora),
     }
+    if qa_v2:
+        frozen_v2 = freeze_v2_environment_from_legacy_arms(
+            legacy_arms_ranker_environment(art), art,
+            detector_provenance=art["_meta"]["detector"],
+            source_documents=source_documents,
+        )
+        for corpus in corpora:
+            for doc_id, entry in art[corpus].items():
+                entry["v2_frozen_input"] = frozen_v2["documents"][doc_id]
+        art["_meta"]["v2_frozen_environment"] = {
+            "artifact_version": frozen_v2["artifact_version"],
+            "environment_hash": frozen_v2["environment_hash"],
+        }
+        environment_audit = build_environment_audit(
+            frozen_v2, source_documents=source_documents,
+        )
+        # The QA-v2 artifact is the frozen contract itself.  Do not serialize the
+        # temporary legacy arms used by the migration adapter into a V2 output.
+        for corpus in corpora:
+            for doc_id, entry in list(art[corpus].items()):
+                art[corpus][doc_id] = {
+                    "v2_frozen_input": entry["v2_frozen_input"],
+                }
+    else:
+        from cloak.train.qa_audit import build_legacy_environment_audit
+        environment_audit = build_legacy_environment_audit(art)
+    art["_meta"]["environment_audit"] = {
+        "version": environment_audit["version"],
+        "audit_hash": environment_audit["audit_hash"],
+        "summary_by_code": environment_audit["summary_by_code"],
+        "summary_by_action": environment_audit["summary_by_action"],
+    }
+    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(art, indent=1))
-    print(f"wall {time.time()-t0:.0f}s -> {out}")
+    audit_paths = write_audit_sidecars(
+        environment_audit, out.with_name(f"{out.stem}.environment-audit"),
+    )
+    print(f"wall {time.time()-t0:.0f}s -> {out}; environment_audit={','.join(map(str, audit_paths))}")
 
 
 if __name__ == "__main__":

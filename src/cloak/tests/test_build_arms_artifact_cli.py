@@ -190,7 +190,27 @@ def test_qa_v2_document_entry_persists_detector_diagnostic_families():
         "normalizations",
         "post_detection_rejections",
     }
-    assert all(row["type"] != "demographic-other" for row in entry["tau_walk"][1])
+    assert "tau_walk" not in entry
+    assert all(row["type"] != "demographic-other" for row in entry["v2_occurrences"])
+
+
+def test_qa_v2_freeze_never_calls_legacy_tau_walk(monkeypatch):
+    mod = _module()
+    detection = DetectionResult(
+        spans=[Span(0, 8, "aspirin", "drug", 0.95, "gliner", raw_label="drug")],
+        candidates=[], normalizations=[],
+    )
+    monkeypatch.setattr(mod, "build_arms", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("legacy tau walk must not run for QA-v2")
+    ))
+    monkeypatch.setattr(mod, "freeze_policy_free_candidates", lambda _text, _spans: [{
+        "surface": "aspirin", "type": "drug", "start": 0, "end": 8,
+        "lattice": ["an analgesic"],
+    }])
+
+    entry = mod.document_entry_from_detection("aspirin", detection, tau=0.02, qa_v2=True)
+
+    assert entry["v2_occurrences"][0]["lattice"] == ["an analgesic"]
 
 
 def test_qa_v2_action_table_limits_controlled_types_and_requires_levels(monkeypatch):
@@ -235,3 +255,77 @@ def test_qa_v2_action_table_limits_controlled_types_and_requires_levels(monkeypa
     )
 
     assert set(table) == {"aspirin"}
+
+
+def test_v2_action_table_has_only_legal_lattice_and_typed_placeholder(monkeypatch):
+    mod = _module()
+    monkeypatch.setattr(mod, "aset_count", lambda *_args, **_kwargs: 42.0)
+    monkeypatch.setattr(mod, "walk_risk", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("V2 menu must not score legacy risk")
+    ))
+    table = mod.v2_action_table("aspirin", [{
+        "surface": "aspirin", "type": "drug", "start": 0, "end": 7,
+        "lattice": ["an analgesic", "<DRUG_1>"],
+        "action": "placeholder", "replacement": "<DRUG_1>", "risk": 0.9,
+        "exhausted": True,
+    }], controlled_types=mod.QA_V2_CONTROLLED_TYPES)
+
+    row = next(iter(table.values()))
+    assert row["actions"] == [
+        {"fill": "an analgesic", "mode": "level", "aset": 42.0, "legal": True},
+        {"fill": None, "mode": "placeholder", "placeholder_type": "drug", "legal": True},
+    ]
+
+
+def test_public_detector_manifest_retains_pinned_qa_contract(monkeypatch):
+    mod = _module()
+    args = mod.parse_args([
+        "--corpora", "clinical",
+        "--detector-config", "qa-v2-clinical",
+    ])
+    seen = {}
+    monkeypatch.setattr(mod, "Detector", lambda **kwargs: seen.update(kwargs) or object())
+
+    mod.make_detector(args, "clinical")
+    manifest = mod.detector_manifest(args, ["clinical"])
+
+    assert seen["gliner_model"] == "knowledgator/gliner-pii-large-v1.0"
+    assert seen["threshold"] == 0.35
+    assert seen["profile"] == "clinical"
+    assert seen["label2type"]["condition"] == "health-condition"
+    assert seen["label2type"]["drug"] == "drug"
+    assert seen["label2type"]["medical process"] == "medical-procedure"
+    assert "DEM" not in seen["label2type"].values()
+    assert "MISC" not in seen["label2type"].values()
+    assert manifest["label_schema"] == "knowledgator-native-clinical-v1"
+    assert manifest["label_map"] == mod.QA_V2_CLINICAL_LABELS
+    assert manifest["controlled_runtime_types"] == [
+        "LOC", "drug", "health-condition", "medical-procedure",
+    ]
+
+
+def test_action_table_accepts_set_for_qa_v2_lattice_roles(monkeypatch):
+    mod = _module()
+    monkeypatch.setattr(mod, "walk_risk", lambda *args, **kwargs: 0.1)
+    monkeypatch.setattr(mod, "fill_proximity", lambda *args, **kwargs: 0.2)
+    monkeypatch.setattr(mod, "aset_count", lambda *args, **kwargs: 10.0)
+    records = [
+        {
+            "surface": "arthritis", "type": "health-condition", "start": 0, "end": 9,
+            "action": "generalize", "replacement": "a disease",
+            "lattice": ["a disease"],
+        },
+        {
+            "surface": "62-year-old", "type": "age", "start": 14, "end": 25,
+            "action": "generalize", "replacement": "an age",
+            "lattice": ["an age"],
+        },
+    ]
+
+    table = mod.action_table(
+        "arthritis and 62-year-old",
+        records,
+        controlled_types={"health-condition", "drug", "medical-procedure", "LOC"},
+    )
+
+    assert list(table) == ["arthritis"]

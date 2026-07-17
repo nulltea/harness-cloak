@@ -126,6 +126,104 @@ def _fix_indefinite_articles(text: str) -> str:
     return re.sub(r"\b([Aa]n?)\s+([A-Za-z][A-Za-z-]*)", repl, text)
 
 
+def freeze_policy_free_candidates(text: str, spans: list[Span]) -> list[dict]:
+    """Freeze detector/profile/lattice facts without executing a privacy policy.
+
+    This is the QA-v2/Ranker-v2 source path. It deliberately never calls
+    ``walk_risk`` and emits no chosen replacement, risk, tau outcome, or exhausted
+    state. The legacy ``substitute`` path below remains unchanged.
+    """
+    spans = [s for s in spans if not (
+        s.type == "DATETIME" and not re.search(
+            r"\d|january|february|march|april|may|june|july|august|september|october"
+            r"|november|december|year[s]?[\s-]old|\b(?:last|next|previous|past)\b",
+            s.text, re.IGNORECASE,
+        )
+    )]
+    spans = coref_chains(text, spans)
+    items = [
+        (s.text, s.type, _sentence_around(text, s.start, s.end))
+        for s in spans if s.type in PROFILE_BACKED_TYPES
+    ]
+    proposals = match_spans_batch(items) if items else {}
+    by_surface: dict[tuple[str, str], dict] = {}
+    records = []
+    for span in sorted(spans, key=lambda row: (row.start, row.end)):
+        detector_provenance = (
+            dict(span.detector_provenance)
+            if span.detector_provenance is not None
+            else {
+                "source": span.source, "raw_label": span.raw_label,
+                "recognizer": span.recognizer, "score": span.score,
+            }
+        )
+        row = {
+            "start": span.start, "end": span.end, "surface": span.text,
+            "type": span.type, "chain": span.chain, "score": span.score,
+            "detector_provenance": detector_provenance,
+        }
+        surface_key = (span.type, span.text.casefold())
+        previous = by_surface.get(surface_key)
+        if previous is not None:
+            row.update(previous)
+            records.append(row)
+            continue
+        if span.type in DIRECT_TYPES:
+            # Forced protection, not a ranker action: every V2 render uses the
+            # typed placeholder and no KEEP action is synthesized downstream.
+            frozen = {"lattice": [], "forced_placeholder": True, "uncontrolled": False}
+        else:
+            sentence = _sentence_around(text, span.start, span.end)
+            key = span_key(span.text, span.type)
+            proposal = proposals[key] if key in proposals else NO_PREPASS
+            lattice = lattice_for(span.text, span.type, sentence, proposal=proposal)
+            match = proposals.get(key)
+            distinctive = set(re.findall(r"\d[\d,.]*\d|\d", span.text)) | {
+                word.lower() for word in re.findall(r"\b[A-Z][a-z]{2,}\b", span.text)
+            }
+            lattice = [
+                candidate for candidate in lattice
+                if PLACEHOLDER_RE.fullmatch(candidate)
+                or not distinctive & (
+                    set(re.findall(r"\d[\d,.]*\d|\d", candidate))
+                    | set(re.findall(r"\w{3,}", candidate.lower()))
+                )
+            ] or [
+                placeholder_token(span.type, 1)
+                if span.type not in TYPE_LABEL else TYPE_LABEL.get(span.type, "something")
+            ]
+            real_levels = [
+                candidate for candidate in lattice if not PLACEHOLDER_RE.fullmatch(candidate)
+            ]
+            profile_entry = lookup_entry(span.text, span.type)
+            frozen = {
+                "lattice": lattice,
+                "uncontrolled": bool(
+                    span.type in PROFILE_BACKED_TYPES and not real_levels and profile_entry is None
+                ),
+            }
+            if match is not None:
+                frozen["match"] = (
+                    {"kind": "exact", "entry": match.entry}
+                    if match.kind == "exact" else
+                    {"kind": "semantic", "entry": match.entry,
+                     "similarity": round(match.similarity, 3),
+                     "nli": round(match.nli, 3) if match.nli is not None else None}
+                )
+                frozen["profile_match"] = {
+                    "outcome": match.kind, "reason": f"{match.kind}_entry",
+                    "entry": match.entry,
+                }
+            elif span.type in PROFILE_BACKED_TYPES:
+                frozen["profile_match"] = {
+                    "outcome": "abstained", "reason": "no_certified_match",
+                }
+        by_surface[surface_key] = frozen
+        row.update(frozen)
+        records.append(row)
+    return records
+
+
 def substitute(text: str, spans: list[Span], tau: float = 0.02) -> tuple[str, list[dict]]:
     """Returns (doc_p, R). Spans must be non-overlapping (Detector dedupes)."""
     spans, _rejected = prepare_spans_for_substitution(text, spans)

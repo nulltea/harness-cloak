@@ -1,4 +1,4 @@
-"""Phase-0 builder: the stage-1 ranker training environment artifact.
+"""Build policy-free Ranker-v2 environments (or explicit legacy-v1 compatibility envs).
 
 Implements spec §2 Phase 0a/0b (docs/specs/RL/surrogate-ranker-infiller.md): per decision
 span — the action table (lattice levels ∪ generic placeholder) with precomputed P4 walk_risk
@@ -25,6 +25,10 @@ from build_arms_artifact import ARTIFACT, CORPORA, load_artifact
 from cloak.corpora import load_task_docs
 from cloak.runtime_types import RUNTIME_TYPES
 from cloak.train.probes import probes_for_docs
+from cloak.train.qa_builder import (
+    freeze_v2_environment_from_legacy_arms,
+    legacy_arms_ranker_environment,
+)
 
 OUT = Path("data/ranker_env.json")
 TAU = 0.02
@@ -49,11 +53,84 @@ def main():
                     help="output env path (default: the frozen env — override for the pilot env)")
     ap.add_argument("--skip-probes", action="store_true",
                     help="build spans/splits without teacher-generated QA probes")
+    ap.add_argument("--legacy-v1", action="store_true",
+                    help="emit the retired tau/probe/BC compatibility environment for v1 scripts")
     args = ap.parse_args()
     out = Path(args.out)
 
     t0 = time.time()
-    art = load_artifact(args.arms)
+    raw_art = json.loads(Path(args.arms).read_text())
+    arms_meta = dict(raw_art.pop("_meta", {}) or {})
+    art = raw_art
+    if not args.legacy_v1:
+        requested = args.corpora.split(",")
+        embedded_documents = {
+            doc_id: entry["v2_frozen_input"]
+            for corpus in requested for doc_id, entry in art.get(corpus, {}).items()
+            if isinstance(entry, dict) and isinstance(entry.get("v2_frozen_input"), dict)
+        }
+        if embedded_documents:
+            frozen = {
+                "artifact_version": "occurrence-decisions-v1",
+                "documents": embedded_documents,
+                "environment_hash": (
+                    (arms_meta.get("v2_frozen_environment") or {}).get("environment_hash")
+                ),
+            }
+        else:
+            source_documents = {}
+            for corpus in requested:
+                source_documents.update({
+                    row["id"]: row["text"] for row in load_task_docs(corpus, args.n_docs)
+                })
+            frozen = freeze_v2_environment_from_legacy_arms(
+                legacy_arms_ranker_environment(art), art,
+                source_documents=source_documents,
+            )
+        selected_docs = {
+            doc_id: document
+            for doc_id, document in frozen["documents"].items()
+            if any(doc_id in art.get(corpus, {}) for corpus in requested)
+        }
+        frozen = {
+            "artifact_version": frozen["artifact_version"],
+            "documents": selected_docs,
+            "environment_hash": frozen["environment_hash"],
+        }
+        # Recompute via the compatibility freezer after limiting corpora only when
+        # building all requested docs; per-doc hashes remain canonical either way.
+        env = {
+            "artifact_version": "ranker-v2-environment-v1",
+            "compatibility_adapter": "legacy-arms-policy-free-v1",
+            "frozen_environment": frozen,
+            "corpora": {
+                corpus: {
+                    doc_id: {
+                        "decisions": document["decisions"],
+                        "occurrences": document["occurrences"],
+                        "policy_decision_ids": [
+                            decision["decision_id"] for decision in document["decisions"]
+                            if decision.get("ranker_selectable", True)
+                        ],
+                        "trainable": any(
+                            decision.get("ranker_selectable", True)
+                            for decision in document["decisions"]
+                        ),
+                    }
+                    for doc_id, document in selected_docs.items()
+                    if doc_id in art.get(corpus, {})
+                }
+                for corpus in requested
+            },
+        }
+        # The V2 training artifact must be self-describing but never carry legacy
+        # policy parameters or behavior-clone/probe provenance.
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(env, indent=1))
+        print(f"wall {time.time()-t0:.0f}s -> {out} (ranker-v2, docs={len(selected_docs)})")
+        return
+
+    # Explicit legacy adapter below: retained only for v1 scripts.
     env = {"tau": TAU,                    # legacy walk_risk mask — provenance only
            # Floors retired to 1.0 pending grounded counts; downstream plumbing stays inert.
            "k_floors": inert_runtime_floors(),

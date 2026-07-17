@@ -12,7 +12,9 @@ from copy import deepcopy
 from math import ceil, isfinite
 from numbers import Real
 
+from cloak.runtime_types import placeholder_token, placeholder_type_token
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
+from cloak.train.qa_audit import build_qa_audit
 
 RELATION_TEACHER_MODEL = "openai/gpt-oss-120b"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
@@ -5145,7 +5147,11 @@ def freeze_ranker_environment(
                         **action_semantics,
                         "action_id": action_id,
                     })
-                if not any(action["mode"] == "keep" for action in actions):
+                forced_placeholder = any(
+                    action.get("mode") == "placeholder" and action.get("forced_placeholder")
+                    for action in actions
+                )
+                if not forced_placeholder and not any(action["mode"] == "keep" for action in actions):
                     keep_semantics = {
                         "fill": decision_key[1],
                         "mode": "keep",
@@ -5180,6 +5186,7 @@ def freeze_ranker_environment(
                         "canonical_key": decision_key[1],
                         "occurrence_ids": [],
                         "controlled": True,
+                        "ranker_selectable": not forced_placeholder,
                         "actions": actions,
                         "action_menu_hash": action_menu_hash,
                     }
@@ -5259,6 +5266,10 @@ def freeze_ranker_environment(
                     "overlap_disposition": row.get("overlap_disposition", "accepted"),
                     "decision_id": decision["decision_id"] if decision is not None else None,
                     "controlled": decision is not None,
+                    **({"match": dict(row["match"])}
+                       if isinstance(row.get("match"), Mapping) else {}),
+                    **({"profile_match": dict(row["profile_match"])}
+                       if isinstance(row.get("profile_match"), Mapping) else {}),
                 })
                 if decision is not None:
                     decision["occurrence_ids"].append(occurrence_id)
@@ -5292,35 +5303,237 @@ def freeze_ranker_environment(
     return frozen
 
 
+_V2_ACTION_FIELDS = frozenset({
+    "fill", "mode", "keep", "source_identity", "aset", "coarseness_rank",
+    "level_grounding", "legal", "entails", "forced_placeholder",
+})
+_V2_OCCURRENCE_FIELDS = frozenset({
+    "surface", "type", "runtime_type", "start", "end", "score", "aliases",
+    "polarity", "detector_provenance", "overlap_disposition", "match",
+    "profile_match", "forced_placeholder",
+})
+_V2_DETECTOR_ROW_FIELDS = frozenset({
+    "text", "surface", "type", "runtime_type", "proposed_runtime_type", "start",
+    "end", "score", "source", "raw_label", "recognizer", "status", "reason",
+    "min_health_condition_score", "detector_provenance", "overlap_disposition",
+})
+
+
+def _policy_free_action(action: Mapping, runtime_type: str) -> dict:
+    clean = {key: action[key] for key in _V2_ACTION_FIELDS if key in action}
+    if str(clean.get("mode", "level")) == "placeholder":
+        clean["fill"] = None
+        clean["placeholder_type"] = runtime_type
+    return clean
+
+
+def _policy_free_ranker_environment(ranker_environment: Mapping) -> dict:
+    """Whitelist V2 decision facts from a legacy ranker environment.
+
+    This is deliberately a compatibility adapter, not a policy migration: tau,
+    floors, behavior-clone labels, cached risk, and proximity never cross it.
+    """
+    corpora = {}
+    for corpus, documents in (ranker_environment.get("corpora") or {}).items():
+        corpora[corpus] = {}
+        for doc_id, document in documents.items():
+            spans = []
+            for span in document.get("spans", []):
+                runtime_type = str(span.get("type", span.get("runtime_type", "")))
+                spans.append({
+                    key: span[key]
+                    for key in ("surface", "type", "start", "end", "sent")
+                    if key in span
+                } | {
+                    "type": runtime_type,
+                    "actions": [
+                        _policy_free_action(action, runtime_type)
+                        for action in span.get("actions", [])
+                    ],
+                })
+            corpora[corpus][doc_id] = {"spans": spans}
+    return {"corpora": corpora}
+
+
+def legacy_arms_ranker_environment(arms: Mapping) -> dict:
+    """Expose historical action tables through the policy-free V2 whitelist."""
+    corpora = {}
+    for corpus, documents in arms.items():
+        if corpus == "_meta" or not isinstance(documents, Mapping):
+            continue
+        corpora[corpus] = {}
+        for doc_id, document in documents.items():
+            table = document.get("v2_action_table", document.get("action_table", {}))
+            rows = list(table.values()) if isinstance(table, Mapping) else []
+            corpora[corpus][doc_id] = {"spans": rows}
+    return _policy_free_ranker_environment({"corpora": corpora})
+
+
+def _legacy_arms_occurrences(
+    arms: Mapping,
+    *,
+    detector_provenance: Mapping | None = None,
+) -> dict[str, list[dict]]:
+    """Read only policy-independent rows from a historical arms artifact."""
+    result = {}
+    for corpus, documents in arms.items():
+        if corpus == "_meta" or not isinstance(documents, Mapping):
+            continue
+        for doc_id, document in documents.items():
+            rows = document.get("v2_occurrences")
+            if not isinstance(rows, list):
+                walk = document.get("tau_walk")
+                rows = walk[1] if isinstance(walk, (list, tuple)) and len(walk) > 1 else []
+            clean_rows = []
+            for row in rows if isinstance(rows, list) else []:
+                clean = {key: row[key] for key in _V2_OCCURRENCE_FIELDS if key in row}
+                if detector_provenance is not None or row.get("detector_provenance"):
+                    clean["detector_provenance"] = {
+                        **dict(detector_provenance or {}),
+                        **dict(row.get("detector_provenance") or {}),
+                        "score": row.get("score"),
+                    }
+                clean_rows.append(clean)
+            result[str(doc_id)] = clean_rows
+    return result
+
+
+def _policy_free_detector_diagnostics(value: object) -> dict:
+    if not isinstance(value, Mapping):
+        return {}
+    clean = {}
+    for section in ("accepted", "rejected", "post_detection_rejections"):
+        rows = value.get(section)
+        if isinstance(rows, list):
+            clean[section] = [
+                {key: row[key] for key in _V2_DETECTOR_ROW_FIELDS if key in row}
+                for row in rows if isinstance(row, Mapping)
+            ]
+    return clean
+
+
+def freeze_v2_environment_from_legacy_arms(
+    ranker_environment: Mapping,
+    arms: Mapping,
+    *,
+    detector_provenance: Mapping | None = None,
+    source_documents: Mapping[str, str] | None = None,
+) -> dict:
+    """Compatibility boundary from historical arms/env files to the V2 contract.
+
+    The returned representation contains canonical occurrence/decision/action IDs,
+    legal lattice actions, typed placeholders, and render offsets. It cannot depend
+    on legacy policy outcomes because the adapter uses an explicit field whitelist.
+    """
+    frozen = freeze_ranker_environment(
+        _policy_free_ranker_environment(ranker_environment),
+        occurrences_by_document=_legacy_arms_occurrences(
+            arms, detector_provenance=detector_provenance,
+        ),
+        source_documents=source_documents,
+    )
+    for corpus, documents in arms.items():
+        if corpus == "_meta" or not isinstance(documents, Mapping):
+            continue
+        for doc_id, legacy_document in documents.items():
+            document = frozen["documents"].get(str(doc_id))
+            if document is None or not isinstance(legacy_document, Mapping):
+                continue
+            diagnostics = _policy_free_detector_diagnostics(
+                legacy_document.get("detector_diagnostics")
+            )
+            if diagnostics:
+                document["detector_diagnostics"] = diagnostics
+                document["environment_document_hash"] = _stable_hash(document)
+    frozen["environment_hash"] = _stable_hash({
+        key: value for key, value in frozen.items() if key != "environment_hash"
+    })
+    return frozen
+
+
+def render_frozen_action_vector(
+    source: str,
+    frozen_document: Mapping,
+    action_vector: Mapping[str, str],
+) -> tuple[str, list[dict]]:
+    """Render one V2 action vector using only frozen offsets and action semantics."""
+    decisions = {
+        str(decision["decision_id"]): decision
+        for decision in frozen_document.get("decisions", [])
+    }
+    chosen = {}
+    placeholder_by_decision = {}
+    counters: dict[str, int] = {}
+    used_fills = {}
+    for decision in frozen_document.get("decisions", []):
+        decision_id = str(decision["decision_id"])
+        selected_id = str(action_vector[decision_id])
+        selected = next(
+            (action for action in decision["actions"]
+             if str(action["action_id"]) == selected_id),
+            None,
+        )
+        if selected is None or not selected.get("legal", True):
+            raise ValueError(f"illegal or unknown action for decision {decision_id}")
+        if selected["mode"] == "placeholder":
+            runtime_type = str(selected.get("placeholder_type") or decision["runtime_type"])
+            token_type = placeholder_type_token(runtime_type)
+            counters[token_type] = counters.get(token_type, 0) + 1
+            placeholder_by_decision[decision_id] = placeholder_token(
+                runtime_type, counters[token_type]
+            )
+        elif selected["mode"] == "level":
+            fill_key = canon(str(selected.get("fill", "")))
+            owner = used_fills.setdefault(fill_key, decision_id)
+            if owner != decision_id:
+                raise ValueError(f"non-injective V2 action vector fill {selected.get('fill')!r}")
+        chosen[decision_id] = selected
+
+    replacements = []
+    for occurrence in frozen_document.get("occurrences", []):
+        decision_id = occurrence.get("decision_id")
+        if decision_id is None:
+            continue
+        decision_id = str(decision_id)
+        if decision_id not in decisions or decision_id not in chosen:
+            raise ValueError(f"unresolved controlled occurrence decision {decision_id}")
+        selected = chosen[decision_id]
+        original = source[int(occurrence["start"]):int(occurrence["end"])]
+        if selected["mode"] == "keep":
+            replacement = original
+        elif selected["mode"] == "placeholder":
+            replacement = placeholder_by_decision[decision_id]
+        else:
+            replacement = str(selected["fill"])
+            if original[:1].isupper() and replacement:
+                replacement = replacement[:1].upper() + replacement[1:]
+        replacements.append({
+            "occurrence_id": occurrence["occurrence_id"],
+            "decision_id": decision_id,
+            "start": int(occurrence["start"]),
+            "end": int(occurrence["end"]),
+            "surface": original,
+            "replacement": replacement,
+            "action_id": selected["action_id"],
+            "mode": selected["mode"],
+        })
+    ordered = sorted(replacements, key=lambda row: (row["start"], row["end"]))
+    for left, right in zip(ordered, ordered[1:]):
+        if right["start"] < left["end"]:
+            raise ValueError("overlapping frozen V2 occurrences cannot be rendered")
+    rendered = source
+    for row in reversed(ordered):
+        rendered = rendered[:row["start"]] + row["replacement"] + rendered[row["end"]:]
+    return rendered, ordered
+
+
 def frozen_occurrences_from_arms(
     arms: Mapping,
     *,
     detector_provenance: Mapping | None = None,
 ) -> dict[str, list[dict]]:
-    """Read frozen occurrence rows from an already-frozen arms artifact. Rows with
-    a lattice become controlled decisions."""
-    def _row(row: Mapping) -> dict:
-        return {
-            **dict(row),
-            **({
-                "detector_provenance": {
-                    **dict(detector_provenance or {}),
-                    **dict(row.get("detector_provenance") or {}),
-                    "score": row.get("score"),
-                }
-            } if (
-                detector_provenance is not None or row.get("detector_provenance")
-            ) else {}),
-        }
-    return {
-        doc_id: [
-            _row(row) for row in document["tau_walk"][1]
-            if row.get("lattice")
-        ]
-        for corpus, documents in arms.items()
-        if corpus != "_meta"
-        for doc_id, document in documents.items()
-    }
+    """Legacy compatibility reader; V2 callers use the frozen environment directly."""
+    return _legacy_arms_occurrences(arms, detector_provenance=detector_provenance)
 
 
 # Detected runtime types that are supposed to carry a generalization lattice
@@ -5445,6 +5658,7 @@ def build_utility_artifact(
     render_action_vector: Callable[[str, Mapping[str, str]], str],
     relation_teacher: OpenRouterRelationTeacher | None = None,
     secondary_relation_teacher: OpenRouterRelationTeacher | None = None,
+    environment_audit: Mapping | None = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation."""
     reader_pin = _validated_build_reader_pin(reader, pins)
@@ -5473,6 +5687,8 @@ def build_utility_artifact(
     relation_generation_by_document: dict[str, list[dict]] = {}
     relation_teacher_runs_by_document: dict[str, list[dict]] = {}
     relation_escalation_by_document: dict[str, dict] = {}
+    relation_opportunities_by_document: dict[str, list[dict]] = {}
+    relation_coverage_by_document: dict[str, dict] = {}
     rejection_records: list[dict] = []
 
     def preserve_rejection(record_value: Mapping, *, doc_id: str) -> None:
@@ -5538,6 +5754,11 @@ def build_utility_artifact(
         candidate_arguments = candidate_evidence.get("arguments")
         if candidate_arguments:  # compiled arg identity, so gleaning can key/repair the reject
             evidence["arguments"] = _rejection_safe_arguments(candidate_arguments)
+        anchor_diagnostics = candidate_evidence.get("anchor_diagnostics")
+        if anchor_diagnostics:
+            # Diagnostic-only: a wide cross-clause relation may still be reader
+            # validated, but both kept and rejected attempts must remain auditable.
+            evidence["anchor_diagnostics"] = list(anchor_diagnostics)
         if anchor is not None:
             evidence.update({
                 "joint_anchor_action_vector": anchor["action_vector"],
@@ -5572,6 +5793,11 @@ def build_utility_artifact(
             str(row["occurrence_id"]): row
             for row in environment_document.get("occurrences", [])
         }
+        # Always retain the cheap structural ledger, even when teacher escalation
+        # is disabled. Otherwise a primary-teacher miss is invisible in the QA
+        # report and cannot be selectively re-run later.
+        opportunities = relation_support_opportunities(source, environment_document)
+        relation_opportunities_by_document[doc_id] = opportunities
         placeholder_vector = {}
         for decision in decisions:
             placeholder = next(
@@ -5783,7 +6009,6 @@ def build_utility_artifact(
                 prompt = relation_teacher_prompt(doc_id, source, environment_document)
                 prompt_hash = _stable_hash(prompt)
                 if escalation_enabled:
-                    opportunities = relation_support_opportunities(source, environment_document)
                     opportunity_counts = {
                         scope: sum(row["scope"] == scope for row in opportunities)
                         for scope in _RELATION_ESCALATION_SCOPES
@@ -6298,6 +6523,28 @@ def build_utility_artifact(
                 attempt={"doc_id": doc_id, "definition_version": "contextual-relation-v4"},
                 evidence={"source": "relation_teacher", "teacher_configured": False},
             ), doc_id=doc_id)
+        coverage_targets = _gleaning_targets(
+            source,
+            [row for row in accepted
+             if row.get("family") == "context" and row.get("subtype") == "contextual_relation"],
+            [row for row in rejection_records if row.get("doc_id") == doc_id],
+            opportunities,
+            occurrences,
+        )
+        relation_coverage_by_document[doc_id] = {
+            "opportunity_count": len(opportunities),
+            "unresolved_targets": [
+                {
+                    "kind": row["kind"],
+                    "relation": row.get("relation"),
+                    "reason": row.get("reason"),
+                    "hint": row.get("hint"),
+                    "fact_key_hash": _stable_hash(row["fact_key"]),
+                    "evidence_span": row.get("evidence_span"),
+                }
+                for row in coverage_targets
+            ],
+        }
         candidates_by_document[doc_id] = accepted
 
     artifact_pins = {
@@ -6333,6 +6580,8 @@ def build_utility_artifact(
     }
     artifact["relation_candidate_accounting"] = candidate_accounting_by_document
     artifact["relation_generation"] = relation_generation_by_document
+    artifact["relation_support_opportunities"] = relation_opportunities_by_document
+    artifact["relation_coverage"] = relation_coverage_by_document
     if escalation_enabled:
         artifact["relation_teacher_runs"] = relation_teacher_runs_by_document
         artifact["relation_escalation"] = relation_escalation_by_document
@@ -6349,6 +6598,9 @@ def build_utility_artifact(
     # contents, so it is included in the hashed payload (keeps the downstream
     # gate's hash recompute consistent) without adding entropy.
     artifact["review_flags"] = compute_review_flags(artifact)
+    artifact["qa_audit"] = build_qa_audit(
+        artifact, environment_audit=environment_audit,
+    )
     artifact["artifact_hash"] = _stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
     })
@@ -6422,10 +6674,23 @@ def build_joint_representative_anchor(
             selected = coarsest[0]
             action_vector[decision_id] = str(selected["action_id"])
         else:
-            keep = next((action for action in actions if action.get("mode") == "keep"), None)
-            if keep is None:
-                raise ValueError(f"unrelated decision {decision_id} has no legal KEEP action")
-            action_vector[decision_id] = str(keep["action_id"])
+            if decision.get("ranker_selectable") is False:
+                forced = next(
+                    (action for action in actions
+                     if action.get("mode") == "placeholder"
+                     and action.get("forced_placeholder")),
+                    None,
+                )
+                if forced is None:
+                    raise ValueError(
+                        f"non-selectable decision {decision_id} has no forced placeholder"
+                    )
+                action_vector[decision_id] = str(forced["action_id"])
+            else:
+                keep = next((action for action in actions if action.get("mode") == "keep"), None)
+                if keep is None:
+                    raise ValueError(f"unrelated decision {decision_id} has no legal KEEP action")
+                action_vector[decision_id] = str(keep["action_id"])
 
     missing = sorted(set(requirements) - seen)
     if missing:

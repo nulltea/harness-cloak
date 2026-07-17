@@ -14,12 +14,11 @@ from cloak.train.qa_builder import (
     OpenRouterRelationTeacher,
     artifact_views,
     build_utility_artifact,
-    frozen_occurrences_from_arms,
-    freeze_ranker_environment,
+    freeze_v2_environment_from_legacy_arms,
     read_context_batch,
+    render_frozen_action_vector,
 )
-from cloak.train.reward import canon
-from train_ranker import assemble
+from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
 
 
 _READER_PIN_FIELDS = frozenset({
@@ -72,116 +71,14 @@ def _source_rows(corpus: str, doc_ids: list[str]) -> dict[str, dict]:
 
 
 def _action_renderer(
-    environment: dict,
     frozen_environment: dict,
-    arms: dict,
-    corpus: str,
     source_documents: dict[str, str],
 ):
-    raw_documents = environment["corpora"][corpus]
-
     def render(doc_id: str, action_vector: dict[str, str]) -> str:
-        raw_document = raw_documents[doc_id]
         frozen_document = frozen_environment["documents"][doc_id]
-        decisions_by_id = {
-            str(row["decision_id"]): row
-            for row in frozen_document["decisions"]
-        }
-        decisions_by_key = {
-            (str(row["runtime_type"]), str(row["canonical_key"])): row
-            for row in frozen_document["decisions"]
-        }
-        decision_surfaces = {}
-        for occurrence in frozen_document["occurrences"]:
-            decision_id = occurrence.get("decision_id")
-            decision = decisions_by_id.get(str(decision_id))
-            if decision is None:
-                continue
-            key = (
-                str(occurrence["runtime_type"]),
-                canon(str(occurrence["surface"])),
-            )
-            decisions_by_key.setdefault(key, decision)
-            decision_surfaces.setdefault(str(decision_id), set()).add(key)
-        choice = {}
-        keep_markers = {}
-        walk_rows = arms[corpus][doc_id]["tau_walk"][1]
-        generalized_fill_surface: dict[str, str] = {}
-        for span in raw_document["spans"]:
-            key = (str(span.get("type", "")), canon(str(span.get("surface", ""))))
-            decision = decisions_by_key[key]
-            selected_id = action_vector[str(decision["decision_id"])]
-            selected = next(
-                action for action in decision["actions"]
-                if str(action["action_id"]) == selected_id
-            )
-            fill = selected.get("fill")
-            if selected["mode"] == "keep":
-                marker = (
-                    "__QA_KEEP_"
-                    + str(selected["action_id"]).removeprefix("sha256:")[:16]
-                    + "__"
-                )
-                if marker in source_documents[doc_id]:
-                    raise ValueError(f"KEEP render marker collision for {selected_id}")
-                keep_markers.setdefault(marker, [
-                    str(row["surface"])
-                    for row in sorted(walk_rows, key=lambda row: int(row["start"]))
-                    if row.get("lattice")
-                    and str(row.get("type", "")) == str(decision["runtime_type"])
-                    and (
-                        str(row.get("type", "")),
-                        canon(str(row.get("surface", ""))),
-                    ) in decision_surfaces.get(str(decision["decision_id"]), set())
-                ])
-                fill = marker
-            else:
-                # A generalized/placeholder identity: record one raw-span surface so its
-                # OTHER occurrences (gate-dropped / text-anchored repeats) get the same
-                # fill applied below. KEEP decisions are excluded -- their markers are
-                # count-matched to walk rows, and KEEP preserves identity anyway.
-                generalized_fill_surface.setdefault(
-                    str(decision["decision_id"]), str(span["surface"]))
-            choice[str(span["surface"]).lower()] = {
-                "mode": "level" if selected["mode"] in {"level", "keep"} else "placeholder",
-                "fill": fill,
-                "decision_id": str(decision["decision_id"]),
-            }
-        # P1: generalize EVERY occurrence of a generalized decision, not just the
-        # detector-admitted walk rows. A repeat mention the detector dropped locally
-        # (below the per-type gate) or that text-anchoring recovered would otherwise
-        # survive verbatim in doc_p -- a real identity leak. Universal: any repeated
-        # identity, any doc. Positions already in the walk are left to the walk.
-        walk_boxes = [(int(row["start"]), int(row["end"])) for row in walk_rows]
-        augmented_walk = list(walk_rows)
-        for occurrence in frozen_document.get("occurrences", []):
-            decision_id = occurrence.get("decision_id")
-            fill_surface = (generalized_fill_surface.get(str(decision_id))
-                            if decision_id is not None else None)
-            if fill_surface is None:
-                continue
-            start, end = int(occurrence["start"]), int(occurrence["end"])
-            if any(start < box_end and box_start < end for box_start, box_end in walk_boxes):
-                continue  # already covered by a detector walk row
-            augmented_walk.append({
-                "surface": fill_surface, "type": str(occurrence.get("runtime_type", "")),
-                "start": start, "end": end, "lattice": True,
-                "replacement": str(occurrence.get("surface", "")), "action": "generalize",
-            })
-        rendered = assemble(
-            source_documents[doc_id],
-            augmented_walk,
-            raw_document["spans"],
-            choice,
+        return render_frozen_action_vector(
+            source_documents[doc_id], frozen_document, action_vector,
         )[0]
-        for marker, surfaces in keep_markers.items():
-            for surface in surfaces:
-                if marker not in rendered:
-                    raise ValueError(f"missing KEEP render marker {marker}")
-                rendered = rendered.replace(marker, surface, 1)
-            if marker in rendered:
-                raise ValueError(f"unresolved KEEP render marker {marker}")
-        return rendered
 
     return render
 
@@ -197,24 +94,35 @@ def build_from_files(
     _require_manifest_reader_pin(manifest)
 
     environment = json.loads(Path(args.env).read_text())
-    environment = _selected_environment(environment, args.corpus, args.doc_id)
     arms = json.loads(Path(args.arms).read_text())
     arms_meta = dict(arms.pop("_meta", {}) or {})
     detector_pin = dict(arms_meta.get("detector", {}) or {})
-    all_occurrence_records = frozen_occurrences_from_arms(
-        arms, detector_provenance=detector_pin or None
-    )
-    occurrence_records = {
-        doc_id: all_occurrence_records[doc_id] for doc_id in args.doc_id
-    }
     rows = _source_rows(args.corpus, args.doc_id)
     if any(not doc_id.startswith("aci/") for doc_id in rows):
         raise SystemExit("the implemented task adapter currently supports ACI documents only")
     source_documents = {doc_id: row["text"] for doc_id, row in rows.items()}
-    frozen_environment = freeze_ranker_environment(
-        environment,
-        occurrences_by_document=occurrence_records,
-        source_documents=source_documents,
+    persisted_frozen = environment.get("frozen_environment")
+    if isinstance(persisted_frozen, Mapping):
+        documents = persisted_frozen.get("documents")
+        if not isinstance(documents, Mapping):
+            raise SystemExit("ranker-v2 environment has no frozen documents")
+        missing = [doc_id for doc_id in args.doc_id if doc_id not in documents]
+        if missing:
+            raise SystemExit(f"documents absent from frozen ranker-v2 environment: {missing}")
+        frozen_environment = {
+            "artifact_version": persisted_frozen.get("artifact_version"),
+            "environment_hash": persisted_frozen.get("environment_hash"),
+            "documents": {doc_id: documents[doc_id] for doc_id in args.doc_id},
+        }
+    else:
+        environment = _selected_environment(environment, args.corpus, args.doc_id)
+        frozen_environment = freeze_v2_environment_from_legacy_arms(
+            environment, arms,
+            detector_provenance=detector_pin or None,
+            source_documents=source_documents,
+        )
+    environment_audit = build_environment_audit(
+        frozen_environment, source_documents=source_documents,
     )
     references = {doc_id: row["gold_ref"] for doc_id, row in rows.items()}
     gleaning_requested = bool(
@@ -258,6 +166,7 @@ def build_from_files(
         "builder_pin": "qa-builder-v2-assertion-compiler-v11",
         "detector_pin": detector_pin or None,
         "teacher_pin": teacher_pin,
+        "environment_audit_hash": environment_audit.get("audit_hash") or None,
         "source_hashes": {doc_id: _hash(text) for doc_id, text in source_documents.items()},
         "reference_hashes": {doc_id: _hash(text) for doc_id, text in references.items()},
     })
@@ -277,12 +186,13 @@ def build_from_files(
         pins=pins,
         reader=reader,
         render_action_vector=_action_renderer(
-            environment, frozen_environment, arms, args.corpus, source_documents
+            frozen_environment, source_documents
         ),
         relation_teacher=relation_teacher,
         secondary_relation_teacher=(
             secondary_relation_teacher if escalation_configured else None
         ),
+        environment_audit=environment_audit or None,
     )
 
 
@@ -319,6 +229,11 @@ def write_artifacts(artifact: dict, output: Path) -> tuple[Path, Path]:
     output.write_text(json.dumps(artifact, indent=1))
     assertions_output.write_text(json.dumps(assertions_view, indent=1))
     qa_pairs_output.write_text(json.dumps(qa_pairs_view, indent=1))
+    qa_audit = artifact.get("qa_audit")
+    if isinstance(qa_audit, Mapping):
+        write_audit_sidecars(
+            qa_audit, output.with_name(f"{output.stem}.qa-audit"),
+        )
     return assertions_output, qa_pairs_output
 
 
@@ -335,11 +250,18 @@ def main(
     )
     output = Path(args.out)
     assertions_output, qa_pairs_output = write_artifacts(artifact, output)
+    qa_audit_base = output.with_name(f"{output.stem}.qa-audit")
+    qa_audit_paths = [
+        qa_audit_base.with_name(qa_audit_base.name + ".json"),
+        qa_audit_base.with_name(qa_audit_base.name + ".jsonl"),
+        qa_audit_base.with_name(qa_audit_base.name + ".md"),
+    ]
     print(
         f"wrote {output}: docs={len(artifact['documents'])} "
         f"assertions={len(artifact['assertions'])} "
         f"rejections={sum(artifact['rejections']['summary_by_reason'].values())}; "
-        f"views={assertions_output},{qa_pairs_output}",
+        f"views={assertions_output},{qa_pairs_output}; "
+        f"qa_audit={','.join(map(str, qa_audit_paths))}",
         flush=True,
     )
 
