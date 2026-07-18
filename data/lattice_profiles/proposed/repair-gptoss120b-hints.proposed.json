@@ -1,0 +1,186 @@
+{
+ "artifact_role": "proposal",
+ "base_profile_hash": "075c7044a631f93b1f31679647e70c586637c0053c50e4caecc1dc1dd2d1a67e",
+ "created": "2026-07-18",
+ "producer_run_id": "repair-gptoss120b-hints",
+ "profiles": {
+  "drug": {
+   "symbicort": {
+    "aliases": [
+     "budesonide/formoterol",
+     "symbicort inhaler",
+     "budesonide/formoterol combination"
+    ],
+    "count": 15.0,
+    "entry_origin": "observed-surface",
+    "level_counts": {
+     "inhaled corticosteroid/long‑acting β2‑adrenergic agonist combination (ICS/LABA)": 15.0,
+     "medication": 11000.0,
+     "therapeutic agent": 15000.0
+    },
+    "level_grounding": {
+     "inhaled corticosteroid/long‑acting β2‑adrenergic agonist combination (ICS/LABA)": {
+      "count_basis": "model-proposed-corpus-median",
+      "count_evidence": "'inhaled corticosteroid/long‑acting β2‑adrenergic agonist combination (ICS/LABA)' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+      "member_set_ref": null,
+      "selector": "FDA Orange Book",
+      "source_family": "model-proposed",
+      "status": "model-proposed"
+     },
+     "medication": {
+      "count_basis": "real-world-reference-estimate",
+      "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+      "member_set_ref": null,
+      "selector": "canonical",
+      "source_family": "model-proposed",
+      "status": "model-proposed"
+     },
+     "therapeutic agent": {
+      "count_basis": "real-world-reference-estimate",
+      "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+      "member_set_ref": null,
+      "selector": "canonical",
+      "source_family": "model-proposed",
+      "status": "model-proposed"
+     }
+    },
+    "levels": [
+     "inhaled corticosteroid/long‑acting β2‑adrenergic agonist combination (ICS/LABA)",
+     "medication",
+     "therapeutic agent"
+    ],
+    "source_ids": [
+     "producer:repair-gptoss120b-hints:triage:drug:symbicort"
+    ]
+   },
+   "albuterol": {
+    "aliases": [
+     "salbutamol",
+     "ventolin",
+     "proair",
+     "proventil"
+    ],
+    "count": 10.0,
+    "entry_origin": "manually-authored",
+    "level_counts": {
+     "beta-2 adrenergic agonist": 10.0,
+     "bronchodilator": 25.0,
+     "medication": 11000.0
+    },
+    "level_grounding": {
+     "beta-2 adrenergic agonist": {
+      "count_basis": "real-world-reference-estimate",
+      "count_evidence": "manually authored albuterol ladder; 'beta-2 adrenergic agonist' count = anchor value from data/lattice_sources/reference/drug_class_anchors.json (beta-2 adrenergic agonist=10, bronchodilator=25, medication=11000); not certifying",
+      "member_set_ref": null,
+      "selector": "canonical",
+      "source_family": "manually-authored",
+      "status": "model-proposed"
+     },
+     "bronchodilator": {
+      "count_basis": "real-world-reference-estimate",
+      "count_evidence": "manually authored albuterol ladder; 'bronchodilator' count = anchor value from data/lattice_sources/reference/drug_class_anchors.json (beta-2 adrenergic agonist=10, bronchodilator=25, medication=11000); not certifying",
+      "member_set_ref": null,
+      "selector": "canonical",
+      "source_family": "manually-authored",
+      "status": "model-proposed"
+     },
+     "medication": {
+      "count_basis": "real-world-reference-estimate",
+      "count_evidence": "manually authored albuterol ladder; 'medication' count = anchor value from data/lattice_sources/reference/drug_class_anchors.json (beta-2 adrenergic agonist=10, bronchodilator=25, medication=11000); not certifying",
+      "member_set_ref": null,
+      "selector": "canonical",
+      "source_family": "manually-authored",
+      "status": "model-proposed"
+     }
+    },
+    "levels": [
+     "beta-2 adrenergic agonist",
+     "bronchodilator",
+     "medication"
+    ],
+    "source_ids": []
+   }
+  },
+  "health-condition": {
+   "abnormal weight gain": {
+    "aliases": [
+     "excessive weight gain",
+     "abnormal weight increase",
+     "weight gain"
+    ],
+    "count": 50.0,
+    "entry_origin": "observed-surface",
+    "level_counts": {
+     "clinical symptom": 1000.0,
+     "weight gain disorder": 50.0
+    },
+    "level_grounding": {
+     "clinical symptom": {
+      "count_basis": "real-world-reference-estimate",
+      "count_evidence": "'clinical symptom' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+      "member_set_ref": null,
+      "selector": "canonical_vocabulary_slice",
+      "source_family": "model-proposed",
+      "status": "model-proposed"
+     },
+     "weight gain disorder": {
+      "count_basis": "model-proposed-corpus-median",
+      "count_evidence": "'weight gain disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+      "member_set_ref": null,
+      "selector": "ICD-10/ICD-11 taxonomy review",
+      "source_family": "model-proposed",
+      "status": "model-proposed"
+     }
+    },
+    "levels": [
+     "weight gain disorder",
+     "clinical symptom"
+    ],
+    "source_ids": [
+     "producer:repair-gptoss120b-hints:triage:health-condition:abnormal weight gain"
+    ]
+   },
+   "rotator cuff tendinopathy": {
+    "aliases": [
+     "shoulder tendinopathy",
+     "subacromial tendon disorder",
+     "overuse shoulder tendon syndrome"
+    ],
+    "count": 130.0,
+    "entry_origin": "observed-surface",
+    "level_counts": {
+     "musculoskeletal system disease": 1000.0,
+     "subacromial tendon disorder family": 130.0
+    },
+    "level_grounding": {
+     "musculoskeletal system disease": {
+      "count_basis": "model-proposed-corpus-median",
+      "count_evidence": "'musculoskeletal system disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+      "member_set_ref": null,
+      "selector": "ICD-10-CM",
+      "source_family": "model-proposed",
+      "status": "model-proposed"
+     },
+     "subacromial tendon disorder family": {
+      "count_basis": "model-proposed-corpus-median",
+      "count_evidence": "'subacromial tendon disorder family' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+      "member_set_ref": null,
+      "selector": "ICD-10-CM",
+      "source_family": "model-proposed",
+      "status": "model-proposed"
+     }
+    },
+    "levels": [
+     "subacromial tendon disorder family",
+     "musculoskeletal system disease"
+    ],
+    "source_ids": [
+     "producer:repair-gptoss120b-hints:triage:health-condition:rotator cuff tendinopathy"
+    ]
+   }
+  }
+ },
+ "proposal_scope": "producer-processed-only",
+ "schema_version": 1,
+ "sources": {}
+}

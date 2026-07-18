@@ -39,18 +39,49 @@ def _tokens(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", text.lower()))
 
 
+# Generic category head nouns that recur across MANY unrelated classes and so carry no
+# discriminative signal for near-duplicate detection. Two labels sharing only one of these
+# ("respiratory agent" vs "antibacterial agent", "genetic disorder" vs "musculoskeletal
+# disorder") are NOT near-duplicates -- token-Jaccard on the raw tokens wrongly scored them 0.33
+# (one shared word out of three) and tripped the 0.3 gate, cascading real distinct rungs into
+# too_few_levels. Real class heads (analgesic, inhibitor, antibiotic, glucocorticoid, ...) are
+# deliberately absent: they DO distinguish a tier and must keep counting.
+_GENERIC_HEAD_NOUNS = frozenset({
+    "agent", "agents", "condition", "conditions", "disorder", "disorders", "disease", "diseases",
+    "procedure", "procedures", "medication", "medications", "substance", "substances", "compound",
+    "compounds", "symptom", "symptoms", "finding", "findings", "drug", "drugs", "therapy",
+    "therapies", "family", "families", "illness", "illnesses", "syndrome", "syndromes",
+})
+
+
+def _label_overlap(a: set[str], b: set[str]) -> float:
+    """Token-Jaccard, except two labels whose ONLY shared tokens are generic category head nouns
+    score 0 -- sharing just "agent"/"disorder"/"condition" is not similarity. Full-token Jaccard
+    is kept otherwise (no union shrinking), so a real paraphrase sharing a discriminative token
+    still scores exactly as before."""
+    if not a or not b:
+        return 0.0
+    shared = a & b
+    if not shared or shared <= _GENERIC_HEAD_NOUNS:
+        return 0.0
+    return len(shared) / len(a | b)
+
+
 class CanonicalVocabulary:
     def __init__(self, runtime_type: str, *, proposed_out: str | Path | None = None):
         self.runtime_type = runtime_type
         self._labels: dict[str, float] = {}
         self._run_labels: set[str] = set()
+        self._anchor_labels: set[str] = set()
         self._seed()
         if proposed_out is not None:
             self._seed_from_run(proposed_out)
 
     def _seed(self) -> None:
         for label, count in load_reference_anchors(self.runtime_type).items():
-            self._labels[_norm(label)] = count
+            key = _norm(label)
+            self._labels[key] = count
+            self._anchor_labels.add(key)
         if self.runtime_type == "medical-procedure":
             for _prefix, (desc, members) in load_icd10pcs_index().items():
                 label = _norm(desc)
@@ -105,26 +136,59 @@ class CanonicalVocabulary:
             tokens = _tokens(label)
             if not tokens:
                 continue
-            overlap = len(candidate_tokens & tokens) / len(candidate_tokens | tokens)
+            overlap = _label_overlap(candidate_tokens, tokens)
             if overlap > min_overlap:
                 scored.append((overlap, label))
         scored.sort(key=lambda pair: -pair[0])
         return [label for _, label in scored[:k]]
 
+    def _functional_band(self) -> list[str]:
+        """Seeded anchors in the middle magnitude band -- the indication/functional class tier
+        ('antidepressant', 'antihistamine', 'statin'), between the tiny specific mechanism classes
+        and the huge umbrella tiers. These share no letters with a drug's brand/INN name, so pure
+        surface-overlap ranking never surfaces them and the model jumps mechanism -> umbrella,
+        skipping the tier a layperson actually recognizes. Percentile-relative so it generalizes
+        across runtime types."""
+        counts = sorted(self._labels[label] for label in self._anchor_labels)
+        if len(counts) < 4:
+            return []
+        # ~P15..P95: wide enough to span the functional tier from the low end (anticoagulant,
+        # statin) to the high end (antibiotic, cardiovascular agent); the even-count spread in
+        # context_slice then samples across it. Trims only the tiniest mechanism classes and the
+        # very largest umbrellas (already surfaced by the count-ranked primary slice).
+        lo = counts[len(counts) * 3 // 20]
+        hi = counts[min(len(counts) - 1, len(counts) * 19 // 20)]
+        return [label for label in self._anchor_labels if lo <= self._labels[label] <= hi]
+
     def context_slice(self, n: int = 10, *, surface: str | None = None) -> list[dict]:
         """A bounded, representative slice for a context packet as {label, count} rows. When a
-        surface is given, rank by token-overlap with the surface first (so the model sees the
-        labels most likely to be the right reuse target), then by count; otherwise count-desc."""
-        labels = list(self._labels)
-        if surface:
-            surface_tokens = _tokens(surface)
-            def key(label):
-                overlap = len(_tokens(label) & surface_tokens)
-                return (-overlap, -self._labels[label])
-            labels.sort(key=key)
-        else:
-            labels.sort(key=lambda label: -self._labels[label])
-        return [{"label": label, "count": self._labels[label]} for label in labels[:n]]
+        surface is given, rank by token-overlap with the surface first, but RESERVE part of the
+        budget for functional-band anchors so the model sees the indication/functional class as a
+        reuse target even though it's lexically distant from the surface; otherwise count-desc."""
+        surface_tokens = _tokens(surface or "")
+        def overlap(label: str) -> int:
+            return len(_tokens(label) & surface_tokens)
+        if not surface:
+            ranked = sorted(self._labels, key=lambda label: -self._labels[label])
+            return [{"label": label, "count": self._labels[label]} for label in ranked[:n]]
+        ranked = sorted(self._labels, key=lambda label: (-overlap(label), -self._labels[label]))
+        reserve = n // 2
+        chosen = ranked[: n - reserve]
+        # Magnitude alone can't isolate the functional tier (anticoagulant 20 sits with mechanism
+        # classes), so show a DIVERSE spread across the band, evenly spaced by count, rather than
+        # the lowest few -- that surfaces anticoagulant, antidepressant, antihistamine, antibiotic,
+        # cardiovascular agent, ... so whichever fits the drug is visible to reuse.
+        band = sorted(self._functional_band(), key=lambda label: self._labels[label])
+        if band and reserve:
+            step = max(1, len(band) // reserve)
+            spread = band[::step]
+            band = spread + [label for label in band if label not in spread]
+        for label in [*band, *ranked]:
+            if len(chosen) >= n:
+                break
+            if label not in chosen:
+                chosen.append(label)
+        return [{"label": label, "count": self._labels[label]} for label in chosen]
 
     def all_labels(self) -> list[str]:
         return list(self._labels)

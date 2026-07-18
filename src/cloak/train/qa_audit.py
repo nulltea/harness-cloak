@@ -459,6 +459,7 @@ def build_environment_audit(
             by_key = {
                 _detector_row_key(row): row for row in records if isinstance(row, Mapping)
             }
+            source_document = (source_documents or {}).get(stable_doc_id)
 
             for detector_row in accepted:
                 if not isinstance(detector_row, Mapping):
@@ -505,6 +506,15 @@ def build_environment_audit(
                     evidence={"profile_match": dict(trace), "walk_action": row.get("action") if row else None},
                     recommended_action="investigate",
                 ))
+                if isinstance(source_document, str):
+                    self_type_rows.append({
+                        "doc_id": stable_doc_id,
+                        "surface": str(detector_row.get("text", detector_row.get("surface", ""))),
+                        "runtime_type": runtime_type,
+                        "entry": None,
+                        "start": detector_row.get("start"), "end": detector_row.get("end"),
+                        "context": _source_excerpt(source_document, detector_row.get("start"), detector_row.get("end")),
+                    })
 
             controlled = [
                 row for row in records if isinstance(row, Mapping)
@@ -554,7 +564,6 @@ def build_environment_audit(
                 entry = match.get("entry")
                 if runtime_type in PROFILE_BACKED_TYPES and isinstance(entry, str) and entry:
                     profile_decisions.setdefault((runtime_type, entry), row)
-            source_document = (source_documents or {}).get(stable_doc_id)
             for row in profile_decisions.values():
                 ladder = _ladder_diagnostic(row, profiles)
                 observations.append(_ladder_observation(
@@ -658,8 +667,12 @@ def build_environment_audit(
         if self_type_error is not None:
             diagnostics_metadata["controlled_self_type_nli_error"] = self_type_error
         for score in self_scores:
+            diagnostic_code = (
+                "unprofiled_self_type_diagnostic"
+                if score.get("entry") is None else "controlled_self_type_diagnostic"
+            )
             events.append(_event(
-                doc_id=str(score["doc_id"]), stage="detector", code="controlled_self_type_diagnostic",
+                doc_id=str(score["doc_id"]), stage="detector", code=diagnostic_code,
                 severity="info", fix_class="investigate",
                 entity_refs={"surface": score["surface"], "runtime_type": score["runtime_type"],
                              "entry": score["entry"], "start": score["start"], "end": score["end"]},

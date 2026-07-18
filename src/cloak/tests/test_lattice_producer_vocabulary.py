@@ -46,6 +46,28 @@ def test_nearest_returns_empty_for_unrelated_candidate() -> None:
     assert vocab.nearest("zzz completely unrelated zzz", k=3) == []
 
 
+def test_nearest_ignores_shared_generic_head_noun() -> None:
+    # regression: a shared category head noun ("agent") is NOT similarity. "respiratory agent"
+    # only coincidentally shares "agent" with the "___ agent" anchors; on raw tokens that scored
+    # 0.33 and tripped the 0.3 near-dup gate, cascading distinct rungs into too_few_levels.
+    vocab = CanonicalVocabulary("drug")
+
+    hits = vocab.nearest("respiratory agent", k=3, min_overlap=0.3)
+    assert all(other.endswith(" agent") is False or "respiratory" in other for other in hits)
+    assert "antibacterial agent" not in hits
+    assert "cardiovascular agent" not in hits
+
+    # but a genuine paraphrase sharing a DISCRIMINATIVE token is still caught
+    assert "antihypertensive agent" in vocab.nearest("antihypertensive medication", k=3, min_overlap=0.3)
+
+
+def test_nearest_ignores_shared_syndrome_head_noun() -> None:
+    # "weight gain syndrome" is not a near-duplicate of the bare "syndrome" tier -- it only
+    # shares the generic head noun, the same false positive as "___ agent"/"___ disorder".
+    vocab = CanonicalVocabulary("health-condition")
+    assert "syndrome" not in vocab.nearest("weight gain syndrome", k=3, min_overlap=0.3)
+
+
 def test_context_slice_is_bounded_and_ranked_by_count() -> None:
     vocab = CanonicalVocabulary("drug")
 
@@ -53,6 +75,20 @@ def test_context_slice_is_bounded_and_ranked_by_count() -> None:
 
     assert len(top) == 3
     assert "chemical substance" in [row["label"] for row in top]  # largest real-world anchor (CAS Registry)
+
+
+def test_context_slice_surfaces_functional_class_anchors_for_lexically_distant_surface() -> None:
+    # a drug brand/INN name shares no letters with its functional class ("wellbutrin" vs
+    # "antidepressant"), so pure surface-overlap ranking used to show only the broad umbrella
+    # anchors. The reserved functional band must now surface a spread of functional classes.
+    vocab = CanonicalVocabulary("drug")
+    labels = [row["label"] for row in vocab.context_slice(n=20, surface="wellbutrin bupropion")]
+    functional = {"antidepressant", "antihistamine", "antipsychotic", "antibiotic",
+                  "anticoagulant", "antihypertensive agent", "cardiovascular agent"}
+    assert len(functional & set(labels)) >= 3, labels
+
+    # no-surface behaviour is unchanged (pure count-desc, umbrellas first)
+    assert [r["label"] for r in vocab.context_slice(n=1)] == ["chemical substance"]
 
 
 def test_medical_procedure_seeds_from_icd10pcs_headers_not_a_hand_file() -> None:

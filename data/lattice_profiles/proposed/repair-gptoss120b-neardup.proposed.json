@@ -1,0 +1,574 @@
+{
+  "artifact_role": "proposal",
+  "base_profile_hash": "075c7044a631f93b1f31679647e70c586637c0053c50e4caecc1dc1dd2d1a67e",
+  "created": "2026-07-18",
+  "producer_run_id": "repair-gptoss120b-neardup",
+  "profiles": {
+    "drug": {
+      "penicillin": {
+        "aliases": [
+          "penicillins",
+          "\u03b2\u2011lactam antibiotic",
+          "penicillin g",
+          "penicillin v",
+          "penicillanic acid derivative"
+        ],
+        "count": 150.0,
+        "entry_origin": "observed-surface",
+        "ladder_defects": [
+          "no_anonymity_expansion"
+        ],
+        "level_counts": {
+          "antibacterial agent": 150.0,
+          "antibiotic": 150.0
+        },
+        "level_grounding": {
+          "antibacterial agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antibacterial agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "ATC J01",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "antibiotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antibiotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "ATC J01",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antibiotic",
+          "antibacterial agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:repair:drug:penicillin"
+        ]
+      },
+      "phexxi": {
+        "aliases": [
+          "phexxi",
+          "phexxi (spermicide)",
+          "phexxi (vaginal contraceptive)"
+        ],
+        "count": 30.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "contraceptive agent": 150.0,
+          "spermicide": 30.0
+        },
+        "level_grounding": {
+          "contraceptive agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'contraceptive agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broader pharmacologic category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "spermicide": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'spermicide' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "pharmacologic/mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "spermicide",
+          "contraceptive agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:drug:phexxi"
+        ]
+      }
+    },
+    "health-condition": {
+      "cholesterol problems": {
+        "aliases": [
+          "high cholesterol",
+          "elevated cholesterol",
+          "cholesterol abnormality"
+        ],
+        "count": 80.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "disease of metabolism": 1200.0,
+          "hyperlipidemia": 80.0
+        },
+        "level_grounding": {
+          "disease of metabolism": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'disease of metabolism' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocab",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "hyperlipidemia": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'hyperlipidemia' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "taxonomy_review",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "hyperlipidemia",
+          "disease of metabolism"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:health-condition:cholesterol problems"
+        ]
+      },
+      "diabetes mellitus": {
+        "aliases": [
+          "diabetes",
+          "dm",
+          "diabetes mellitus type 1",
+          "diabetes mellitus type 2",
+          "diabetes mellitus",
+          "type 1 diabetes",
+          "type 2 diabetes"
+        ],
+        "count": 80.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "carbohydrate metabolic disorder": 250.0,
+          "disease of metabolism": 1200.0,
+          "glucose metabolism disease": 80.0
+        },
+        "level_grounding": {
+          "carbohydrate metabolic disorder": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'carbohydrate metabolic disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "custom taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "disease of metabolism": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'disease of metabolism' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "custom taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "glucose metabolism disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'glucose metabolism disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "custom taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "glucose metabolism disease",
+          "carbohydrate metabolic disorder",
+          "disease of metabolism"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:repair:health-condition:diabetes mellitus"
+        ]
+      },
+      "gastroesophageal reflux disease": {
+        "aliases": [
+          "acid reflux",
+          "acid reflux disease",
+          "biliary reflux",
+          "chronic acid reflux",
+          "gastresophageal reflux",
+          "gastro-esophageal reflux",
+          "gastroesophageal reflux",
+          "gerd",
+          "gerd - gastro-esophageal reflux disease",
+          "reflux",
+          "reflux disease",
+          "reflux esophagitis",
+          "gastroesophageal reflux disease"
+        ],
+        "count": 30.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "gastroesophageal reflux disorder": 30.0,
+          "gastrointestinal reflux disease": 356.67
+        },
+        "level_grounding": {
+          "gastroesophageal reflux disorder": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'gastroesophageal reflux disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "gastrointestinal reflux disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'gastrointestinal reflux disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "gastroesophageal reflux disorder",
+          "gastrointestinal reflux disease"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:repair:health-condition:gastroesophageal reflux disease"
+        ]
+      },
+      "huntington disease": {
+        "aliases": [
+          "huntington's disease",
+          "hd",
+          "huntington disease"
+        ],
+        "count": 80.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "genetic neurodegenerative disease": 80.0,
+          "nervous system disease": 1800.0,
+          "neurodegenerative disease": 350.0
+        },
+        "level_grounding": {
+          "genetic neurodegenerative disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'genetic neurodegenerative disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "Orphanet",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "nervous system disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'nervous system disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "neurodegenerative disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'neurodegenerative disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "NINDS",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "genetic neurodegenerative disease",
+          "neurodegenerative disease",
+          "nervous system disease"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:health-condition:Huntington Disease"
+        ]
+      },
+      "type two diabetes": {
+        "aliases": [
+          "type 2 diabetes",
+          "type two diabetes",
+          "t2dm",
+          "non\u2011insulin\u2011dependent diabetes mellitus"
+        ],
+        "count": 180.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "diabetes mellitus": 356.67,
+          "disease of metabolism": 1200.0,
+          "type 2 diabetes mellitus": 180.0
+        },
+        "level_grounding": {
+          "diabetes mellitus": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'diabetes mellitus' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "WHO disease taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "disease of metabolism": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'disease of metabolism' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "type 2 diabetes mellitus": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'type 2 diabetes mellitus' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD\u201110 classification hierarchy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "type 2 diabetes mellitus",
+          "diabetes mellitus",
+          "disease of metabolism"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:repair:health-condition:type two diabetes"
+        ]
+      },
+      "ulcerative colitis complications": {
+        "aliases": [
+          "ulcerative colitis",
+          "uc",
+          "ulcerative colitis complications"
+        ],
+        "count": 150.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "colitis": 150.0,
+          "inflammatory bowel disease": 356.67
+        },
+        "level_grounding": {
+          "colitis": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'colitis' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "inflammatory bowel disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'inflammatory bowel disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ontology",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "colitis",
+          "inflammatory bowel disease"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:health-condition:ulcerative colitis complications"
+        ]
+      }
+    },
+    "medical-procedure": {
+      "ascending aortic aneurysm repair": {
+        "aliases": [
+          "ascending aortic aneurysm repair",
+          "ascending aorta repair",
+          "ascending aortic aneurysm reconstruction"
+        ],
+        "count": 99.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "heart and great vessels, repair": 99.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "heart and great vessels, repair": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'heart and great vessels, repair' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical label \"heart and great vessels, repair\"",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "heart and great vessels, repair",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:ascending aortic aneurysm repair"
+        ]
+      },
+      "colonoscopy": {
+        "aliases": [
+          "colonoscopy screening",
+          "screening colonoscopic exam",
+          "preventive colonoscopy",
+          "colonoscopy"
+        ],
+        "count": 312.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "lower gastrointestinal endoscopy": 312.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "lower gastrointestinal endoscopy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'lower gastrointestinal endoscopy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "taxonomy:procedure_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "lower gastrointestinal endoscopy",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:colonoscopy"
+        ]
+      },
+      "coronary artery bypass grafting": {
+        "aliases": [
+          "cabg",
+          "coronary bypass surgery",
+          "coronary artery bypass",
+          "heart bypass"
+        ],
+        "count": 848.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "heart and great vessels, bypass": 848.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "heart and great vessels, bypass": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'heart and great vessels, bypass' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical vocabulary slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "heart and great vessels, bypass",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:coronary artery bypass grafting"
+        ]
+      },
+      "endoscopy": {
+        "aliases": [
+          "endoscopy",
+          "upper gi endoscopy",
+          "egd"
+        ],
+        "count": 120.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "endoscopic procedure": 900.0,
+          "esophagogastroduodenoscopy": 120.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "endoscopic procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'endoscopic procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "national_procedure_database",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "esophagogastroduodenoscopy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'esophagogastroduodenoscopy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_code_registry",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "esophagogastroduodenoscopy",
+          "endoscopic procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:endoscopy"
+        ]
+      },
+      "pulmonary function test": {
+        "aliases": [
+          "pft",
+          "spirometry",
+          "lung function test",
+          "pulmonary function assessment"
+        ],
+        "count": 850.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115.0,
+          "respiratory function testing": 850.0
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "respiratory function testing": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'respiratory function testing' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "SNOMED CT hierarchy for respiratory diagnostics",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "respiratory function testing",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:pulmonary function test"
+        ]
+      }
+    }
+  },
+  "proposal_scope": "producer-processed-only",
+  "schema_version": 1,
+  "sources": {}
+}

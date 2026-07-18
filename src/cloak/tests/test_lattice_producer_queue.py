@@ -302,6 +302,78 @@ def test_context_packet_includes_rejection_feedback_for_retry(tmp_path: Path) ->
     assert "architecture and engineering occupation" in json.dumps(packet)
 
 
+def test_context_packet_carries_repair_queue_reason_and_hint(tmp_path: Path) -> None:
+    profiles = tmp_path / "profiles.json"
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_profiles(profiles, {"medical-procedure": {}})
+    packet = assemble_context_packet(
+        {
+            "runtime_type": "medical-procedure",
+            "surface": "physical therapy",
+            "reprocess_reason": "missing_profile_type_entailed",
+            "reprocess_hint": "The marked context entails a medical procedure; establish a truthful profile.",
+        },
+        profiles_path=profiles,
+        run_dir=run_dir,
+        prompt_version="lattice-producer-v1",
+        max_context_rows=1,
+    )
+
+    assert packet["reprocess_reason"] == "missing_profile_type_entailed"
+    assert packet["reprocess_hint"].startswith("The marked context")
+    assert "stable real-world referent" in packet["reprocess_instruction"]
+    assert "current_profile" not in packet  # no existing row for a missing profile
+
+
+def test_context_packet_ladder_repair_carries_current_profile_and_findings(tmp_path: Path) -> None:
+    profiles = tmp_path / "profiles.json"
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_profiles(
+        profiles,
+        {
+            "health-condition": {
+                "diabetes": {
+                    "aliases": ["diabetes mellitus"],
+                    "levels": ["glucose metabolism disease", "medical condition"],
+                    "level_counts": {"glucose metabolism disease": 10.0, "medical condition": 1000.0},
+                    "count": 1.0,
+                    "level_grounding": {"glucose metabolism disease": {"status": "model-proposed"}},
+                },
+            },
+        },
+    )
+    findings = [{
+        "code": "lattice_level_suspect",
+        "unreadable_level": "glucose metabolism disease",
+        "readable_coarser_level": "medical condition",
+        "chain": ["glucose metabolism disease", "medical condition"],
+    }]
+    packet = assemble_context_packet(
+        {
+            "runtime_type": "health-condition",
+            "surface": "diabetes",
+            "canonical_value": "diabetes",
+            "reprocess_reason": "lattice_structure_or_utility_failure",
+            "reprocess_hint": "Audit evidence: lattice_level_suspect.",
+            "repair_findings": findings,
+        },
+        profiles_path=profiles,
+        run_dir=run_dir,
+        prompt_version="lattice-producer-v1",
+        max_context_rows=1,
+    )
+
+    assert packet["repair_findings"] == findings
+    assert packet["current_profile"]["levels"] == ["glucose metabolism disease", "medical condition"]
+    assert packet["current_profile"]["level_counts"]["medical condition"] == 1000.0
+    assert packet["current_profile"]["level_grounding_status"] == {"glucose metabolism disease": "model-proposed"}
+    assert "do not copy current_profile" in packet["reprocess_instruction"]
+    # the packet hash covers the repair context, so repair prompts stay cache-deterministic
+    assert packet["context_packet_hash"]
+
+
 def test_proposal_base_url_must_be_local() -> None:
     ensure_local_base_url("http://localhost:8060/v1")
     with pytest.raises(ValueError, match="local"):

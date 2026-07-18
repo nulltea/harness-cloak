@@ -1,0 +1,661 @@
+{
+  "artifact_role": "proposal",
+  "base_profile_hash": "075c7044a631f93b1f31679647e70c586637c0053c50e4caecc1dc1dd2d1a67e",
+  "created": "2026-07-18",
+  "producer_run_id": "repair-gptoss120b-functional",
+  "profiles": {
+    "drug": {
+      "antipsychotics": {
+        "aliases": [
+          "antipsychotic drugs",
+          "neuroleptics",
+          "psychotropic agents",
+          "major tranquilizers"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "D2 receptor antagonist": 10.0,
+          "antipsychotic": 60.0,
+          "psychotropic agent": 250.0
+        },
+        "level_grounding": {
+          "D2 receptor antagonist": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'D2 receptor antagonist' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanism == 'D2 antagonist'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "antipsychotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antipsychotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "label == 'antipsychotic'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "category == 'psychotropic'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "D2 receptor antagonist",
+          "antipsychotic",
+          "psychotropic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:antipsychotics"
+        ]
+      },
+      "claritin": {
+        "aliases": [
+          "loratadine",
+          "claritin",
+          "claritin\u00ae"
+        ],
+        "count": 50.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antihistamine": 50.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "antihistamine": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antihistamine' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antihistamine",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:claritin"
+        ]
+      },
+      "clozaril": {
+        "aliases": [
+          "clozaril",
+          "clozapine",
+          "clozaril\u00ae",
+          "leponex"
+        ],
+        "count": 60.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antipsychotic": 60.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "antipsychotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antipsychotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antipsychotic",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:clozaril"
+        ]
+      },
+      "eliquis": {
+        "aliases": [
+          "apixaban",
+          "eliquis",
+          "eliquis\u00ae"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anticoagulant": 20.0,
+          "cardiovascular agent": 300.0,
+          "factor Xa inhibitor": 10.0
+        },
+        "level_grounding": {
+          "anticoagulant": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'anticoagulant' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "indication/function class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad system tier",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "factor Xa inhibitor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'factor Xa inhibitor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "factor Xa inhibitor",
+          "anticoagulant",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:eliquis"
+        ]
+      },
+      "gabapentin neurontin": {
+        "aliases": [
+          "gabapentin",
+          "neurontin"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "alpha-2-delta calcium channel modulator": 10.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "alpha-2-delta calcium channel modulator": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'alpha-2-delta calcium channel modulator' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "pharmacology reference",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "alpha-2-delta calcium channel modulator",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:gabapentin neurontin"
+        ]
+      },
+      "growth hormone": {
+        "aliases": [
+          "human growth hormone",
+          "hgh",
+          "somatotropin",
+          "recombinant human growth hormone"
+        ],
+        "count": 60.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "hormone": 60.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "hormone": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'hormone' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "hormone",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:growth hormone"
+        ]
+      },
+      "illicit substances": {
+        "aliases": [
+          "illicit drugs",
+          "illegal substances",
+          "illicit substances",
+          "illegal drugs"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "psychoactive substance": 10.0,
+          "recreational drug": 200.0
+        },
+        "level_grounding": {
+          "psychoactive substance": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'psychoactive substance' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "recreational drug": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'recreational drug' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "psychoactive substance",
+          "recreational drug"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:illicit substances"
+        ]
+      },
+      "lexapro": {
+        "aliases": [
+          "lexapro",
+          "escitalopram",
+          "cipralex"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antidepressant": 40.0,
+          "selective serotonin reuptake inhibitor": 10.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "antidepressant": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antidepressant' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "indication / functional class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "selective serotonin reuptake inhibitor": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'selective serotonin reuptake inhibitor' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "selective serotonin reuptake inhibitor",
+          "antidepressant",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:lexapro"
+        ]
+      },
+      "lipitor": {
+        "aliases": [
+          "lipitor",
+          "atorvastatin",
+          "atorvastatin calcium",
+          "lipitor 40 mg",
+          "lipitor\u00ae"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "HMG-CoA reductase inhibitor": 10.0,
+          "cardiovascular agent": 300.0,
+          "statin": 60.0
+        },
+        "level_grounding": {
+          "HMG-CoA reductase inhibitor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'HMG-CoA reductase inhibitor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_body_system",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "statin": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'statin' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "HMG-CoA reductase inhibitor",
+          "statin",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:lipitor"
+        ]
+      },
+      "prilosec": {
+        "aliases": [
+          "omeprazole",
+          "prilosec",
+          "prilosec otc"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "acid reducer": 60.0,
+          "proton pump inhibitor": 10.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "acid reducer": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'acid reducer' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "indication_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "proton pump inhibitor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'proton pump inhibitor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "proton pump inhibitor",
+          "acid reducer",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:prilosec"
+        ]
+      },
+      "symbicort": {
+        "aliases": [
+          "budesonide/formoterol",
+          "symbicort inhaler",
+          "budesonide/formoterol combination",
+          "symbicort",
+          "ics/laba"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asthma maintenance therapy": 240.0,
+          "inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)": 10.0
+        },
+        "level_grounding": {
+          "asthma maintenance therapy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'asthma maintenance therapy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)",
+          "asthma maintenance therapy"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:symbicort"
+        ]
+      },
+      "toprol": {
+        "aliases": [
+          "toprol",
+          "metoprolol",
+          "toprol xl"
+        ],
+        "count": 20.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antihypertensive agent": 150.0,
+          "beta-blocker": 20.0,
+          "cardiovascular agent": 300.0
+        },
+        "level_grounding": {
+          "antihypertensive agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antihypertensive agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "beta-blocker": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'beta-blocker' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "beta-blocker",
+          "antihypertensive agent",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:toprol"
+        ]
+      },
+      "wellbutrin": {
+        "aliases": [
+          "wellbutrin",
+          "bupropion",
+          "wellbutrin xl",
+          "zyban"
+        ],
+        "count": 40.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antidepressant": 40.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "antidepressant": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antidepressant' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "indication_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antidepressant",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:wellbutrin"
+        ]
+      },
+      "xanax": {
+        "aliases": [
+          "alprazolam",
+          "xanax",
+          "alprazolam (xanax)"
+        ],
+        "count": 15.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anxiolytic": 60.0,
+          "benzodiazepine": 15.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "anxiolytic": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anxiolytic' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "Therapeutic class code for anxiolytics",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "benzodiazepine": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'benzodiazepine' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "ATC N05BA \u2013 Benzodiazepine class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "benzodiazepine",
+          "anxiolytic",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:xanax"
+        ]
+      },
+      "zyprexa": {
+        "aliases": [
+          "zyprexa",
+          "olanzapine",
+          "zyprexa xr"
+        ],
+        "count": 60.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antipsychotic": 60.0,
+          "psychotropic agent": 250.0
+        },
+        "level_grounding": {
+          "antipsychotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antipsychotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_body_system",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antipsychotic",
+          "psychotropic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:zyprexa"
+        ]
+      }
+    }
+  },
+  "proposal_scope": "producer-processed-only",
+  "schema_version": 1,
+  "sources": {}
+}
