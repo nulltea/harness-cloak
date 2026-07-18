@@ -36106,52 +36106,12 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:knee sprain"
         ]
       },
-      "knees": {
-        "aliases": [
-          "bilateral knee joints",
-          "knee articulations",
-          "lower limb joints",
-          "knee",
-          "knees"
-        ],
-        "count": 74.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "knee injury": 74.0,
-          "medical condition": 500000.0
-        },
-        "level_grounding": {
-          "knee injury": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'knee injury' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "canonical",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "medical condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "knee injury",
-          "medical condition"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:knees"
-        ]
-      },
-      "knocked me down": {
+      "blackout": {
         "aliases": [
           "fainting spell",
           "loss of consciousness",
           "syncope episode",
-          "blackout"
+          "knocked me down"
         ],
         "count": 30.0,
         "entry_origin": "observed-surface",

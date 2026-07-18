@@ -7,7 +7,7 @@ import json
 import os
 import re
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from copy import deepcopy
 from math import ceil, isfinite
 from numbers import Real
@@ -26,6 +26,9 @@ RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v21"
 RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
 RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
 RELATION_TEACHER_MAX_RELATIONS = 12
+# The gleaning+repair pass batches its targets: one teacher call per <=N targets, so a note with
+# many opportunities (D2N002 hit 54) is not crammed into a single unfocusable prompt.
+RELATION_REPAIR_MAX_TARGETS_PER_CALL = 20
 # Retry an empty (HTTP-200, no choices/content) teacher reply before failing -- transient.
 _TEACHER_EMPTY_RETRIES = 3
 # Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
@@ -285,6 +288,13 @@ ACI_RELATION_CONTRACT = {
         "connector_patterns": (r"\s+(?:causes|explains)\s+",),
     },
 }
+# Relations whose lexical cue is NECESSARY BUT NOT SUFFICIENT: their argument classes span every
+# condition x condition permutation, and the block-level cue match (allow_plan_section) fires for any
+# such pair sharing a causal word, so cue-ok is unreliable. When an escalator (MedGemma judge) is
+# configured, the miner routes even cue-OK pairs of these relations through it for confirmation --
+# so the escalator acts as a precision FILTER here, not only additive recovery. With no escalator,
+# they fall back to cue-only (the no-regression invariant is unchanged in that mode).
+_JUDGE_GATED_RELATIONS = frozenset({"causes_or_explains"})
 # Closed procedure-form lexicon: detector-typed conditions whose surface names
 # a performed procedure ("kidney transplant" in past medical history) may also
 # fill procedure slots; ordinary condition surfaces may not.
@@ -723,11 +733,28 @@ class AciTaskAdapter:
         self._references = dict(references)
 
     def validate_environment(self, frozen_environment: Mapping) -> None:
+        def forced_render_only(decision: Mapping) -> bool:
+            actions = decision.get("actions")
+            return (
+                decision.get("ranker_selectable") is False
+                and isinstance(actions, list)
+                and bool(actions)
+                and all(
+                    isinstance(action, Mapping)
+                    and action.get("mode") == "placeholder"
+                    and action.get("forced_placeholder") is True
+                    for action in actions
+                )
+            )
+
         unsupported = sorted({
             str(decision.get("runtime_type", ""))
             for document in frozen_environment.get("documents", {}).values()
             for decision in document.get("decisions", [])
-            if decision.get("runtime_type") not in self.controlled_runtime_types
+            if (
+                decision.get("runtime_type") not in self.controlled_runtime_types
+                and not forced_render_only(decision)
+            )
         })
         if unsupported:
             raise ValueError(
@@ -740,9 +767,16 @@ class AciTaskAdapter:
         doc_id: str,
         document: str,
         environment_document: Mapping,
+        *,
+        relation_opportunities: Sequence[Mapping] | None = None,
+        context_judge: "Callable[..., bool] | None" = None,
     ) -> list[dict]:
         return [
-            *self.semantic_property_candidates(doc_id, document, environment_document),
+            *self.semantic_property_candidates(
+                doc_id, document, environment_document,
+                relation_opportunities=relation_opportunities,
+                context_judge=context_judge,
+            ),
             *self.delivered_candidates(
                 doc_id, document, self._references[doc_id], environment_document
             ),
@@ -753,8 +787,18 @@ class AciTaskAdapter:
         doc_id: str,
         document: str,
         environment_document: Mapping,
+        *,
+        relation_opportunities: Sequence[Mapping] | None = None,
+        context_judge: "Callable[..., bool] | None" = None,
     ) -> list[dict]:
-        """Compile safe category probes from legal frozen action entailments."""
+        """Compile safe category probes from legal frozen action entailments.
+
+        On a role-cue regex miss, the informative-context escalation (admit-only) applies:
+        an entity already carried by a mined relation opportunity passes for free (its role
+        in context is established), else `context_judge` decides on the redacted locator
+        sentence. Both defaults off -> byte-identical to the pure regex lexicon."""
+        if SEMANTIC_PROPERTY_PROBES_DISABLED:
+            return []
         occurrences_by_decision: dict[str, list[Mapping]] = defaultdict(list)
         protected_terms = []
         for occurrence in environment_document.get("occurrences", []):
@@ -763,6 +807,20 @@ class AciTaskAdapter:
             if decision_id is None or not occurrence.get("controlled", True):
                 continue
             occurrences_by_decision[str(decision_id)].append(occurrence)
+        relation_decision_ids: set[str] = set()
+        if relation_opportunities:
+            decision_by_occurrence = {
+                str(row["occurrence_id"]): str(row["decision_id"])
+                for row in environment_document.get("occurrences", [])
+                if row.get("occurrence_id") is not None
+                and row.get("decision_id") is not None
+            }
+            relation_decision_ids = {
+                decision_by_occurrence[str(argument.get("occurrence_id"))]
+                for opportunity in relation_opportunities
+                for argument in opportunity.get("arguments") or []
+                if str(argument.get("occurrence_id")) in decision_by_occurrence
+            }
 
         records = []
         for decision in environment_document.get("decisions", []):
@@ -845,11 +903,15 @@ class AciTaskAdapter:
                     ))
                 continue
 
+            semantic_label = _semantic_label(runtime_type)
             locator, role_cue, locator_rejection = _task_role_context_locator(
                 document,
                 occurrences,
                 protected_terms=[*protected_terms, *properties],
                 role_patterns=type_contract["role_patterns"],
+                in_accepted_relation=decision_id in relation_decision_ids,
+                context_judge=context_judge,
+                judge_category={"loc": "location"}.get(semantic_label, semantic_label),
             )
             for property_level in properties:
                 attempt = {
@@ -1811,6 +1873,21 @@ def _meaningful_tokens(value: str) -> set[str]:
     }
 
 
+def _singularize(token: str) -> str:
+    """Cheap English plural fold so answer/alias token matching survives inflection
+    ("kidney stones" alias vs "kidney stone" answer). Applied to BOTH sides, so it need
+    not be linguistically perfect — only consistent."""
+    if len(token) > 4 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _stemmed_tokens(value: str) -> set[str]:
+    return {_singularize(token) for token in _meaningful_tokens(value)}
+
+
 def _normalized_aliases(value) -> list[str]:
     if value is None:
         return []
@@ -2017,12 +2094,42 @@ def _sentence_at(document: str, position: int) -> str:
     return document[left:right].strip()
 
 
+def _redacted_locator(
+    sentence: str,
+    target_terms: set[str],
+    protected_terms: Sequence[str],
+) -> str:
+    def redact(text: str, terms: Sequence[str], marker: str) -> str:
+        for term in sorted(
+            set(terms), key=lambda value: (-len(value), canon(value), value)
+        ):
+            if not term:
+                continue
+            text = re.sub(
+                rf"(?<!\w){re.escape(term)}(?!\w)",
+                marker,
+                text,
+                flags=re.IGNORECASE,
+            )
+        return text
+
+    redacted = redact(sentence, list(target_terms), "[target item]")
+    redacted = redact(redacted, [
+        term for term in protected_terms
+        if canon(term) not in {canon(target) for target in target_terms}
+    ], "[protected item]")
+    return re.sub(r"\s+", " ", redacted).strip()
+
+
 def _task_role_context_locator(
     document: str,
     occurrences: Sequence[Mapping],
     *,
     protected_terms: Sequence[str],
     role_patterns: Sequence[tuple[str, str]],
+    in_accepted_relation: bool = False,
+    context_judge: "Callable[..., bool] | None" = None,
+    judge_category: str | None = None,
 ) -> tuple[str | None, str | None, str]:
     targets = []
     for occurrence in occurrences:
@@ -2044,7 +2151,7 @@ def _task_role_context_locator(
         return None, None, "no_safe_contextual_locator"
     locator = None
     matched_cue = None
-    has_surviving_context = False
+    surviving_sentences: list[str] = []
     protected_tokens = {
         token for term in protected_terms for token in _meaningful_tokens(term)
     }
@@ -2053,7 +2160,8 @@ def _task_role_context_locator(
         sentence_tokens = _meaningful_tokens(sentence)
         if not sentence_tokens - protected_tokens:
             continue
-        has_surviving_context = True
+        if sentence not in surviving_sentences:
+            surviving_sentences.append(sentence)
         escaped_surface = rf"(?<!\w){re.escape(surface)}(?!\w)"
         matched_cue = next((
             cue for cue, pattern in role_patterns
@@ -2066,39 +2174,35 @@ def _task_role_context_locator(
         if matched_cue is not None:
             locator = sentence
             break
-    if locator is None:
-        return (
-            None,
-            None,
-            "no_task_role_cue" if has_surviving_context else "no_safe_contextual_locator",
-        )
     target_terms = {
         str(occurrence.get("surface", "")).strip()
         for occurrence in occurrences
         if str(occurrence.get("surface", "")).strip()
     }
-
-    def redact(terms: Sequence[str], marker: str) -> None:
-        nonlocal locator
-        for term in sorted(
-            set(terms), key=lambda value: (-len(value), canon(value), value)
-        ):
-            if not term:
-                continue
-            locator = re.sub(
-                rf"(?<!\w){re.escape(term)}(?!\w)",
-                marker,
-                locator,
-                flags=re.IGNORECASE,
-            )
-
-    redact(list(target_terms), "[target item]")
-    redact([
-        term for term in protected_terms
-        if canon(term) not in {canon(target) for target in target_terms}
-    ], "[protected item]")
-    locator = re.sub(r"\s+", " ", locator).strip()
-    return locator, matched_cue, ""
+    if locator is None and surviving_sentences:
+        # Cue-miss escalation (admit-only; the reader three-point gate remains the real
+        # acceptance check, so the cue-matched set can never regress):
+        if in_accepted_relation:
+            # relation evidence already established this entity's clinical role in context
+            locator, matched_cue = surviving_sentences[0], "relation_evidence"
+        elif context_judge is not None:
+            # ponytail: judge at most 3 candidate sentences per decision; raise if recall needs it
+            for sentence in surviving_sentences[:3]:
+                if context_judge(
+                    locator=_redacted_locator(sentence, target_terms, protected_terms),
+                    category=judge_category or "clinical item",
+                ):
+                    locator, matched_cue = sentence, "semantic_judge"
+                    break
+            else:
+                return None, None, "uninformative_context_judged"
+    if locator is None:
+        return (
+            None,
+            None,
+            "no_task_role_cue" if surviving_sentences else "no_safe_contextual_locator",
+        )
+    return _redacted_locator(locator, target_terms, protected_terms), matched_cue, ""
 
 
 def _contains(text: str, value: str) -> bool:
@@ -2816,10 +2920,6 @@ def relation_repair_prompt(
                 f"| levels: {'; '.join(row['properties'])}]")
 
     spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
-    cards = "\n".join(
-        f"E{card['index']}: {card['text']}\nLabels: {', '.join(card['labels'])}"
-        for card in kept_cards
-    ) or "(No span-local cards; inspect the source directly.)"
 
     def _arg_desc(argument: Mapping | None) -> str:
         if argument is None:
@@ -2828,26 +2928,52 @@ def relation_repair_prompt(
             return _arg_label(argument) or "?"
         return f'context literal "{argument.get("literal", "")}"'
 
-    target_lines = []
-    for target in targets:
+    def _target_source(target: Mapping) -> str:
+        # The clauses this target actually spans, inlined so the teacher does not cross-reference a
+        # separate card list. Union of the arguments' occurrence/literal spans + any evidence_span,
+        # snapped to source-clause boundaries; a mispaired literal shows every clause it appears in.
+        ranges: list[tuple[int, int]] = []
+        for argument in target.get("arguments") or []:
+            span = _arg_span(argument)
+            if span:
+                ranges.append(span)
+            if argument.get("kind") == "context" and argument.get("literal"):
+                ranges.extend(_source_literal_spans(document, str(argument["literal"])))
+        evidence_span = target.get("evidence_span")
+        if evidence_span and len(evidence_span) == 2:
+            ranges.append((int(evidence_span[0]), int(evidence_span[1])))
+        seen: set[str] = set()
+        texts: list[str] = []
+        for lo, hi in _source_clause_spans(document):
+            if any(not (hi <= r0 or r1 <= lo) for r0, r1 in ranges):
+                text = document[lo:hi].strip()
+                if text and text not in seen:
+                    seen.add(text)
+                    texts.append(text)
+        return " […] ".join(texts) or "(no clause located; inspect the source directly)"
+
+    target_blocks = []
+    for index, target in enumerate(targets, start=1):
         arguments = target.get("arguments") or []
         subject = next((a for a in arguments if a.get("role") == "subject"), None)
         obj = next((a for a in arguments if a.get("role") == "object"), None)
         detail = str(target.get("hint", ""))
         if target.get("reason"):
-            detail = f"(previously rejected: {target['reason']}) {detail}"
-        target_lines.append(
-            f"- [{target.get('relation', '?')}] {_arg_desc(subject)} -> {_arg_desc(obj)} "
-            f"| {str(target.get('kind', '')).upper()}: {detail}")
-    repair_targets = "\n".join(target_lines) or "(No targets.)"
+            detail = f"was rejected ({target['reason']}); {detail}"
+        target_blocks.append(
+            f"[{index}] {str(target.get('kind', '')).upper()} · {target.get('relation', '?')} · "
+            f"{_arg_desc(subject)} → {_arg_desc(obj)}\n"
+            f"    source: \"{_target_source(target)}\"\n"
+            f"    fix: {detail}")
+    repair_targets = "\n".join(target_blocks) or "(No targets.)"
 
     relation_inventory = CLINICAL_RELATION_INVENTORY
     worked_examples = CLINICAL_WORKED_EXAMPLES
     return f"""TASK
-REPAIR + GLEAN pass over one clinical note. A first pass already ran. Below are ONLY the relations to fix or recover — kept relations and legitimately-rejected ones are omitted. Address EACH listed target: fix the noted problem (rewrite/re-anchor/disambiguate) or emit the missed relation if the source supports it; abstain on any target you cannot support from the source. Do NOT re-emit relations that are not listed. Same output schema and privacy rules as the first pass.
+REPAIR + GLEAN pass over one clinical note. A first pass already ran. Below are ONLY the relations to fix or recover — kept relations and legitimately-rejected ones are omitted. Address EACH numbered target: fix the noted problem (rewrite/re-anchor/disambiguate) or emit the missed relation if the source supports it; abstain on any target you cannot support from the source. Do NOT re-emit relations that are not listed. Same output schema and privacy rules as the first pass.
 
 HOW TO INSPECT THE SOURCE
-Read the full source. Evidence cards and detected spans are restricted to the listed targets — they are navigation aids, not pair gates. Use S-labels for linked controlled arguments (one label per value, tagged in every clause it appears in); quote an uncontrolled argument's exact source text as a context literal. A relation may connect spans across turns of the SAME problem discussion (short patient acknowledgments between the doctor's sentences are fine), never across different problems or small talk. A conditional/planned statement IS a valid relation but its question MUST be phrased conditionally (may / might / would / if …).
+Each target below carries the source clause(s) it spans and names its arguments by S-label; DETECTED SPANS lists the level choices for those labels. Judge each target only from the clauses shown for it. Use S-labels for linked controlled arguments (one label per value); quote an uncontrolled argument's exact source text as a context literal. A relation may connect spans across turns of the SAME problem discussion (short patient acknowledgments between the doctor's sentences are fine), never across different problems or small talk. A conditional/planned statement IS a valid relation but its question MUST be phrased conditionally (may / might / would / if …).
 
 PRIVACY-SAFE QA
 Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest.
@@ -2859,23 +2985,17 @@ RELATION INVENTORY
 WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy these entities)
 {worked_examples}
 
-DETECTED SPANS (only those relevant to the targets)
+DETECTED SPANS (level choices for the labels named in the targets)
 {spans}
 
-EVIDENCE CARDS (only clauses relevant to the targets)
-{cards}
-
-REPAIR TARGETS (address only these; each is ambiguous / fixable / missed)
+REPAIR TARGETS (address only these; each is tagged ambiguous / fixable / missed, with the source clause and the fix)
 {repair_targets}
 
 RESPONSE
 Return two relation lists with the same records as the first pass: relation; a subject then an object argument; a question; answer_role; accepted answers; the fixed scoring contract.
 span_relations: subject and object both displayed spans, each kind linked with span_label + one listed level as support_property; the two labels MUST differ.
 context_relations: exactly one linked S-label argument and one uncontrolled context argument whose literal is exact source text (not any displayed span), in the relation's DIRECTIONAL order per the inventory. Set answer_role to the linked argument's role: the literal is the question locator and the linked support_property is the accepted answer.
-Emit each distinct fact EXACTLY ONCE. Return exactly one candidate_accounting row per shown S-label with a short reason (emitted / duplicate_mention / exhausted_no_relation / unsupported) referencing labels and levels only. Return only the structured response.
-
-SOURCE DOCUMENT
-{document}"""
+Emit each distinct fact EXACTLY ONCE. Return exactly one candidate_accounting row per shown S-label with a short reason (emitted / duplicate_mention / exhausted_no_relation / unsupported) referencing labels and levels only. Return only the structured response."""
 
 
 def _teacher_relation_arguments(
@@ -3355,6 +3475,24 @@ def _relation_quote_has_semantic_support(
     return nli_entails(normalized, hypothesis)
 
 
+# Relation cue gates in the COMPILER (fixed lexical-cue lexicon + NLI rescue) are DISABLED:
+# for a teacher-proposed relation the three-point reader gate is the semantic acceptance
+# check, and the maintained cue lexicon is not sustainable on informal clinical speech
+# (recurring false-negatives; same rationale as the literal-probe cue drop, extended to
+# span->span). Structural safeguards -- anchor locality, exact grounding, no problem-switch
+# crossing -- all remain. NOT applied to the opportunity miner: there the cue is the only
+# precision filter on a combinatorial pair enumeration (disabling it inflated span_span
+# opportunities ~10x), so the miner keeps it. Cue code retained but dormant pending removal:
+# see docs/issues/qa-builder-dept.md.
+RELATION_CUE_GATES_DISABLED = True
+
+# Deterministic semantic_property category probes are DISABLED (2026-07-18): across D2N001-007
+# they yielded 1 kept assertion against 114 no_task_role_cue rejections, and the QA focus is
+# teacher relations. Generation code (incl. the informative-context judge escalation) retained
+# dormant; see docs/issues/qa-builder-dept.md.
+SEMANTIC_PROPERTY_PROBES_DISABLED = True
+
+
 def _relation_quote_has_direct_support(
     relation: str,
     quote: str,
@@ -3532,6 +3670,8 @@ def _remap_to_groundable_siblings(
         # A literal->linked probe is judged by the later three-point reader
         # gate, not a lexical/NLI relation parser. Exact literal grounding and
         # the anchor's locality constraints still prevent document-wide pairs.
+        if RELATION_CUE_GATES_DISABLED:
+            return True
         if sum(argument.get("kind") == "linked" for argument in args) == 1:
             return True
         return _relation_quote_has_direct_support(
@@ -3657,11 +3797,25 @@ def _remap_to_lexically_groundable_siblings(
     return initial
 
 
+def _opportunity_record(relation, key, anchor_kind, arguments, span, *, recovered):
+    return {
+        "relation": relation,
+        "scope": _relation_scope(arguments),
+        "fact_key": key,
+        "anchor_kind": anchor_kind,
+        "recovered_by_escalation": recovered,
+        # carried for the gleaning "missed" evidence card (unused by escalation counts)
+        "arguments": deepcopy(arguments),
+        "evidence_span": list(span),
+    }
+
+
 def relation_support_opportunities(
     document: str,
     environment_document: Mapping,
     *,
     relation_contract: Mapping[str, Mapping] = ACI_RELATION_CONTRACT,
+    escalator: "Callable[..., bool] | None" = None,
 ) -> list[dict]:
     """Enumerate conservative, source-supported relation opportunities.
 
@@ -3702,6 +3856,7 @@ def relation_support_opportunities(
         for row in contexts.values()
     ]
     opportunities: dict[tuple, dict] = {}
+    pending: dict[tuple, tuple] = {}  # cue-misses awaiting the escalator (batched after the loop)
     for relation in relation_contract:
         for subject_template in [*linked, *context]:
             for object_template in [*linked, *context]:
@@ -3732,22 +3887,43 @@ def relation_support_opportunities(
                 if not all(_argument_is_grounded(argument, document, span, occurrences)
                            for argument in arguments):
                     continue
-                if not _relation_quote_has_lexical_cue_support(
+                cue_ok = _relation_quote_has_lexical_cue_support(
                     relation, quote, arguments, relation_contract,
                     allow_adjacent_clauses=True,
                     allow_plan_section=anchor_kind in {"plan_section", "problem_block", "speaker_turn"},
-                ):
-                    continue
+                )
                 key = _relation_fact_key(relation, arguments, occurrences)
-                opportunities.setdefault(key, {
-                    "relation": relation,
-                    "scope": _relation_scope(arguments),
-                    "fact_key": key,
-                    "anchor_kind": anchor_kind,
-                    # carried for the gleaning "missed" evidence card (unused by escalation counts)
-                    "arguments": deepcopy(arguments),
-                    "evidence_span": list(span),
-                })
+                # For _JUDGE_GATED_RELATIONS the lexical cue is necessary but NOT sufficient: its
+                # block-level cue match accepts every condition x condition pair sharing a causal
+                # word, so a cue-ok pair still requires judge confirmation (validated: 14 -> 1 on
+                # D2N002). With no escalator this falls back to cue-only, preserving that mode.
+                judge_gated = escalator is not None and relation in _JUDGE_GATED_RELATIONS
+                if cue_ok and not judge_gated:
+                    opportunities.setdefault(key, _opportunity_record(
+                        relation, key, anchor_kind, arguments, span, recovered=False))
+                elif escalator is not None and key not in pending:
+                    # cue-miss (any relation) or cue-ok judge-gated relation: the escalator decides.
+                    pending[key] = (relation, quote, deepcopy(arguments), anchor_kind, list(span))
+
+    # NO-REGRESSION INVARIANT: escalator=None leaves `pending` unconsulted, so the result is exactly
+    # the cue gate. For non-judge-gated relations the escalator only sees cue-misses and may only
+    # ACCEPT, so their returned set is a superset of the cue-only set. EXCEPTION: _JUDGE_GATED_RELATIONS
+    # also route their cue-OK pairs through the escalator (cue necessary, judge sufficient), so for
+    # those the escalator is a precision filter and the set is NOT a cue-only superset. See
+    # docs/issues/qa-builder-dept.md.
+    if escalator is not None and pending:
+        items = [(key, payload) for key, payload in pending.items() if key not in opportunities]
+        calls = [
+            {"relation": r, "quote": q, "arguments": a, "anchor_kind": ak, "document": document}
+            for _, (r, q, a, ak, _sp) in items
+        ]
+        judge_batch = getattr(escalator, "judge_batch", None)
+        verdicts = (judge_batch(calls) if callable(judge_batch)
+                    else [bool(escalator(**call)) for call in calls])
+        for (key, (relation, _q, arguments, anchor_kind, span)), accept in zip(items, verdicts):
+            if accept:
+                opportunities.setdefault(key, _opportunity_record(
+                    relation, key, anchor_kind, arguments, span, recovered=True))
     return [opportunities[key] for key in sorted(opportunities)]
 
 
@@ -3785,7 +3961,9 @@ _GLEANING_FIX_HINTS: dict[str, str] = {
     "invalid_question":
         "Re-author a well-formed question that asks for the answered argument with a generic slot word.",
     "invalid_property":
-        "Use one of the answered argument's listed generalization levels as the accepted answer.",
+        "The accepted answer must be copied VERBATIM from the answered span's listed levels (shown "
+        "with its S-label) -- the previous attempt used a raw term that is not one of them. Never use "
+        "the source word or your own phrasing; if no listed level accurately fits, abstain.",
 }
 _GLEANING_FIXABLE_REASONS = frozenset(_GLEANING_FIX_HINTS)
 _GLEANING_AMBIGUOUS_HINT = (
@@ -3874,8 +4052,23 @@ def _gleaning_targets(
         return ("reject", str(row.get("rejection_id") or row.get("attempt_hash")
                              or row.get("proposal_hash") or _stable_hash(dict(row))))
 
+    def _is_self_pair(arguments: Sequence[Mapping]) -> bool:
+        # A degenerate target whose two linked arguments resolve to the SAME decision (e.g. a
+        # rejected teacher proposal pairing "knees" with "knees"): never a real relation, so it
+        # must not be handed back to the repair teacher.
+        linked = [a for a in arguments if a.get("kind") == "linked"]
+        if len(linked) != 2:
+            return False
+        decisions = {
+            (occurrences.get(str(a.get("occurrence_id"))) or {}).get("decision_id")
+            for a in linked
+        }
+        return len(decisions) == 1 and None not in decisions
+
     def _add(key: tuple | None, kind: str, **extra) -> None:
         if key is None:
+            return
+        if _is_self_pair(extra.get("arguments") or []):
             return
         existing = targets.get(key)
         if existing and _GLEANING_TARGET_PRIORITY[existing["kind"]] >= _GLEANING_TARGET_PRIORITY[kind]:
@@ -3922,7 +4115,29 @@ def _gleaning_targets(
                  hint=_GLEANING_MISSED_HINT, arguments=list(opportunity.get("arguments") or []),
                  evidence_span=opportunity.get("evidence_span"))
 
-    return [targets[key] for key in sorted(targets, key=repr)]
+    # Order by source locality so problem-block-adjacent targets cluster together (a note's targets
+    # for one problem sit in one contiguous source range). Downstream this is sliced into teacher
+    # batches, so co-locating a problem's targets lets the teacher's own "emit each fact once"
+    # dedupe the cross-target near-duplicates (e.g. "thyroid panel" / "thyroid labs", or the same
+    # drug attributed to a symptom and its condition) that arbitrary ordering scattered across calls.
+    def _target_source_pos(target: Mapping) -> int:
+        positions: list[int] = []
+        for argument in target.get("arguments") or []:
+            if argument.get("kind") == "linked":
+                occurrence = occurrences.get(str(argument.get("occurrence_id"))) or {}
+                if isinstance(occurrence.get("start"), int):
+                    positions.append(int(occurrence["start"]))
+            elif isinstance(argument.get("start"), int):
+                positions.append(int(argument["start"]))
+        evidence_span = target.get("evidence_span")
+        if evidence_span and len(evidence_span) == 2:
+            positions.append(int(evidence_span[0]))
+        return min(positions) if positions else len(document)
+
+    return [
+        targets[key]
+        for key in sorted(targets, key=lambda k: (_target_source_pos(targets[k]), repr(k)))
+    ]
 
 
 def _validate_relation_escalation_policy(policy: Mapping | None) -> dict | None:
@@ -4313,7 +4528,8 @@ def compile_relational_assertions(
             sum(argument.get("kind") == "linked" for argument in arguments) == 1
             and sum(argument.get("kind") == "context" for argument in arguments) == 1
         )
-        if (not is_literal_probe
+        if (not RELATION_CUE_GATES_DISABLED
+                and not is_literal_probe
                 and not _relation_quote_has_direct_support(
                     relation,
                     quote,
@@ -5608,11 +5824,23 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
             elif (scores.get("original", 0.0) >= 1.0
                     and scores.get("representative", 0.0) < 1.0
                     and scores.get("placeholder", 1.0) < 1.0):
-                # original answerable, generalized form not, no coarser level reads
-                # either -> genuine reader capability limit, not a data issue
+                # source answerable, generalized form not -> the chosen generalization level is
+                # not reader-recoverable. Treated as a lattice-profile signal (level too coarse /
+                # mislabeled for the surface). NOTE: a minority of these are genuine reader limits
+                # rather than data; the `scores` detail lets a human triage.
                 flags[doc_id].append(_review_flag(
-                    "representative_unreadable", "gate", "reader", "warn",
+                    "representative_unreadable", "gate", "data_lattice", "warn",
                     {"scores": scores}))
+            elif (scores.get("original", 1.0) < 1.0
+                    and scores.get("representative", 0.0) >= 1.0):
+                # answer recoverable ONLY when the level is literally rendered (generalized
+                # render passes, source render does not) -> the accepted level is not
+                # reader-recoverable from the source surface. Strong lattice-profile signal:
+                # missing/insufficient answer_aliases or a level too abstract for the surface.
+                flags[doc_id].append(_review_flag(
+                    "answer_only_readable_when_generalized", "gate", "data_lattice", "warn",
+                    {"scores": scores, "subtype": evidence.get("subtype"),
+                     "occurrence_ids": evidence.get("occurrence_ids")}))
 
     # D) a repair that had to lower the answer floor is worth a human look
     for row in (artifact.get("assertions") or {}).values():
@@ -5644,6 +5872,53 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
             flags[doc_id].append(_review_flag(
                 "ledger_inconsistent", "compile", "teacher_redraw", "warn", {}))
 
+    # teacher-repairable but unresolved: a relation whose only outcomes are FIXABLE-reason
+    # rejections (no kept sibling for the same fact) that the repair pass did not rescue -- either
+    # the secondary teacher abstained, or it re-proposed and the fix still rejects. These are the
+    # relations a better teacher draw could recover; deterministic rewriting is deliberately NOT
+    # attempted (surface recolor already ran in _substitute_linked_surfaces; the residue is
+    # un-substitutable source text). fix_class teacher_redraw -> re-selectable for a repair re-run.
+    def _fact_key(row: Mapping) -> tuple:
+        parts = []
+        for argument in row.get("arguments") or []:
+            parts.append((
+                argument.get("role"),
+                argument.get("span_label") or argument.get("literal")
+                or argument.get("support_property"),
+            ))
+        return (row.get("relation"), tuple(parts))
+
+    gleaning = artifact.get("relation_gleaning") or {}
+    for doc_id, rows in (artifact.get("relation_generation") or {}).items():
+        kept_keys = {_fact_key(r) for r in rows if r.get("status") == "kept"}
+        by_key: dict[tuple, list[Mapping]] = defaultdict(list)
+        for r in rows:
+            if r.get("status") == "rejected" and r.get("reason") in _GLEANING_FIXABLE_REASONS:
+                by_key[_fact_key(r)].append(r)
+        abstained = str((gleaning.get(doc_id) or {}).get("secondary_status")) == "abstained"
+        for key, rejected in by_key.items():
+            if key in kept_keys:
+                continue  # recovered elsewhere -> not an unresolved loss
+            run_ids = {r.get("run_id") for r in rejected}
+            if "gleaning" in run_ids:
+                disposition = "unresolved_after_repair"  # C2 re-proposed, still rejects
+            elif abstained:
+                disposition = "repair_abstained"          # C2 declined to re-author it
+            else:
+                disposition = "repair_not_returned"        # C2 ran but did not target it
+            latest = rejected[-1]
+            try:
+                scope = _relation_scope(latest.get("arguments") or [])
+            except ValueError:
+                scope = None
+            flags[doc_id].append(_review_flag(
+                "teacher_repairable_unresolved", "gate", "teacher_redraw", "warn",
+                {"relation": latest.get("relation"),
+                 "reason": latest.get("reason"),
+                 "hint": _GLEANING_FIX_HINTS.get(str(latest.get("reason"))),
+                 "disposition": disposition,
+                 "scope": scope}))
+
     return {doc_id: doc_flags for doc_id, doc_flags in flags.items()}
 
 
@@ -5659,8 +5934,15 @@ def build_utility_artifact(
     relation_teacher: OpenRouterRelationTeacher | None = None,
     secondary_relation_teacher: OpenRouterRelationTeacher | None = None,
     environment_audit: Mapping | None = None,
+    relation_support_escalator: "Callable[..., bool] | None" = None,
+    informative_context_judge: "Callable[..., bool] | None" = None,
 ) -> dict:
-    """Build and validate one artifact through deterministic candidates and optional escalation."""
+    """Build and validate one artifact through deterministic candidates and optional escalation.
+
+    `relation_support_escalator` (opt-in) recovers opportunity-miner cue-misses without regressing
+    the cue-matched set — see relation_support_opportunities' no-regression invariant.
+    `informative_context_judge` (opt-in) analogously recovers semantic_property role-cue regex
+    misses: free via relation-opportunity membership, else one judge call on the locator sentence."""
     reader_pin = _validated_build_reader_pin(reader, pins)
     validate_environment = getattr(task_adapter, "validate_environment", None)
     if validate_environment is not None:
@@ -5796,7 +6078,9 @@ def build_utility_artifact(
         # Always retain the cheap structural ledger, even when teacher escalation
         # is disabled. Otherwise a primary-teacher miss is invisible in the QA
         # report and cannot be selectively re-run later.
-        opportunities = relation_support_opportunities(source, environment_document)
+        opportunities = relation_support_opportunities(
+            source, environment_document, escalator=relation_support_escalator,
+        )
         relation_opportunities_by_document[doc_id] = opportunities
         placeholder_vector = {}
         for decision in decisions:
@@ -5866,14 +6150,22 @@ def build_utility_artifact(
                 # so both the leak check and the reader gate match deployment.
                 representative_vector = dict(anchor["action_vector"])
                 for decision in decisions:
+                    decision_id = str(decision["decision_id"])
                     surface = str(decision.get("canonical_key") or "")
                     if surface and any(
                         canon(surface) != canon(term) and _contains(surface, term)
                         for term in protected_terms
                     ):
-                        hiding = _hiding_action_id(decision)
+                        hiding = _hiding_action_id(
+                            decision,
+                            excluded_level_fill_keys=_selected_level_fill_keys(
+                                decisions,
+                                representative_vector,
+                                exclude_decision_id=decision_id,
+                            ),
+                        )
                         if hiding is not None:
-                            representative_vector[str(decision["decision_id"])] = hiding
+                            representative_vector[decision_id] = hiding
                 representative_context = render_action_vector(doc_id, representative_vector)
                 surviving_terms = [
                     term for term in protected_terms
@@ -5970,9 +6262,16 @@ def build_utility_artifact(
                 accepted_rows.append(row)
             return accepted_rows
 
+        # kwargs only when the judge is on: one flag governs the whole escalation (including the
+        # free relation-reuse tier), and adapters without the kwargs keep working when it's off.
+        deterministic_kwargs = (
+            {"relation_opportunities": opportunities,
+             "context_judge": informative_context_judge}
+            if informative_context_judge is not None else {}
+        )
         deterministic_records = [
             dict(row) for row in task_adapter.deterministic_candidates(
-                doc_id, source, environment_document
+                doc_id, source, environment_document, **deterministic_kwargs
             )
         ]
         deterministic_candidates = []
@@ -6313,49 +6612,73 @@ def build_utility_artifact(
                     }
                     if gleaning_targets:
                         escalation["triggered"] = True
-                        repair_prompt = relation_repair_prompt(
-                            doc_id, source, environment_document, gleaning_targets,
-                        )
-                        repair_prompt_hash = _stable_hash(repair_prompt)
-                        escalation["gleaning"]["repair_prompt_hash"] = repair_prompt_hash
+                        # Batch the targets: one teacher CALL per <=N targets so a note with many
+                        # opportunities is not crammed into one unfocusable prompt. All batches'
+                        # proposals are compiled/validated together below (single pass).
+                        target_batches = [
+                            gleaning_targets[i:i + RELATION_REPAIR_MAX_TARGETS_PER_CALL]
+                            for i in range(0, len(gleaning_targets),
+                                           RELATION_REPAIR_MAX_TARGETS_PER_CALL)
+                        ]
+                        repair_prompt_hashes: list[str] = []
                         secondary_accounting: list[dict] = []
                         secondary_attempts: list[dict] = []
                         secondary_accepted: list[dict] = []
+                        secondary_proposals: list = []
                         secondary_proposal_count = 0
+                        repair_prompt_hash = None
+                        phase_run_records: list[dict] = []
                         try:
-                            if isinstance(secondary_relation_teacher, OpenRouterRelationTeacher):
-                                secondary_proposals = secondary_relation_teacher.propose(
-                                    repair_prompt,
-                                    response_format=relation_teacher_response_format(
-                                        environment_document, source,
-                                    ),
+                            for batch in target_batches:
+                                repair_prompt = relation_repair_prompt(
+                                    doc_id, source, environment_document, batch,
                                 )
-                            else:
-                                secondary_proposals = secondary_relation_teacher.propose(repair_prompt)
-                            secondary_proposal_count = len(secondary_proposals)
-                            if isinstance(secondary_proposals, RelationTeacherProposals):
-                                try:
-                                    secondary_accounting = _validated_candidate_accounting(
-                                        secondary_proposals.candidate_accounting,
-                                        environment_document, source,
+                                batch_hash = _stable_hash(repair_prompt)
+                                repair_prompt_hashes.append(batch_hash)
+                                if isinstance(secondary_relation_teacher, OpenRouterRelationTeacher):
+                                    batch_proposals = secondary_relation_teacher.propose(
+                                        repair_prompt,
+                                        response_format=relation_teacher_response_format(
+                                            environment_document, source,
+                                        ),
                                     )
-                                except ValueError as error:
-                                    secondary_accounting = [{
-                                        "state": "ledger_inconsistent",
-                                        "reason": "invalid_teacher_candidate_accounting",
-                                        "detail": str(error),
-                                    }]
-                            relation_teacher_runs_by_document.setdefault(doc_id, []).append({
-                                "teacher_id": "gpt_oss",
-                                "run_id": "gleaning",
-                                "prompt_hash": repair_prompt_hash,
-                                "teacher_pin_hash": _stable_hash(
-                                    getattr(secondary_relation_teacher, "pin", {})
-                                ),
-                                "proposal_count": secondary_proposal_count,
-                                "candidate_accounting": deepcopy(secondary_accounting),
-                                "status": "proposed" if secondary_proposals else "abstained",
-                            })
+                                else:
+                                    batch_proposals = secondary_relation_teacher.propose(repair_prompt)
+                                batch_accounting: list[dict] = []
+                                if isinstance(batch_proposals, RelationTeacherProposals):
+                                    try:
+                                        batch_accounting = _validated_candidate_accounting(
+                                            batch_proposals.candidate_accounting,
+                                            environment_document, source,
+                                        )
+                                    except ValueError as error:
+                                        batch_accounting = [{
+                                            "state": "ledger_inconsistent",
+                                            "reason": "invalid_teacher_candidate_accounting",
+                                            "detail": str(error),
+                                        }]
+                                secondary_accounting.extend(batch_accounting)
+                                run_record = {
+                                    "teacher_id": "gpt_oss",
+                                    "run_id": "gleaning",
+                                    "prompt_hash": batch_hash,
+                                    "teacher_pin_hash": _stable_hash(
+                                        getattr(secondary_relation_teacher, "pin", {})
+                                    ),
+                                    "proposal_count": len(batch_proposals),
+                                    "candidate_accounting": deepcopy(batch_accounting),
+                                    "status": "proposed" if batch_proposals else "abstained",
+                                }
+                                relation_teacher_runs_by_document.setdefault(doc_id, []).append(run_record)
+                                phase_run_records.append(run_record)
+                                secondary_proposals.extend(batch_proposals)
+                            secondary_proposal_count = len(secondary_proposals)
+                            # Phase-level hash over the batch prompts groups this phase's
+                            # candidates/rejections; the per-call hashes live in the run records.
+                            repair_prompt_hash = _stable_hash(repair_prompt_hashes)
+                            escalation["gleaning"]["repair_prompt_hash"] = repair_prompt_hash
+                            escalation["gleaning"]["repair_prompt_hashes"] = repair_prompt_hashes
+                            escalation["gleaning"]["batch_count"] = len(target_batches)
                             if secondary_proposals:
                                 secondary_attempts = [{
                                     "proposal_index": proposal_index,
@@ -6426,9 +6749,10 @@ def build_utility_artifact(
                                             "status": "rejected",
                                             "reason": rejection.get("detail_reason", rejection.get("reason")),
                                         })
-                                relation_teacher_runs_by_document[doc_id][-1]["status"] = (
-                                    "kept" if secondary_accepted else "rejected"
-                                )
+                                phase_rollup = "kept" if secondary_accepted else "rejected"
+                                for run_record in phase_run_records:
+                                    if run_record["status"] == "proposed":
+                                        run_record["status"] = phase_rollup
                             relation_generation_by_document.setdefault(doc_id, []).extend(secondary_attempts)
                             escalation["secondary_status"] = (
                                 "kept" if secondary_accepted else "abstained"
@@ -6438,6 +6762,14 @@ def build_utility_artifact(
                                 error.code if isinstance(error, RelationTeacherResponseError)
                                 else "teacher_generation_failed"
                             )
+                            # a batch may have failed mid-phase; anchor the failed run to whatever
+                            # batch prompts were built (phase hash) or None if none were.
+                            repair_prompt_hash = repair_prompt_hash or (
+                                _stable_hash(repair_prompt_hashes) if repair_prompt_hashes else None
+                            )
+                            escalation["gleaning"]["repair_prompt_hash"] = repair_prompt_hash
+                            escalation["gleaning"]["repair_prompt_hashes"] = repair_prompt_hashes
+                            escalation["gleaning"]["batch_count"] = len(target_batches)
                             relation_teacher_runs_by_document.setdefault(doc_id, []).append({
                                 "teacher_id": "gpt_oss",
                                 "run_id": "gleaning",
@@ -6607,7 +6939,49 @@ def build_utility_artifact(
     return artifact
 
 
-def _hiding_action_id(decision: Mapping) -> str | None:
+def _level_fill_key(action: Mapping) -> str | None:
+    if action.get("mode") != "level":
+        return None
+    fill = action.get("fill")
+    if not isinstance(fill, str) or not fill.strip():
+        return None
+    return canon(fill)
+
+
+def _selected_level_fill_keys(
+    decisions: Sequence[Mapping],
+    action_vector: Mapping[str, str],
+    *,
+    exclude_decision_id: str | None = None,
+) -> set[str]:
+    keys: set[str] = set()
+    for decision in decisions:
+        decision_id = str(decision["decision_id"])
+        if decision_id == exclude_decision_id:
+            continue
+        selected_id = action_vector.get(decision_id)
+        if selected_id is None:
+            continue
+        selected = next(
+            (
+                action for action in decision.get("actions", [])
+                if str(action.get("action_id")) == str(selected_id)
+            ),
+            None,
+        )
+        if selected is None:
+            continue
+        fill_key = _level_fill_key(selected)
+        if fill_key is not None:
+            keys.add(fill_key)
+    return keys
+
+
+def _hiding_action_id(
+    decision: Mapping,
+    *,
+    excluded_level_fill_keys: Collection[str] = (),
+) -> str | None:
     """Action that hides a decision's surface for a leak-check render: the coarsest legal
     generalization level, else a placeholder. None if neither exists (the decision stays
     KEEP). Used to generalize a co-referent decision so its surface stops leaking a
@@ -6620,8 +6994,13 @@ def _hiding_action_id(decision: Mapping) -> str | None:
         and isinstance(action.get("coarseness_rank"), Real)
         and not isinstance(action.get("coarseness_rank"), bool)
     ]
-    if levels:
-        return str(max(levels, key=lambda action: float(action["coarseness_rank"]))["action_id"])
+    excluded = set(excluded_level_fill_keys)
+    available = [
+        action for action in levels
+        if _level_fill_key(action) not in excluded
+    ]
+    if available:
+        return str(max(available, key=lambda action: float(action["coarseness_rank"]))["action_id"])
     placeholder = next((action for action in actions if action.get("mode") == "placeholder"), None)
     return str(placeholder["action_id"]) if placeholder else None
 
@@ -6633,6 +7012,7 @@ def build_joint_representative_anchor(
     """Choose one joint vector: linked coarsest entailing levels, unrelated KEEP."""
     requirements = dict(assertion.get("decision_requirements") or {})
     action_vector: dict[str, str] = {}
+    used_level_fill_keys: set[str] = set()
     seen = set()
     for decision in decisions:
         decision_id = str(decision["decision_id"])
@@ -6645,10 +7025,12 @@ def build_joint_representative_anchor(
                 if action.get("mode") not in {"keep", "placeholder"}
                 and not action.get("source_identity", False)
                 and property_level in (action.get("entails") or [])
+                and _level_fill_key(action) not in used_level_fill_keys
             ]
             if not candidates:
                 raise ValueError(
-                    f"no legal generalization for decision {decision_id} entails {property_level}"
+                    f"no legal generalization for decision {decision_id} entails "
+                    f"{property_level} without a duplicate level fill"
                 )
             for action in candidates:
                 rank = action.get("coarseness_rank")
@@ -6673,6 +7055,9 @@ def build_joint_representative_anchor(
                 )
             selected = coarsest[0]
             action_vector[decision_id] = str(selected["action_id"])
+            fill_key = _level_fill_key(selected)
+            if fill_key is not None:
+                used_level_fill_keys.add(fill_key)
         else:
             if decision.get("ranker_selectable") is False:
                 forced = next(
@@ -6744,14 +7129,22 @@ def _diagnose_coarser_readable(
                 continue
             probe_vector = dict(probe_anchor["action_vector"])
             for other in decisions:  # mirror the deployed co-referent leak guard
+                other_id = str(other["decision_id"])
                 surface = str(other.get("canonical_key") or "")
                 if surface and any(
                     canon(surface) != canon(term) and _contains(surface, term)
                     for term in protected_terms
                 ):
-                    hiding = _hiding_action_id(other)
+                    hiding = _hiding_action_id(
+                        other,
+                        excluded_level_fill_keys=_selected_level_fill_keys(
+                            decisions,
+                            probe_vector,
+                            exclude_decision_id=other_id,
+                        ),
+                    )
                     if hiding is not None:
-                        probe_vector[str(other["decision_id"])] = hiding
+                        probe_vector[other_id] = hiding
             probe_context = render_action_vector(doc_id, probe_vector)
             answer = reader(
                 [_permuted_reader_question(probe, 0)],
@@ -6780,13 +7173,13 @@ def _resolve_semantic_node(chain: Sequence[Mapping], answer: str) -> dict | None
     (containment on meaningful tokens); ambiguous or unresolved -> None. A
     protected source value resolves to KEEP locally without ever entering the
     artifact's public answer golds."""
-    answer_tokens = _meaningful_tokens(answer)
+    answer_tokens = _stemmed_tokens(answer)
     if not answer_tokens:
         return None
     matches = [
         node for node in chain
         if any(
-            (alias_tokens := _meaningful_tokens(str(alias)))
+            (alias_tokens := _stemmed_tokens(str(alias)))
             and alias_tokens <= answer_tokens
             for alias in node.get("answer_aliases") or []
         )

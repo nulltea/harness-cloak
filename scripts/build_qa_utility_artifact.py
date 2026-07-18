@@ -19,6 +19,31 @@ from cloak.train.qa_builder import (
     render_frozen_action_vector,
 )
 from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
+from cloak.train.relation_support_gate import (
+    RelationSupportCascade,
+    build_informative_context_judge,
+    build_medgemma_judge,
+)
+from cloak.train.reward import QA_BASE_URL
+
+RELATION_SUPPORT_JUDGE_MODEL = "medgemma-4b-it"
+
+
+def _medgemma_client():
+    from cloak.llm import LLMClient
+
+    return LLMClient(
+        RELATION_SUPPORT_JUDGE_MODEL, base_url=QA_BASE_URL, api_key="none", temperature=0.0,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+    )
+
+
+def _build_relation_support_escalator():
+    """Recall-first, accept-only escalator for opportunity-miner cue-misses (MedGemma judge on the
+    shared llama-swap endpoint)."""
+    # ponytail: MedGemma-only (validated core); the optional accept-only MedNLI cost tier can be
+    # added via mednli_entail= once per-candidate LLM latency is the bottleneck.
+    return RelationSupportCascade(build_medgemma_judge(_medgemma_client()))
 
 
 _READER_PIN_FIELDS = frozenset({
@@ -164,7 +189,9 @@ def build_from_files(
     pins.update({
         "gate_manifest_hash": _hash(manifest),
         "task_pin": AciTaskAdapter.task_pin,
-        "builder_pin": "qa-builder-v2-assertion-compiler-v11",
+        # v13: semantic_property probes disabled entirely (their informative-context judge
+        # escalation ships dormant behind the same flag; see docs/issues/qa-builder-dept.md)
+        "builder_pin": "qa-builder-v2-assertion-compiler-v13",
         "detector_pin": detector_pin or None,
         "teacher_pin": teacher_pin,
         "environment_audit_hash": environment_audit.get("audit_hash") or None,
@@ -179,6 +206,22 @@ def build_from_files(
             },
             "relation_escalation_policy": dict(manifest["relation_escalation_policy"]),
         })
+    relation_support_escalator = (
+        _build_relation_support_escalator()
+        if getattr(args, "relation_support_escalation", False) else None
+    )
+    if relation_support_escalator is not None:
+        pins["relation_support_escalation"] = {
+            "judge_model": RELATION_SUPPORT_JUDGE_MODEL, "base_url": QA_BASE_URL,
+        }
+    informative_context_judge = (
+        build_informative_context_judge(_medgemma_client())
+        if getattr(args, "informative_context_judge", False) else None
+    )
+    if informative_context_judge is not None:
+        pins["informative_context_judge"] = {
+            "judge_model": RELATION_SUPPORT_JUDGE_MODEL, "base_url": QA_BASE_URL,
+        }
     return build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
@@ -194,6 +237,8 @@ def build_from_files(
             secondary_relation_teacher if escalation_configured else None
         ),
         environment_audit=environment_audit or None,
+        relation_support_escalator=relation_support_escalator,
+        informative_context_judge=informative_context_judge,
     )
 
 
@@ -217,6 +262,27 @@ def parse_args(argv=None):
             "with a manifest relation_escalation_policy, conditionally run one "
             "GPT-OSS gleaning+repair pass after the primary GPT-OSS build "
             "(targets ambiguous / fixable-rejected / missed relations)"
+        ),
+    )
+    parser.add_argument(
+        "--relation-support-escalation",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "recover opportunity-miner cue-misses with the MedGemma judge (recall-first). "
+            "ON by default; use --no-relation-support-escalation to fall back to the cue gate. "
+            "Requires the medgemma-4b-it model on the llama-swap endpoint."
+        ),
+    )
+    parser.add_argument(
+        "--informative-context-judge",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "admit semantic_property context probes on a role-cue regex miss: free when the "
+            "entity already carries mined relation evidence, else one MedGemma informativeness "
+            "call on its redacted locator sentence. ON by default; "
+            "--no-informative-context-judge falls back to the pure regex lexicon."
         ),
     )
     return parser.parse_args(argv)

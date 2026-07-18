@@ -2236,6 +2236,8 @@ def test_relation_support_opportunities_counts_distinct_compiler_shaped_facts():
 
     opportunities = qa_builder.relation_support_opportunities(source, _environment(source))
 
+    # The opportunity miner keeps its lexical-cue precision filter (unlike the compiler,
+    # see docs/issues/qa-builder-dept.md): only the cued prescribed_with pair survives.
     assert [(row["relation"], row["scope"]) for row in opportunities] == [
         ("prescribed_with", "span_span"),
     ]
@@ -2572,9 +2574,248 @@ def test_relation_repair_prompt_restricts_to_targets_and_lists_hints():
 
     assert "REPAIR TARGETS" in prompt and "procedure_for" in prompt
     assert "make it uniquely answerable" in prompt and "AMBIGUOUS" in prompt
-    # the target's spans are shown; the non-target insomnia/zolpidem block is excluded
+    # targets+evidence are combined: the target's own source clause is inlined, no separate cards
+    assert "EVIDENCE CARDS" not in prompt
+    assert 'source: "for your first problem , your reflux , continue dietary modifications' in prompt
+    # the full-source copy is dropped as redundant; the per-target clause is the only source shown
+    assert "SOURCE DOCUMENT" not in prompt
+    # the target's spans are shown; the non-target insomnia/zolpidem block never appears
     assert inv["d-reflux"] in prompt and inv["d-diet"] in prompt
-    assert "insomnia" not in prompt.split("SOURCE DOCUMENT")[0]  # only in the source, not spans/cards
-    assert "zolpidem" not in prompt.split("SOURCE DOCUMENT")[0]
+    assert "insomnia" not in prompt and "zolpidem" not in prompt
     # safety-critical privacy instruction survives
     assert "the QUESTION must never contain the accepted answer" in prompt
+
+
+# --- Relation-support escalation: no-regression invariant + accept-only cascade ---
+from cloak.train.relation_support_gate import RelationSupportCascade, build_medgemma_judge
+
+
+def _cueless_env():
+    # condition + drug co-located with no relation cue verb -> cue gate misses the pair
+    source = "Hypothyroidism and Synthroid."
+    return source, _environment(source)
+
+
+def test_relation_support_escalator_none_matches_cue_only():
+    source, env = _cueless_env()
+    base = qa_builder.relation_support_opportunities(source, env)
+    assert qa_builder.relation_support_opportunities(source, env, escalator=None) == base
+
+
+def test_causes_or_explains_cue_ok_is_judge_gated():
+    # a cue-OK causal pair ("arthritis causes fever"): cue-only mode keeps it, but with an escalator
+    # the judge filters it -- a rejecting judge drops the cue-ok pair, an accepting judge keeps it.
+    source = "The arthritis causes fever in this patient."
+    def sp(x): return source.index(x)
+    env = {
+        "occurrences": [
+            {"occurrence_id": "art", "decision_id": "d-art", "surface": "arthritis",
+             "start": sp("arthritis"), "end": sp("arthritis") + 9, "runtime_type": "health-condition"},
+            {"occurrence_id": "fev", "decision_id": "d-fev", "surface": "fever",
+             "start": sp("fever"), "end": sp("fever") + 5, "runtime_type": "health-condition"},
+        ],
+        "decisions": [
+            {"decision_id": "d-art", "actions": [{"mode": "level", "legal": True, "entails": ["joint disease"]}]},
+            {"decision_id": "d-fev", "actions": [{"mode": "level", "legal": True, "entails": ["febrile illness"]}]},
+        ],
+    }
+
+    def causal(opps):
+        return [o for o in opps if o["relation"] == "causes_or_explains"]
+
+    # cue-only (no escalator): the cue-ok causal pair is kept
+    assert causal(qa_builder.relation_support_opportunities(source, env))
+    # escalator present: judge is the authority -> reject drops it, accept keeps it
+    assert not causal(qa_builder.relation_support_opportunities(source, env, escalator=lambda **k: False))
+    assert causal(qa_builder.relation_support_opportunities(source, env, escalator=lambda **k: True))
+
+
+def test_relation_support_escalation_is_additive_superset():
+    source, env = _cueless_env()
+    base = qa_builder.relation_support_opportunities(source, env)
+    base_keys = {tuple(o["fact_key"]) for o in base}
+
+    accept_all = qa_builder.relation_support_opportunities(source, env, escalator=lambda **k: True)
+    reject_all = qa_builder.relation_support_opportunities(source, env, escalator=lambda **k: False)
+    acc_keys = {tuple(o["fact_key"]) for o in accept_all}
+
+    # NO-REGRESSION: every cue-only opportunity survives escalation.
+    assert base_keys <= acc_keys
+    # A rejecting escalator is byte-identical to the cue-only set (escalator only recovers).
+    assert {tuple(o["fact_key"]) for o in reject_all} == base_keys
+    # The co-located cue-less pair is genuinely recovered (strict addition), and flagged.
+    assert len(acc_keys) > len(base_keys)
+    recovered = [o for o in accept_all if o["recovered_by_escalation"]]
+    assert recovered
+    assert all(not o["recovered_by_escalation"]
+               for o in accept_all if tuple(o["fact_key"]) in base_keys)
+
+
+def _pair(subject="afib", object_="digoxin"):
+    return [{"role": "subject", "kind": "linked", "surface": subject},
+            {"role": "object", "kind": "linked", "surface": object_}]
+
+
+def test_cascade_mednli_accepts_and_short_circuits_judge():
+    judge_calls = []
+
+    def judge(**kwargs):
+        judge_calls.append(kwargs)
+        return False  # would reject; must not be consulted
+
+    casc = RelationSupportCascade(judge, mednli_entail=lambda p, h: 0.99, mednli_threshold=0.98)
+    assert casc(relation="prescribed_with", quote="q", arguments=_pair()) is True
+    assert judge_calls == []  # accept-only tier short-circuited the LLM
+
+
+def test_cascade_defers_to_judge_when_mednli_below_threshold():
+    casc = RelationSupportCascade(judge=lambda **k: True,
+                                  mednli_entail=lambda p, h: 0.10, mednli_threshold=0.98)
+    assert casc(relation="prescribed_with", quote="q", arguments=_pair()) is True
+    casc_rej = RelationSupportCascade(judge=lambda **k: False,
+                                      mednli_entail=lambda p, h: 0.10, mednli_threshold=0.98)
+    assert casc_rej(relation="prescribed_with", quote="q", arguments=_pair()) is False
+
+
+def test_cascade_defers_without_regressing_on_no_pair_or_unknown_relation():
+    casc = RelationSupportCascade(judge=lambda **k: True)
+    # missing object -> no judgeable pair -> defer (no recovery, no regression)
+    assert casc(relation="prescribed_with", quote="q",
+                arguments=[{"role": "subject", "surface": "x"}]) is False
+    # relation with no claim template -> defer
+    assert casc(relation="not_a_relation", quote="q", arguments=_pair()) is False
+
+
+class _StubClient:
+    def __init__(self, reply):
+        self.reply = reply
+
+    def generate(self, prompt, system=None):
+        return self.reply
+
+
+def test_medgemma_judge_parses_and_is_accept_biased_on_error():
+    assert build_medgemma_judge(_StubClient('{"asserted": true, "why": "x"}'))(premise="p", claim="c") is True
+    assert build_medgemma_judge(_StubClient('{"asserted": false, "why": "x"}'))(premise="p", claim="c") is False
+    # recall-first default: unparseable reply accepts rather than dropping a possibly-true relation
+    assert build_medgemma_judge(_StubClient("garbage"))(premise="p", claim="c") is True
+    assert build_medgemma_judge(_StubClient("garbage"), accept_on_error=False)(premise="p", claim="c") is False
+    # causes_or_explains flips to REJECT-on-error (combinatorial; can't afford accept-on-glitch),
+    # while other relations keep the recall-first accept-on-error default.
+    j = build_medgemma_judge(_StubClient("garbage"))
+    assert j(premise="p", claim="c", relation="causes_or_explains") is False
+    assert j(premise="p", claim="c", relation="prescribed_with") is True
+
+
+def test_judge_system_is_per_relation_isolated():
+    from cloak.train.relation_support_gate import _judge_system
+    causal = _judge_system("causes_or_explains")
+    contra = _judge_system("contraindicated_because_of")
+    prescribed = _judge_system("prescribed_with")
+
+    # each relation's own rule appears ONLY in its own prompt (no cross-relation contamination)
+    assert "CAUSAL claim" in causal and "CONTRAINDICATION" not in causal
+    assert "CONTRAINDICATION" in contra and "CAUSAL claim" not in contra
+    # prescribed_with needs no extra rule beyond the general grounding ones
+    assert "CAUSAL claim" not in prescribed and "CONTRAINDICATION" not in prescribed
+    # only the target relation's worked examples are present (off-corpus entities)
+    assert "due to your pneumonia" in causal  # causal example
+    assert "due to your pneumonia" not in prescribed
+    assert "start you on sumatriptan" in prescribed  # prescribed_with example
+    assert "start you on sumatriptan" not in causal
+    # shared grounding + answer format are always present
+    for prompt in (causal, contra, prescribed):
+        assert "careful clinical NLP annotator" in prompt
+        assert '"asserted": true|false' in prompt
+
+
+def test_informative_context_judge_parses_and_is_accept_biased_on_error():
+    from cloak.train.relation_support_gate import build_informative_context_judge
+
+    assert build_informative_context_judge(
+        _StubClient('{"informative": true, "why": "x"}'))(locator="l", category="drug") is True
+    assert build_informative_context_judge(
+        _StubClient('{"informative": false, "why": "x"}'))(locator="l", category="drug") is False
+    assert build_informative_context_judge(_StubClient("garbage"))(locator="l", category="drug") is True
+    assert build_informative_context_judge(
+        _StubClient("garbage"), accept_on_error=False)(locator="l", category="drug") is False
+
+
+class _BatchEscalator:
+    """Escalator exposing judge_batch -> the miner must use the batch path."""
+    def __init__(self, verdict):
+        self.verdict = verdict
+        self.batches = []
+
+    def judge_batch(self, calls):
+        self.batches.append(list(calls))
+        return [self.verdict] * len(calls)
+
+
+def test_miner_uses_batch_escalator_and_preserves_invariant():
+    source, env = _cueless_env()
+    base_keys = {tuple(o["fact_key"]) for o in qa_builder.relation_support_opportunities(source, env)}
+
+    reject = _BatchEscalator(False)
+    reject_out = qa_builder.relation_support_opportunities(source, env, escalator=reject)
+    # batch path was taken (one judge_batch call), and rejecting batch == cue-only
+    assert reject.batches and {tuple(o["fact_key"]) for o in reject_out} == base_keys
+
+    accept = _BatchEscalator(True)
+    accept_out = qa_builder.relation_support_opportunities(source, env, escalator=accept)
+    acc_keys = {tuple(o["fact_key"]) for o in accept_out}
+    assert base_keys <= acc_keys and len(acc_keys) > len(base_keys)
+    # every call payload carries the fields a real judge needs
+    assert accept.batches
+    for call in accept.batches[0]:
+        assert {"relation", "quote", "arguments", "anchor_kind", "document"} <= set(call)
+
+
+def test_cascade_judge_batch_is_medgemma_only_and_concurrent_safe():
+    seen = []
+
+    def judge(*, premise, claim, relation=None):
+        seen.append(claim)
+        return "prescribed" in claim  # accept only the prescribed_with claim
+
+    # mednli present but MUST be ignored by judge_batch (MedGemma-only path)
+    casc = RelationSupportCascade(judge, mednli_entail=lambda p, h: 1.0, mednli_threshold=0.0)
+    calls = [
+        {"relation": "prescribed_with", "quote": "q", "arguments": _pair("afib", "digoxin")},
+        {"relation": "tests_for", "quote": "q", "arguments": _pair("afib", "echocardiogram")},
+        {"relation": "prescribed_with", "quote": "q", "arguments": [{"role": "subject", "surface": "x"}]},
+    ]
+    out = casc.judge_batch(calls)
+    assert out == [True, False, False]  # 3rd has no object -> False; mednli's 1.0 never short-circuits
+    assert len(seen) == 2  # judge consulted for the two well-formed pairs, not the no-object one
+
+
+def test_claim_directionality_places_drug_test_first():
+    from cloak.train.relation_support_gate import _claim
+    # miner passes subject=condition, object=drug/test/procedure for these relations
+    assert _claim("prescribed_with", "afib", "digoxin") == "digoxin is a medication prescribed to treat afib"
+    assert _claim("tests_for", "chronic back pain", "x-ray") == "x-ray is a test or scan done to investigate chronic back pain"
+    assert _claim("procedure_for", "back pain", "physical therapy") == "physical therapy is a procedure or treatment given for back pain"
+    # subject-first relations are unchanged
+    assert _claim("contraindicated_because_of", "lasix", "edema") == "the patient must NOT be given lasix because they have edema"
+    assert _claim("causes_or_explains", "edema", "mitral regurgitation") == "edema causes or explains mitral regurgitation"
+
+
+def test_linked_answer_score_folds_plural_singular():
+    from cloak.train.qa_builder import _linked_answer_score, _resolve_semantic_node
+    chain = [
+        {"answer_aliases": ["kidney stones"], "entailed_properties": ["urolithiasis", "kidney disease"]},
+        {"answer_aliases": ["urolithiasis"], "entailed_properties": ["urolithiasis"]},
+    ]
+    # singular answer against plural alias now resolves + credits
+    assert _resolve_semantic_node(chain, "possible kidney stone") is not None
+    assert _linked_answer_score("possible kidney stone", chain, "urolithiasis") == 1.0
+    # exact-level answer still credits
+    assert _linked_answer_score("urolithiasis", chain, "urolithiasis") == 1.0
+    # plural answer against singular alias
+    chain2 = [{"answer_aliases": ["medication"], "entailed_properties": ["drug"]}]
+    assert _linked_answer_score("some medications", chain2, "drug") == 1.0
+    # '-ss' words are not truncated (no false fold), unrelated terms don't resolve
+    chain3 = [{"answer_aliases": ["abscess"], "entailed_properties": ["lesion"]}]
+    assert _linked_answer_score("abscess", chain3, "lesion") == 1.0
+    assert _linked_answer_score("headache", chain3, "lesion") == 0.0

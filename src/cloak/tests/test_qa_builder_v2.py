@@ -341,6 +341,56 @@ def test_joint_anchor_rejects_missing_entailing_action():
         build_joint_representative_anchor(assertion, decisions)
 
 
+def test_joint_anchor_avoids_duplicate_level_fills_across_decisions():
+    decisions = [
+        {
+            "decision_id": "first",
+            "actions": [
+                {"action_id": "first-shared", "mode": "level", "legal": True,
+                 "fill": "medical condition", "coarseness_rank": 20,
+                 "entails": ["condition"]},
+            ],
+        },
+        {
+            "decision_id": "second",
+            "actions": [
+                {"action_id": "second-shared", "mode": "level", "legal": True,
+                 "fill": "medical condition", "coarseness_rank": 20,
+                 "entails": ["condition"]},
+                {"action_id": "second-distinct", "mode": "level", "legal": True,
+                 "fill": "system disease", "coarseness_rank": 10,
+                 "entails": ["condition"]},
+            ],
+        },
+    ]
+
+    anchor = build_joint_representative_anchor(
+        {"decision_requirements": {"first": "condition", "second": "condition"}},
+        decisions,
+    )
+
+    assert anchor["action_vector"] == {
+        "first": "first-shared",
+        "second": "second-distinct",
+    }
+
+
+def test_hiding_action_uses_placeholder_when_its_level_fill_is_occupied():
+    decision = {
+        "decision_id": "co-ref",
+        "actions": [
+            {"action_id": "shared-level", "mode": "level", "legal": True,
+             "fill": "musculoskeletal system disease", "coarseness_rank": 20},
+            {"action_id": "placeholder", "mode": "placeholder", "legal": True},
+        ],
+    }
+
+    assert qa_builder._hiding_action_id(
+        decision,
+        excluded_level_fill_keys={"musculoskeletal system disease"},
+    ) == "placeholder"
+
+
 def test_context_validation_requires_original_and_generalization_but_not_placeholder():
     assertions = [{
         "assertion_id": "a1",
@@ -1559,6 +1609,33 @@ def test_aci_adapter_rejects_legacy_coarse_decision_types():
         qa_builder.AciTaskAdapter({}).validate_environment(environment)
 
 
+def test_aci_adapter_accepts_forced_render_only_direct_identifiers():
+    environment = {
+        "documents": {
+            "aci/D2N002": {
+                "decisions": [
+                    {
+                        "decision_id": "person", "runtime_type": "PERSON",
+                        "ranker_selectable": False,
+                        "actions": [{
+                            "mode": "placeholder", "forced_placeholder": True,
+                        }],
+                    },
+                    {
+                        "decision_id": "code", "runtime_type": "CODE",
+                        "ranker_selectable": False,
+                        "actions": [{
+                            "mode": "placeholder", "forced_placeholder": True,
+                        }],
+                    },
+                ],
+            }
+        }
+    }
+
+    qa_builder.AciTaskAdapter({}).validate_environment(environment)
+
+
 def _relation_environment(
     source="Hypothyroidism is treated with Synthroid.",
 ):
@@ -1682,7 +1759,24 @@ def _semantic_property_environment():
     }
 
 
-def test_semantic_property_candidates_use_legal_entails_and_link_repetitions():
+@pytest.fixture
+def semantic_property_probes(monkeypatch):
+    """Re-enable the disabled-by-default probe family to test its (dormant) generator."""
+    monkeypatch.setattr(qa_builder, "SEMANTIC_PROPERTY_PROBES_DISABLED", False)
+
+
+def test_semantic_property_probes_disabled_by_default():
+    assert qa_builder.SEMANTIC_PROPERTY_PROBES_DISABLED is True
+    assert AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002",
+        "The patient takes Synthroid daily.",
+        _semantic_property_environment(),
+    ) == []
+
+
+def test_semantic_property_candidates_use_legal_entails_and_link_repetitions(
+    semantic_property_probes,
+):
     document = (
         "The patient with hypothyroidism takes Synthroid daily. "
         "Synthroid remains on the medication list."
@@ -1728,7 +1822,7 @@ def test_semantic_property_candidates_use_legal_entails_and_link_repetitions():
     assert anchor["action_vector"] == {"d-drug": "opioid"}
 
 
-def test_semantic_property_records_not_generated_without_safe_context_locator():
+def test_semantic_property_records_not_generated_without_safe_context_locator(semantic_property_probes):
     environment = _semantic_property_environment()
     environment["decisions"][0]["actions"] = [
         row for row in environment["decisions"][0]["actions"]
@@ -1756,7 +1850,7 @@ def test_semantic_property_records_not_generated_without_safe_context_locator():
     assert "medication" not in json.dumps(rejection)
 
 
-def test_semantic_property_records_not_generated_without_task_role_cue():
+def test_semantic_property_records_not_generated_without_task_role_cue(semantic_property_probes):
     environment = _semantic_property_environment()
     environment["decisions"][0]["actions"] = [
         row for row in environment["decisions"][0]["actions"]
@@ -1773,7 +1867,78 @@ def test_semantic_property_records_not_generated_without_task_role_cue():
     assert records[0]["detail_reason"] == "no_task_role_cue"
 
 
-def test_semantic_property_records_zero_legal_property_decision():
+def _cue_miss_drug_environment():
+    environment = _semantic_property_environment()
+    environment["decisions"][0]["actions"] = [
+        row for row in environment["decisions"][0]["actions"]
+        if row["action_id"] in {"opioid", "keep", "placeholder"}
+    ]
+    return environment
+
+
+def test_semantic_property_cue_miss_admitted_by_relation_evidence(semantic_property_probes):
+    def forbidden_judge(**_):
+        raise AssertionError("relation evidence must admit without a judge call")
+
+    records = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002", "The patient mentioned Synthroid yesterday.",
+        _cue_miss_drug_environment(),
+        relation_opportunities=[{"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-drug-1"},
+            {"role": "object", "kind": "context", "literal": "tsh"},
+        ]}],
+        context_judge=forbidden_judge,
+    )
+
+    accepted = [row for row in records if row.get("status") != "rejected"]
+    assert len(accepted) == 1
+    assert accepted[0]["evidence"]["role_cue"] == "relation_evidence"
+    assert "[target item]" in accepted[0]["question"]
+    assert "synthroid" not in accepted[0]["question"].casefold()
+
+
+def test_semantic_property_cue_miss_judge_decides_on_redacted_locator(semantic_property_probes):
+    calls = []
+
+    def judge(*, locator, category):
+        calls.append((locator, category))
+        return True
+
+    records = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002", "The patient mentioned Synthroid yesterday.",
+        _cue_miss_drug_environment(), context_judge=judge,
+    )
+    accepted = [row for row in records if row.get("status") != "rejected"]
+    assert len(accepted) == 1
+    assert accepted[0]["evidence"]["role_cue"] == "semantic_judge"
+    locator, category = calls[0]
+    assert category == "drug"
+    assert "[target item]" in locator
+    assert "synthroid" not in locator.casefold()
+
+    rejecting = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002", "The patient mentioned Synthroid yesterday.",
+        _cue_miss_drug_environment(), context_judge=lambda **_: False,
+    )
+    assert len(rejecting) == 1
+    assert rejecting[0]["status"] == "rejected"
+    assert rejecting[0]["detail_reason"] == "uninformative_context_judged"
+
+
+def test_semantic_property_role_cue_match_never_consults_judge(semantic_property_probes):
+    def forbidden_judge(**_):
+        raise AssertionError("cue match must not consult the judge")
+
+    records = AciTaskAdapter({}).semantic_property_candidates(
+        "aci/D2N002", "The patient takes Synthroid daily.",
+        _cue_miss_drug_environment(), context_judge=forbidden_judge,
+    )
+    accepted = [row for row in records if row.get("status") != "rejected"]
+    assert len(accepted) == 1
+    assert accepted[0]["evidence"]["role_cue"] == "taking"
+
+
+def test_semantic_property_records_zero_legal_property_decision(semantic_property_probes):
     environment = {
         "occurrences": [{
             "occurrence_id": "o-drug", "decision_id": "d-drug",
@@ -1814,7 +1979,7 @@ def test_semantic_property_records_zero_legal_property_decision():
     ("LOC", "Berlin", "the place.", "The clinic is located in Berlin."),
 ])
 def test_semantic_property_rejects_article_bearing_placeholder_meaning(
-    runtime_type, surface, property_level, document,
+    semantic_property_probes, runtime_type, surface, property_level, document,
 ):
     environment = {
         "occurrences": [{
@@ -1844,7 +2009,7 @@ def test_semantic_property_rejects_article_bearing_placeholder_meaning(
     assert records[0]["detail_reason"] == "placeholder_type_only"
 
 
-def test_semantic_property_requires_role_cue_attached_to_target_occurrence():
+def test_semantic_property_requires_role_cue_attached_to_target_occurrence(semantic_property_probes):
     environment = _semantic_property_environment()
     environment["decisions"][0]["actions"] = [
         row for row in environment["decisions"][0]["actions"]
@@ -1863,7 +2028,7 @@ def test_semantic_property_requires_role_cue_attached_to_target_occurrence():
     assert records[0]["detail_reason"] == "no_task_role_cue"
 
 
-def test_semantic_property_records_unsupported_runtime_type_attempt():
+def test_semantic_property_records_unsupported_runtime_type_attempt(semantic_property_probes):
     environment = {
         "occurrences": [{
             "occurrence_id": "o-custom",
@@ -2008,7 +2173,10 @@ def test_contextual_relation_rejection_hashes_unknown_teacher_argument_ids():
     "Hypothyroidism is treated with metformin. Synthroid is listed separately.",
     "Hypothyroidism is treated with metformin\nSynthroid is listed separately",
 ])
-def test_relational_compiler_rejects_cross_sentence_false_link(source):
+def test_relational_compiler_defers_cross_sentence_link_to_reader_gate(source):
+    # Cue gates are disabled (RELATION_CUE_GATES_DISABLED): a grounded cross-sentence
+    # pairing compiles and the three-point reader gate judges its semantics.
+    # See docs/issues/qa-builder-dept.md.
     proposal = {
         "subtype": "contextual_relation",
         "relation": "procedure_for",
@@ -2027,12 +2195,16 @@ def test_relational_compiler_rejects_cross_sentence_false_link(source):
         "aci/D2N002", source, _relation_environment(source), [proposal]
     )
 
-    assert accepted == []
-    assert rejected[0]["reason"] == "invalid"
-    assert rejected[0]["detail_reason"] == "invalid_evidence"
+    assert rejected == []
+    assert len(accepted) == 1
+    assert accepted[0]["relation"] == "prescribed_with"
 
 
-def test_relational_compiler_rejects_extra_entity_inside_connector():
+def test_relational_compiler_defers_extra_entity_inside_connector_to_reader_gate():
+    # Cue gates are disabled (RELATION_CUE_GATES_DISABLED): the conjunction-ambiguity guard
+    # ("Hypothyroidism and diabetes is treated with Synthroid") was a cue-gate precision
+    # check. It now compiles; the three-point reader gate and ambiguity monitor judge it.
+    # See docs/issues/qa-builder-dept.md.
     source = "Hypothyroidism and diabetes is treated with Synthroid."
     proposal = {
         "subtype": "contextual_relation",
@@ -2052,9 +2224,9 @@ def test_relational_compiler_rejects_extra_entity_inside_connector():
         "aci/D2N002", source, _relation_environment(source), [proposal]
     )
 
-    assert accepted == []
-    assert rejected[0]["reason"] == "invalid"
-    assert rejected[0]["detail_reason"] == "invalid_evidence"
+    assert rejected == []
+    assert len(accepted) == 1
+    assert accepted[0]["relation"] == "prescribed_with"
 
 
 def test_relational_compiler_rejects_answer_modifier_and_alias_leakage():
@@ -2242,7 +2414,10 @@ def test_relational_compiler_requires_ambiguous_quote_start_and_binds_occurrence
     assert wrong_rejections[0]["detail_reason"] == "invalid_evidence_occurrence"
 
 
-def test_relational_compiler_rejects_wide_quote_using_unselected_duplicate_relation():
+def test_relational_compiler_remaps_wide_quote_duplicate_to_colocated_mention():
+    # Cue gates are disabled (RELATION_CUE_GATES_DISABLED): the wide-quote duplicate is no
+    # longer cue-rejected. The cue-free sibling remap re-anchors the condition to the mention
+    # that co-locates with the drug, so it grounds and compiles. See docs/issues/qa-builder-dept.md.
     source = (
         "Hypothyroidism was discussed; "
         "Hypothyroidism is treated with Synthroid."
@@ -2286,8 +2461,9 @@ def test_relational_compiler_rejects_wide_quote_using_unselected_duplicate_relat
         "aci/D2N002", source, environment, [proposal]
     )
 
-    assert accepted == []
-    assert rejected[0]["detail_reason"] == "invalid_evidence"
+    assert rejected == []
+    assert len(accepted) == 1
+    assert accepted[0]["relation"] == "prescribed_with"
 
 
 @pytest.mark.parametrize(
@@ -2329,11 +2505,10 @@ def test_relational_compiler_rejects_unfrozen_or_leaking_proposals(change, reaso
 @pytest.mark.parametrize(
     ("source", "proposal_change", "reason"),
     [
-        (
-            "Hypothyroidism and Synthroid are listed in the chart.",
-            {"evidence_quote": "Hypothyroidism and Synthroid are listed in the chart."},
-            "invalid_evidence",
-        ),
+        # The no-relational-cue "listed in the chart" case is gone: cue gates are disabled
+        # (RELATION_CUE_GATES_DISABLED), so it now compiles and defers to the reader gate.
+        # Polarity and source-contradiction gates are independent of the cue gate and remain.
+        # See docs/issues/qa-builder-dept.md.
         (
             "Hypothyroidism is treated with Synthroid.",
             {"argument_polarities": {"o-condition": "negated", "o-drug": "active"}},
@@ -2578,7 +2753,7 @@ def _real_d2n002_frozen_environment(source):
     }
 
 
-def test_real_aci_d2n002_compiles_labeled_blocks_and_dialogue_cues():
+def test_real_aci_d2n002_compiles_labeled_blocks_and_dialogue_cues(semantic_property_probes):
     row = next(item for item in load_task_docs("aci") if item["id"] == "aci/D2N002")
     environment = _real_d2n002_frozen_environment(row["text"])
     candidates = AciTaskAdapter({row["id"]: row["gold_ref"]}).deterministic_candidates(
@@ -3492,7 +3667,52 @@ def test_compute_review_flags_classifies_missing_generalization_and_rejections()
     assert missing[0]["fix_class"] == "data_lattice"
     by_class = {f["code"]: f["fix_class"] for f in flags["d1"]}
     assert by_class["ledger_inconsistent"] == "teacher_redraw"
-    assert by_class["representative_unreadable"] == "reader"
+    # orig>=1/rep<1: the generalized level is not reader-recoverable -> lattice-profile signal
+    assert by_class["representative_unreadable"] == "data_lattice"
+
+
+def test_compute_review_flags_teacher_repairable_unresolved():
+    def arg(role, label, prop=None):
+        return {"role": role, "kind": "linked", "span_label": label, "support_property": prop}
+
+    artifact = {
+        "relation_generation": {
+            "d1": [
+                # fixable rejection in C1, C2 re-proposed and STILL rejects -> unresolved_after_repair
+                {"relation": "tests_for", "status": "rejected", "reason": "protected_locator",
+                 "run_id": "primary", "arguments": [arg("subject", "S2"), arg("object", "S5")]},
+                {"relation": "tests_for", "status": "rejected", "reason": "protected_locator",
+                 "run_id": "gleaning", "arguments": [arg("subject", "S2"), arg("object", "S5")]},
+                # fixable rejection with a kept sibling for the SAME fact -> recovered, not flagged
+                {"relation": "prescribed_with", "status": "rejected", "reason": "invalid_question",
+                 "run_id": "gleaning", "arguments": [arg("subject", "S3"), arg("object", "S8")]},
+                {"relation": "prescribed_with", "status": "kept", "reason": "accepted",
+                 "run_id": "gleaning", "arguments": [arg("subject", "S3"), arg("object", "S8")]},
+                # NON-fixable rejection (gate) -> never a teacher-repairable flag
+                {"relation": "tests_for", "status": "rejected", "reason": "three_point_gate_failed",
+                 "run_id": "primary", "arguments": [arg("subject", "S1"), arg("object", "S9")]},
+            ],
+            "d2": [
+                # fixable rejection in C1 only, secondary teacher abstained -> repair_abstained
+                {"relation": "procedure_for", "status": "rejected", "reason": "hedged_relation",
+                 "run_id": "primary", "arguments": [arg("subject", "S1"), arg("object", "S4")]},
+            ],
+        },
+        "relation_gleaning": {"d1": {"secondary_status": "kept"},
+                              "d2": {"secondary_status": "abstained"}},
+    }
+
+    flags = qa_builder.compute_review_flags(artifact)
+    d1 = [f for f in flags["d1"] if f["code"] == "teacher_repairable_unresolved"]
+    assert len(d1) == 1  # only the unrecovered tests_for; kept-sibling and gate rejections excluded
+    assert d1[0]["detail"]["disposition"] == "unresolved_after_repair"
+    assert d1[0]["detail"]["reason"] == "protected_locator"
+    assert d1[0]["detail"]["scope"] == "span_span"
+    assert d1[0]["fix_class"] == "teacher_redraw"
+    assert d1[0]["detail"]["hint"]  # carries the repair guidance
+
+    d2 = [f for f in flags["d2"] if f["code"] == "teacher_repairable_unresolved"]
+    assert len(d2) == 1 and d2[0]["detail"]["disposition"] == "repair_abstained"
 
 
 def test_manifest_pinned_relation_escalation_calls_secondary_and_records_provenance(monkeypatch):
@@ -3576,3 +3796,79 @@ def test_manifest_pinned_relation_escalation_calls_secondary_and_records_provena
     assert gleaning["target_count"] >= 1
     assert gleaning["repair_prompt_hash"] is not None
     assert sum(gleaning["target_kinds"].values()) == gleaning["target_count"]
+
+
+def test_relation_repair_batches_targets_into_multiple_calls(monkeypatch):
+    # 25 gleaning targets with a batch cap of 20 -> exactly 2 teacher calls + 2 gleaning run records.
+    source = "Hypothyroidism is treated with Synthroid."
+    frozen = {"environment_hash": "env-v1", "documents": {"d1": _relation_environment()}}
+
+    class Adapter:
+        def deterministic_candidates(self, *args):
+            return []
+
+        def compile_relations(self, *args):
+            return [], []  # acceptance is irrelevant; we assert call/record counts
+
+    class Teacher:
+        def __init__(self, rows, pin):
+            self.rows, self.pin, self.calls = rows, pin, 0
+
+        def propose(self, prompt, **kwargs):
+            self.calls += 1
+            return self.rows
+
+    primary = Teacher([], {"model": "gpt"})
+    secondary = Teacher([], {"model": "gpt-oss-repair"})
+    monkeypatch.setattr(qa_builder, "RELATION_REPAIR_MAX_TARGETS_PER_CALL", 20)
+    targets = [{"kind": "missed", "relation": "prescribed_with", "fact_key": (i,),
+                "hint": "emit if supported", "arguments": []} for i in range(25)]
+    monkeypatch.setattr(qa_builder, "_gleaning_targets", lambda *a, **k: targets)
+
+    artifact = build_utility_artifact(
+        frozen, Adapter(), {"d1": source},
+        threshold_manifest={
+            "family_budgets": {"context": 0.6, "delivered": 0.4},
+            "relation_escalation_policy": {
+                "version": "structural-opportunity-v1",
+                "min_opportunities": {"span_span": 1, "span_literal": 1},
+                "coverage_fraction": {"span_span": 1.0, "span_literal": 1.0},
+                "scope_caps": {"span_span": 6, "span_literal": 6},
+            },
+        },
+        pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
+        reader=_pin_reader(lambda questions, context: ["NONE" for _ in questions]),
+        render_action_vector=lambda doc_id, vector: "x",
+        relation_teacher=primary,
+        secondary_relation_teacher=secondary,
+    )
+
+    assert secondary.calls == 2  # ceil(25 / 20)
+    gleaning_runs = [r for r in artifact["relation_teacher_runs"]["d1"] if r["run_id"] == "gleaning"]
+    assert len(gleaning_runs) == 2
+    gleaning = artifact["relation_escalation"]["d1"]["gleaning"]
+    assert gleaning["batch_count"] == 2
+    assert len(gleaning["repair_prompt_hashes"]) == 2
+    assert gleaning["repair_prompt_hash"] is not None
+
+
+def test_review_flag_answer_only_readable_when_generalized():
+    from cloak.train.qa_builder import compute_review_flags
+    art = {"rejections": {"records": [
+        # oRp: source unreadable, generalized readable -> new lattice signal
+        {"doc_id": "aci/D2N004", "detail_reason": "three_point_gate_failed",
+         "evidence": {"subtype": "contextual_relation", "occurrence_ids": ["o1"],
+                      "validation": {"scores": {"original": 0.0, "representative": 1.0, "placeholder": 0.0}}}},
+        # Orp + no coarser: reader-limit, NOT the new flag
+        {"doc_id": "aci/D2N004", "detail_reason": "three_point_gate_failed",
+         "evidence": {"validation": {"scores": {"original": 1.0, "representative": 0.0, "placeholder": 0.0}}}},
+    ]}}
+    flags = compute_review_flags(art)
+    codes = [f["code"] for f in flags.get("aci/D2N004", [])]
+    assert "answer_only_readable_when_generalized" in codes
+    assert "representative_unreadable" in codes  # the opposite pattern still classified
+    flag = next(f for f in flags["aci/D2N004"] if f["code"] == "answer_only_readable_when_generalized")
+    assert flag["fix_class"] == "data_lattice"
+    # orig=1/rep=0 (representative_unreadable) is now a lattice-data signal too
+    rep_flag = next(f for f in flags["aci/D2N004"] if f["code"] == "representative_unreadable")
+    assert rep_flag["fix_class"] == "data_lattice"

@@ -390,11 +390,13 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     assert teacher.calls == 1
     assert artifact["teacher_pin"] == teacher.pin
     assert artifact["reader_pin"] == TEST_READER_PIN
-    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v11"
+    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v13"
     assert all(subtypes.count(subtype) > 0 for subtype in (
-        "structure", "field", "content", "exact_relation", "semantic_property",
+        "structure", "field", "content", "exact_relation",
         "contextual_relation",
     ))
+    # semantic_property probes are disabled (SEMANTIC_PROPERTY_PROBES_DISABLED)
+    assert "semantic_property" not in subtypes
     assert set(artifact["family_budgets"]) == {"context", "delivered"}
     document = artifact["documents"]["aci/D2N002"]
     assert set(document["present_family_budgets"]) == {"context", "delivered"}
