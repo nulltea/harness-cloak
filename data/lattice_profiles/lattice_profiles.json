@@ -36537,35 +36537,35 @@
         "count": 130.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "arterial condtion": 130.0,
-          "vascular condtion": 327.0,
-          "cardiovascular system condtion": 627.0,
+          "artery condition": 130.0,
+          "vascular condition": 327.0,
+          "cardiovascular system condition": 627.0,
           "disease of anatomical entity": 9162.0
         },
         "level_grounding": {
-          "artery disease": {
+          "artery condition": {
             "count_basis": "ontology-derived",
-            "count_evidence": "'artery disease' count is the number of is_a descendants of DOID:0050828 in the Human Disease Ontology. Hypertension's classification here is ontologically deliberate \u2014 DOID's own definition states hypertension is 'an artery disease characterized by chronic elevated blood pressure in the arteries,' so this parent is correct, unlike a use-based mislabel. FLAGGED SEPARATELY: value (130) exactly matches this entry's own leaf observed-surface count \u2014 re-verify against a direct DOID descendant query before trusting it, since this coincidence pattern has previously indicated a silent default-to-leaf-count bug elsewhere in the corpus.",
+            "count_evidence": "'artery condition' count is the number of is_a descendants of DOID:0050828 in the Human Disease Ontology. Hypertension's classification here is ontologically deliberate \u2014 DOID's own definition states hypertension is 'an artery condition characterized by chronic elevated blood pressure in the arteries,' so this parent is correct, unlike a use-based mislabel. FLAGGED SEPARATELY: value (130) exactly matches this entry's own leaf observed-surface count \u2014 re-verify against a direct DOID descendant query before trusting it, since this coincidence pattern has previously indicated a silent default-to-leaf-count bug elsewhere in the corpus.",
             "member_set_ref": "doid:is_a_descendants:DOID:0050828",
             "selector": "doid.is_a_descendants(DOID:0050828)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "vascular disease": {
+          "vascular condition": {
             "member_set_ref": "doid:is_a_descendants:DOID:178",
             "selector": "doid.is_a_descendants(DOID:178)",
             "source_family": "doid-is-a",
             "status": "certifying",
             "count_basis": "ontology-derived",
-            "count_evidence": "'vascular disease' count is the number of is_a descendants of DOID:178 in the Human Disease Ontology."
+            "count_evidence": "'vascular condition' count is the number of is_a descendants of DOID:178 in the Human Disease Ontology."
           },
-          "cardiovascular system disease": {
+          "cardiovascular system condition": {
             "member_set_ref": "doid:is_a_descendants:DOID:1287",
             "selector": "doid.is_a_descendants(DOID:1287)",
             "source_family": "doid-is-a",
             "status": "certifying",
             "count_basis": "ontology-derived",
-            "count_evidence": "'cardiovascular system disease' count is the number of is_a descendants of DOID:1287 in the Human Disease Ontology."
+            "count_evidence": "'cardiovascular system condition' count is the number of is_a descendants of DOID:1287 in the Human Disease Ontology."
           },
           "disease of anatomical entity": {
             "member_set_ref": "doid:is_a_descendants:DOID:7",
@@ -36577,9 +36577,9 @@
           }
         },
         "levels": [
-          "artery condtion",
-          "vascular condtion",
-          "cardiovascular system condtion",
+          "artery condition",
+          "vascular condition",
+          "cardiovascular system condition",
           "disease of anatomical entity"
         ],
         "source_ids": [
