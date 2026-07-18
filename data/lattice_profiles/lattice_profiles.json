@@ -24243,8 +24243,7 @@
         "count": 50.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "clinical symptom": 1000.0,
-          "weight gain disorder": 50.0
+          "clinical symptom": 1000.0
         },
         "level_grounding": {
           "clinical symptom": {
@@ -24254,18 +24253,9 @@
             "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
-          },
-          "weight gain disorder": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'weight gain disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "ICD-10/ICD-11 taxonomy review",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
           }
         },
         "levels": [
-          "weight gain disorder",
           "clinical symptom"
         ],
         "source_ids": [
@@ -34909,30 +34899,34 @@
         "count": 30.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "gastroesophageal reflux disorder": 30.0,
-          "gastrointestinal reflux disease": 356.67
+          "esophageal disease": 40.0,
+          "gastrointestinal system disease": 838.0,
+          "disease of anatomical entity": 9162.0
         },
         "level_grounding": {
-          "gastroesophageal reflux disorder": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'gastroesophageal reflux disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "ICD-10",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
+          "esophageal disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:6050",
+            "selector": "doid.is_a_descendants(DOID:6050)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
           },
-          "gastrointestinal reflux disease": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'gastrointestinal reflux disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "ICD-10",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
+          "gastrointestinal system disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:77",
+            "selector": "doid.is_a_descendants(DOID:77)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "disease of anatomical entity": {
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
           }
         },
         "levels": [
-          "gastroesophageal reflux disorder",
-          "gastrointestinal reflux disease"
+          "esophageal disease",
+          "gastrointestinal system disease",
+          "disease of anatomical entity"
         ],
         "source_ids": [
           "producer:repair-gptoss120b-neardup:repair:health-condition:gastroesophageal reflux disease"
@@ -36537,35 +36531,35 @@
         "count": 130.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "artery condition": 130.0,
-          "vascular condition": 327.0,
-          "cardiovascular system condition": 627.0,
+          "artery disease": 130.0,
+          "vascular disease": 327.0,
+          "cardiovascular system disease": 627.0,
           "disease of anatomical entity": 9162.0
         },
         "level_grounding": {
-          "artery condition": {
+          "artery disease": {
             "count_basis": "ontology-derived",
-            "count_evidence": "'artery condition' count is the number of is_a descendants of DOID:0050828 in the Human Disease Ontology. Hypertension's classification here is ontologically deliberate \u2014 DOID's own definition states hypertension is 'an artery condition characterized by chronic elevated blood pressure in the arteries,' so this parent is correct, unlike a use-based mislabel. FLAGGED SEPARATELY: value (130) exactly matches this entry's own leaf observed-surface count \u2014 re-verify against a direct DOID descendant query before trusting it, since this coincidence pattern has previously indicated a silent default-to-leaf-count bug elsewhere in the corpus.",
+            "count_evidence": "'artery disease' count is the number of is_a descendants of DOID:0050828 in the Human Disease Ontology. Hypertension's classification here is ontologically deliberate \u2014 DOID's own definition states hypertension is 'an artery disease characterized by chronic elevated blood pressure in the arteries,' so this parent is correct, unlike a use-based mislabel. FLAGGED SEPARATELY: value (130) exactly matches this entry's own leaf observed-surface count \u2014 re-verify against a direct DOID descendant query before trusting it, since this coincidence pattern has previously indicated a silent default-to-leaf-count bug elsewhere in the corpus.",
             "member_set_ref": "doid:is_a_descendants:DOID:0050828",
             "selector": "doid.is_a_descendants(DOID:0050828)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "vascular condition": {
+          "vascular disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:178",
             "selector": "doid.is_a_descendants(DOID:178)",
             "source_family": "doid-is-a",
             "status": "certifying",
             "count_basis": "ontology-derived",
-            "count_evidence": "'vascular condition' count is the number of is_a descendants of DOID:178 in the Human Disease Ontology."
+            "count_evidence": "'vascular disease' count is the number of is_a descendants of DOID:178 in the Human Disease Ontology."
           },
-          "cardiovascular system condition": {
+          "cardiovascular system disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:1287",
             "selector": "doid.is_a_descendants(DOID:1287)",
             "source_family": "doid-is-a",
             "status": "certifying",
             "count_basis": "ontology-derived",
-            "count_evidence": "'cardiovascular system condition' count is the number of is_a descendants of DOID:1287 in the Human Disease Ontology."
+            "count_evidence": "'cardiovascular system disease' count is the number of is_a descendants of DOID:1287 in the Human Disease Ontology."
           },
           "disease of anatomical entity": {
             "member_set_ref": "doid:is_a_descendants:DOID:7",
@@ -36577,9 +36571,9 @@
           }
         },
         "levels": [
-          "artery condition",
-          "vascular condition",
-          "cardiovascular system condition",
+          "artery disease",
+          "vascular disease",
+          "cardiovascular system disease",
           "disease of anatomical entity"
         ],
         "source_ids": [
@@ -39129,8 +39123,7 @@
         "count": 80.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "disease": 15000.0,
-          "therapeutic management condition": 80.0
+          "disease": 15000.0
         },
         "level_grounding": {
           "disease": {
@@ -39139,17 +39132,9 @@
             "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
-          },
-          "therapeutic management condition": {
-            "count_evidence": "Expert curation of therapeutic management categories in clinical guidelines identifies roughly eighty distinct health conditions that are defined by specific medical management protocols.",
-            "member_set_ref": null,
-            "selector": "curated list of management guidelines",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
           }
         },
         "levels": [
-          "therapeutic management condition",
           "disease"
         ],
         "source_ids": [
@@ -44930,8 +44915,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "diabetes mellitus": 356.67,
-          "disease of metabolism": 1200.0,
-          "type 2 diabetes mellitus": 180.0
+          "disease of metabolism": 1200.0
         },
         "level_grounding": {
           "diabetes mellitus": {
@@ -44949,18 +44933,9 @@
             "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
-          },
-          "type 2 diabetes mellitus": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'type 2 diabetes mellitus' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "ICD\u201110 classification hierarchy",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
           }
         },
         "levels": [
-          "type 2 diabetes mellitus",
           "diabetes mellitus",
           "disease of metabolism"
         ],
@@ -46768,19 +46743,10 @@
         "count": 120.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "bladder distension procedure": 120.0,
           "genitourinary surgical procedures": 835.5,
           "medical procedure": 79115.0
         },
         "level_grounding": {
-          "bladder distension procedure": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'bladder distension procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "procedure_code=BDP",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
           "genitourinary surgical procedures": {
             "count_basis": "model-proposed-corpus-median",
             "count_evidence": "'genitourinary surgical procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
@@ -46799,7 +46765,6 @@
           }
         },
         "levels": [
-          "bladder distension procedure",
           "genitourinary surgical procedures",
           "medical procedure"
         ],
@@ -48413,21 +48378,12 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "home-based nutritional intervention": 86.0,
-          "home-based snacking provision": 1.0,
           "medical procedure": 79115.0
         },
         "level_grounding": {
           "home-based nutritional intervention": {
             "count_basis": "corpus-membership",
             "count_evidence": "'home-based nutritional intervention' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "mined-clinical:mts/59",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "home-based snacking provision": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'home-based snacking provision' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
             "member_set_ref": null,
             "selector": "mined-clinical:mts/59",
             "source_family": "model-proposed",
@@ -48443,7 +48399,6 @@
           }
         },
         "levels": [
-          "home-based snacking provision",
           "home-based nutritional intervention",
           "medical procedure"
         ],
@@ -48462,9 +48417,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "administration, physiological systems and anatomical regions, introduction": 86.0,
-          "intravenous injection": 1.0,
-          "medical procedure": 79115.0,
-          "parenteral injection": 1.35
+          "medical procedure": 79115.0
         },
         "level_grounding": {
           "administration, physiological systems and anatomical regions, introduction": {
@@ -48475,14 +48428,6 @@
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "intravenous injection": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'intravenous injection' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "intravenous injection",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
           "medical procedure": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
@@ -48490,19 +48435,9 @@
             "selector": "icd10pcs.billable_7_character_code",
             "source_family": "icd10pcs-universe",
             "status": "model-proposed"
-          },
-          "parenteral injection": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'parenteral injection' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "parenteral injection",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
           }
         },
         "levels": [
-          "intravenous injection",
-          "parenteral injection",
           "administration, physiological systems and anatomical regions, introduction",
           "medical procedure"
         ],
@@ -49204,7 +49139,6 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "medical procedure": 79115.0,
-          "rotator cuff repair": 1.0,
           "shoulder surgery": 1.35
         },
         "level_grounding": {
@@ -49214,14 +49148,6 @@
             "member_set_ref": null,
             "selector": "icd10pcs.billable_7_character_code",
             "source_family": "icd10pcs-universe",
-            "status": "model-proposed"
-          },
-          "rotator cuff repair": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'rotator cuff repair' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "CPT procedure codes",
-            "source_family": "model-proposed",
             "status": "model-proposed"
           },
           "shoulder surgery": {
@@ -49234,7 +49160,6 @@
           }
         },
         "levels": [
-          "rotator cuff repair",
           "shoulder surgery",
           "medical procedure"
         ],
