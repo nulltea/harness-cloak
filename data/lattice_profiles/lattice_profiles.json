@@ -10867,6 +10867,91 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:agrimonia eupatoria flower"
         ]
       },
+      "albuterol": {
+        "aliases": [
+          "salbutamol",
+          "ventolin",
+          "proair",
+          "proventil"
+        ],
+        "count": 10.0,
+        "entry_origin": "manually-authored",
+        "level_counts": {
+          "beta-2 adrenergic agonist": 10.0,
+          "bronchodilator": 25.0,
+          "medication": 11000.0
+        },
+        "level_grounding": {
+          "beta-2 adrenergic agonist": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "manually authored albuterol ladder; 'beta-2 adrenergic agonist' count = anchor value from data/lattice_sources/reference/drug_class_anchors.json (beta-2 adrenergic agonist=10, bronchodilator=25, medication=11000); not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "manually-authored",
+            "status": "model-proposed"
+          },
+          "bronchodilator": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "manually authored albuterol ladder; 'bronchodilator' count = anchor value from data/lattice_sources/reference/drug_class_anchors.json (beta-2 adrenergic agonist=10, bronchodilator=25, medication=11000); not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "manually-authored",
+            "status": "model-proposed"
+          },
+          "medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "manually authored albuterol ladder; 'medication' count = anchor value from data/lattice_sources/reference/drug_class_anchors.json (beta-2 adrenergic agonist=10, bronchodilator=25, medication=11000); not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "manually-authored",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "beta-2 adrenergic agonist",
+          "bronchodilator",
+          "medication"
+        ],
+        "source_ids": []
+      },
+      "alcohol": {
+        "aliases": [
+          "ethanol",
+          "ethyl alcohol",
+          "grain alcohol"
+        ],
+        "count": 250.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "central nervous system agent": 400.0,
+          "psychotropic agent": 250.0
+        },
+        "level_grounding": {
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "psychotropic agent",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:repair:drug:alcohol"
+        ]
+      },
       "aldactone": {
         "aliases": [],
         "count": 3.0,
@@ -11483,27 +11568,33 @@
         ]
       },
       "amoxicillin": {
-        "aliases": [],
-        "count": 17.0,
+        "aliases": [
+          "amox",
+          "amoxil",
+          "amoxicillin trihydrate"
+        ],
+        "count": 10.0,
         "entry_origin": "observed-surface",
         "level_counts": {
           "antibiotic": 150.0,
-          "penicillin-class antibacterial": 17.0
+          "penicillin-class antibacterial": 10.0
         },
         "level_grounding": {
           "antibiotic": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'antibiotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
             "member_set_ref": null,
-            "selector": "Canonical vocabulary slice",
+            "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
           "penicillin-class antibacterial": {
-            "member_set_ref": "openfda-ndc:pharm_class:Penicillin-class Antibacterial [EPC]",
-            "selector": "openfda_ndc.pharm_class == 'Penicillin-class Antibacterial [EPC]'",
-            "source_family": "openfda-pharm-class",
-            "status": "certifying"
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'penicillin-class antibacterial' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "DrugBank pharmacologic classification",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           }
         },
         "levels": [
@@ -11511,7 +11602,7 @@
           "antibiotic"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:drug:amoxicillin"
+          "producer:repair-gptoss120b:repair:drug:amoxicillin"
         ]
       },
       "amphetamine": {
@@ -11814,6 +11905,65 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:anti-smoking i drops"
+        ]
+      },
+      "antipsychotics": {
+        "aliases": [
+          "antipsychotic drugs",
+          "neuroleptics",
+          "psychotropic agents",
+          "major tranquilizers"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "D2 receptor antagonist": 10.0,
+          "antipsychotic": 60.0,
+          "central nervous system agent": 400.0,
+          "psychotropic agent": 250.0
+        },
+        "level_grounding": {
+          "D2 receptor antagonist": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'D2 receptor antagonist' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanism == 'D2 antagonist'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "antipsychotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antipsychotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "label == 'antipsychotic'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "category == 'psychotropic'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "D2 receptor antagonist",
+          "antipsychotic",
+          "psychotropic agent",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:antipsychotics"
         ]
       },
       "apixaban": {
@@ -13872,37 +14022,51 @@
         ]
       },
       "claritin": {
-        "aliases": [],
+        "aliases": [
+          "loratadine",
+          "claritin",
+          "claritin\u00ae"
+        ],
         "count": 10.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "antihistamine": 10.0,
+          "H1 histamine receptor antagonist": 10.0,
+          "antihistamine": 50.0,
           "therapeutic agent": 15000.0
         },
         "level_grounding": {
+          "H1 histamine receptor antagonist": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'H1 histamine receptor antagonist' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ATC code R06A (Antihistamines for systemic use)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
           "antihistamine": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'antihistamine' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
             "member_set_ref": null,
-            "selector": "mechanism_of_action == 'H1 receptor antagonist'",
+            "selector": "functional_class",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
           "therapeutic agent": {
             "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'therapeutic agent' set from the corrected runtime-type-conditional magnitude in data/lattice_sources/reference/ (class-universe sizes were wrong here); still not certifying",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
             "member_set_ref": null,
-            "selector": "drug_type == 'therapeutic agent'",
+            "selector": "broad_class",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
         },
         "levels": [
+          "H1 histamine receptor antagonist",
           "antihistamine",
           "therapeutic agent"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:drug:claritin"
+          "producer:repair-gptoss120b-functional:refine-drug:claritin"
         ]
       },
       "clindamycin": {
@@ -14115,6 +14279,65 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:clozapine"
+        ]
+      },
+      "clozaril": {
+        "aliases": [
+          "clozaril",
+          "clozapine",
+          "clozaril\u00ae",
+          "leponex"
+        ],
+        "count": 60.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antipsychotic": 60.0,
+          "central nervous system agent": 400.0,
+          "psychotropic agent": 250.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "antipsychotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antipsychotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "system=central_nervous",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "therapeutic_category=psychotropic",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antipsychotic",
+          "psychotropic agent",
+          "central nervous system agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:clozaril"
         ]
       },
       "cocaine": {
@@ -15433,6 +15656,54 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:elderberry fruit"
         ]
       },
+      "eliquis": {
+        "aliases": [
+          "apixaban",
+          "eliquis",
+          "eliquis\u00ae"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anticoagulant": 20.0,
+          "cardiovascular agent": 300.0,
+          "factor Xa inhibitor": 10.0
+        },
+        "level_grounding": {
+          "anticoagulant": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'anticoagulant' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "indication/function class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad system tier",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "factor Xa inhibitor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'factor Xa inhibitor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "factor Xa inhibitor",
+          "anticoagulant",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:eliquis"
+        ]
+      },
       "empagliflozin": {
         "aliases": [],
         "count": 5.0,
@@ -16057,6 +16328,54 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:flomax"
         ]
       },
+      "fluocinonide": {
+        "aliases": [
+          "fluocinonide",
+          "fluocinonide topical",
+          "fluocinonide cream"
+        ],
+        "count": 15.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anti-inflammatory agent": 200.0,
+          "corticosteroid": 25.0,
+          "glucocorticoid": 15.0
+        },
+        "level_grounding": {
+          "anti-inflammatory agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anti-inflammatory agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "WHO ATC \u2013 anti-inflammatory and antirheumatic products",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "corticosteroid": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'corticosteroid' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "Goodman & Gilman \u2013 corticosteroid list",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "glucocorticoid": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'glucocorticoid' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "FDA Orange Book \u2013 glucocorticoid class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "glucocorticoid",
+          "corticosteroid",
+          "anti-inflammatory agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:repair:drug:fluocinonide"
+        ]
+      },
       "fluorouracil": {
         "aliases": [],
         "count": 17.0,
@@ -16275,6 +16594,53 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:gabapentin"
         ]
       },
+      "gabapentin neurontin": {
+        "aliases": [
+          "gabapentin",
+          "neurontin"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "alpha-2-delta calcium channel modulator": 10.0,
+          "central nervous system agent": 400.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "alpha-2-delta calcium channel modulator": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'alpha-2-delta calcium channel modulator' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "pharmacology reference",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical vocabulary",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "alpha-2-delta calcium channel modulator",
+          "central nervous system agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:gabapentin neurontin"
+        ]
+      },
       "glimepiride": {
         "aliases": [],
         "count": 3.0,
@@ -16347,6 +16713,45 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:glipizide"
+        ]
+      },
+      "growth hormone": {
+        "aliases": [
+          "human growth hormone",
+          "hgh",
+          "somatotropin",
+          "recombinant human growth hormone"
+        ],
+        "count": 60.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "hormone": 60.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "hormone": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'hormone' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "hormone",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:growth hormone"
         ]
       },
       "guaifenesin": {
@@ -16835,28 +17240,34 @@
         ]
       },
       "illicit substances": {
-        "aliases": [],
-        "count": 250.0,
+        "aliases": [
+          "illicit drugs",
+          "illegal substances",
+          "illicit substances",
+          "illegal drugs"
+        ],
+        "count": 10.0,
         "entry_origin": "observed-surface",
         "level_counts": {
           "central nervous system agent": 400.0,
-          "medication": 10999.97,
-          "psychotropic agent": 250.0
+          "psychoactive substance": 10.0,
+          "psychotropic agent": 250.0,
+          "recreational drug": 200.0
         },
         "level_grounding": {
           "central nervous system agent": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
             "member_set_ref": null,
-            "selector": "central nervous system agent",
+            "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "medication": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+          "psychoactive substance": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'psychoactive substance' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
             "member_set_ref": null,
-            "selector": "medication",
+            "selector": "mechanistic",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
@@ -16864,18 +17275,27 @@
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
             "member_set_ref": null,
-            "selector": "psychotropic agent",
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "recreational drug": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'recreational drug' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
         },
         "levels": [
+          "psychoactive substance",
+          "recreational drug",
           "psychotropic agent",
-          "central nervous system agent",
-          "medication"
+          "central nervous system agent"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:drug:illicit substances"
+          "producer:repair-gptoss120b-functional:refine-drug:illicit substances"
         ]
       },
       "imitrex": {
@@ -17716,6 +18136,111 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:levothyroxine"
         ]
       },
+      "lexapro": {
+        "aliases": [
+          "lexapro",
+          "escitalopram",
+          "cipralex"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antidepressant": 40.0,
+          "central nervous system agent": 400.0,
+          "selective serotonin reuptake inhibitor": 10.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "antidepressant": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antidepressant' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "indication / functional class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "selective serotonin reuptake inhibitor": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'selective serotonin reuptake inhibitor' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "selective serotonin reuptake inhibitor",
+          "antidepressant",
+          "central nervous system agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:lexapro"
+        ]
+      },
+      "lidocaine": {
+        "aliases": [
+          "xylocaine",
+          "lidocaine hydrochloride"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "amide local anesthetic": 10.0,
+          "central nervous system agent": 400.0,
+          "local anesthetic": 60.0
+        },
+        "level_grounding": {
+          "amide local anesthetic": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'amide local anesthetic' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "pharmacologic/mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "systemic pharmacologic category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "local anesthetic": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'local anesthetic' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "therapeutic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "amide local anesthetic",
+          "local anesthetic",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:repair:drug:lidocaine"
+        ]
+      },
       "linaclotide": {
         "aliases": [],
         "count": 1.0,
@@ -17822,6 +18347,56 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:liothyronine"
+        ]
+      },
+      "lipitor": {
+        "aliases": [
+          "lipitor",
+          "atorvastatin",
+          "atorvastatin calcium",
+          "lipitor 40 mg",
+          "lipitor\u00ae"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "HMG-CoA reductase inhibitor": 10.0,
+          "cardiovascular agent": 300.0,
+          "statin": 60.0
+        },
+        "level_grounding": {
+          "HMG-CoA reductase inhibitor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'HMG-CoA reductase inhibitor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_body_system",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "statin": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'statin' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "HMG-CoA reductase inhibitor",
+          "statin",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:lipitor"
         ]
       },
       "liraglutide": {
@@ -18785,6 +19360,55 @@
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:drug:mira miralax"
         ]
       },
+      "mira- miralax": {
+        "aliases": [
+          "miralax",
+          "mira miralax",
+          "polyethylene glycol 3350",
+          "peg 3350"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "laxative": 80.0,
+          "medication": 11000.0,
+          "osmotic laxative": 10.0
+        },
+        "level_grounding": {
+          "laxative": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'laxative' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "generated",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "osmotic laxative": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'osmotic laxative' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "generated",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "osmotic laxative",
+          "laxative",
+          "medication"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:drug:mira- miralax"
+        ]
+      },
       "mirabegron": {
         "aliases": [],
         "count": 2.0,
@@ -19187,6 +19811,44 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:neomycin"
         ]
       },
+      "neurontin": {
+        "aliases": [
+          "neurontin",
+          "gabapentin"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "central nervous system agent": 400.0,
+          "gabapentinoid": 10.0
+        },
+        "level_grounding": {
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "Canonical vocabulary slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "gabapentinoid": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'gabapentinoid' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "Pharmacologic class taxonomy (WHO ATC N03AX)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "gabapentinoid",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:repair:drug:Neurontin",
+          "producer:repair-gptoss120b:triage:drug:neurontin"
+        ]
+      },
       "nicotine": {
         "aliases": [],
         "count": 25.0,
@@ -19391,6 +20053,54 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:norethindrone"
+        ]
+      },
+      "norvasc": {
+        "aliases": [
+          "amlodipine",
+          "amlodipine besylate",
+          "norvasc"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antihypertensive agent": 150.0,
+          "cardiovascular agent": 300.0,
+          "dihydropyridine calcium channel blocker": 10.0
+        },
+        "level_grounding": {
+          "antihypertensive agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antihypertensive agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "dihydropyridine calcium channel blocker": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'dihydropyridine calcium channel blocker' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ATC code C08CA (dihydropyridine calcium channel blockers)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "dihydropyridine calcium channel blocker",
+          "antihypertensive agent",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:drug:norvasc"
         ]
       },
       "numbing medicine": {
@@ -19772,6 +20482,53 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:oxycodone"
         ]
       },
+      "oxycontin": {
+        "aliases": [
+          "oxycontin",
+          "oxycodone"
+        ],
+        "count": 25.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "analgesic": 150.0,
+          "central nervous system agent": 400.0,
+          "opioid analgesic": 25.0
+        },
+        "level_grounding": {
+          "analgesic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "opioid analgesic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'opioid analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "DrugBank opioid analgesic list",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "opioid analgesic",
+          "analgesic",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:drug:Oxycontin"
+        ]
+      },
       "pancrelipase": {
         "aliases": [],
         "count": 1.0,
@@ -19880,6 +20637,147 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:paroxetine"
+        ]
+      },
+      "penicillin": {
+        "aliases": [
+          "penicillins",
+          "\u03b2\u2011lactam antibiotic",
+          "penicillin g",
+          "penicillin v",
+          "penicillanic acid derivative",
+          "benzylpenicillin"
+        ],
+        "count": 50.0,
+        "entry_origin": "observed-surface",
+        "ladder_defects": [
+          "no_anonymity_expansion"
+        ],
+        "level_counts": {
+          "antibiotic": 150.0,
+          "beta-lactam antibiotic": 50.0,
+          "medication": 11000.0
+        },
+        "level_grounding": {
+          "antibiotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "manually authored penicillin ladder; 'antibiotic' = anchor value from data/lattice_sources/reference/drug_class_anchors.json; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "manually-authored",
+            "status": "model-proposed"
+          },
+          "beta-lactam antibiotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "manually authored penicillin ladder; 'beta-lactam antibiotic' = best-effort count of distinct beta-lactam antibiotics (penicillins, cephalosporins, carbapenems, monobactams); not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "manually-authored",
+            "status": "model-proposed"
+          },
+          "medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "manually authored penicillin ladder; 'medication' = anchor value from data/lattice_sources/reference/drug_class_anchors.json; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "manually-authored",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "beta-lactam antibiotic",
+          "antibiotic",
+          "medication"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:repair:drug:penicillin"
+        ]
+      },
+      "percocet": {
+        "aliases": [
+          "percocet",
+          "oxycodone/acetaminophen",
+          "tylenol #3",
+          "oxycontin-apap"
+        ],
+        "count": 25.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "analgesic": 150.0,
+          "central nervous system agent": 400.0,
+          "opioid analgesic": 25.0
+        },
+        "level_grounding": {
+          "analgesic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical label",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical label",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "opioid analgesic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'opioid analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "DrugBank classification: Opioid Analgesic",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "opioid analgesic",
+          "analgesic",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:drug:percocet"
+        ]
+      },
+      "phexxi": {
+        "aliases": [
+          "phexxi",
+          "phexxi (spermicide)",
+          "phexxi (vaginal contraceptive)"
+        ],
+        "count": 30.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "contraceptive agent": 150.0,
+          "spermicide": 30.0
+        },
+        "level_grounding": {
+          "contraceptive agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'contraceptive agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broader pharmacologic category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "spermicide": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'spermicide' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "pharmacologic/mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "spermicide",
+          "contraceptive agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:drug:phexxi"
         ]
       },
       "pioglitazone": {
@@ -20062,6 +20960,42 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:prednisolone"
         ]
       },
+      "prednisone": {
+        "aliases": [
+          "prednisone"
+        ],
+        "count": 15.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anti-inflammatory agent": 200.0,
+          "glucocorticoid": 15.0
+        },
+        "level_grounding": {
+          "anti-inflammatory agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anti-inflammatory agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "WHO ATC A02 (anti-inflammatory agents) overview",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "glucocorticoid": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'glucocorticoid' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "DrugBank glucocorticoid class list",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "glucocorticoid",
+          "anti-inflammatory agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:repair:drug:prednisone"
+        ]
+      },
       "pregabalin": {
         "aliases": [],
         "count": 1.0,
@@ -20138,6 +21072,64 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:prescription drugs"
+        ]
+      },
+      "prilosec": {
+        "aliases": [
+          "omeprazole",
+          "prilosec",
+          "prilosec otc"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "acid reducer": 60.0,
+          "gastrointestinal agent": 80.0,
+          "proton pump inhibitor": 10.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "acid reducer": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'acid reducer' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "indication_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "gastrointestinal agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'gastrointestinal agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "ATC code A02",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "proton pump inhibitor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'proton pump inhibitor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "proton pump inhibitor",
+          "acid reducer",
+          "gastrointestinal agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:prilosec"
         ]
       },
       "primidone": {
@@ -21024,6 +22016,44 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:statin"
         ]
       },
+      "steroid": {
+        "aliases": [
+          "corticosteroid",
+          "glucocorticoid",
+          "steroid drug"
+        ],
+        "count": 15.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anti-inflammatory agent": 200.0,
+          "glucocorticoid": 15.0
+        },
+        "level_grounding": {
+          "anti-inflammatory agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anti-inflammatory agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "glucocorticoid": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'glucocorticoid' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "pharmacologic class taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "glucocorticoid",
+          "anti-inflammatory agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:drug:steroid"
+        ]
+      },
       "steroid solution": {
         "aliases": [],
         "count": 40.0,
@@ -21130,6 +22160,66 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:sumatriptan"
+        ]
+      },
+      "symbicort": {
+        "aliases": [
+          "budesonide/formoterol",
+          "symbicort inhaler",
+          "budesonide/formoterol combination",
+          "symbicort",
+          "ics/laba"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asthma maintenance therapy": 240.0,
+          "inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)": 10.0,
+          "medication": 11000.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "asthma maintenance therapy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'asthma maintenance therapy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medication": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medication' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "inhaled corticosteroid/long\u2011acting \u03b22\u2011agonist combination (ICS/LABA)",
+          "asthma maintenance therapy",
+          "medication",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:symbicort"
         ]
       },
       "tadalafil": {
@@ -21588,6 +22678,54 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:topiramate"
+        ]
+      },
+      "toprol": {
+        "aliases": [
+          "toprol",
+          "metoprolol",
+          "toprol xl"
+        ],
+        "count": 20.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antihypertensive agent": 150.0,
+          "beta-blocker": 20.0,
+          "cardiovascular agent": 300.0
+        },
+        "level_grounding": {
+          "antihypertensive agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antihypertensive agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "beta-blocker": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'beta-blocker' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "beta-blocker",
+          "antihypertensive agent",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:toprol"
         ]
       },
       "torsemide": {
@@ -22156,6 +23294,45 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:warfarin"
         ]
       },
+      "water pill": {
+        "aliases": [
+          "diuretic",
+          "thiazide diuretic",
+          "hydrochlorothiazide",
+          "loop diuretic"
+        ],
+        "count": 150.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antihypertensive agent": 150.0,
+          "cardiovascular agent": 300.0
+        },
+        "level_grounding": {
+          "antihypertensive agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antihypertensive agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antihypertensive agent",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:drug:water pill"
+        ]
+      },
       "weight loss medications": {
         "aliases": [],
         "count": 1.0,
@@ -22190,6 +23367,143 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:weight loss medications"
         ]
       },
+      "wellbutrin": {
+        "aliases": [
+          "wellbutrin",
+          "bupropion",
+          "wellbutrin xl",
+          "zyban"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antidepressant": 40.0,
+          "central nervous system agent": 400.0,
+          "norepinephrine-dopamine reuptake inhibitor (NDRI)": 10.0,
+          "psychotropic agent": 250.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "antidepressant": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antidepressant' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "indication_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "norepinephrine-dopamine reuptake inhibitor (NDRI)": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'norepinephrine-dopamine reuptake inhibitor (NDRI)' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "DrugBank",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "norepinephrine-dopamine reuptake inhibitor (NDRI)",
+          "antidepressant",
+          "psychotropic agent",
+          "central nervous system agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:wellbutrin"
+        ]
+      },
+      "xanax": {
+        "aliases": [
+          "alprazolam",
+          "xanax",
+          "alprazolam (xanax)"
+        ],
+        "count": 15.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anxiolytic": 60.0,
+          "benzodiazepine": 15.0,
+          "central nervous system agent": 400.0,
+          "psychotropic agent": 250.0,
+          "therapeutic agent": 15000.0
+        },
+        "level_grounding": {
+          "anxiolytic": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anxiolytic' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "Therapeutic class code for anxiolytics",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "benzodiazepine": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'benzodiazepine' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "ATC N05BA \u2013 Benzodiazepine class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "benzodiazepine",
+          "anxiolytic",
+          "psychotropic agent",
+          "central nervous system agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:xanax"
+        ]
+      },
       "zofran": {
         "aliases": [],
         "count": 10.0,
@@ -22222,6 +23536,55 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:zofran"
         ]
       },
+      "zoloft": {
+        "aliases": [
+          "sertraline",
+          "zoloft",
+          "sertraline (zoloft)",
+          "lustral"
+        ],
+        "count": 10.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antidepressant": 40.0,
+          "psychotropic agent": 250.0,
+          "selective serotonin reuptake inhibitor": 10.0
+        },
+        "level_grounding": {
+          "antidepressant": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antidepressant' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "Therapeutic use classification (e.g., FDA drug categories)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "Canonical vocabulary slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "selective serotonin reuptake inhibitor": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'selective serotonin reuptake inhibitor' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "WHO ATC pharmacologic class hierarchy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "selective serotonin reuptake inhibitor",
+          "antidepressant",
+          "psychotropic agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:drug:zoloft"
+        ]
+      },
       "zolpidem": {
         "aliases": [],
         "count": 2.0,
@@ -22252,6 +23615,54 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:drug:zolpidem"
+        ]
+      },
+      "zyprexa": {
+        "aliases": [
+          "zyprexa",
+          "olanzapine",
+          "zyprexa xr"
+        ],
+        "count": 60.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antipsychotic": 60.0,
+          "central nervous system agent": 400.0,
+          "psychotropic agent": 250.0
+        },
+        "level_grounding": {
+          "antipsychotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antipsychotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical vocabulary slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychotropic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychotropic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_body_system",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antipsychotic",
+          "psychotropic agent",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-functional:refine-drug:zyprexa"
         ]
       }
     },
@@ -22819,6 +24230,44 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:abnormal paps"
+        ]
+      },
+      "abnormal weight gain": {
+        "aliases": [
+          "excessive weight gain",
+          "abnormal weight increase",
+          "weight gain"
+        ],
+        "count": 50.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "clinical symptom": 1000.0,
+          "weight gain disorder": 50.0
+        },
+        "level_grounding": {
+          "clinical symptom": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical symptom' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "weight gain disorder": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'weight gain disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10/ICD-11 taxonomy review",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "weight gain disorder",
+          "clinical symptom"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-hints:triage:health-condition:abnormal weight gain"
         ]
       },
       "achenbach syndrome": {
@@ -27270,43 +28719,39 @@
           "lower gastrointestinal dysfunction",
           "bowel issues",
           "bowel problems",
-          "bowel complaints"
+          "bowel complaints",
+          "bowel dysfunction"
         ],
-        "count": 283.0,
+        "count": 120.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "disease of anatomical entity": 9162.0,
-          "gastrointestinal system disease": 838.0,
-          "intestinal disease": 283.0
+          "functional bowel disorder": 120.0,
+          "gastrointestinal condition": 400.0
         },
         "level_grounding": {
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
+          "functional bowel disorder": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'functional bowel disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "clinical taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           },
-          "gastrointestinal system disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:77",
-            "selector": "doid.is_a_descendants(DOID:77)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "intestinal disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:5295",
-            "selector": "doid.is_a_descendants(DOID:5295)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
+          "gastrointestinal condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'gastrointestinal condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical vocabulary",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           }
         },
         "levels": [
-          "intestinal disease",
-          "gastrointestinal system disease",
-          "disease of anatomical entity"
+          "functional bowel disorder",
+          "gastrointestinal condition"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:bowel dysfunction",
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:bowel issues"
+          "producer:repair-gptoss120b:repair:health-condition:bowel dysfunction"
         ]
       },
       "brain cancer": {
@@ -29036,6 +30481,44 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:cholesterol embolism"
         ]
       },
+      "cholesterol problems": {
+        "aliases": [
+          "high cholesterol",
+          "elevated cholesterol",
+          "cholesterol abnormality"
+        ],
+        "count": 80.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "disease of metabolism": 1200.0,
+          "hyperlipidemia": 80.0
+        },
+        "level_grounding": {
+          "disease of metabolism": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'disease of metabolism' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocab",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "hyperlipidemia": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'hyperlipidemia' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "taxonomy_review",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "hyperlipidemia",
+          "disease of metabolism"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:health-condition:cholesterol problems"
+        ]
+      },
       "chronic abdominal pain": {
         "aliases": [
           "chronic belly pain",
@@ -29622,6 +31105,44 @@
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:colon cancer"
+        ]
+      },
+      "congenital artery": {
+        "aliases": [
+          "congenital arterial anomaly",
+          "congenital artery malformation",
+          "congenital arterial defect"
+        ],
+        "count": 130.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "congenital arterial malformation": 130.0,
+          "congenital vascular anomaly": 400.0
+        },
+        "level_grounding": {
+          "congenital arterial malformation": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'congenital arterial malformation' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10 Chapter IX > Q25.0\u2013Q25.9 (Congenital malformations of arteries)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "congenital vascular anomaly": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'congenital vascular anomaly' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10 Chapter IX > Q25\u2013Q28 (Congenital malformations of the circulatory system)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "congenital arterial malformation",
+          "congenital vascular anomaly"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:health-condition:congenital artery"
         ]
       },
       "congenital diaphragmatic hernia": {
@@ -30560,52 +32081,51 @@
           "diabetes",
           "dm",
           "diabetes mellitus type 1",
-          "diabetes mellitus type 2"
+          "diabetes mellitus type 2",
+          "diabetes mellitus",
+          "type 1 diabetes",
+          "type 2 diabetes"
         ],
-        "count": 71.0,
+        "count": 80.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "carbohydrate metabolic disorder": 176.0,
-          "disease of metabolism": 897.99,
-          "glucose metabolism disease": 71.0,
-          "inherited metabolic disorder": 836.0
+          "carbohydrate metabolic disorder": 250.0,
+          "disease of metabolism": 1200.0,
+          "glucose metabolism disease": 80.0
         },
         "level_grounding": {
           "carbohydrate metabolic disorder": {
-            "member_set_ref": "doid:is_a_descendants:DOID:2978",
-            "selector": "doid.is_a_descendants(DOID:2978)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'carbohydrate metabolic disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "custom taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           },
           "disease of metabolism": {
-            "count_basis": "corpus-adjusted-from-certifying-source",
-            "count_evidence": "'disease of metabolism' has a real source-backed count (898.0) that required a small adjustment (897.99) to stay monotone with the rest of this run's chains; flag for manual review",
-            "member_set_ref": "doid:is_a_descendants:DOID:0014667",
-            "selector": "doid.is_a_descendants(DOID:0014667)",
-            "source_family": "doid-is-a",
-            "status": "corpus-adjusted-from-certifying-source"
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'disease of metabolism' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "custom taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           },
           "glucose metabolism disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:4194",
-            "selector": "doid.is_a_descendants(DOID:4194)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "inherited metabolic disorder": {
-            "member_set_ref": "doid:is_a_descendants:DOID:655",
-            "selector": "doid.is_a_descendants(DOID:655)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'glucose metabolism disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "custom taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           }
         },
         "levels": [
           "glucose metabolism disease",
           "carbohydrate metabolic disorder",
-          "inherited metabolic disorder",
           "disease of metabolism"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:diabetes mellitus"
+          "producer:repair-gptoss120b-neardup:repair:health-condition:diabetes mellitus"
         ]
       },
       "diabetes mellitus type two": {
@@ -31257,6 +32777,44 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:dubin-johnson syndrome"
+        ]
+      },
+      "dysphagia": {
+        "aliases": [
+          "difficulty swallowing",
+          "swallowing disorder",
+          "pharyngeal dysphagia"
+        ],
+        "count": 1000.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "clinical finding": 60000.0,
+          "clinical symptom": 1000.0
+        },
+        "level_grounding": {
+          "clinical finding": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical finding' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "clinical symptom": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical symptom' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "clinical symptom",
+          "clinical finding"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:repair:health-condition:dysphagia"
         ]
       },
       "early parkinson s disease": {
@@ -33300,56 +34858,39 @@
           "gerd - gastro-esophageal reflux disease",
           "reflux",
           "reflux disease",
-          "reflux esophagitis"
+          "reflux esophagitis",
+          "gastroesophageal reflux disease"
         ],
-        "count": 400.0,
+        "count": 30.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "disease of anatomical entity": 9162.0,
-          "gastrointestinal condition": 400.0,
-          "gastrointestinal system disease": 838.0,
-          "medical condition": 75000.0
+          "gastroesophageal reflux disorder": 30.0,
+          "gastrointestinal reflux disease": 356.67
         },
         "level_grounding": {
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "gastrointestinal condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'gastrointestinal condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+          "gastroesophageal reflux disorder": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'gastroesophageal reflux disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
             "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
+            "selector": "ICD-10",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "gastrointestinal system disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:77",
-            "selector": "doid.is_a_descendants(DOID:77)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "medical condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical condition' set from the corrected runtime-type-conditional magnitude in data/lattice_sources/reference/ (class-universe sizes were wrong here); still not certifying",
+          "gastrointestinal reflux disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'gastrointestinal reflux disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
             "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
+            "selector": "ICD-10",
             "source_family": "model-proposed",
             "status": "model-proposed"
           }
         },
         "levels": [
-          "gastrointestinal condition",
-          "gastrointestinal system disease",
-          "disease of anatomical entity",
-          "medical condition"
+          "gastroesophageal reflux disorder",
+          "gastrointestinal reflux disease"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:gastroesophageal reflux disease",
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:reflux",
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:reflux disease"
+          "producer:repair-gptoss120b-neardup:repair:health-condition:gastroesophageal reflux disease"
         ]
       },
       "generalized weakness": {
@@ -34630,6 +36171,54 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:hodgkin's lymphoma"
         ]
       },
+      "huntington disease": {
+        "aliases": [
+          "huntington's disease",
+          "hd",
+          "huntington disease"
+        ],
+        "count": 80.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "genetic neurodegenerative disease": 80.0,
+          "nervous system disease": 1800.0,
+          "neurodegenerative disease": 350.0
+        },
+        "level_grounding": {
+          "genetic neurodegenerative disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'genetic neurodegenerative disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "Orphanet",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "nervous system disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'nervous system disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "neurodegenerative disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'neurodegenerative disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "NINDS",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "genetic neurodegenerative disease",
+          "neurodegenerative disease",
+          "nervous system disease"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:health-condition:Huntington Disease"
+        ]
+      },
       "huntington's disease": {
         "aliases": [
           "hd",
@@ -34898,53 +36487,40 @@
           "hypertensive disease",
           "vascular hypertensive disorder",
           "high bp",
-          "hypertensive disorder"
+          "hypertensive disorder",
+          "significant high blood pressure"
         ],
-        "count": 130.0,
+        "count": 150.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "artery disease": 130.0,
-          "cardiovascular system disease": 627.0,
-          "disease of anatomical entity": 9162.0,
-          "vascular disease": 327.0
+          "cardiovascular condition": 300.0,
+          "primary arterial pressure disorder family": 150.0
         },
         "level_grounding": {
-          "artery disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:0050828",
-            "selector": "doid.is_a_descendants(DOID:0050828)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
+          "cardiovascular condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "UMLS CUI C0011849 (Cardiovascular Disease) hierarchy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           },
-          "cardiovascular system disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:1287",
-            "selector": "doid.is_a_descendants(DOID:1287)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "vascular disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:178",
-            "selector": "doid.is_a_descendants(DOID:178)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
+          "primary arterial pressure disorder family": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'primary arterial pressure disorder family' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10 I10-I15 (essential and secondary hypertension categories)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           }
         },
         "levels": [
-          "artery disease",
-          "vascular disease",
-          "cardiovascular system disease",
-          "disease of anatomical entity"
+          "primary arterial pressure disorder family",
+          "cardiovascular condition"
         ],
         "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:b p h",
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:blood pressure problems",
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:high blood pressure",
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:hypertension"
+          "producer:repair-gptoss120b:repair:health-condition:hypertension",
+          "producer:repair-gptoss120b:repair:health-condition:significant high blood pressure"
         ]
       },
       "hyperthyroidism": {
@@ -37673,6 +39249,45 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:melanoma"
         ]
       },
+      "memory loss": {
+        "aliases": [
+          "amnesia",
+          "forgetfulness",
+          "cognitive impairment",
+          "memory impairment"
+        ],
+        "count": 85.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "episodic memory disorder": 85.0,
+          "neurological condition": 600.0
+        },
+        "level_grounding": {
+          "episodic memory disorder": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'episodic memory disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10 Chapter F (Mental, Behavioural and Neurodevelopmental disorders)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "neurological condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'neurological condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "MeSH hierarchy under D009460",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "episodic memory disorder",
+          "neurological condition"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:health-condition:memory loss"
+        ]
+      },
       "menopause": {
         "aliases": [
           "menopause",
@@ -39980,6 +41595,45 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:polycythemia vera"
         ]
       },
+      "poor renal sufficiency": {
+        "aliases": [
+          "renal insufficiency",
+          "reduced kidney function",
+          "poor renal function",
+          "renal failure"
+        ],
+        "count": 150.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "kidney disease": 400.0,
+          "renal insufficiency": 150.0
+        },
+        "level_grounding": {
+          "kidney disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'kidney disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "UMLS",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "renal insufficiency": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'renal insufficiency' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "renal insufficiency",
+          "kidney disease"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:health-condition:Poor renal sufficiency"
+        ]
+      },
       "positive straight leg": {
         "aliases": [
           "positive straight leg raise",
@@ -41417,6 +43071,44 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:rotator cuff tear"
         ]
       },
+      "rotator cuff tendinopathy": {
+        "aliases": [
+          "shoulder tendinopathy",
+          "subacromial tendon disorder",
+          "overuse shoulder tendon syndrome"
+        ],
+        "count": 130.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "musculoskeletal system disease": 1000.0,
+          "subacromial tendon disorder family": 130.0
+        },
+        "level_grounding": {
+          "musculoskeletal system disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'musculoskeletal system disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10-CM",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "subacromial tendon disorder family": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'subacromial tendon disorder family' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10-CM",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "subacromial tendon disorder family",
+          "musculoskeletal system disease"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-hints:triage:health-condition:rotator cuff tendinopathy"
+        ]
+      },
       "scalp psoriasis": {
         "aliases": [
           "psoriasis of the scalp",
@@ -41662,6 +43354,44 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:septic arthritis"
+        ]
+      },
+      "severe aortic stenosis": {
+        "aliases": [
+          "severe aortic stenosis",
+          "critical aortic stenosis",
+          "advanced aortic valve stenosis"
+        ],
+        "count": 110.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "aortic stenosis subtypes": 110.0,
+          "cardiac valve disorder": 400.0
+        },
+        "level_grounding": {
+          "aortic stenosis subtypes": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'aortic stenosis subtypes' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10/Orphanet taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiac valve disorder": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'cardiac valve disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "WHO cardiovascular disease taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "aortic stenosis subtypes",
+          "cardiac valve disorder"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:health-condition:severe aortic stenosis"
         ]
       },
       "severe hypertension": {
@@ -42569,6 +44299,55 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:subchondral marrow edema"
         ]
       },
+      "suprasellar tumor": {
+        "aliases": [
+          "suprasellar neoplasm",
+          "suprasellar mass",
+          "suprasellar lesion",
+          "pituitary stalk tumor"
+        ],
+        "count": 80.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "brain tumor": 400.0,
+          "central nervous system neoplasm": 400.0,
+          "suprasellar neoplasm family": 80.0
+        },
+        "level_grounding": {
+          "brain tumor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'brain tumor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broader anatomical grouping (central nervous system neoplasms)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "central nervous system neoplasm": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'central nervous system neoplasm' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broadest anatomical cancer category before generic 'cancer'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "suprasellar neoplasm family": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'suprasellar neoplasm family' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "nearest specific disease family based on anatomical site",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "suprasellar neoplasm family",
+          "brain tumor",
+          "central nervous system neoplasm"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:health-condition:suprasellar tumor"
+        ]
+      },
       "symptoms": {
         "aliases": [
           "clinical manifestations",
@@ -43151,6 +44930,55 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:tuberculosis"
         ]
       },
+      "type two diabetes": {
+        "aliases": [
+          "type 2 diabetes",
+          "type two diabetes",
+          "t2dm",
+          "non\u2011insulin\u2011dependent diabetes mellitus"
+        ],
+        "count": 180.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "diabetes mellitus": 356.67,
+          "disease of metabolism": 1200.0,
+          "type 2 diabetes mellitus": 180.0
+        },
+        "level_grounding": {
+          "diabetes mellitus": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'diabetes mellitus' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "WHO disease taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "disease of metabolism": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'disease of metabolism' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "type 2 diabetes mellitus": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'type 2 diabetes mellitus' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD\u201110 classification hierarchy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "type 2 diabetes mellitus",
+          "diabetes mellitus",
+          "disease of metabolism"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:repair:health-condition:type two diabetes"
+        ]
+      },
       "ulcerative colitis": {
         "aliases": [
           "left-sided ulcerative colitis",
@@ -43200,6 +45028,44 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:ulcerative colitis"
+        ]
+      },
+      "ulcerative colitis complications": {
+        "aliases": [
+          "ulcerative colitis",
+          "uc",
+          "ulcerative colitis complications"
+        ],
+        "count": 150.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "colitis": 150.0,
+          "inflammatory bowel disease": 356.67
+        },
+        "level_grounding": {
+          "colitis": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'colitis' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "inflammatory bowel disease": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'inflammatory bowel disease' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ontology",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "colitis",
+          "inflammatory bowel disease"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:health-condition:ulcerative colitis complications"
         ]
       },
       "unexplained abdominal pain": {
@@ -44263,6 +46129,54 @@
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:ambulance"
         ]
       },
+      "angioplasty": {
+        "aliases": [
+          "pci",
+          "percutaneous coronary angioplasty",
+          "balloon angioplasty"
+        ],
+        "count": 162.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "cardiovascular interventional procedure": 835.5,
+          "medical procedure": 79115.0,
+          "percutaneous coronary intervention": 162.0
+        },
+        "level_grounding": {
+          "cardiovascular interventional procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'cardiovascular interventional procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "interventional_registry",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "percutaneous coronary intervention": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'percutaneous coronary intervention' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "cpt_code_registry",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "percutaneous coronary intervention",
+          "cardiovascular interventional procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:angioplasty"
+        ]
+      },
       "annual visit": {
         "aliases": [
           "yearly checkup",
@@ -44411,6 +46325,54 @@
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:appendix out"
         ]
       },
+      "appendix removed": {
+        "aliases": [
+          "appendectomy",
+          "appendix removal",
+          "appendicectomy"
+        ],
+        "count": 85.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anatomical regions, general, removal": 514.0,
+          "appendectomy": 85.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "anatomical regions, general, removal": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anatomical regions, general, removal' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "appendectomy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'appendectomy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure coding taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "appendectomy",
+          "anatomical regions, general, removal",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:appendix removed"
+        ]
+      },
       "arthrogram": {
         "aliases": [
           "arthrography",
@@ -44468,6 +46430,44 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:arthrogram"
+        ]
+      },
+      "ascending aortic aneurysm repair": {
+        "aliases": [
+          "ascending aortic aneurysm repair",
+          "ascending aorta repair",
+          "ascending aortic aneurysm reconstruction"
+        ],
+        "count": 99.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "heart and great vessels, repair": 99.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "heart and great vessels, repair": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'heart and great vessels, repair' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical label \"heart and great vessels, repair\"",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "heart and great vessels, repair",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:ascending aortic aneurysm repair"
         ]
       },
       "autoimmune panel": {
@@ -44780,6 +46780,54 @@
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:bimanual exam"
         ]
       },
+      "bladder distension surgery": {
+        "aliases": [
+          "bladder distension",
+          "bladder expansion surgery",
+          "bladder augmentation procedure"
+        ],
+        "count": 120.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "bladder distension procedure": 120.0,
+          "genitourinary surgical procedures": 835.5,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "bladder distension procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'bladder distension procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_code=BDP",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "genitourinary surgical procedures": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'genitourinary surgical procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "category=genitourinary_surgical_procedures",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "bladder distension procedure",
+          "genitourinary surgical procedures",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:bladder distension surgery"
+        ]
+      },
       "blood born pathogen exposure": {
         "aliases": [
           "bloodborne pathogen exposure",
@@ -45046,6 +47094,55 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:blood tests"
+        ]
+      },
+      "breast exam": {
+        "aliases": [
+          "clinical breast examination",
+          "breast physical exam",
+          "mammary exam",
+          "breast assessment"
+        ],
+        "count": 112.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "breast physical examination": 112.0,
+          "medical procedure": 79115.0,
+          "physical examination": 642.0
+        },
+        "level_grounding": {
+          "breast physical examination": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'breast physical examination' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT taxonomy \u2013 breast-specific exam codes",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "physical examination": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'physical examination' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT taxonomy \u2013 general physical exam codes",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "breast physical examination",
+          "physical examination",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:breast exam"
         ]
       },
       "breastfed": {
@@ -45498,6 +47595,132 @@
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:childbirth"
         ]
       },
+      "colonoscopy": {
+        "aliases": [
+          "colonoscopy screening",
+          "screening colonoscopic exam",
+          "preventive colonoscopy",
+          "colonoscopy"
+        ],
+        "count": 312.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "lower gastrointestinal endoscopy": 312.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "lower gastrointestinal endoscopy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'lower gastrointestinal endoscopy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "taxonomy:procedure_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "lower gastrointestinal endoscopy",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:colonoscopy"
+        ]
+      },
+      "coronary artery bypass grafting": {
+        "aliases": [
+          "cabg",
+          "coronary bypass surgery",
+          "coronary artery bypass",
+          "heart bypass"
+        ],
+        "count": 848.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "heart and great vessels, bypass": 848.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "heart and great vessels, bypass": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'heart and great vessels, bypass' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical vocabulary slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "heart and great vessels, bypass",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:coronary artery bypass grafting"
+        ]
+      },
+      "coronary artery bypass surgery": {
+        "aliases": [
+          "cabg",
+          "coronary artery bypass graft",
+          "coronary bypass surgery"
+        ],
+        "count": 120.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "coronary artery bypass grafting": 120.0,
+          "heart and great vessels, bypass": 848.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "coronary artery bypass grafting": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'coronary artery bypass grafting' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_code",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "heart and great vessels, bypass": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'heart and great vessels, bypass' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_label",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "coronary artery bypass grafting",
+          "heart and great vessels, bypass",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:coronary artery bypass surgery"
+        ]
+      },
       "crutches": {
         "aliases": [
           "walking aids",
@@ -45767,6 +47990,103 @@
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:echocardiogram"
         ]
       },
+      "echocardiogram echocardiocardiogram": {
+        "aliases": [
+          "echocardiogram",
+          "echocardiocardiogram",
+          "cardiac ultrasound",
+          "heart ultrasound"
+        ],
+        "count": 87.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "echocardiography": 642.0,
+          "medical procedure": 79115.0,
+          "transthoracic echocardiography": 87.0
+        },
+        "level_grounding": {
+          "echocardiography": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'echocardiography' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT 93306-93308 aggregate",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "transthoracic echocardiography": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'transthoracic echocardiography' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10-PCS 4A03ZX",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "transthoracic echocardiography",
+          "echocardiography",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:echocardiogram echocardiocardiogram"
+        ]
+      },
+      "endoscopy": {
+        "aliases": [
+          "endoscopy",
+          "upper gi endoscopy",
+          "egd"
+        ],
+        "count": 120.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "endoscopic procedure": 900.0,
+          "esophagogastroduodenoscopy": 120.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "endoscopic procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'endoscopic procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "national_procedure_database",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "esophagogastroduodenoscopy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'esophagogastroduodenoscopy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_code_registry",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "esophagogastroduodenoscopy",
+          "endoscopic procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:endoscopy"
+        ]
+      },
       "exacerbations": {
         "aliases": [
           "disease flare-ups",
@@ -45816,6 +48136,54 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:exacerbations"
+        ]
+      },
+      "exploratory laparotomy": {
+        "aliases": [
+          "diagnostic laparotomy",
+          "open abdominal exploration",
+          "exploratory abdominal surgery"
+        ],
+        "count": 78.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "diagnostic laparotomy": 78.0,
+          "laparotomy": 292.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "diagnostic laparotomy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'diagnostic laparotomy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10-PCS code 0WJ* (diagnostic laparotomy) frequency table",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "laparotomy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'laparotomy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "NIS 2022 dataset, procedure category 'laparotomy'",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "diagnostic laparotomy",
+          "laparotomy",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:exploratory laparotomy"
         ]
       },
       "fiscal year end data": {
@@ -46336,6 +48704,112 @@
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:lower extremity exam"
         ]
       },
+      "lumbar disc replacement": {
+        "aliases": [
+          "lumbar disc arthroplasty",
+          "lumbar intervertebral disc replacement",
+          "lumbar disc prosthesis implantation"
+        ],
+        "count": 250.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "lumbar spine replacement procedure": 250.0,
+          "medical procedure": 79115.0,
+          "spinal surgery": 620.0
+        },
+        "level_grounding": {
+          "lumbar spine replacement procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'lumbar spine replacement procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "report:national-surgical-volume:lumbar-spine-replacements",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "spinal surgery": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'spinal surgery' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "database:healthcare-procedure-codes:spinal-surgery",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "lumbar spine replacement procedure",
+          "spinal surgery",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:lumbar disc replacement"
+        ]
+      },
+      "mammogram": {
+        "aliases": [
+          "mammogram",
+          "screening mammography",
+          "breast cancer screening imaging"
+        ],
+        "count": 118.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "breast imaging": 835.5,
+          "mammography": 292.0,
+          "medical procedure": 79115.0,
+          "screening mammography": 118.0
+        },
+        "level_grounding": {
+          "breast imaging": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'breast imaging' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "combined_cpt_listing",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "mammography": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'mammography' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "cpt_database",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "screening mammography": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'screening mammography' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_code_registry",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "screening mammography",
+          "mammography",
+          "breast imaging",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:mammogram"
+        ]
+      },
       "massage": {
         "aliases": [
           "massage therapy",
@@ -46507,6 +48981,93 @@
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:orthotic"
+        ]
+      },
+      "prostate biopsies": {
+        "aliases": [
+          "prostate needle biopsy",
+          "prostatic core biopsy",
+          "prostate tissue sampling"
+        ],
+        "count": 124.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115.0,
+          "prostate biopsy procedures": 362.0,
+          "prostate needle biopsy": 124.0
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "prostate biopsy procedures": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'prostate biopsy procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "hospital_billing_2022_prostate_biopsy_variants",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "prostate needle biopsy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'prostate needle biopsy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "urology_registry_2023_prostate_biopsy_codes",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "prostate needle biopsy",
+          "prostate biopsy procedures",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:prostate biopsies"
+        ]
+      },
+      "pulmonary function test": {
+        "aliases": [
+          "pft",
+          "spirometry",
+          "lung function test",
+          "pulmonary function assessment"
+        ],
+        "count": 850.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115.0,
+          "respiratory function testing": 850.0
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "respiratory function testing": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'respiratory function testing' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "SNOMED CT hierarchy for respiratory diagnostics",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "respiratory function testing",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b-neardup:triage:medical-procedure:pulmonary function test"
         ]
       },
       "rapid covid test": {
@@ -46990,6 +49551,152 @@
         ],
         "source_ids": [
           "producer:qa-v2-clinical-remine-nemotron-3-super-clean:medical-procedure:ultrasound guided core needle biopsy"
+        ]
+      },
+      "uterus removed": {
+        "aliases": [
+          "uterus removal",
+          "hysterectomy",
+          "uterine excision",
+          "uterine removal"
+        ],
+        "count": 120.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "gynecologic surgical procedure": 835.5,
+          "hysterectomy": 120.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "gynecologic surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'gynecologic surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "hysterectomy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'hysterectomy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "hysterectomy",
+          "gynecologic surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:uterus removed"
+        ]
+      },
+      "vasectomy": {
+        "aliases": [
+          "male sterilization",
+          "surgical vasectomy",
+          "vasectomy procedure"
+        ],
+        "count": 142.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "genitourinary surgical procedures": 835.5,
+          "male sterilization procedure": 142.0,
+          "medical procedure": 79115.0
+        },
+        "level_grounding": {
+          "genitourinary surgical procedures": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'genitourinary surgical procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT & ICD-10-PCS taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "male sterilization procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'male sterilization procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "male sterilization procedure",
+          "genitourinary surgical procedures",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:vasectomy"
+        ]
+      },
+      "whole blood transfusion": {
+        "aliases": [
+          "whole blood transfusion",
+          "whole blood infusion",
+          "complete blood transfusion",
+          "wb transfusion"
+        ],
+        "count": 242.0,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "blood transfusion": 242.0,
+          "medical procedure": 79115.0,
+          "transfusion procedure": 617.0
+        },
+        "level_grounding": {
+          "blood transfusion": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'blood transfusion' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD-10-PCS 3023*",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "transfusion procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'transfusion procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT 3020-3029 series",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "blood transfusion",
+          "transfusion procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:repair-gptoss120b:triage:medical-procedure:whole blood transfusion"
         ]
       },
       "wide local incision": {
