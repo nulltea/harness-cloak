@@ -18,11 +18,15 @@ import re
 from cloak.extract import invert
 from cloak.lattice import NLI_MODEL
 
-QA_MODEL = "gemma 4 (E4B)"  # THE context reader -- the SINGLE definition. Every reader path
+QA_MODEL = "medgemma-4b-it"  # THE context reader -- the SINGLE definition. Every reader path
                             # (DEFAULT_CONTEXT_READER_PIN, BatchedContextReader) imports this;
                             # do not hardcode a reader model elsewhere or add a per-call reader
                             # override. Served generative whole-doc reader on llama-swap :8060,
                             # temp0/greedy, non-thinking, batched via pmap (workers match -np 6).
+                            # Reader sweep (D2N001-007, 2026-07-19): medgemma > gemma 4 E4B on
+                            # QA yield (kept 47 vs 44, three_point_gate_failed 29 vs 31) at the
+                            # same local 4B cost; a 120B gpt-oss reader rejected MORE, so
+                            # gate-failure is not reader-capability-bound (see memory).
 QA_BASE_URL = "http://localhost:8060/v1"
 QA_PROMPT = ("Answer the question using ONLY the note below. Reply with the shortest exact "
              "answer copied from the note (a name, value, number, or phrase). If the note does "
