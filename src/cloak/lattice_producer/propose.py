@@ -83,12 +83,21 @@ _DEFAULT_LEVEL_GUIDANCE = (
 )
 _TYPE_LEVEL_GUIDANCE: dict[str, str] = {
     "drug": (
-        "This entry is a DRUG. The nearest level is its specific pharmacologic/mechanistic class, "
-        "e.g. metoprolol -> 'beta blocker' (or 'selective beta-1 adrenergic antagonist'), then "
-        "widen one step at a time: -> 'antihypertensive agent' -> 'cardiovascular agent'. Do NOT "
-        "start at 'medication', 'drug', or 'pharmaceutical compound' -- those are only the broadest "
-        "tier, never the first. proposed_count is the number of DISTINCT drugs in that class "
-        "(a specific class holds ~dozens; the broadest tier at most low thousands)."
+        "This entry is a DRUG. Build the chain nearest-to-broadest in THREE kinds of tier: "
+        "(1) the specific pharmacologic/mechanistic class; (2) the common INDICATION/FUNCTIONAL "
+        "class a layperson would recognize -- what the drug is 'for'; (3) a broad body-system or "
+        "agent tier. Tier (2) is REQUIRED whenever such a class exists: never jump from a "
+        "mechanism straight to a broad umbrella. Worked examples: "
+        "metoprolol -> 'beta blocker' -> 'antihypertensive agent' -> 'cardiovascular agent'; "
+        "bupropion -> 'norepinephrine-dopamine reuptake inhibitor' -> 'antidepressant' -> "
+        "'psychotropic agent'; loratadine -> 'H1 histamine receptor antagonist' -> 'antihistamine' "
+        "-> 'therapeutic agent'; atorvastatin -> 'HMG-CoA reductase inhibitor' -> 'statin' -> "
+        "'lipid-lowering agent' -> 'cardiovascular agent'; apixaban -> 'factor Xa inhibitor' -> "
+        "'anticoagulant' -> 'cardiovascular agent'. Do NOT start at 'medication', 'drug', or "
+        "'pharmaceutical compound' -- those are only the broadest tier, never the first, and do "
+        "NOT omit the indication/functional rung. proposed_count is the number of DISTINCT drugs "
+        "in that class: a specific mechanistic class holds ~dozens, a functional class ~dozens to "
+        "low hundreds, the broadest tier at most low thousands."
     ),
     "health-condition": (
         "This entry is a HEALTH CONDITION. The nearest level is its specific disease family, e.g. "

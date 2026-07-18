@@ -77,6 +77,20 @@ def test_context_slice_is_bounded_and_ranked_by_count() -> None:
     assert "chemical substance" in [row["label"] for row in top]  # largest real-world anchor (CAS Registry)
 
 
+def test_context_slice_surfaces_functional_class_anchors_for_lexically_distant_surface() -> None:
+    # a drug brand/INN name shares no letters with its functional class ("wellbutrin" vs
+    # "antidepressant"), so pure surface-overlap ranking used to show only the broad umbrella
+    # anchors. The reserved functional band must now surface a spread of functional classes.
+    vocab = CanonicalVocabulary("drug")
+    labels = [row["label"] for row in vocab.context_slice(n=20, surface="wellbutrin bupropion")]
+    functional = {"antidepressant", "antihistamine", "antipsychotic", "antibiotic",
+                  "anticoagulant", "antihypertensive agent", "cardiovascular agent"}
+    assert len(functional & set(labels)) >= 3, labels
+
+    # no-surface behaviour is unchanged (pure count-desc, umbrellas first)
+    assert [r["label"] for r in vocab.context_slice(n=1)] == ["chemical substance"]
+
+
 def test_medical_procedure_seeds_from_icd10pcs_headers_not_a_hand_file() -> None:
     vocab = CanonicalVocabulary("medical-procedure")
 
