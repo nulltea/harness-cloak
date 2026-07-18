@@ -10,6 +10,8 @@ from pathlib import Path
 
 from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
+    RELATION_TEACHER_MODEL,
+    RELATION_TEACHER_PROVIDER,
     AciTaskAdapter,
     OpenRouterRelationTeacher,
     artifact_views,
@@ -108,6 +110,15 @@ def _action_renderer(
     return render
 
 
+def _relation_teacher_from_args(args) -> OpenRouterRelationTeacher:
+    """Construct the GPT-OSS teacher from the CLI's routing args (prod entry point)."""
+    return OpenRouterRelationTeacher(
+        model=getattr(args, "teacher_model", RELATION_TEACHER_MODEL),
+        routed_provider=(getattr(args, "teacher_provider", RELATION_TEACHER_PROVIDER) or None),
+        allow_fallbacks=bool(getattr(args, "teacher_allow_fallbacks", False)),
+    )
+
+
 def build_from_files(
     args, *, relation_teacher=None, secondary_relation_teacher=None,
     reader=read_context_batch,
@@ -156,14 +167,14 @@ def build_from_files(
         or os.getenv("CLOAK_RELATION_TEACHER_GLEANING") == "1"
     )
     if relation_teacher is None and (args.relation_teacher or gleaning_requested):
-        relation_teacher = OpenRouterRelationTeacher()
+        relation_teacher = _relation_teacher_from_args(args)
     escalation_configured = bool(
         gleaning_requested and manifest.get("relation_escalation_policy") is not None
     )
     # The gleaning+repair pass reuses the primary GPT-OSS teacher config; the second
     # call differs only by prompt (relation_repair_prompt), so it is a distinct cache key.
     if secondary_relation_teacher is None and escalation_configured:
-        secondary_relation_teacher = OpenRouterRelationTeacher()
+        secondary_relation_teacher = _relation_teacher_from_args(args)
     teacher_pin = None
     if relation_teacher is not None:
         raw_teacher_pin = getattr(relation_teacher, "pin", None)
@@ -254,6 +265,26 @@ def parse_args(argv=None):
         "--relation-teacher",
         action="store_true",
         help="enable the primary cached GPT-OSS relation teacher",
+    )
+    parser.add_argument(
+        "--teacher-model",
+        default=RELATION_TEACHER_MODEL,
+        help=f"OpenRouter model id for the relation teacher (default {RELATION_TEACHER_MODEL})",
+    )
+    parser.add_argument(
+        "--teacher-provider",
+        default=RELATION_TEACHER_PROVIDER,
+        help=(
+            "OpenRouter routed provider for the teacher, e.g. deepinfra/turbo, deepinfra/bf16 "
+            f"(default {RELATION_TEACHER_PROVIDER}); pass an empty string to leave routing "
+            "to OpenRouter. The routed provider is part of the teacher pin and the cache key."
+        ),
+    )
+    parser.add_argument(
+        "--teacher-allow-fallbacks",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="allow OpenRouter to fall back off the routed provider (default off)",
     )
     parser.add_argument(
         "--relation-teacher-gleaning",
