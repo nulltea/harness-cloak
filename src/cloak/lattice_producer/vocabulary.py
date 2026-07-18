@@ -39,6 +39,34 @@ def _tokens(text: str) -> set[str]:
     return set(re.findall(r"[a-z0-9]+", text.lower()))
 
 
+# Generic category head nouns that recur across MANY unrelated classes and so carry no
+# discriminative signal for near-duplicate detection. Two labels sharing only one of these
+# ("respiratory agent" vs "antibacterial agent", "genetic disorder" vs "musculoskeletal
+# disorder") are NOT near-duplicates -- token-Jaccard on the raw tokens wrongly scored them 0.33
+# (one shared word out of three) and tripped the 0.3 gate, cascading real distinct rungs into
+# too_few_levels. Real class heads (analgesic, inhibitor, antibiotic, glucocorticoid, ...) are
+# deliberately absent: they DO distinguish a tier and must keep counting.
+_GENERIC_HEAD_NOUNS = frozenset({
+    "agent", "agents", "condition", "conditions", "disorder", "disorders", "disease", "diseases",
+    "procedure", "procedures", "medication", "medications", "substance", "substances", "compound",
+    "compounds", "symptom", "symptoms", "finding", "findings", "drug", "drugs", "therapy",
+    "therapies", "family", "families", "illness", "illnesses", "syndrome", "syndromes",
+})
+
+
+def _label_overlap(a: set[str], b: set[str]) -> float:
+    """Token-Jaccard, except two labels whose ONLY shared tokens are generic category head nouns
+    score 0 -- sharing just "agent"/"disorder"/"condition" is not similarity. Full-token Jaccard
+    is kept otherwise (no union shrinking), so a real paraphrase sharing a discriminative token
+    still scores exactly as before."""
+    if not a or not b:
+        return 0.0
+    shared = a & b
+    if not shared or shared <= _GENERIC_HEAD_NOUNS:
+        return 0.0
+    return len(shared) / len(a | b)
+
+
 class CanonicalVocabulary:
     def __init__(self, runtime_type: str, *, proposed_out: str | Path | None = None):
         self.runtime_type = runtime_type
@@ -105,7 +133,7 @@ class CanonicalVocabulary:
             tokens = _tokens(label)
             if not tokens:
                 continue
-            overlap = len(candidate_tokens & tokens) / len(candidate_tokens | tokens)
+            overlap = _label_overlap(candidate_tokens, tokens)
             if overlap > min_overlap:
                 scored.append((overlap, label))
         scored.sort(key=lambda pair: -pair[0])

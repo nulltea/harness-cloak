@@ -46,6 +46,28 @@ def test_nearest_returns_empty_for_unrelated_candidate() -> None:
     assert vocab.nearest("zzz completely unrelated zzz", k=3) == []
 
 
+def test_nearest_ignores_shared_generic_head_noun() -> None:
+    # regression: a shared category head noun ("agent") is NOT similarity. "respiratory agent"
+    # only coincidentally shares "agent" with the "___ agent" anchors; on raw tokens that scored
+    # 0.33 and tripped the 0.3 near-dup gate, cascading distinct rungs into too_few_levels.
+    vocab = CanonicalVocabulary("drug")
+
+    hits = vocab.nearest("respiratory agent", k=3, min_overlap=0.3)
+    assert all(other.endswith(" agent") is False or "respiratory" in other for other in hits)
+    assert "antibacterial agent" not in hits
+    assert "cardiovascular agent" not in hits
+
+    # but a genuine paraphrase sharing a DISCRIMINATIVE token is still caught
+    assert "antihypertensive agent" in vocab.nearest("antihypertensive medication", k=3, min_overlap=0.3)
+
+
+def test_nearest_ignores_shared_syndrome_head_noun() -> None:
+    # "weight gain syndrome" is not a near-duplicate of the bare "syndrome" tier -- it only
+    # shares the generic head noun, the same false positive as "___ agent"/"___ disorder".
+    vocab = CanonicalVocabulary("health-condition")
+    assert "syndrome" not in vocab.nearest("weight gain syndrome", k=3, min_overlap=0.3)
+
+
 def test_context_slice_is_bounded_and_ranked_by_count() -> None:
     vocab = CanonicalVocabulary("drug")
 

@@ -506,15 +506,37 @@ def test_rejected_item_requeues_once_with_rejection_feedback(tmp_path: Path) -> 
     retry = requeue_rejected_item(state)
 
     assert retry["current_item"]["retry_attempt"] == 1
-    assert retry["current_item"]["rejection_feedback"] == [
-        {
-            "reason": "missing_aliases",
-            "level": "architecture and engineering occupation",
-            "count": None,
-            "grounding_status": None,
-        }
-    ]
+    feedback = retry["current_item"]["rejection_feedback"]
+    assert feedback[0]["reason"] == "missing_aliases"
+    assert feedback[0]["level"] == "architecture and engineering occupation"
+    assert "same-entity aliases" in feedback[0]["repair_hint"]  # actionable, not just the code
     assert retry["rejected_rows"] == []
+
+
+def test_rejection_feedback_repair_hint_is_specific_per_reason(tmp_path: Path) -> None:
+    state = make_initial_state(
+        run_id="hint-smoke",
+        run_dir=tmp_path / "run",
+        profiles_path=tmp_path / "profiles.json",
+        proposed_out=tmp_path / "proposed.json",
+    )
+    state["current_item"] = {"item_id": "drug:albuterol", "runtime_type": "drug", "surface": "albuterol"}
+    state["accepted_rows"] = []
+    state["rejected_rows"] = [
+        {"item_id": "drug:albuterol", "level": "salbutamol inhaler", "reason": "self_leak"},
+    ]
+    state["diagnostic_rows"] = [
+        {"item_id": "drug:albuterol", "level": "bronchodilator", "reason": "count_disagreement",
+         "recorded_count": 25.0},
+        {"item_id": "drug:albuterol", "level": "short-acting beta-2 agonist",
+         "reason": "unreused_near_duplicate_label", "near_duplicates": ["beta-2 adrenergic agonist"]},
+    ]
+
+    retry = requeue_rejected_item(state)
+    hints = {f["reason"]: f.get("repair_hint", "") for f in retry["current_item"]["rejection_feedback"]}
+    assert "25.0" in hints["count_disagreement"]  # concrete recorded size, not boilerplate
+    assert "beta-2 adrenergic agonist" in hints["unreused_near_duplicate_label"]  # the label to reuse
+    assert "surface" in hints["self_leak"]
     assert retry["diagnostic_rows"] == []
 
 

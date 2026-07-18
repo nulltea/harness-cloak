@@ -249,8 +249,10 @@ def assemble_context_packet(
         packet["retry_attempt"] = int(item.get("retry_attempt", 0))
         packet["previous_rejection_feedback"] = list(item.get("rejection_feedback", []))
         packet["retry_instruction"] = (
-            "The previous proposal failed gates. Address every feedback item with stronger aliases, "
-            "more specific truthful levels, non-flat proposed counts, and concrete count evidence."
+            "The previous proposal failed gates. Each previous_rejection_feedback item names the "
+            "rung that failed and, where available, a repair_hint with the specific correction -- "
+            "apply every repair_hint. Keep truthful levels, non-flat counts, and concrete count "
+            "evidence."
         )
     packet["artifact_slice_hashes"] = {"nearby_profile_rows": _hash_payload(relevant)}
     packet["context_packet_hash"] = _hash_payload(packet)

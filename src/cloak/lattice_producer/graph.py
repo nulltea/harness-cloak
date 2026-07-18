@@ -465,18 +465,68 @@ def persist_proposed_artifact_node(state: ProducerState) -> ProducerState:
     return {"proposed_persisted": int(state.get("proposed_persisted", 0)) + 1}
 
 
+# Actionable, per-gate-reason repair guidance for a retry/re-run. The raw reason code alone
+# ("self_leak", "count_disagreement") doesn't tell the model HOW to fix the rung it produced;
+# these hints name the concrete correction. {level}/{near}/{recorded}/{ceiling} are filled from
+# the rejected row so the hint is specific, not boilerplate.
+_REPAIR_HINTS: dict[str, str] = {
+    "self_leak": "The rung '{level}' repeats the surface itself, so it would leak it. Name the "
+                 "category WITHOUT reusing the surface's own words.",
+    "unreused_near_duplicate_label": "The rung '{level}' duplicates the existing canonical label "
+                 "{near}. Reuse that label verbatim (set reused_canonical_label: true) instead of "
+                 "coining a paraphrase, or choose a genuinely distinct tier.",
+    "count_disagreement": "The proposed_count for '{level}' disagrees with the recorded "
+                 "anonymity-set size ({recorded}); this class holds roughly that many members, "
+                 "not the number you gave. Use a count consistent with {recorded}.",
+    "implausible_count": "The proposed_count for '{level}' exceeds the plausible ceiling "
+                 "({ceiling}) for this type. Anonymity-set sizes run dozens to low-thousands, "
+                 "never millions.",
+    "too_few_levels": "Fewer than two usable rungs survived. Propose a full 2-4 rung chain from "
+                 "the specific class up to a broader one, each a real, distinct category.",
+    "chain_below_floor": "The broadest rung ('{level}') is too narrow to anonymize into. Add a "
+                 "broader but still truthful ceiling class so the chain reaches a usable tier.",
+    "no_domain_overlap": "The rung '{level}' shares no vocabulary with this domain. Ensure every "
+                 "rung is a real category OF this runtime_type.",
+    "low_confidence_surface": "The surface is short or multi-referent. If context does not "
+                 "disambiguate it, keep surface_confidence low/ambiguous rather than guessing a "
+                 "single referent.",
+    "generic_filler_aliases": "The aliases are generic filler, not real same-entity names. Give "
+                 "actual alternate names/spellings for this exact entity, or none.",
+    "missing_aliases": "Provide real same-entity aliases (alternate names/spellings), or omit "
+                 "aliases rather than inventing filler.",
+    "type_membership_mismatch": "This surface is not an entity of this runtime_type. Report "
+                 "type_membership: mismatch instead of forcing a ladder.",
+    "missing_model_evidence": "Each rung needs a concrete count_evidence, selector, and rationale.",
+}
+
+
+def _format_repair_hint(row: dict[str, Any]) -> str | None:
+    template = _REPAIR_HINTS.get(str(row.get("reason") or ""))
+    if template is None:
+        return None
+    near = row.get("near_duplicates")
+    return template.format(
+        level=row.get("level") or "this rung",
+        near=", ".join(str(n) for n in near) if isinstance(near, list) and near else "already in use",
+        recorded=row.get("recorded_count"),
+        ceiling=row.get("count_ceiling"),
+    )
+
+
 def _rejection_feedback(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     feedback = []
     for row in rows:
         grounding = row.get("level_grounding") or {}
-        feedback.append(
-            {
-                "reason": row.get("reason"),
-                "level": row.get("level"),
-                "count": row.get("level_count"),
-                "grounding_status": grounding.get("status"),
-            }
-        )
+        entry = {
+            "reason": row.get("reason"),
+            "level": row.get("level"),
+            "count": row.get("level_count"),
+            "grounding_status": grounding.get("status"),
+        }
+        hint = _format_repair_hint(row)
+        if hint:
+            entry["repair_hint"] = hint
+        feedback.append(entry)
     return feedback
 
 
