@@ -16206,16 +16206,24 @@
         "count": 6.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "antihypertensive agent": 150.0,
-          "cardiovascular agent": 300.0,
-          "loop diuretic": 6.0
+          "loop diuretic": 6.0,
+          "cardiovascular diuretic": 20,
+          "cardiovascular agent": 300.0
         },
         "level_grounding": {
-          "antihypertensive agent": {
+          "loop diuretic": {
+            "count_basis": "regulatory-classification",
+            "count_evidence": "'loop diuretic' count is the number of distinct drugs listed under the FDA Established Pharmacologic Class 'Loop Diuretic [EPC]' in openFDA NDC data. NOTE: value (6) coincides exactly with this entry's own leaf observed-surface count — plausible given the small real-world loop diuretic class, but worth confirming the openFDA query actually executed rather than defaulting to the leaf value.",
+            "member_set_ref": "openfda-ndc:pharm_class:Loop Diuretic [EPC]",
+            "selector": "openfda_ndc.pharm_class == 'Loop Diuretic [EPC]'",
+            "source_family": "openfda-pharm-class",
+            "status": "certifying"
+          },
+          "cardiovascular diuretic": {
             "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'antihypertensive agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "WHO ATC",
+            "count_evidence": "'cardiovascular diuretic' set from ATC class C03 (diuretics), scoped to the cardiovascular-system branch of the ATC hierarchy to exclude diuretics used primarily for non-cardiac indications (e.g. mannitol for cerebral edema, acetazolamide for glaucoma/altitude sickness). Covers loop, thiazide/thiazide-like, potassium-sparing, and combination diuretics used for hypertension, heart failure, and edema — on the order of 15-25 distinct active-substance entries. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "WHO ATC/DDD Index, class C03",
+            "selector": "Belongs to the cardiovascular-system diuretic category (ATC C03) in the canonical vocabulary.",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
@@ -16226,17 +16234,11 @@
             "selector": "canonical_vocabulary_slice",
             "source_family": "model-proposed",
             "status": "model-proposed"
-          },
-          "loop diuretic": {
-            "member_set_ref": "openfda-ndc:pharm_class:Loop Diuretic [EPC]",
-            "selector": "openfda_ndc.pharm_class == 'Loop Diuretic [EPC]'",
-            "source_family": "openfda-pharm-class",
-            "status": "certifying"
           }
         },
         "levels": [
           "loop diuretic",
-          "antihypertensive agent",
+          "cardiovascular diuretic",
           "cardiovascular agent"
         ],
         "source_ids": [
@@ -29694,26 +29696,32 @@
         "count": 270.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "disease of anatomical entity": 9162.0,
           "heart disease": 270.0,
-          "thoracic disease": 390.0
+          "thoracic disease": 390.0,
+          "disease of anatomical entity": 9162.0
         },
         "level_grounding": {
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
           "heart disease": {
+            "count_basis": "ontology-derived",
+            "count_evidence": "'heart disease' count is the number of is_a descendants of DOID:114 in the Human Disease Ontology (DOID). FLAGGED: this value (270) exactly matches the entry's own leaf-level observed-surface count — verify this wasn't inherited by default rather than computed from an actual DOID query.",
             "member_set_ref": "doid:is_a_descendants:DOID:114",
             "selector": "doid.is_a_descendants(DOID:114)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
           "thoracic disease": {
+            "count_basis": "ontology-derived",
+            "count_evidence": "'thoracic disease' count is the number of is_a descendants of DOID:0060118 in the Human Disease Ontology (DOID).",
             "member_set_ref": "doid:is_a_descendants:DOID:0060118",
             "selector": "doid.is_a_descendants(DOID:0060118)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
+          "disease of anatomical entity": {
+            "count_basis": "ontology-derived",
+            "count_evidence": "'disease of anatomical entity' count is the number of is_a descendants of DOID:7 in the Human Disease Ontology (DOID).",
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
             "source_family": "doid-is-a",
             "status": "certifying"
           }
@@ -34903,27 +34911,17 @@
         "count": 130.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "artery disease": 130.0,
-          "cardiovascular system disease": 627.0,
-          "disease of anatomical entity": 9162.0,
-          "vascular disease": 327.0
+          "arterial condtion": 130.0,
+          "vascular condtion": 327.0,
+          "cardiovascular system condtion": 627.0,
+          "disease of anatomical entity": 9162.0
         },
         "level_grounding": {
           "artery disease": {
+            "count_basis": "ontology-derived",
+            "count_evidence": "'artery disease' count is the number of is_a descendants of DOID:0050828 in the Human Disease Ontology. Hypertension's classification here is ontologically deliberate — DOID's own definition states hypertension is 'an artery disease characterized by chronic elevated blood pressure in the arteries,' so this parent is correct, unlike a use-based mislabel. FLAGGED SEPARATELY: value (130) exactly matches this entry's own leaf observed-surface count — re-verify against a direct DOID descendant query before trusting it, since this coincidence pattern has previously indicated a silent default-to-leaf-count bug elsewhere in the corpus.",
             "member_set_ref": "doid:is_a_descendants:DOID:0050828",
             "selector": "doid.is_a_descendants(DOID:0050828)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "cardiovascular system disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:1287",
-            "selector": "doid.is_a_descendants(DOID:1287)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
             "source_family": "doid-is-a",
             "status": "certifying"
           },
@@ -34931,13 +34929,31 @@
             "member_set_ref": "doid:is_a_descendants:DOID:178",
             "selector": "doid.is_a_descendants(DOID:178)",
             "source_family": "doid-is-a",
-            "status": "certifying"
+            "status": "certifying",
+            "count_basis": "ontology-derived",
+            "count_evidence": "'vascular disease' count is the number of is_a descendants of DOID:178 in the Human Disease Ontology."
+          },
+          "cardiovascular system disease": {
+            "member_set_ref": "doid:is_a_descendants:DOID:1287",
+            "selector": "doid.is_a_descendants(DOID:1287)",
+            "source_family": "doid-is-a",
+            "status": "certifying",
+            "count_basis": "ontology-derived",
+            "count_evidence": "'cardiovascular system disease' count is the number of is_a descendants of DOID:1287 in the Human Disease Ontology."
+          },
+          "disease of anatomical entity": {
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying",
+            "count_basis": "ontology-derived",
+            "count_evidence": "'disease of anatomical entity' count is the number of is_a descendants of DOID:7 in the Human Disease Ontology."
           }
         },
         "levels": [
-          "artery disease",
-          "vascular disease",
-          "cardiovascular system disease",
+          "artery condtion",
+          "vascular condtion",
+          "cardiovascular system condtion",
           "disease of anatomical entity"
         ],
         "source_ids": [
@@ -44479,19 +44495,10 @@
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "autoimmune serology panel": 1.0,
           "immunology laboratory panel": 86.0,
           "medical procedure": 79115.0
         },
         "level_grounding": {
-          "autoimmune serology panel": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'autoimmune serology panel' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "autoimmune serology panel",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
           "immunology laboratory panel": {
             "count_basis": "corpus-membership",
             "count_evidence": "'immunology laboratory panel' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
@@ -44510,7 +44517,6 @@
           }
         },
         "levels": [
-          "autoimmune serology panel",
           "immunology laboratory panel",
           "medical procedure"
         ],
