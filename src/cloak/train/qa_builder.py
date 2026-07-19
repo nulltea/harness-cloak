@@ -2958,19 +2958,38 @@ def relation_repair_prompt(
         return f'context literal "{argument.get("literal", "")}"'
 
     clauses = _source_clause_spans(document)
+    occurrence_spans_by_decision: dict[str, list[tuple[int, int]]] = {}
+    for occurrence in occ_by_id.values():
+        start, end = occurrence.get("start"), occurrence.get("end")
+        if isinstance(start, int) and isinstance(end, int):
+            occurrence_spans_by_decision.setdefault(
+                str(occurrence.get("decision_id")), []).append((int(start), int(end)))
 
     def _target_clause_indices(target: Mapping) -> list[int]:
-        # ONLY the ARGUMENT clauses (each occurrence/literal mention), NOT the evidence_span envelope.
-        # The envelope spans every clause between far arguments (acne@49 → diabetes-treatment@89 = 40
-        # clauses) and would drag the irrelevant middle into the prompt; the relation cue/evidence lives
-        # in the argument clauses themselves, and the middle is elided (mirrors the judge premise).
+        # ALL occurrence clauses of each argument (every mention of a linked arg's DECISION, every
+        # occurrence of a context literal) -- NOT a single representative occurrence, and NOT the
+        # evidence-span envelope. The relation's supporting evidence often sits at a DIFFERENT mention
+        # than the grounded one (e.g. an HPI "taking ibuprofen for the pain" vs a plan-section question),
+        # so the region must carry every mention; the irrelevant middle between them is elided. This
+        # mirrors the all-occurrence judge premise -- the envelope (acne@49 → treatment@89 = 40 clauses)
+        # would instead drag the whole middle in.
         ranges: list[tuple[int, int]] = []
         for argument in target.get("arguments") or []:
-            span = _arg_span(argument)
-            if span:
-                ranges.append(span)
-            if argument.get("kind") == "context" and argument.get("literal"):
-                ranges.extend(_source_literal_spans(document, str(argument["literal"])))
+            if argument.get("kind") == "linked":
+                occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
+                spans = occurrence_spans_by_decision.get(str(occurrence.get("decision_id")))
+                if spans:
+                    ranges.extend(spans)
+                else:
+                    span = _arg_span(argument)
+                    if span:
+                        ranges.append(span)
+            else:
+                if argument.get("literal"):
+                    ranges.extend(_source_literal_spans(document, str(argument["literal"])))
+                span = _arg_span(argument)
+                if span:
+                    ranges.append(span)
         return [
             index for index, (lo, hi) in enumerate(clauses)
             if document[lo:hi].strip()
