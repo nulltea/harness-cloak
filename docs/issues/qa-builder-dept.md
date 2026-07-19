@@ -237,11 +237,23 @@ clauses needed to support or correctly refute a target. Verdicts and actions:
   `lumbar strain → ibuprofen`: HPI "been taking ibuprofen … gave me some relief" vs the plan-section
   question). Now gathers ALL occurrence clauses of each arg's decision (mirrors the judge premise).
 
-- **DISMISSED — secondary proposals not target-fact-key-whitelisted.** The repair schema is the full
-  environment and off-target secondary proposals aren't filtered before compile. But every secondary
-  proposal passes the SAME three-point reader gate as everything else, and the de-bloated prompt only
-  shows target-region context, so the teacher rarely goes off-target. Reader-protected → not a
-  precision leak worth a whitelist.
+- **FIXED — repair response schema scoped to shown labels.** The repair schema was built from the FULL
+  environment: the `span_label` enum permitted every inventory label and the `candidate_accounting`
+  ledger REQUIRED one row per inventory label — while the de-bloated prompt shows only the target
+  regions' labels. So the teacher could emit a relation over a label it never saw, and was forced to
+  account for labels absent from its prompt. Now `relation_repair_prompt` exposes its shown labels
+  (`shown_labels_out`) and the repair call passes them as `allowed_labels` to
+  `relation_teacher_response_format`, scoping both the enum and the ledger to the shown set; a
+  deterministic post-propose filter drops any secondary proposal whose linked label is not shown
+  (belt-and-suspenders for a non-strict provider). (Primary teacher unchanged — it sees the whole note.)
+
+- **DEFERRED (documented) — alias-surface display + batch-global DETECTED SPANS.** (a) The inventory shows
+  one representative (earliest) surface per decision; if a decision's in-region occurrence is a later
+  ALIAS, DETECTED SPANS displays `[Sx: earliest surface]` while the region text shows the alias —
+  cosmetic confusion on merged-alias decisions (fix: display an in-region occurrence surface). (b) `shown`
+  is computed across ALL regions of a batch, so a label source-supported in region A is listed even for
+  region B's targets; not a leak (globally source-supported) but weakens the per-region "judge only from
+  this region" instruction. Neither is a source-label leak; both are bounded attention/precision items.
 
 - **DEFERRED (documented) — predicate/anaphora-only turns are omitted.** A relation stated in a turn
   that names neither argument by surface ("that medication helped", "we'll start it") is never

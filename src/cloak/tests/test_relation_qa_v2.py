@@ -3006,3 +3006,54 @@ def test_relation_repair_prompt_shares_clause_pool_across_targets():
     # header carries label + surface for matching
     inv = {str(r["decision_id"]): r["span_label"] for r in qa_builder.relation_teacher_span_inventory(environment)}
     assert f"{inv['d-g']} (gout)" in prompt
+
+
+def _mini_repair_env():
+    source = "for the reflux continue omeprazole ."
+    def sp(x): return source.index(x)
+    env = {
+        "occurrences": [
+            {"occurrence_id": "r", "decision_id": "d-r", "surface": "reflux",
+             "start": sp("reflux"), "end": sp("reflux") + 6, "runtime_type": "health-condition"},
+            {"occurrence_id": "o", "decision_id": "d-o", "surface": "omeprazole",
+             "start": sp("omeprazole"), "end": sp("omeprazole") + 10, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-r", "actions": [{"mode": "level", "legal": True, "entails": ["gastrointestinal condition"]}]},
+            {"decision_id": "d-o", "actions": [{"mode": "level", "legal": True, "entails": ["ppi"]}]},
+        ],
+    }
+    return source, env
+
+
+def _span_label_enum(fmt):
+    return (fmt["json_schema"]["schema"]["properties"]["span_relations"]["items"]
+            ["properties"]["arguments"]["anyOf"][0]["prefixItems"][0]["properties"]["span_label"]["enum"])
+
+
+def test_repair_response_schema_scoped_to_shown_labels():
+    source, env = _mini_repair_env()
+    inv = {str(r["decision_id"]): r["span_label"] for r in qa_builder.relation_teacher_span_inventory(env)}
+    full = qa_builder.relation_teacher_response_format(env, source)
+    scoped = qa_builder.relation_teacher_response_format(env, source, allowed_labels={inv["d-r"]})
+    # full schema: both labels emittable + accounting ledger covers both
+    assert set(_span_label_enum(full)) == {inv["d-r"], inv["d-o"]}
+    assert full["json_schema"]["schema"]["properties"]["candidate_accounting"]["minItems"] == 2
+    # scoped schema: only the shown label; ledger covers exactly it
+    assert _span_label_enum(scoped) == [inv["d-r"]]
+    ledger = scoped["json_schema"]["schema"]["properties"]["candidate_accounting"]
+    assert ledger["minItems"] == 1 and ledger["maxItems"] == 1
+
+
+def test_relation_repair_prompt_exposes_shown_labels():
+    source, env = _mini_repair_env()
+    target = {"kind": "missed", "relation": "prescribed_with", "hint": "emit if supported",
+              "arguments": [{"role": "subject", "kind": "linked", "occurrence_id": "r"},
+                            {"role": "object", "kind": "linked", "occurrence_id": "o"}]}
+    out: set = set()
+    prompt = qa_builder.relation_repair_prompt("d", source, env, [target], shown_labels_out=out)
+    inv_labels = {r["span_label"] for r in qa_builder.relation_teacher_span_inventory(env)}
+    assert out and out <= inv_labels          # populated, subset of inventory
+    # every exposed label appears in the rendered DETECTED SPANS
+    for lab in out:
+        assert f"[{lab}:" in prompt

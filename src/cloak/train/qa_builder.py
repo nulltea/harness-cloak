@@ -1661,12 +1661,21 @@ CLINICAL_RELATIONS = (
 
 
 def relation_teacher_response_format(
-    environment_document: Mapping, document: str,
+    environment_document: Mapping, document: str, *,
+    allowed_labels: "Sequence[str] | None" = None,
 ) -> dict:
-    """Bind strict wire fields to displayed labels, never internal IDs or answers."""
+    """Bind strict wire fields to displayed labels, never internal IDs or answers.
+
+    `allowed_labels` scopes the schema to a SUBSET of the inventory (the repair pass shows only the
+    target regions' labels): the span_label enum and the candidate_accounting ledger then cover exactly
+    those labels, so the teacher can neither emit a relation over a label it was not shown nor be forced
+    to account for one. Default (None) = full inventory (the primary teacher, which sees the whole note)."""
     response_format = deepcopy(RELATION_TEACHER_RESPONSE_FORMAT)
     schema = response_format["json_schema"]["schema"]
     inventory = relation_teacher_span_inventory(environment_document)
+    if allowed_labels is not None:
+        allowed = set(allowed_labels)
+        inventory = [row for row in inventory if row["span_label"] in allowed]
     relations = list(CLINICAL_RELATIONS)
     labels = [row["span_label"] for row in inventory]
     support_properties = sorted({property_level for row in inventory for property_level in row["properties"]})
@@ -2879,6 +2888,8 @@ def relation_repair_prompt(
     document: str,
     environment_document: Mapping,
     targets: Sequence[Mapping],
+    *,
+    shown_labels_out: "set[str] | None" = None,
 ) -> str:
     """Second-pass gleaning+repair prompt: same privacy/response contract as the primary, but the
     DETECTED SPANS and EVIDENCE CARDS are restricted to the clauses relevant to `targets`, and a
@@ -2962,6 +2973,10 @@ def relation_repair_prompt(
         return False
 
     shown = [row for row in inventory if _label_in_rendered_region(row)]
+    # Expose the shown labels so the repair RESPONSE SCHEMA can be scoped to them (the teacher must
+    # not be allowed to emit, or be required to account for, a label absent from its rendered region).
+    if shown_labels_out is not None:
+        shown_labels_out.update(row["span_label"] for row in shown)
 
     def _span_line(row: Mapping) -> str:
         return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
@@ -6853,20 +6868,41 @@ def build_utility_artifact(
                         phase_run_records: list[dict] = []
                         try:
                             for batch in target_batches:
+                                batch_shown_labels: set[str] = set()
                                 repair_prompt = relation_repair_prompt(
                                     doc_id, source, environment_document, batch,
+                                    shown_labels_out=batch_shown_labels,
                                 )
                                 batch_hash = _stable_hash(repair_prompt)
                                 repair_prompt_hashes.append(batch_hash)
                                 if isinstance(secondary_relation_teacher, OpenRouterRelationTeacher):
+                                    # Scope the response schema to the batch's SHOWN labels: the teacher
+                                    # cannot emit, or be forced to account for, a label absent from its
+                                    # rendered region (the repair prompt only shows the target regions).
                                     batch_proposals = secondary_relation_teacher.propose(
                                         repair_prompt,
                                         response_format=relation_teacher_response_format(
                                             environment_document, source,
+                                            allowed_labels=batch_shown_labels,
                                         ),
                                     )
                                 else:
                                     batch_proposals = secondary_relation_teacher.propose(repair_prompt)
+                                # Deterministic backstop for a non-strict provider: drop any secondary
+                                # proposal whose linked argument references a label outside the batch's
+                                # shown set (the scoped enum should already prevent this).
+                                if isinstance(batch_proposals, RelationTeacherProposals):
+                                    kept = [
+                                        proposal for proposal in batch_proposals
+                                        if all(
+                                            str(argument.get("span_label")) in batch_shown_labels
+                                            for argument in (proposal.get("arguments") or [])
+                                            if argument.get("kind") == "linked"
+                                            and argument.get("span_label") is not None
+                                        )
+                                    ]
+                                    batch_proposals = RelationTeacherProposals(
+                                        kept, batch_proposals.candidate_accounting)
                                 batch_accounting: list[dict] = []
                                 if isinstance(batch_proposals, RelationTeacherProposals):
                                     try:
