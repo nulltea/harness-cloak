@@ -29,12 +29,17 @@ def _cache_path(
     if not cache_dir:
         return None
     os.makedirs(cache_dir, exist_ok=True)
+    # max_tokens is a generation SAFETY bound, not a semantic input: a call that terminates before
+    # the cap yields identical content with or without it. Excluding it from the key means adding a
+    # cap to stop a runaway generation does NOT invalidate every prior cached verdict. (A call that
+    # genuinely truncates at the cap is a degenerate output we would not want to reuse anyway.)
+    key_params = {k: v for k, v in params.items() if k != "max_tokens"}
     blob = json.dumps(
         {
             "model": model,
             "base_url": base_url,
             "messages": messages,
-            "params": params,
+            "params": key_params,
         },
         sort_keys=True,
         default=str,

@@ -36,6 +36,11 @@ def _medgemma_client():
 
     return LLMClient(
         RELATION_SUPPORT_JUDGE_MODEL, base_url=QA_BASE_URL, api_key="none", temperature=0.0,
+        # max_tokens is mandatory: the judges return a one-line JSON verdict, and without a cap
+        # llama-server runs n_predict=-1 — a degenerate generation then rambles to the context
+        # wall (~28k tokens, observed 2026-07-19), stalling the build for ~30min per call AND
+        # failing the verdict parse, which accept_on_error turns into a silent fail-open accept.
+        max_tokens=128,
         extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
 

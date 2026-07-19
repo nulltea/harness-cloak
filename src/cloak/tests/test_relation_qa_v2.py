@@ -2633,7 +2633,8 @@ def test_relation_repair_prompt_restricts_to_targets_and_lists_hints():
     assert "make it uniquely answerable" in prompt and "AMBIGUOUS" in prompt
     # targets+evidence are combined: the target's own source clause is inlined, no separate cards
     assert "EVIDENCE CARDS" not in prompt
-    assert 'source: "for your first problem , your reflux , continue dietary modifications' in prompt
+    # grouped by region: the target's clause is shown once on a SOURCE line above its target
+    assert 'SOURCE: "for your first problem , your reflux , continue dietary modifications' in prompt
     # the full-source copy is dropped as redundant; the per-target clause is the only source shown
     assert "SOURCE DOCUMENT" not in prompt
     # the target's spans are shown; the non-target insomnia/zolpidem block never appears
@@ -2876,3 +2877,132 @@ def test_linked_answer_score_folds_plural_singular():
     chain3 = [{"answer_aliases": ["abscess"], "entailed_properties": ["lesion"]}]
     assert _linked_answer_score("abscess", chain3, "lesion") == 1.0
     assert _linked_answer_score("headache", chain3, "lesion") == 0.0
+
+
+def test_all_occurrence_judge_premise_elides_middle_not_contiguous():
+    """All-occurrence premise = the occurrence-clauses joined (2\\n13\\n14), NOT the span 2..14."""
+    from cloak.train.qa_builder import _all_occurrence_judge_premise, _source_clause_spans
+    doc = (
+        "[doctor] the patient has gout in the past history .\n"
+        "[patient] okay yes .\n"
+        "[doctor] talking about the gout again now .\n"
+        "[doctor] and we started allopurinol today ."
+    )
+    clauses = _source_clause_spans(doc)
+    assert len(clauses) == 4  # one clause per speaker turn
+    gout1 = doc.index("gout")
+    gout2 = doc.index("gout", gout1 + 1)
+    allo = doc.index("allopurinol")
+    occurrences = {
+        "o1": {"occurrence_id": "o1", "decision_id": "d_gout", "start": gout1, "end": gout1 + 4},
+        "o2": {"occurrence_id": "o2", "decision_id": "d_gout", "start": gout2, "end": gout2 + 4},
+        "o3": {"occurrence_id": "o3", "decision_id": "d_allo", "start": allo, "end": allo + 11},
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "o1"},
+        {"role": "object", "kind": "linked", "occurrence_id": "o3"},
+    ]
+    premise = _all_occurrence_judge_premise(doc, arguments, occurrences, clauses)
+    # includes BOTH gout mentions (turns 0 and 2) and allopurinol (turn 3)
+    assert "past history" in premise and "gout again now" in premise and "allopurinol" in premise
+    # elides the middle turn that mentions neither entity (turn 1)
+    assert "okay yes" not in premise
+    # it is the joined clauses, not the contiguous 2..14 envelope
+    assert premise == "\n".join(
+        doc[l:r].strip() for l, r in (clauses[0], clauses[2], clauses[3])
+    )
+
+
+def test_escalation_prefilter_coordination_and_negation():
+    from cloak.train.qa_builder import _escalation_prefilter_reason
+    # coordination: three conditions in a flat list -> siblings, not a relation
+    doc = "past medical history significant for gout , depression and hypertension ."
+    g, d, h = doc.index("gout"), doc.index("depression"), doc.index("hypertension")
+    ctx = {
+        "c1": {"start": g, "end": g + 4}, "c2": {"start": d, "end": d + 10},
+        "c3": {"start": h, "end": h + 12},
+    }
+    coord_args = [  # two CONDITIONS in a flat list -> same-class siblings
+        {"role": "subject", "kind": "context", "literal": "gout",
+         "runtime_type": "health-condition", "start": g, "end": g + 4},
+        {"role": "object", "kind": "context", "literal": "hypertension",
+         "runtime_type": "health-condition", "start": h, "end": h + 12},
+    ]
+    assert _escalation_prefilter_reason(doc, coord_args, {}, ctx) == "coordination_sibling"
+
+    # cross-type "and" (condition + drug) is NOT coordination -- can be a real prescribed_with
+    cross_args = [
+        {"role": "subject", "kind": "context", "literal": "gout",
+         "runtime_type": "health-condition", "start": g, "end": g + 4},
+        {"role": "object", "kind": "context", "literal": "hypertension",
+         "runtime_type": "drug", "start": h, "end": h + 12},
+    ]
+    assert _escalation_prefilter_reason(doc, cross_args, {}, ctx) is None
+
+    # "with" is NOT a coordinator: a qualifier/complication can be a real relation
+    doc2 = "chronic heart failure with diastolic dysfunction was noted ."
+    hf, dd = doc2.index("heart failure"), doc2.index("diastolic dysfunction")
+    with_args = [
+        {"role": "subject", "kind": "context", "literal": "heart failure", "start": hf, "end": hf + 13},
+        {"role": "object", "kind": "context", "literal": "diastolic dysfunction",
+         "start": dd, "end": dd + 21},
+    ]
+    assert _escalation_prefilter_reason(doc2, with_args, {}, {}) is None
+
+    # negation: an argument explicitly asserted absent
+    doc3 = "the workup shows no evidence of coronary artery disease today ."
+    cad = doc3.index("coronary artery disease")
+    neg_args = [
+        {"role": "subject", "kind": "context", "literal": "coronary artery disease",
+         "start": cad, "end": cad + 23},
+        {"role": "object", "kind": "context", "literal": "workup",
+         "start": doc3.index("workup"), "end": doc3.index("workup") + 6},
+    ]
+    assert _escalation_prefilter_reason(doc3, neg_args, {}, {}) == "negation_scope"
+
+    # genuine relation with a predicate between the arguments -> not junk
+    doc4 = "the gout was treated with allopurinol daily ."
+    gg, aa = doc4.index("gout"), doc4.index("allopurinol")
+    real_args = [
+        {"role": "subject", "kind": "context", "literal": "gout", "start": gg, "end": gg + 4},
+        {"role": "object", "kind": "context", "literal": "allopurinol", "start": aa, "end": aa + 11},
+    ]
+    assert _escalation_prefilter_reason(doc4, real_args, {}, {}) is None
+
+
+def test_relation_repair_prompt_shares_clause_pool_across_targets():
+    """A clause referenced by multiple targets is inlined ONCE in SOURCE CLAUSES and cited by label;
+    the target header shows label + surface (e.g. 'S1 (gout)')."""
+    source = ("[doctor] you have gout so we started allopurinol and colchicine .\n"
+              "[patient] okay , thanks .")
+    def sp(x): return source.index(x)
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "g", "decision_id": "d-g", "surface": "gout",
+             "start": sp("gout"), "end": sp("gout") + 4, "runtime_type": "health-condition"},
+            {"occurrence_id": "a", "decision_id": "d-a", "surface": "allopurinol",
+             "start": sp("allopurinol"), "end": sp("allopurinol") + 11, "runtime_type": "drug"},
+            {"occurrence_id": "c", "decision_id": "d-c", "surface": "colchicine",
+             "start": sp("colchicine"), "end": sp("colchicine") + 10, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-g", "actions": [{"mode": "level", "legal": True, "entails": ["arthritis"]}]},
+            {"decision_id": "d-a", "actions": [{"mode": "level", "legal": True, "entails": ["urate lowering drug"]}]},
+            {"decision_id": "d-c", "actions": [{"mode": "level", "legal": True, "entails": ["anti-inflammatory"]}]},
+        ],
+    }
+    t1 = {"kind": "missed", "relation": "prescribed_with", "hint": "emit if supported",
+          "arguments": [{"role": "subject", "kind": "linked", "occurrence_id": "g"},
+                        {"role": "object", "kind": "linked", "occurrence_id": "a"}]}
+    t2 = {"kind": "missed", "relation": "prescribed_with", "hint": "emit if supported",
+          "arguments": [{"role": "subject", "kind": "linked", "occurrence_id": "g"},
+                        {"role": "object", "kind": "linked", "occurrence_id": "c"}]}
+    prompt = qa_builder.relation_repair_prompt("d", source, environment, [t1, t2])
+    clause_text = "you have gout so we started allopurinol and colchicine"
+    # both targets share the clause -> one region -> the clause is inlined exactly ONCE, not per target
+    assert prompt.count(clause_text) == 1
+    assert prompt.count("SOURCE:") == 1          # a single region groups both targets
+    assert "[1]" in prompt and "[2]" in prompt   # both targets listed under it
+    # header carries label + surface for matching
+    inv = {str(r["decision_id"]): r["span_label"] for r in qa_builder.relation_teacher_span_inventory(environment)}
+    assert f"{inv['d-g']} (gout)" in prompt

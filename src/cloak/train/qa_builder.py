@@ -2947,13 +2947,23 @@ def relation_repair_prompt(
         if argument is None:
             return "?"
         if argument.get("kind") == "linked":
-            return _arg_label(argument) or "?"
+            label = _arg_label(argument)
+            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
+            surface = str(occurrence.get("surface") or argument.get("surface") or "").strip()
+            # label + surface (e.g. "S12 (blood sugar)") so the teacher can match the label to its
+            # mention in the cited clauses; the surface is already shown in DETECTED SPANS/SOURCE CLAUSES.
+            if label and surface:
+                return f"{label} ({surface})"
+            return label or "?"
         return f'context literal "{argument.get("literal", "")}"'
 
-    def _target_source(target: Mapping) -> str:
-        # The clauses this target actually spans, inlined so the teacher does not cross-reference a
-        # separate card list. Union of the arguments' occurrence/literal spans + any evidence_span,
-        # snapped to source-clause boundaries; a mispaired literal shows every clause it appears in.
+    clauses = _source_clause_spans(document)
+
+    def _target_clause_indices(target: Mapping) -> list[int]:
+        # ONLY the ARGUMENT clauses (each occurrence/literal mention), NOT the evidence_span envelope.
+        # The envelope spans every clause between far arguments (acne@49 → diabetes-treatment@89 = 40
+        # clauses) and would drag the irrelevant middle into the prompt; the relation cue/evidence lives
+        # in the argument clauses themselves, and the middle is elided (mirrors the judge premise).
         ranges: list[tuple[int, int]] = []
         for argument in target.get("arguments") or []:
             span = _arg_span(argument)
@@ -2961,33 +2971,64 @@ def relation_repair_prompt(
                 ranges.append(span)
             if argument.get("kind") == "context" and argument.get("literal"):
                 ranges.extend(_source_literal_spans(document, str(argument["literal"])))
-        evidence_span = target.get("evidence_span")
-        if evidence_span and len(evidence_span) == 2:
-            ranges.append((int(evidence_span[0]), int(evidence_span[1])))
-        seen: set[str] = set()
-        texts: list[str] = []
-        for lo, hi in _source_clause_spans(document):
-            if any(not (hi <= r0 or r1 <= lo) for r0, r1 in ranges):
-                text = document[lo:hi].strip()
-                if text and text not in seen:
-                    seen.add(text)
-                    texts.append(text)
-        return " […] ".join(texts) or "(no clause located; inspect the source directly)"
+        return [
+            index for index, (lo, hi) in enumerate(clauses)
+            if document[lo:hi].strip()
+            and any(not (hi <= r0 or r1 <= lo) for r0, r1 in ranges)
+        ]
 
-    target_blocks = []
-    for index, target in enumerate(targets, start=1):
+    # GROUP BY SOURCE REGION: cluster targets that share any source clause (a problem discussion),
+    # then show each region's source text ONCE followed by its targets. A clause shared by K targets
+    # in a region is inlined once, not K times; and there is no doc-wide clause index to cross-map --
+    # the S-label surfaces (e.g. "S13 (vitamin d deficiency)") locate each argument within the region.
+    target_clause_indices = [_target_clause_indices(target) for target in targets]
+    parent = list(range(len(targets)))
+
+    def _find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    clause_owner: dict[int, int] = {}
+    for ti, indices in enumerate(target_clause_indices):
+        for ci in indices:
+            if ci in clause_owner:
+                parent[_find(ti)] = _find(clause_owner[ci])
+            else:
+                clause_owner[ci] = ti
+    clusters: dict[int, list[int]] = {}
+    for ti in range(len(targets)):
+        clusters.setdefault(_find(ti), []).append(ti)
+
+    def _cluster_first_clause(members: list[int]) -> int:
+        return min((ci for ti in members for ci in target_clause_indices[ti]), default=10**9)
+
+    def _target_line(number: int, target: Mapping) -> str:
         arguments = target.get("arguments") or []
         subject = next((a for a in arguments if a.get("role") == "subject"), None)
         obj = next((a for a in arguments if a.get("role") == "object"), None)
         detail = str(target.get("hint", ""))
         if target.get("reason"):
             detail = f"was rejected ({target['reason']}); {detail}"
-        target_blocks.append(
-            f"[{index}] {str(target.get('kind', '')).upper()} · {target.get('relation', '?')} · "
+        return (
+            f"  [{number}] {str(target.get('kind', '')).upper()} · {target.get('relation', '?')} · "
             f"{_arg_desc(subject)} → {_arg_desc(obj)}\n"
-            f"    source: \"{_target_source(target)}\"\n"
-            f"    fix: {detail}")
-    repair_targets = "\n".join(target_blocks) or "(No targets.)"
+            f"      fix: {detail}")
+
+    blocks: list[str] = []
+    number = 0
+    for members in sorted(clusters.values(), key=_cluster_first_clause):
+        region_clauses = sorted({ci for ti in members for ci in target_clause_indices[ti]})
+        source = " […] ".join(
+            document[clauses[ci][0]:clauses[ci][1]].strip() for ci in region_clauses
+        ) or "(no clause located; inspect the source directly)"
+        lines = []
+        for ti in sorted(members, key=lambda t: (target_clause_indices[t] or [10**9], t)):
+            number += 1
+            lines.append(_target_line(number, targets[ti]))
+        blocks.append(f'SOURCE: "{source}"\n' + "\n".join(lines))
+    repair_targets = "\n\n".join(blocks) or "(No targets.)"
 
     relation_inventory = CLINICAL_RELATION_INVENTORY
     worked_examples = CLINICAL_WORKED_EXAMPLES
@@ -2995,7 +3036,7 @@ def relation_repair_prompt(
 REPAIR + GLEAN pass over one clinical note. A first pass already ran. Below are ONLY the relations to fix or recover — kept relations and legitimately-rejected ones are omitted. Address EACH numbered target: fix the noted problem (rewrite/re-anchor/disambiguate) or emit the missed relation if the source supports it; abstain on any target you cannot support from the source. Do NOT re-emit relations that are not listed. Same output schema and privacy rules as the first pass.
 
 HOW TO INSPECT THE SOURCE
-Each target below carries the source clause(s) it spans and names its arguments by S-label; DETECTED SPANS lists the level choices for those labels. Judge each target only from the clauses shown for it. Use S-labels for linked controlled arguments (one label per value); quote an uncontrolled argument's exact source text as a context literal. A relation may connect spans across turns of the SAME problem discussion (short patient acknowledgments between the doctor's sentences are fine), never across different problems or small talk. A conditional/planned statement IS a valid relation but its question MUST be phrased conditionally (may / might / would / if …).
+REPAIR TARGETS are grouped by source region: each SOURCE line is the source text for the targets listed under it — judge those targets only from that region. Arguments are named by S-label with their surface in parentheses (e.g. "S13 (vitamin d deficiency)") so you can locate each one in the SOURCE text; DETECTED SPANS lists the level choices for those labels. Use S-labels for linked controlled arguments (one label per value); quote an uncontrolled argument's exact source text as a context literal. A relation may connect spans across turns of the SAME problem discussion (short patient acknowledgments between the doctor's sentences are fine), never across different problems or small talk. A conditional/planned statement IS a valid relation but its question MUST be phrased conditionally (may / might / would / if …).
 
 PRIVACY-SAFE QA
 Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest.
@@ -3010,7 +3051,7 @@ WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy t
 DETECTED SPANS (level choices for the labels named in the targets)
 {spans}
 
-REPAIR TARGETS (address only these; each is tagged ambiguous / fixable / missed, with the source clause and the fix)
+REPAIR TARGETS (grouped by source region; address only these — each is tagged ambiguous / fixable / missed, with the fix)
 {repair_targets}
 
 RESPONSE
@@ -3832,6 +3873,107 @@ def _opportunity_record(relation, key, anchor_kind, arguments, span, *, recovere
     }
 
 
+# Deterministic POSITIVE-STRUCTURE junk pre-filter for escalation eligibility. A pending pair is
+# skipped from the judge ONLY when the surface structure PROVES it non-assertive: coordinated list
+# siblings (only list punctuation + and/or between them, e.g. a PMH enumeration "CHF, depression and
+# hypertension"), or an argument under an explicit negation cue ("no evidence of X"). These never
+# carry an asserted relation, so skipping costs no recall (validated: 0/36 reader-passed relations
+# flagged). Absence-of-signal rules (no cue / large distance) are deliberately NOT used here -- they
+# drop real relations (verified). "with"/"as" are NOT coordinators ("CHF with diastolic dysfunction"
+# is a qualifier, not a flat list). See docs/issues/qa-builder-dept.md.
+_ESCALATION_COORDINATION = re.compile(
+    r"^[\s,;:/&()\-\.]*(?:\b(?:and|or)\b[\s,;:/&()\-\.]*)*$", re.I)
+_ESCALATION_NEGATION = re.compile(
+    r"\b(denies|denied|no evidence of|negative for|ruled out|no history of|no known|"
+    r"non-?contributory|without any)\b", re.I)
+
+
+def _escalation_prefilter_reason(
+    document: str, arguments: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping], contexts: Mapping[str, Mapping],
+) -> str | None:
+    """Junk reason if this pair is provably non-assertive by surface structure, else None."""
+    def span_of(argument: Mapping) -> tuple[int, int] | None:
+        if argument.get("kind") == "linked":
+            occ = occurrences.get(str(argument.get("occurrence_id"))) or {}
+            start, end = occ.get("start"), occ.get("end")
+        else:
+            start, end = argument.get("start"), argument.get("end")
+        return (int(start), int(end)) if isinstance(start, int) and isinstance(end, int) else None
+
+    spans = [span_of(argument) for argument in arguments]
+    if len(spans) != 2 or any(span is None for span in spans):
+        return None
+    (a0, a1), (b0, b1) = spans
+    lo, hi = (a1, b0) if a1 <= b0 else (b1, a0)
+    lo, hi = min(lo, hi), max(lo, hi)
+    if lo <= hi:
+        gap = list(document[lo:hi])
+        others = [(int(o["start"]), int(o["end"])) for o in occurrences.values()
+                  if isinstance(o.get("start"), int) and isinstance(o.get("end"), int)]
+        others += [(int(r["start"]), int(r["end"])) for r in contexts.values()]
+        for x0, x1 in others:                      # blank intervening list neighbours
+            if lo <= x0 and x1 <= hi:
+                for i in range(max(0, x0 - lo), min(len(gap), x1 - lo)):
+                    gap[i] = " "
+        if _ESCALATION_COORDINATION.match("".join(gap)):
+            # Only SAME-TYPE siblings are a coordinated enumeration (two conditions in a PMH list).
+            # A cross-type "and" (condition AND drug) is not a list -- it can join a condition to its
+            # treatment (e.g. "hypothyroidism and synthroid"), a real relation -- so never skip it.
+            classes = [
+                _argument_relation_classes(
+                    str(argument.get("runtime_type", "")),
+                    str(argument.get("surface") or argument.get("literal") or ""))
+                for argument in arguments
+            ]
+            if classes[0] & classes[1]:
+                return "coordination_sibling"
+    for start, _ in spans:                          # explicit negation in the argument's own clause
+        pre = document[max(0, start - 55):start]
+        matches = list(_ESCALATION_NEGATION.finditer(pre))
+        if matches and not re.search(r"[.?!]", pre[matches[-1].end():]):
+            return "negation_scope"
+    return None
+
+
+def _all_occurrence_judge_premise(
+    document: str, arguments: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping], clauses: Sequence[tuple[int, int]],
+) -> str:
+    r"""Recall-oriented judge premise: source clauses of ALL occurrences of both arguments, deduped,
+    source-ordered, middle elided ("clause2\nclause13\nclause14" -- NEVER the contiguous span 2..14).
+    Gives the accept-biased judge every place each entity is discussed so a document-level relation
+    is visible, without needing to pick the "right" occurrence. Escalation-verdict ONLY: never
+    persisted on an assertion and never reaches the reader (which uses the compiler anchor's clause
+    ranges via `_derived_relation_anchor`). See docs/issues/qa-builder-dept.md."""
+    def clause_index(start: int, end: int) -> int | None:
+        return next((i for i, (left, right) in enumerate(clauses)
+                     if left <= start < end <= right), None)
+
+    by_decision: dict[str, list[tuple[int, int]]] = {}
+    for occ in occurrences.values():
+        start, end = occ.get("start"), occ.get("end")
+        if isinstance(start, int) and isinstance(end, int):
+            by_decision.setdefault(str(occ.get("decision_id")), []).append((int(start), int(end)))
+
+    indices: set[int] = set()
+    for argument in arguments:
+        if argument.get("kind") == "linked":
+            occ = occurrences.get(str(argument.get("occurrence_id"))) or {}
+            spans = by_decision.get(str(occ.get("decision_id")), [])
+        elif argument.get("literal"):
+            spans = _source_literal_spans(document, str(argument["literal"]))
+            if not spans and isinstance(argument.get("start"), int):
+                spans = [(int(argument["start"]), int(argument["end"]))]
+        else:
+            spans = []
+        for start, end in spans:
+            clause = clause_index(start, end)
+            if clause is not None:
+                indices.add(clause)
+    return "\n".join(document[clauses[i][0]:clauses[i][1]].strip() for i in sorted(indices))
+
+
 def relation_support_opportunities(
     document: str,
     environment_document: Mapping,
@@ -3924,8 +4066,13 @@ def relation_support_opportunities(
                     opportunities.setdefault(key, _opportunity_record(
                         relation, key, anchor_kind, arguments, span, recovered=False))
                 elif escalator is not None and key not in pending:
-                    # cue-miss (any relation) or cue-ok judge-gated relation: the escalator decides.
-                    pending[key] = (relation, quote, deepcopy(arguments), anchor_kind, list(span))
+                    # cue-miss (any relation) or cue-ok judge-gated relation: the escalator decides,
+                    # unless a deterministic positive-structure rule proves the pair non-assertive
+                    # (coordinated list siblings / explicitly-negated argument) -- those are skipped
+                    # so the accept-biased judge never turns them into junk seeds.
+                    if _escalation_prefilter_reason(
+                        document, arguments, occurrences, contexts) is None:
+                        pending[key] = (relation, quote, deepcopy(arguments), anchor_kind, list(span))
 
     # NO-REGRESSION INVARIANT: escalator=None leaves `pending` unconsulted, so the result is exactly
     # the cue gate. For non-judge-gated relations the escalator only sees cue-misses and may only
@@ -3935,8 +4082,14 @@ def relation_support_opportunities(
     # docs/issues/qa-builder-dept.md.
     if escalator is not None and pending:
         items = [(key, payload) for key, payload in pending.items() if key not in opportunities]
+        clauses = _source_clause_spans(document)
         calls = [
-            {"relation": r, "quote": q, "arguments": a, "anchor_kind": ak, "document": document}
+            # Judge premise = ALL occurrence-clauses of both arguments (recall-oriented), falling
+            # back to the anchor quote if no clause resolves. This changes only what the judge reads;
+            # the anchor `span`/clause_ranges (reader + evidence) stay from `_derived_relation_anchor`.
+            {"relation": r,
+             "quote": _all_occurrence_judge_premise(document, a, occurrences, clauses) or q,
+             "arguments": a, "anchor_kind": ak, "document": document}
             for _, (r, q, a, ak, _sp) in items
         ]
         judge_batch = getattr(escalator, "judge_batch", None)
