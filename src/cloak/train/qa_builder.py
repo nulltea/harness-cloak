@@ -2915,69 +2915,14 @@ def relation_repair_prompt(
             occurrence_spans_by_decision.setdefault(
                 str(occurrence.get("decision_id")), []).append((int(start), int(end)))
 
-    target_labels: set[str] = set()
-    target_ranges: list[tuple[int, int]] = []
-    for target in targets:
-        for argument in target.get("arguments") or []:
-            label = _arg_label(argument)
-            if label:
-                target_labels.add(label)
-            # Range = the SAME spans the region will render (all occurrences of a linked arg's
-            # DECISION; all mentions of a context literal), NOT the evidence-span envelope -- so a
-            # card in the elided middle can't leak its label into DETECTED SPANS whose source text
-            # is absent from the shown region (#4). A mispaired literal still shows every clause it
-            # appears in, so the teacher can re-pair it.
-            if argument.get("kind") == "linked":
-                occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
-                target_ranges.extend(
-                    occurrence_spans_by_decision.get(str(occurrence.get("decision_id")), []))
-            elif argument.get("literal"):
-                target_ranges.extend(_source_literal_spans(document, str(argument["literal"])))
-            span = _arg_span(argument)
-            if span:
-                target_ranges.append(span)
-
-    def _card_kept(card: Mapping) -> bool:
-        if set(card["labels"]) & target_labels:
-            return True
-        return any(not (hi <= card["start"] or card["end"] <= lo) for lo, hi in target_ranges)
-
-    kept_cards = [card for card in _relation_evidence_cards(document, environment_document, inventory)
-                  if _card_kept(card)]
-    leftover_labels = {label for card in kept_cards for label in card["labels"]}
-    # DETECTED SPANS restricted to labels still present in the leftover cards.
-    shown = [row for row in inventory if row["span_label"] in leftover_labels]
-
-    def _span_line(row: Mapping) -> str:
-        return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
-                f"| levels: {'; '.join(row['properties'])}]")
-
-    spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
-
-    def _arg_desc(argument: Mapping | None) -> str:
-        if argument is None:
-            return "?"
-        if argument.get("kind") == "linked":
-            label = _arg_label(argument)
-            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
-            surface = str(occurrence.get("surface") or argument.get("surface") or "").strip()
-            # label + surface (e.g. "S12 (blood sugar)") so the teacher can match the label to its
-            # mention in the cited clauses; the surface is already shown in DETECTED SPANS/SOURCE CLAUSES.
-            if label and surface:
-                return f"{label} ({surface})"
-            return label or "?"
-        return f'context literal "{argument.get("literal", "")}"'
-
     clauses = _source_clause_spans(document)
 
     def _target_clause_indices(target: Mapping) -> list[int]:
         # ALL occurrence clauses of each argument (every mention of a linked arg's DECISION, every
         # occurrence of a context literal) -- NOT a single representative occurrence, and NOT the
         # evidence-span envelope. The relation's supporting evidence often sits at a DIFFERENT mention
-        # than the grounded one (e.g. an HPI "taking ibuprofen for the pain" vs a plan-section question),
-        # so the region must carry every mention; the irrelevant middle between them is elided. This
-        # mirrors the all-occurrence judge premise -- the envelope (acne@49 → treatment@89 = 40 clauses)
-        # would instead drag the whole middle in.
+        # than the grounded one (HPI "taking ibuprofen for the pain" vs a plan-section question), so
+        # the region must carry every mention; the irrelevant middle is elided (mirrors the judge premise).
         ranges: list[tuple[int, int]] = []
         for argument in target.get("arguments") or []:
             if argument.get("kind") == "linked":
@@ -3001,11 +2946,49 @@ def relation_repair_prompt(
             and any(not (hi <= r0 or r1 <= lo) for r0, r1 in ranges)
         ]
 
+    target_clause_indices = [_target_clause_indices(target) for target in targets]
+    rendered_clause_spans = [
+        clauses[index] for index in sorted({i for indices in target_clause_indices for i in indices})
+    ]
+
+    def _label_in_rendered_region(row: Mapping) -> bool:
+        # DETECTED SPANS lists a label ONLY if one of its occurrences falls in a RENDERED clause, so
+        # the teacher never sees a label whose source text was elided from the region (#4). This
+        # replaces the prior card-based filter, where a kept card leaked its co-occurring labels even
+        # when their clauses were not shown.
+        for start, end in occurrence_spans_by_decision.get(str(row["decision_id"]), []):
+            if any(not (hi <= start or end <= lo) for lo, hi in rendered_clause_spans):
+                return True
+        return False
+
+    shown = [row for row in inventory if _label_in_rendered_region(row)]
+
+    def _span_line(row: Mapping) -> str:
+        return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
+                f"| levels: {'; '.join(row['properties'])}]")
+
+    spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
+
+    def _arg_desc(argument: Mapping | None) -> str:
+        if argument is None:
+            return "?"
+        if argument.get("kind") == "linked":
+            label = _arg_label(argument)
+            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
+            surface = str(occurrence.get("surface") or argument.get("surface") or "").strip()
+            # label + surface (e.g. "S12 (blood sugar)") so the teacher can match the label to its
+            # mention in the cited clauses; the surface is already shown in DETECTED SPANS/SOURCE CLAUSES.
+            if label and surface:
+                return f"{label} ({surface})"
+            return label or "?"
+        return f'context literal "{argument.get("literal", "")}"'
+
     # GROUP BY SOURCE REGION: cluster targets that share any source clause (a problem discussion),
     # then show each region's source text ONCE followed by its targets. A clause shared by K targets
     # in a region is inlined once, not K times; and there is no doc-wide clause index to cross-map --
     # the S-label surfaces (e.g. "S13 (vitamin d deficiency)") locate each argument within the region.
-    target_clause_indices = [_target_clause_indices(target) for target in targets]
+    # `clauses` / `_target_clause_indices` / `target_clause_indices` are computed above (also feed the
+    # rendered-region-aligned DETECTED SPANS).
     parent = list(range(len(targets)))
 
     def _find(x: int) -> int:
