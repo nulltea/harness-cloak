@@ -1767,14 +1767,18 @@ def test_conditional_relation_kept_with_conditional_question():
     assert accepted[0]["relation"] == "procedure_for"
 
 
-def test_conditional_relation_rejected_with_definite_question():
+def test_conditional_relation_definite_question_flagged_not_blocked():
+    # DEMOTED 2026-07-19: a hedged source + definite question is a non-blocking diagnostic, not a
+    # reject (regex hedge/question detectors too blunt; see docs/issues/qa-builder-dept.md). The
+    # relation reaches the reader gate; compile records the modality diagnostic on its evidence.
     env = _conditional_referral_environment(_CONDITIONAL_SOURCE)
     proposal = _conditional_referral_proposal(
         "What procedure was performed for the musculoskeletal system disease?")
     accepted, rejected = compile_relational_assertions("d2", _CONDITIONAL_SOURCE, env, [proposal])
 
-    assert accepted == []
-    assert any(r["detail_reason"] == "hedged_relation" for r in rejected)
+    assert not any(r.get("detail_reason") == "hedged_relation" for r in rejected), rejected
+    assert accepted, "hedged relation must no longer be blocked from the reader"
+    assert accepted[0]["evidence"]["modality_diagnostics"] == ["hedged_source_definite_question"]
 
 
 def test_multiturn_anchor_rejects_link_across_a_problem_switch():
@@ -1798,9 +1802,12 @@ def test_multiturn_anchor_rejects_link_across_a_problem_switch():
     assert rejected[0]["detail_reason"] == "invalid_evidence"
 
 
-def test_problem_block_anchor_rejects_a_hedged_conditional_relation():
-    # The conditional PT referral ("if symptoms continue ... possibly referral")
-    # must not become an asserted fact even though both ends share the block.
+def test_problem_block_hedged_relation_not_blocked_by_hedge_gate():
+    # The conditional PT referral ("if symptoms continue ... possibly referral") is no longer
+    # rejected as `hedged_relation` (demoted 2026-07-19). With the hedge out of the way this
+    # particular relation falls to a DIFFERENT downstream gate — the context-literal object forces
+    # the condition as the scored answer, which the question names → answer_leakage. The point:
+    # the hedge gate itself no longer blocks.
     source = (
         "[doctor] so for your knee pain , this is your arthritis . "
         "if your symptoms continue , we'll possibly refer you to physical therapy .\n"
@@ -1831,8 +1838,9 @@ def test_problem_block_anchor_rejects_a_hedged_conditional_relation():
 
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
-    assert accepted == []
-    assert rejected[0]["detail_reason"] == "hedged_relation"
+    reasons = {r.get("detail_reason") for r in rejected}
+    assert "hedged_relation" not in reasons, rejected     # the hedge gate no longer blocks
+    assert "answer_leakage" in reasons                    # caught by a real downstream gate instead
 
 
 def test_prompt_permits_within_problem_block_multiturn_links():
@@ -2361,6 +2369,35 @@ def test_source_literal_spans_equates_case_and_whitespace_only():
     assert qa_builder._source_literal_spans(punct, "a1c-") == []
 
 
+def test_source_literal_spans_equates_unicode_dash_variants():
+    # LLM teachers emit unicode dashes (gpt-oss: "x‑ray" U+2011) for source ASCII "x-ray";
+    # all dash variants are equated so the literal still grounds.
+    document = "we did an x-ray and a follow-up ct scan."
+    assert [document[s:e] for s, e in
+            qa_builder._source_literal_spans(document, "x‑ray")] == ["x-ray"]      # U+2011
+    assert [document[s:e] for s, e in
+            qa_builder._source_literal_spans(document, "follow–up")] == ["follow-up"]  # U+2013
+    # symmetric: ASCII literal still grounds an ASCII source dash
+    assert [document[s:e] for s, e in
+            qa_builder._source_literal_spans(document, "x-ray")] == ["x-ray"]
+    # a dash must NOT be equated with whitespace or nothing (no over-match)
+    assert qa_builder._source_literal_spans("state of art care", "state-of-art") == []
+
+
+def test_evidence_quote_grounding_equates_unicode_dashes():
+    # teacher emits a unicode dash in the evidence quote for an ASCII-hyphen source; grounding
+    # must still resolve, to the correct-length ORIGINAL-document span (dash fold is 1-char->1-char).
+    doc = "[doctor] show me the right knee x-ray. no fracture."   # ASCII hyphen in source
+    quote = "show me the right knee x‑ray"                        # U+2011 in the teacher quote
+    span, err = qa_builder._resolve_relation_evidence_span(doc, quote, None)
+    assert err is None and span is not None
+    assert doc[span[0]:span[1]] == "show me the right knee x-ray"  # exact source substring
+    assert span[1] - span[0] == len(quote)                        # length preserved
+    # no-regression: case stays exact, and a genuinely-absent quote still fails
+    assert qa_builder._exact_substring_starts(doc, "SHOW me") == []
+    assert qa_builder._resolve_relation_evidence_span(doc, "mri scan", None) == (None, "invalid_evidence")
+
+
 def test_protected_term_generic_category_word_is_not_a_leak():
     leaks = qa_builder._question_leaks_protected_term
     # "medication" is a detected drug SURFACE (protected term) AND a drug placeholder word ->
@@ -2488,6 +2525,26 @@ def test_gleaning_targets_never_drops_a_fixable_reject_without_compiled_args():
     assert all(t["fact_key"][0] == "reject" for t in targets)  # keyed by rejection identity
     assert not any(t.get("reason") == "source_contradiction" for t in targets)
     assert len(targets) == 2  # legitimate reject excluded, both fixable/ambiguous kept
+
+
+def test_gleaning_targets_routes_hedge_flagged_reader_failure_to_repair():
+    # The hedge guard is now a non-blocking diagnostic, but a hedge-flagged relation the READER
+    # then could not confirm is routed back to repair to re-phrase conditionally (restores the
+    # pre-demotion repair path, gated on actually failing the reader).
+    hedged = {"relation": "procedure_for", "detail_reason": "three_point_gate_failed",
+              "rejection_id": "sha256:hhh",
+              "evidence": {"modality_diagnostics": ["hedged_source_definite_question"]}}
+    # a plain reader failure WITHOUT the hedge flag (and not a mispaired literal) is NOT routed
+    plain = {"relation": "prescribed_with", "detail_reason": "three_point_gate_failed",
+             "rejection_id": "sha256:ppp", "evidence": {}}
+
+    targets = qa_builder._gleaning_targets("", [], [hedged, plain], [], {})
+
+    hedge_targets = [t for t in targets if t.get("reason") == "hedged_relation"]
+    assert len(hedge_targets) == 1
+    assert hedge_targets[0]["kind"] == "fixable"
+    assert "conditional" in hedge_targets[0]["hint"].lower()
+    assert all(t["relation"] != "prescribed_with" for t in targets)  # plain gate-fail not routed
 
 
 def test_gleaning_targets_flags_mispaired_context_literal_for_repair():

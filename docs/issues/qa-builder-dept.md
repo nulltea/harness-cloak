@@ -2,8 +2,8 @@
 type: reference
 status: current
 created: 2026-07-18
-updated: 2026-07-18
-tags: [qa-v2, debt, cue-gate, relation-teacher]
+updated: 2026-07-19
+tags: [qa-v2, debt, cue-gate, relation-teacher, hedge-guard]
 ---
 
 # QA-builder debt log
@@ -145,3 +145,77 @@ is the binding constraint behind the D2N005 (4→2) and D2N007 (4→1) kept-rela
 observed on 2026-07-18. Fix = broaden context-literal recall without a hand-maintained
 gazetteer (same brittleness class as the cue gate). Scope TBD; needs a precision/recall check so
 it does not reintroduce the miner explosion above.
+
+## Hedge guard: regex modality gate demoted to diagnostic; semantic replacement planned (2026-07-19)
+
+**Why the current guard is limited.** The compile-time hedge gate
+(`_relation_window_is_hedged` + `_question_is_conditional`, `qa_builder.py`) rejects a relation as
+`hedged_relation` when the SOURCE window between the two arguments matches `_HEDGE_PATTERN`
+(may/might/would/if/consider…) AND the teacher QUESTION is not itself conditional. The intent is
+correct — a conditional/planned source ("if it persists we'll order an MRI") paired with a definite
+question ("which test was ordered?") is a false assertion that corrupts the QA/reward signal, and
+the reader gate does NOT catch it (the reader tests *answerability of the privacy-rewritten doc*,
+not *whether the source actually asserts the relation at the stated modality*). But both halves are
+brittle regex:
+
+- `_relation_window_is_hedged` scans the whole min→max argument window, so an unrelated "might" or
+  "consider" anywhere in the window rejects a valid relation (the code comment itself calls this
+  "whack-a-mole"); and it misses hedges the pattern does not enumerate (false negatives).
+- `_question_is_conditional` is the same brittleness on the question side.
+- `tests_for` is blanket-exempt (finding-hedge is pervasive there), so a genuinely *planned* test
+  with a "was ordered" question is never caught for that relation.
+
+This is the same maintained-lexicon anti-pattern already retired for the relation cue gate
+(`RELATION_CUE_GATES_DISABLED`) and the semantic_property role-cue lexicon.
+
+**Interim change (this commit): demoted to a non-blocking diagnostic.** The gate no longer
+rejects. When the (regex) hedge condition fires it records `evidence.modality_diagnostics =
+["hedged_source_definite_question"]` on the relation and lets it proceed to the reader gate;
+`compute_review_flags` surfaces it as an `info` `hedged_source_definite_question` flag
+(fix_class `ontology_review`). Rationale: the regex is too blunt to *block* on (net false-negatives),
+but the observation is still worth surfacing for review until the semantic replacement lands. The
+`hedged_relation` reject reason is no longer emitted as a blocker.
+Empirically the relations this gate blocked were mostly conditional-procedure/PRN cases (D2N004/D2N007
+`procedure_for`/`prescribed_with`) that are better judged semantically than by window regex.
+
+**Reader-failed hedge-flagged relations still route to repair.** Demoting the blocker must not lose
+the old repair path, so: `reject_context_candidate` carries `evidence.modality_diagnostics` onto the
+reader-gate rejection, and `_gleaning_targets` routes a `three_point_gate_failed` rejection carrying
+`hedged_source_definite_question` back as a `fixable` target with the conditional-phrasing hint
+(reusing the `hedged_relation` `_GLEANING_FIX_HINTS` entry). Net: hedge-flagged → reaches the reader →
+kept if confirmed (no needless redraw), routed to repair only if the reader also fails it — strictly
+better-targeted than the pre-demotion path, which repaired every hedged relation. Note this only
+fires for relations that pass all compile gates then fail the reader; a hedge-flagged relation caught
+by an earlier compile gate (e.g. a context-literal `procedure_for` hitting `answer_leakage`) never
+reaches the reader and is that gate's concern, not the hedge's.
+
+**Proposed replacement: a strict semantic modality judge (compiler-side).** Replace both regexes
+with one MedGemma call per teacher proposal, reusing the existing `_claim`/`RELATION_CLAIM` templates
+and MedGemma client/cache/pin from `relation_support_gate.py`, but a NEW wrapper (not
+`build_medgemma_judge`, which never sees the question):
+
+- Signature: `build_relation_modality_judge(client, *, accept_on_error=False)` returning
+  `judge(*, premise, claim, question, relation) -> ModalityVerdict(relation_asserted,
+  question_ok, why)`.
+- Prompt: `_JUDGE_PREAMBLE` grounding rules + a MODALITY rule + the teacher QUESTION; JSON
+  `{"relation_asserted": bool, "question_not_stronger_than_source": bool, "why": "<=12w"}`. Worked
+  examples OFF-CORPUS (never an ACI entity — see the burned-example rule).
+- **Strict, not accept-biased** (opposite of the miner's `RelationSupportCascade`): parse/infra
+  error → reject + log, because a false keep here is an RL-reward error. This is the compiler-side
+  discipline: the compiler protects source-truth/modality before reward; the miner is accept-biased
+  for recall; the reader only checks that the rewrite preserved an already-source-valid question.
+- Wiring: at the current hedge site, `question_not_stronger_than_source == false` rejects
+  (`question_overstates_source`); `relation_asserted == false` optionally rejects
+  (`source_relation_not_asserted`) — the latter broadens the gate to a source-truth check for every
+  proposal and overlaps the problem-switch gate, so ship modality-only first.
+- Cached + pinned by (premise, claim, question, relation, judge-prompt-version, judge-pin);
+  ~1 call/proposal (cap-bounded), batch across a doc only if latency bites.
+- Rollout: opt-in flag (`--relation-modality-judge`, default off = byte-identical to today), same
+  pattern as `--relation-support-escalation`/`--informative-context-judge`; validate on real data,
+  THEN delete `_HEDGE_PATTERN`, `_relation_window_is_hedged`, `_CONDITIONAL_QUESTION_PATTERN`,
+  `_question_is_conditional`, and the `tests_for` exemption. Do not delete the regex in the same
+  commit that adds the judge.
+
+Origin: reviewed with GPT-5.6 (Sol, high) 2026-07-19 — the gate-audit conclusion was that the
+reader is an *answerability* gate not a *source-truth* gate, so this cannot be dropped onto the
+reader, only semanticized.

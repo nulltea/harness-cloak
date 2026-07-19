@@ -3671,6 +3671,23 @@ def test_compute_review_flags_classifies_missing_generalization_and_rejections()
     assert by_class["representative_unreadable"] == "data_lattice"
 
 
+def test_compute_review_flags_relation_count_soft_cap():
+    cap = qa_builder.RELATION_TEACHER_MAX_RELATIONS
+    artifact = {
+        "relation_generation": {
+            "dense": [{"status": "kept"} for _ in range(cap + 1)],   # over soft cap
+            "normal": [{"status": "kept"} for _ in range(cap)]       # at cap -> no flag
+                      + [{"status": "rejected"} for _ in range(5)],  # rejects don't count
+        },
+    }
+    flags = qa_builder.compute_review_flags(artifact)
+    dense = [f for f in flags["dense"] if f["code"] == "relation_count_over_soft_cap"]
+    assert len(dense) == 1
+    assert dense[0]["severity"] == "info"  # logged, NOT a reject
+    assert dense[0]["detail"]["kept_relations"] == cap + 1
+    assert not any(f["code"] == "relation_count_over_soft_cap" for f in flags.get("normal", []))
+
+
 def test_compute_review_flags_teacher_repairable_unresolved():
     def arg(role, label, prop=None):
         return {"role": role, "kind": "linked", "span_label": label, "support_property": prop}

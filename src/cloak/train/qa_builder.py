@@ -2626,7 +2626,20 @@ def _aci_reference_authorizes_relation(
     return False
 
 
+# ASCII hyphen plus the unicode hyphen/dash/minus variants LLM teachers emit (e.g. gpt-oss
+# writes "x‑ray" U+2011 for source ASCII "x-ray"). Equated in literal AND evidence-quote
+# grounding. Dash folding is 1-char->1-char, so it preserves string length and offsets.
+_LITERAL_DASH_CHARS = "-‐‑‒–—−"
+_DASH_FOLD = str.maketrans({ch: "-" for ch in _LITERAL_DASH_CHARS})
+
+
 def _exact_substring_starts(document: str, quote: str) -> list[int]:
+    """Start offsets where `quote` occurs in `document`, equating unicode dash variants with ASCII
+    '-' (teachers emit U+2011 etc. for source '-'). Folding is length-preserving, so the returned
+    starts and `len(quote)` still index the ORIGINAL document -- callers relying on
+    `start + len(quote)` (evidence spans) stay correct. Otherwise byte-exact (case + whitespace)."""
+    document = document.translate(_DASH_FOLD)
+    quote = quote.translate(_DASH_FOLD)
     starts = []
     cursor = 0
     while quote:
@@ -2639,12 +2652,13 @@ def _exact_substring_starts(document: str, quote: str) -> list[int]:
 
 
 def _source_literal_spans(document: str, literal: str) -> list[tuple[int, int]]:
-    """Source `(start, end)` spans matching `literal` under case-fold + whitespace-collapse
-    equivalence at token boundaries. Offsets index the ORIGINAL document, so the matched text
-    is exactly ``document[start:end]`` -- a context literal resolved through this and then written
-    back as its source substring still satisfies the exact-source grounding contract
-    (`_argument_is_grounded`). Only orthographic casing and inter-token whitespace are equated;
-    a different token sequence, synonym, abbreviation, or reordering never matches.
+    """Source `(start, end)` spans matching `literal` under case-fold + whitespace-collapse +
+    dash-variant equivalence at token boundaries. Offsets index the ORIGINAL document, so the
+    matched text is exactly ``document[start:end]`` -- a context literal resolved through this and
+    then written back as its source substring still satisfies the exact-source grounding contract
+    (`_argument_is_grounded`). Only orthographic casing, inter-token whitespace, and unicode dash
+    variants are equated; a different token sequence, synonym, abbreviation, or reordering never
+    matches.
 
     ponytail: `re.IGNORECASE` (not full Unicode case-fold) and ASCII `\\w` boundaries suit the
     ASCII clinical corpus; move to str.casefold + an explicit offset map only if non-ASCII
@@ -2652,7 +2666,15 @@ def _source_literal_spans(document: str, literal: str) -> list[tuple[int, int]]:
     tokens = str(literal).split()
     if not tokens:
         return []
-    core = r"\s+".join(re.escape(token) for token in tokens)
+
+    def _escape_token(token: str) -> str:
+        # per-char escape so any dash variant in the literal matches any dash variant in the
+        # source; every other char keeps exact (case-insensitive) escaping.
+        return "".join(
+            "[" + _LITERAL_DASH_CHARS + "]" if ch in _LITERAL_DASH_CHARS else re.escape(ch)
+            for ch in token
+        )
+    core = r"\s+".join(_escape_token(token) for token in tokens)
     # (?<!\w)/(?!\w) are token-boundary guards that, unlike \b, still match when the literal's
     # first/last char is non-word ("(MRI)", "C++") -- \b there fails to find an exact source
     # occurrence, a grounding regression from the prior exact-substring lookup.
@@ -4094,6 +4116,18 @@ def _gleaning_targets(
             _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
                  reason=reason, hint=_GLEANING_FIX_HINTS[reason], arguments=_args(row))
 
+    # hedge modality: the hedge guard is a non-blocking diagnostic (not a reject) -- but a
+    # hedge-flagged relation the READER then could not confirm is routed back to repair to
+    # re-phrase the question conditionally. Restores the pre-demotion repair path, now gated on
+    # actually failing the reader (relations the reader confirms are kept, not needlessly redrawn).
+    for row in rejections:
+        reason = str(row.get("detail_reason") or row.get("reason") or "")
+        modality = (row.get("evidence") or {}).get("modality_diagnostics") or []
+        if reason == "three_point_gate_failed" and "hedged_source_definite_question" in modality:
+            _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
+                 reason="hedged_relation", hint=_GLEANING_FIX_HINTS["hedged_relation"],
+                 arguments=_args(row))
+
     # mispaired context literal: a literal->linked relation the grounding/reader could not confirm for
     # the paired condition. Structural detection (one linked + one context arg), so the failed relation
     # goes back to the teacher with the literal's real evidence to re-pair -- not silently re-paired here.
@@ -4437,11 +4471,15 @@ def compile_relational_assertions(
         # reject() carries the identity gleaning needs (fact key + repair-prompt arguments).
         grounded_relation: str | None = None
         grounded_arguments: list[dict] = []
+        # Hedge/modality observation (diagnostic only, non-blocking -- see docs/issues/
+        # qa-builder-dept.md): set at the hedge site below, attached to the accepted relation's
+        # evidence so compute_review_flags can surface it without blocking the reader gate.
+        modality_diagnostic: str | None = None
 
-        if index >= RELATION_TEACHER_MAX_RELATIONS:
-            reject("relation_cap_exceeded")
-            continue
-
+        # No hard relation cap: the teacher's response schema already bounds each section to
+        # RELATION_TEACHER_MAX_RELATIONS, and a genuinely relation-dense note should not have its
+        # extra valid relations dropped. Over-count is surfaced (not rejected) as a soft review
+        # flag in compute_review_flags.
         proposed_subtype = proposal.get("subtype")
         if proposed_subtype not in {None, "contextual_relation"}:
             reject("invalid_subtype")
@@ -4555,16 +4593,17 @@ def compile_relational_assertions(
         )
         competing_answers = _answer_competing_surfaces(
             document, _subject_arg_mon, _answer_arg_mon, _answer_scope_target, occurrences)
-        # A conditional/planned statement ("possibly refer to physical therapy",
-        # "if symptoms persist, order X") is a real contextual fact, but must not be
-        # asserted as already done: allow it only when the question is itself phrased
-        # conditionally (may / might / would / if …). A hedged source paired with a
-        # definite question is the actual false-assertion case and stays rejected.
+        # A conditional/planned statement ("possibly refer to physical therapy", "if symptoms
+        # persist, order X") paired with a DEFINITE question ("which test was ordered?") is a
+        # modality mismatch. DEMOTED 2026-07-19 from a blocker to a non-blocking diagnostic: the
+        # regex hedge/question detectors are too blunt to reject on (whack-a-mole false pos/neg,
+        # tests_for blanket-exempt; see docs/issues/qa-builder-dept.md). Record the observation
+        # and let the relation reach the reader gate; a strict semantic modality judge is the
+        # planned replacement. No longer emits `hedged_relation`.
         if (uses_v4_arguments
                 and _relation_window_is_hedged(document, arguments, occurrences, relation)
                 and not _question_is_conditional(str(proposal.get("question", "")))):
-            reject("hedged_relation")
-            continue
+            modality_diagnostic = "hedged_source_definite_question"
         if not _proposal_polarity_matches_frozen_occurrences(
             proposal, occurrence_ids, occurrences
         ):
@@ -4795,6 +4834,8 @@ def compile_relational_assertions(
             evidence["reader_clauses"] = reader_clauses
         if soft_cap_diagnostic is not None:
             evidence["anchor_diagnostics"] = [soft_cap_diagnostic]
+        if modality_diagnostic is not None:
+            evidence["modality_diagnostics"] = [modality_diagnostic]
         if leakage_repair is not None:
             evidence["leakage_repair"] = leakage_repair
         if competing_answers:  # ambiguity monitor (computed above, pre-gate); diagnostic only
@@ -5791,6 +5832,16 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
                      "surface": occurrence.get("surface"),
                      "resolved_decision": bool(decision)}))
 
+    # C) soft relation-count cap: the hard K-cap reject was removed, so a relation-dense note
+    #    keeps all its valid relations. Log (info, no fix_class action) when a document's kept
+    #    relation count exceeds the soft cap, so unusually dense notes are still visible.
+    for doc_id, records in (artifact.get("relation_generation") or {}).items():
+        kept = sum(1 for record in records if record.get("status") == "kept")
+        if kept > RELATION_TEACHER_MAX_RELATIONS:
+            flags[str(doc_id)].append(_review_flag(
+                "relation_count_over_soft_cap", "compile", "ontology_review", "info",
+                {"kept_relations": kept, "soft_cap": RELATION_TEACHER_MAX_RELATIONS}))
+
     # D) classify signals the build already emits
     for record in (artifact.get("rejections") or {}).get("records") or []:
         doc_id = str(record.get("doc_id"))
@@ -5849,6 +5900,13 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
             flags[str(row.get("doc_id"))].append(_review_flag(
                 "floor_lowered_repair", "compile", "ontology_review", "info",
                 {"from_level": repair.get("from_level"), "to_level": repair.get("to_level")}))
+        # Hedge/modality observation (non-blocking): the source is conditional/planned but the
+        # question is definite -- surfaced for review, the relation was NOT blocked from the reader.
+        modality = (row.get("evidence") or {}).get("modality_diagnostics")
+        if modality:
+            flags[str(row.get("doc_id"))].append(_review_flag(
+                "hedged_source_definite_question", "compile", "ontology_review", "info",
+                {"diagnostics": list(modality)}))
 
     # ambiguity MONITOR: a relation whose answered type has >1 co-valid answer in scope. The
     # free-form reader can name a different (also-valid) one -> non-deterministic utility signal.
@@ -6041,6 +6099,11 @@ def build_utility_artifact(
             # Diagnostic-only: a wide cross-clause relation may still be reader
             # validated, but both kept and rejected attempts must remain auditable.
             evidence["anchor_diagnostics"] = list(anchor_diagnostics)
+        modality_diagnostics = candidate_evidence.get("modality_diagnostics")
+        if modality_diagnostics:
+            # Carry the hedge/modality diagnostic onto the rejection so a reader-FAILED
+            # hedge-flagged relation can be routed back to repair (see _gleaning_targets).
+            evidence["modality_diagnostics"] = list(modality_diagnostics)
         if anchor is not None:
             evidence.update({
                 "joint_anchor_action_vector": anchor["action_vector"],
