@@ -2908,6 +2908,13 @@ def relation_repair_prompt(
             return int(argument["start"]), int(argument["end"])
         return None
 
+    occurrence_spans_by_decision: dict[str, list[tuple[int, int]]] = {}
+    for occurrence in occ_by_id.values():
+        start, end = occurrence.get("start"), occurrence.get("end")
+        if isinstance(start, int) and isinstance(end, int):
+            occurrence_spans_by_decision.setdefault(
+                str(occurrence.get("decision_id")), []).append((int(start), int(end)))
+
     target_labels: set[str] = set()
     target_ranges: list[tuple[int, int]] = []
     for target in targets:
@@ -2915,16 +2922,20 @@ def relation_repair_prompt(
             label = _arg_label(argument)
             if label:
                 target_labels.add(label)
+            # Range = the SAME spans the region will render (all occurrences of a linked arg's
+            # DECISION; all mentions of a context literal), NOT the evidence-span envelope -- so a
+            # card in the elided middle can't leak its label into DETECTED SPANS whose source text
+            # is absent from the shown region (#4). A mispaired literal still shows every clause it
+            # appears in, so the teacher can re-pair it.
+            if argument.get("kind") == "linked":
+                occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
+                target_ranges.extend(
+                    occurrence_spans_by_decision.get(str(occurrence.get("decision_id")), []))
+            elif argument.get("literal"):
+                target_ranges.extend(_source_literal_spans(document, str(argument["literal"])))
             span = _arg_span(argument)
             if span:
                 target_ranges.append(span)
-            # A context literal may have been grounded at the WRONG occurrence (mispaired target);
-            # show every clause the literal actually appears in so the teacher can re-pair it.
-            if argument.get("kind") == "context" and argument.get("literal"):
-                target_ranges.extend(_source_literal_spans(document, str(argument["literal"])))
-        evidence_span = target.get("evidence_span")
-        if evidence_span and len(evidence_span) == 2:
-            target_ranges.append((int(evidence_span[0]), int(evidence_span[1])))
 
     def _card_kept(card: Mapping) -> bool:
         if set(card["labels"]) & target_labels:
@@ -2958,12 +2969,6 @@ def relation_repair_prompt(
         return f'context literal "{argument.get("literal", "")}"'
 
     clauses = _source_clause_spans(document)
-    occurrence_spans_by_decision: dict[str, list[tuple[int, int]]] = {}
-    for occurrence in occ_by_id.values():
-        start, end = occurrence.get("start"), occurrence.get("end")
-        if isinstance(start, int) and isinstance(end, int):
-            occurrence_spans_by_decision.setdefault(
-                str(occurrence.get("decision_id")), []).append((int(start), int(end)))
 
     def _target_clause_indices(target: Mapping) -> list[int]:
         # ALL occurrence clauses of each argument (every mention of a linked arg's DECISION, every

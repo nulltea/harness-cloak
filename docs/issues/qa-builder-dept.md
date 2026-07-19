@@ -3,7 +3,7 @@ type: reference
 status: current
 created: 2026-07-18
 updated: 2026-07-19
-tags: [qa-v2, debt, cue-gate, relation-teacher, hedge-guard]
+tags: [qa-v2, debt, cue-gate, relation-teacher, hedge-guard, repair-prompt]
 ---
 
 # QA-builder debt log
@@ -219,3 +219,51 @@ and MedGemma client/cache/pin from `relation_support_gate.py`, but a NEW wrapper
 Origin: reviewed with GPT-5.6 (Sol, high) 2026-07-19 — the gate-audit conclusion was that the
 reader is an *answerability* gate not a *source-truth* gate, so this cannot be dropped onto the
 reader, only semanticized.
+
+## Repair-prompt context construction: Codex review verdicts (2026-07-19)
+
+GPT-5.6 (codex, session 019f74c2) reviewed the repair/gleaning prompt's source-context builder
+(`relation_repair_prompt` / `_target_clause_indices`) for ways it can starve the teacher of the
+clauses needed to support or correctly refute a target. Verdicts and actions:
+
+- **FIXED — DETECTED SPANS showed labels from elided clauses.** `target_ranges` (feeding
+  `_card_kept`) included the `evidence_span` ENVELOPE while `_target_clause_indices` (the rendered
+  region) excluded it, so labels from the elided middle appeared in DETECTED SPANS without their
+  source text. Now `target_ranges` uses the SAME all-occurrence arg/literal spans the region renders,
+  so DETECTED SPANS ⊆ shown clauses.
+
+- **FIXED (prior commit) — single-occurrence blindness.** `_target_clause_indices` grounded on one
+  representative occurrence; the supporting mention often sits at a different occurrence (D2N009
+  `lumbar strain → ibuprofen`: HPI "been taking ibuprofen … gave me some relief" vs the plan-section
+  question). Now gathers ALL occurrence clauses of each arg's decision (mirrors the judge premise).
+
+- **DISMISSED — secondary proposals not target-fact-key-whitelisted.** The repair schema is the full
+  environment and off-target secondary proposals aren't filtered before compile. But every secondary
+  proposal passes the SAME three-point reader gate as everything else, and the de-bloated prompt only
+  shows target-region context, so the teacher rarely goes off-target. Reader-protected → not a
+  precision leak worth a whitelist.
+
+- **DEFERRED (documented) — predicate/anaphora-only turns are omitted.** A relation stated in a turn
+  that names neither argument by surface ("that medication helped", "we'll start it") is never
+  selected, since selection keys on argument occurrences. This is a genuine recall gap on dialogue.
+  A/B on the cached D2N001–028 subset showed proposed yield ~flat (+1 net, no regression), so it is
+  not acute, and the safe fix is non-trivial: thread a grounding-witness clause range (the anchor's
+  `clause_ranges`, not the envelope) onto each target and include it, plus at most an immediate
+  neighboring turn — NOT a full envelope (which recreated the 33k-token bloat). Needs its own measured
+  iteration; not rushed as a heuristic.
+
+- **DEFERRED (documented) — transitive region merge.** All-occurrence gathering + union-find on shared
+  clauses collapses nearly every doc to ONE region (a recurring entity bridges problems). Regions stay
+  bounded (≤~4.8k chars, middle elided) and each target is an explicit `S-label (surface) → S-label`
+  pair, so cross-problem misleading context is mitigated; but true per-problem separation is not
+  achieved. Fix if precision harm is demonstrated: render per-target tagged snippets and cluster only
+  on a target-local grounding witness, not incidental historical occurrences.
+
+- **DEFERRED (documented) — unmatched free-text literals have no repair source.** `_source_literal_spans`
+  matches only case/whitespace/dash variants, so a teacher literal like `x-rays` for source `x-ray`
+  (or other morphological variants) yields no clause and the region shows only the linked-condition
+  clauses. Measured ~0 on opportunity literals (they are grounded); the gap is teacher-authored
+  `unknown_context_literal` fixable targets, already near-zero after the dash-normalization fix. The
+  existing "(no clause located; inspect the source directly)" fallback discloses it. If it resurfaces,
+  add disclosure-only stemmed-overlap retrieval ("possible source occurrence — verify") and log
+  `repair_context_unavailable`; never weaken the exact compiler grounding matcher.
