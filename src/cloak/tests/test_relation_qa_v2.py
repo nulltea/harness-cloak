@@ -2426,6 +2426,399 @@ def test_literal_reverse_assertions_builds_compound_condition_answer():
         document, [{**opp("bmp"), "recovered_by_escalation": False}], occurrences, decisions_by_id) == []
 
 
+def test_first_noncolliding_level_escalates_past_foreign_surface():
+    levels = ["congestive heart failure", "heart disease", "medical condition"]
+    # finest level is byte-identical to ANOTHER decision's protected surface -> escalate
+    assert qa_builder._first_noncolliding_level(
+        levels, ["congestive heart failure"]) == "heart disease"
+    # whole-word containment of a foreign surface also collides
+    assert qa_builder._first_noncolliding_level(
+        ["kidney transplant history", "organ history"], ["kidney transplant"]) == "organ history"
+    # every level colliding -> fall back to finest (compile's leak check stays the backstop)
+    assert qa_builder._first_noncolliding_level(
+        ["heart disease"], ["heart disease"]) == "heart disease"
+    # no foreign collision -> finest wins as before
+    assert qa_builder._first_noncolliding_level(levels, ["hypertension"]) == levels[0]
+
+
+def test_stage_proposal_locator_escalates_on_foreign_surface_collision():
+    occurrences, decisions, opportunity = _stage_fixture()
+    # a DIFFERENT decision's raw surface equals the condition's finest level
+    occurrences = dict(occurrences, other={
+        "occurrence_id": "other", "decision_id": "d-o", "surface": "congestive heart failure",
+        "start": 60, "end": 84, "runtime_type": "health-condition", "controlled": True})
+    [plan] = qa_builder._deterministic_relation_plans(
+        [opportunity("tests_for", "cond", "test1")], occurrences, decisions)
+
+    forward = qa_builder._deterministic_stage_proposal(
+        plan, "forward", "cardiac imaging study", occurrences, decisions,
+        {"d-c": "S1", "d-t": "S4"})
+
+    # locator escalated past the colliding finest level to "heart disease"
+    assert forward["question"] == (
+        "Which test or investigation was ordered to evaluate the heart disease?")
+
+
+def test_gleaning_targets_drop_literal_collision_protected_locator():
+    occurrences = {
+        "cond": {"occurrence_id": "cond", "decision_id": "d-c", "start": 0, "end": 3},
+    }
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "cond"},
+        {"role": "object", "kind": "context", "literal": "kidney function"},
+    ]
+    def rejection(extra_evidence):
+        return {"relation": "tests_for", "detail_reason": "protected_locator",
+                "evidence": {"arguments": arguments, **extra_evidence}}
+
+    # literal-collision leak: dead weight, never a repair target
+    assert qa_builder._gleaning_targets(
+        "CHF; checked kidney function.", [],
+        [rejection({"leak_source": "context_literal"})], [], occurrences) == []
+    # an ordinary protected_locator (recolorable) stays fixable
+    targets = qa_builder._gleaning_targets(
+        "CHF; checked kidney function.", [], [rejection({})], [], occurrences)
+    assert [t["kind"] for t in targets] == ["fixable"]
+    assert targets[0]["reason"] == "protected_locator"
+
+
+def test_reader_outcome_route_signatures():
+    def rejection(original, representative, placeholder, teacher_id=None):
+        evidence = {"validation": {"scores": {
+            "original": original, "representative": representative, "placeholder": placeholder}}}
+        if teacher_id:
+            evidence["teacher_id"] = teacher_id
+        return {"evidence": evidence}
+
+    route = qa_builder._reader_outcome_route
+    # orig/rep verdict disagreement (either direction) or placeholder-only readable -> lattice
+    assert route(rejection(1.0, 0.0, 0.0)) == "lattice_suspect"
+    assert route(rejection(0.0, 1.0, 0.0)) == "lattice_suspect"
+    assert route(rejection(0.0, 0.0, 1.0)) == "lattice_suspect"
+    # read nowhere: no_relation ONLY for deterministic authorship; teacher rejections keep repair
+    assert route(rejection(0.0, 0.0, 0.0, teacher_id="deterministic")) == "no_relation"
+    assert route(rejection(0.0, 0.0, 0.0)) is None
+    assert route(rejection(0.0, 0.0, 0.0, teacher_id="gpt_oss")) is None
+    # placeholder-answerable (1,1,1) stays with its fixable-taxonomy repair path
+    assert route(rejection(1.0, 1.0, 1.0)) is None
+    # no reader scores (compile-time rejection) -> untouched
+    assert route({"evidence": {}}) is None
+
+
+def test_gleaning_targets_reader_routing_excludes_without_resurrecting():
+    occurrences = {
+        "cond": {"occurrence_id": "cond", "decision_id": "d-c", "start": 0, "end": 3},
+        "test1": {"occurrence_id": "test1", "decision_id": "d-t", "start": 10, "end": 13},
+    }
+    document = "CHF; got bmp today."
+    arguments = [{"role": "subject", "kind": "linked", "occurrence_id": "cond"},
+                 {"role": "object", "kind": "linked", "occurrence_id": "test1"}]
+    fact_key = qa_builder._relation_fact_key("tests_for", arguments, occurrences)
+    opportunity = {"relation": "tests_for", "scope": "span_span", "fact_key": fact_key,
+                   "arguments": arguments}
+
+    def stage_rejection(scores):
+        return {"relation": "tests_for", "detail_reason": "three_point_gate_failed",
+                "evidence": {"arguments": arguments, "teacher_id": "deterministic",
+                             "answer_competing": ["other test"],
+                             "validation": {"scores": scores}}}
+
+    # reader-verified no-relation: neither an ambiguous target NOR resurrected as missed
+    nowhere = stage_rejection({"original": 0.0, "representative": 0.0, "placeholder": 0.0})
+    assert qa_builder._gleaning_targets(document, [], [nowhere], [opportunity], occurrences) == []
+    # lattice signature: excluded too (any authorship)
+    disagree = stage_rejection({"original": 1.0, "representative": 0.0, "placeholder": 0.0})
+    disagree["evidence"].pop("teacher_id")
+    assert qa_builder._gleaning_targets(document, [], [disagree], [opportunity], occurrences) == []
+    # control: the same competing-answer rejection WITHOUT an exclusion signature is a target
+    ambiguous = stage_rejection({"original": 0.0, "representative": 0.0, "placeholder": 0.0})
+    ambiguous["evidence"].pop("teacher_id")
+    targets = qa_builder._gleaning_targets(document, [], [ambiguous], [opportunity], occurrences)
+    assert [t["kind"] for t in targets] == ["ambiguous"]
+
+
+def test_gleaning_targets_skip_facts_kept_by_any_row():
+    occurrences = {
+        "cond": {"occurrence_id": "cond", "decision_id": "d-c", "start": 0, "end": 3},
+        "drug1": {"occurrence_id": "drug1", "decision_id": "d-1", "start": 10, "end": 15},
+    }
+    document = "CHF on lasix; ordered bmp and cxr."
+    subject = {"role": "subject", "kind": "linked", "occurrence_id": "cond"}
+    drug = {"role": "object", "kind": "linked", "occurrence_id": "drug1"}
+    # fact kept via the deterministic REVERSE flip...
+    kept_reverse = {"relation": "prescribed_with",
+                    "evidence": {"arguments": [subject, drug]}}
+    # ...while the teacher's FORWARD attempt was rejected as ambiguous
+    forward_reject = {"relation": "prescribed_with", "detail_reason": "three_point_gate_failed",
+                      "evidence": {"arguments": [subject, drug],
+                                   "answer_competing": ["other drug"]}}
+    # compound literal row (3 args -> no 2-arg fact key) covering two literal pairs
+    kept_compound = {"relation": "tests_for", "evidence": {"arguments": [
+        subject,
+        {"role": "object", "kind": "context", "literal": "bmp", "start": 22, "end": 25},
+        {"role": "object", "kind": "context", "literal": "cxr", "start": 30, "end": 33},
+    ]}}
+
+    def literal_opportunity(literal):
+        return {"relation": "tests_for", "scope": "span_literal",
+                "fact_key": ("tests_for", ("linked_decision", "d-c"), ("context_literal", literal)),
+                "arguments": [subject,
+                              {"role": "object", "kind": "context", "literal": literal}]}
+
+    targets = qa_builder._gleaning_targets(
+        document,
+        [kept_reverse, kept_compound],
+        [forward_reject],
+        [literal_opportunity("bmp"), literal_opportunity("cxr"), literal_opportunity("troponin")],
+        occurrences,
+    )
+
+    kinds = {(t["kind"], t["relation"]) for t in targets}
+    # the kept-forward-rejected fact and the compound-covered literal pairs are NOT re-targeted;
+    # only the genuinely uncovered opportunity remains
+    assert kinds == {("missed", "tests_for")}
+    [target] = targets
+    assert target["fact_key"] == ("tests_for", ("linked_decision", "d-c"),
+                                  ("context_literal", "troponin"))
+    # without the kept rows, the ambiguous forward rejection IS a target again
+    targets_unkept = qa_builder._gleaning_targets(
+        document, [], [forward_reject],
+        [literal_opportunity("troponin")], occurrences)
+    assert {t["kind"] for t in targets_unkept} == {"ambiguous", "missed"}
+    # a compound REJECTION also counts its pairs as proposed: they never resurrect as "missed"
+    compound_reject = {"relation": "tests_for", "detail_reason": "three_point_gate_failed",
+                       "evidence": {"arguments": kept_compound["evidence"]["arguments"]}}
+    targets_rejected = qa_builder._gleaning_targets(
+        document, [], [compound_reject],
+        [literal_opportunity("bmp"), literal_opportunity("cxr")], occurrences)
+    assert [t["kind"] for t in targets_rejected] == []
+
+
+def _stage_fixture():
+    occurrences = {
+        "cond": {"occurrence_id": "cond", "decision_id": "d-c", "surface": "CHF",
+                 "start": 0, "end": 3, "runtime_type": "health-condition", "controlled": True},
+        "drug1": {"occurrence_id": "drug1", "decision_id": "d-1", "surface": "lasix",
+                  "start": 10, "end": 15, "runtime_type": "drug", "controlled": True},
+        "drug2": {"occurrence_id": "drug2", "decision_id": "d-2", "surface": "carvedilol",
+                  "start": 20, "end": 30, "runtime_type": "drug", "controlled": True},
+        "test1": {"occurrence_id": "test1", "decision_id": "d-t", "surface": "echocardiogram",
+                  "start": 40, "end": 54, "runtime_type": "test", "controlled": True},
+    }
+    decisions = {
+        "d-c": {"decision_id": "d-c", "actions": [
+            {"mode": "level", "legal": True, "entails": ["congestive heart failure"]},
+            {"mode": "level", "legal": True, "entails": ["heart disease"]},
+            {"mode": "level", "legal": True, "entails": ["medical condition"]}]},
+        "d-1": {"decision_id": "d-1", "actions": [
+            {"mode": "level", "legal": True, "entails": ["loop diuretic"]},
+            {"mode": "level", "legal": True, "entails": ["medication"]}]},
+        "d-2": {"decision_id": "d-2", "actions": [
+            {"mode": "level", "legal": True, "entails": ["beta blocker"]}]},
+        "d-t": {"decision_id": "d-t", "actions": [
+            {"mode": "level", "legal": True, "entails": ["cardiac imaging study"]}]},
+    }
+
+    def opportunity(relation, subject_id, object_id):
+        return {"relation": relation, "scope": "span_span", "fact_key": (relation, subject_id, object_id),
+                "arguments": [
+                    {"role": "subject", "kind": "linked", "occurrence_id": subject_id},
+                    {"role": "object", "kind": "linked", "occurrence_id": object_id}]}
+
+    return occurrences, decisions, opportunity
+
+
+def test_deterministic_relation_plans_singleton_forward_multi_reverse():
+    occurrences, decisions, opportunity = _stage_fixture()
+    opportunities = [
+        opportunity("prescribed_with", "cond", "drug1"),   # 2 drug objects -> ambiguous
+        opportunity("prescribed_with", "cond", "drug2"),
+        opportunity("tests_for", "cond", "test1"),         # singleton -> forward + reverse fallback
+        {"relation": "tests_for", "scope": "span_literal", "arguments": []},  # not a span plan
+    ]
+
+    plans = qa_builder._deterministic_relation_plans(opportunities, occurrences, decisions)
+
+    by_relation = {}
+    for plan in plans:
+        by_relation.setdefault(plan["relation"], []).append(plan)
+    prescribed = by_relation["prescribed_with"]
+    assert [plan["directions"] for plan in prescribed if not plan.get("compound")] == [
+        ["reverse"], ["reverse"]]
+    # ambiguous group also gets ONE compound plan, ordered AFTER its per-object flips
+    assert prescribed[-1].get("compound") is True
+    assert len(prescribed[-1]["objects"]) == 2
+    assert prescribed[-1]["fact_keys"] == [plan["fact_key"] for plan in prescribed[:-1]]
+    # singleton groups never get a compound plan
+    assert [plan["directions"] for plan in by_relation["tests_for"]] == [["forward", "reverse"]]
+    tests_plan = by_relation["tests_for"][0]
+    assert tests_plan["fact_key"] == qa_builder._relation_fact_key(
+        "tests_for", [tests_plan["subject"], tests_plan["object"]], occurrences)
+    # an uncontrolled argument disqualifies the pair entirely
+    uncontrolled = dict(occurrences, test1={**occurrences["test1"], "controlled": False})
+    assert qa_builder._deterministic_relation_plans(
+        [opportunity("tests_for", "cond", "test1")], uncontrolled, decisions) == []
+
+
+def test_deterministic_answer_levels_coarsest_first_with_skip():
+    occurrences, decisions, _ = _stage_fixture()
+    # coarsest -> finest, with the bare type-word level ("medical condition") skipped
+    assert qa_builder._deterministic_answer_levels(decisions["d-c"]) == [
+        "heart disease", "congestive heart failure"]
+    # every level degenerate -> one trial at the finest level, never an empty search
+    only_type_word = {"decision_id": "d-x", "actions": [
+        {"mode": "level", "legal": True, "entails": ["medication"]}]}
+    assert qa_builder._deterministic_answer_levels(only_type_word) == ["medication"]
+
+
+def test_deterministic_stage_proposal_directions():
+    occurrences, decisions, opportunity = _stage_fixture()
+    [plan] = qa_builder._deterministic_relation_plans(
+        [opportunity("tests_for", "cond", "test1")], occurrences, decisions)
+    span_labels = {"d-c": "S1", "d-t": "S4"}
+
+    forward = qa_builder._deterministic_stage_proposal(
+        plan, "forward", "cardiac imaging study", occurrences, decisions, span_labels)
+    assert forward["answer_role"] == "object"
+    assert forward["accepted_answers"] == ["cardiac imaging study"]
+    # locator = subject at its FINEST level; answer argument carries the trial level
+    assert forward["question"] == (
+        "Which test or investigation was ordered to evaluate the congestive heart failure?")
+    assert [argument["span_label"] for argument in forward["arguments"]] == ["S1", "S4"]
+    assert forward["arguments"][1]["support_property"] == "cardiac imaging study"
+
+    reverse = qa_builder._deterministic_stage_proposal(
+        plan, "reverse", "heart disease", occurrences, decisions, span_labels)
+    assert reverse["answer_role"] == "subject"
+    assert reverse["accepted_answers"] == ["heart disease"]
+    assert reverse["question"] == "For what medical condition was the cardiac imaging study ordered?"
+    assert reverse["arguments"][0]["support_property"] == "heart disease"
+
+
+def test_compound_span_reverse_row_locators_and_requirements():
+    occurrences, decisions, opportunity = _stage_fixture()
+    plans = qa_builder._deterministic_relation_plans(
+        [opportunity("prescribed_with", "cond", "drug1"),
+         opportunity("prescribed_with", "cond", "drug2")], occurrences, decisions)
+    compound = plans[-1]
+    assert compound.get("compound") is True
+
+    row = qa_builder._compound_span_reverse_row(
+        "CHF x on lasix and carvedilol; echocardiogram done later today ok",
+        "prescribed_with", compound["subject"], compound["objects"],
+        occurrences, decisions, "heart disease")
+
+    # every object at its FINEST level forms the locator; the subject answers at the trial level
+    assert "loop diuretic" in row["question"] and "beta blocker" in row["question"]
+    assert row["accepted_values"] == ["heart disease"]
+    assert row["answer_target"] == {"kind": "linked_decision", "decision_id": "d-c",
+                                    "required_property": "heart disease"}
+    assert row["decision_requirements"] == {
+        "d-c": "heart disease", "d-1": "loop diuretic", "d-2": "beta blocker"}
+    assert row["occurrence_ids"] == ["cond", "drug1", "drug2"]
+    assert (row["evidence"] or {})["run_id"] == "deterministic_stage"
+
+
+def test_set_forward_row_members_and_requirements():
+    occurrences, decisions, opportunity = _stage_fixture()
+    plans = qa_builder._deterministic_relation_plans(
+        [opportunity("prescribed_with", "cond", "drug1"),
+         opportunity("prescribed_with", "cond", "drug2")], occurrences, decisions)
+    compound = plans[-1]
+
+    row = qa_builder._set_forward_row(
+        "CHF x on lasix and carvedilol; echocardiogram done later today ok",
+        "prescribed_with", compound["subject"], compound["objects"], occurrences, decisions)
+
+    # subject locator at its finest level in the question; members = objects at THEIR finest
+    assert "congestive heart failure" in row["question"]
+    assert row["answer_target"] == {"kind": "linked_decision_set", "members": [
+        {"decision_id": "d-1", "required_property": "loop diuretic"},
+        {"decision_id": "d-2", "required_property": "beta blocker"}]}
+    assert row["decision_requirements"] == {
+        "d-c": "congestive heart failure", "d-1": "loop diuretic", "d-2": "beta blocker"}
+    assert row["scoring_contract"] == {"kind": "semantic_qa", "match": "set_recall"}
+    assert (row["evidence"] or {})["run_id"] == "deterministic_stage"
+
+
+def test_context_answer_score_set_recall_one_to_one():
+    row = {"answer_target": {"kind": "linked_decision_set", "members": [
+        {"decision_id": "d-1", "required_property": "loop diuretic"},
+        {"decision_id": "d-2", "required_property": "beta blocker"}]}}
+    chains = {
+        "d-1": [{"node": "loop diuretic", "answer_aliases": ["loop diuretic"],
+                 "entailed_properties": ["loop diuretic", "medication"]}],
+        "d-2": [{"node": "beta blocker", "answer_aliases": ["beta blocker"],
+                 "entailed_properties": ["beta blocker", "medication"]}],
+    }
+    score = qa_builder._context_answer_score
+    # full recall; the extra uncontrolled literal prediction is ignored (recall, not precision)
+    assert score(row, '["loop diuretic", "beta blocker", "bmp"]', chains) == 1.0
+    # one member missing -> partial recall (< threshold 1.0 -> gate-fails on that render)
+    assert score(row, '["loop diuretic"]', chains) == 0.5
+    # one prediction cannot satisfy two members (one-to-one matching)
+    assert score(row, '["loop diuretic", "loop diuretic"]', chains) == 0.5
+    # malformed / non-array reply -> zero
+    assert score(row, "loop diuretic and beta blocker", chains) == 0.0
+    assert score(row, "[]", chains) == 0.0
+
+
+def test_validate_context_assertions_routes_set_rows_to_set_reader():
+    row = {
+        "family": "context", "question": "List EVERY distinct medication.",
+        "answer_target": {"kind": "linked_decision_set", "members": [
+            {"decision_id": "d-1", "required_property": "loop diuretic"}]},
+        "evidence": {"reader_turns": [0]},
+    }
+    chains = {"d-1": [{"node": "loop diuretic", "answer_aliases": ["loop diuretic"],
+                       "entailed_properties": ["loop diuretic"]}]}
+    calls = {"span": 0, "set": 0}
+
+    def span_reader(questions, context):
+        calls["span"] += 1
+        return ["never used for set rows"] * len(questions)
+
+    def set_reader(questions, context):
+        calls["set"] += 1
+        # answerable on original+representative, hidden on placeholder
+        return ['["loop diuretic"]' if "lasix" in context or "loop diuretic" in context
+                else "[]"] * len(questions)
+
+    accepted, evidence = qa_builder.validate_context_assertions(
+        [row],
+        original_context="on lasix daily",
+        representative_context="on loop diuretic daily",
+        placeholder_context="on [MEDICATION] daily",
+        reader=span_reader,
+        chain_by_decision=chains,
+        set_reader=set_reader,
+    )
+    assert len(accepted) == 1
+    assert calls == {"span": 0, "set": 3}
+    [row_evidence] = evidence.values()
+    assert row_evidence["scores"] == {"original": 1.0, "representative": 1.0, "placeholder": 0.0}
+
+
+def test_literal_reverse_groups_widened_seed_carries_fact_key():
+    occurrences = {
+        "cond": {"occurrence_id": "cond", "decision_id": "d-c", "surface": "CHF", "start": 0,
+                 "end": 3, "runtime_type": "health-condition", "controlled": True},
+    }
+    cue_pass = {"relation": "tests_for", "scope": "span_literal", "recovered_by_escalation": False,
+                "fact_key": ("tests_for", ("linked_decision", "d-c"), ("context_literal", "bmp")),
+                "arguments": [
+                    {"role": "subject", "kind": "linked", "occurrence_id": "cond"},
+                    {"role": "object", "kind": "context", "literal": "bmp", "start": 13, "end": 16}]}
+
+    assert qa_builder._literal_reverse_groups([cue_pass], occurrences) == {}
+    groups = qa_builder._literal_reverse_groups(
+        [cue_pass], occurrences, judge_recovered_only=False)
+    assert set(groups) == {("tests_for", "d-c")}
+    [entry] = groups[("tests_for", "d-c")]["literals"].values()
+    assert entry["literal"] == "bmp"
+    assert entry["fact_key"] == cue_pass["fact_key"]
+
+
 def test_llm_prefilter_context_candidates_locates_and_types_phrases():
     source = "Hypothyroidism was treated with levothyroxine; ordered a thyroid panel."
     env = {
@@ -2867,6 +3260,54 @@ def test_relation_repair_prompt_restricts_to_targets_and_lists_hints():
     assert "insomnia" not in prompt and "zolpidem" not in prompt
     # safety-critical privacy instruction survives
     assert "the QUESTION must never contain the accepted answer" in prompt
+
+
+def test_relation_repair_prompt_writes_each_fix_hint_once():
+    source = ("for your first problem , your reflux , continue dietary modifications . "
+              "for your second problem , your insomnia , continue the zolpidem .")
+    def sp(x): return source.index(x)
+    environment = {
+        "occurrences": [
+            {"occurrence_id": "reflux", "decision_id": "d-reflux", "surface": "reflux",
+             "start": sp("reflux"), "end": sp("reflux") + 6, "runtime_type": "health-condition"},
+            {"occurrence_id": "diet", "decision_id": "d-diet", "surface": "dietary modifications",
+             "start": sp("dietary modifications"), "end": sp("dietary modifications") + 21,
+             "runtime_type": "medical-procedure"},
+            {"occurrence_id": "ins", "decision_id": "d-ins", "surface": "insomnia",
+             "start": sp("insomnia"), "end": sp("insomnia") + 8, "runtime_type": "health-condition"},
+            {"occurrence_id": "zol", "decision_id": "d-zol", "surface": "zolpidem",
+             "start": sp("zolpidem"), "end": sp("zolpidem") + 8, "runtime_type": "drug"},
+        ],
+        "decisions": [
+            {"decision_id": "d-reflux", "actions": [{"mode": "level", "legal": True, "entails": ["gastrointestinal condition"]}]},
+            {"decision_id": "d-diet", "actions": [{"mode": "level", "legal": True, "entails": ["dietary intervention"]}]},
+            {"decision_id": "d-ins", "actions": [{"mode": "level", "legal": True, "entails": ["sleep disorder"]}]},
+            {"decision_id": "d-zol", "actions": [{"mode": "level", "legal": True, "entails": ["sedative"]}]},
+        ],
+    }
+    hint = qa_builder._GLEANING_MISSED_HINT
+    def missed(subject_id, object_id, relation):
+        return {"kind": "missed", "relation": relation, "hint": hint,
+                "arguments": [
+                    {"role": "subject", "kind": "linked", "occurrence_id": subject_id},
+                    {"role": "object", "kind": "linked", "occurrence_id": object_id}]}
+    fixable = {"kind": "fixable", "relation": "prescribed_with", "reason": "answer_leakage",
+               "hint": qa_builder._GLEANING_FIX_HINTS["answer_leakage"],
+               "arguments": [
+                   {"role": "subject", "kind": "linked", "occurrence_id": "ins"},
+                   {"role": "object", "kind": "linked", "occurrence_id": "zol"}]}
+
+    prompt = qa_builder.relation_repair_prompt(
+        "d", source, environment,
+        [missed("reflux", "diet", "procedure_for"), missed("ins", "zol", "prescribed_with"),
+         fixable])
+
+    # the shared MISSED hint appears exactly ONCE (in the FIX GUIDE), not per target
+    assert prompt.count(hint) == 1
+    assert prompt.count(qa_builder._GLEANING_FIX_HINTS["answer_leakage"]) == 1
+    assert "FIX GUIDE" in prompt
+    # target lines reference the guide by tag instead of inlining the hint
+    assert "MISSED" in prompt and "fix: answer_leakage" in prompt
 
 
 # --- Relation-support escalation: no-regression invariant + accept-only cascade ---

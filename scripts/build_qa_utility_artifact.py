@@ -19,6 +19,7 @@ from cloak.train.qa_builder import (
     freeze_v2_environment_from_legacy_arms,
     llm_prefilter_context_candidates,
     read_context_batch,
+    read_context_set_batch,
     render_frozen_action_vector,
 )
 from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
@@ -268,6 +269,9 @@ def build_from_files(
         pins["relation_support_prefilter"] = {
             "model": RELATION_SUPPORT_JUDGE_MODEL, "base_url": QA_BASE_URL,
         }
+    deterministic_relation_stage = bool(getattr(args, "relation_deterministic_stage", False))
+    if deterministic_relation_stage:
+        pins["relation_deterministic_stage"] = True
     return build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
@@ -286,6 +290,8 @@ def build_from_files(
         relation_support_escalator=relation_support_escalator,
         informative_context_judge=informative_context_judge,
         context_prefilter=context_prefilter,
+        deterministic_relation_stage=deterministic_relation_stage,
+        set_reader=read_context_set_batch if reader is read_context_batch else None,
     )
 
 
@@ -360,6 +366,17 @@ def parse_args(argv=None):
             "recovers drug/symptom/condition literal relation objects the gazetteer cannot emit. "
             "Opt-in (off by default); requires --relation-support-escalation. Augment-only, so it "
             "cannot drop a currently-accepted pair. Adds ~(#conditions x 5) MedGemma calls per doc."
+        ),
+    )
+    parser.add_argument(
+        "--relation-deterministic-stage",
+        action="store_true",
+        help=(
+            "generate template relation QAs from mined opportunity pairs between the primary "
+            "teacher pass and gleaning (no teacher call): forward with reverse fallback for "
+            "singleton span pairs, reverse-only for ambiguous groups, literal-reverse from the "
+            "all-accepted seed; answer levels searched coarsest-to-finest against the reader gate. "
+            "Facts kept here are excluded from the paid gleaning targets. Opt-in (off by default)."
         ),
     )
     return parser.parse_args(argv)

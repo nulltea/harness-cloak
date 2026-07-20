@@ -640,6 +640,21 @@ class BatchedContextReader:
         raw = raw.strip().strip('"').strip("'").strip()
         return "" if raw.upper() == "NONE" else raw
 
+    def _read_set_one(self, question: str, context: str) -> str:
+        # Set-valued read (validated wrapper: scripts/spikes/set_valued_gate_probe.py): the raw
+        # JSON-array reply is returned verbatim; _context_answer_score parses and scores recall.
+        prompt = (
+            "Read the DOCUMENT and complete the REQUEST. Copy each answer verbatim as a short "
+            "phrase from the DOCUMENT; include nothing not in the DOCUMENT. Respond with ONLY a "
+            'JSON array of strings, e.g. ["x","y"]. If there are none, respond [].\n\n'
+            f"DOCUMENT:\n{context}\n\n"
+            f"REQUEST: {question}"
+        )
+        return self._client.generate(prompt).strip()
+
+    def read_set(self, questions: list[str], context: str) -> list[str]:
+        return [self._read_set_one(question, context) for question in questions]
+
     def __call__(self, questions: list[str], context: str) -> list[str]:
         return [self._read_one(question, context) for question in questions]
 
@@ -655,6 +670,14 @@ def read_context_batch(questions: list[str], context: str) -> list[str]:
 
 
 read_context_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
+
+
+def read_context_set_batch(questions: list[str], context: str) -> list[str]:
+    """Set-valued reads (same pinned reader model/endpoint, JSON-array response contract)."""
+    global _batched_context_reader
+    if _batched_context_reader is None:
+        _batched_context_reader = BatchedContextReader()
+    return _batched_context_reader.read_set(questions, context)
 
 
 class AciTaskAdapter:
@@ -2924,9 +2947,10 @@ def relation_repair_prompt(
     shown_labels_out: "set[str] | None" = None,
 ) -> str:
     """Second-pass gleaning+repair prompt: same privacy/response contract as the primary, but the
-    DETECTED SPANS and EVIDENCE CARDS are restricted to the clauses relevant to `targets`, and a
-    REPAIR TARGETS section names each target with its per-reason fix hint. Kept relations and
-    100%-legitimate rejections are not shown. The primary prompt is untouched (cache-safe)."""
+    DETECTED SPANS and EVIDENCE CARDS are restricted to the clauses relevant to `targets`; a FIX
+    GUIDE states each distinct per-reason hint once, and the REPAIR TARGETS lines reference it by
+    tag. Kept relations and 100%-legitimate rejections are not shown. The primary prompt is
+    untouched (cache-safe)."""
     del doc_id
     inventory = relation_teacher_span_inventory(environment_document)
     label_by_decision = {str(row["decision_id"]): row["span_label"] for row in inventory}
@@ -3058,17 +3082,29 @@ def relation_repair_prompt(
     def _cluster_first_clause(members: list[int]) -> int:
         return min((ci for ti in members for ci in target_clause_indices[ti]), default=10**9)
 
+    # FIX GUIDE: each distinct fix hint is written ONCE, keyed by the target's rejection reason
+    # (fixable) or kind (missed/ambiguous); a target line carries only its key. Batched targets
+    # share a handful of hints, so repeating the multi-sentence hint per target was pure prompt
+    # weight with no information.
+    def _fix_key(target: Mapping) -> str:
+        return str(target.get("reason") or str(target.get("kind", "")).upper())
+
+    fix_guide_entries: dict[str, str] = {}
+    for target in targets:
+        fix_guide_entries.setdefault(_fix_key(target), str(target.get("hint", "")))
+    fix_guide = "\n".join(
+        f"- {key}: {hint}" for key, hint in fix_guide_entries.items()) or "(No targets.)"
+
     def _target_line(number: int, target: Mapping) -> str:
         arguments = target.get("arguments") or []
         subject = next((a for a in arguments if a.get("role") == "subject"), None)
         obj = next((a for a in arguments if a.get("role") == "object"), None)
-        detail = str(target.get("hint", ""))
-        if target.get("reason"):
-            detail = f"was rejected ({target['reason']}); {detail}"
+        tag = str(target.get("kind", "")).upper()
+        key = _fix_key(target)
+        fix = f" · fix: {key}" if key != tag else ""
         return (
-            f"  [{number}] {str(target.get('kind', '')).upper()} · {target.get('relation', '?')} · "
-            f"{_arg_desc(subject)} → {_arg_desc(obj)}\n"
-            f"      fix: {detail}")
+            f"  [{number}] {tag}{fix} · {target.get('relation', '?')} · "
+            f"{_arg_desc(subject)} → {_arg_desc(obj)}")
 
     blocks: list[str] = []
     number = 0
@@ -3105,7 +3141,10 @@ WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy t
 DETECTED SPANS (level choices for the labels named in the targets)
 {spans}
 
-REPAIR TARGETS (grouped by source region; address only these — each is tagged ambiguous / fixable / missed, with the fix)
+FIX GUIDE (one entry per tag; apply it to EVERY target labeled with that tag)
+{fix_guide}
+
+REPAIR TARGETS (grouped by source region; address only these — each is tagged ambiguous / fixable / missed, and names its FIX GUIDE entry)
 {repair_targets}
 
 RESPONSE
@@ -3864,6 +3903,27 @@ def _compiled_relation_fact_key(candidate: Mapping, occurrences: Mapping[str, Ma
     return _relation_fact_key(str(candidate.get("relation", "")), arguments, occurrences)
 
 
+def _pair_fact_keys(rows: Sequence[Mapping], occurrences: Mapping[str, Mapping]) -> set[tuple]:
+    """Pair-level fact keys covered by relation rows: a two-argument row contributes its own
+    key; a compound row (one subject + N objects: set-valued, compound-locator, multi-literal)
+    is decomposed into one subject x object key per object. Rows whose arguments cannot key
+    (unknown literal/decision) contribute nothing."""
+    keys: set[tuple] = set()
+    for row in rows:
+        arguments = list(dict(row.get("evidence") or {}).get("arguments") or [])
+        subjects = [a for a in arguments if a.get("role") == "subject"]
+        objects = [a for a in arguments if a.get("role") == "object"]
+        if len(subjects) != 1 or not objects:
+            continue
+        for obj in objects:
+            try:
+                keys.add(_relation_fact_key(
+                    str(row.get("relation", "")), [subjects[0], obj], occurrences))
+            except ValueError:
+                continue
+    return keys
+
+
 def _remap_to_lexically_groundable_siblings(
     document: str,
     arguments: Sequence[Mapping],
@@ -4344,12 +4404,41 @@ def _rejection_safe_arguments(arguments: Sequence[Mapping]) -> list[dict]:
     ]
 
 
+def _reader_outcome_route(rejection: Mapping, reader_threshold: float = 1.0) -> str | None:
+    """Route a reader-gated rejection by its stored three-point scores.
+
+    * "lattice_suspect" -- the orig/rep verdicts DISAGREE (readable raw but not at the required
+      level, or vice versa), or only the placeholder render reads: a generalization-level /
+      chain-alias data defect, not something a teacher can re-author. Any authorship.
+    * "no_relation" -- a DETERMINISTIC-stage relation the reader confirmed NOWHERE (orig, rep,
+      placeholder all below threshold) after the stage exhausted its direction/level/compound/set
+      ladder: reader-verified co-occurrence junk from the recall-oriented miner. Teacher-authored
+      rejections are NOT routed here -- their questions carried real judgment, so their existing
+      repair paths stand.
+    * None -- no exclusion (no reader scores, or a pattern the repair taxonomy handles).
+    """
+    evidence = rejection.get("evidence") or {}
+    scores = (evidence.get("validation") or {}).get("scores") or {}
+    if not scores:
+        return None
+    original = float(scores.get("original", 0.0)) >= reader_threshold
+    representative = float(scores.get("representative", 0.0)) >= reader_threshold
+    placeholder = float(scores.get("placeholder", 0.0)) >= reader_threshold
+    if original != representative or (not original and not representative and placeholder):
+        return "lattice_suspect"
+    if (not original and not representative and not placeholder
+            and str(evidence.get("teacher_id")) == "deterministic"):
+        return "no_relation"
+    return None
+
+
 def _gleaning_targets(
     document: str,
     kept_relations: Sequence[Mapping],
     rejections: Sequence[Mapping],
     opportunities: Sequence[Mapping],
     occurrences: Mapping[str, Mapping],
+    reader_threshold: float = 1.0,
 ) -> list[dict]:
     """Compute the gleaning+repair target set from the primary pass (diagnostic/planning only).
 
@@ -4383,9 +4472,20 @@ def _gleaning_targets(
         subject = args[1] if role == "subject" else args[0]
         return subject, answer, (row.get("answer_target") or {})
 
-    proposed_keys = {
-        key for row in [*kept_relations, *rejections] if (key := _fact_key(row)) is not None
-    }
+    # PROPOSED = every pair fact some row attempted (kept or rejected), with compound rows
+    # (set-valued / compound-locator / multi-literal, >2 args) decomposed into their pair keys --
+    # else a compound attempt's pairs would resurrect as "missed" targets.
+    proposed_keys = _pair_fact_keys([*kept_relations, *rejections], occurrences)
+    # Reader-outcome routing: a rejection whose three-point scores say "lattice data defect" or
+    # "reader-verified no-relation" is EXCLUDED from repair targeting (see _reader_outcome_route)
+    # -- but stays in proposed_keys above, so the excluded fact can never resurrect as "missed".
+    repairable_rejections = [
+        row for row in rejections if _reader_outcome_route(row, reader_threshold) is None
+    ]
+    # Pair-level fact keys COVERED by a kept row. A fact can be attempted several times per build
+    # (forward teacher proposal, deterministic reverse flip, compound row): a rejection for one
+    # attempt must not re-target a fact another attempt already kept.
+    kept_pair_keys = _pair_fact_keys(kept_relations, occurrences)
     targets: dict[tuple, dict] = {}
 
     def _fallback_key(row: Mapping) -> tuple:
@@ -4411,6 +4511,8 @@ def _gleaning_targets(
     def _add(key: tuple | None, kind: str, **extra) -> None:
         if key is None:
             return
+        if key in kept_pair_keys:
+            return  # the fact is already covered by a kept row; re-authoring it wastes a call
         if _is_self_pair(extra.get("arguments") or []):
             return
         existing = targets.get(key)
@@ -4421,7 +4523,7 @@ def _gleaning_targets(
     # ambiguous: a REJECTED relation with a co-valid same-type answer in the subject's block. Kept
     # relations are excluded -- they already answered uniquely, so re-authoring them wastes a teacher
     # call and re-emits the same fact; their multi-answer siblings are recovered by reverse-framing.
-    for row in rejections:
+    for row in repairable_rejections:
         competing = list((row.get("evidence") or {}).get("answer_competing") or [])
         if not competing:
             subject, answer, target = _subject_and_answer(row)
@@ -4433,8 +4535,12 @@ def _gleaning_targets(
                  hint=_GLEANING_AMBIGUOUS_HINT, competing=competing, arguments=_args(row))
 
     # fixable: a rejection whose reason is in the FIXABLE taxonomy
-    for row in rejections:
+    for row in repairable_rejections:
         reason = str(row.get("detail_reason") or row.get("reason") or "")
+        if reason == "protected_locator" and str(
+                (row.get("evidence") or {}).get("leak_source") or "") == "context_literal":
+            continue  # the leak sits inside an unrecolorable context literal: no author -- the
+            # repair teacher included -- can phrase around it, so it is dead weight, not fixable
         if reason in _GLEANING_FIXABLE_REASONS:
             _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
                  reason=reason, hint=_GLEANING_FIX_HINTS[reason], arguments=_args(row))
@@ -4443,7 +4549,7 @@ def _gleaning_targets(
     # hedge-flagged relation the READER then could not confirm is routed back to repair to
     # re-phrase the question conditionally. Restores the pre-demotion repair path, now gated on
     # actually failing the reader (relations the reader confirms are kept, not needlessly redrawn).
-    for row in rejections:
+    for row in repairable_rejections:
         reason = str(row.get("detail_reason") or row.get("reason") or "")
         modality = (row.get("evidence") or {}).get("modality_diagnostics") or []
         if reason == "three_point_gate_failed" and "hedged_source_definite_question" in modality:
@@ -4454,7 +4560,7 @@ def _gleaning_targets(
     # mispaired context literal: a literal->linked relation the grounding/reader could not confirm for
     # the paired condition. Structural detection (one linked + one context arg), so the failed relation
     # goes back to the teacher with the literal's real evidence to re-pair -- not silently re-paired here.
-    for row in rejections:
+    for row in repairable_rejections:
         reason = str(row.get("detail_reason") or row.get("reason") or "")
         if reason not in _MISPAIRED_LITERAL_REASONS:
             continue
@@ -4817,21 +4923,21 @@ def _join_locators(items: Sequence[str]) -> str:
     return ", ".join(unique[:-1]) + ", and " + unique[-1]
 
 
-def _literal_reverse_assertions(
-    document: str,
+def _literal_reverse_groups(
     opportunities: Sequence[Mapping],
     occurrences: Mapping[str, Mapping],
-    decisions_by_id: Mapping[str, Mapping],
-) -> list[dict]:
-    """Deterministic literal->span reverse context assertions from JUDGE-ACCEPTED span_literal
-    opportunities: for each (relation, controlled condition) group, the literal object(s) become the
-    question locator and the condition is the answer (answer_role=subject). Compound (>=2 literals)
-    disambiguates a single condition where one generic literal cannot; a single specific literal still
-    yields a QA. The condition is controlled, so the placeholder render hides it and the three-point
-    gate holds by construction. No teacher call. Gated downstream by validate_candidate_rows."""
+    *,
+    judge_recovered_only: bool = True,
+) -> dict[tuple, dict]:
+    """(relation, condition decision_id) -> literal group eligible for a literal->span reverse QA.
+    `judge_recovered_only=True` is the original seed (judge-recovered span_literal pairs only);
+    False widens to every accepted opportunity (the deterministic stage's seed). Each literal
+    entry carries its pair's fact_key so callers can drop already-kept facts."""
     groups: dict[tuple, dict] = {}
     for opportunity in opportunities:
-        if not opportunity.get("recovered_by_escalation") or opportunity.get("scope") != "span_literal":
+        if judge_recovered_only and not opportunity.get("recovered_by_escalation"):
+            continue
+        if opportunity.get("scope") != "span_literal":
             continue
         relation = str(opportunity.get("relation", ""))
         if relation not in _LITERAL_REVERSE_TEMPLATES:
@@ -4854,53 +4960,475 @@ def _literal_reverse_assertions(
         group = groups.setdefault(
             (relation, str(occurrence["decision_id"])),
             {"occurrence_id": str(condition["occurrence_id"]), "literals": {}})
-        group["literals"].setdefault(canon(str(literal["literal"])), (str(literal["literal"]), start, end))
+        group["literals"].setdefault(canon(str(literal["literal"])), {
+            "literal": str(literal["literal"]), "start": start, "end": end,
+            "fact_key": opportunity.get("fact_key"),
+        })
+    return groups
 
+
+def _literal_reverse_row(
+    document: str,
+    relation: str,
+    decision_id: str,
+    group: Mapping,
+    occurrences: Mapping[str, Mapping],
+    answer_level: str,
+) -> dict:
+    """One literal->span reverse context-assertion row: the group's literal(s) are the question
+    locator, the controlled condition answers at `answer_level`."""
+    occurrence_id = group["occurrence_id"]
+    occurrence = occurrences[occurrence_id]
+    literals = list(group["literals"].values())
+    display = _display_locators([entry["literal"] for entry in literals])
+    question = _LITERAL_REVERSE_TEMPLATES[relation].format(
+        locators=_join_locators(display or [entry["literal"] for entry in literals]))
+    condition_span = (int(occurrence["start"]), int(occurrence["end"]))
+    ranges = [condition_span] + [(entry["start"], entry["end"]) for entry in literals]
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": occurrence_id,
+         "runtime_type": occurrence.get("runtime_type"), "support_property": answer_level},
+        *[{"role": "object", "kind": "context", "literal": entry["literal"],
+           "start": entry["start"], "end": entry["end"]}
+          for entry in literals],
+    ]
+    lo, hi = min(span[0] for span in ranges), max(span[1] for span in ranges)
+    return {
+        "family": "context", "scope": "linked", "subtype": "contextual_relation",
+        "relation": relation,
+        "occurrence_ids": [occurrence_id],
+        "group_id": "literal_reverse:" + relation + ":" + _stable_hash(
+            [decision_id, sorted(group["literals"])]),
+        "question": question,
+        "accepted_values": [answer_level],
+        "answer_target": {"kind": "linked_decision", "decision_id": decision_id,
+                          "required_property": answer_level},
+        "answer_type": _relation_answer_type_hint(relation, "subject"),
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+        "decision_requirements": {decision_id: answer_level},
+        "evidence": {
+            "authority": "source_document",
+            "arguments": arguments,
+            "argument_spans": {occurrence_id: [condition_span[0], condition_span[1]]},
+            "reader_turns": _source_turns_for_ranges(document, ranges),
+            "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
+            "teacher_id": "deterministic", "run_id": "literal_reverse",
+        },
+    }
+
+
+def _literal_reverse_assertions(
+    document: str,
+    opportunities: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+    decisions_by_id: Mapping[str, Mapping],
+) -> list[dict]:
+    """Deterministic literal->span reverse context assertions from JUDGE-ACCEPTED span_literal
+    opportunities: for each (relation, controlled condition) group, the literal object(s) become the
+    question locator and the condition is the answer (answer_role=subject). Compound (>=2 literals)
+    disambiguates a single condition where one generic literal cannot; a single specific literal still
+    yields a QA. The condition is controlled, so the placeholder render hides it and the three-point
+    gate holds by construction. No teacher call. Gated downstream by validate_candidate_rows."""
     rows = []
-    for (relation, decision_id), group in groups.items():
+    for (relation, decision_id), group in _literal_reverse_groups(
+            opportunities, occurrences).items():
         decision = decisions_by_id.get(decision_id)
         levels = _ordered_decision_levels(decision) if decision else []
         if not levels:
             continue  # no legal generalization -> nothing to answer with
-        answer_level = levels[0]
-        occurrence_id = group["occurrence_id"]
-        occurrence = occurrences[occurrence_id]
-        literals = list(group["literals"].values())
-        display = _display_locators([literal for literal, _s, _e in literals])
-        question = _LITERAL_REVERSE_TEMPLATES[relation].format(
-            locators=_join_locators(display or [literal for literal, _s, _e in literals]))
-        condition_span = (int(occurrence["start"]), int(occurrence["end"]))
-        ranges = [condition_span] + [(start, end) for _literal, start, end in literals]
-        arguments = [
-            {"role": "subject", "kind": "linked", "occurrence_id": occurrence_id,
-             "runtime_type": occurrence.get("runtime_type"), "support_property": answer_level},
-            *[{"role": "object", "kind": "context", "literal": literal, "start": start, "end": end}
-              for literal, start, end in literals],
-        ]
-        lo, hi = min(span[0] for span in ranges), max(span[1] for span in ranges)
-        rows.append({
-            "family": "context", "scope": "linked", "subtype": "contextual_relation",
-            "relation": relation,
-            "occurrence_ids": [occurrence_id],
-            "group_id": "literal_reverse:" + relation + ":" + _stable_hash(
-                [decision_id, sorted(group["literals"])]),
-            "question": question,
-            "accepted_values": [answer_level],
-            "answer_target": {"kind": "linked_decision", "decision_id": decision_id,
-                              "required_property": answer_level},
-            "answer_type": _relation_answer_type_hint(relation, "subject"),
-            "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
-            "decision_requirements": {decision_id: answer_level},
-            "evidence": {
-                "authority": "source_document",
-                "arguments": arguments,
-                "argument_spans": {occurrence_id: [condition_span[0], condition_span[1]]},
-                "reader_turns": _source_turns_for_ranges(document, ranges),
-                "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
-                "teacher_id": "deterministic", "run_id": "literal_reverse",
-            },
-        })
+        rows.append(_literal_reverse_row(
+            document, relation, decision_id, group, occurrences, levels[0]))
     return rows
+
+
+# Deterministic relation stage (opt-in, between the primary teacher pass and gleaning): mined
+# opportunity pairs become template QAs without a teacher call. Forward = subject locator in the
+# question, object answers; reverse = object locator, subject answers. The answered argument must be
+# a controlled span (hidden by the placeholder render), so template choice is what makes the
+# three-point gate satisfiable by construction.
+_FORWARD_RELATION_TEMPLATES = {
+    "prescribed_with": "Which medication was prescribed or used to treat the {locator}?",
+    "tests_for": "Which test or investigation was ordered to evaluate the {locator}?",
+    "procedure_for": "Which procedure or therapy was performed or planned for the {locator}?",
+    "contraindicated_because_of": "Which medical condition makes the {locator} contraindicated "
+                                  "or unsuitable?",
+    "causes_or_explains": "Which symptom, finding, or condition does the {locator} cause or explain?",
+}
+
+# The stage's reverse templates: the ambiguity-repair set plus the two relations it never needed.
+# _REVERSE_FRAME_TEMPLATES itself is untouched -- its membership gates the post-gleaning
+# reverse-framing pass, which must stay byte-identical when the stage is off.
+_DETERMINISTIC_REVERSE_TEMPLATES = {
+    **_REVERSE_FRAME_TEMPLATES,
+    "contraindicated_because_of": "Which medication or treatment must be avoided because of "
+                                  "the {locator}?",
+    "causes_or_explains": "Which underlying medical condition causes or explains the {locator}?",
+}
+
+# Bare type-word levels are useless answers (and usually echo the question's answer-type word):
+# the coarsest->finest answer-level search skips them instead of spending reader calls.
+_DETERMINISTIC_LEVEL_SKIP = frozenset(canon(level) for level in (
+    # conditions
+    "medical condition", "health condition", "condition", "medical problem", "diagnosis",
+    "disease", "disease of anatomical entity", "clinical finding", "finding", "clinical symptom", "symptom",
+    # procedures
+    "medical procedure", "surgical procedure", "diagnostic procedure", "therapeutic procedure",
+    "procedure", "therapy", "treatment",
+    # diagnostics
+    "diagnostic test", "test", "investigation", "medical device",
+    # drugs
+    "therapeutic agent", "medication", "drug", "medicine",
+    "dietary supplement", "pharmaceutical compound", "chemical substance", "prescription medication",
+))
+
+
+def _deterministic_answer_levels(decision: Mapping) -> list[str]:
+    """Answer-level trial order for the deterministic stage: coarsest -> finest, so the FIRST
+    three-point-gate pass is the coarsest supported level (same semantics as the teacher's
+    supported-level prior). Degenerate type-word levels are skipped; a decision whose every
+    level is degenerate still gets one trial at its finest level."""
+    levels = _ordered_decision_levels(decision)  # most-specific -> coarsest
+    trials = [level for level in reversed(levels)
+              if canon(level) not in _DETERMINISTIC_LEVEL_SKIP]
+    return trials or levels[:1]
+
+
+def _deterministic_relation_plans(
+    opportunities: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+    decisions: Mapping[str, Mapping],
+) -> list[dict]:
+    """Direction plans for the deterministic stage's span<->span pairs (literal pairs are the
+    literal-reverse path's job). Grouped by (relation, subject decision): a single span object
+    generates FORWARD (object answers) with a REVERSE fallback; >=2 span objects each generate
+    REVERSE only (subject answers) -- the forward question is ambiguous by construction. Both
+    arguments must be controlled decisions with legal levels (all span-inventory args are)."""
+    def controlled_levels(argument: Mapping) -> bool:
+        occurrence = occurrences.get(str(argument.get("occurrence_id")))
+        if occurrence is None or occurrence.get("decision_id") is None:
+            return False
+        if not occurrence.get("controlled", True):
+            return False
+        decision = decisions.get(str(occurrence["decision_id"]))
+        return bool(decision and _ordered_decision_levels(decision))
+
+    groups: dict[tuple, dict[str, dict]] = {}
+    for opportunity in opportunities:
+        if opportunity.get("scope") != "span_span":
+            continue
+        relation = str(opportunity.get("relation", ""))
+        if relation not in _FORWARD_RELATION_TEMPLATES:
+            continue
+        arguments = opportunity.get("arguments") or []
+        subject = next((a for a in arguments if a.get("role") == "subject"), None)
+        obj = next((a for a in arguments if a.get("role") == "object"), None)
+        if subject is None or obj is None:
+            continue
+        if not (controlled_levels(subject) and controlled_levels(obj)):
+            continue
+        subject_decision = str(occurrences[str(subject["occurrence_id"])]["decision_id"])
+        object_decision = str(occurrences[str(obj["occurrence_id"])]["decision_id"])
+        groups.setdefault((relation, subject_decision), {}).setdefault(
+            object_decision, {"subject": dict(subject), "object": dict(obj)})
+
+    plans: list[dict] = []
+    for (relation, _subject_decision), by_object in sorted(groups.items()):
+        directions = ["forward", "reverse"] if len(by_object) == 1 else ["reverse"]
+        group_fact_keys: list[tuple] = []
+        for _object_decision, pair in sorted(by_object.items()):
+            try:
+                fact_key = _relation_fact_key(
+                    relation, [pair["subject"], pair["object"]], occurrences)
+            except ValueError:
+                continue
+            group_fact_keys.append(fact_key)
+            plans.append({
+                "relation": relation,
+                "fact_key": fact_key,
+                "subject": pair["subject"],
+                "object": pair["object"],
+                "directions": list(directions),
+            })
+        if len(by_object) >= 2 and group_fact_keys:
+            # Compound fallback for the ambiguous group, AFTER its per-object flips in plan
+            # order: all object levels in one locator pin a single subject where one object
+            # (tied to several subjects) cannot. Executed only while some pair is still unkept.
+            pairs = [pair for _dec, pair in sorted(by_object.items())]
+            plans.append({
+                "relation": relation,
+                "compound": True,
+                "subject": pairs[0]["subject"],
+                "objects": [pair["object"] for pair in pairs],
+                "fact_keys": group_fact_keys,
+            })
+    return plans
+
+
+def _foreign_protected_terms(
+    occurrences: Mapping[str, Mapping], own_decision_id: str,
+) -> list[str]:
+    """Protected surfaces/aliases of every controlled decision EXCEPT the locator's own."""
+    return [
+        term
+        for occurrence in occurrences.values()
+        if occurrence.get("controlled", True)
+        and occurrence.get("decision_id") is not None
+        and str(occurrence["decision_id"]) != str(own_decision_id)
+        for term in _occurrence_protected_terms(occurrence)
+    ]
+
+
+def _first_noncolliding_level(levels: Sequence[str], foreign_terms: Sequence[str]) -> str:
+    """First level that neither equals nor contains a FOREIGN protected surface. A level that
+    echoes another decision's raw surface reads as a locator for THAT span (protected_locator),
+    even though it is a legal generalization of its own -- so escalate past it to the next
+    coarser level. Falls back to the finest level when every level collides; compile's leak
+    check remains the backstop."""
+    for level in levels:
+        if not any(_contains(str(level), str(term)) for term in foreign_terms):
+            return str(level)
+    return str(levels[0])
+
+
+def _deterministic_stage_proposal(
+    plan: Mapping,
+    direction: str,
+    answer_level: str,
+    occurrences: Mapping[str, Mapping],
+    decisions: Mapping[str, Mapping],
+    span_label_by_decision: Mapping[str, str],
+) -> dict | None:
+    """A teacher-style relation proposal for one (plan, direction, answer level) trial. The
+    locator argument is fixed at its finest legal level (most readable); the answered argument
+    carries the trial level. Compiled by the normal compile_relations path, so every teacher
+    guard (anchor, cue, leakage repair, protected locator) applies unchanged."""
+    subject, obj = dict(plan["subject"]), dict(plan["object"])
+    answer_argument, locator_argument = (obj, subject) if direction == "forward" else (subject, obj)
+    templates = (_FORWARD_RELATION_TEMPLATES if direction == "forward"
+                 else _DETERMINISTIC_REVERSE_TEMPLATES)
+    locator_decision_id = str(
+        (occurrences.get(str(locator_argument.get("occurrence_id"))) or {}).get("decision_id"))
+    locator_levels = _ordered_decision_levels(decisions.get(locator_decision_id) or {})
+    if not locator_levels:
+        return None
+    locator_argument["support_property"] = _first_noncolliding_level(
+        locator_levels, _foreign_protected_terms(occurrences, locator_decision_id))
+    answer_argument["support_property"] = str(answer_level)
+    for argument in (subject, obj):
+        decision_id = (occurrences.get(str(argument.get("occurrence_id"))) or {}).get("decision_id")
+        label = span_label_by_decision.get(str(decision_id))
+        if label:  # v4 anchor path needs a span_label on each linked argument
+            argument.setdefault("span_label", label)
+    return {
+        "relation": str(plan["relation"]),
+        "arguments": [subject, obj],
+        "question": templates[str(plan["relation"])].format(
+            locator=locator_argument["support_property"]),
+        "answer_role": "object" if direction == "forward" else "subject",
+        "accepted_answers": [str(answer_level)],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+    }
+
+
+# Set-valued forward templates (validated: scripts/spikes/set_valued_gate_probe.py): the
+# exhaustive object-direction question for an ambiguous group. The subject is referenced by its
+# LEVEL, the answer is the FULL controlled object set (JSON array via the set reader); literals
+# are pre-excluded from scoring -- recall counts controlled members only.
+_SET_FORWARD_TEMPLATES = {
+    "prescribed_with": "List EVERY distinct medication that the document says was prescribed or "
+                       "used to treat the patient's {locator}.",
+    "tests_for": "List EVERY distinct test, lab, or imaging study that the document says was "
+                 "ordered or performed to evaluate the patient's {locator}.",
+    "procedure_for": "List EVERY distinct procedure or therapy that the document says was "
+                     "performed or planned to treat the patient's {locator}.",
+    "contraindicated_because_of": "List EVERY distinct medical condition that the document says "
+                                  "makes the patient's {locator} contraindicated or unsuitable.",
+    "causes_or_explains": "List EVERY distinct symptom, finding, or condition that the document "
+                          "says is caused or explained by the patient's {locator}.",
+}
+
+
+def _set_forward_row(
+    document: str,
+    relation: str,
+    subject_argument: Mapping,
+    object_arguments: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+    decisions: Mapping[str, Mapping],
+) -> dict | None:
+    """One set-valued forward row for an ambiguous group: subject locator at its finest level,
+    answer = every controlled object at its finest level (answer_target linked_decision_set,
+    scored as one-to-one member recall). No answer-level search: the probe validated finest-level
+    members, and a per-member level product would explode the trial space."""
+    subject_occurrence = occurrences.get(str(subject_argument.get("occurrence_id")))
+    if subject_occurrence is None or subject_occurrence.get("decision_id") is None:
+        return None
+    subject_decision_id = str(subject_occurrence["decision_id"])
+    subject_levels = _ordered_decision_levels(decisions.get(subject_decision_id) or {})
+    if not subject_levels:
+        return None
+    subject_level = _first_noncolliding_level(
+        subject_levels, _foreign_protected_terms(occurrences, subject_decision_id))
+    members: list[dict] = []
+    compiled_objects: list[dict] = []
+    requirements: dict[str, str] = {subject_decision_id: subject_level}
+    for object_argument in object_arguments:
+        occurrence = occurrences.get(str(object_argument.get("occurrence_id")))
+        if occurrence is None or occurrence.get("decision_id") is None:
+            return None
+        decision_id = str(occurrence["decision_id"])
+        levels = _ordered_decision_levels(decisions.get(decision_id) or {})
+        if not levels:
+            return None
+        member_level = str(levels[0])
+        requirements[decision_id] = member_level
+        members.append({"decision_id": decision_id, "required_property": member_level})
+        compiled_objects.append({
+            "role": "object", "kind": "linked",
+            "occurrence_id": str(occurrence["occurrence_id"]),
+            "runtime_type": occurrence.get("runtime_type"),
+            "support_property": member_level,
+        })
+    if len(requirements) != len(compiled_objects) + 1:
+        return None  # an object shares the subject's (or a sibling's) decision -> degenerate
+    question = _SET_FORWARD_TEMPLATES[relation].format(locator=subject_level)
+    occurrence_ids = [str(subject_occurrence["occurrence_id"])] + [
+        argument["occurrence_id"] for argument in compiled_objects]
+    ranges = [
+        (int(occurrences[occurrence_id]["start"]), int(occurrences[occurrence_id]["end"]))
+        for occurrence_id in occurrence_ids
+    ]
+    lo, hi = min(span[0] for span in ranges), max(span[1] for span in ranges)
+    return {
+        "family": "context", "scope": "linked", "subtype": "contextual_relation",
+        "relation": relation,
+        "occurrence_ids": occurrence_ids,
+        "group_id": "set_forward:" + relation + ":" + _stable_hash(
+            [subject_decision_id, sorted(requirements)]),
+        "question": question,
+        "accepted_values": [member["required_property"] for member in members],
+        "answer_target": {"kind": "linked_decision_set", "members": members},
+        "answer_type": _relation_answer_type_hint(relation, "object"),
+        "scoring_contract": {"kind": "semantic_qa", "match": "set_recall"},
+        "decision_requirements": requirements,
+        "evidence": {
+            "authority": "source_document",
+            "arguments": [
+                {"role": "subject", "kind": "linked",
+                 "occurrence_id": occurrence_ids[0],
+                 "runtime_type": subject_occurrence.get("runtime_type"),
+                 "support_property": subject_level},
+                *compiled_objects,
+            ],
+            "argument_spans": {
+                occurrence_id: [span[0], span[1]]
+                for occurrence_id, span in zip(occurrence_ids, ranges)
+            },
+            "reader_turns": _source_turns_for_ranges(document, ranges),
+            "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
+            "teacher_id": "deterministic", "run_id": "deterministic_stage",
+        },
+    }
+
+
+# Compound span-locator reverse templates: ALL of an ambiguous group's object levels in one
+# question. A single object's flip fails exactly when that object ties to several subjects; the
+# conjunction pins one subject the way the compound literal locator pins one condition. "all"/
+# "single" + the name-only tail steer the extractive reader to one answer.
+_COMPOUND_REVERSE_TEMPLATES = {
+    "prescribed_with": "For what single medical condition were {locators} all prescribed? "
+                       "Name only the condition.",
+    "tests_for": "What single medical condition were {locators} all ordered to evaluate? "
+                 "Name only the condition.",
+    "procedure_for": "What single medical condition were {locators} all performed or planned to "
+                     "treat? Name only the condition.",
+    "contraindicated_because_of": "Which single medication or treatment must be avoided because "
+                                  "of {locators}? Name only that medication or treatment.",
+    "causes_or_explains": "What single underlying medical condition causes or explains "
+                          "{locators}? Name only the condition.",
+}
+
+
+def _compound_span_reverse_row(
+    document: str,
+    relation: str,
+    subject_argument: Mapping,
+    object_arguments: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+    decisions: Mapping[str, Mapping],
+    answer_level: str,
+) -> dict | None:
+    """One compound span-locator reverse row: every object at its finest level forms the question
+    locator, the subject answers at `answer_level`. All arguments are controlled linked spans, so
+    the placeholder render hides subject AND locators -- the gate's floor holds by construction."""
+    subject_occurrence = occurrences.get(str(subject_argument.get("occurrence_id")))
+    if subject_occurrence is None or subject_occurrence.get("decision_id") is None:
+        return None
+    subject_decision_id = str(subject_occurrence["decision_id"])
+    locators: list[str] = []
+    compiled_objects: list[dict] = []
+    requirements: dict[str, str] = {subject_decision_id: str(answer_level)}
+    for object_argument in object_arguments:
+        occurrence = occurrences.get(str(object_argument.get("occurrence_id")))
+        if occurrence is None or occurrence.get("decision_id") is None:
+            return None
+        decision = decisions.get(str(occurrence["decision_id"]))
+        levels = _ordered_decision_levels(decision or {})
+        if not levels:
+            return None
+        locator_level = _first_noncolliding_level(
+            levels, _foreign_protected_terms(occurrences, str(occurrence["decision_id"])))
+        locators.append(locator_level)
+        requirements[str(occurrence["decision_id"])] = locator_level
+        compiled_objects.append({
+            "role": "object", "kind": "linked",
+            "occurrence_id": str(occurrence["occurrence_id"]),
+            "runtime_type": occurrence.get("runtime_type"),
+            "support_property": locator_level,
+        })
+    if len(requirements) != len(compiled_objects) + 1:
+        return None  # an object shares the subject's (or a sibling's) decision -> degenerate
+    display = _display_locators(locators)
+    question = _COMPOUND_REVERSE_TEMPLATES[relation].format(
+        locators=_join_locators(display or locators))
+    occurrence_ids = [str(subject_occurrence["occurrence_id"])] + [
+        argument["occurrence_id"] for argument in compiled_objects]
+    ranges = [
+        (int(occurrences[occurrence_id]["start"]), int(occurrences[occurrence_id]["end"]))
+        for occurrence_id in occurrence_ids
+    ]
+    lo, hi = min(span[0] for span in ranges), max(span[1] for span in ranges)
+    return {
+        "family": "context", "scope": "linked", "subtype": "contextual_relation",
+        "relation": relation,
+        "occurrence_ids": occurrence_ids,
+        "group_id": "compound_span_reverse:" + relation + ":" + _stable_hash(
+            [subject_decision_id, sorted(requirements)]),
+        "question": question,
+        "accepted_values": [str(answer_level)],
+        "answer_target": {"kind": "linked_decision", "decision_id": subject_decision_id,
+                          "required_property": str(answer_level)},
+        "answer_type": _relation_answer_type_hint(relation, "subject"),
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+        "decision_requirements": requirements,
+        "evidence": {
+            "authority": "source_document",
+            "arguments": [
+                {"role": "subject", "kind": "linked",
+                 "occurrence_id": occurrence_ids[0],
+                 "runtime_type": subject_occurrence.get("runtime_type"),
+                 "support_property": str(answer_level)},
+                *compiled_objects,
+            ],
+            "argument_spans": {
+                occurrence_id: [span[0], span[1]]
+                for occurrence_id, span in zip(occurrence_ids, ranges)
+            },
+            "reader_turns": _source_turns_for_ranges(document, ranges),
+            "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
+            "teacher_id": "deterministic", "run_id": "deterministic_stage",
+        },
+    }
 
 
 def compile_relational_assertions(
@@ -5318,7 +5846,23 @@ def compile_relational_assertions(
             for term, tokens in allowed_level_tokens.items()
         }
         if _question_leaks_protected_term(question, protected_terms, question_allowed_tokens):
-            reject("protected_locator")
+            # Attribute the leak: if exempting the CONTEXT LITERAL arguments' tokens clears it,
+            # the collision comes solely from an unrecolorable literal (e.g. a lab-function
+            # phrase overlapping a protected organ surface) -- no author, teacher included, can
+            # rephrase around it, so gleaning drops these as dead weight.
+            literal_tokens = frozenset(
+                token
+                for argument in arguments
+                if argument.get("kind") == "context"
+                for token in _meaningful_tokens(str(argument.get("literal") or ""))
+            )
+            literal_only_leak = bool(literal_tokens) and not _question_leaks_protected_term(
+                question, protected_terms,
+                {term: tokens | literal_tokens
+                 for term, tokens in question_allowed_tokens.items()},
+            )
+            reject("protected_locator",
+                   detail={"leak_source": "context_literal"} if literal_only_leak else None)
             continue
         # Only literal/legacy answer golds are teacher-authored text and need this raw-surface
         # leak check. Linked answer golds above are local lattice properties and never enter the
@@ -6590,13 +7134,18 @@ def build_utility_artifact(
     relation_support_escalator: "Callable[..., bool] | None" = None,
     informative_context_judge: "Callable[..., bool] | None" = None,
     context_prefilter: "Callable[[str, Mapping], Sequence[Mapping]] | None" = None,
+    deterministic_relation_stage: bool = False,
+    set_reader: "Callable[[list[str], str], Sequence[str]] | None" = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation.
 
     `relation_support_escalator` (opt-in) recovers opportunity-miner cue-misses without regressing
     the cue-matched set — see relation_support_opportunities' no-regression invariant.
     `informative_context_judge` (opt-in) analogously recovers semantic_property role-cue regex
-    misses: free via relation-opportunity membership, else one judge call on the locator sentence."""
+    misses: free via relation-opportunity membership, else one judge call on the locator sentence.
+    `deterministic_relation_stage` (opt-in) turns mined opportunity pairs into template relation
+    QAs between the primary teacher pass and gleaning (no teacher call), so gleaning only
+    re-authors facts the free deterministic generation could not keep."""
     reader_pin = _validated_build_reader_pin(reader, pins)
     validate_environment = getattr(task_adapter, "validate_environment", None)
     if validate_environment is not None:
@@ -6684,6 +7233,11 @@ def build_utility_artifact(
             "occurrence_ids": list(candidate.get("occurrence_ids") or []),
         }
         candidate_evidence = candidate.get("evidence") or {}
+        # Authorship carries through to the rejection (teacher run vs deterministic pass), so
+        # downstream target routing and failure attribution never have to guess it back.
+        for authorship_key in ("teacher_id", "run_id"):
+            if candidate_evidence.get(authorship_key):
+                evidence[authorship_key] = candidate_evidence[authorship_key]
         competing_answers = candidate_evidence.get("answer_competing")
         if competing_answers:  # carry the ambiguity monitor through to the rejection record
             evidence["answer_competing"] = competing_answers
@@ -6862,6 +7416,7 @@ def build_utility_artifact(
                         option_permutations=option_permutations,
                         stability_threshold=stability_threshold,
                         chain_by_decision=chain_by_decision,
+                        set_reader=set_reader,
                     )
                 except Exception as error:
                     reject_context_candidate(
@@ -7234,6 +7789,179 @@ def build_utility_artifact(
                             ),
                         },
                     ), doc_id=doc_id)
+                # Deterministic relation stage (opt-in): mined opportunity pairs become template
+                # QAs BETWEEN the primary pass and gleaning, so gleaning only re-authors facts the
+                # free deterministic generation could not keep. Span pairs ride the normal compile
+                # path (forward with reverse fallback for singletons, reverse-only for ambiguous
+                # groups); literal pairs ride the literal-reverse builder with the seed widened
+                # from judge-recovered to every accepted opportunity. Answer levels are searched
+                # coarsest->finest, so the first gate pass is the coarsest supported level (the
+                # teacher-prior semantics, without a teacher).
+                stage_kept_relations: list[dict] = []
+                if deterministic_relation_stage:
+                    stage_decisions_by_id = {
+                        str(decision["decision_id"]): decision for decision in decisions
+                    }
+                    occurrence_decision = {
+                        occurrence_id: str(occurrence["decision_id"])
+                        for occurrence_id, occurrence in occurrences.items()
+                        if occurrence.get("decision_id") is not None
+                    }
+                    span_label_by_decision: dict[str, str] = {}
+                    for inventory_row in relation_teacher_span_inventory(environment_document):
+                        inventory_decision = occurrence_decision.get(
+                            str(inventory_row.get("occurrence_id")))
+                        if inventory_decision is not None:
+                            span_label_by_decision.setdefault(
+                                inventory_decision, str(inventory_row.get("span_label")))
+                    stage_kept_fact_keys = set()
+                    for row in accepted:
+                        try:
+                            stage_kept_fact_keys.add(
+                                _compiled_relation_fact_key(row, occurrences))
+                        except ValueError:
+                            pass
+
+                    def _stage_trial(row: dict, *, final: bool) -> list[dict]:
+                        # Intermediate level/direction trials are speculative: their expected
+                        # failures must not flood the rejection channel (or shift gleaning-target
+                        # kinds), so only a plan's FINAL trial may leave rejection records.
+                        checkpoint = len(rejection_records)
+                        kept_rows = validate_candidate_rows([row])
+                        if not kept_rows and not final:
+                            del rejection_records[checkpoint:]
+                        return kept_rows
+
+                    def _stage_keep(row: dict) -> None:
+                        accepted.append(row)
+                        stage_kept_relations.append(row)
+                        try:
+                            stage_kept_fact_keys.add(
+                                _compiled_relation_fact_key(row, occurrences))
+                        except ValueError:
+                            pass
+                        relation_generation_by_document.setdefault(doc_id, []).append({
+                            "relation": row.get("relation"),
+                            "arguments": list(
+                                dict(row.get("evidence") or {}).get("arguments") or []),
+                            "question": row.get("question"),
+                            "accepted_answers": row.get("accepted_values"),
+                            "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+                            "status": "kept", "reason": "accepted",
+                            "teacher_id": "deterministic", "run_id": "deterministic_stage",
+                        })
+
+                    stage_plans = _deterministic_relation_plans(
+                        opportunities, occurrences, stage_decisions_by_id)
+                    for plan in stage_plans:
+                        if plan.get("compound"):
+                            # Ambiguous-group fallbacks, run after the group's per-object flips
+                            # (plan order) and only while some pair is still unkept. Strategy 1:
+                            # set-valued forward (validated probe; single trial, finest-level
+                            # members). Strategy 2: compound span-locator reverse, answer-level
+                            # searched coarsest->finest.
+                            if all(key in stage_kept_fact_keys for key in plan["fact_keys"]):
+                                continue
+                            set_row = _set_forward_row(
+                                source, plan["relation"], plan["subject"], plan["objects"],
+                                occurrences, stage_decisions_by_id)
+                            if set_row is not None:
+                                kept_rows = _stage_trial(set_row, final=False)
+                                if kept_rows:
+                                    _stage_keep(kept_rows[0])
+                                    stage_kept_fact_keys.update(plan["fact_keys"])
+                                    continue
+                            answer_decision = stage_decisions_by_id.get(occurrence_decision.get(
+                                str(plan["subject"].get("occurrence_id")), ""))
+                            stage_levels = _deterministic_answer_levels(answer_decision or {})
+                            for level_index, level in enumerate(stage_levels):
+                                compound_row = _compound_span_reverse_row(
+                                    source, plan["relation"], plan["subject"], plan["objects"],
+                                    occurrences, stage_decisions_by_id, level)
+                                if compound_row is None:
+                                    break
+                                kept_rows = _stage_trial(
+                                    compound_row, final=level_index == len(stage_levels) - 1)
+                                if kept_rows:
+                                    _stage_keep(kept_rows[0])
+                                    stage_kept_fact_keys.update(plan["fact_keys"])
+                                    break
+                            continue
+                        if plan["fact_key"] in stage_kept_fact_keys:
+                            continue
+                        trials = []
+                        for direction in plan["directions"]:
+                            answer_argument = (plan["object"] if direction == "forward"
+                                               else plan["subject"])
+                            answer_decision = stage_decisions_by_id.get(occurrence_decision.get(
+                                str(answer_argument.get("occurrence_id")), ""))
+                            trials.extend(
+                                (direction, level)
+                                for level in _deterministic_answer_levels(answer_decision or {})
+                            )
+                        for trial_index, (direction, level) in enumerate(trials):
+                            final = trial_index == len(trials) - 1
+                            proposal = _deterministic_stage_proposal(
+                                plan, direction, level, occurrences, stage_decisions_by_id,
+                                span_label_by_decision)
+                            if proposal is None:
+                                continue
+                            trial_rows, trial_rejections = task_adapter.compile_relations(
+                                doc_id, source, environment_document, [proposal])
+                            if not trial_rows:
+                                if final:
+                                    for rejection in trial_rejections:
+                                        rejection = dict(rejection)
+                                        rejection["evidence"] = {
+                                            **dict(rejection.get("evidence") or {}),
+                                            "teacher_id": "deterministic",
+                                            "run_id": "deterministic_stage",
+                                        }
+                                        preserve_rejection(rejection, doc_id=doc_id)
+                                continue
+                            trial_row = dict(trial_rows[0])
+                            trial_row["evidence"] = {
+                                **dict(trial_row.get("evidence") or {}),
+                                "teacher_id": "deterministic",
+                                "run_id": "deterministic_stage",
+                            }
+                            kept_rows = _stage_trial(trial_row, final=final)
+                            if kept_rows:
+                                _stage_keep(kept_rows[0])
+                                break
+
+                    stage_literal_groups = _literal_reverse_groups(
+                        opportunities, occurrences, judge_recovered_only=False)
+                    for (stage_relation, stage_decision_id), group in sorted(
+                            stage_literal_groups.items()):
+                        decision = stage_decisions_by_id.get(stage_decision_id)
+                        # drop literals whose (relation, condition, literal) fact is already kept
+                        remaining = {
+                            key: entry for key, entry in group["literals"].items()
+                            if entry.get("fact_key") not in stage_kept_fact_keys
+                        }
+                        if not remaining or decision is None:
+                            continue
+                        trial_group = {**group, "literals": remaining}
+                        stage_levels = _deterministic_answer_levels(decision)
+                        for level_index, level in enumerate(stage_levels):
+                            literal_row = _literal_reverse_row(
+                                source, stage_relation, stage_decision_id, trial_group,
+                                occurrences, level)
+                            literal_row["evidence"] = {
+                                **literal_row["evidence"], "run_id": "deterministic_stage",
+                            }
+                            kept_rows = _stage_trial(
+                                literal_row, final=level_index == len(stage_levels) - 1)
+                            if kept_rows:
+                                _stage_keep(kept_rows[0])
+                                break
+                    if escalation_enabled:
+                        relation_escalation_by_document[doc_id]["deterministic_stage"] = {
+                            "plan_count": len(stage_plans),
+                            "literal_group_count": len(stage_literal_groups),
+                            "kept_count": len(stage_kept_relations),
+                        }
                 if escalation_enabled:
                     escalation = relation_escalation_by_document[doc_id]
                     primary_accepted_relations, _ = merge_kept_relation_rows(
@@ -7251,10 +7979,13 @@ def build_utility_artifact(
                     escalation["primary_kept_counts"] = primary_counts
                     gleaning_targets = _gleaning_targets(
                         source,
-                        primary_accepted_relations,
+                        # Stage keeps count as covered: a fact the deterministic stage already
+                        # kept must not be re-authored by the paid gleaning teacher.
+                        [*primary_accepted_relations, *stage_kept_relations],
                         [r for r in rejection_records if r.get("doc_id") == doc_id],
                         opportunities,
                         occurrences,
+                        reader_threshold=reader_threshold,
                     )
                     escalation["gleaning"] = {
                         "target_count": len(gleaning_targets),
@@ -7488,11 +8219,31 @@ def build_utility_artifact(
                                     "error_code": error_code,
                                 },
                             ), doc_id=doc_id)
+                        # A GLEANING row duplicating a pair fact the stage already covers is
+                        # dropped before the merge (the stage version is gate-kept and free; the
+                        # teacher was told not to re-emit unlisted facts). Only the secondary
+                        # side is filtered -- a primary row overlapping a stage COMPOUND row's
+                        # pair set is legitimate and must stay primary-preferred.
+                        stage_pair_keys = _pair_fact_keys(stage_kept_relations, occurrences)
+                        if stage_pair_keys:
+                            deduped_secondary = []
+                            for row in secondary_accepted:
+                                try:
+                                    duplicate = _compiled_relation_fact_key(
+                                        row, occurrences) in stage_pair_keys
+                                except ValueError:
+                                    duplicate = False
+                                if not duplicate:
+                                    deduped_secondary.append(row)
+                            secondary_accepted = deduped_secondary
                         merged_relations, disposition = merge_kept_relation_rows(
                             primary_accepted_relations, secondary_accepted, occurrences,
                         )
                         escalation["gleaning"]["returned_count"] = len(secondary_accepted)
-                        accepted = pre_teacher_accepted + merged_relations
+                        # Deterministic-stage keeps REJOIN the rebuilt kept set: they are neither
+                        # primary nor secondary rows, and compound stage rows (>2 args) cannot
+                        # ride merge_kept_relation_rows.
+                        accepted = pre_teacher_accepted + stage_kept_relations + merged_relations
                         contextual_relation_count = sum(
                             row.get("family") == "context"
                             and row.get("subtype") == "contextual_relation"
@@ -7638,10 +8389,14 @@ def build_utility_artifact(
         # Deterministic literal->span reverse assertions: judge-accepted span_literal opportunities
         # (recall widened by the LLM prefilter when enabled) become condition-answer QAs whose locator
         # is the literal object(s). Additive, gated by the same reader; the condition answer is
-        # controlled so the placeholder render hides it. No teacher call.
-        literal_reverse_rows = _literal_reverse_assertions(
-            source, opportunities, occurrences,
-            {str(decision["decision_id"]): decision for decision in decisions},
+        # controlled so the placeholder render hides it. No teacher call. When the deterministic
+        # stage ran, it already emitted these from the WIDER all-accepted seed (with answer-level
+        # search), so the narrow pass is skipped to avoid duplicating kept rows.
+        literal_reverse_rows = (
+            [] if deterministic_relation_stage else _literal_reverse_assertions(
+                source, opportunities, occurrences,
+                {str(decision["decision_id"]): decision for decision in decisions},
+            )
         )
         if literal_reverse_rows:
             for r in validate_candidate_rows(literal_reverse_rows):
@@ -7655,14 +8410,34 @@ def build_utility_artifact(
                     "status": "kept", "reason": "accepted",
                     "teacher_id": "deterministic", "run_id": "literal_reverse",
                 })
+        doc_rejections = [row for row in rejection_records if row.get("doc_id") == doc_id]
         coverage_targets = _gleaning_targets(
             source,
             [row for row in accepted
              if row.get("family") == "context" and row.get("subtype") == "contextual_relation"],
-            [row for row in rejection_records if row.get("doc_id") == doc_id],
+            doc_rejections,
             opportunities,
             occurrences,
+            reader_threshold=reader_threshold,
         )
+        # Rejections the reader-outcome router excluded from repair, surfaced for their real
+        # owners: lattice_suspect -> a lattice_profiles data fix; no_relation -> reader-verified
+        # miner co-occurrence junk (kept for miner-precision analysis, never re-authored).
+        routed_out: dict[str, list[dict]] = {}
+        for row in doc_rejections:
+            route = _reader_outcome_route(row, reader_threshold)
+            if route is None:
+                continue
+            evidence = row.get("evidence") or {}
+            scores = (evidence.get("validation") or {}).get("scores") or {}
+            routed_out.setdefault(route, []).append({
+                "relation": row.get("relation"),
+                "detail_reason": row.get("detail_reason"),
+                "run_id": evidence.get("run_id"),
+                "scores": {key: scores.get(key) for key in
+                           ("original", "representative", "placeholder")},
+                "rejection_id": row.get("rejection_id"),
+            })
         relation_coverage_by_document[doc_id] = {
             "opportunity_count": len(opportunities),
             "unresolved_targets": [
@@ -7676,6 +8451,7 @@ def build_utility_artifact(
                 }
                 for row in coverage_targets
             ],
+            **({"reader_routed_out": routed_out} if routed_out else {}),
         }
         candidates_by_document[doc_id] = accepted
 
@@ -8198,6 +8974,32 @@ def _context_answer_score(
         if not chain:
             return 0.0
         return _linked_answer_score(answer, chain, str(target.get("required_property", "")))
+    if target.get("kind") == "linked_decision_set":
+        # Set-valued QA (validated: scripts/spikes/set_valued_gate_probe.py): the reader answers
+        # with a JSON array; the score is one-to-one per-member recall (each prediction matches at
+        # most one member via the linked scorer). At the production threshold 1.0 the three-point
+        # gate then requires EVERY member readable on orig and rep, and at least one member hidden
+        # on placeholder. Extra predictions (e.g. uncontrolled literals) are ignored: literals are
+        # pre-excluded from privacy scoring by construction.
+        predictions = _parse_llm_json_array(answer)
+        members = list(target.get("members") or [])
+        if not members:
+            return 0.0
+        used = [False] * len(predictions)
+        hits = 0
+        for member in members:
+            chain = chain_by_decision.get(str(member.get("decision_id")))
+            if not chain:
+                continue
+            for index, prediction in enumerate(predictions):
+                if used[index]:
+                    continue
+                if _linked_answer_score(
+                        prediction, chain, str(member.get("required_property", ""))) >= 1.0:
+                    used[index] = True
+                    hits += 1
+                    break
+        return hits / len(members)
     if target.get("kind") == "literal":
         return _answer_score(answer, list(target.get("expected_values") or []))
     return _answer_score(answer, list(row.get("accepted_values") or []))
@@ -8236,8 +9038,12 @@ def validate_context_assertions(
     option_permutations: int = 1,
     stability_threshold: float = 1.0,
     chain_by_decision: Mapping[str, Sequence[Mapping]] | None = None,
+    set_reader: Callable[[list[str], str], Sequence[str]] | None = None,
 ) -> tuple[list[dict], dict[str, dict]]:
-    """Apply frozen repeated original/generalization/placeholder reader checks."""
+    """Apply frozen repeated original/generalization/placeholder reader checks.
+
+    `set_reader` answers linked_decision_set rows (JSON-array response contract); without it a
+    set row falls back to the span reader, whose reply cannot parse as an array -> rejected."""
     chain_by_decision = chain_by_decision or {}
     rows = [row for row in assertions if row.get("family") == "context"]
     if stability_repetitions < 1 or option_permutations < 1:
@@ -8260,9 +9066,15 @@ def validate_context_assertions(
                 rx = _reader_excerpt(representative_context, reader_evidence)
                 px = _reader_excerpt(placeholder_context, reader_evidence)
                 debug_excerpts[id(row)] = (question, ox, rx, px)
-                original_answers += reader([question], ox)
-                representative_answers += reader([question], rx)
-                placeholder_answers += reader([question], px)
+                row_reader = (
+                    set_reader
+                    if set_reader is not None
+                    and (row.get("answer_target") or {}).get("kind") == "linked_decision_set"
+                    else reader
+                )
+                original_answers += row_reader([question], ox)
+                representative_answers += row_reader([question], rx)
+                placeholder_answers += row_reader([question], px)
             if not all(len(answers) == len(rows) for answers in (
                 original_answers, representative_answers, placeholder_answers
             )):
@@ -8392,6 +9204,7 @@ def score_utility(
     doc_p: str,
     out_final: str,
     reader: Callable[[list[str], str], Sequence[str]],
+    set_reader: Callable[[list[str], str], Sequence[str]] | None = None,
 ) -> dict:
     """Score one document with one context-reader batch and deterministic delivered checks."""
     _validated_build_reader_pin(reader, artifact)
@@ -8408,7 +9221,13 @@ def score_utility(
     for row in context_rows:
         question = _permuted_reader_question(row, 0)
         reader_evidence = row.get("evidence") or {}
-        context_answers += reader(
+        row_reader = (
+            set_reader
+            if set_reader is not None
+            and (row.get("answer_target") or {}).get("kind") == "linked_decision_set"
+            else reader
+        )
+        context_answers += row_reader(
             [question], _reader_excerpt(doc_p, reader_evidence)
         )
     if len(context_answers) != len(context_rows):

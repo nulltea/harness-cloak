@@ -1024,7 +1024,7 @@ def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
 
     calls = []
 
-    def fake_score(artifact, doc_id, *, doc_p, out_final, reader):
+    def fake_score(artifact, doc_id, *, doc_p, out_final, reader, set_reader=None):
         calls.append((artifact, doc_id, doc_p, out_final, reader))
         return {"component_scores": {"c1": 0.75}, "utility": 0.75}
 

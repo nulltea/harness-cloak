@@ -16,7 +16,7 @@ import os
 
 from cloak.extract import invert
 from cloak.tasks import SCHEMA_TEMPLATE, TASK_TEMPLATE
-from cloak.train.qa_builder import read_context_batch, score_utility
+from cloak.train.qa_builder import read_context_batch, read_context_set_batch, score_utility
 from cloak.train.ladder_probes import entail_score, mc_shuffle
 from cloak.train.reward import (_max_by_fact, _read_batch, _read_mc_batch, canon,
                                 decision_prompt, fact_f1s, fact_score, mc_score,
@@ -181,6 +181,7 @@ def roundtrip_batch(
                 doc_p=j["doc_p"],
                 out_final=out_final,
                 reader=read_context_batch,
+                set_reader=read_context_set_batch,
             )
             result = {
                 "out_p": op,
