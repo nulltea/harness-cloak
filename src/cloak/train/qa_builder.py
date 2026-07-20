@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import bisect
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -500,6 +501,7 @@ class OpenRouterRelationTeacher:
         generation_config: Mapping | None = None,
         prompt_version: str = RELATION_TEACHER_PROMPT_VERSION,
         revision: str = RELATION_TEACHER_REVISION,
+        include_reasoning: bool = False,
     ):
         from cloak.llm import LLMClient
 
@@ -515,6 +517,12 @@ class OpenRouterRelationTeacher:
         self._generation_config = deepcopy(
             RELATION_TEACHER_GENERATION_CONFIG if generation_config is None else generation_config
         )
+        # Diagnostic only: have OpenRouter return the reasoning trace (for prompt A/B tweaking). The
+        # `exclude` flag changes only whether the trace is echoed, not the generated content -- but it
+        # is part of extra_body/the cache key, so enable it ONLY on a teacher whose prompt already
+        # differs (e.g. the gleaning pass), never the primary, to avoid busting the primary cache.
+        if include_reasoning:
+            self._generation_config = {**self._generation_config, "reasoning": {"exclude": False}}
         self._prompt_version = str(prompt_version)
         self._revision = str(revision)
         provider_config = {"allow_fallbacks": self._allow_fallbacks}
@@ -1262,10 +1270,13 @@ class AciTaskAdapter:
         document: str,
         environment_document: Mapping,
         proposals: Sequence[Mapping],
+        *,
+        reverse_framing_only: bool = False,
     ) -> tuple[list[dict], list[dict]]:
         return compile_relational_assertions(
             doc_id, document, environment_document, proposals,
             relation_contract=self.relation_contract,
+            reverse_framing_only=reverse_framing_only,
         )
 
 
@@ -1924,6 +1935,22 @@ def _placeholder_meaning_tokens(runtime_type: str) -> set[str]:
     }
 
 
+def _answer_leak_tokens(
+    question: str,
+    answer: str,
+    runtime_type: str | Sequence[str],
+    *,
+    extra_exempt_tokens: Sequence[str] = (),
+) -> set[str]:
+    """The discriminative answer tokens that also appear in the question (the actual leak)."""
+    types = [runtime_type] if isinstance(runtime_type, str) else list(runtime_type)
+    exempt = set(extra_exempt_tokens)
+    for type_value in types:
+        exempt |= _placeholder_meaning_tokens(type_value)
+    answer_tokens = _meaningful_tokens(answer) - exempt
+    return answer_tokens & _meaningful_tokens(question)
+
+
 def _question_leaks_answer(
     question: str,
     answer: str,
@@ -1931,12 +1958,8 @@ def _question_leaks_answer(
     *,
     extra_exempt_tokens: Sequence[str] = (),
 ) -> bool:
-    types = [runtime_type] if isinstance(runtime_type, str) else list(runtime_type)
-    exempt = set(extra_exempt_tokens)
-    for type_value in types:
-        exempt |= _placeholder_meaning_tokens(type_value)
-    answer_tokens = _meaningful_tokens(answer) - exempt
-    return bool(answer_tokens & _meaningful_tokens(question))
+    return bool(_answer_leak_tokens(
+        question, answer, runtime_type, extra_exempt_tokens=extra_exempt_tokens))
 
 
 def _ordered_decision_levels(decision: Mapping) -> list[str]:
@@ -2683,7 +2706,16 @@ def _source_literal_spans(document: str, literal: str) -> list[tuple[int, int]]:
             "[" + _LITERAL_DASH_CHARS + "]" if ch in _LITERAL_DASH_CHARS else re.escape(ch)
             for ch in token
         )
-    core = r"\s+".join(_escape_token(token) for token in tokens)
+    escaped = [_escape_token(token) for token in tokens]
+    # Plural fold on the FINAL token only, matched-extent-inclusive and symmetric: strip one trailing
+    # "s" to a stem, then allow an optional "s". So a singular literal ("x-ray", "aldosterone level")
+    # matches a plural source ("x-rays", "levels") and vice versa, and the matched span still indexes
+    # the real source substring (grounding stays exact). ponytail: single trailing "s" only -- covers
+    # the observed x-ray/level/lab cases; "es"/"ies" plurals are rare here and left out.
+    last = tokens[-1]
+    stem = last[:-1] if len(last) > 1 and last[-1].lower() == "s" else last
+    escaped[-1] = _escape_token(stem) + "s?"
+    core = r"\s+".join(escaped)
     # (?<!\w)/(?!\w) are token-boundary guards that, unlike \b, still match when the literal's
     # first/last char is non-word ("(MRI)", "C++") -- \b there fails to find an exact source
     # occurrence, a grounding regression from the prior exact-substring lookup.
@@ -4210,7 +4242,9 @@ def _gleaning_targets(
     """Compute the gleaning+repair target set from the primary pass (diagnostic/planning only).
 
     Targets, deduplicated by decision-level fact key with priority ambiguous > fixable > missed:
-      * ambiguous  -- a kept OR rejected relation with a co-valid same-type answer in scope;
+      * ambiguous  -- a REJECTED relation with a co-valid same-type answer in scope (a KEPT relation
+                      already answered uniquely at the reader gate, and its multi-answer coverage is
+                      handled deterministically by reverse-framing -- so it is never re-authored);
       * fixable    -- a rejection whose reason is in the FIXABLE taxonomy;
       * missed     -- a source-supported opportunity the teacher never proposed.
     `kept_relations`/`rejections` must carry `evidence.arguments` (compiled form). Conservative:
@@ -4272,8 +4306,10 @@ def _gleaning_targets(
             return
         targets[key] = {"fact_key": key, "kind": kind, **extra}
 
-    # ambiguous: any kept or rejected relation with a co-valid same-type answer in the subject's block
-    for row in [*kept_relations, *rejections]:
+    # ambiguous: a REJECTED relation with a co-valid same-type answer in the subject's block. Kept
+    # relations are excluded -- they already answered uniquely, so re-authoring them wastes a teacher
+    # call and re-emits the same fact; their multi-answer siblings are recovered by reverse-framing.
+    for row in rejections:
         competing = list((row.get("evidence") or {}).get("answer_competing") or [])
         if not competing:
             subject, answer, target = _subject_and_answer(row)
@@ -4532,6 +4568,86 @@ def _answer_competing_surfaces(
     return sorted(competing.values())
 
 
+# Deterministic reverse-orientation question templates (condition-subject relations only). The
+# locator is the object's generalized level; the answer is the subject condition's level, asked with
+# a generic answer-type word ("medical condition") so it never leaks. Mirrors the context-literal
+# reverse questions the teacher already authors.
+_REVERSE_FRAME_TEMPLATES = {
+    "prescribed_with": "For what medical condition was the {locator} prescribed?",
+    "tests_for": "For what medical condition was the {locator} ordered?",
+    "procedure_for": "For what medical condition was the {locator} performed?",
+}
+
+
+def _reverse_framed_proposals(
+    proposals: Sequence[Mapping],
+    span_labels: Mapping[str, str],
+    occurrences: Mapping[str, Mapping],
+) -> list[dict]:
+    """Additive reverse-orientation QAs that recover ambiguity losses without touching the teacher.
+
+    A forward relation "Which <type> for the <subject>?" with >=2 same-type objects for one subject
+    is unanswerable. When an object is tied to EXACTLY ONE subject in the doc (reverse-unique), emit
+    a reverse QA: the object is the question locator, the subject is the answer (answer_role=subject)
+    -- the same directional fact, uniquely answerable. Roles are PRESERVED (subject stays the
+    condition, object stays the treatment), so the argument-type contract still holds and
+    answer-type/leakage/anchor logic stay correct. Never replaces a forward proposal; the reader gate
+    keeps whichever is answerable. Deterministic: no teacher call, no model judgment of uniqueness."""
+    def linked_decision(arg: Mapping) -> str | None:
+        occ_id = arg.get("occurrence_id") or span_labels.get(str(arg.get("span_label")))
+        occ = occurrences.get(str(occ_id))
+        return str(occ["decision_id"]) if occ and occ.get("decision_id") is not None else None
+
+    def obj_identity(arg: Mapping) -> tuple | None:
+        if arg.get("kind") == "context":
+            lit = canon(str(arg.get("literal", "")))
+            return ("lit", lit) if lit else None
+        dec = linked_decision(arg)
+        return ("dec", dec) if dec else None
+
+    forwards: list = []
+    fwd_objs: dict[tuple, set] = {}
+    for p in proposals:
+        rel = str(p.get("relation", ""))
+        if rel not in _REVERSE_FRAME_TEMPLATES or str(p.get("answer_role", "object")) == "subject":
+            continue
+        args = p.get("arguments") or []
+        subj = next((a for a in args if a.get("role") == "subject"), None)
+        obj = next((a for a in args if a.get("role") == "object"), None)
+        if subj is None or obj is None or subj.get("kind") != "linked":
+            continue  # subject must be a linked condition to be a valid answer
+        subj_dec, obj_id = linked_decision(subj), obj_identity(obj)
+        if subj_dec is None or obj_id is None:
+            continue
+        forwards.append((p, rel, subj_dec, obj_id, subj, obj))
+        fwd_objs.setdefault((rel, subj_dec), set()).add(obj_id)
+
+    variants, seen = [], set()
+    for p, rel, subj_dec, obj_id, subj, obj in forwards:
+        if len(fwd_objs[(rel, subj_dec)]) < 2:
+            continue  # only ambiguous groups (>=2 objects for the subject); flip EVERY object and
+            # let the reader keep the ones a source-supported single subject makes answerable.
+        if obj_id == ("dec", subj_dec):
+            continue  # self-pair: the object resolves to the SAME decision as the subject
+        key = (rel, subj_dec, obj_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        subj_level = subj.get("support_property")
+        obj_level = obj.get("support_property") or obj.get("literal")
+        if not subj_level or not obj_level:
+            continue
+        variant = dict(p)
+        variant["arguments"] = [dict(subj), dict(obj)]  # order [subject, object] preserved
+        variant["answer_role"] = "subject"
+        variant["accepted_answers"] = [str(subj_level)]
+        variant["question"] = _REVERSE_FRAME_TEMPLATES[rel].format(locator=str(obj_level))
+        variant["scoring_contract"] = {"kind": "semantic_qa", "match": "fact_score"}
+        variant["_reverse_framed"] = True
+        variants.append(variant)
+    return variants
+
+
 def compile_relational_assertions(
     doc_id: str,
     document: str,
@@ -4540,8 +4656,13 @@ def compile_relational_assertions(
     *,
     relation_contract: Mapping[str, Mapping] = ACI_RELATION_CONTRACT,
     context_candidates: Sequence[Mapping] | None = None,
+    reverse_framing_only: bool = False,
 ) -> tuple[list[dict], list[dict]]:
-    """Compile bounded teacher proposals into frozen, evidence-checked assertions."""
+    """Compile bounded teacher proposals into frozen, evidence-checked assertions.
+
+    `reverse_framing_only=True` compiles ONLY the deterministic reverse-orientation ambiguity
+    variants derived from `proposals` (the doc-global ambiguity pass passes primary+gleaning
+    combined here, so {objects} is complete); the forward proposals themselves are not re-compiled."""
     occurrences = {
         str(row["occurrence_id"]): row
         for row in environment_document.get("occurrences", [])
@@ -4599,11 +4720,16 @@ def compile_relational_assertions(
 
     accepted, rejected = [], []
     fact_groups = set()
-    for index, proposal_value in enumerate(proposals):
+    # Normal mode compiles the forward proposals as given. reverse_framing_only compiles ONLY the
+    # reverse-orientation variants derived from `proposals` (deterministic, roles preserved) -- run
+    # as a separate doc-global pass so it can't perturb the forward passes' fact-group dedup.
+    active_proposals = (_reverse_framed_proposals(proposals, span_labels, occurrences)
+                        if reverse_framing_only else list(proposals))
+    for index, proposal_value in enumerate(active_proposals):
         proposal = dict(proposal_value)
         proposal_hash = _stable_hash(proposal)
 
-        def reject(reason: str) -> None:
+        def reject(reason: str, detail: Mapping | None = None) -> None:
             quote, quote_span, _ = proposal_evidence(proposal)
             evidence = {
                 "source": "relation_teacher",
@@ -4622,6 +4748,8 @@ def compile_relational_assertions(
                 evidence["answer_competing"] = competing_answers
             if grounded_arguments:  # compiled arg identity, so gleaning can key/repair the reject
                 evidence["arguments"] = _rejection_safe_arguments(grounded_arguments)
+            if detail:  # reason-specific diagnostics (e.g. the leaking token + answer level)
+                evidence.update(detail)
             record = _rejection_record(
                 reason=_stable_rejection_reason(reason),
                 detail_reason=reason,
@@ -4858,19 +4986,29 @@ def compile_relational_assertions(
         # placeholder contract (for example, "medication" in a question whose
         # canonical linked answer is "thyroid medication"). Every remaining
         # overlap is discriminative and still triggers the strict repair.
-        if any(_question_leaks_answer(
-                question,
-                answer,
-                answer_exempt_types,
-                extra_exempt_tokens=_meaningful_tokens(answer_type_hint or ""),
-        )
-               for answer in accepted_values):
+        leak_exempt = _meaningful_tokens(answer_type_hint or "")
+        # Reverse-orientation question (answer=subject): the locator (the object named in the
+        # question, e.g. "thyroid panel") is the GIVEN premise, not the answer -- its tokens must
+        # not count as answer-leakage, else the repair strips them ("thyroid panel" -> "panel").
+        if answer_role == "subject":
+            locator_argument = arguments[1]
+            locator_text = str(locator_argument.get("support_property")
+                               or locator_argument.get("literal") or "")
+            leak_exempt = leak_exempt | _meaningful_tokens(locator_text)
+        leaking_tokens: set[str] = set()
+        for answer in accepted_values:
+            leaking_tokens |= _answer_leak_tokens(
+                question, answer, answer_exempt_types, extra_exempt_tokens=leak_exempt)
+        if leaking_tokens:
             repaired = _repair_leaked_relation(
                 question, accepted_values, arguments, answer_role,
                 answer_exempt_types, decisions, occurrences,
             ) if uses_v4_arguments else None
             if repaired is None:
-                reject("answer_leakage")
+                reject("answer_leakage", detail={
+                    "leaking_tokens": sorted(leaking_tokens),
+                    "answer_levels": [str(value) for value in accepted_values],
+                })
                 continue
             # Recolored to a legal level that clears the lexical collision; the
             # linked answer target and support are rebuilt from the new levels.
@@ -6027,7 +6165,9 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
                 "literal_will_be_substituted", "compile", "data_lattice", "warn", {}))
         elif reason == "answer_leakage":
             flags[doc_id].append(_review_flag(
-                "unrepaired_answer_leakage", "compile", "ontology_review", "warn", {}))
+                "unrepaired_answer_leakage", "compile", "ontology_review", "warn",
+                {"leaking_tokens": evidence.get("leaking_tokens"),
+                 "answer_levels": evidence.get("answer_levels")}))
         elif reason == "placeholder_answerable":
             flags[doc_id].append(_review_flag(
                 "placeholder_answerable", "gate", "ontology_review", "info", {}))
@@ -7114,6 +7254,100 @@ def build_utility_artifact(
                 attempt={"doc_id": doc_id, "definition_version": "contextual-relation-v4"},
                 evidence={"source": "relation_teacher", "teacher_configured": False},
             ), doc_id=doc_id)
+        # Source 1: doc-global reverse-orientation ambiguity recovery. Over ALL forward attempts for
+        # the doc (primary + gleaning combined), flip every object in an ambiguous (relation, subject)
+        # group and gate the reverse QAs in an ISOLATED pass -- additive (cannot perturb the forward
+        # fact-group dedup) and doc-global (sees the full {objects} set, unlike the per-pass path).
+        # Only flip forwards that actually GROUNDED (kept, or reader-gate reasons = reached the
+        # reader). A forward rejected at grounding/type would only regenerate the same failure in
+        # reverse, cluttering the rejection channel with junk.
+        _GROUNDED_REASONS = {"three_point_gate_failed", "unstable", "placeholder_answerable",
+                             "answer_leakage", "duplicate_fact_group"}
+        doc_attempts = [att for att in (relation_generation_by_document.get(doc_id) or [])
+                        if att.get("status") == "kept" or att.get("reason") in _GROUNDED_REASONS]
+        _adapter_supports_reverse = hasattr(task_adapter, "compile_relations") and (
+            "reverse_framing_only" in inspect.signature(task_adapter.compile_relations).parameters)
+        if relation_teacher is not None and doc_attempts and _adapter_supports_reverse:
+            # Source 2: also seed {objects} with JUDGE-ACCEPTED opportunities (recovered_by_escalation)
+            # -- source-supported objects the teacher never proposed forward. Treated as forward
+            # (answer=object) so the flip generates object->subject. Opportunity args carry only
+            # occurrence_id; stamp each linked arg with its decision's inventory span_label so the
+            # variant takes the v4 anchor path (like teacher proposals) instead of the legacy
+            # evidence path (which needs an evidence_quote opportunities lack -> invalid_evidence).
+            _inv = relation_teacher_span_inventory(environment_document)
+            _occ2dec = {str(o.get("occurrence_id")): o.get("decision_id")
+                        for o in environment_document.get("occurrences", [])}
+            _dec2label: dict = {}
+            for _row in _inv:
+                _dec = _occ2dec.get(str(_row.get("occurrence_id")))
+                if _dec is not None:
+                    _dec2label.setdefault(_dec, _row.get("span_label"))
+
+            def _stamp_span_label(arg):
+                if arg.get("kind") != "linked" or arg.get("span_label"):
+                    return arg
+                label = _dec2label.get(_occ2dec.get(str(arg.get("occurrence_id"))))
+                return {**arg, "span_label": label} if label else arg
+
+            def _typed_opp(o):
+                # keep only opportunities whose arguments satisfy the relation's arg-type contract
+                # (subject=condition, object=treatment/test); drops condition->condition, finding-
+                # or reagent-object opportunities that would else generate invalid_argument_types.
+                args = o.get("arguments") or []
+                subj = next((a for a in args if a.get("role") == "subject"), None)
+                obj = next((a for a in args if a.get("role") == "object"), None)
+                if subj is None or obj is None:
+                    return None
+                if not _relation_arguments_are_legal(o["relation"], [subj, obj], ACI_RELATION_CONTRACT):
+                    return None
+                return {"relation": o["relation"],
+                        "arguments": [_stamp_span_label(subj), _stamp_span_label(obj)]}
+
+            judge_opps = [
+                opp for o in opportunities
+                if o.get("recovered_by_escalation") and o.get("relation") in _REVERSE_FRAME_TEMPLATES
+                and (opp := _typed_opp(o)) is not None
+            ]
+            reverse_inputs = [*doc_attempts, *judge_opps]
+            rev_candidates, rev_compile_rej = task_adapter.compile_relations(
+                doc_id, source, environment_document, reverse_inputs, reverse_framing_only=True,
+            )
+            for rejection in rev_compile_rej:
+                rejection = dict(rejection)
+                rejection["evidence"] = {**dict(rejection.get("evidence") or {}),
+                                         "teacher_id": "deterministic", "run_id": "reverse_framing"}
+                preserve_rejection(rejection, doc_id=doc_id)
+            if rev_candidates:
+                kept_keys = set()
+                for row in accepted:
+                    try:
+                        kept_keys.add(_compiled_relation_fact_key(row, occurrences))
+                    except ValueError:
+                        pass
+                # Skip a reverse whose fact is already kept forward BEFORE gating -- it is redundant,
+                # and gating it only wastes reader calls and pollutes the rejection channel.
+                rev_rows = []
+                for r in rev_candidates:
+                    try:
+                        if _compiled_relation_fact_key(r, occurrences) in kept_keys:
+                            continue
+                    except ValueError:
+                        pass
+                    row = dict(r)
+                    row["evidence"] = {**dict(row.get("evidence") or {}),
+                                       "teacher_id": "deterministic", "run_id": "reverse_framing"}
+                    rev_rows.append(row)
+                for r in validate_candidate_rows(rev_rows):
+                    accepted.append(r)
+                    relation_generation_by_document.setdefault(doc_id, []).append({
+                        "relation": r.get("relation"),
+                        "arguments": list(dict(r.get("evidence") or {}).get("arguments") or []),
+                        "question": r.get("question"),
+                        "accepted_answers": r.get("accepted_values"),
+                        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+                        "status": "kept", "reason": "accepted",
+                        "teacher_id": "deterministic", "run_id": "reverse_framing",
+                    })
         coverage_targets = _gleaning_targets(
             source,
             [row for row in accepted
@@ -7612,6 +7846,25 @@ def _turn_excerpt(
     return "\n".join(parts)
 
 
+def _gate_debug(exc, orig_ans, rep_ans, ph_ans, scores) -> None:
+    """Dev-only dump of what the reader saw + answered per render, for gate debugging. OFF unless
+    $CLOAK_GATE_DEBUG_DIR is set; filtered to reverse-orientation questions to keep output tiny."""
+    out_dir = os.getenv("CLOAK_GATE_DEBUG_DIR")
+    if not out_dir or not exc:
+        return
+    question, ox, rx, px = exc
+    if not question.startswith("For what medical condition was the"):
+        return
+    os.makedirs(out_dir, exist_ok=True)
+    key = _stable_hash(question + ox).split(":")[-1][:16]
+    with open(os.path.join(out_dir, key + ".json"), "w") as f:
+        json.dump({"question": question, "scores": scores,
+                   "original": {"excerpt": ox, "answer": list(orig_ans)},
+                   "representative": {"excerpt": rx, "answer": list(rep_ans)},
+                   "placeholder": {"excerpt": px, "answer": list(ph_ans)}},
+                  f, ensure_ascii=False, indent=1)
+
+
 def _reader_excerpt(context: str, evidence: Mapping) -> str:
     """Render an assertion's pinned reader evidence, preserving old artifacts."""
     turns = evidence.get("reader_turns") or []
@@ -7692,15 +7945,17 @@ def validate_context_assertions(
             # arguments/evidence (same turn indices across all three renders),
             # not the whole note.
             original_answers, representative_answers, placeholder_answers = [], [], []
+            debug_excerpts: dict[int, tuple] = {}
             for row in rows:
                 question = _permuted_reader_question(row, permutation_index)
                 reader_evidence = row.get("evidence") or {}
-                original_answers += reader([question], _reader_excerpt(
-                    original_context, reader_evidence))
-                representative_answers += reader([question], _reader_excerpt(
-                    representative_context, reader_evidence))
-                placeholder_answers += reader([question], _reader_excerpt(
-                    placeholder_context, reader_evidence))
+                ox = _reader_excerpt(original_context, reader_evidence)
+                rx = _reader_excerpt(representative_context, reader_evidence)
+                px = _reader_excerpt(placeholder_context, reader_evidence)
+                debug_excerpts[id(row)] = (question, ox, rx, px)
+                original_answers += reader([question], ox)
+                representative_answers += reader([question], rx)
+                placeholder_answers += reader([question], px)
             if not all(len(answers) == len(rows) for answers in (
                 original_answers, representative_answers, placeholder_answers
             )):
@@ -7713,6 +7968,7 @@ def validate_context_assertions(
                     "representative": _context_answer_score(row, representative, chain_by_decision),
                     "placeholder": _context_answer_score(row, placeholder, chain_by_decision),
                 }
+                _gate_debug(debug_excerpts.get(id(row)), original, representative, placeholder, scores)
                 assertion_id = str(row.get("assertion_id") or _stable_hash(dict(row)))
                 trials_by_assertion[assertion_id].append({
                     "repetition": repetition,

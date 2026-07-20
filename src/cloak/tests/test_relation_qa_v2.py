@@ -470,6 +470,77 @@ def test_linked_relation_gold_is_derived_from_selected_property():
     assert accepted[0]["decision_requirements"] == {"d-condition": "endocrine condition", "d-drug": "thyroid medication"}
 
 
+def test_span_span_relation_flips_orientation_answer_is_subject():
+    # Ambiguity flip (phase 1): two linked spans, answer_role=subject -> the DRUG is the question
+    # locator and the CONDITION is the answer, so "which condition is <drug> for?" is unique even
+    # when the condition has several drugs. Same directional fact; only QA orientation changes.
+    source = "Hypothyroidism is treated with Synthroid."
+    proposal = {
+        "relation": "prescribed_with",
+        "answer_role": "subject",
+        "arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "condition",
+             "support_property": "endocrine condition"},
+            {"role": "object", "kind": "linked", "occurrence_id": "drug",
+             "support_property": "thyroid medication"},
+        ],
+        "question": "What medical condition was the thyroid medication prescribed for?",
+        "accepted_answers": ["endocrine condition"],
+        "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+        "evidence_quote": source,
+    }
+    accepted, rejected = compile_relational_assertions("d2", source, _environment(source), [proposal])
+
+    assert rejected == [], rejected
+    assert accepted[0]["accepted_values"] == ["endocrine condition"]          # subject is the answer
+    assert accepted[0]["answer_target"]["decision_id"] == "d-condition"        # target = subject decision
+    assert accepted[0]["answer_target"]["required_property"] == "endocrine condition"
+
+
+def test_source_literal_spans_plural_fold():
+    S = qa_builder._source_literal_spans
+    doc = "reviewed the x-rays and ordered morning aldosterone levels today"
+    assert [doc[a:b] for a, b in S(doc, "x-ray")] == ["x-rays"]                 # singular -> plural source
+    assert [doc[a:b] for a, b in S(doc, "aldosterone level")] == ["aldosterone levels"]
+    doc2 = "ordered an x-ray today"
+    assert [doc2[a:b] for a, b in S(doc2, "x-rays")] == ["x-ray"]  # plural literal -> singular source
+    assert S("went into labor", "lab") == []                                    # boundary: no over-match
+
+
+def test_reverse_framed_proposals_only_ambiguous_and_reverse_unique():
+    occurrences = {
+        "oc": {"occurrence_id": "oc", "decision_id": "d-cond"},
+        "oa": {"occurrence_id": "oa", "decision_id": "d-a"},
+        "ob": {"occurrence_id": "ob", "decision_id": "d-b"},
+        "oc2": {"occurrence_id": "oc2", "decision_id": "d-cond2"},
+        "os": {"occurrence_id": "os", "decision_id": "d-shared"},
+    }
+    span_labels = {"S1": "oc", "S2": "oa", "S3": "ob", "S4": "oc2", "S5": "os"}
+
+    def rel(subj, obj, sp_o):
+        return {"relation": "prescribed_with", "arguments": [
+            {"role": "subject", "kind": "linked", "span_label": subj, "support_property": "heart disease"},
+            {"role": "object", "kind": "linked", "span_label": obj, "support_property": sp_o}]}
+
+    proposals = [
+        rel("S1", "S2", "loop diuretic"),      # heart disease -> three drugs = ambiguous group;
+        rel("S1", "S3", "ace inhibitor"),      # flip EVERY object in the group (reader filters),
+        rel("S1", "S5", "shared drug"),        # including the shared one
+        rel("S4", "S5", "shared drug"),        # S4 has a single object -> NOT ambiguous -> no flip
+    ]
+    variants = qa_builder._reverse_framed_proposals(proposals, span_labels, occurrences)
+    qs = {v["question"] for v in variants}
+    assert qs == {
+        "For what medical condition was the loop diuretic prescribed?",
+        "For what medical condition was the ace inhibitor prescribed?",
+        "For what medical condition was the shared drug prescribed?",
+    }  # all 3 objects of the ambiguous subject S1; nothing for single-object S4
+    for v in variants:
+        assert v["answer_role"] == "subject"
+        assert v["accepted_answers"] == ["heart disease"]
+        assert v["_reverse_framed"] is True
+
+
 def test_procedure_for_rejects_drug_and_context_argument_stays_unlinked():
     source = "Hypothyroidism is treated with Synthroid. Arthritis was referred to physical therapy."
     environment = _environment(source)
@@ -2505,6 +2576,29 @@ def test_gleaning_targets_classifies_by_taxonomy():
     assert amb["competing"] == ["ultrasound"] and "uniquely" in amb["hint"].lower()
     fx = next(t for t in targets if t["kind"] == "fixable")
     assert fx["reason"] == "invalid_evidence" and "anchor" in fx["hint"].lower()
+
+
+def test_gleaning_targets_excludes_kept_relations_from_ambiguous():
+    # A kept relation already answered uniquely at the reader gate; its multi-answer coverage is
+    # handled deterministically by reverse-framing, so it must NEVER be handed back as an ambiguous
+    # gleaning target (which would re-author an already-kept fact).
+    occ = {n: {"occurrence_id": n, "decision_id": f"d-{n}", "runtime_type": t,
+               "controlled": True, "surface": n, "start": s, "end": s + 5}
+           for n, t, s in [("reflux", "health-condition", 0), ("diet", "medical-procedure", 20)]}
+    kept = {"relation": "procedure_for", "evidence": {
+        "answer_competing": ["ultrasound"],
+        "arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "reflux", "support_property": "x"},
+            {"role": "object", "kind": "linked", "occurrence_id": "diet", "support_property": "y"}]}}
+    assert qa_builder._gleaning_targets("", [kept], [], [], occ) == []
+
+
+def test_answer_leak_tokens_reports_overlap_minus_exempt():
+    # the discriminative answer tokens present in the question are the leak; exemptions remove them
+    assert qa_builder._answer_leak_tokens("was the aspirin prescribed?", "aspirin", "") == {"aspirin"}
+    assert qa_builder._answer_leak_tokens(
+        "was the aspirin prescribed?", "aspirin", "", extra_exempt_tokens=["aspirin"]) == set()
+    assert qa_builder._answer_leak_tokens("what condition was treated?", "aspirin", "") == set()
 
 
 def test_gleaning_targets_never_drops_a_fixable_reject_without_compiled_args():

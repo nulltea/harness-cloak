@@ -115,12 +115,13 @@ def _action_renderer(
     return render
 
 
-def _relation_teacher_from_args(args) -> OpenRouterRelationTeacher:
+def _relation_teacher_from_args(args, *, include_reasoning: bool = False) -> OpenRouterRelationTeacher:
     """Construct the GPT-OSS teacher from the CLI's routing args (prod entry point)."""
     return OpenRouterRelationTeacher(
         model=getattr(args, "teacher_model", RELATION_TEACHER_MODEL),
         routed_provider=(getattr(args, "teacher_provider", RELATION_TEACHER_PROVIDER) or None),
         allow_fallbacks=bool(getattr(args, "teacher_allow_fallbacks", False)),
+        include_reasoning=include_reasoning,
     )
 
 
@@ -179,7 +180,11 @@ def build_from_files(
     # The gleaning+repair pass reuses the primary GPT-OSS teacher config; the second
     # call differs only by prompt (relation_repair_prompt), so it is a distinct cache key.
     if secondary_relation_teacher is None and escalation_configured:
-        secondary_relation_teacher = _relation_teacher_from_args(args)
+        # CLOAK_TEACHER_REASONING=include has the gleaning teacher return its reasoning trace for
+        # prompt A/B tweaking. Scoped to the secondary teacher (its prompt already differs, so it is
+        # a fresh cache key regardless); the primary teacher is untouched, so its cache still hits.
+        secondary_relation_teacher = _relation_teacher_from_args(
+            args, include_reasoning=os.getenv("CLOAK_TEACHER_REASONING", "").lower() == "include")
     teacher_pin = None
     if relation_teacher is not None:
         raw_teacher_pin = getattr(relation_teacher, "pin", None)
@@ -205,9 +210,11 @@ def build_from_files(
     pins.update({
         "gate_manifest_hash": _hash(manifest),
         "task_pin": AciTaskAdapter.task_pin,
-        # v13: semantic_property probes disabled entirely (their informative-context judge
-        # escalation ships dormant behind the same flag; see docs/issues/qa-builder-dept.md)
-        "builder_pin": "qa-builder-v2-assertion-compiler-v13",
+        # v14: deterministic reverse-orientation ambiguity recovery (Sources 1+2) -- an ambiguous
+        # (relation, subject) group flips every object (teacher-proposed + judge-accepted) to an
+        # answer_role=subject QA, gated in an isolated doc-global pass (see docs/handoffs/
+        # 2026-07-20-qa-relation-ambiguity-and-open-tasks.md). v13: semantic_property probes disabled.
+        "builder_pin": "qa-builder-v2-assertion-compiler-v14",
         "detector_pin": detector_pin or None,
         "teacher_pin": teacher_pin,
         "environment_audit_hash": environment_audit.get("audit_hash") or None,

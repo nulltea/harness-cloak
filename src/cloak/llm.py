@@ -76,6 +76,28 @@ def _write_cache(path: str, content: str, model: str) -> None:
                 pass
 
 
+def _record_reasoning(cache_path: str | None, messages: list[Message], content: str,
+                      reasoning: str | None, finish_reason, model: str) -> None:
+    """Dev-only sidecar of the model's reasoning trace, for prompt A/B tweaking. OFF unless
+    $CLOAK_LLM_REASONING_DIR is set. Keyed by the cache hash so reasoning ties to prompt+output;
+    never read by the pipeline and never affects the cache key or the chat return value."""
+    out_dir = os.getenv("CLOAK_LLM_REASONING_DIR")
+    if not out_dir:
+        return
+    os.makedirs(out_dir, exist_ok=True)
+    key = (os.path.splitext(os.path.basename(cache_path))[0] if cache_path
+           else hashlib.sha256((content or "").encode()).hexdigest())
+    path = os.path.join(out_dir, key + ".json")
+    try:
+        with tempfile.NamedTemporaryFile("w", dir=out_dir, delete=False) as f:
+            tmp = f.name
+            json.dump({"model": model, "finish_reason": finish_reason, "reasoning": reasoning,
+                       "content": content, "messages": messages}, f, ensure_ascii=False)
+        os.replace(tmp, path)
+    except OSError:
+        pass
+
+
 class LLMClient:
     """A chat model behind an OpenAI-compatible API.
 
@@ -155,6 +177,11 @@ class LLMClient:
             return ""
         choice = resp.choices[0]
         content = choice.message.content or ""
+        reasoning = (getattr(choice.message, "reasoning", None)
+                     or getattr(choice.message, "reasoning_content", None)
+                     or (getattr(choice.message, "model_extra", None) or {}).get("reasoning"))
+        _record_reasoning(path, messages, content, reasoning,
+                          getattr(choice, "finish_reason", None), self.model)
         if not content.strip():
             self.last_completion_state = {
                 "outcome": "empty_content",
