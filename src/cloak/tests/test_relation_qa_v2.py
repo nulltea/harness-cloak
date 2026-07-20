@@ -2322,6 +2322,101 @@ def test_relation_support_opportunities_counts_distinct_compiler_shaped_facts():
     ]
 
 
+def test_relation_support_opportunities_augment_adds_gazetteer_unreachable_literal():
+    # The gazetteer emits only test/procedure/status/category literals, so a DRUG literal object is
+    # structurally unreachable. The prefilter augment recovers it; cue-matched ("treated with") so no
+    # judge is needed. Also asserts the no-drop invariant (augmented set superset of baseline).
+    source = "Hypothyroidism was treated with levothyroxine daily."
+    env = {
+        "occurrences": [
+            {"occurrence_id": "condition", "decision_id": "d-condition", "surface": "Hypothyroidism",
+             "start": 0, "end": 14, "runtime_type": "health-condition"},
+        ],
+        "decisions": [
+            {"decision_id": "d-condition",
+             "actions": [{"mode": "level", "legal": True, "entails": ["endocrine condition"]}]},
+        ],
+    }
+    baseline = qa_builder.relation_support_opportunities(source, env)
+    assert not any(row["relation"] == "prescribed_with" for row in baseline)
+
+    start = source.index("levothyroxine")
+    drug_literal = {
+        "context_candidate_id": "context:levo", "kind": "context_literal", "runtime_type": "drug",
+        "literal": "levothyroxine", "start": start, "end": start + len("levothyroxine"),
+        "provenance": "llm_prefilter",
+    }
+    augmented = qa_builder.relation_support_opportunities(
+        source, env, extra_context_candidates=[drug_literal])
+
+    base_keys = {qa_builder._stable_hash(row["fact_key"]) for row in baseline}
+    aug_keys = {qa_builder._stable_hash(row["fact_key"]) for row in augmented}
+    assert base_keys <= aug_keys  # no-drop invariant
+    assert any(row["relation"] == "prescribed_with" and row["scope"] == "span_literal"
+               for row in augmented)
+
+
+def test_literal_reverse_assertions_builds_compound_condition_answer():
+    occurrences = {
+        "cond": {"occurrence_id": "cond", "decision_id": "d-c", "surface": "CHF", "start": 0, "end": 3,
+                 "runtime_type": "health-condition", "controlled": True},
+    }
+    decisions_by_id = {"d-c": {"decision_id": "d-c", "actions": [
+        {"mode": "level", "legal": True, "entails": ["heart disease"]}]}}
+    document = "CHF; ordered bmp and a lipid panel."
+
+    def opp(literal):
+        start = document.index(literal)
+        return {"relation": "tests_for", "scope": "span_literal", "recovered_by_escalation": True,
+                "arguments": [
+                    {"role": "subject", "kind": "linked", "occurrence_id": "cond"},
+                    {"role": "object", "kind": "context", "literal": literal,
+                     "start": start, "end": start + len(literal)}]}
+
+    rows = qa_builder._literal_reverse_assertions(
+        document, [opp("bmp"), opp("a lipid panel")], occurrences, decisions_by_id)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["relation"] == "tests_for"
+    assert row["answer_target"] == {"kind": "linked_decision", "decision_id": "d-c",
+                                    "required_property": "heart disease"}
+    assert row["accepted_values"] == ["heart disease"]
+    assert "bmp" in row["question"] and "lipid panel" in row["question"]  # compound locator
+    assert "CHF" not in row["question"]                                   # answer never in question
+    assert row["occurrence_ids"] == ["cond"]                              # only the condition is linked
+    # a non-judge-accepted opportunity is ignored
+    assert qa_builder._literal_reverse_assertions(
+        document, [{**opp("bmp"), "recovered_by_escalation": False}], occurrences, decisions_by_id) == []
+
+
+def test_llm_prefilter_context_candidates_locates_and_types_phrases():
+    source = "Hypothyroidism was treated with levothyroxine; ordered a thyroid panel."
+    env = {
+        "occurrences": [
+            {"occurrence_id": "c", "decision_id": "d", "surface": "Hypothyroidism",
+             "start": 0, "end": 14, "runtime_type": "health-condition", "controlled": True},
+        ],
+        "decisions": [],
+    }
+
+    def propose(prompt):  # stub set-call: drug for prescribed_with, test for tests_for (fenced), else []
+        if "medication or drug" in prompt:
+            return '["levothyroxine"]'
+        if "diagnostic test" in prompt:
+            return '```json\n["thyroid panel"]\n```'
+        return "[]"
+
+    candidates = qa_builder.llm_prefilter_context_candidates(source, env, propose)
+
+    typed = {(row["literal"], row["runtime_type"]) for row in candidates}
+    assert ("levothyroxine", "drug") in typed
+    assert ("thyroid panel", "test") in typed
+    for row in candidates:  # every literal is a verbatim source span
+        assert source[row["start"]:row["end"]].lower() == row["literal"].lower()
+        assert row["provenance"] == "llm_prefilter"
+
+
 def test_relation_escalation_trigger_uses_manifest_policy_per_scope():
     policy = {
         "version": "structural-opportunity-v1",

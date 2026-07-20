@@ -17,6 +17,7 @@ from cloak.train.qa_builder import (
     artifact_views,
     build_utility_artifact,
     freeze_v2_environment_from_legacy_arms,
+    llm_prefilter_context_candidates,
     read_context_batch,
     render_frozen_action_vector,
 )
@@ -51,6 +52,18 @@ def _build_relation_support_escalator():
     # ponytail: MedGemma-only (validated core); the optional accept-only MedNLI cost tier can be
     # added via mednli_entail= once per-candidate LLM latency is the bottleneck.
     return RelationSupportCascade(build_medgemma_judge(_medgemma_client()))
+
+
+def _build_context_prefilter():
+    """LLM set-call proposer of context-literal relation candidates (MedGemma, higher token budget
+    than the judge -- enumerations are longer than a yes/no verdict). Augments the gazetteer; the
+    escalator still decides acceptance."""
+    from cloak.llm import LLMClient
+    client = LLMClient(
+        RELATION_SUPPORT_JUDGE_MODEL, base_url=QA_BASE_URL, api_key="x", temperature=0.0,
+        max_tokens=256, extra_body={"chat_template_kwargs": {"enable_thinking": False}})
+    return lambda source, environment_document: llm_prefilter_context_candidates(
+        source, environment_document, client.generate)
 
 
 _READER_PIN_FIELDS = frozenset({
@@ -245,6 +258,16 @@ def build_from_files(
         pins["informative_context_judge"] = {
             "judge_model": RELATION_SUPPORT_JUDGE_MODEL, "base_url": QA_BASE_URL,
         }
+    context_prefilter = None
+    if getattr(args, "relation_support_prefilter", False):
+        if relation_support_escalator is None:
+            raise SystemExit(
+                "--relation-support-prefilter requires --relation-support-escalation: the prefilter's "
+                "literal candidates are cue-misses that only the judge can accept.")
+        context_prefilter = _build_context_prefilter()
+        pins["relation_support_prefilter"] = {
+            "model": RELATION_SUPPORT_JUDGE_MODEL, "base_url": QA_BASE_URL,
+        }
     return build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
@@ -262,6 +285,7 @@ def build_from_files(
         environment_audit=environment_audit or None,
         relation_support_escalator=relation_support_escalator,
         informative_context_judge=informative_context_judge,
+        context_prefilter=context_prefilter,
     )
 
 
@@ -326,6 +350,16 @@ def parse_args(argv=None):
             "entity already carries mined relation evidence, else one MedGemma informativeness "
             "call on its redacted locator sentence. ON by default; "
             "--no-informative-context-judge falls back to the pure regex lexicon."
+        ),
+    )
+    parser.add_argument(
+        "--relation-support-prefilter",
+        action="store_true",
+        help=(
+            "augment the gazetteer context-literal candidates with an LLM set-call prefilter that "
+            "recovers drug/symptom/condition literal relation objects the gazetteer cannot emit. "
+            "Opt-in (off by default); requires --relation-support-escalation. Augment-only, so it "
+            "cannot drop a currently-accepted pair. Adds ~(#conditions x 5) MedGemma calls per doc."
         ),
     )
     return parser.parse_args(argv)

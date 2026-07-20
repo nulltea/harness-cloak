@@ -4028,12 +4028,103 @@ def _all_occurrence_judge_premise(
     return "\n".join(document[clauses[i][0]:clauses[i][1]].strip() for i in sorted(indices))
 
 
+# LLM-prefilter set-call, one per relation, keyed on a controlled CONDITION anchor. The gazetteer
+# (relation_context_candidates) can only emit test/procedure/status/category literals, so drug,
+# symptom, and condition literal objects are structurally unreachable -- the prefilter recovers them.
+# `{2}` is the runtime_type stamped on returned phrases so they type into the relation's object class
+# (test->monitoring, drug->treatment, symptom->symptom, procedure->procedure). The condition may be
+# the object (contraindicated_because_of) or subject; the combinatorial pairing in
+# relation_support_opportunities assigns the role, so anchoring on the condition suffices.
+_RELATION_PREFILTER_SETCALL: dict[str, tuple[str, str, str]] = {
+    "prescribed_with": (
+        "medication or drug", "was prescribed, started, continued, or given to treat", "drug"),
+    "procedure_for": (
+        "medical procedure, therapy, surgery, or referral",
+        "was performed, planned, referred, or previously done to treat", "procedure"),
+    "tests_for": (
+        "diagnostic test, lab, panel, imaging study, or exam",
+        "was ordered, performed, or resulted to work up, monitor, or evaluate", "test"),
+    "contraindicated_because_of": (
+        "medication, drug, drug class, or procedure",
+        "must be avoided or is contraindicated because of", "drug"),
+    "causes_or_explains": (
+        "condition, symptom, or finding", "is caused or explained by", "symptom"),
+}
+_RELATION_PREFILTER_FRAME = (
+    "Clinical note:\n\"\"\"\n{ctx}\n\"\"\"\n\n"
+    "List EVERY distinct {kind} that the note says {phrase} the patient's {anchor}.\n"
+    "Copy each answer verbatim as a short phrase from the note; include nothing not in the note.\n"
+    "Respond with ONLY a JSON array of strings, e.g. [\"x\",\"y\"]. If there are none, respond []."
+)
+
+
+def _parse_llm_json_array(raw: str) -> list[str]:
+    """Extract a JSON string array from a (possibly ```json-fenced) reply; [] on any malformity."""
+    match = re.search(r"\[.*\]", raw or "", re.DOTALL)
+    if match is None:
+        return []
+    try:
+        parsed = json.loads(match.group(0))
+    except (json.JSONDecodeError, ValueError):
+        return []
+    if not isinstance(parsed, list):
+        return []
+    return [str(value).strip() for value in parsed if str(value).strip()]
+
+
+def llm_prefilter_context_candidates(
+    document: str,
+    environment_document: Mapping,
+    propose: "Callable[[str], str]",
+) -> list[dict]:
+    """High-recall LLM proposer of context-literal relation candidates (opt-in, augment-only).
+
+    For each controlled condition, run one enumeration set-call per relation on the ORIGINAL document
+    (build-time, never published), locate each returned phrase verbatim, and emit it as a typed
+    context-literal candidate. Feeds relation_support_opportunities' `extra_context_candidates`, where
+    the SAME grounding + lexical-cue + judge pipeline decides acceptance -- the prefilter only widens
+    recall, it never bypasses a gate. Phrases that are not verbatim-locatable are dropped (cannot ground).
+    """
+    conditions: dict[str, str] = {}
+    for occurrence in environment_document.get("occurrences", []):
+        if (occurrence.get("controlled", True)
+                and canon(str(occurrence.get("runtime_type", ""))) == "health-condition"
+                and occurrence.get("surface")):
+            conditions.setdefault(str(occurrence.get("decision_id")), str(occurrence["surface"]))
+    candidates: dict[tuple, dict] = {}
+    for anchor in conditions.values():
+        for kind, phrase, runtime_type in _RELATION_PREFILTER_SETCALL.values():
+            prompt = _RELATION_PREFILTER_FRAME.format(
+                ctx=document, kind=kind, phrase=phrase, anchor=anchor)
+            for item in _parse_llm_json_array(propose(prompt)):
+                match = re.search(re.escape(item), document, re.IGNORECASE)
+                if match is None:
+                    continue
+                start, end = match.span()
+                literal = document[start:end]
+                key = (runtime_type, start, end, literal)
+                candidates.setdefault(key, {
+                    "context_candidate_id": "context:" + _stable_hash({
+                        "runtime_type": runtime_type, "start": start, "end": end, "literal": literal,
+                    }),
+                    "kind": "context_literal",
+                    "runtime_type": runtime_type,
+                    "literal": literal,
+                    "start": start,
+                    "end": end,
+                    "provenance": "llm_prefilter",
+                })
+    return sorted(candidates.values(),
+                  key=lambda row: (int(row["start"]), str(row["context_candidate_id"])))
+
+
 def relation_support_opportunities(
     document: str,
     environment_document: Mapping,
     *,
     relation_contract: Mapping[str, Mapping] = ACI_RELATION_CONTRACT,
     escalator: "Callable[..., bool] | None" = None,
+    extra_context_candidates: "Sequence[Mapping] | None" = None,
 ) -> list[dict]:
     """Enumerate conservative, source-supported relation opportunities.
 
@@ -4047,9 +4138,16 @@ def relation_support_opportunities(
         for row in environment_document.get("occurrences", [])
         if row.get("occurrence_id") is not None
     }
+    # Gazetteer context literals, optionally AUGMENTED with an LLM-prefilter's typed literals. Union
+    # (never replace): the augmented set is a superset of the gazetteer set, so a currently-accepted
+    # pair can never be dropped (validated on 5 docs -- scripts/spikes/relation_prefilter_regression.py).
+    # Dedup by context_candidate_id, so a prefilter literal identical to a gazetteer one collapses.
+    context_rows = list(relation_context_candidates(document))
+    if extra_context_candidates:
+        context_rows += list(extra_context_candidates)
     contexts = {
         str(row["context_candidate_id"]): row
-        for row in relation_context_candidates(document)
+        for row in context_rows
     }
     linked = [
         {
@@ -4646,6 +4744,118 @@ def _reverse_framed_proposals(
         variant["_reverse_framed"] = True
         variants.append(variant)
     return variants
+
+
+# Deterministic literal->span (reverse) templates: the literal object(s) are the question LOCATOR,
+# the controlled condition is the ANSWER (answer_role=subject, answer-type word first so the extractive
+# reader names the diagnosis, not the tests). A >=2-literal compound locator pins a single condition
+# where one generic literal ("labs") cannot. Validated on 5 docs (scripts/spikes/reverse_flip_probe.py).
+_LITERAL_REVERSE_TEMPLATES = {
+    "tests_for": "What single medical condition or diagnosis were {locators} ordered to evaluate or "
+                 "treat? Name only the condition.",
+    "prescribed_with": "What single medical condition or diagnosis were {locators} prescribed to "
+                       "treat? Name only the condition.",
+    "procedure_for": "What single medical condition or diagnosis were {locators} performed or planned "
+                     "to treat? Name only the condition.",
+    "contraindicated_because_of": "What single medical condition makes {locators} contraindicated or "
+                                  "unsuitable? Name only the condition.",
+    "causes_or_explains": "What single medical condition causes or explains {locators}? Name only the "
+                          "condition.",
+}
+
+
+def _join_locators(items: Sequence[str]) -> str:
+    unique = list(dict.fromkeys(items))
+    if len(unique) == 1:
+        return unique[0]
+    if len(unique) == 2:
+        return f"{unique[0]} and {unique[1]}"
+    return ", ".join(unique[:-1]) + ", and " + unique[-1]
+
+
+def _literal_reverse_assertions(
+    document: str,
+    opportunities: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+    decisions_by_id: Mapping[str, Mapping],
+) -> list[dict]:
+    """Deterministic literal->span reverse context assertions from JUDGE-ACCEPTED span_literal
+    opportunities: for each (relation, controlled condition) group, the literal object(s) become the
+    question locator and the condition is the answer (answer_role=subject). Compound (>=2 literals)
+    disambiguates a single condition where one generic literal cannot; a single specific literal still
+    yields a QA. The condition is controlled, so the placeholder render hides it and the three-point
+    gate holds by construction. No teacher call. Gated downstream by validate_candidate_rows."""
+    groups: dict[tuple, dict] = {}
+    for opportunity in opportunities:
+        if not opportunity.get("recovered_by_escalation") or opportunity.get("scope") != "span_literal":
+            continue
+        relation = str(opportunity.get("relation", ""))
+        if relation not in _LITERAL_REVERSE_TEMPLATES:
+            continue
+        arguments = opportunity.get("arguments") or []
+        condition = next(
+            (arg for arg in arguments if arg.get("kind") == "linked" and arg.get("occurrence_id")), None)
+        literal = next(
+            (arg for arg in arguments if arg.get("kind") == "context" and arg.get("literal")), None)
+        if condition is None or literal is None:
+            continue
+        occurrence = occurrences.get(str(condition.get("occurrence_id")))
+        if (occurrence is None or occurrence.get("decision_id") is None
+                or not occurrence.get("controlled", True)):
+            continue
+        try:
+            start, end = int(literal["start"]), int(literal["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        group = groups.setdefault(
+            (relation, str(occurrence["decision_id"])),
+            {"occurrence_id": str(condition["occurrence_id"]), "literals": {}})
+        group["literals"].setdefault(canon(str(literal["literal"])), (str(literal["literal"]), start, end))
+
+    rows = []
+    for (relation, decision_id), group in groups.items():
+        decision = decisions_by_id.get(decision_id)
+        levels = _ordered_decision_levels(decision) if decision else []
+        if not levels:
+            continue  # no legal generalization -> nothing to answer with
+        answer_level = levels[0]
+        occurrence_id = group["occurrence_id"]
+        occurrence = occurrences[occurrence_id]
+        literals = list(group["literals"].values())
+        question = _LITERAL_REVERSE_TEMPLATES[relation].format(
+            locators=_join_locators([literal for literal, _s, _e in literals]))
+        condition_span = (int(occurrence["start"]), int(occurrence["end"]))
+        ranges = [condition_span] + [(start, end) for _literal, start, end in literals]
+        arguments = [
+            {"role": "subject", "kind": "linked", "occurrence_id": occurrence_id,
+             "runtime_type": occurrence.get("runtime_type"), "support_property": answer_level},
+            *[{"role": "object", "kind": "context", "literal": literal, "start": start, "end": end}
+              for literal, start, end in literals],
+        ]
+        lo, hi = min(span[0] for span in ranges), max(span[1] for span in ranges)
+        rows.append({
+            "family": "context", "scope": "linked", "subtype": "contextual_relation",
+            "relation": relation,
+            "occurrence_ids": [occurrence_id],
+            "group_id": "literal_reverse:" + relation + ":" + _stable_hash(
+                [decision_id, sorted(group["literals"])]),
+            "question": question,
+            "accepted_values": [answer_level],
+            "answer_target": {"kind": "linked_decision", "decision_id": decision_id,
+                              "required_property": answer_level},
+            "answer_type": _relation_answer_type_hint(relation, "subject"),
+            "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+            "decision_requirements": {decision_id: answer_level},
+            "evidence": {
+                "authority": "source_document",
+                "arguments": arguments,
+                "argument_spans": {occurrence_id: [condition_span[0], condition_span[1]]},
+                "reader_turns": _source_turns_for_ranges(document, ranges),
+                "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
+                "teacher_id": "deterministic", "run_id": "literal_reverse",
+            },
+        })
+    return rows
 
 
 def compile_relational_assertions(
@@ -6309,6 +6519,7 @@ def build_utility_artifact(
     environment_audit: Mapping | None = None,
     relation_support_escalator: "Callable[..., bool] | None" = None,
     informative_context_judge: "Callable[..., bool] | None" = None,
+    context_prefilter: "Callable[[str, Mapping], Sequence[Mapping]] | None" = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation.
 
@@ -6456,8 +6667,14 @@ def build_utility_artifact(
         # Always retain the cheap structural ledger, even when teacher escalation
         # is disabled. Otherwise a primary-teacher miss is invisible in the QA
         # report and cannot be selectively re-run later.
+        # Opt-in LLM prefilter (augment-only) widens the context-literal candidate set before the same
+        # cue+judge pipeline runs; None => byte-identical to the gazetteer-only path.
+        extra_context = (
+            context_prefilter(source, environment_document) if context_prefilter is not None else None
+        )
         opportunities = relation_support_opportunities(
             source, environment_document, escalator=relation_support_escalator,
+            extra_context_candidates=extra_context,
         )
         relation_opportunities_by_document[doc_id] = opportunities
         placeholder_vector = {}
@@ -7348,6 +7565,26 @@ def build_utility_artifact(
                         "status": "kept", "reason": "accepted",
                         "teacher_id": "deterministic", "run_id": "reverse_framing",
                     })
+        # Deterministic literal->span reverse assertions: judge-accepted span_literal opportunities
+        # (recall widened by the LLM prefilter when enabled) become condition-answer QAs whose locator
+        # is the literal object(s). Additive, gated by the same reader; the condition answer is
+        # controlled so the placeholder render hides it. No teacher call.
+        literal_reverse_rows = _literal_reverse_assertions(
+            source, opportunities, occurrences,
+            {str(decision["decision_id"]): decision for decision in decisions},
+        )
+        if literal_reverse_rows:
+            for r in validate_candidate_rows(literal_reverse_rows):
+                accepted.append(r)
+                relation_generation_by_document.setdefault(doc_id, []).append({
+                    "relation": r.get("relation"),
+                    "arguments": list(dict(r.get("evidence") or {}).get("arguments") or []),
+                    "question": r.get("question"),
+                    "accepted_answers": r.get("accepted_values"),
+                    "scoring_contract": {"kind": "semantic_qa", "match": "fact_score"},
+                    "status": "kept", "reason": "accepted",
+                    "teacher_id": "deterministic", "run_id": "literal_reverse",
+                })
         coverage_targets = _gleaning_targets(
             source,
             [row for row in accepted
