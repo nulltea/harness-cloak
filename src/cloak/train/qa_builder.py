@@ -6410,6 +6410,24 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
                 "relation_count_over_soft_cap", "compile", "ontology_review", "info",
                 {"kept_relations": kept, "soft_cap": RELATION_TEACHER_MAX_RELATIONS}))
 
+    # False-positive guard for the lattice_level_suspect probe: a lattice node used by a KEPT relation
+    # in the same doc is provably readable, so a gate failure elsewhere is context-specific, not bad
+    # data. Map each doc's kept-assertion decisions back to their canonical surfaces.
+    _surface_by_decision = {
+        str(doc_id): {
+            str(d.get("decision_id")): canon(str(d.get("canonical_key") or ""))
+            for d in (document.get("decisions") or [])
+        }
+        for doc_id, document in (artifact.get("documents") or {}).items()
+    }
+    kept_lattice_surfaces: dict[str, set[str]] = defaultdict(set)
+    for assertion in (artifact.get("assertions") or {}).values():
+        _dec_surface = _surface_by_decision.get(str(assertion.get("doc_id")), {})
+        for decision_id in (assertion.get("decision_requirements") or {}):
+            surface = _dec_surface.get(str(decision_id))
+            if surface:
+                kept_lattice_surfaces[str(assertion.get("doc_id"))].add(surface)
+
     # D) classify signals the build already emits
     for record in (artifact.get("rejections") or {}).get("records") or []:
         doc_id = str(record.get("doc_id"))
@@ -6430,18 +6448,25 @@ def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
             scores = (evidence.get("validation") or {}).get("scores") or {}
             probe = evidence.get("lattice_probe")
             if isinstance(probe, Mapping) and probe.get("readable_coarser_level"):
-                # a COARSER legal level in the same chain reads -> the chosen fine level,
-                # not the relation, is the problem. almost always bad data in
-                # lattice_profiles.json (mis-grounded/mislabeled level). points at the
-                # exact entry to fix.
-                flags[doc_id].append(_review_flag(
-                    "lattice_level_suspect", "gate", "data_lattice", "warn",
-                    {"surface": probe.get("surface"),
-                     "runtime_type": probe.get("runtime_type"),
-                     "unreadable_level": probe.get("unreadable_level"),
-                     "readable_coarser_level": probe.get("readable_coarser_level"),
-                     "chain": probe.get("chain"),
-                     "scores": scores}))
+                # a COARSER legal level in the same chain reads -> the chosen fine level, not the
+                # relation, could be bad lattice data. But this probe is FALSE-POSITIVE-PRONE: the
+                # failure is usually ANSWER AMBIGUITY (subject has >=2 same-type answers -> no unique
+                # QA, not a bad level), or the flagged node is used by a KEPT relation in-doc (provably
+                # readable). Suppress both; only a node that fails AND is unambiguous AND is never kept
+                # in-doc is a genuine data suspect worth a human fixing lattice_profiles.json.
+                if evidence.get("answer_competing") or (
+                        canon(str(probe.get("surface", "")))
+                        in kept_lattice_surfaces.get(doc_id, set())):
+                    pass
+                else:
+                    flags[doc_id].append(_review_flag(
+                        "lattice_level_suspect", "gate", "data_lattice", "warn",
+                        {"surface": probe.get("surface"),
+                         "runtime_type": probe.get("runtime_type"),
+                         "unreadable_level": probe.get("unreadable_level"),
+                         "readable_coarser_level": probe.get("readable_coarser_level"),
+                         "chain": probe.get("chain"),
+                         "scores": scores}))
             elif (scores.get("original", 0.0) >= 1.0
                     and scores.get("representative", 0.0) < 1.0
                     and scores.get("placeholder", 1.0) < 1.0):

@@ -2356,6 +2356,33 @@ def test_relation_support_opportunities_augment_adds_gazetteer_unreachable_liter
                for row in augmented)
 
 
+def test_lattice_level_suspect_suppressed_for_ambiguity_and_kept_sibling():
+    probe = {"surface": "tsh", "runtime_type": "lab", "unreadable_level": "thyroid test",
+             "readable_coarser_level": "lab test", "chain": []}
+    document = {"decisions": [{"decision_id": "d1", "canonical_key": "tsh"},
+                              {"decision_id": "d2", "canonical_key": "cbc"}]}
+
+    def artifact(extra_evidence, kept_decision):
+        return {
+            "documents": {"aci/D": document},
+            "assertions": {"a1": {"doc_id": "aci/D", "decision_requirements": {kept_decision: "x"}}},
+            "rejections": {"records": [{
+                "doc_id": "aci/D", "detail_reason": "three_point_gate_failed",
+                "evidence": {"validation": {"scores": {}}, "lattice_probe": probe, **extra_evidence}}]},
+        }
+
+    def suspects(art):
+        flags = qa_builder.compute_review_flags(art)
+        return sum(1 for lst in flags.values() for f in lst if f.get("code") == "lattice_level_suspect")
+
+    # unambiguous AND tsh never kept in-doc (only cbc kept) -> genuine suspect, fires
+    assert suspects(artifact({}, "d2")) == 1
+    # ambiguity-driven failure -> suppressed
+    assert suspects(artifact({"answer_competing": ["a", "b"]}, "d2")) == 0
+    # tsh's decision is used by a kept relation (provably readable) -> suppressed
+    assert suspects(artifact({}, "d1")) == 0
+
+
 def test_display_locators_strips_lead_verbs_and_drops_superset_duplicates():
     out = qa_builder._display_locators(
         ["order a thyroid panel", "referral to physical therapy", "physical therapy", "creatinine"])
