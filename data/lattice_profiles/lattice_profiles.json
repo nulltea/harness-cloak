@@ -12430,85 +12430,6 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:apixaban"
         ]
       },
-      "arabica coffee bean": {
-        "aliases": [],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "central nervous system agent": 400,
-          "methylxanthine": 1,
-          "non-standardized food allergenic extract": 216
-        },
-        "level_grounding": {
-          "central nervous system agent": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'central nervous system agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "methylxanthine": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'methylxanthine' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "expert_knowledge",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "non-standardized food allergenic extract": {
-            "member_set_ref": "openfda-ndc:pharm_class:Non-Standardized Food Allergenic Extract [EPC]",
-            "selector": "openfda_ndc.pharm_class == 'Non-Standardized Food Allergenic Extract [EPC]'",
-            "source_family": "openfda-pharm-class",
-            "status": "certifying"
-          }
-        },
-        "levels": [
-          "methylxanthine",
-          "non-standardized food allergenic extract",
-          "central nervous system agent"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:drug:arabica coffee bean"
-        ]
-      },
-      "arctic heat": {
-        "aliases": [
-          "arctic heat cream",
-          "arctic heat gel"
-        ],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "analgesic": 150,
-          "counterirritant": 10
-        },
-        "level_grounding": {
-          "analgesic": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'analgesic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "counterirritant": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'counterirritant' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "FDA Orange Book / drug class listings",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "counterirritant",
-          "analgesic"
-        ],
-        "source_ids": [
-          "producer:levelfix-all:levelfix:drug:arctic heat"
-        ]
-      },
       "aripiprazole": {
         "aliases": [
           "abilify",
@@ -13945,7 +13866,7 @@
         "count": 1,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "cadmium salt": 1,
+          "cadmium salt": 20,
           "systemic pharmacological substance": 150
         },
         "level_grounding": {
@@ -14240,6 +14161,55 @@
         ],
         "source_ids": [
           "producer:regate:levelfix:drug:carbamazepine"
+        ]
+      },
+      "crestor": {
+        "aliases": [
+          "rosuvastatin",
+          "crestor (brand)",
+          "rosuvastatin calcium"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "entity_type_flag": "MISCLASSIFIED: 'crestor' (rosuvastatin) is a drug, not a health condition — confirmed by its own aliases. The existing ladder generalized it into 'primary hypercholesterolemia,' the condition it treats, which inverts drug and indication (same error pattern as the 'aging process' medical-procedure misclassification). Recommend re-typing to the drug namespace with a proper drug-class ladder rather than a disease ladder. Left the corrected drug-side ladder below; the original disease-indication data should be discarded or moved to a separate drug-to-indication mapping if that relationship is independently useful.",
+        "level_counts": {
+          "statin": 12,
+          "lipid-lowering agent": 40,
+          "therapeutic agent": 100000
+        },
+        "level_grounding": {
+          "statin": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'statin' set from ATC class C10AA (HMG CoA reductase inhibitors), which contains ~8-12 distinct active-substance entries (atorvastatin, rosuvastatin, simvastatin, pravastatin, lovastatin, fluvastatin, pitavastatin, plus combination products). Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "WHO ATC/DDD Index, class C10AA",
+            "selector": "Belongs to the statin (HMG-CoA reductase inhibitor) category (ATC C10AA) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "lipid-lowering agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'lipid-lowering agent' set from ATC class C10 (lipid modifying agents: statins, fibrates, bile acid sequestrants, cholesterol absorption inhibitors, PCSK9 inhibitors, niacin, combinations), on the order of 30-50 distinct active-substance entries. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "WHO ATC/DDD Index, class C10",
+            "selector": "Belongs to the lipid-lowering agent category (ATC C10) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying. Held at 100000 to match the anchor established for other drug entries (e.g. levothyroxine); prior version of this field (under the mistaken health-condition typing) used 75000, which does not match this anchor.",
+            "member_set_ref": null,
+            "selector": "drug_category:therapeutic agent",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "statin",
+          "lipid-lowering agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:drug:crestor"
         ]
       },
       "carbo": {
@@ -27205,11 +27175,11 @@
         "count": 1,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "abdominal imaging finding": 1,
+          "CT scan": 100,
           "medical condition": 75000
         },
         "level_grounding": {
-          "abdominal imaging finding": {
+          "CT scan": {
             "count_basis": "corpus-membership",
             "count_evidence": "'abdominal imaging finding' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
             "member_set_ref": null,
@@ -27227,7 +27197,7 @@
           }
         },
         "levels": [
-          "abdominal imaging finding",
+          "CT scan",
           "medical condition"
         ],
         "source_ids": [
@@ -31537,7 +31507,7 @@
           "medical condition": 75000,
           "structured exercise regimen": 604,
           "sustained aerobic movement": 74,
-          "therapeutic physical activity": 1
+          "therapeutic physical activity": 1000
         },
         "level_grounding": {
           "medical condition": {
@@ -33520,7 +33490,7 @@
         "entry_origin": "observed-surface",
         "level_counts": {
           "medical condition": 75000,
-          "road traffic injury": 1
+          "road traffic injury": 2500
         },
         "level_grounding": {
           "medical condition": {
@@ -34170,47 +34140,6 @@
         ],
         "source_ids": [
           "producer:levelfix-all:levelfix:health-condition:cervical radicularopathy"
-        ]
-      },
-      "cervical spine m r i": {
-        "aliases": [
-          "cervical mri",
-          "cervical spine mri",
-          "mri cervical spine",
-          "cervical spinal mri",
-          "cervical spine magnetic resonance imaging",
-          "cervical spine mr imaging"
-        ],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "cervical spine disorder": 1,
-          "medical condition": 75000
-        },
-        "level_grounding": {
-          "cervical spine disorder": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'cervical spine disorder' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "clinical_taxonomy",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "medical condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical condition' set from the corrected runtime-type-conditional magnitude in data/lattice_sources/reference/ (class-universe sizes were wrong here); still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "cervical spine disorder",
-          "medical condition"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:cervical spine m r i"
         ]
       },
       "changes in bowel habits": {
@@ -35728,44 +35657,6 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:craniopharyngioma"
         ]
       },
-      "crestor": {
-        "aliases": [
-          "rosuvastatin",
-          "crestor (brand)",
-          "rosuvastatin calcium"
-        ],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "medical condition": 75000,
-          "primary hypercholesterolemia": 1
-        },
-        "level_grounding": {
-          "medical condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical condition' set from the corrected runtime-type-conditional magnitude in data/lattice_sources/reference/ (class-universe sizes were wrong here); still not certifying",
-            "member_set_ref": null,
-            "selector": "medical_condition",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "primary hypercholesterolemia": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'primary hypercholesterolemia' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "primary_hypercholesterolemia",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "primary hypercholesterolemia",
-          "medical condition"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:crestor"
-        ]
-      },
       "cyst formation": {
         "aliases": [
           "cystic structure",
@@ -36270,44 +36161,6 @@
         ],
         "source_ids": [
           "producer:levelfix-all:levelfix:health-condition:demarcated scaly erythematous plaques"
-        ]
-      },
-      "dentures": {
-        "aliases": [
-          "artificial teeth",
-          "false teeth",
-          "dental prosthetics"
-        ],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "dental prosthesis condition": 1,
-          "medical condition": 75000
-        },
-        "level_grounding": {
-          "dental prosthesis condition": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'dental prosthesis condition' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "SNOMED CT concept count",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "medical condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical condition' set from the corrected runtime-type-conditional magnitude in data/lattice_sources/reference/ (class-universe sizes were wrong here); still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice entry for medical condition",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "dental prosthesis condition",
-          "medical condition"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:dentures"
         ]
       },
       "depressive disorder": {
@@ -37059,6 +36912,45 @@
         ],
         "source_ids": [
           "producer:levelfix-all:levelfix:health-condition:dry cough"
+        ]
+      },
+      "dentures": {
+        "aliases": [
+          "artificial teeth",
+          "false teeth",
+          "dental prosthetics"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "entity_type_flag": "MISCLASSIFIED: 'dentures' is a dental appliance/medical device, not a health condition — confirmed by its own aliases (artificial teeth, false teeth, dental prosthetics). The existing ladder invents 'dental prosthesis condition' as an intermediate level, which does not correspond to any real diagnostic category in ICD-10 or SNOMED CT — it appears to be a fabricated placeholder rather than a genuine ontology node (compare to the drug/procedure/condition entities elsewhere in this corpus, which map to real ATC/ICD-10/DOID/SNOMED entries). This is the third instance of this failure pattern found in this corpus (see also 'crestor' — drug misfiled as health-condition, and 'aging process' — biological process misfiled as medical-procedure). Recommend: (1) re-type to a device/appliance namespace if one exists in the schema, or create one; (2) if a health-condition relationship is independently useful (e.g. 'edentulism' / tooth loss, the condition dentures address — ICD-10 K08.1), model that as a separate, correctly-named entry rather than folding the device into the condition ladder.",
+        "level_counts": {
+          "dental prosthesis condition": 1,
+          "medical condition": 75000
+        },
+        "level_grounding": {
+          "dental prosthesis condition": {
+            "count_basis": "corpus-membership",
+            "count_evidence": "'dental prosthesis condition' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying. FLAGGED: no real-world diagnostic category named 'dental prosthesis condition' could be identified in ICD-10 or SNOMED CT — this label likely does not correspond to a genuine ontology node. Selector 'SNOMED CT concept count' names a coding system without a concept ID, consistent with there being no real concept behind it.",
+            "member_set_ref": null,
+            "selector": "corpus entries whose generalization chain includes the (likely fabricated) dental prosthesis condition node",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical condition' set from the corrected runtime-type-conditional magnitude in data/lattice_sources/reference/ (class-universe sizes were wrong here); still not certifying. NOTE: value (75000) does not match the 500000 anchor used elsewhere in this corpus for health-condition entries (e.g. abdominal distension, body aches, chronic back pain) — same anchor-drift pattern seen in the 'crestor' entry. Left unchanged pending a corpus-wide anchor reconciliation.",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice entry for medical condition",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "dental prosthesis condition",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:health-condition:dentures"
         ]
       },
       "dry needling": {
@@ -53990,6 +53882,57 @@
           "producer:levelfix-all:levelfix:medical-procedure:chemotherapy"
         ]
       },
+      "cervical spine m r i": {
+        "aliases": [
+          "cervical mri",
+          "cervical spine mri",
+          "mri cervical spine",
+          "cervical spinal mri",
+          "cervical spine magnetic resonance imaging",
+          "cervical spine mr imaging"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "spine mri": 5,
+          "diagnostic imaging procedure": 900,
+          "medical procedure": 79115
+        },
+        "level_grounding": {
+          "spine mri": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'spine mri' set from CPT codes 72141-72158 and ICD-10-PCS section B0 (Imaging, Central Nervous System/Spinal Canal), covering cervical, thoracic, and lumbar spine MRI with/without contrast; on the order of 5-8 distinct billable code variants. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "CPT 72141-72158; ICD-10-PCS section B0 (spinal canal imaging)",
+            "selector": "Belongs to the spine MRI category (CPT 72141-72158 / ICD-10-PCS spinal canal imaging) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "diagnostic imaging procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'diagnostic imaging procedure' set from ICD-10-PCS section B (Imaging) collapsed to distinct modality/body-region procedure-type granularity (X-ray, CT, MRI, ultrasound, nuclear medicine across body regions), on the order of several hundred to ~1000 distinct procedure types. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10-PCS section B (Imaging)",
+            "selector": "Belongs to the diagnostic imaging procedure category (ICD-10-PCS section B) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "spine mri",
+          "diagnostic imaging procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:cervical spine m r i"
+        ]
+      },
       "childbirth": {
         "aliases": [
           "parturition",
@@ -54209,19 +54152,10 @@
         "count": 1,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "crutch-assisted ambulation": 1,
           "medical procedure": 79115,
           "mobility aid procedure": 86
         },
         "level_grounding": {
-          "crutch-assisted ambulation": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'crutch-assisted ambulation' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "procedure_taxonomy",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
           "medical procedure": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
@@ -54240,7 +54174,6 @@
           }
         },
         "levels": [
-          "crutch-assisted ambulation",
           "mobility aid procedure",
           "medical procedure"
         ],
@@ -54303,55 +54236,6 @@
         ],
         "source_ids": [
           "producer:levelfix-all:levelfix:medical-procedure:diabetes treatment"
-        ]
-      },
-      "diarrhea": {
-        "aliases": [
-          "loose stools",
-          "bowel evacuation disorder",
-          "gastrointestinal symptom",
-          "diarrhea"
-        ],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "fluid replacement therapy": 86,
-          "medical procedure": 79115,
-          "oral rehydration therapy administration": 1
-        },
-        "level_grounding": {
-          "fluid replacement therapy": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'fluid replacement therapy' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "CPT",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "medical procedure": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
-            "member_set_ref": null,
-            "selector": "icd10pcs.billable_7_character_code",
-            "source_family": "icd10pcs-universe",
-            "status": "model-proposed"
-          },
-          "oral rehydration therapy administration": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'oral rehydration therapy administration' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "WHO-EML",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "oral rehydration therapy administration",
-          "fluid replacement therapy",
-          "medical procedure"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:medical-procedure:diarrhea"
         ]
       },
       "drainage of intracranial epidural space open approach": {
