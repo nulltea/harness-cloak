@@ -10961,6 +10961,54 @@
           "producer:levelfix-all:levelfix:drug:adalimumab"
         ]
       },
+      "advair": {
+        "aliases": [
+          "advair",
+          "fluticasone/salmeterol",
+          "seretide"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "asthma controller": 150,
+          "inhaled corticosteroid/long-acting \u03b22-agonist combination": 25,
+          "respiratory system agent": 2000
+        },
+        "level_grounding": {
+          "asthma controller": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'asthma controller' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "inhaled corticosteroid/long-acting \u03b22-agonist combination": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'inhaled corticosteroid/long-acting \u03b22-agonist combination' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "respiratory system agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'respiratory system agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broad_system_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "inhaled corticosteroid/long-acting \u03b22-agonist combination",
+          "asthma controller",
+          "respiratory system agent"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:advair"
+        ]
+      },
       "aerosoothe": {
         "aliases": [
           "aerosoothe"
@@ -12329,6 +12377,198 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:anti-smoking i drops"
         ]
       },
+      "antibiotic ointment": {
+        "aliases": [
+          "antibiotic ointment",
+          "topical antibiotic",
+          "antibiotic cream",
+          "antibacterial ointment"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antibiotic": 150,
+          "pharmaceutical compound": 17000,
+          "therapeutic agent": 15000,
+          "topical antibiotic": 25
+        },
+        "level_grounding": {
+          "antibiotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antibiotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "pharmaceutical compound": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'pharmaceutical compound' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "topical antibiotic": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'topical antibiotic' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ATC J01CA",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "topical antibiotic",
+          "antibiotic",
+          "therapeutic agent",
+          "pharmaceutical compound"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:antibiotic ointment"
+        ]
+      },
+      "antibiotics": {
+        "aliases": [
+          "antibiotics",
+          "antibacterial agents",
+          "antimicrobial drugs"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antibiotic": 150,
+          "beta-lactam antibiotic": 25,
+          "therapeutic agent": 15000
+        },
+        "level_grounding": {
+          "antibiotic": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'antibiotic' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "functional class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "beta-lactam antibiotic": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'beta-lactam antibiotic' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad agent tier",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "beta-lactam antibiotic",
+          "antibiotic",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:antibiotics"
+        ]
+      },
+      "anticoagulant": {
+        "aliases": [
+          "blood thinner",
+          "anticoagulant drug"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "antithrombotic agent": 25,
+          "cardiovascular agent": 300
+        },
+        "level_grounding": {
+          "antithrombotic agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'antithrombotic agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broad_body_system",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_system",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "antithrombotic agent",
+          "cardiovascular agent"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:anticoagulant"
+        ]
+      },
+      "antiinflammatories": {
+        "aliases": [
+          "nsaid",
+          "nonsteroidal anti-inflammatory drug",
+          "anti-inflammatory drug"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anti-inflammatory": 150,
+          "cyclooxygenase inhibitor": 25,
+          "therapeutic agent": 15000
+        },
+        "level_grounding": {
+          "anti-inflammatory": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anti-inflammatory' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "cyclooxygenase inhibitor": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'cyclooxygenase inhibitor' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "cyclooxygenase inhibitor",
+          "anti-inflammatory",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:antiinflammatories"
+        ]
+      },
       "antipsychotics": {
         "aliases": [
           "antipsychotic drugs",
@@ -13218,6 +13458,54 @@
           "producer:levelfix-all:levelfix:drug:bimatoprost"
         ]
       },
+      "birth control": {
+        "aliases": [
+          "oral contraceptive",
+          "combined pill",
+          "birth control pill"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "combined estrogen-progestin oral contraceptive": 25,
+          "contraceptive": 150,
+          "reproductive system agent": 800
+        },
+        "level_grounding": {
+          "combined estrogen-progestin oral contraceptive": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'combined estrogen-progestin oral contraceptive' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "contraceptive": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'contraceptive' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "reproductive system agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'reproductive system agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broad_system_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "combined estrogen-progestin oral contraceptive",
+          "contraceptive",
+          "reproductive system agent"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:birth control"
+        ]
+      },
       "bisoprolol": {
         "aliases": [],
         "count": 1,
@@ -13396,6 +13684,55 @@
         ],
         "source_ids": [
           "producer:regate:levelfix:drug:blood thinners"
+        ]
+      },
+      "botox": {
+        "aliases": [
+          "botox",
+          "botulinum toxin",
+          "botulinum toxin type a",
+          "btx-a"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "muscle relaxant": 150,
+          "neuromuscular blocking agent": 25,
+          "therapeutic agent": 15000
+        },
+        "level_grounding": {
+          "muscle relaxant": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'muscle relaxant' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "function=muscle_relaxation",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "neuromuscular blocking agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'neuromuscular blocking agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanism=neuromuscular_blocking",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "therapeutic agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'therapeutic agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "broad_category=therapeutic_agent",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "neuromuscular blocking agent",
+          "muscle relaxant",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:botox"
         ]
       },
       "brilinta": {
@@ -22083,6 +22420,54 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:mupirocin"
         ]
       },
+      "mylanta": {
+        "aliases": [
+          "mylanta",
+          "mylanta antacid",
+          "mylanta chewable tablets"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "alkaline antacid": 25,
+          "antacid": 300,
+          "gastrointestinal agent": 80
+        },
+        "level_grounding": {
+          "alkaline antacid": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'alkaline antacid' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "drug_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "antacid": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'antacid' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "gastrointestinal agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'gastrointestinal agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "body_system",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "alkaline antacid",
+          "gastrointestinal agent",
+          "antacid"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:mylanta"
+        ]
+      },
       "nabumetone": {
         "aliases": [
           "relafen"
@@ -24750,6 +25135,53 @@
           "producer:regate:levelfix:drug:sacubitril"
         ]
       },
+      "salmeterol inhaler": {
+        "aliases": [
+          "salmeterol inhaler",
+          "salmeterol"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "bronchodilator": 25,
+          "long-acting \u03b22-adrenergic agonist": 80,
+          "respiratory system agent": 2000
+        },
+        "level_grounding": {
+          "bronchodilator": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'bronchodilator' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "functional",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "long-acting \u03b22-adrenergic agonist": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'long-acting \u03b22-adrenergic agonist' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "mechanistic",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "respiratory system agent": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'respiratory system agent' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "broad",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "bronchodilator",
+          "long-acting \u03b22-adrenergic agonist",
+          "respiratory system agent"
+        ],
+        "source_ids": [
+          "producer:mts-producer:drug:salmeterol inhaler"
+        ]
+      },
       "scar gel": {
         "aliases": [
           "silicone gel",
@@ -26251,6 +26683,53 @@
           "producer:drug-health-procedure-nemotron-3-super:drug:ultram"
         ]
       },
+      "vaginal cream": {
+        "aliases": [
+          "intravaginal cream"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "reproductive system agent": 800,
+          "therapeutic agent": 15000,
+          "topical gynecologic preparation": 40
+        },
+        "level_grounding": {
+          "reproductive system agent": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'reproductive system agent' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "broad_system_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "therapeutic agent": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'therapeutic agent' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "broad_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "topical gynecologic preparation": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'topical gynecologic preparation' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "formulation_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          }
+        },
+        "levels": [
+          "topical gynecologic preparation",
+          "reproductive system agent",
+          "therapeutic agent"
+        ],
+        "source_ids": [
+          "mined-clinical:mts/33",
+          "manual-rescue:mts-producer:drug:vaginal cream"
+        ]
+      },
       "valacyclovir": {
         "aliases": [
           "valtrex"
@@ -26640,6 +27119,55 @@
         ],
         "source_ids": [
           "producer:regate:levelfix:drug:water pill"
+        ]
+      },
+      "weed": {
+        "aliases": [
+          "cannabis",
+          "marijuana",
+          "ganja"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "cannabinoid receptor agonist": 30,
+          "central nervous system agent": 800,
+          "psychoactive agent": 200
+        },
+        "level_grounding": {
+          "cannabinoid receptor agonist": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'cannabinoid receptor agonist' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "mechanistic_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "central nervous system agent": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'central nervous system agent' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "broad_system_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "psychoactive agent": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'psychoactive agent' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "functional_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          }
+        },
+        "levels": [
+          "cannabinoid receptor agonist",
+          "psychoactive agent",
+          "central nervous system agent"
+        ],
+        "source_ids": [
+          "mined-clinical:mts/136",
+          "manual-rescue:mts-producer:drug:weed"
         ]
       },
       "weight loss medications": {
@@ -39235,6 +39763,54 @@
           "producer:levelfix-all:levelfix:health-condition:focal sensory deficit"
         ]
       },
+      "food intolerance": {
+        "aliases": [
+          "dietary intolerance",
+          "nutrient intolerance",
+          "food hypersensitivity"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "disease": 15000,
+          "gastrointestinal condition": 400,
+          "malabsorption syndrome": 150
+        },
+        "level_grounding": {
+          "disease": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "gastrointestinal condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'gastrointestinal condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "malabsorption syndrome": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'malabsorption syndrome' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "clinical_taxonomy:malabsorption_syndromes",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "malabsorption syndrome",
+          "gastrointestinal condition",
+          "disease"
+        ],
+        "source_ids": [
+          "producer:mts-producer:health-condition:food intolerance"
+        ]
+      },
       "full active and passive range of motion": {
         "aliases": [
           "complete joint mobility",
@@ -47110,6 +47686,122 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:polycythemia vera"
         ]
       },
+      "polyps": {
+        "aliases": [
+          "intestinal polyps",
+          "gi polyps",
+          "colonic polyps"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "disease": 15000,
+          "gastrointestinal condition": 400,
+          "gastrointestinal polyp": 120,
+          "medical condition": 75000
+        },
+        "level_grounding": {
+          "disease": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "gastrointestinal condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'gastrointestinal condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "gastrointestinal polyp": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'gastrointestinal polyp' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "ICD\u201110\u2011CM D12.x series / SNOMED CT 236423003",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "gastrointestinal polyp",
+          "gastrointestinal condition",
+          "disease",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:mts-producer:health-condition:polyps"
+        ]
+      },
+      "polyuria": {
+        "aliases": [
+          "excessive urination",
+          "polyuric",
+          "frequent urination"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "clinical finding": 60000,
+          "genitourinary symptom": 60,
+          "medical condition": 75000,
+          "urinary volume/frequency symptom": 12
+        },
+        "level_grounding": {
+          "clinical finding": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical finding' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "genitourinary symptom": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'genitourinary symptom' set from ICD-10 R30-R39 (symptoms and signs involving the urinary system: dysuria, hematuria, urinary incontinence, urinary retention, urinary frequency/volume symptoms, etc.), on the order of 50-70 distinct coded entities. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 R30-R39",
+            "selector": "Belongs to the genitourinary symptom/sign category (ICD-10 R30-R39) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying. NOTE: value (75000) is part of the 75000 anchor cluster (nausea or vomiting, crestor, dentures) rather than the 500000 cluster \u2014 flagged in prior entry, unresolved anchor-drift question still open.",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "urinary volume/frequency symptom": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'urinary volume/frequency symptom' set from ICD-10 R35 (polyuria), R39.1x (nocturia, urinary frequency), and R34 (anuria/oliguria), the tight cluster of signs specifically describing abnormal urine volume or voiding frequency; on the order of 8-15 distinct coded entities. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 R34, R35, R39.1x",
+            "selector": "Belongs to the urinary volume/frequency symptom category (ICD-10 R34/R35/R39.1x) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "urinary volume/frequency symptom",
+          "genitourinary symptom",
+          "clinical finding",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:mts-producer:health-condition:polyuria"
+        ]
+      },
       "poor renal sufficiency": {
         "aliases": [
           "renal insufficiency",
@@ -47730,6 +48422,54 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:psoriasis"
+        ]
+      },
+      "psychological disease": {
+        "aliases": [
+          "psychological disease",
+          "mental illness",
+          "mental health disorder"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "disease": 15000,
+          "neurological condition": 600,
+          "psychiatric disorder": 280
+        },
+        "level_grounding": {
+          "disease": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "neurological condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'neurological condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "psychiatric disorder": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'psychiatric disorder' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "psychiatric disorder",
+          "neurological condition",
+          "disease"
+        ],
+        "source_ids": [
+          "producer:mts-producer:health-condition:psychological disease"
         ]
       },
       "psychotic periods": {
@@ -52381,6 +53121,65 @@
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:ambulance"
         ]
       },
+      "anal fissure surgery": {
+        "aliases": [
+          "c sections",
+          "anal fissure surgery",
+          "anal fissure repair",
+          "anal fissure operation"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "anal surgical treatment": 247,
+          "colorectal surgical procedure": 442,
+          "medical procedure": 79115,
+          "surgical procedure": 914
+        },
+        "level_grounding": {
+          "anal surgical treatment": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'anal surgical treatment of the anal canal' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "clinical coding catalog",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "colorectal surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'colorectal surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "colorectal surgery procedure index",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "global surgical taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "anal surgical treatment",
+          "colorectal surgical procedure",
+          "surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:anal fissure surgery"
+        ]
+      },
       "angioplasty": {
         "aliases": [
           "pci",
@@ -53655,6 +54454,65 @@
           "producer:levelfix-all:levelfix:medical-procedure:bypass right ventricle to coronary circulation open approach"
         ]
       },
+      "c section": {
+        "aliases": [
+          "c section",
+          "c-section",
+          "cesarean section",
+          "cesarean delivery"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "Cesarean delivery procedures": 45,
+          "Obstetric surgical procedures": 442,
+          "medical procedure": 79115,
+          "surgical procedure": 914
+        },
+        "level_grounding": {
+          "Cesarean delivery procedures": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'Cesarean delivery procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "CPT taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "Obstetric surgical procedures": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'Obstetric surgical procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "OBGYN taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "Cesarean delivery procedures",
+          "Obstetric surgical procedures",
+          "surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:c section"
+        ]
+      },
       "carotid sinus surgery": {
         "aliases": [
           "carotid sinus denervation",
@@ -54381,6 +55239,54 @@
           "producer:levelfix-all:levelfix:medical-procedure:echocardiogram echocardiocardiogram"
         ]
       },
+      "electromyography study": {
+        "aliases": [
+          "emg study",
+          "electromyography test",
+          "muscle electrophysiology study"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "diagnostic procedure": 914,
+          "medical procedure": 79115,
+          "neuromuscular diagnostic procedure": 442
+        },
+        "level_grounding": {
+          "diagnostic procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'diagnostic procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "national procedure taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "neuromuscular diagnostic procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'neuromuscular diagnostic procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "specialty\u2011specific procedure classification (neurology/physiatry)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "neuromuscular diagnostic procedure",
+          "diagnostic procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:electromyography study"
+        ]
+      },
       "endoscopy": {
         "aliases": [
           "endoscopy",
@@ -54684,6 +55590,64 @@
           "producer:drug-health-procedure-nemotron-3-super:medical-procedure:heart catheterization"
         ]
       },
+      "heart surgery": {
+        "aliases": [
+          "cardiac surgery",
+          "heart operation"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "cardiac surgical procedure": 200,
+          "cardiovascular surgical procedure": 442,
+          "medical procedure": 79115,
+          "surgical procedure": 914
+        },
+        "level_grounding": {
+          "cardiac surgical procedure": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'cardiac surgical procedure' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "organ_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "cardiovascular surgical procedure": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'cardiovascular surgical procedure' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "body_system_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "medical procedure": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'medical procedure' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "root",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "surgical procedure": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'surgical procedure' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "broad_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          }
+        },
+        "levels": [
+          "cardiac surgical procedure",
+          "cardiovascular surgical procedure",
+          "surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "mined-clinical:mts/15",
+          "manual-rescue:mts-producer:medical-procedure:heart surgery"
+        ]
+      },
       "hemoglobin a1c": {
         "aliases": [
           "hba1c",
@@ -54893,6 +55857,55 @@
           "producer:levelfix-all:levelfix:medical-procedure:injection procedure"
         ]
       },
+      "joint replacements": {
+        "aliases": [
+          "joint replacement",
+          "arthroplasty",
+          "joint arthroplasty",
+          "total joint replacement"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115,
+          "orthopedic surgical procedures": 442,
+          "surgical procedure": 914
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "orthopedic surgical procedures": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'orthopedic surgical procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "clinical specialty taxonomy (orthopedics)",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "orthopedic surgical procedures",
+          "surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:joint replacements"
+        ]
+      },
       "knee replacement": {
         "aliases": [
           "knee arthroplasty",
@@ -54955,6 +55968,53 @@
         ],
         "source_ids": [
           "producer:regate:levelfix:medical-procedure:knee replacement"
+        ]
+      },
+      "knee surgery": {
+        "aliases": [
+          "knee operation"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115,
+          "orthopedic surgical procedures": 442,
+          "surgical procedure": 914
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'medical procedure' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "root",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "orthopedic surgical procedures": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'orthopedic surgical procedures' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "body_system_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          },
+          "surgical procedure": {
+            "count_basis": "manual-rescue-estimate",
+            "count_evidence": "'surgical procedure' anonymity-set size is a manually curated real-world magnitude estimate, aligned to the run's broad-tier counts; rescued from a low-confidence/refused producer item",
+            "member_set_ref": null,
+            "selector": "broad_class",
+            "source_family": "manual-curated",
+            "status": "manual-rescue"
+          }
+        },
+        "levels": [
+          "orthopedic surgical procedures",
+          "surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "mined-clinical:mts/60",
+          "manual-rescue:mts-producer:medical-procedure:knee surgery"
         ]
       },
       "liver ultrasound": {
@@ -55101,6 +56161,112 @@
         ],
         "source_ids": [
           "producer:regate:levelfix:medical-procedure:lumbar disc replacement"
+        ]
+      },
+      "lumbar laminectomy": {
+        "aliases": [
+          "lumbar laminectomy",
+          "lumbar decompression laminectomy",
+          "lumbar spine laminectomy"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115,
+          "spinal laminectomy procedures": 120,
+          "spinal surgery": 442,
+          "surgical procedure": 914
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "spinal laminectomy procedures": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'spinal laminectomy procedures' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "spinal decompression procedure classification",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "spinal surgery": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'spinal surgery' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "spine surgery procedural catalog",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "spinal laminectomy procedures",
+          "spinal surgery",
+          "surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:lumbar laminectomy"
+        ]
+      },
+      "lymph node biopsy": {
+        "aliases": [
+          "lymph node sampling",
+          "lymph node excisional biopsy",
+          "lymph node core needle biopsy"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "biopsy": 247,
+          "diagnostic procedure": 914,
+          "medical procedure": 79115
+        },
+        "level_grounding": {
+          "biopsy": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'biopsy' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure taxonomy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "diagnostic procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'diagnostic procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "biopsy",
+          "diagnostic procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:lymph node biopsy"
         ]
       },
       "mammogram": {
@@ -55479,6 +56645,44 @@
         ],
         "source_ids": [
           "producer:levelfix-all:levelfix:medical-procedure:pulmonary function test"
+        ]
+      },
+      "radiation therapy": {
+        "aliases": [
+          "radiation therapy",
+          "radiotherapy",
+          "rt"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115,
+          "therapeutic procedure": 442
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "therapeutic procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'therapeutic procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "SNOMED CT hierarchy",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "therapeutic procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:radiation therapy"
         ]
       },
       "rapid covid test": {
@@ -55865,6 +57069,91 @@
         ],
         "source_ids": [
           "producer:regate:levelfix:medical-procedure:stripping of veins"
+        ]
+      },
+      "tonsillectomy": {
+        "aliases": [
+          "tonsillectomy",
+          "tonsil removal"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "head and neck surgical procedure": 247,
+          "medical procedure": 79115,
+          "surgical procedure": 914
+        },
+        "level_grounding": {
+          "head and neck surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'head and neck surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "body_system_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "surgical procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'surgical procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "procedure_category",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "head and neck surgical procedure",
+          "surgical procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:tonsillectomy"
+        ]
+      },
+      "transplant": {
+        "aliases": [
+          "organ transplant",
+          "solid organ transplant",
+          "transplantation"
+        ],
+        "count": 1,
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "medical procedure": 79115,
+          "therapeutic procedure": 442
+        },
+        "level_grounding": {
+          "medical procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
+          },
+          "therapeutic procedure": {
+            "count_basis": "model-proposed-corpus-median",
+            "count_evidence": "'therapeutic procedure' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "therapeutic procedure",
+          "medical procedure"
+        ],
+        "source_ids": [
+          "producer:mts-producer:medical-procedure:transplant"
         ]
       },
       "tubes tied": {
