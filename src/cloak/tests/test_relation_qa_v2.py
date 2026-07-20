@@ -2356,6 +2356,15 @@ def test_relation_support_opportunities_augment_adds_gazetteer_unreachable_liter
                for row in augmented)
 
 
+def test_display_locators_strips_lead_verbs_and_drops_superset_duplicates():
+    out = qa_builder._display_locators(
+        ["order a thyroid panel", "referral to physical therapy", "physical therapy", "creatinine"])
+    assert "thyroid panel" in out                     # leading verb + article stripped
+    assert "physical therapy" in out
+    assert "referral to physical therapy" not in out  # near-duplicate superset dropped
+    assert "creatinine" in out
+
+
 def test_literal_reverse_assertions_builds_compound_condition_answer():
     occurrences = {
         "cond": {"occurrence_id": "cond", "decision_id": "d-c", "surface": "CHF", "start": 0, "end": 3,

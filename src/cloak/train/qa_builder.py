@@ -4035,24 +4035,37 @@ def _all_occurrence_judge_premise(
 # (test->monitoring, drug->treatment, symptom->symptom, procedure->procedure). The condition may be
 # the object (contraindicated_because_of) or subject; the combinatorial pairing in
 # relation_support_opportunities assigns the role, so anchoring on the condition suffices.
-_RELATION_PREFILTER_SETCALL: dict[str, tuple[str, str, str]] = {
+# (kind, phrase, runtime_type, constraint). `constraint` is an extra form/precision instruction for
+# relations whose objects the small reader tends to answer loosely; "" for the entity-typed relations
+# (test/drug/procedure objects are naturally named noun phrases).
+_RELATION_PREFILTER_SETCALL: dict[str, tuple[str, str, str, str]] = {
     "prescribed_with": (
-        "medication or drug", "was prescribed, started, continued, or given to treat", "drug"),
+        "medication or drug", "was prescribed, started, continued, or given to treat", "drug", ""),
     "procedure_for": (
         "medical procedure, therapy, surgery, or referral",
-        "was performed, planned, referred, or previously done to treat", "procedure"),
+        "was performed, planned, referred, or previously done to treat", "procedure", ""),
     "tests_for": (
         "diagnostic test, lab, panel, imaging study, or exam",
-        "was ordered, performed, or resulted to work up, monitor, or evaluate", "test"),
+        "was ordered, performed, or resulted to work up, monitor, or evaluate", "test", ""),
     "contraindicated_because_of": (
         "medication, drug, drug class, or procedure",
-        "must be avoided or is contraindicated because of", "drug"),
+        "must be avoided or is contraindicated because of", "drug", ""),
+    # causes_or_explains objects are open-ended findings, so the reader returns imperatives/advice and
+    # clauses ("push fluids", "take it easy", "wbc is not elevated"). Pin the FORM hard: a named
+    # noun-phrase finding only. Final attempt -- drop the relation from the prefilter if this misses.
     "causes_or_explains": (
-        "condition, symptom, or finding", "is caused or explained by", "symptom"),
+        "symptom, sign, or abnormal test or exam finding",
+        "is caused or explained by", "symptom",
+        "Each answer MUST be a short NOUN PHRASE naming one specific symptom, sign, or abnormal "
+        "finding (for example: chest pain, jaundice, elevated white cell count, lower-extremity "
+        "swelling). Do NOT return: advice or instructions, actions or verb phrases, full sentences "
+        "or clauses, negated or normal findings, or the patient's own words about their life, diet, "
+        "or behavior."),
 }
 _RELATION_PREFILTER_FRAME = (
     "Clinical note:\n\"\"\"\n{ctx}\n\"\"\"\n\n"
     "List EVERY distinct {kind} that the note says {phrase} the patient's {anchor}.\n"
+    "{constraint}"
     "Copy each answer verbatim as a short phrase from the note; include nothing not in the note.\n"
     "Respond with ONLY a JSON array of strings, e.g. [\"x\",\"y\"]. If there are none, respond []."
 )
@@ -4093,9 +4106,10 @@ def llm_prefilter_context_candidates(
             conditions.setdefault(str(occurrence.get("decision_id")), str(occurrence["surface"]))
     candidates: dict[tuple, dict] = {}
     for anchor in conditions.values():
-        for kind, phrase, runtime_type in _RELATION_PREFILTER_SETCALL.values():
+        for kind, phrase, runtime_type, constraint in _RELATION_PREFILTER_SETCALL.values():
             prompt = _RELATION_PREFILTER_FRAME.format(
-                ctx=document, kind=kind, phrase=phrase, anchor=anchor)
+                ctx=document, kind=kind, phrase=phrase, anchor=anchor,
+                constraint=(constraint + "\n") if constraint else "")
             for item in _parse_llm_json_array(propose(prompt)):
                 match = re.search(re.escape(item), document, re.IGNORECASE)
                 if match is None:
@@ -4764,6 +4778,36 @@ _LITERAL_REVERSE_TEMPLATES = {
 }
 
 
+_LOCATOR_LEAD_STRIP = re.compile(
+    r"^(?:order(?:ed|ing)?|check(?:ed|ing)?|obtain(?:ed|ing)?|get|perform(?:ed|ing)?|plan(?:ned)?|"
+    r"start(?:ed|ing)?|refer(?:ral)?(?:\s+to)?|the|a|an|some|his|her|your|our|my)\s+", re.I)
+
+
+def _clean_locator(text: str) -> str:
+    """Strip leading order/refer verbs and articles so a locator reads as the entity itself
+    ('order a thyroid panel' -> 'thyroid panel'). Iterated to peel a verb+article stack."""
+    previous = None
+    text = text.strip()
+    while text and text != previous:
+        previous = text
+        text = _LOCATOR_LEAD_STRIP.sub("", text).strip()
+    return text or previous or ""
+
+
+def _display_locators(literals: Sequence[str]) -> list[str]:
+    """Clean + drop near-duplicate supersets (keep 'physical therapy' over 'referral to physical
+    therapy'), so the compound locator is concise and non-redundant."""
+    cleaned = list(dict.fromkeys(filter(None, (_clean_locator(literal) for literal in literals))))
+    cleaned.sort(key=len)  # prefer the shortest form of a near-duplicate
+    display: list[str] = []
+    for candidate in cleaned:
+        tokens = set(canon(candidate).split())
+        if tokens and any(set(canon(kept).split()) <= tokens for kept in display):
+            continue  # a shorter kept locator already covers this one
+        display.append(candidate)
+    return display
+
+
 def _join_locators(items: Sequence[str]) -> str:
     unique = list(dict.fromkeys(items))
     if len(unique) == 1:
@@ -4822,8 +4866,9 @@ def _literal_reverse_assertions(
         occurrence_id = group["occurrence_id"]
         occurrence = occurrences[occurrence_id]
         literals = list(group["literals"].values())
+        display = _display_locators([literal for literal, _s, _e in literals])
         question = _LITERAL_REVERSE_TEMPLATES[relation].format(
-            locators=_join_locators([literal for literal, _s, _e in literals]))
+            locators=_join_locators(display or [literal for literal, _s, _e in literals]))
         condition_span = (int(occurrence["start"]), int(occurrence["end"]))
         ranges = [condition_span] + [(start, end) for _literal, start, end in literals]
         arguments = [
