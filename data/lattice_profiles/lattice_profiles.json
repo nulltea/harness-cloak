@@ -12217,7 +12217,9 @@
         ]
       },
       "aspirin": {
-        "aliases": [],
+        "aliases": [
+          "nsaid"
+        ],
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -12948,7 +12950,9 @@
         ]
       },
       "bumetanide": {
-        "aliases": [],
+        "aliases": [
+          "bumex"
+        ],
         "count": 6.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -15857,7 +15861,9 @@
         ]
       },
       "epinephrine": {
-        "aliases": [],
+        "aliases": [
+          "epipen"
+        ],
         "count": 20.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -16101,7 +16107,9 @@
         ]
       },
       "famotidine": {
-        "aliases": [],
+        "aliases": [
+          "pepcid"
+        ],
         "count": 12.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -16525,18 +16533,18 @@
         "count": 6.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "loop diuretic": 6.0,
+          "cardiovascular agent": 300.0,
           "cardiovascular diuretic": 20,
-          "cardiovascular agent": 300.0
+          "loop diuretic": 6.0
         },
         "level_grounding": {
-          "loop diuretic": {
-            "count_basis": "regulatory-classification",
-            "count_evidence": "'loop diuretic' count is the number of distinct drugs listed under the FDA Established Pharmacologic Class 'Loop Diuretic [EPC]' in openFDA NDC data. NOTE: value (6) coincides exactly with this entry's own leaf observed-surface count \u2014 plausible given the small real-world loop diuretic class, but worth confirming the openFDA query actually executed rather than defaulting to the leaf value.",
-            "member_set_ref": "openfda-ndc:pharm_class:Loop Diuretic [EPC]",
-            "selector": "openfda_ndc.pharm_class == 'Loop Diuretic [EPC]'",
-            "source_family": "openfda-pharm-class",
-            "status": "certifying"
+          "cardiovascular agent": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
           },
           "cardiovascular diuretic": {
             "count_basis": "real-world-reference-estimate",
@@ -16546,13 +16554,13 @@
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "cardiovascular agent": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'cardiovascular agent' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "canonical_vocabulary_slice",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
+          "loop diuretic": {
+            "count_basis": "regulatory-classification",
+            "count_evidence": "'loop diuretic' count is the number of distinct drugs listed under the FDA Established Pharmacologic Class 'Loop Diuretic [EPC]' in openFDA NDC data. NOTE: value (6) coincides exactly with this entry's own leaf observed-surface count \u2014 plausible given the small real-world loop diuretic class, but worth confirming the openFDA query actually executed rather than defaulting to the leaf value.",
+            "member_set_ref": "openfda-ndc:pharm_class:Loop Diuretic [EPC]",
+            "selector": "openfda_ndc.pharm_class == 'Loop Diuretic [EPC]'",
+            "source_family": "openfda-pharm-class",
+            "status": "certifying"
           }
         },
         "levels": [
@@ -17139,7 +17147,8 @@
         ]
       },
       "ibuprofen": {
-        "aliases": [],
+        "aliases": [
+        ],
         "count": 90.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -18049,7 +18058,6 @@
         ]
       },
       "levonorgestrel": {
-        "aliases": [],
         "count": 9.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -18961,7 +18969,8 @@
         ]
       },
       "menthol": {
-        "aliases": [],
+        "aliases": [
+        ],
         "count": 150.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -22091,7 +22100,9 @@
         ]
       },
       "sucralfate": {
-        "aliases": [],
+        "aliases": [
+          "carafate"
+        ],
         "count": 3.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -23080,7 +23091,9 @@
         ]
       },
       "venlafaxine": {
-        "aliases": [],
+        "aliases": [
+          "effexor"
+        ],
         "count": 14.0,
         "entry_origin": "observed-surface",
         "level_counts": {
@@ -31244,11 +31257,19 @@
         "count": 270.0,
         "entry_origin": "observed-surface",
         "level_counts": {
+          "disease of anatomical entity": 9162.0,
           "heart disease": 270.0,
-          "thoracic disease": 390.0,
-          "disease of anatomical entity": 9162.0
+          "thoracic disease": 390.0
         },
         "level_grounding": {
+          "disease of anatomical entity": {
+            "count_basis": "ontology-derived",
+            "count_evidence": "'disease of anatomical entity' count is the number of is_a descendants of DOID:7 in the Human Disease Ontology (DOID).",
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
           "heart disease": {
             "count_basis": "ontology-derived",
             "count_evidence": "'heart disease' count is the number of is_a descendants of DOID:114 in the Human Disease Ontology (DOID). FLAGGED: this value (270) exactly matches the entry's own leaf-level observed-surface count \u2014 verify this wasn't inherited by default rather than computed from an actual DOID query.",
@@ -31262,14 +31283,6 @@
             "count_evidence": "'thoracic disease' count is the number of is_a descendants of DOID:0060118 in the Human Disease Ontology (DOID).",
             "member_set_ref": "doid:is_a_descendants:DOID:0060118",
             "selector": "doid.is_a_descendants(DOID:0060118)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "disease of anatomical entity": {
-            "count_basis": "ontology-derived",
-            "count_evidence": "'disease of anatomical entity' count is the number of is_a descendants of DOID:7 in the Human Disease Ontology (DOID).",
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
             "source_family": "doid-is-a",
             "status": "certifying"
           }
@@ -34899,11 +34912,17 @@
         "count": 30.0,
         "entry_origin": "observed-surface",
         "level_counts": {
+          "disease of anatomical entity": 9162.0,
           "esophageal disease": 40.0,
-          "gastrointestinal system disease": 838.0,
-          "disease of anatomical entity": 9162.0
+          "gastrointestinal system disease": 838.0
         },
         "level_grounding": {
+          "disease of anatomical entity": {
+            "member_set_ref": "doid:is_a_descendants:DOID:7",
+            "selector": "doid.is_a_descendants(DOID:7)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
+          },
           "esophageal disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:6050",
             "selector": "doid.is_a_descendants(DOID:6050)",
@@ -34913,12 +34932,6 @@
           "gastrointestinal system disease": {
             "member_set_ref": "doid:is_a_descendants:DOID:77",
             "selector": "doid.is_a_descendants(DOID:77)",
-            "source_family": "doid-is-a",
-            "status": "certifying"
-          },
-          "disease of anatomical entity": {
-            "member_set_ref": "doid:is_a_descendants:DOID:7",
-            "selector": "doid.is_a_descendants(DOID:7)",
             "source_family": "doid-is-a",
             "status": "certifying"
           }
@@ -36526,15 +36539,20 @@
           "hypertensive disease",
           "vascular hypertensive disorder",
           "high bp",
-          "hypertensive disorder"
+          "hypertensive disorder",
+          "severe hypertension",
+          "uncontrolled hypertension",
+          "severe htn",
+          "high blood pressure severe",
+          "high blood pressure uncontrolled"
         ],
         "count": 130.0,
         "entry_origin": "observed-surface",
         "level_counts": {
           "artery disease": 130.0,
-          "vascular disease": 327.0,
           "cardiovascular system disease": 627.0,
-          "disease of anatomical entity": 9162.0
+          "disease of anatomical entity": 9162.0,
+          "vascular disease": 327.0
         },
         "level_grounding": {
           "artery disease": {
@@ -36545,29 +36563,29 @@
             "source_family": "doid-is-a",
             "status": "certifying"
           },
-          "vascular disease": {
-            "member_set_ref": "doid:is_a_descendants:DOID:178",
-            "selector": "doid.is_a_descendants(DOID:178)",
-            "source_family": "doid-is-a",
-            "status": "certifying",
-            "count_basis": "ontology-derived",
-            "count_evidence": "'vascular disease' count is the number of is_a descendants of DOID:178 in the Human Disease Ontology."
-          },
           "cardiovascular system disease": {
+            "count_basis": "ontology-derived",
+            "count_evidence": "'cardiovascular system disease' count is the number of is_a descendants of DOID:1287 in the Human Disease Ontology.",
             "member_set_ref": "doid:is_a_descendants:DOID:1287",
             "selector": "doid.is_a_descendants(DOID:1287)",
             "source_family": "doid-is-a",
-            "status": "certifying",
-            "count_basis": "ontology-derived",
-            "count_evidence": "'cardiovascular system disease' count is the number of is_a descendants of DOID:1287 in the Human Disease Ontology."
+            "status": "certifying"
           },
           "disease of anatomical entity": {
+            "count_basis": "ontology-derived",
+            "count_evidence": "'disease of anatomical entity' count is the number of is_a descendants of DOID:7 in the Human Disease Ontology.",
             "member_set_ref": "doid:is_a_descendants:DOID:7",
             "selector": "doid.is_a_descendants(DOID:7)",
             "source_family": "doid-is-a",
-            "status": "certifying",
+            "status": "certifying"
+          },
+          "vascular disease": {
             "count_basis": "ontology-derived",
-            "count_evidence": "'disease of anatomical entity' count is the number of is_a descendants of DOID:7 in the Human Disease Ontology."
+            "count_evidence": "'vascular disease' count is the number of is_a descendants of DOID:178 in the Human Disease Ontology.",
+            "member_set_ref": "doid:is_a_descendants:DOID:178",
+            "selector": "doid.is_a_descendants(DOID:178)",
+            "source_family": "doid-is-a",
+            "status": "certifying"
           }
         },
         "levels": [
@@ -43368,65 +43386,6 @@
           "producer:repair-gptoss120b:triage:health-condition:severe aortic stenosis"
         ]
       },
-      "severe hypertension": {
-        "aliases": [
-          "high blood pressure severe",
-          "high blood pressure uncontrolled",
-          "severe htn",
-          "uncontrolled hypertension"
-        ],
-        "count": 300.0,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "cardiovascular condition": 300.0,
-          "disease of anatomical entity": 9162.0,
-          "essential hypertension family": 1.0,
-          "heart disease": 6999.93
-        },
-        "level_grounding": {
-          "cardiovascular condition": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'cardiovascular condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "cardiovascular condition",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "disease of anatomical entity": {
-            "count_evidence": "canonical_vocabulary_slice entry for disease of anatomical entity",
-            "member_set_ref": null,
-            "selector": "disease of anatomical entity",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "essential hypertension family": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'essential hypertension family' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "essential hypertension family",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "heart disease": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'heart disease' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "heart disease",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "essential hypertension family",
-          "cardiovascular condition",
-          "heart disease",
-          "disease of anatomical entity"
-        ],
-        "source_ids": [
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:severe hypertension",
-          "producer:qa-v2-clinical-remine-nemotron-3-super-clean:health-condition:uncontrolled hypertension"
-        ]
-      },
       "shoulder shrugging": {
         "aliases": [
           "shoulder elevation",
@@ -46457,12 +46416,12 @@
             "status": "model-proposed"
           },
           "medical procedure": {
-            "status": "model-proposed",
-            "source_family": "icd10pcs-universe",
-            "selector": "icd10pcs.billable_7_character_code",
-            "member_set_ref": null,
             "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles"
+            "count_evidence": "'medical procedure' uses the distinct billable ICD-10-PCS code universe as a broad reference magnitude; this does not certify individual free-text profiles",
+            "member_set_ref": null,
+            "selector": "icd10pcs.billable_7_character_code",
+            "source_family": "icd10pcs-universe",
+            "status": "model-proposed"
           }
         },
         "levels": [
@@ -48227,24 +48186,24 @@
         "count": 1.0,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "cardiac catheterization": 1.0,
           "cardiovascular catheterization": 86.0,
+          "cardiovascular procedure": 900,
           "medical procedure": 79115.0
         },
         "level_grounding": {
-          "cardiac catheterization": {
+          "cardiovascular catheterization": {
             "count_basis": "corpus-membership",
-            "count_evidence": "'cardiac catheterization' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
+            "count_evidence": "'cardiovascular catheterization' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying.",
             "member_set_ref": null,
-            "selector": "ICD-10-PCS",
+            "selector": "corpus entries whose generalization chain includes the cardiovascular catheterization node",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
-          "cardiovascular catheterization": {
-            "count_basis": "corpus-membership",
-            "count_evidence": "'cardiovascular catheterization' count is a corpus-membership anonymity-set size (number of distinct entries in this run whose generalization chain includes it), adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "ICD-10-PCS",
+          "cardiovascular procedure": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'cardiovascular procedure' set from ICD-10-PCS section 02 (Medical and Surgical, Heart and Great Vessels) plus related section 0-body-system cardiovascular procedure codes (bypass, catheterization, valvuloplasty, pacemaker/defibrillator insertion, ablation, angioplasty, etc.), collapsed to distinct procedure-type granularity rather than full 7-character billable-code granularity; on the order of a few hundred to ~1000 distinct procedure types. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10-PCS section 02 (Heart and Great Vessels) and related cardiovascular procedure codes",
+            "selector": "Belongs to the cardiovascular procedure category (ICD-10-PCS heart/great-vessel procedures) in the canonical vocabulary.",
             "source_family": "model-proposed",
             "status": "model-proposed"
           },
@@ -48258,8 +48217,8 @@
           }
         },
         "levels": [
-          "cardiac catheterization",
           "cardiovascular catheterization",
+          "cardiovascular procedure",
           "medical procedure"
         ],
         "source_ids": [
