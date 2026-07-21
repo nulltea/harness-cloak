@@ -3716,19 +3716,30 @@ def test_claim_directionality_places_drug_test_first():
     assert _claim("causes_or_explains", "edema", "mitral regurgitation") == "edema causes or explains mitral regurgitation"
 
 
-def test_linked_answer_score_folds_plural_singular():
+def test_linked_answer_score_contiguity_and_verbosity_cap():
     from cloak.train.qa_builder import _linked_answer_score, _resolve_semantic_node
     chain = [
         {"answer_aliases": ["kidney stones"], "entailed_properties": ["urolithiasis", "kidney disease"]},
         {"answer_aliases": ["urolithiasis"], "entailed_properties": ["urolithiasis"]},
     ]
-    # singular answer against plural alias now resolves + credits
-    assert _resolve_semantic_node(chain, "possible kidney stone") is not None
-    assert _linked_answer_score("possible kidney stone", chain, "urolithiasis") == 1.0
-    # exact-level answer still credits
+    # singular answer against plural alias resolves + credits (inflection folds both sides)
+    assert _resolve_semantic_node(chain, "kidney stone") is not None
+    assert _linked_answer_score("kidney stone", chain, "urolithiasis") == 1.0
+    # determiners/stopwords are ignored: "the kidney stones" is still an exact span
+    assert _linked_answer_score("the kidney stones", chain, "urolithiasis") == 1.0
     assert _linked_answer_score("urolithiasis", chain, "urolithiasis") == 1.0
-    # plural answer against singular alias
+    # legitimate verbosity within the cap resolves: hedge prefix, qualifier tail, compound span
+    # (the 2026-07-21 scorer A/B measured these as 32/37 of strict-equality's false negatives)
+    assert _linked_answer_score("possible kidney stone", chain, "urolithiasis") == 1.0
+    assert _linked_answer_score("recurrent kidney stones on the left", chain, "urolithiasis") == 1.0
+    # NON-CONTIGUOUS alias tokens never resolve (scattered-token containment was unearned)
+    assert _linked_answer_score("kidney pain from stones", chain, "urolithiasis") == 0.0
+    # whole-sentence echo over the verbosity cap never resolves
+    assert _linked_answer_score(
+        "the doctor will order an ultrasound scan to check whether kidney stones explain it",
+        chain, "urolithiasis") == 0.0
     chain2 = [{"answer_aliases": ["medication"], "entailed_properties": ["drug"]}]
+    assert _linked_answer_score("medications", chain2, "drug") == 1.0
     assert _linked_answer_score("some medications", chain2, "drug") == 1.0
     # '-ss' words are not truncated (no false fold), unrelated terms don't resolve
     chain3 = [{"answer_aliases": ["abscess"], "entailed_properties": ["lesion"]}]

@@ -136,7 +136,18 @@ RELATION_TEACHER_RESPONSE_FORMAT = {
     },
 }
 CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v4"
-CONTEXT_READER_RESPONSE_SCHEMA = {"type": "single-span", "version": 2}
+# version 3: contiguity + verbosity-cap scoring — _resolve_semantic_node requires an alias to
+# appear as a CONTIGUOUS stemmed subsequence of the reply (was: token-SET subset, which credited
+# scattered tokens), with at most _ANSWER_EXTRA_TOKEN_CAP meaningful tokens of reply verbosity
+# (which credited whole-sentence echoes). The schema version covers the full
+# answer-interpretation contract, not just the wire format.
+CONTEXT_READER_RESPONSE_SCHEMA = {"type": "single-span", "version": 3}
+# Set from the 2026-07-21 scorer A/B and FROZEN before any re-gate; never retuned per result
+# (empirical-honesty rule). Measured extra-token distribution: legitimate replies (hedge
+# prefixes, dose/qualifier tails, compound spans) at 1-6 extra; two verbose two-drug compound
+# sentences at 9 (deliberately left out — recovering them needs cap>=9, the near-echo regime);
+# whole-sentence echoes at 26. The 6->26 gap places the cap.
+_ANSWER_EXTRA_TOKEN_CAP = 6
 CONTEXT_READER_REVISION = "qa-reader-r5"
 # The reader is given only the transcript turns covering an assertion's
 # arguments/evidence, plus this many neighbor turns each side, instead of the
@@ -2125,6 +2136,16 @@ def _singularize(token: str) -> str:
 
 def _stemmed_tokens(value: str) -> set[str]:
     return {_singularize(token) for token in _meaningful_tokens(value)}
+
+
+def _stemmed_token_sequence(value: str) -> tuple[str, ...]:
+    """Ordered variant of _stemmed_tokens (same canon/stopword/inflection folding, order kept):
+    the exact-span scorer compares SEQUENCES, so a reply must be the alias, not merely contain
+    its words somewhere."""
+    return tuple(
+        _singularize(token) for token in re.findall(r"[a-z0-9]+", canon(value))
+        if len(token) > 2 and token not in _LEAKAGE_STOPWORDS
+    )
 
 
 def _normalized_aliases(value) -> list[str]:
@@ -9263,25 +9284,37 @@ def _answer_score(answer: str, accepted_values: Sequence[str]) -> float:
 
 def _resolve_semantic_node(chain: Sequence[Mapping], answer: str) -> dict | None:
     """Resolve a free-form reader answer to exactly one node in one decision's
-    frozen semantic chain, by its answer_aliases. Decision-scoped and lexical
-    (containment on meaningful tokens); ambiguous or unresolved -> None. A
-    protected source value resolves to KEEP locally without ever entering the
-    artifact's public answer golds."""
-    answer_tokens = _stemmed_tokens(answer)
-    if not answer_tokens:
+    frozen semantic chain, by its answer_aliases. Decision-scoped and lexical;
+    ambiguous or unresolved -> None. A protected source value resolves to KEEP
+    locally without ever entering the artifact's public answer golds.
+
+    Contiguity + verbosity cap (reader schema v3): an alias must appear as a
+    CONTIGUOUS stemmed subsequence of the reply, and the reply may carry at most
+    _ANSWER_EXTRA_TOKEN_CAP meaningful tokens beyond the alias. Keeps legitimate
+    reader verbosity resolvable — hedge prefixes, dose/qualifier tails, compound
+    spans (measured: 32/37 strict-equality flips were such false negatives) —
+    while rejecting the containment rule's unearned passes: whole-sentence
+    echoes (over the cap) and tokens scattered across phrases (non-contiguous)."""
+    answer_sequence = _stemmed_token_sequence(answer)
+    if not answer_sequence:
         return None
+
+    def resolves(alias: str) -> bool:
+        alias_sequence = _stemmed_token_sequence(alias)
+        span = len(alias_sequence)
+        if not span or len(answer_sequence) - span > _ANSWER_EXTRA_TOKEN_CAP:
+            return False
+        return any(
+            answer_sequence[start:start + span] == alias_sequence
+            for start in range(len(answer_sequence) - span + 1)
+        )
+
     matches = [
         node for node in chain
-        if any(
-            (alias_tokens := _stemmed_tokens(str(alias)))
-            and alias_tokens <= answer_tokens
-            for alias in node.get("answer_aliases") or []
-        )
+        if any(resolves(str(alias)) for alias in node.get("answer_aliases") or [])
     ]
-    # A coarser level's words are often a subset of a finer level's answer
-    # (e.g. "analgesic" <= "opioid analgesic"), so several nodes can match. The
-    # chain is linear specific->coarse, so matches[0] is the finest match; finer
-    # entails coarser, making it the correct and strictest resolution.
+    # Exact equality can still match several nodes when aliases repeat across
+    # the chain; matches[0] is the finest (chain is linear specific->coarse).
     # ponytail: assumes a linear chain (no sibling levels); revisit for a DAG.
     return dict(matches[0]) if matches else None
 
