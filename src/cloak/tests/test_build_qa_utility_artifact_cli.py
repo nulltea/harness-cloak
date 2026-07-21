@@ -114,7 +114,7 @@ class _InjectedRelationTeacher:
         return self.proposals
 
 
-def _acceptance_reader(questions, context):
+def _acceptance_reader(questions, context, clauses=None):
     support = {
         "endocrine condition": ("hypothyroidism", "endocrine condition"),
         "thyroid medication": ("synthroid", "thyroid medication"),
@@ -523,7 +523,7 @@ def test_build_from_files_rejects_unpinned_injected_reader(tmp_path, monkeypatch
     ])
 
     with pytest.raises(ValueError, match="injected reader.*pin"):
-        qa_cli.build_from_files(args, reader=lambda questions, context: [])
+        qa_cli.build_from_files(args, reader=lambda questions, context, clauses=None: [])
 
 
 def test_build_from_files_rejects_relation_teacher_without_explicit_pin(

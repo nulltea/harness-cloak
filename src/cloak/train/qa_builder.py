@@ -135,9 +135,9 @@ RELATION_TEACHER_RESPONSE_FORMAT = {
         },
     },
 }
-CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v3"
+CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v4"
 CONTEXT_READER_RESPONSE_SCHEMA = {"type": "single-span", "version": 2}
-CONTEXT_READER_REVISION = "qa-reader-r4"
+CONTEXT_READER_REVISION = "qa-reader-r5"
 # The reader is given only the transcript turns covering an assertion's
 # arguments/evidence, plus this many neighbor turns each side, instead of the
 # whole document. Removes distractor spans (e.g. an unrelated drug elsewhere in
@@ -603,6 +603,171 @@ class OpenRouterRelationTeacher:
         return RelationTeacherProposals(relations, accounting)
 
 
+# Relation-constrained reader clause (qa-context-reader-v4). One prompt line restates the QA as
+# the relation the ANSWER must satisfy, naming the LOCATOR argument(s) — every NON-answer
+# argument — by the exact string the representative render substitutes. This is the only prompt
+# lever that stopped the reader grabbing lexically-resonant distractor spans; the 56-row
+# regression audit showed no clean regression
+# (docs/handoffs/2026-07-21-relation-constrained-reader-prompt.md).
+# Keyed by (relation, answer_role), NEVER by "the subject is the condition": for
+# contraindicated_because_of the subject is the treatment — the mirror image of the other four
+# relations — so the forward answer is a condition and the reverse answer is a treatment.
+_RELATION_READER_CLAUSES = {
+    ("prescribed_with", "object"):
+        "is a medication prescribed or used to treat {loc}",
+    ("prescribed_with", "subject"):
+        "is the medical condition that {loc} was prescribed or used to treat",
+    ("procedure_for", "object"):
+        "is a procedure or treatment performed for {loc}",
+    ("procedure_for", "subject"):
+        "is the medical condition that {loc} was performed or planned for",
+    ("tests_for", "object"):
+        "is a test or exam ordered to evaluate or monitor {loc}",
+    ("tests_for", "subject"):
+        "is the medical condition that {loc} was ordered to evaluate or monitor",
+    ("contraindicated_because_of", "object"):
+        "is a medical condition that makes {loc} unsuitable",
+    ("contraindicated_because_of", "subject"):
+        "is a treatment made unsuitable by {loc}",
+    ("causes_or_explains", "object"):
+        "is a condition, symptom, or finding caused or explained by {loc}",
+    ("causes_or_explains", "subject"):
+        "is the underlying condition that causes or explains {loc}",
+}
+# >= 2 locators (compound span-locator reverse, multi-literal reverse): the answer is always the
+# subject, so only subject rows exist. Plural verb + "all" pins uniqueness exactly as the
+# compound question text does.
+_RELATION_READER_CLAUSES_COMPOUND = {
+    ("prescribed_with", "subject"):
+        "is the single medical condition that {loc} were all prescribed or used to treat",
+    ("procedure_for", "subject"):
+        "is the single medical condition that {loc} were all performed or planned for",
+    ("tests_for", "subject"):
+        "is the single medical condition that {loc} were all ordered to evaluate or monitor",
+    ("contraindicated_because_of", "subject"):
+        "is a treatment made unsuitable by all of {loc}",
+    ("causes_or_explains", "subject"):
+        "is the single underlying condition that causes or explains all of {loc}",
+}
+
+
+def _rendered_level_fill(decision: Mapping, level: str) -> str:
+    """The exact string the render substitutes for `decision` at `level` (the level action's
+    fill) — not the level/support_property text, which can differ from what appears in the
+    rendered document."""
+    for action in decision.get("actions", []) or []:
+        if (
+            action.get("mode") == "level"
+            and action.get("entails")
+            and canon(str(action["entails"][0])) == canon(str(level))
+        ):
+            return str(action.get("fill") or action["entails"][0])
+    return str(level)
+
+
+def _typeset_locator_phrase(
+    argument: Mapping,
+    occurrences: Mapping[str, Mapping],
+    decisions_by_id: Mapping[str, Mapping],
+    requirements: Mapping[str, str],
+) -> str | None:
+    """A locator argument as a clause-ready noun phrase. Linked span: "the <rendered fill>"
+    (leading article stripped before prefixing). Context literal: the verbatim text in double
+    quotes, article-free — quoting keeps a junk literal (e.g. a whole verb phrase) a
+    syntactically inert token instead of destroying the clause grammar."""
+    if argument.get("kind") == "context":
+        literal = str(argument.get("literal") or "").strip()
+        return f'"{literal}"' if literal else None
+    occurrence = occurrences.get(str(argument.get("occurrence_id")))
+    if occurrence is None or occurrence.get("decision_id") is None:
+        return None
+    decision_id = str(occurrence["decision_id"])
+    decision = decisions_by_id.get(decision_id)
+    level = requirements.get(decision_id)
+    if decision is None or not level:
+        return None
+    fill = _rendered_level_fill(decision, str(level)).strip()
+    if not fill:
+        return None
+    return "the " + re.sub(r"^(?:a|an|the)\s+", "", fill, flags=re.IGNORECASE)
+
+
+def _join_locator_phrases(phrases: Sequence[str]) -> str:
+    if len(phrases) <= 2:
+        return " and ".join(phrases)
+    return ", ".join(phrases[:-1]) + ", and " + phrases[-1]
+
+
+def _relation_reader_clause(
+    candidate: Mapping,
+    occurrences: Mapping[str, Mapping],
+    decisions: Sequence[Mapping],
+) -> str | None:
+    """Frozen per-assertion relation-constraint clause for the v4 context reader.
+
+    The locators are the complement of the answer argument set (orientation-aware by
+    construction: forward names the subject, reverse the object(s), set-valued forward the
+    subject), so the answer argument can never be named. Locator strings are pinned-level
+    rendered fills — the same strings the representative render substitutes — frozen here once
+    and reused verbatim at every gate read, both lattice probes, and runtime scoring, so gate
+    and runtime certify the same instrument. Returns None (no constraint line) when the row is
+    not a relation QA, the answer is uncontrolled, or a locator cannot be typeset — graceful
+    degradation, never an exception."""
+    relation = str(candidate.get("relation") or "")
+    target = candidate.get("answer_target") or {}
+    arguments = list((candidate.get("evidence") or {}).get("arguments") or [])
+    requirements = {
+        str(key): str(value)
+        for key, value in dict(candidate.get("decision_requirements") or {}).items()
+    }
+    if target.get("kind") == "linked_decision":
+        answer_decision_ids = {str(target.get("decision_id"))}
+    elif target.get("kind") == "linked_decision_set":
+        answer_decision_ids = {
+            str(member.get("decision_id")) for member in target.get("members") or []
+        }
+    else:
+        return None  # legacy literal answer target: uncontrolled answer, no relation constraint
+
+    def argument_decision(argument: Mapping) -> str | None:
+        occurrence = occurrences.get(str(argument.get("occurrence_id")))
+        if occurrence is None or occurrence.get("decision_id") is None:
+            return None
+        return str(occurrence["decision_id"])
+
+    answer_arguments = [
+        argument for argument in arguments
+        if argument.get("kind") == "linked"
+        and argument_decision(argument) in answer_decision_ids
+    ]
+    answer_argument_ids = {id(argument) for argument in answer_arguments}
+    locator_arguments = [
+        argument for argument in arguments if id(argument) not in answer_argument_ids
+    ]
+    if not answer_arguments or not locator_arguments:
+        return None
+    answer_roles = {str(argument.get("role") or "") for argument in answer_arguments}
+    if len(answer_roles) != 1:
+        return None
+    answer_role = next(iter(answer_roles))
+    if any(str(argument.get("role") or "") == answer_role for argument in locator_arguments):
+        return None  # a locator sharing the answer's role cannot be named unambiguously
+    decisions_by_id = {str(decision["decision_id"]): decision for decision in decisions}
+    phrases = [
+        _typeset_locator_phrase(argument, occurrences, decisions_by_id, requirements)
+        for argument in locator_arguments
+    ]
+    if any(phrase is None for phrase in phrases):
+        return None
+    table = (
+        _RELATION_READER_CLAUSES_COMPOUND if len(phrases) > 1 else _RELATION_READER_CLAUSES
+    )
+    template = table.get((relation, answer_role))
+    if template is None:
+        return None
+    return template.format(loc=_join_locator_phrases(phrases))
+
+
 class BatchedContextReader:
     """Pinned reader for context assertions — one model request per question."""
 
@@ -626,58 +791,79 @@ class BatchedContextReader:
             )
         self._client = client
 
-    def _read_one(self, question: str, context: str) -> str:
-        prompt = (
-            "Read the DOCUMENT and complete the REQUEST. Copy the answer span "
-            "exactly from the DOCUMENT — do not rephrase, summarize, or add words. "
-            "If the DOCUMENT does not answer it, reply with exactly NONE.\n\n"
-            f"DOCUMENT:\n{context}\n\n"
-            f"REQUEST: {question}"
-        )
+    def _read_one(self, question: str, context: str, clause: str | None = None) -> str:
+        # qa-context-reader-v4: the optional relation-constraint line restates the QA as the
+        # relation the answer must satisfy (see _relation_reader_clause). Without a clause the
+        # template is the same minus that line (legacy rows, non-relation probes).
+        lines = [
+            "Read the DOCUMENT and answer the QUESTION. Copy the answer span exactly from the "
+            "DOCUMENT — do not rephrase, summarize, or add words.",
+            "If the DOCUMENT does not answer it, reply with exactly NONE.",
+        ]
+        if clause:
+            lines.append(f"Your ANSWER must satisfy the relation: ANSWER {clause}.")
+        prompt = "\n".join(lines) + f"\n\nDOCUMENT:\n{context}\n\nQUESTION: {question}"
         raw = self._client.generate(prompt).strip()
         if raw.startswith("```") and raw.endswith("```"):
             raw = raw.strip("`").strip()
         raw = raw.strip().strip('"').strip("'").strip()
         return "" if raw.upper() == "NONE" else raw
 
-    def _read_set_one(self, question: str, context: str) -> str:
+    def _read_set_one(self, question: str, context: str, clause: str | None = None) -> str:
         # Set-valued read (validated wrapper: scripts/spikes/set_valued_gate_probe.py): the raw
         # JSON-array reply is returned verbatim; _context_answer_score parses and scores recall.
-        prompt = (
-            "Read the DOCUMENT and complete the REQUEST. Copy each answer verbatim as a short "
+        lines = [
+            "Read the DOCUMENT and answer the QUESTION. Copy each answer verbatim as a short "
             "phrase from the DOCUMENT; include nothing not in the DOCUMENT. Respond with ONLY a "
-            'JSON array of strings, e.g. ["x","y"]. If there are none, respond [].\n\n'
-            f"DOCUMENT:\n{context}\n\n"
-            f"REQUEST: {question}"
-        )
+            'JSON array of strings, e.g. ["x","y"]. If there are none, respond [].',
+        ]
+        if clause:
+            lines.append(f"Every answer must satisfy the relation: ANSWER {clause}.")
+        prompt = "\n".join(lines) + f"\n\nDOCUMENT:\n{context}\n\nQUESTION: {question}"
         return self._client.generate(prompt).strip()
 
-    def read_set(self, questions: list[str], context: str) -> list[str]:
-        return [self._read_set_one(question, context) for question in questions]
+    def read_set(
+        self, questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+    ) -> list[str]:
+        clauses = clauses if clauses is not None else [None] * len(questions)
+        return [
+            self._read_set_one(question, context, clause)
+            for question, clause in zip(questions, clauses, strict=True)
+        ]
 
-    def __call__(self, questions: list[str], context: str) -> list[str]:
-        return [self._read_one(question, context) for question in questions]
+    def __call__(
+        self, questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+    ) -> list[str]:
+        clauses = clauses if clauses is not None else [None] * len(questions)
+        return [
+            self._read_one(question, context, clause)
+            for question, clause in zip(questions, clauses, strict=True)
+        ]
 
 
 _batched_context_reader = None
 
 
-def read_context_batch(questions: list[str], context: str) -> list[str]:
+def read_context_batch(
+    questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+) -> list[str]:
     global _batched_context_reader
     if _batched_context_reader is None:
         _batched_context_reader = BatchedContextReader()
-    return _batched_context_reader(questions, context)
+    return _batched_context_reader(questions, context, clauses)
 
 
 read_context_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
 
 
-def read_context_set_batch(questions: list[str], context: str) -> list[str]:
+def read_context_set_batch(
+    questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+) -> list[str]:
     """Set-valued reads (same pinned reader model/endpoint, JSON-array response contract)."""
     global _batched_context_reader
     if _batched_context_reader is None:
         _batched_context_reader = BatchedContextReader()
-    return _batched_context_reader.read_set(questions, context)
+    return _batched_context_reader.read_set(questions, context, clauses)
 
 
 class AciTaskAdapter:
@@ -7177,7 +7363,7 @@ def build_utility_artifact(
     *,
     threshold_manifest: Mapping,
     pins: Mapping,
-    reader: Callable[[list[str], str], Sequence[str]],
+    reader: Callable[[list[str], str, list[str | None]], Sequence[str]],
     render_action_vector: Callable[[str, Mapping[str, str]], str],
     relation_teacher: OpenRouterRelationTeacher | None = None,
     secondary_relation_teacher: OpenRouterRelationTeacher | None = None,
@@ -7186,7 +7372,7 @@ def build_utility_artifact(
     informative_context_judge: "Callable[..., bool] | None" = None,
     context_prefilter: "Callable[[str, Mapping], Sequence[Mapping]] | None" = None,
     deterministic_relation_stage: bool = False,
-    set_reader: "Callable[[list[str], str], Sequence[str]] | None" = None,
+    set_reader: "Callable[[list[str], str, list[str | None]], Sequence[str]] | None" = None,
     finer_level_check: "str | bool | None" = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation.
@@ -7407,6 +7593,13 @@ def build_utility_artifact(
                         detail_reason="linked_occurrence_not_transformed",
                     )
                     continue
+                # Freeze the v4 relation-constraint clause on the row before any read: the
+                # artifact carries it, so gate, lattice probes, and runtime score the same
+                # instrument. None (non-relation row, untypesettable locator) => no clause key
+                # and the reader omits the constraint line.
+                relation_clause = _relation_reader_clause(candidate, occurrences, decisions)
+                if relation_clause is not None:
+                    candidate = {**candidate, "reader_clause": relation_clause}
                 try:
                     anchor = build_joint_representative_anchor(candidate, decisions)
                 except ValueError:
@@ -7515,7 +7708,7 @@ def build_utility_artifact(
                             candidate, decisions, protected_terms,
                             doc_id=doc_id, render_action_vector=render_action_vector,
                             reader=reader, chain_by_decision=chain_by_decision,
-                            reader_threshold=reader_threshold,
+                            reader_threshold=reader_threshold, occurrences=occurrences,
                         )
                         if suspect is not None:
                             extra_evidence = {"lattice_probe": suspect}
@@ -8770,9 +8963,10 @@ def _diagnose_coarser_readable(
     *,
     doc_id: str,
     render_action_vector: Callable[[str, Mapping[str, str]], str],
-    reader: Callable[[list[str], str], Sequence[str]],
+    reader: Callable[..., Sequence[str]],
     chain_by_decision: Mapping[str, Sequence[Mapping]],
     reader_threshold: float,
+    occurrences: Mapping[str, Mapping] | None = None,
 ) -> dict | None:
     """Lattice-data diagnostic. A relation failed the 3-point gate while genuinely supported
     (original readable, representative not). Coarsen the LOCATOR argument (the linked level
@@ -8823,9 +9017,16 @@ def _diagnose_coarser_readable(
                     if hiding is not None:
                         probe_vector[other_id] = hiding
             probe_context = render_action_vector(doc_id, probe_vector)
+            # this probe COARSENS the LOCATOR level, so the frozen clause (pinned-level fill)
+            # no longer matches the probe render — recompute it from the probe's requirements
+            probe_clause = (
+                _relation_reader_clause(probe, occurrences, decisions)
+                if occurrences is not None else candidate.get("reader_clause")
+            )
             answer = reader(
                 [_permuted_reader_question(probe, 0)],
                 _reader_excerpt(probe_context, candidate.get("evidence") or {}),
+                [probe_clause],
             )[0]
             if _context_answer_score(probe, answer, chain_by_decision) >= reader_threshold:
                 return {
@@ -8845,7 +9046,7 @@ def _finer_level_readability(
     *,
     doc_id: str,
     render_action_vector: Callable[[str, Mapping[str, str]], str],
-    reader: Callable[[list[str], str], Sequence[str]],
+    reader: Callable[..., Sequence[str]],
     chain_by_decision: Mapping[str, Sequence[Mapping]],
 ) -> dict[str, dict] | None:
     """Reward-band certification for a KEPT relation QA (opt-in; see the spec's level-pinning
@@ -8906,9 +9107,12 @@ def _finer_level_readability(
                 if hiding is not None:
                     probe_vector[other_id] = hiding
         probe_context = render_action_vector(doc_id, probe_vector)
+        # the frozen clause stays valid: only the ANSWER level varies here and the clause names
+        # locators only, exactly as at RL time
         answer = reader(
             [_permuted_reader_question(candidate, 0)],
             _reader_excerpt(probe_context, candidate.get("evidence") or {}),
+            [candidate.get("reader_clause")],
         )[0]
         # scored against the ORIGINAL row (frozen required_property): the finer node must
         # resolve via its aliases and entail the supported level, as it must at RL time
@@ -9214,13 +9418,13 @@ def validate_context_assertions(
     original_context: str,
     representative_context: str,
     placeholder_context: str,
-    reader: Callable[[list[str], str], Sequence[str]],
+    reader: Callable[[list[str], str, list[str | None]], Sequence[str]],
     threshold: float = 1.0,
     stability_repetitions: int = 1,
     option_permutations: int = 1,
     stability_threshold: float = 1.0,
     chain_by_decision: Mapping[str, Sequence[Mapping]] | None = None,
-    set_reader: Callable[[list[str], str], Sequence[str]] | None = None,
+    set_reader: Callable[[list[str], str, list[str | None]], Sequence[str]] | None = None,
 ) -> tuple[list[dict], dict[str, dict]]:
     """Apply frozen repeated original/generalization/placeholder reader checks.
 
@@ -9243,6 +9447,9 @@ def validate_context_assertions(
             debug_excerpts: dict[int, tuple] = {}
             for row in rows:
                 question = _permuted_reader_question(row, permutation_index)
+                # Frozen relation-constraint clause (v4 reader): the same string on all three
+                # renders and at runtime, so every read certifies the same instrument.
+                clauses = [row.get("reader_clause")]
                 reader_evidence = row.get("evidence") or {}
                 ox = _reader_excerpt(original_context, reader_evidence)
                 rx = _reader_excerpt(representative_context, reader_evidence)
@@ -9254,9 +9461,9 @@ def validate_context_assertions(
                     and (row.get("answer_target") or {}).get("kind") == "linked_decision_set"
                     else reader
                 )
-                original_answers += row_reader([question], ox)
-                representative_answers += row_reader([question], rx)
-                placeholder_answers += row_reader([question], px)
+                original_answers += row_reader([question], ox, clauses)
+                representative_answers += row_reader([question], rx, clauses)
+                placeholder_answers += row_reader([question], px, clauses)
             if not all(len(answers) == len(rows) for answers in (
                 original_answers, representative_answers, placeholder_answers
             )):
@@ -9385,8 +9592,8 @@ def score_utility(
     *,
     doc_p: str,
     out_final: str,
-    reader: Callable[[list[str], str], Sequence[str]],
-    set_reader: Callable[[list[str], str], Sequence[str]] | None = None,
+    reader: Callable[[list[str], str, list[str | None]], Sequence[str]],
+    set_reader: Callable[[list[str], str, list[str | None]], Sequence[str]] | None = None,
 ) -> dict:
     """Score one document with one context-reader batch and deterministic delivered checks."""
     _validated_build_reader_pin(reader, artifact)
@@ -9410,7 +9617,7 @@ def score_utility(
             else reader
         )
         context_answers += row_reader(
-            [question], _reader_excerpt(doc_p, reader_evidence)
+            [question], _reader_excerpt(doc_p, reader_evidence), [row.get("reader_clause")]
         )
     if len(context_answers) != len(context_rows):
         raise ValueError("reader returned the wrong number of answers")

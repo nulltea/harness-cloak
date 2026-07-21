@@ -400,7 +400,7 @@ def test_context_validation_requires_original_and_generalization_but_not_placeho
     }]
     calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         calls.append((list(questions), context))
         answers = {
             "original": ["endocrine condition"],
@@ -432,7 +432,7 @@ def test_context_validation_rejects_unstable_reader_after_deterministic_option_p
     }]
     calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         calls.append((list(questions), context))
         trial = (len(calls) - 1) // 3
         if context == "placeholder":
@@ -487,7 +487,7 @@ def test_builder_records_unstable_context_reader_without_accepting_assertion():
 
     calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         calls.append(context)
         if context == "placeholder":
             return ["NONE"]
@@ -556,7 +556,7 @@ def test_builder_rejects_representative_context_retaining_protected_alias():
 
     reader_calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         reader_calls.append(context)
         return ["medication"] * len(questions)
 
@@ -609,7 +609,7 @@ def test_builder_preserves_deterministic_not_generated_rejection_record():
             "family_budgets": {"context": 0.6, "delivered": 0.4},
         },
         pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
-        reader=_pin_reader(lambda questions, context: []),
+        reader=_pin_reader(lambda questions, context, clauses=None: []),
         render_action_vector=lambda doc_id, vector: "unused",
     )
 
@@ -641,13 +641,13 @@ def test_builder_requires_complete_structured_reader_pin(reader_pin):
                 "family_budgets": {"context": 0.6, "delivered": 0.4},
             },
             pins={"reader_pin": reader_pin},
-            reader=_pin_reader(lambda questions, context: []),
+            reader=_pin_reader(lambda questions, context, clauses=None: []),
             render_action_vector=lambda doc_id, vector: "unused",
         )
 
 
 def test_builder_rejects_injected_reader_pin_mismatch():
-    reader = _pin_reader(lambda questions, context: [])
+    reader = _pin_reader(lambda questions, context, clauses=None: [])
     reader.pin = {**TEST_READER_PIN, "revision": "different-revision"}
 
     with pytest.raises(ValueError, match="reader_pin.*match"):
@@ -711,7 +711,7 @@ def test_builder_preserves_every_teacher_rejection_with_stable_summary():
             "min_context_assertions": 1,
         },
         pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
-        reader=_pin_reader(lambda questions, context: []),
+        reader=_pin_reader(lambda questions, context, clauses=None: []),
         render_action_vector=lambda doc_id, vector: "unused",
         relation_teacher=teacher,
     )
@@ -781,7 +781,7 @@ def test_builder_gates_deterministic_context_before_relation_escalation():
 
     teacher = Teacher()
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         events.append(f"reader:{context}")
         return ["NONE" if context == "placeholder" else "medication"] * len(questions)
 
@@ -834,7 +834,7 @@ def test_builder_records_unmet_relation_threshold_without_teacher():
             "min_contextual_relation_assertions": 1,
         },
         pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
-        reader=_pin_reader(lambda questions, context: []),
+        reader=_pin_reader(lambda questions, context, clauses=None: []),
         render_action_vector=lambda doc_id, vector: "placeholder",
     )
 
@@ -860,7 +860,7 @@ def test_runtime_scores_context_assertions_per_assertion():
     }
     calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         calls.append((list(questions), context))
         return ["endocrine" if "Q1" in questions[0] else "arthritis"]
 
@@ -904,7 +904,7 @@ def test_runtime_linked_answer_scored_by_lattice_entailment(monkeypatch):
     }
 
     def make_reader(answer):
-        def reader(questions, context):
+        def reader(questions, context, clauses=None):
             return [answer]
         _pin_reader(reader)
         return reader
@@ -923,7 +923,7 @@ def test_runtime_linked_answer_scored_by_lattice_entailment(monkeypatch):
 def test_score_utility_rejects_missing_reader_pin_before_reader_call():
     calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         calls.append((questions, context))
         return ["endocrine"]
 
@@ -949,7 +949,7 @@ def test_score_utility_rejects_missing_reader_pin_before_reader_call():
 def test_score_utility_rejects_mismatched_reader_pin_before_reader_call():
     calls = []
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         calls.append((questions, context))
         return ["endocrine"]
 
@@ -1015,6 +1015,275 @@ def test_batched_context_reader_parses_plain_span_wire_variants(wire, expected):
             return wire
 
     assert BatchedContextReader(client=Client())(["What category?"], "note") == [expected]
+
+
+def _clause_fixture():
+    decisions = [
+        {"decision_id": "dc", "actions": [
+            {"action_id": "c1", "mode": "level", "legal": True,
+             "fill": "endocrine condition", "entails": ["endocrine condition"]},
+            {"action_id": "cp", "mode": "placeholder", "legal": True},
+        ]},
+        {"decision_id": "dd", "actions": [
+            # fill carries a leading article: the typesetting rule must not double it
+            {"action_id": "d1", "mode": "level", "legal": True,
+             "fill": "a thyroid hormone replacement",
+             "entails": ["thyroid hormone replacement"]},
+            {"action_id": "dp", "mode": "placeholder", "legal": True},
+        ]},
+        {"decision_id": "de", "actions": [
+            {"action_id": "e1", "mode": "level", "legal": True,
+             "fill": "loop diuretic", "entails": ["loop diuretic"]},
+            {"action_id": "ep", "mode": "placeholder", "legal": True},
+        ]},
+    ]
+    occurrences = {
+        "o-c": {"occurrence_id": "o-c", "decision_id": "dc"},
+        "o-d": {"occurrence_id": "o-d", "decision_id": "dd"},
+        "o-e": {"occurrence_id": "o-e", "decision_id": "de"},
+    }
+    return occurrences, decisions
+
+
+def test_reader_clause_tables_cover_every_relation_and_orientation():
+    for relation in qa_builder.RELATION_ONTOLOGY:
+        for role in ("subject", "object"):
+            template = qa_builder._RELATION_READER_CLAUSES[(relation, role)]
+            assert "{loc}" in template
+        # compound rows always answer the subject (reverse shapes only)
+        compound = qa_builder._RELATION_READER_CLAUSES_COMPOUND[(relation, "subject")]
+        assert "{loc}" in compound
+        assert (relation, "object") not in qa_builder._RELATION_READER_CLAUSES_COMPOUND
+
+
+def test_reader_clause_forward_names_subject_locator_never_the_answer():
+    occurrences, decisions = _clause_fixture()
+    row = {
+        "relation": "prescribed_with",
+        "answer_target": {"kind": "linked_decision", "decision_id": "dd",
+                          "required_property": "thyroid hormone replacement"},
+        "decision_requirements": {"dc": "endocrine condition",
+                                  "dd": "thyroid hormone replacement"},
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-c"},
+            {"role": "object", "kind": "linked", "occurrence_id": "o-d"},
+        ]},
+    }
+    clause = qa_builder._relation_reader_clause(row, occurrences, decisions)
+    assert clause == "is a medication prescribed or used to treat the endocrine condition"
+    assert "thyroid" not in clause  # the answer argument is never named
+
+
+def test_reader_clause_reverse_names_object_locator_and_strips_fill_article():
+    occurrences, decisions = _clause_fixture()
+    row = {
+        "relation": "prescribed_with",
+        "answer_target": {"kind": "linked_decision", "decision_id": "dc",
+                          "required_property": "endocrine condition"},
+        "decision_requirements": {"dc": "endocrine condition",
+                                  "dd": "thyroid hormone replacement"},
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-c"},
+            {"role": "object", "kind": "linked", "occurrence_id": "o-d"},
+        ]},
+    }
+    clause = qa_builder._relation_reader_clause(row, occurrences, decisions)
+    # locator fill "a thyroid hormone replacement" -> "the thyroid hormone replacement"
+    assert clause == ("is the medical condition that the thyroid hormone replacement "
+                      "was prescribed or used to treat")
+    assert "endocrine" not in clause
+
+
+def test_reader_clause_contraindication_orientation_is_mirror_of_other_relations():
+    # subject = treatment, object = condition: forward answers a CONDITION (locator = the
+    # treatment), reverse answers a TREATMENT (locator = the condition)
+    occurrences, decisions = _clause_fixture()
+    arguments = [
+        {"role": "subject", "kind": "linked", "occurrence_id": "o-e"},
+        {"role": "object", "kind": "linked", "occurrence_id": "o-c"},
+    ]
+    requirements = {"de": "loop diuretic", "dc": "endocrine condition"}
+    forward = qa_builder._relation_reader_clause({
+        "relation": "contraindicated_because_of",
+        "answer_target": {"kind": "linked_decision", "decision_id": "dc"},
+        "decision_requirements": requirements,
+        "evidence": {"arguments": arguments},
+    }, occurrences, decisions)
+    reverse = qa_builder._relation_reader_clause({
+        "relation": "contraindicated_because_of",
+        "answer_target": {"kind": "linked_decision", "decision_id": "de"},
+        "decision_requirements": requirements,
+        "evidence": {"arguments": arguments},
+    }, occurrences, decisions)
+    assert forward == "is a medical condition that makes the loop diuretic unsuitable"
+    assert reverse == "is a treatment made unsuitable by the endocrine condition"
+
+
+def test_reader_clause_literal_locator_is_quoted_verbatim():
+    occurrences, decisions = _clause_fixture()
+    row = {
+        "relation": "tests_for",
+        "answer_target": {"kind": "linked_decision", "decision_id": "dc"},
+        "decision_requirements": {"dc": "endocrine condition"},
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-c"},
+            {"role": "object", "kind": "context", "literal": "thyroid labs"},
+        ]},
+    }
+    clause = qa_builder._relation_reader_clause(row, occurrences, decisions)
+    assert clause == ('is the medical condition that "thyroid labs" '
+                      "was ordered to evaluate or monitor")
+
+
+def test_reader_clause_compound_literals_join_with_plural_template():
+    occurrences, decisions = _clause_fixture()
+    row = {
+        "relation": "tests_for",
+        "answer_target": {"kind": "linked_decision", "decision_id": "dc"},
+        "decision_requirements": {"dc": "endocrine condition"},
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-c"},
+            {"role": "object", "kind": "context", "literal": "bmp"},
+            {"role": "object", "kind": "context", "literal": "lipid panel"},
+            {"role": "object", "kind": "context", "literal": "a1c"},
+        ]},
+    }
+    clause = qa_builder._relation_reader_clause(row, occurrences, decisions)
+    assert clause == ('is the single medical condition that "bmp", "lipid panel", and "a1c" '
+                      "were all ordered to evaluate or monitor")
+
+
+def test_reader_clause_set_valued_forward_uses_single_subject_locator():
+    occurrences, decisions = _clause_fixture()
+    row = {
+        "relation": "prescribed_with",
+        "answer_target": {"kind": "linked_decision_set", "members": [
+            {"decision_id": "dd", "required_property": "thyroid hormone replacement"},
+            {"decision_id": "de", "required_property": "loop diuretic"},
+        ]},
+        "decision_requirements": {"dc": "endocrine condition",
+                                  "dd": "thyroid hormone replacement",
+                                  "de": "loop diuretic"},
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-c"},
+            {"role": "object", "kind": "linked", "occurrence_id": "o-d"},
+            {"role": "object", "kind": "linked", "occurrence_id": "o-e"},
+        ]},
+    }
+    clause = qa_builder._relation_reader_clause(row, occurrences, decisions)
+    assert clause == "is a medication prescribed or used to treat the endocrine condition"
+
+
+def test_reader_clause_degrades_to_none_instead_of_raising():
+    occurrences, decisions = _clause_fixture()
+    base = {
+        "relation": "prescribed_with",
+        "answer_target": {"kind": "linked_decision", "decision_id": "dd"},
+        "decision_requirements": {"dc": "endocrine condition",
+                                  "dd": "thyroid hormone replacement"},
+        "evidence": {"arguments": [
+            {"role": "subject", "kind": "linked", "occurrence_id": "o-c"},
+            {"role": "object", "kind": "linked", "occurrence_id": "o-d"},
+        ]},
+    }
+    # legacy literal answer target: no constraint
+    assert qa_builder._relation_reader_clause(
+        {**base, "answer_target": {"kind": "literal", "expected_values": ["x"]}},
+        occurrences, decisions) is None
+    # unknown relation: no template
+    assert qa_builder._relation_reader_clause(
+        {**base, "relation": "has_status"}, occurrences, decisions) is None
+    # empty literal locator: untypesettable
+    assert qa_builder._relation_reader_clause(
+        {**base, "answer_target": {"kind": "linked_decision", "decision_id": "dc"},
+         "evidence": {"arguments": [
+             {"role": "subject", "kind": "linked", "occurrence_id": "o-c"},
+             {"role": "object", "kind": "context", "literal": "  "},
+         ]}}, occurrences, decisions) is None
+    # non-relation row shape (no arguments)
+    assert qa_builder._relation_reader_clause(
+        {**base, "evidence": {}}, occurrences, decisions) is None
+
+
+class _PromptCapture:
+    def __init__(self, reply="x"):
+        self.prompts = []
+        self.reply = reply
+
+    def generate(self, prompt):
+        self.prompts.append(prompt)
+        return self.reply
+
+
+def test_read_one_adds_constraint_line_only_when_clause_present():
+    client = _PromptCapture()
+    reader = BatchedContextReader(client=client)
+    clause = "is a medication prescribed or used to treat the endocrine condition"
+    reader(["Q?"], "DOC", [clause])
+    reader(["Q?"], "DOC")
+    with_clause, without_clause = client.prompts
+    assert f"Your ANSWER must satisfy the relation: ANSWER {clause}." in with_clause
+    assert "must satisfy the relation" not in without_clause
+    # v4 wording: QUESTION directive, never REQUEST; the constraint precedes the document
+    for prompt in client.prompts:
+        assert "QUESTION: Q?" in prompt
+        assert "REQUEST" not in prompt
+    assert with_clause.index("must satisfy") < with_clause.index("DOCUMENT:")
+
+
+def test_read_set_one_adds_per_answer_constraint_line():
+    client = _PromptCapture(reply='["a"]')
+    reader = BatchedContextReader(client=client)
+    clause = "is a medication prescribed or used to treat the endocrine condition"
+    reader.read_set(["Q?"], "DOC", [clause])
+    reader.read_set(["Q?"], "DOC")
+    with_clause, without_clause = client.prompts
+    assert f"Every answer must satisfy the relation: ANSWER {clause}." in with_clause
+    assert "must satisfy the relation" not in without_clause
+    assert "JSON array" in with_clause
+
+
+def test_context_validation_passes_frozen_clause_to_reader_on_all_three_renders():
+    clause = "is a medication prescribed or used to treat the endocrine condition"
+    row = {
+        "assertion_id": "a1", "family": "context", "question": "q",
+        "accepted_values": ["v"], "reader_clause": clause,
+    }
+    seen = []
+
+    def reader(questions, context, clauses=None):
+        seen.append(list(clauses))
+        return ["NONE"] if context == "placeholder" else ["v"]
+
+    accepted, _ = validate_context_assertions(
+        [row], original_context="original", representative_context="generalized",
+        placeholder_context="placeholder", reader=reader,
+    )
+    assert [r["assertion_id"] for r in accepted] == ["a1"]
+    assert seen == [[clause]] * 3
+
+
+def test_score_utility_passes_frozen_clause_to_reader():
+    clause = "is a medication prescribed or used to treat the endocrine condition"
+    seen = []
+
+    def reader(questions, context, clauses=None):
+        seen.append(list(clauses))
+        return ["endocrine"]
+
+    _pin_reader(reader)
+    artifact = {
+        "reader_pin": TEST_READER_PIN,
+        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "assertions": {
+            "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
+                   "question": "Q1", "accepted_values": ["endocrine"],
+                   "reader_clause": clause, "weight": 1.0},
+        },
+    }
+    result = score_utility(artifact, "d1", doc_p="generalized", out_final="", reader=reader)
+    assert result["component_scores"]["c1"] == 1.0
+    assert seen == [[clause]]
 
 
 def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
@@ -1530,7 +1799,7 @@ def test_high_level_builder_calls_teacher_once_then_compiles_and_validates():
     def render(doc_id, action_vector):
         return "placeholder" if action_vector["dec1"] == "placeholder" else "generalized"
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         return ["NONE" if context == "placeholder" else "endocrine"] * len(questions)
 
     _pin_reader(reader)
@@ -3053,7 +3322,7 @@ Arthritis.
 
     result = score_utility(
         artifact, "aci/incomplete", doc_p="unused", out_final=incomplete,
-        reader=_pin_reader(lambda questions, context: pytest.fail("reader must not be called")),
+        reader=_pin_reader(lambda questions, context, clauses=None: pytest.fail("reader must not be called")),
     )
 
     assert result["component_scores"] == {"relation": 0.0}
@@ -3186,7 +3455,7 @@ def test_aci_structure_accepts_heading_only_and_inline_none_sections(reference):
     valid = score_utility(
         artifact, "d1", doc_p="unused", out_final=reference,
         reader=_pin_reader(
-            lambda questions, context: pytest.fail("reader must not be called")
+            lambda questions, context, clauses=None: pytest.fail("reader must not be called")
         ),
     )
     malformed = score_utility(
@@ -3197,7 +3466,7 @@ def test_aci_structure_accepts_heading_only_and_inline_none_sections(reference):
             "ASSESSMENT\nnone", "ASSESSMENT\nno concerns"
         ),
         reader=_pin_reader(
-            lambda questions, context: pytest.fail("reader must not be called")
+            lambda questions, context, clauses=None: pytest.fail("reader must not be called")
         ),
     )
 
@@ -3288,7 +3557,7 @@ Hypothyroidism — Synthroid — thyroid labs
         doc_p="unused",
         out_final=delivered,
         reader=_pin_reader(
-            lambda questions, context: pytest.fail("reader must not be called")
+            lambda questions, context, clauses=None: pytest.fail("reader must not be called")
         ),
     )
 
@@ -3312,7 +3581,7 @@ PLAN
 Hypothyroidism — Synthroid — thyroid labs
 """,
         reader=_pin_reader(
-            lambda questions, context: pytest.fail("reader must not be called")
+            lambda questions, context, clauses=None: pytest.fail("reader must not be called")
         ),
     )
 
@@ -3432,7 +3701,7 @@ def test_teacher_abstention_records_missing_context_without_retry():
             "min_context_assertions": 1,
         },
         pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
-        reader=_pin_reader(lambda questions, context: []),
+        reader=_pin_reader(lambda questions, context, clauses=None: []),
         render_action_vector=lambda doc_id, action_vector: "unused",
         relation_teacher=teacher,
     )
@@ -3467,7 +3736,7 @@ def test_builder_preserves_a_safe_teacher_response_failure_code():
             "min_context_assertions": 1,
         },
         pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
-        reader=_pin_reader(lambda questions, context: []),
+        reader=_pin_reader(lambda questions, context, clauses=None: []),
         render_action_vector=lambda doc_id, action_vector: "unused",
         relation_teacher=EmptyTeacher(),
     )
@@ -3527,7 +3796,7 @@ def test_delivered_only_scoring_is_deterministic_without_reader_call():
         doc_p="unused",
         out_final="History includes kidney transplant.",
         reader=_pin_reader(
-            lambda questions, context: pytest.fail("reader must not be called")
+            lambda questions, context, clauses=None: pytest.fail("reader must not be called")
         ),
     )
 
@@ -3558,7 +3827,7 @@ def test_runtime_component_scores_follow_stable_assertion_id_order():
         doc_p="unused",
         out_final="A female has a kidney transplant.",
         reader=_pin_reader(
-            lambda questions, context: pytest.fail("reader must not be called")
+            lambda questions, context, clauses=None: pytest.fail("reader must not be called")
         ),
     )
 
@@ -3816,7 +4085,7 @@ def test_manifest_pinned_relation_escalation_calls_secondary_and_records_provena
         },
         pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
         reader=_pin_reader(
-            lambda questions, context: [
+            lambda questions, context, clauses=None: [
                 "NONE" if context == "placeholder" else "thyroid medication"
                 for _ in questions
             ]
@@ -3886,7 +4155,7 @@ def test_relation_repair_batches_targets_into_multiple_calls(monkeypatch):
             },
         },
         pins={"gate_manifest_hash": "gate-v1", "reader_pin": TEST_READER_PIN},
-        reader=_pin_reader(lambda questions, context: ["NONE" for _ in questions]),
+        reader=_pin_reader(lambda questions, context, clauses=None: ["NONE" for _ in questions]),
         render_action_vector=lambda doc_id, vector: "x",
         relation_teacher=primary,
         secondary_relation_teacher=secondary,

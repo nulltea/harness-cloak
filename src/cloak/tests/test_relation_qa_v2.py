@@ -2264,7 +2264,7 @@ def test_lattice_level_suspect_probe_flags_coarser_readable(monkeypatch):
         return f"note: patient with {fill_by_action[vector['d1']]} takes a drug"
 
     # reader only extracts once the COARSE level is what got rendered
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         return ["opioid analgesic" if "musculoskeletal system disease" in context else ""]
 
     monkeypatch.setattr(qb, "_turn_excerpt", lambda ctx, turns, window=0: ctx)
@@ -2304,7 +2304,7 @@ def test_lattice_level_suspect_probe_silent_when_no_level_reads(monkeypatch):
     monkeypatch.setattr(qb, "_context_answer_score", lambda row, ans, chain: 0.0)
     result = qb._diagnose_coarser_readable(
         candidate, decisions, [], doc_id="aci/TEST",
-        render_action_vector=lambda d, v: "x", reader=lambda q, c: [""],
+        render_action_vector=lambda d, v: "x", reader=lambda q, c, cl=None: [""],
         chain_by_decision={}, reader_threshold=1.0,
     )
     assert result is None
@@ -2514,7 +2514,7 @@ def test_finer_level_readability_certifies_reward_band():
         return ("on congestive heart failure meds" if vector.get("d-c") == "act-fine"
                 else "on heart disease meds")
 
-    def reader(questions, context):
+    def reader(questions, context, clauses=None):
         return ["congestive heart failure" if "congestive heart failure" in context
                 else "heart disease"] * len(questions)
 
@@ -2918,11 +2918,11 @@ def test_validate_context_assertions_routes_set_rows_to_set_reader():
                        "entailed_properties": ["loop diuretic"]}]}
     calls = {"span": 0, "set": 0}
 
-    def span_reader(questions, context):
+    def span_reader(questions, context, clauses=None):
         calls["span"] += 1
         return ["never used for set rows"] * len(questions)
 
-    def set_reader(questions, context):
+    def set_reader(questions, context, clauses=None):
         calls["set"] += 1
         # answerable on original+representative, hidden on placeholder
         return ['["loop diuretic"]' if "lasix" in context or "loop diuretic" in context

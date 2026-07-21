@@ -100,7 +100,7 @@ The QA build proper. Production flags:
 Every enabled option is recorded in the artifact pins; disabled options leave the build
 byte-identical to the option-free path. The threshold manifest
 (`data/qa_v2/relation_gate_manifest.json`) pins the reader (medgemma-4b-it, prompt
-`qa-context-reader-v3`, single-span response schema, revision `qa-reader-r4`), reader threshold
+`qa-context-reader-v4`, single-span response schema, revision `qa-reader-r5`), reader threshold
 1.0, stability repetitions/permutations, and the family budgets (context 0.6 / delivered 0.4,
 structural cap 0.1).
 
@@ -338,6 +338,23 @@ rep ≥ t and placeholder < t, with optional stability repetitions and option pe
 (manifest-pinned; production 1/1). Set rows route to the JSON-array set reader; scoring is the
 per-member recall above. A gate failure with orig ≥ t and rep < t triggers a coarser-readable
 lattice probe recorded as diagnostic evidence.
+
+**Relation-constrained reader (`qa-context-reader-v4`).** For every relation QA the prompt
+carries one extra line restating the QA as the relation the ANSWER must satisfy — "Your ANSWER
+must satisfy the relation: ANSWER \<clause\>" (span reader) / "Every answer must satisfy …" (set
+reader) — the only prompt lever that stopped the small reader grabbing lexically-resonant
+distractor spans, and one that also declines circular echo passes on reverse rows
+(docs/handoffs/2026-07-21-relation-constrained-reader-prompt.md). The clause
+(`_relation_reader_clause`) names the LOCATOR arguments — the complement of the answer argument
+set, so orientation-correct by construction and never naming the answer — by their exact
+pinned-level rendered fills (`action.fill`, the string the representative render substitutes;
+context literals verbatim in double quotes, so junk literals stay syntactically inert). Clause
+templates are keyed by (relation, answer_role) with plural variants for compound locators; the
+clause is FROZEN onto the assertion row (`reader_clause`) before the first gate read and reused
+verbatim on all three renders, both lattice probes (the coarser-locator diagnostic recomputes it
+because it re-levels the locator), and runtime scoring — gate and runtime certify the same
+instrument. An untypesettable or non-relation row gets no clause and the constraint line is
+omitted.
 
 Gate rejections carry `teacher_id`/`run_id` for attribution.
 
