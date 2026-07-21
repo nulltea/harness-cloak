@@ -410,14 +410,7 @@ assertions; missing families keep the fixed denominator without renormalization.
 
 ### Context probes
 
-- `contextual_relation` — the relation QAs above; the live context family.
-- `semantic_property` — deterministic category/function probes ("what kind of thing is this
-  span"), admitted by role-cue regexes with an optional MedGemma informativeness judge
-  (`--informative-context-judge`) for cue misses (free when the entity already carries mined
-  relation evidence). The family is currently DISABLED after measuring 1 kept assertion against
-  114 role-cue rejections on a development slice; generation and judge machinery are retained
-  dormant.
-
+`contextual_relation` — the relation QAs above; the live context family.
 ### Delivered / schema probes
 
 Deterministic, adapter-owned (`AciTaskAdapter.deterministic_candidates`); truth comes from the
@@ -440,6 +433,14 @@ with the same reader, same per-assertion turn excerpts, and the same answer-targ
 rows via the set reader); delivered contracts are deterministic. Cache keys are
 document/action-vector level.
 
+### Retired `semantic_property` probes
+
+The intended probe asked for a decision's category/function in a local source excerpt; its target
+was one selected lattice level, with `doc_orig` and a representative generalization required to
+pass and the placeholder required to fail. It was dropped from weighted utility because the target
+and admission condition were both lattice-defined: it mainly imposed a preselected level threshold
+or anti-placeholder penalty, not task-context utility. Yield also collapsed (1 accepted probe in
+roughly 182 attempts, mostly `no_task_role_cue`). The machinery remains dormant only; contextual relations and delivered assertions supply the action-sensitive utility signal.
 ## Invariants (unchanged and load-bearing)
 
 1. Detect once; QA and RL consume the same frozen environment.
