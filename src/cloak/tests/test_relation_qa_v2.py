@@ -2522,7 +2522,7 @@ def test_finer_level_readability_certifies_reward_band():
         candidate, decisions, [], doc_id="d", render_action_vector=render,
         reader=reader, chain_by_decision=chains_ok)
     # the finer render is read and its node ENTAILS the supported level -> band certified
-    assert scores == {"congestive heart failure": 1.0}
+    assert scores == {"congestive heart failure": {"score": 1.0, "render": "ok"}}
 
     # broken finer alias: the reader echo cannot resolve -> unreadable finer level recorded as 0
     chains_broken = {"d-c": [
@@ -2534,7 +2534,7 @@ def test_finer_level_readability_certifies_reward_band():
     scores = qa_builder._finer_level_readability(
         candidate, decisions, [], doc_id="d", render_action_vector=render,
         reader=reader, chain_by_decision=chains_broken)
-    assert scores == {"congestive heart failure": 0.0}
+    assert scores == {"congestive heart failure": {"score": 0.0, "render": "ok"}}
 
     # supported level already finest -> empty band -> no check
     finest_pinned = {**candidate,
@@ -2590,16 +2590,36 @@ def test_write_finer_level_failures_emits_lattice_worklist(tmp_path):
     }
     sources = {"aci/DX": "chf on lasix daily."}
 
+    # a HARD-mode rejection (never an assertion) is also emitted, from its rejection evidence
+    artifact["rejections"] = {"summary_by_reason": {"unsupported": 1}, "records": [{
+        "doc_id": "aci/DX", "relation": "tests_for", "reason": "unsupported",
+        "detail_reason": "finer_level_unreadable",
+        "evidence": {"reader_turns": [0],
+                     "arguments": [{"role": "subject", "kind": "linked",
+                                    "occurrence_id": "cond"}],
+                     "question": "Which test was ordered for the heart disease?",
+                     "answer_target": {"kind": "linked_decision", "decision_id": "d-c",
+                                       "required_property": "heart disease"},
+                     "finer_levels": {"congestive heart failure": 0.0}},
+    }]}
+
     path, count = bqa.write_finer_level_failures(artifact, sources, tmp_path / "probe.json")
 
-    assert count == 1 and path.name == "probe.finer-level-failures.jsonl"
-    [row] = [json.loads(line) for line in path.read_text().splitlines()]
+    assert count == 2 and path.name == "probe.finer-level-failures.jsonl"
+    row, rejected_row = [json.loads(line) for line in path.read_text().splitlines()]
     assert row["profile"] == {"key": "chf", "runtime_type": "health-condition"}
     assert row["levels_rejected"] == ["congestive heart failure"]
-    assert row["levels_accepted"] == ["cardiac failure"]
-    assert row["relation"] == {"type": "prescribed_with", "subject": "chf", "object": "lasix",
+    # accepted = the verified ladder: gate-passed supported level + band-confirmed finer levels
+    assert row["levels_accepted"] == ["cardiac failure", "heart disease"]
+    assert row["rejection_causes"] == {"congestive heart failure": "read_failed"}
+    assert row["relation"] == {"type": "prescribed_with", "provenance": "teacher_primary",
+                               "answer_role": "subject", "subject": "chf", "object": "lasix",
                                "supported_level": "heart disease"}
     assert row["doc_context"] == "chf on lasix daily."
+    assert rejected_row["relation"]["type"] == "tests_for"
+    assert rejected_row["question"] == "Which test was ordered for the heart disease?"
+    assert rejected_row["levels_rejected"] == ["congestive heart failure"]
+    assert rejected_row["levels_accepted"] == ["heart disease"]  # never empty: supported is in
 
 
 def test_reader_outcome_route_signatures():
@@ -2623,6 +2643,10 @@ def test_reader_outcome_route_signatures():
     assert route(rejection(1.0, 1.0, 1.0)) is None
     # no reader scores (compile-time rejection) -> untouched
     assert route({"evidence": {}}) is None
+    # hard finer-level-check rejection: lattice-owned, never repair-targeted -- routed on the
+    # detail_reason alone (its supported-level scores are a passing 1,1,0 pattern)
+    assert route({"detail_reason": "finer_level_unreadable",
+                  **rejection(1.0, 1.0, 0.0)}) == "lattice_suspect"
 
 
 def test_gleaning_targets_reader_routing_excludes_without_resurrecting():
@@ -3474,6 +3498,39 @@ def test_causes_or_explains_cue_ok_is_judge_gated():
     assert causal(qa_builder.relation_support_opportunities(source, env, escalator=lambda **k: True))
 
 
+def test_causes_or_explains_proximity_cap_rejects_wide_anchor():
+    # local (single clause) causal pair is eligible; a far-apart pair (>1 clause, wide anchor) is
+    # dropped BEFORE cue/escalation -- a causal claim between whole-note-apart findings is
+    # co-occurrence, not causation. Accept-all escalator so only the cap can remove it.
+    def env_for(source, a_sp, b_sp):
+        return {
+            "occurrences": [
+                {"occurrence_id": "a", "decision_id": "d-a", "surface": "arthritis",
+                 "start": a_sp, "end": a_sp + 9, "runtime_type": "health-condition"},
+                {"occurrence_id": "b", "decision_id": "d-b", "surface": "fever",
+                 "start": b_sp, "end": b_sp + 5, "runtime_type": "health-condition"},
+            ],
+            "decisions": [
+                {"decision_id": "d-a", "actions": [{"mode": "level", "legal": True, "entails": ["joint disease"]}]},
+                {"decision_id": "d-b", "actions": [{"mode": "level", "legal": True, "entails": ["febrile illness"]}]},
+            ],
+        }
+
+    def causal(opps):
+        return [o for o in opps if o["relation"] == "causes_or_explains"]
+
+    local = "The arthritis explains the fever here."
+    env_local = env_for(local, local.index("arthritis"), local.index("fever"))
+    assert causal(qa_builder.relation_support_opportunities(
+        local, env_local, escalator=lambda **k: True))
+
+    far = ("The arthritis was documented today. The patient rested well overnight. "
+           "A separate note. Much later on the fever developed.")
+    env_far = env_for(far, far.index("arthritis"), far.index("fever"))
+    assert not causal(qa_builder.relation_support_opportunities(
+        far, env_far, escalator=lambda **k: True))
+
+
 def test_relation_support_escalation_is_additive_superset():
     source, env = _cueless_env()
     base = qa_builder.relation_support_opportunities(source, env)
@@ -3725,7 +3782,7 @@ def test_escalation_prefilter_coordination_and_negation():
     ]
     assert _escalation_prefilter_reason(doc, cross_args, {}, ctx) is None
 
-    # "with" is NOT a coordinator: a qualifier/complication can be a real relation
+    # "with" is NOT a coordinator for a general pair: a qualifier/complication can be a real relation
     doc2 = "chronic heart failure with diastolic dysfunction was noted ."
     hf, dd = doc2.index("heart failure"), doc2.index("diastolic dysfunction")
     with_args = [
@@ -3734,6 +3791,29 @@ def test_escalation_prefilter_coordination_and_negation():
          "start": dd, "end": dd + 21},
     ]
     assert _escalation_prefilter_reason(doc2, with_args, {}, {}) is None
+    # ...but for causes_or_explains the "with" comorbidity connector is co-occurrence, not causation
+    assert _escalation_prefilter_reason(
+        doc2, with_args, {}, {}, "causes_or_explains") == "cooccurrence_connector"
+
+    # causes_or_explains coordination WITH an intervening quantifier ("and some") -- the gap the
+    # plain and/or coordination regex missed, letting the co-occurrence pair reach the judge
+    doc5 = "there is some edema and some erythema of the right knee ."
+    ed, er = doc5.index("edema"), doc5.index("erythema")
+    cooc_args = [
+        {"role": "subject", "kind": "context", "literal": "edema", "start": ed, "end": ed + 5},
+        {"role": "object", "kind": "context", "literal": "erythema", "start": er, "end": er + 8},
+    ]
+    assert _escalation_prefilter_reason(
+        doc5, cooc_args, {}, {}, "causes_or_explains") == "cooccurrence_connector"
+    # a genuine causal verb in the gap survives even under causes_or_explains (not pure co-occurrence)
+    doc6 = "the leg swelling is caused by her heart failure ."
+    sw, hf2 = doc6.index("leg swelling"), doc6.index("heart failure")
+    causal_args = [
+        {"role": "subject", "kind": "context", "literal": "heart failure", "start": hf2, "end": hf2 + 13},
+        {"role": "object", "kind": "context", "literal": "leg swelling", "start": sw, "end": sw + 12},
+    ]
+    assert _escalation_prefilter_reason(
+        doc6, causal_args, {}, {}, "causes_or_explains") is None
 
     # negation: an argument explicitly asserted absent
     doc3 = "the workup shows no evidence of coronary artery disease today ."

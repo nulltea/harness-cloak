@@ -71,7 +71,13 @@ _RELATION_RULES = {
         "exacerbation/manifestation of Y, in that direction. Two conditions merely mentioned in the "
         "same visit are NOT a causal link, and a normal, absent, or denied finding ('no chest pain', "
         "'denies dizziness', 'a normal blood sugar') can never be a cause or an effect — answer false. "
-        "Check the direction: 'X causes Y' is false if the excerpt only supports 'Y causes X'."
+        "Check the direction: 'X causes Y' is false if the excerpt only supports 'Y causes X'.\n"
+        "Ground your answer: to answer true you MUST quote, in a \"cue\" field, the exact "
+        "consecutive words from the excerpt that state the causation (e.g. 'causing', 'due to', "
+        "'secondary to', 'from the', 'which explains'). If the only words joining the two items are "
+        "co-occurrence words ('and', 'with', 'as well as', a comma list) or you cannot quote a "
+        "causal phrase, answer false with \"cue\": \"\". A phrase you infer but cannot quote does "
+        "not count."
     ),
 }
 # Only the target relation's own worked examples. ENTITIES ARE DELIBERATELY OFF-CORPUS (migraine,
@@ -114,16 +120,19 @@ _RELATION_EXAMPLES = {
     "causes_or_explains": (
         "EXCERPT: \"[doctor] your shortness of breath is due to your pneumonia .\"\n"
         "CANDIDATE: pneumonia causes or explains the shortness of breath\n"
-        "{\"asserted\": true, \"why\": \"breathlessness attributed to the pneumonia\"}\n"
+        "{\"asserted\": true, \"cue\": \"is due to\", \"why\": \"breathlessness attributed to the pneumonia\"}\n"
         "EXCERPT: \"[doctor] your shortness of breath is due to your pneumonia .\"\n"
         "CANDIDATE: the shortness of breath causes or explains the pneumonia\n"
-        "{\"asserted\": false, \"why\": \"pneumonia explains the breathlessness, not the reverse\"}\n"
+        "{\"asserted\": false, \"cue\": \"\", \"why\": \"pneumonia explains the breathlessness, not the reverse\"}\n"
         "EXCERPT: \"[doctor] you do n't have any chest pain , good . this leg swelling is from your cellulitis .\"\n"
         "CANDIDATE: chest pain causes or explains the cellulitis\n"
-        "{\"asserted\": false, \"why\": \"no chest pain present; no causal link stated\"}\n"
+        "{\"asserted\": false, \"cue\": \"\", \"why\": \"no chest pain present; no causal link stated\"}\n"
+        "EXCERPT: \"[doctor] your congestive heart failure with diastolic dysfunction is stable .\"\n"
+        "CANDIDATE: congestive heart failure causes or explains the diastolic dysfunction\n"
+        "{\"asserted\": false, \"cue\": \"\", \"why\": \"joined only by 'with'; co-occurrence, not causation\"}\n"
         "EXCERPT: \"[doctor] your history includes eczema and asthma .\"\n"
         "CANDIDATE: eczema causes or explains the asthma\n"
-        "{\"asserted\": false, \"why\": \"both listed in history; no causation stated\"}"
+        "{\"asserted\": false, \"cue\": \"\", \"why\": \"both listed in history; no causation stated\"}"
     ),
 }
 _JUDGE_ANSWER_FORMAT = "Answer strictly as JSON: {\"asserted\": true|false, \"why\": \"<=12 words\"}."

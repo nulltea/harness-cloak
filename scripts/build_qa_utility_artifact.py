@@ -272,9 +272,9 @@ def build_from_files(
     deterministic_relation_stage = bool(getattr(args, "relation_deterministic_stage", False))
     if deterministic_relation_stage:
         pins["relation_deterministic_stage"] = True
-    finer_level_check = bool(getattr(args, "reader_finer_level_check", False))
+    finer_level_check = getattr(args, "reader_finer_level_check", None) or None
     if finer_level_check:
-        pins["reader_finer_level_check"] = True
+        pins["reader_finer_level_check"] = finer_level_check
     return build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
@@ -385,12 +385,17 @@ def parse_args(argv=None):
     )
     parser.add_argument(
         "--reader-finer-level-check",
-        action="store_true",
+        nargs="?",
+        const="hard",
+        choices=("hard", "soft"),
+        default=None,
         help=(
-            "reward-band certification: for every KEPT relation QA, re-render the representative "
-            "with the answer decision at each level FINER than its supported level and re-read, "
-            "recording per-level readability on the row's validation evidence (never a "
-            "rejection). Adds ~one local reader call per kept row per finer level. Opt-in."
+            "reward-band certification: for every gate-passing relation QA, re-render the "
+            "representative with the answer decision at each level FINER than its supported "
+            "level and re-read. 'hard' (bare flag): an unreadable finer level REJECTS the QA, "
+            "routed lattice_suspect so it never reaches repair/glean. 'soft': keep the QA, only "
+            "record the scores and emit the finer-level-failures worklist. Adds ~one local "
+            "reader call per gate-passing row per finer level. Opt-in."
         ),
     )
     return parser.parse_args(argv)
@@ -406,19 +411,71 @@ def write_finer_level_failures(
     from cloak.train.qa_builder import _reader_excerpt
 
     threshold = float(artifact.get("reader_threshold") or 1.0)
+
+    def _rows_with_finer_levels():
+        # kept assertions (soft mode records on validation evidence) ...
+        for row in artifact.get("assertions", {}).values():
+            if row.get("subtype") != "contextual_relation":
+                continue
+            evidence = row.get("evidence") or {}
+            finer = (evidence.get("validation") or {}).get("finer_levels") or {}
+            if finer:
+                yield row, row.get("question"), row.get("answer_target") or {}, evidence, finer
+        # ... and hard-mode rejections (the QA never became an assertion; the reject site
+        # stashed question/answer_target/finer_levels on the rejection evidence)
+        for row in (artifact.get("rejections") or {}).get("records", []):
+            evidence = row.get("evidence") or {}
+            finer = evidence.get("finer_levels") or {}
+            if finer:
+                yield (row, evidence.get("question"), evidence.get("answer_target") or {},
+                       evidence, finer)
+
+    def _level_entry(value):
+        # per-level value is {"score", "render"} (current) or a bare float (older artifacts)
+        if isinstance(value, dict):
+            return float(value.get("score", 0.0)), str(value.get("render") or "ok")
+        return float(value), "ok"
+
+    def _provenance(row, evidence, arguments, answer_role):
+        run_id = evidence.get("run_id")
+        group_id = str(row.get("group_id") or "")
+        context_count = sum(1 for a in arguments if a.get("kind") == "context")
+        if run_id in (None, "primary"):
+            return "teacher_primary"
+        if run_id in ("gleaning", "reverse_framing", "literal_reverse"):
+            return {"gleaning": "teacher_gleaning",
+                    "reverse_framing": "reverse_framing_flip",
+                    "literal_reverse": "literal_reverse"}[run_id]
+        if run_id == "deterministic_stage":
+            if group_id.startswith("set_forward:"):
+                return "stage_set_forward"
+            if group_id.startswith("compound_span_reverse:"):
+                return "stage_compound_span_reverse"
+            if group_id.startswith("literal_reverse:") or context_count:
+                return ("stage_literal_reverse_compound" if context_count > 1
+                        else "stage_literal_reverse_single")
+            return ("stage_span_reverse" if answer_role == "subject"
+                    else "stage_span_forward")
+        return str(run_id)
+
     rows_out: list[str] = []
-    for row in artifact.get("assertions", {}).values():
-        if row.get("subtype") != "contextual_relation":
-            continue
-        evidence = row.get("evidence") or {}
-        finer_levels = (evidence.get("validation") or {}).get("finer_levels") or {}
-        rejected = sorted(level for level, score in finer_levels.items() if score < threshold)
+    for row, question, target, evidence, finer_levels in _rows_with_finer_levels():
+        entries = {level: _level_entry(value) for level, value in finer_levels.items()}
+        rejected = sorted(level for level, (score, _r) in entries.items() if score < threshold)
         if not rejected:
             continue
-        accepted = sorted(level for level, score in finer_levels.items() if score >= threshold)
+        # levels_accepted = the VERIFIED-accepted part of the ladder: the supported level (it
+        # passed the full three-point gate) plus any finer level the band check confirmed.
+        # Coarser-than-supported levels are deliberately absent: the stage's level search tried
+        # and gate-FAILED them (that is why the supported level is the coarsest), and teacher
+        # rows never tested them -- listing them as accepted would be fabrication.
+        supported_level = str(target.get("required_property") or "")
+        accepted = sorted(
+            {level for level, (score, _r) in entries.items() if score >= threshold}
+            | ({supported_level} if supported_level else set())
+        )
         doc_id = str(row.get("doc_id"))
         document = artifact["documents"][doc_id]
-        target = row.get("answer_target") or {}
         decision = next(
             (d for d in document.get("decisions", [])
              if str(d.get("decision_id")) == str(target.get("decision_id"))), {})
@@ -430,9 +487,16 @@ def write_finer_level_failures(
             occurrence = occurrences.get(str(argument.get("occurrence_id"))) or {}
             return str(occurrence.get("surface") or argument.get("surface") or "")
 
+        def _argument_decision(argument):
+            occurrence = occurrences.get(str(argument.get("occurrence_id"))) or {}
+            return str(occurrence.get("decision_id") or "")
+
         arguments = list(evidence.get("arguments") or [])
         subject = next((a for a in arguments if a.get("role") == "subject"), {})
-        objects = [describe(a) for a in arguments if a.get("role") == "object"]
+        objects = [a for a in arguments if a.get("role") == "object"]
+        # orientation from the ANSWER decision (answer_role is not persisted on compiled rows)
+        answer_role = ("subject" if _argument_decision(subject) == str(target.get("decision_id"))
+                       else "object")
         rows_out.append(json.dumps({
             "profile": {
                 "key": str(decision.get("canonical_key") or ""),
@@ -440,13 +504,23 @@ def write_finer_level_failures(
             },
             "levels_rejected": rejected,
             "levels_accepted": accepted,
+            # what stopped each rejected level: "read_failed" (probe rendered; the reader's
+            # answer did not resolve/entail) vs "no_joint_arm" (level-fill collision: the probe
+            # could not even be rendered jointly -- a render limitation, not a bad level)
+            "rejection_causes": {
+                level: ("no_joint_arm" if entries[level][1] == "no_joint_arm" else "read_failed")
+                for level in rejected
+            },
             "relation": {
                 "type": row.get("relation"),
+                "provenance": _provenance(row, evidence, arguments, answer_role),
+                "answer_role": answer_role,
                 "subject": describe(subject),
-                "object": objects[0] if len(objects) == 1 else objects,
-                "supported_level": str(target.get("required_property") or ""),
+                "object": (describe(objects[0]) if len(objects) == 1
+                           else [describe(a) for a in objects]),
+                "supported_level": supported_level,
             },
-            "question": row.get("question"),
+            "question": question,
             "doc_id": doc_id,
             "doc_context": _reader_excerpt(source_documents.get(doc_id, ""), evidence),
         }, sort_keys=True))

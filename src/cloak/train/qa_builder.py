@@ -4000,11 +4000,34 @@ _ESCALATION_COORDINATION = re.compile(
 _ESCALATION_NEGATION = re.compile(
     r"\b(denies|denied|no evidence of|negative for|ruled out|no history of|no known|"
     r"non-?contributory|without any)\b", re.I)
+# causes_or_explains-ONLY co-occurrence connector: two clinical findings joined by coordination
+# ("edema and some erythema") or attributive comorbidity ("heart failure with diastolic
+# dysfunction") state adjacency, never causation. The between-args gap (intervening entities
+# blanked) is REJECTED when it consists solely of these tokens -- so any real linking verb in the
+# gap ("X, causing Y", "X from Y") leaves a non-matching token and survives to the judge. Scoped to
+# this relation because "with" is a legitimate prescribed_with cue ("treated with"). See the
+# co-occurrence-vs-causation analysis in results/qa_v2_stage_ab/finer_level_failures_for_fable.md.
+_COOCCURRENCE_CONNECTOR = re.compile(
+    r"^[\s,;:/&()\-\.]*(?:\b(?:and|or|with|without|w|associated|along|some|a|an|the)\b"
+    r"[\s,;:/&()\-\.]*)+$", re.I)
+# causes_or_explains proximity cap: a causal assertion in a clinical note is LOCAL -- the two
+# findings sit in the same or an adjacent clause ("X is due to Y"; "X. that's causing the Y").
+# `_derived_relation_anchor` tags that <=1-clause-apart case "clause" (or "speaker_turn" in a
+# transcript -- a MISNOMER for the local tier, not a whole-turn window). The wider anchors
+# (plan_section / problem_block / the stitched_clauses span-bridge) are only reached when the
+# arguments are >1 clause apart; for a causal claim those recover whole-note-apart pairs that are
+# co-occurrence, not causation (audit: the ~4900-char escalation miss). Adjacent-clause causality
+# is caught by the local branch BEFORE the wide tiers, so this never drops a genuinely local cause.
+# ponytail: a real cause whose direction is only clarified by a DISTANT excerpt (a rare
+# false-negative the local reader window can't confirm) is a known, deferred side case -- widen the
+# reader's evidence turns for causes_or_explains if it ever proves material.
+_CAUSAL_LOCAL_ANCHOR_KINDS = frozenset({"clause", "speaker_turn"})
 
 
 def _escalation_prefilter_reason(
     document: str, arguments: Sequence[Mapping],
     occurrences: Mapping[str, Mapping], contexts: Mapping[str, Mapping],
+    relation: str | None = None,
 ) -> str | None:
     """Junk reason if this pair is provably non-assertive by surface structure, else None."""
     def span_of(argument: Mapping) -> tuple[int, int] | None:
@@ -4030,7 +4053,13 @@ def _escalation_prefilter_reason(
             if lo <= x0 and x1 <= hi:
                 for i in range(max(0, x0 - lo), min(len(gap), x1 - lo)):
                     gap[i] = " "
-        if _ESCALATION_COORDINATION.match("".join(gap)):
+        gap_text = "".join(gap)
+        # causes_or_explains: a coordination/comorbidity connector between the two findings is
+        # co-occurrence, never an asserted cause -- the model won't reliably reject it (its judge
+        # rule already forbids co-occurrence, yet accepts it), so reject deterministically here.
+        if relation == "causes_or_explains" and _COOCCURRENCE_CONNECTOR.match(gap_text):
+            return "cooccurrence_connector"
+        if _ESCALATION_COORDINATION.match(gap_text):
             # Only SAME-TYPE siblings are a coordinated enumeration (two conditions in a PMH list).
             # A cross-type "and" (condition AND drug) is not a list -- it can join a condition to its
             # treatment (e.g. "hypothyroidism and synthroid"), a real relation -- so never skip it.
@@ -4277,6 +4306,13 @@ def relation_support_opportunities(
                 if not all(_argument_is_grounded(argument, document, span, occurrences)
                            for argument in arguments):
                     continue
+                # Proximity cap for causes_or_explains: only a local (<=1-clause-apart) anchor can
+                # carry a causal assertion; a wide anchor means the pair is whole-note-apart
+                # co-occurrence, not causation. Applied before cue/escalation so neither path can
+                # recover it. See _CAUSAL_LOCAL_ANCHOR_KINDS.
+                if (relation == "causes_or_explains"
+                        and anchor_kind not in _CAUSAL_LOCAL_ANCHOR_KINDS):
+                    continue
                 cue_ok = _relation_quote_has_lexical_cue_support(
                     relation, quote, arguments, relation_contract,
                     allow_adjacent_clauses=True,
@@ -4297,7 +4333,7 @@ def relation_support_opportunities(
                     # (coordinated list siblings / explicitly-negated argument) -- those are skipped
                     # so the accept-biased judge never turns them into junk seeds.
                     if _escalation_prefilter_reason(
-                        document, arguments, occurrences, contexts) is None:
+                        document, arguments, occurrences, contexts, relation) is None:
                         pending[key] = (relation, quote, deepcopy(arguments), anchor_kind, list(span))
 
     # NO-REGRESSION INVARIANT: escalator=None leaves `pending` unconsulted, so the result is exactly
@@ -4417,6 +4453,10 @@ def _reader_outcome_route(rejection: Mapping, reader_threshold: float = 1.0) -> 
       repair paths stand.
     * None -- no exclusion (no reader scores, or a pattern the repair taxonomy handles).
     """
+    if str(rejection.get("detail_reason")) == "finer_level_unreadable":
+        # hard finer-level check: the fact reads at its supported level but a finer band level
+        # does not -- lattice-owned data, unfixable by re-authoring; never a repair target
+        return "lattice_suspect"
     evidence = rejection.get("evidence") or {}
     scores = (evidence.get("validation") or {}).get("scores") or {}
     if not scores:
@@ -7136,7 +7176,7 @@ def build_utility_artifact(
     context_prefilter: "Callable[[str, Mapping], Sequence[Mapping]] | None" = None,
     deterministic_relation_stage: bool = False,
     set_reader: "Callable[[list[str], str], Sequence[str]] | None" = None,
-    finer_level_check: bool = False,
+    finer_level_check: "str | bool | None" = None,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation.
 
@@ -7147,6 +7187,14 @@ def build_utility_artifact(
     `deterministic_relation_stage` (opt-in) turns mined opportunity pairs into template relation
     QAs between the primary teacher pass and gleaning (no teacher call), so gleaning only
     re-authors facts the free deterministic generation could not keep."""
+    # Finer-level reward-band check mode: "hard" rejects a QA whose finer band has an unreadable
+    # level (routed lattice_suspect, never repair-targeted); "soft" only records/emits it.
+    finer_level_mode = (
+        "hard" if finer_level_check is True
+        else str(finer_level_check) if finer_level_check else None
+    )
+    if finer_level_mode not in {None, "hard", "soft"}:
+        raise ValueError(f"finer_level_check must be 'hard' or 'soft', got {finer_level_check!r}")
     reader_pin = _validated_build_reader_pin(reader, pins)
     validate_environment = getattr(task_adapter, "validate_environment", None)
     if validate_environment is not None:
@@ -7477,8 +7525,10 @@ def build_utility_artifact(
                     "property_level": requirements,
                 }
                 # Opt-in reward-band certification: per-finer-level readability of the ANSWER
-                # decision, recorded on the kept row (never a rejection; see the helper).
-                if finer_level_check:
+                # decision. soft: record on the kept row and emit to the worklist. hard: an
+                # unreadable finer level REJECTS the QA -- and the rejection routes as
+                # lattice_suspect (data-owned), so it can never become a repair/glean target.
+                if finer_level_mode:
                     finer_scores = _finer_level_readability(
                         candidate, decisions, protected_terms,
                         doc_id=doc_id, render_action_vector=render_action_vector,
@@ -7486,6 +7536,26 @@ def build_utility_artifact(
                     )
                     if finer_scores is not None:
                         evidence_row = {**evidence_row, "finer_levels": finer_scores}
+                        if finer_level_mode == "hard" and any(
+                                entry["score"] < reader_threshold
+                                for entry in finer_scores.values()):
+                            reject_context_candidate(
+                                doc_id=doc_id,
+                                candidate=candidate,
+                                reason="unsupported",
+                                detail_reason="finer_level_unreadable",
+                                anchor=anchor,
+                                validation=evidence_row,
+                                extra_evidence={
+                                    # what the worklist emitter needs, since a hard-mode
+                                    # failure never becomes an assertion row
+                                    "finer_levels": finer_scores,
+                                    "question": candidate.get("question"),
+                                    "answer_target": dict(
+                                        candidate.get("answer_target") or {}),
+                                },
+                            )
+                            continue
                 row["evidence"] = {
                     **dict(row.get("evidence") or {}),
                     "validation": evidence_row,
@@ -7837,10 +7907,19 @@ def build_utility_artifact(
                         # Intermediate level/direction trials are speculative: their expected
                         # failures must not flood the rejection channel (or shift gleaning-target
                         # kinds), so only a plan's FINAL trial may leave rejection records.
+                        # EXCEPT finer-level-unreadable rejections (hard finer-level check): the
+                        # level search legitimately moves on to a finer supported level, but the
+                        # unreadable level is lattice-worklist signal that must survive -- it is
+                        # routed out of repair targeting regardless.
                         checkpoint = len(rejection_records)
                         kept_rows = validate_candidate_rows([row])
                         if not kept_rows and not final:
+                            preserved = [
+                                record for record in rejection_records[checkpoint:]
+                                if record.get("detail_reason") == "finer_level_unreadable"
+                            ]
                             del rejection_records[checkpoint:]
+                            rejection_records.extend(preserved)
                         return kept_rows
 
                     def _stage_keep(row: dict) -> None:
@@ -8757,7 +8836,7 @@ def _finer_level_readability(
     render_action_vector: Callable[[str, Mapping[str, str]], str],
     reader: Callable[[list[str], str], Sequence[str]],
     chain_by_decision: Mapping[str, Sequence[Mapping]],
-) -> dict[str, float] | None:
+) -> dict[str, dict] | None:
     """Reward-band certification for a KEPT relation QA (opt-in; see the spec's level-pinning
     gaps). The three-point gate certifies readability only at the SUPPORTED answer level; at RL
     time the policy may rank the answer decision FINER, and scoring then relies on the reader
@@ -8765,8 +8844,11 @@ def _finer_level_readability(
     assumption measured: re-render the representative with the ANSWER decision at each finer
     level (question unchanged -- the answer level never appears in it) and score the read against
     the row's frozen required_property, exactly the RL-time semantics. Returns {finer_level:
-    score}; never changes the verdict -- an unreadable finer level is lattice-owned data, not
-    grounds to reject a QA that is valid at its supported level."""
+    {"score", "render"}} where render is "ok" (probe rendered and was read) or "no_joint_arm"
+    (no arm renders this level jointly with the row's other pinned levels -- a level-fill
+    collision, a RENDER limitation rather than a bad level). Never changes the verdict by
+    itself -- an unreadable finer level is lattice-owned data, not grounds to reject a QA that
+    is valid at its supported level."""
     target = candidate.get("answer_target") or {}
     if target.get("kind") != "linked_decision":
         return None  # set members are pinned at their finest level: the band below is empty
@@ -8783,14 +8865,16 @@ def _finer_level_readability(
     if not finer_levels:
         return None
     requirements = dict(candidate.get("decision_requirements") or {})
-    scores: dict[str, float] = {}
+    scores: dict[str, dict] = {}
     for finer in finer_levels:
         probe = dict(candidate)
         probe["decision_requirements"] = {**requirements, decision_id: finer}
         try:
             probe_anchor = build_joint_representative_anchor(probe, decisions)
         except ValueError:
-            scores[str(finer)] = 0.0  # no arm renders this level jointly -> unreadable in deploy
+            # no arm renders this level jointly with the row's other pinned levels: a level-fill
+            # collision (render limitation), not evidence the level itself is bad
+            scores[str(finer)] = {"score": 0.0, "render": "no_joint_arm"}
             continue
         probe_vector = dict(probe_anchor["action_vector"])
         for other in decisions:  # mirror the deployed co-referent leak guard
@@ -8817,7 +8901,10 @@ def _finer_level_readability(
         )[0]
         # scored against the ORIGINAL row (frozen required_property): the finer node must
         # resolve via its aliases and entail the supported level, as it must at RL time
-        scores[str(finer)] = _context_answer_score(candidate, answer, chain_by_decision)
+        scores[str(finer)] = {
+            "score": _context_answer_score(candidate, answer, chain_by_decision),
+            "render": "ok",
+        }
     return scores
 
 
