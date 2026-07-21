@@ -1142,6 +1142,38 @@ def test_freeze_builds_semantic_chain_closure_with_source_aliases():
     assert by_node["placeholder"]["answer_aliases"] == []
 
 
+def test_semantic_chain_follows_authored_ladder_not_global_aset():
+    # Regression: the entailment chain must follow the AUTHORED level ladder (profile order),
+    # NOT the global per-fill anonymity count. Here the coarse region level ("thoracic disease")
+    # carries a SMALLER global aset (390) than the specific organ level ("heart disease", 400) --
+    # the real cross-profile miscalibration. Sorting by aset would put thoracic first and drop the
+    # organ->region entailment edge (heart would NOT entail thoracic), inverting the RL reward.
+    ranker_env = {
+        "corpora": {"clinical": {"d1": {"spans": [{
+            "surface": "congestive heart failure", "type": "health-condition",
+            "start": 0, "end": 24, "aliases": ["chf"],
+            "actions": [  # authored specific -> coarse; aset is inverted for heart vs thoracic
+                {"fill": "heart disease", "mode": "level", "aset": 400},
+                {"fill": "thoracic disease", "mode": "level", "aset": 390},
+                {"fill": "disease of anatomical entity", "mode": "level", "aset": 60000},
+                {"fill": "congestive heart failure", "mode": "level", "keep": True, "aset": 1},
+                {"fill": None, "mode": "placeholder"},
+            ],
+        }]}}}
+    }
+    frozen = freeze_ranker_environment(ranker_env)
+    chain = frozen["documents"]["d1"]["decisions"][0]["semantic_chain"]
+    order = [row["node"] for row in chain]
+    by_node = {row["node"]: row for row in chain}
+
+    # organ level precedes region level (authored ladder), NOT aset order (which would flip them)
+    assert order.index("heart disease") < order.index("thoracic disease")
+    # the decisive edge: the specific organ level ENTAILS the coarser region level
+    assert by_node["heart disease"]["entailed_properties"] == [
+        "heart disease", "thoracic disease", "disease of anatomical entity"]
+    assert "thoracic disease" in by_node["heart disease"]["entailed_properties"]
+
+
 def test_freeze_ranker_environment_maps_repeated_occurrences_to_one_decision():
     ranker_env = {
         "corpora": {

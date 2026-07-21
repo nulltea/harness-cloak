@@ -6351,10 +6351,21 @@ def _frozen_semantic_chain(decision: Mapping, source_aliases: Sequence[str]) -> 
     linked-answer scorer reads it instead of re-deriving from mutable profiles,
     counts, or lexical similarity (docs/handoffs/2026-07-14-qa-reader-lattice-scoring.md).
     """
-    levels = sorted(
-        (action for action in decision.get("actions", []) if action.get("mode") == "level"),
-        key=lambda action: float(action.get("coarseness_rank", 0.0)),
-    )
+    # Specific -> coarse order is the decision's AUTHORED level ladder (the profile's `levels`
+    # list order, preserved into `actions` at freeze time). The profile loader validates that
+    # ladder is monotone in the profile's OWN level_counts (lattice_profiles.py), so authored
+    # order == profile-count order and is the semantic hierarchy.
+    #
+    # We deliberately do NOT re-sort by `coarseness_rank`: that is a GLOBAL per-fill anonymity-set
+    # size (aset_count -> lookup_count, keyed on the level string across ALL profiles, aggregated
+    # by max), not a per-profile generality rank. It is miscalibrated across profiles -- e.g.
+    # global "heart disease"=400 > "thoracic disease"=390 -- so sorting by it inverts organ vs
+    # region levels (heart ranked coarser than thoracic), which drops the organ->region entailment
+    # edge and inverts the RL reward gradient (a policy generalizing CHF to the more-specific
+    # "heart disease" would score 0 while the coarser "thoracic disease" scores 1). aset /
+    # coarseness_rank is UNCHANGED for its real jobs (ranker policy feature, BC target selection,
+    # hiding / representative-anchor selection); only the entailment ORDER uses the profile ladder.
+    levels = [action for action in decision.get("actions", []) if action.get("mode") == "level"]
     ordered_properties = [
         canon(str(action["entails"][0]))
         for action in levels
