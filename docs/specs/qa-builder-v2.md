@@ -2,9 +2,9 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-15
+updated: 2026-07-21
 tags: [qa, reward-design, utility-components, context-preservation, credit-routing,
-       interactive-ranker, spec]
+       interactive-ranker, spec, deterministic-relations, gleaning]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-decision-log.md,
             docs/specs/RL/interactive-ranker-v2-diagnostics.md,
@@ -14,928 +14,461 @@ companion: [docs/specs/RL/interactive-ranker-v2.md,
 
 # QA builder v2 — context-preservation utility for interactive ranker v2
 
-**Status: normative design with a partially implemented ACI builder/scorer. The PERSON-relation
-path has been removed per the relation anti-goals below (the teacher now runs a single clinical
-span→span / span→literal call); empirical gates remain uncertified until the preregistered smoke
-and support runs complete.**
+**Status: implemented and validated (67-doc ACI corpus, 2026-07-21). This document describes the
+pipeline as built — `src/cloak/train/qa_builder.py` plus the builder scripts — not an aspirational
+design. The historical normative design and its migration narrative live in the decision log.**
 
-QA builder v2 produces a small, frozen set of utility assertions that reward truthful
-generalization when it preserves useful context that a generic placeholder destroys. It also
-measures the quality of the final delivered output. QA is a utility instrument, never a privacy
-measurement. Privacy remains held-out LLM re-identification success on `doc_p` and `out_final`
-at matched realized privacy and identical settings.
+QA builder v2 produces a frozen set of utility assertions that reward truthful generalization when
+it preserves useful context that a generic placeholder destroys, plus delivered-output assertions
+on the final round-trip result. QA is a utility instrument, never a privacy measurement. Privacy
+remains held-out LLM re-identification success on `doc_p` and `out_final` at matched realized
+privacy and identical settings.
 
-## Core design
+## Definitions
 
-The design has two complementary measurement channels:
+- **occurrence / decision** — a detected source span / the stable per-value policy decision it
+  links to (many occurrences → one decision). Frozen before QA; the builder never re-detects.
+- **level (generalization level / support property)** — a legal non-KEEP, non-placeholder lattice
+  meaning of a decision (e.g. a drug's class), ordered most-specific → coarsest.
+- **linked argument** — a relation argument that is a controlled occurrence (carries `span_label`
+  `S#`, `occurrence_id`, and one level as `support_property`).
+- **context literal** — a relation argument that is exact, uncontrolled source text (never a
+  detector decision; survives every render verbatim).
+- **fact key** — the decision-level directional identity of a relation:
+  `(relation, subject-identity, object-identity)`, where a linked identity is its decision and a
+  literal identity is its canonical text. Levels do not enter the key; forward and reverse QA of
+  the same pair share one key. Compound rows decompose into subject × object pair keys.
+- **three-point reader gate** — a QA is kept iff the pinned reader answers it on `doc_orig`
+  (score ≥ t), on the representative generalized render (≥ t), and NOT on the all-placeholder
+  render (< t), with t = the manifest `reader_threshold` (1.0 in production).
+- **opportunity** — a mined, source-supported candidate pair (subject, object, relation) from the
+  structural miner; the recall ledger that escalation, the deterministic stage, and gleaning
+  targeting all consume.
 
-1. **Context preservation on `doc_p`.** Semantic-property and contextual-decision assertions
-   test whether the transformed input still carries category, function, and relational meaning.
-   These are the primary signal that a legal truthful generalization can preserve useful context
-   better than a generic placeholder.
-2. **Delivered utility on `out_final`.** Content and schema assertions test omissions, required
-   structure, field/category/status agreement, exact recovery, and symbolic relation
-   preservation after the complete round trip.
+## Pipeline overview
 
-Neither channel substitutes for the other. A placeholder may preserve symbolic utility through
-schema slots and local inversion without preserving semantics. Conversely, `doc_p` may retain
-useful context that the remote task later omits. The reward must observe both effects.
-
-The builder optimizes reliable measurements, not accepted-pair count. Missing QA coverage never
-removes a policy decision or implies zero utility relevance.
-
-Every rewarded context assertion must distinguish three points: it succeeds on `doc_orig`,
-succeeds on at least one legal non-KEEP, non-placeholder transformed anchor whose lattice
-semantics support the asserted property, and fails on the all-placeholder anchor. This is the
-minimum evidence that the assertion rewards usable generalization rather than merely KEEP.
-
-## Invariants
-
-1. **Detect once.** QA and RL consume the same frozen occurrence/decision artifact. The builder
-   never runs detection.
-2. **Stable many-to-one decisions.** Occurrences link to stable IDs; equivalent occurrences map
-   to one policy decision.
-3. **Assertions precede questions.** The builder first compiles grounded assertions. Questions,
-   when needed, are only scoring forms of accepted assertions.
-4. **Teacher proposals are not gold.** Code owns IDs, canonical links, relation vocabulary,
-   channels, and validation. The teacher authors contextual relation questions and accepted
-   answers; code validates rather than deterministically inventing that semantic content.
-5. **Probe links are routing hints.** They route provisional credit but do not certify causality.
-6. **Measurement and routing are orthogonal.** Assertion family records what is measured;
-   `scope: linked | global` records how ranker v2 routes it.
-7. **Counterfactuals provide bounded local evidence.** For a tested action pair, ranker v2
-   substitutes measured local contextual evidence for provisional routing. This is not unbiased
-   causal attribution and does not establish independent decision causality.
-8. **Pins are transitive.** Detector, task, model, extractor, reader, scorer, assertion, or gate
-   changes invalidate dependent artifacts and caches.
-9. **Thresholds are preregistered.** Final RL or attacker results cannot tune QA gates, weights,
-   generation, or validation.
-10. **Repeated-context leakage remains an audit assumption.** One decision may control repeated
-    occurrences, but repetition can still increase inference risk.
-
-## One deep module
-
-QA builder v2 exposes one external interface:
+Five artifacts, built in order; each step pins the previous one:
 
 ```text
-build_utility_artifact(
-    frozen_environment,
-    task_adapter,
-    source_documents,
-    references,
-    optional_ceiling_diagnostics,
-    builder_pin,
-) -> UtilityArtifact
+lattice_profiles.json                      (curated generalization lattices; owned upstream)
+  └─ scripts/build_profile_embindex.py     → lattice_profiles.embindex.npz
+       └─ scripts/build_arms_artifact.py   → arms.json (+ environment-audit sidecars)
+            └─ scripts/build_ranker_env.py → ranker-env.json (frozen v2 environment)
+                 └─ scripts/build_qa_utility_artifact.py → *.utility.json (+ views, qa-audit)
 ```
 
-Callers do not orchestrate detection, relation extraction, question generation, validation,
-coverage accounting, or cache keys. Those are implementation details behind this interface.
+### Embedding index (`build_profile_embindex.py`)
 
-The task adapter is the only public variation seam:
+Builds the embedding-index sidecar over `lattice_profiles.json` used by profile matching
+(`cloak.profile_match`, default encoder `BAAI/bge-small-en-v1.5`). Must be rebuilt whenever the
+lattice profiles change; a stale index silently degrades lattice resolution in the arms build.
+
+### Arms (`build_arms_artifact.py`)
+
+Detection runs ONCE here and is frozen. The QA-v2 clinical preset is pinned and may not be
+overridden per flag (`--detector-config qa-v2-clinical`): GLiNER
+`knowledgator/gliner-pii-large-v1.0`, threshold 0.35, label schema
+`knowledgator-native-clinical-v1`, health-condition admission floor 0.5 (drops exam-finding noise
+below real diagnoses), controlled runtime types `{LOC, drug, health-condition,
+medical-procedure}`. The artifact embeds the v2 frozen input per document (occurrences, decisions,
+action menus) and writes environment-audit sidecars. Rationale for freezing: detection is
+nondeterministic across processes on long docs, so recomputing per consumer breaks caches and
+reproducibility.
+
+The full ACI corpus is `--corpora aci --n-docs 67`.
+
+### Ranker environment (`build_ranker_env.py`)
+
+Freezes the ranker-v2 environment from the arms artifact (`--skip-probes` in the QA-v2 flow: the
+retired teacher QA-probe path is not used). Output carries the `environment_hash` that every
+downstream artifact and cache key pins.
+
+### QA utility artifact (`build_qa_utility_artifact.py`)
+
+The QA build proper. Production flags:
+
+- `--relation-teacher` — primary relation-teacher pass (paid, cached);
+- `--relation-support-escalation` (default on) — MedGemma opportunity-miner escalation judge;
+- `--informative-context-judge` (default on) — semantic-property probe admission judge (the probe
+  family itself is currently disabled; machinery dormant);
+- `--relation-support-prefilter` — LLM set-call proposer of context-literal candidates
+  (augment-only; requires escalation);
+- `--relation-deterministic-stage` — template relation QAs between primary and gleaning (below);
+- `--relation-teacher-gleaning` — the paid repair+glean second pass (requires the manifest
+  `relation_escalation_policy`).
+
+Every enabled option is recorded in the artifact pins; disabled options leave the build
+byte-identical to the option-free path. The threshold manifest
+(`data/qa_v2/relation_gate_manifest.json`) pins the reader (medgemma-4b-it, prompt
+`qa-context-reader-v3`, single-span response schema, revision `qa-reader-r4`), reader threshold
+1.0, stability repetitions/permutations, and the family budgets (context 0.6 / delivered 0.4,
+structural cap 0.1).
+
+## QA model
+
+### Relation inventory
+
+Five directed relations; the arrow is the complete argument-direction contract
+(`CLINICAL_RELATION_INVENTORY` / `ACI_RELATION_CONTRACT`):
 
 ```text
-TaskAdapter:
-  fixed_schema
-  assertion_ontology
-  deterministic_candidates(document, environment)
-  score(assertion, context)
+prescribed_with              condition → drug
+procedure_for                condition → medical procedure (incl. past treatment)
+tests_for                    condition → diagnostic/monitoring test, lab, imaging, exam
+contraindicated_because_of   drug or procedure → condition
+causes_or_explains           condition → condition or symptom
 ```
 
-Add an adapter only when a second task genuinely requires different schema or assertion logic.
-Do not expose separate public ladder, decision, schema, validator, or compiler modules.
-
-**Compiler terminology is normative.** Relational-assertion compilation is the complete
-deterministic-first operation that may invoke the one-call teacher escalation and then validates
-the proposal against frozen IDs, legal properties, and exact evidence. Artifact packaging is the
-subsequent local-only operation that assigns IDs, links, weights, coverage states, hashes, and
-pins. A packaging-only command must not be described as the assertion compiler.
-
-Runtime scoring has one interface:
-
-```text
-score_utility(artifact, doc_id, doc_p, out_final) -> {assertion_id: ScoreRecord}
-```
-
-Generated `out_p` may remain in the round-trip artifact for diagnostics, but semantic and
-contextual QA does not read it.
-
-Runtime scoring batches all context assertions for one `(doc_p, reader/scorer pin)` into one
-reader request. Delivered assertions are deterministic where possible and otherwise share one
-batched request. Cache keys are document/action-vector level, never assertion-call level.
-
-## Frozen environment contract
-
-The builder consumes one immutable artifact containing:
-
-```yaml
-environment_hash: sha256:...
-documents:
-  aci/D2N002:
-    source_hash: sha256:...
-    occurrences:
-      - occurrence_id: occ:...
-        start: 120
-        end: 134
-        surface: hypothyroidism
-        runtime_type: health-condition
-        polarity: active
-        detector_provenance: {...}
-        overlap_disposition: accepted
-        decision_id: dec:...
-    decisions:
-      - decision_id: dec:...
-        runtime_type: health-condition
-        occurrence_ids: [occ:...]
-        controlled: true
-        action_menu_hash: sha256:...
-```
-
-Every controlled occurrence maps to exactly one decision. IDs derive from canonical versioned
-fields and hashes, not list position or `surface.lower()`. Canonical substring matching is
-migration-only and produces explicitly low-confidence links.
-
-## Building per-sample assertions
-
-The task schema is fixed once per adapter. Each document receives an assertion manifest through
-one simple pipeline.
-
-### Deterministic extraction
-
-Code derives what it can authoritatively:
-
-- frozen occurrence IDs, offsets, types, surfaces, polarity, aliases, and lattice levels;
-- explicit age, sex, condition, drug, procedure, and other task facts;
-- exact source and human-reference matches;
-- fixed schema sections and row keys;
-- exact ceiling matches.
-
-### One bounded relation-teacher request
-
-For every document with at least one eligible controlled `S#` span, make one pinned, batched,
-cached relation-proposal call. Deterministic extraction supplies structural facts and the
-safety/representability prefilter; it does not create contextual relation QA templates. A document
-with no eligible controlled span makes no relation-teacher call and records that explicit
-no-candidate state. The teacher may abstain; do not retry to chase coverage.
-
-The teacher receives `doc_orig`, authoritative reference evidence when available, and the compact
-relation prompt described in [Teacher prompt specification](#teacher-prompt-specification). It
-selects from the ACI adapter's closed relation vocabulary. Abstain rather than retrying to chase
-coverage.
-
-The relation teacher is pinned to
-`nvidia/nemotron-3-super-120b-a12b:free` through
-`https://openrouter.ai/api/v1`, authenticated by `OPENROUTER_API_KEY`. Changing model, provider,
-prompt, response schema, or generation configuration invalidates the build cache and artifact
-pin. The request sets no completion or reasoning token cap: the model's reasoning is mandatory
-on this route, and observed caps repeatedly produced empty replies or a truncated source scan
-(the r16 smoke's reasoning cut off mid-document, leaving explicit relations unproposed). The
-configuration only excludes the reasoning trace from the returned reply, keeping it out of the
-cache and artifact. The OpenRouter wire request uses strict JSON Schema,
-with `relations` and `candidate_accounting` required at the top level; basic JSON-object mode is
-insufficient because `{}` is syntactically valid but semantically unusable. Per document, the
-wire schema constrains relation roles to `subject`/`object` fixed by argument position, argument
-kinds to `linked`/`context`, linked short labels to the document's displayed `S#` labels, and
-ledger cardinality to the number of displayed `S#` labels. Because the compiler unconditionally
-rejects a relation with no linked argument, the argument pair is bound to the three shapes
-`linked+linked`, `linked+context`, and `context+linked`; a zero-linked pair is unrepresentable
-on the wire (the r16 smoke's only proposal was exactly that always-rejected shape). It must
-permit a clean empty relation list and must not create an empty enumeration for any optional
-field. It must not bind teacher-authored accepted answers to a finite answer enum. The compiler
-remains the authority for cross-field semantics and exactly-once candidate coverage.
-
-### Teacher prompt specification
-
-This section is normative for the relation teacher's human-facing prompt. It deliberately
-separates semantic search from deterministic validation.
-
-**Responsibilities.** The teacher searches `doc_orig` for as many source-grounded,
-task-relevant, non-duplicate relations as the preregistered cap permits, with relation diversity
-where evidence supports it. It authors the contextual question, accepted answer(s), scoring
-contract, and semantic generalization requirements. It must not fabricate a relation merely to
-cover a type. Deterministic code maps the teacher's short labels back to frozen records and
-validates source grounding, argument types, legal generalization support, protected-term leakage,
-duplicate fact groups, reader gates, and representative anchors.
-
-**Prompt presentation.** The human-facing instruction is a short fixed outline, not a narrative
-wall of text. It must appear in this order:
-
-```text
-TASK
-Find as many explicit, source-grounded, non-duplicate relations as the cap permits.
-Prefer diversity only when the source supports it. Abstain rather than inventing a fact.
-
-HOW TO INSPECT THE SOURCE
-Read the full document. Use evidence cards to find and name source spans.
-Consider every displayed span. A relation may use any ontology-compatible spans in the source;
-cards do not limit semantic search.
-
-PRIVACY-SAFE QA
-Write a question and accepted answer(s) that test the relation's meaning.
-Never copy a displayed controlled source span or alias into either; use its displayed
-generalization level. An exact uncontrolled literal is allowed only when it is the measured fact.
-
-RELATION INVENTORY
-<the concise plain-text inventory below>
-
-WORKED EXAMPLES
-<the three examples below>
-
-EVIDENCE CARDS
-<compact cards for this document>
-
-RESPONSE
-State the required record contents: relation; subject then object argument; question; accepted
-answers; the fixed scoring contract. A displayed span is a linked argument carrying its S-label
-as span_label and exactly one of that label's listed levels, copied verbatim, as
-support_property. Every relation needs at least one linked S-label argument; never quote a
-displayed span as a context literal; an uncontrolled argument is a context literal with its
-exact source text. Emit each distinct fact once, at the S-label inside the sentence that states
-the relation; other labels of that value are duplicate_mention rows naming the emitting label.
-Include compact record-shaped examples (one all-linked, one with a context literal). Then
-request one concise accounting record for every displayed label, with a short label-referential
-reason on every row.
-```
-
-The instruction must not contain implementation/wire prose such as “the constrained wire
-schema,” JSON-null instructions, hash rules, offset rules, or internal validation gates. Those
-belong solely to the provider response schema and deterministic compiler. The only
-response-level language visible to the teacher is the semantic task and the short list of
-required record contents above. Naming the record fields (`span_label`, `support_property`,
-`literal`, argument kind) is required, not optional: the r16 smoke's reasoning trace shows the
-teacher planning a free-text format (“format? Not fully specified”) and then falling into the
-degenerate all-context wire shape the compiler always rejects. The record-contents list aligns
-the teacher's plan with what the constrained decoder will demand.
-
-The prompt includes these compact worked examples before document-specific evidence cards:
-
-```text
-Example A — drug, not procedure
-Source: “… [S1: arthritis | condition | levels: joint disease; inflammatory condition] …
-prescribe [S2: Ultram | drug | levels: opioid analgesic] …”
-Relation: prescribed_with(S1, S2)
-Safe QA: “Which medication category was prescribed for the joint condition?”
-Accepted answer: “opioid analgesic”
-Never call this procedure_for.
-
-Example B — explicit monitoring/diagnostic test
-Source: “… To follow the [S3: thyroid condition | condition | levels: endocrine condition],
-order thyroid labs …”
-Relation: tests_for(S3, "thyroid labs")
-Safe QA: “What follow-up testing was ordered for the endocrine condition?”
-Accepted answer: “thyroid labs”
-
-Example C — do not infer a relation
-Source: “… autoimmune panel …” with no explicit linked condition or purpose.
-Action: do not emit tests_for merely because the test is present.
-```
-
-**Teacher input.** The prompt contains the full source document plus compact, readable
-relation-focused evidence cards. A card contains a source excerpt and inline short labels, for
-example:
-
-```text
-E12
-... acute exacerbation of [S7: arthritis | condition | levels: joint disease; inflammatory condition]
-... prescribe [S8: Ultram | drug | levels: opioid analgesic] ...
-```
-
-**Detected-span presentation.** The teacher sees source occurrences, not internal detector
-records. Before prompt construction, code selects a detector occurrence only when all of the
-following hold:
-
-1. it is an accepted frozen occurrence with an exact span in `doc_orig`;
-2. it is linked to a controlled decision;
-3. that decision has at least one legal non-KEEP, non-placeholder generalization level; and
-4. its adapter-mapped coarse class can fill at least one relation-inventory role (`condition`,
-   `symptom`, `drug`, `procedure`, or `provider`).
-
-Thus age, demographic/person labels, unsupported detector types, and any occurrence without a
-usable lattice profile are absent from the teacher prompt. This is eligibility filtering, not a
-semantic judgement about whether two retained spans have a relation.
-
-Every retained *source occurrence* receives one document-local label in source order: `S1`, `S2`,
-…. Repeated mentions receive separate labels because they are separate source anchors, even when
-they map internally to one policy decision. The visible form is exactly one line:
-
-```text
-[S7: arthritis | condition | levels: joint disease; inflammatory condition]
-```
-
-`arthritis` is the exact source text, `condition` is the adapter's human-readable relation class,
-and the listed levels are the decision's legal non-KEEP/non-placeholder lattice meanings. Code
-retains the opaque occurrence ID, decision ID, offsets, detector runtime type, aliases, polarity,
-and the `S7` mapping; none of those fields is shown to the teacher. The teacher refers to `S7`
-in its relation record, and the compiler resolves that label to the exact occurrence before any
-validation.
-
-An uncontrolled source-grounded literal is an exact quoted literal authored by the teacher. It is
-permitted only in a relation with at least one linked `S#` argument. The compiler first resolves
-the linked labels and derives candidate evidence anchors from them; it then resolves the literal
-as one exact, unique span inside an anchor. It derives the literal's canonical class from the
-adapter's closed literal contract: explicit lexical/structural rules for `test`, `procedure`,
-`provider`, `status`, and `category`, plus the relation object's permitted slot class. It rejects
-an ambiguous, duplicate, untyped, or slot-incompatible resolution. The compiler privately retains
-the exact source spans and mappings needed for that literal.
-
-The prompt must not expose unrelated detector types (for example age or `demographic-other`),
-opaque occurrence/context hashes, character offsets, aliases, the ambiguous word `surface`, a
-global context-candidate inventory, or a global evidence-window/pair matrix. Use `text` or
-`source span` for the displayed source text, and `allowed generalization levels` for the lattice
-levels; do not use `legal_support_properties` in teacher-facing prose.
-
-Evidence cards are navigation and grounding aids, not a semantic prefilter. In particular, code
-must not generate or expose `eligible_pairs`, and must not use relation-specific cue/order
-heuristics to decide which pairs the teacher may propose. Cards may exclude policy-ineligible
-spans, but must not decide that an ontology-compatible source pair lacks a relation. The teacher
-may propose any source-grounded ontology-compatible relation it finds in the supplied document and
-cards; the compiler performs the subsequent deterministic evidence check.
-
-**Evidence grounding.** The teacher does not select an evidence-window ID or manufacture an
-evidence quote. The compiler resolves linked arguments first and derives the smallest candidate
-source anchor containing them: normally one clause, or two adjacent clauses only when an
-unambiguous, word-boundary relation cue links them. For a recognized clinical assessment/plan
-block, it may instead use the single explicit condition heading and its following plan bullets as
-one bounded source section. This fallback applies only when every resolved argument is in that
-same section and the relation's direct cue occurs there; it is not a cross-turn or free-form
-proximity bridge. It resolves a quoted literal only within the chosen anchor, then verifies that
-the completed relation is directly supported. The compiler rejects proximity links, cross-turn
-links, cue substrings, contradictory polarity, and a relation whose arguments cannot be directly
-connected in that anchor. Two clause conventions are normative for transcript sources: the cue is
-searched within the clause or two adjacent clauses holding the arguments (an explicit cue such as
-"ca n't take" legitimately precedes the subject), and a period inside a run ("if ... and
-prescribe") is a spoken hesitation marker, never a clause boundary.
-
-**Problem-block anchor (multi-turn span pairs).** A spoken assessment/plan discusses one problem
-across several turns; a true relation can straddle the patient acknowledgments inside it (a
-condition named when the problem is introduced, a test ordered for it a sentence later —
-`tests_for(arthritis -> autoimmune panel)` in D2N002, spike-confirmed 2026-07-14). After the
-clause and plan-section anchors fail, the compiler grounds the relation in the one problem block
-containing every argument, bounded by the assessment opener and each "for your <next> problem"
-switch; it never bridges a problem switch or unrelated small talk, and the cue check still runs
-over the argument window. A repeated controlled value has several occurrences (S-labels); the
-teacher may name one (e.g. a past-medical-history mention) that is not in the relation sentence,
-so the compiler retries grounding at the same-decision sibling occurrence that co-locates with
-the other argument — the teacher's choice among duplicate labels does not affect grounding.
-**Conditional relations:** a relation whose argument window is conditional/planned ("if your
-symptoms continue", "possibly", "we can consider") is a valid contextual fact, but is kept only
-when its question is phrased conditionally (may / might / would / if …); a conditional plan
-paired with a definite question is rejected as `hedged_relation`, since asserting it as fact would
-violate the truth-source rule. The hedge match is tightened so the spoken "if ... and prescribe"
-disfluency and dosing "as needed" do not block a real prescription.
-
-Two closed extensions cover the clinical indication form. A detector-typed condition whose
-surface names a performed procedure (closed lexicon: transplant, surgery, -ectomy, -plasty,
-bypass, graft, replacement, repair) may also fill procedure slots, displayed to the teacher as
-`condition/procedure`; an ordinary condition surface may not. And `procedure_for` accepts the
-reversed indication connector "<procedure> for <condition>" within one clause ("had the kidney
-transplant a few years ago for some polycystic kidneys" — stated verbatim in the D2N002
-reference). Class gating keeps the generic word "for" inert for every other argument pairing. Cards help the teacher navigate; they neither limit search nor
-constitute accepted evidence. There is no `evidence_window_id` in the teacher response or relation
-artifact.
-
-**Leakage scope.** Protected-term lint applies to every controlled decision and its deterministic
-aliases, whether or not that decision was eligible for teacher presentation. Display eligibility
-only limits semantic search and candidate accounting; it never removes privacy protection. Raw
-detector-only occurrences that are not controlled decisions are outside this protected set. A
-context literal may appear in an accepted answer only when it resolves to an uncontrolled literal;
-if it also resolves to a protected controlled span, the proposal is rejected as ambiguous. The
-compiler separately checks answer-to-question leakage.
-
-Three lint refinements are normative, each with a measured motivation. First, tokens of a
-decision's declared legal generalization levels are exempt from that decision's token-overlap
-lint: QA is directed to use those levels verbatim, and without the exemption "solid organ
-transplant" could never appear in a question about a kidney transplant. Full-term containment of
-the protected surface still rejects. Second, before the leakage gates run, the compiler
-substitutes each linked argument's protected surface/alias in the question and accepted answers
-with that argument's teacher-selected support property, recording `sanitized_qa` in the
-assertion evidence. This is mechanical substitution of teacher-chosen content, not authorship:
-three consecutive live smokes wrote the source surface into otherwise valid QA despite
-escalating prompt guidance, and the leakage gates rerun on the substituted text. Third,
-placeholder-label tokens of the linked argument types (for example "medication", "condition")
-are information-free for level-based QA and are exempt from answer-to-question overlap; the
-answer's distinguishing tokens remain linted.
-
-**Candidate accounting.** The response includes exactly one concise accounting row for every
-displayed `S#` label: `emitted`, `duplicate_mention`, `exhausted_no_relation`, or `unsupported`.
-`emitted` means the teacher attempted a relation using that label; it does not claim compiler
-acceptance. `duplicate_mention` means another label of the same underlying value already carries
-the fact, named in the reason; without this state a live smoke fabricated one relation per
-repeated label to make every label `emitted`, crowding out real relation types under the cap.
-`exhausted_no_relation` means the label was considered but no explicit, ontology-compatible
-relation is supported. `unsupported` means the source does not establish enough semantic role or
-connection for that label to support any ontology relation; it is not a claim that the policy
-decision lacks utility. The wire schema requires a nonempty bounded reason on every row. The compiler records prefilter exclusions separately as
-`ineligible_prefilter`; those records are not teacher ledger members. Quoted literals are not
-ledger members. Reasons must be concise, sanitized, and label-referential: they
-must not repeat protected source text. This is a bounded coverage diagnostic, never a requirement
-to invent a relation or a reason to remove a ranker decision. The compiler cross-checks the ledger
-against proposals and preserves attempted, accepted, and rejected counts by relation type. A
-missing, duplicate, or proposal-inconsistent ledger row records `ledger_inconsistent` as a
-diagnostic; it must not reject an otherwise valid relation or erase its compilation outcome.
-
-**Relation inventory.** Present this inventory as structured instructional text, never JSON.
-The arrow is the complete argument-direction contract; do not separately repeat `ordered`,
-`ordered_roles`, or `argument_classes` in teacher-facing material.
-
-```text
-RELATION INVENTORY
-
-Use only these directed relations. The arrow gives argument direction.
-Do not reverse it. Emit a relation only when the source explicitly supports it.
-
-1. prescribed_with
-   condition or diagnosis → drug
-   Use when a drug is prescribed, continued, taken, or used for that condition.
-   Example: “arthritis … prescribe Ultram” → arthritis prescribed_with Ultram.
-   Do not use for a procedure.
-
-2. procedure_for
-   condition or diagnosis → medical procedure
-   A therapeutic procedure or referral for the condition, including a past treatment the
-   patient already had (a prior transplant/surgery). Merges the former treated_with and
-   referred_to. Example: “had the kidney transplant for polycystic kidneys” →
-   procedure_for(polycystic kidneys, kidney transplant). Never use for a drug.
-
-3. tests_for
-   condition or diagnosis → diagnostic or monitoring test/study
-   A test that discovers or monitors the condition — ordered to follow it, or whose result
-   showed it. Merges the former monitored_by and the diagnostic-yield relation. Use for any
-   lab, panel, imaging, or exam. Example: “order thyroid labs” → tests_for(hypothyroidism,
-   “thyroid labs”); “the CT shows a stone” → tests_for(kidney stone, “ct”). A test ordered
-   while assessing one problem is linked to that problem's condition even if its sentence does
-   not repeat the condition name; do not link a test from a different problem block.
-
-4. contraindicated_because_of
-   drug or procedure → condition or diagnosis
-   Use only when the source explicitly states the treatment/procedure cannot be used because of
-   the condition. The drug argument may be a drug-class phrase quoted as a context literal
-   (e.g. “anti-inflammatory medications”), not only a specific drug name.
-
-5. causes_or_explains
-   condition or diagnosis → condition or symptom
-   Use only for an explicit causal or explanatory statement.
-
-A conditional or planned relation (“possibly refer to physical therapy”, “if symptoms persist,
-order X”) is valid, but its question must be phrased conditionally (may / might / would / if …)
-so it is never asserted as already done; a conditional plan with a definite question is rejected.
-```
-
-#### Relation anti-goals
-
-The relation graph measures explicit task-relevant dependencies; it is not a mechanism for giving
-every controlled decision a probe. A relation whose only purpose is to connect an otherwise
-uncovered span is out of scope. In particular:
-
-- `PERSON -> {condition, drug, procedure}` is not a contextual relation for the single-patient ACI
-  task. It produces generic holder questions such as "Which condition does `<PERSON_2>` have?"
-  that either duplicate a richer clinical relation or test only whether the reader can copy one
-  generalized clinical value from a person-local excerpt.
-- `{condition, drug, procedure} -> PERSON` is also excluded. In a single-patient interaction,
-  questions such as "Who has endocrine system disease?" have the same constant answer and collapse
-  to a fragile target-presence check. They add no ranker action, routing information, or
-  document-level utility evidence beyond the controlled clinical decision itself.
-- Agent questions such as "Who diagnosed, prescribed, or conducted this?" are unsupported unless
-  the authoritative source explicitly names and links that provider. A `[doctor]` speaker role is
-  not a PERSON identity, and the compiler must not infer an unnamed clinician.
-- Generic attribute-holder relations such as `PERSON -> {age, nationality, profession}` or their
-  inverse are not introduced merely to manufacture QA coverage. A new controlled type requires an
-  independently justified privacy/task role, a grounded generalization lattice and counts, reliable
-  detection, and an explicit task-relevant relation contract.
-- Generic `has_status` and `has_category` relations remain excluded. Their argument types are too
-  vague, they had zero ACI coverage, and they invite the teacher to relabel ordinary holder facts
-  instead of finding an explicit dependency.
-
-A future multi-party task adapter may define an ownership-scoping relation only after measured
-cross-person ambiguity demonstrates that it changes answer correctness. Such an adapter-specific
-extension does not enter the single-patient ACI inventory by default.
-
-Disconnection from this finite relation inventory does **not** establish that a decision is
-utility-irrelevant. It may reflect an isolated but task-important fact, an intentionally narrow
-ontology, detector gaps, or teacher/compiler abstention. Such a decision remains in the ranker
-environment, receives complete-document delivered utility and fallback credit, and is prioritized
-for one-decision counterfactuals. If placeholder and truthful generalization produce equal measured
-task utility, the count/privacy objective may correctly prefer placeholder; the builder must not
-pre-empt that outcome by fabricating a coverage relation or by assigning zero utility relevance.
-
-The prompt additionally requires semantic QA: questions and accepted answers must not copy a
-displayed controlled source span or alias. They should use the selected allowed generalization
-level where needed; an uncontrolled context literal may remain an answer when that is what the
-relation measures. Accepted answers are teacher-authored nonempty strings, not deterministic
-templates or a schema enum. The compiler validates them for answer leakage, protected-term
-leakage, grounding, and reader support. The worked examples above are mandatory prompt content;
-add only one short contraindication example if the task adapter supports that relation.
-
-The provider's strict response schema remains a machine-level constraint. It may bind short labels
-and cardinality, but its field-level machinery must not be reproduced as prose instructions that
-compete with the semantic task.
-
-The teacher cannot invent relation types, span labels, or unsupported source facts. It does author
-the contextual QA question, accepted semantic answer(s), and scoring contract for an otherwise
-compiled relation; deterministic code validates rather than templates that semantic content.
-
-Relation arguments have two disjoint forms. A **linked decision argument** is a controlled,
-frozen occurrence ID and carries a legal lattice-support property; it receives routing links and
-the joint representative-anchor check. A **context/literal argument** is an exact, typed,
-source-grounded span (for example a lab, physical therapy, status, or category) that is not a
-detector decision and never requires a lattice action. Both forms require exact source evidence.
-Only linked arguments enter `occurrence_ids` and carry a `decision_requirements` lattice action.
-
-Every adapter must map each controlled runtime type that it exposes to one canonical relation
-class before prefiltering. In particular, `medical-procedure` maps to `procedure`; a missing map
-is a configuration error, not grounds to silently remove a valid controlled procedure.
-
-**Versioning and deferred reader checks.** This redesign requires a new relation-teacher prompt
-revision and response-schema/artifact revision (v4 or a later explicitly named successor); both
-are cache pins. Reader repetition and answer-option permutation remain deliberately deferred:
-the current single-pass contextual reader gates remain in force, but no repeated/permuted protocol
-is introduced or claimed until a smoke result motivates and preregisters it.
-
-### Deterministic compilation
-
-A relation is accepted only when:
-
-- every linked `S#` label exists and every quoted literal resolves uniquely in the derived anchor;
-- the relation permits the arguments' canonical classes;
-- the compiler-derived evidence anchor directly connects the arguments;
-- polarity is consistent;
-- no source contradiction exists.
-
-The one bounded request uses the compact span labels, evidence cards, relation inventory, and a
-preregistered maximum of **12** relations per document. Context arguments may reference a local
-card label or an exact quoted literal under the resolution rule above. Coverage and relation
-diversity are diagnostics, not a reward for fabricating one relation of every type. The compiler
-rejects reversed roles, duplicate fact groups, unsupported literals, answer/protected-term
-leakage, and invalid scoring contracts. It records per-document and corpus attempted, accepted,
-and rejected counts by relation type. Missing coverage never removes a ranker decision or implies
-zero relevance.
-
-General domain knowledge absent from the document cannot become an assertion. Teacher failure or
-abstention produces an explicit missing/rejected state, not a fabricated fallback.
-
-Each task adapter declares one authoritative truth source: the human reference where it contains
-the required fact or relation, otherwise explicit `doc_orig` evidence. Ceiling output is only a
-feasibility context for delivered assertions; it is never truth. Teacher interpretation alone is
-never sufficient.
-
-## Utility assertions
-
-Use only two measurement families. Routing scope is a separate field.
-
-### Context assertions on `doc_p`
-
-These combine the old ladder and downstream-decision surfaces into one family. Subtypes are
-metadata, not separate pipelines:
-
-- `semantic_property`: category or function retained by truthful generalization;
-- `contextual_relation`: a relation or bounded decision requiring preserved context.
-
-Each assertion is defined and reader-validated on `doc_orig`, fails the all-placeholder anchor,
-passes its pinned joint representative generalization anchor, and is scored on each rollout's
-`doc_p`.
-
-Use one joint representative anchor per assertion. Every linked decision takes its coarsest legal
-non-placeholder action whose lattice semantics still entail the assertion; every unrelated
-decision remains KEEP. If no such joint action vector exists or the reader fails it, reject the
-assertion. Store the complete action vector and hash plus the supported property level. This
-avoids combinatorial anchors and requires no question or model call per rung.
-
-This gate establishes that truthful generalization retains more measured utility than
-placeholder. It does not make QA reward generalization over KEEP inside the supported semantic
-band. Ranker-v2's exact local count objective supplies pressure away from KEEP and toward the
-coarsest semantically viable action. This division of labor is intentional.
-
-Semantic accepted answers for fixed structural assertions come from the frozen lattice or adapter
-ontology. Contextual gold and dependencies come from accepted compiled relations. Do not generate
-one question per lattice rung and do not force exactly two questions per span. Generate one
-measurement only when an accepted task-relevant assertion exists.
-
-Relation QA is teacher-authored in the same bounded relation proposal: the teacher supplies the
-question, accepted semantic answer(s), and scoring contract. Deterministic code must never
-invent that relation semantics from templates; it validates grounding, answer/protected-term
-leakage, duplicate fact groups, reader support, and the joint anchor. Structural and delivered
-assertions may use deterministic contracts because their semantics are already fixed by the task
-adapter. Questions are static and may not contain protected-value locators; they are not rewritten
-per rollout.
-
-The generator does not see the all-placeholder document. Validation remains independent and
-prevents wording from overfitting one floor realization.
-
-### Delivered-output assertions on `out_final`
-
-These measure what the user receives:
-
-- authoritative source/reference-backed content coverage and omissions;
-- required sections and parseability;
-- field/category/status agreement;
-- exact recovery and symbolic relation preservation;
-- one non-overlapping global task-quality criterion when justified by the adapter.
-
-Structural compliance alone is diagnostic or receives a small preregistered weight. It is not
-semantic retention. Field assertions are scored separately; a schema aggregate cannot recompute
-them.
-
-Delivered assertion truth and gold come only from the adapter's authoritative source, human
-reference, or fixed task schema. Ceiling output may establish task-model feasibility or define an
-explicitly model-relative diagnostic; it never defines truth. An omission assertion means an
-authoritative required fact is absent from `out_final`, regardless of whether the ceiling also
-omits it; ceiling omission is reported separately as a feasibility limitation.
-
-For `aci/D2N002`, local inversion may preserve
-`hypothyroidism -> Synthroid -> thyroid labs` or `arthritis -> physical therapy`. Those are
-legitimate symbolic delivered-utility successes. They do not prove that the transformed prompt
-preserved thyroid/endocrine or treatment-constraint meaning.
-
-The same document also shows why final-output assertions are necessary: placeholder-heavy
-generation can omit age, sex, or kidney-transplant history, compress medical history, reorganize
-assessment rows, and shift category/status values.
-
-Either measurement family may have `scope: linked` with occurrence IDs or `scope: global` with
-an empty occurrence list. A complete-task delivered assertion is therefore
-`family: delivered, scope: global`; there is no third global measurement family.
-
-## Minimal artifact
-
-The builder emits one artifact containing accepted assertions, rejection summaries, coverage,
-and pins:
-
-```yaml
-artifact_version: utility-assertions-v1
-artifact_hash: sha256:...
-environment_hash: sha256:...
-task_pin: {...}
-builder_pin: {...}
-teacher_pin: {...}
-reader_pin: {...}
-gate_manifest_hash: sha256:...
-documents:
-  aci/D2N002:
-    measurement_state: measured | partial | unsupported | build_failed
-    utility_weight_denominator: <context budget + delivered budget>
-    present_family_budgets: [context, delivered]
-    missing_family_budgets: []
-    assertion_ids: [ast:...]
-    controlled_decision_ids: [dec:...]
-    uncovered_decision_ids: [dec:...]
-assertions:
-  ast:...:
-    doc_id: aci/D2N002
-    family: context | delivered
-    scope: linked | global
-    subtype: semantic_property | contextual_relation | content | field | exact_relation
-    occurrence_ids: [occ:...]
-    relation: tests_for
-    expected_values: [...]
-    group_id: fact-or-relation:...
-    weight: <derived from frozen family/group budgets>
-    expected_action_support:
-      joint_anchor_action_vector: {dec:...: action:...}
-      joint_anchor_hash: sha256:...
-      property_level: endocrine-system-disease
-    question: ...
-    scoring_contract: {...}
-    evidence: {...}
-    status: accepted
-rejections:
-  summary_by_reason: {...}
-```
-
-Stable assertion IDs hash document, assertion semantics, evidence offsets, scoring contract, and
-definition version. Rollout scores are separate:
-
-```yaml
-assertion_id: ast:...
-rollout_id: ...
-status: scored | abstained | failed
-score: 0.0
-raw_observation: ...
-scorer_pin: {...}
-```
-
-Infrastructure failure never silently becomes task score zero.
-
-## Validation
-
-Use one bounded validation path with only load-bearing gates:
-
-1. **Identity and evidence:** IDs resolve, evidence matches the adapter's authoritative source,
-   and assertion semantics are internally valid.
-2. **Leakage:** the question or options do not reveal the answer.
-3. **Context support:** the assertion passes `doc_orig`, passes its pinned joint representative
-   generalization anchor, and fails the all-placeholder anchor.
-4. **Stability:** until a later preregistered change, the single-pass reader gate is used. Any
-   repeated-read or option-permutation bound is a deferred future protocol, not a current gate.
-
-Other checks remain adapter-specific diagnostics until a measured failure justifies promoting
-them to a gate.
-
-Do not run builder-time model counterfactuals by default. Ranker-time one-decision pairs provide
-bounded local contextual evidence on actual rollout states. A small report-only audit sample may
-be added only if link disagreement becomes a measured problem.
-
-Use a compact rejection taxonomy:
-
-```text
-not_generated
-generation_failed
-invalid
-leakage
-unsupported
-floor_answerable
-unstable
-infrastructure_failed
-```
-
-Keep detailed evidence internally, but callers and gates depend only on these stable classes.
-
-## Static anti-density weights
-
-The builder does not define a utility aggregation or advantage algorithm. The frozen QA
-threshold manifest declares fixed `context` and `delivered` family budgets. Within each family,
-divide its budget equally across unique fact/relation `group_id`s, then divide each group budget
-equally across its accepted assertions. Context and delivered assertions about the same fact use
-separate family-local groups: they do not collapse into one score, and their total mass remains
-bounded by their family budgets. Structural-only assertions are diagnostic or consume a capped
-portion of the delivered budget.
-
-If a document lacks one family, use a fixed denominator equal to the sum of the reserved context
-and delivered family budgets. The absent family contributes zero numerator and its reserved mass
-remains absent; surviving components are not renormalized to full strength. Do not fabricate
-zero-score assertions. Record the fixed denominator plus present and missing family budgets in
-the document artifact. Such a document cannot support a claim about the missing family, but its
-decisions remain eligible for ranker-v2 fallback credit.
-
-The weighted component vector and frozen document denominator are the interface to ranker v2.
-Ranker-v2's `weighted_mean` uses that denominator rather than the sum of present weights. The
-ranker specification still exclusively owns `Q_j`, `Q_global`, `A_link`, `A_global`,
-`A_document`, fallback, counterfactual substitution, and loss. QA builder v2 defines only frozen
-weight state; it does not define parallel advantages or loss composition.
-
-## Credit routing
-
-For decision `j`, linked assertions are those whose occurrence IDs map to `j`. An assertion
-appears once per decision even when several mapped occurrences repeat it. Multi-decision
-relations route provisionally to each linked decision.
-
-Ranker v2 maps linked occurrence IDs to decisions and exclusively owns routing, fallback,
-advantages, pairwise substitution, and loss. The builder supplies only stable IDs, scope, links,
-group IDs, weights, and scores. See
-[interactive ranker v2](RL/interactive-ranker-v2.md#contextual-counterfactual-credit) for the
-normative one-decision intervention. Its complete reward pin includes both direct `doc_p`
-context scores and round-trip `out_final` delivered scores; batching and caching do not weaken
-that intervention.
-
-Missing coverage never removes a decision or sets its utility relevance to zero.
-
-## Cache and pins
-
-Use one content-addressed build cache and one document/action-vector rollout cache.
-
-The build key includes authoritative source/reference hashes, frozen environment, task adapter,
-teacher/reader identities, prompts, assertion ontology, joint representative anchor vector/hash,
-and threshold manifest. Model-relative ceiling diagnostics are pinned only when used. The rollout
-key adds the complete action vector, `doc_p`, `out_final`, artifact hash, and scorer pin. It
-stores the complete batched score vector.
-
-A pin mismatch invalidates the dependent cache and all downstream gates. Do not preserve separate
-public ladder, decision, or schema caches after migration.
-
-## QA threshold manifest and pre-training gate
-
-Before building the artifact, freeze a QA threshold manifest defining:
-
-- the eligibility prefilter, no-eligible-span state, and one-call-per-eligible-document rule;
-- joint representative-action selection and deterministic tie handling;
-- the deferred reader-stability/permutation policy state and acceptance threshold;
-- context/delivered family budgets, group construction, structural cap, and missing-family state;
-- build and runtime cost budgets in calls and wall time.
-
-No numeric constants are invented here. The selection protocols are fixed before artifact build,
-full RL, and held-out evaluation; train/development preflight may instantiate their values once.
-
-Before lambda selection, ExIt reuse, or RL, require:
-
-- exact environment-hash identity between QA and ranker;
-- zero dangling occurrence or decision links;
-- zero duplicate assertion IDs with different semantics;
-- zero scope/link inconsistencies or linked/global duplication;
-- valid pins and no infrastructure failure represented as a score;
-- every rewarded context assertion passes its pinned joint representative anchor and records the
-  complete action vector/hash and property support;
-- measurable variation in both context and delivered utility for any claim requiring both;
-- explicit counts of missing families and uncovered decisions;
-- reader jitter below the frozen measurement threshold;
-- a frozen static weight/group manifest;
-- reader and remote calls per rollout within the preregistered cost budget.
-
-Shared environment, routing, fallback, counterfactual scheduler, and loss gates remain owned by
-interactive ranker v2 and its diagnostics specification; QA does not duplicate them here.
-
-Report assertion support by corpus, type, family, linked/uncovered decision status, and rejection
-reason. Coverage is diagnostic; there is no minimum accepted-probe count. Final attacker results
-cannot tune this gate.
-
-The cost report separates base rollout round trips from extra one-decision counterfactual round
-trips and reports counterfactual cache-hit rate plus total remote generation, extraction, and
-reader calls per training document and epoch. Counterfactual calls remain governed by ranker-v2's
-frozen scheduler budget, but QA support reporting must expose when sparse routing makes them the
-dominant expected cost.
-
-## Migration plan
-
-1. **Freeze identities.** Build the shared occurrence/decision artifact and prove stable
-   many-to-one mappings.
-2. **Wrap current scores.** Emit per-assertion records from current exact, ladder, decision, and
-   schema measurements; use the legacy scalar only as an equivalence check.
-3. **Build the ACI adapter.** Add deterministic structural extraction and eligibility filtering,
-   one batched teacher relation request for each eligible document, representative generalization
-   anchors, and context assertions scored on `doc_p`.
-4. **Retire holder relations.** Remove PERSON relation types, prompt/schema branches,
-   placeholder-anchor arguments, and their compiler/report paths without removing PERSON detection
-   or substitution from the shared privacy environment.
-5. **Switch credit.** Remove probe-count document filtering, activate linked/global/fallback
-   routing, and prioritize uncovered decisions for counterfactuals.
-6. **Retire legacy surfaces.** Remove independent detection, generated-`out_p` QA, exactly-two
-   ladder probes, whole-document decision discovery, free-text dependencies, and separate probe
-   artifacts after migration fixtures pass.
-
-## Required tests
-
-- identical pinned inputs produce identical environment, assertion, and artifact IDs;
-- frozen family budgets deterministically produce group/assertion weights, keep context and
-  delivered groups separate for the same fact, and obey the declared missing-family state;
-- missing-family fixtures retain the full reserved denominator, contribute zero absent-family
-  numerator, and do not renormalize surviving weights;
-- teacher output cannot create or override IDs, gold, relation types, polarity, or aliases;
-- the relation prompt/schema reject PERSON holder relations and do not expose placeholder-anchor
-  arguments to the teacher;
-- every accepted relation resolves to exact source evidence and legal argument types;
-- assertions resolve to the adapter's authoritative source, while ceiling evidence is used only
-  for feasibility diagnostics;
-- context assertions pass `doc_orig`, pass a compatible legal non-KEEP/non-placeholder anchor,
-  fail the placeholder anchor, record the joint action vector/hash and property support, and
-  score rollout `doc_p`;
-- multi-decision context assertions use one joint anchor with linked decisions at their coarsest
-  entailing legal actions and unrelated decisions at KEEP;
-- delivered assertions score `out_final`, with structural checks unable to satisfy semantic ones;
-- a placeholder-restored symbolic relation can pass while its context assertion fails;
-- field assertions cannot re-enter through a schema aggregate;
-- repeated occurrences map one assertion once to one decision;
-- a controlled decision with no accepted relation remains in the environment, receives no
-  fabricated zero-score assertion, and remains eligible for document fallback and counterfactual
-  priority;
-- global credit reaches all decisions without duplicating linked assertions;
-- uncovered decisions receive complete-document fallback and counterfactual priority;
-- tested-pair evidence substitutes for provisional credit and the complete vector is rescored;
-- ranker-v2 alone computes weighted means, linked/global/document advantages, fallback, and loss;
-- all context assertions for one rollout use one batched reader request;
-- deterministic delivered assertions use no reader call and remaining delivered assertions batch;
-- each eligible document makes one cached relation-teacher call, while a no-eligible-span document
-  records its no-call state;
-- parser, reader, or infrastructure failure follows declared semantics rather than implicit zero;
-- changing each pin invalidates the correct cache and downstream gate.
-
-## Required preflight spikes
-
-Only three bounded spikes are required before implementation claims:
-
-1. **ACI assertion support:** on a tiny development slice, measure deterministic structural
-   extraction, relation-teacher acceptance and diversity diagnostics, representative-generalization support,
-   context/delivered score variation, and uncovered decisions.
-2. **Reader stability:** measure repeated-read and option-order disagreement on the proposed
-   context assertions.
-3. **Cost:** report base rollout round trips separately from extra one-decision counterfactual
-   round trips, counterfactual cache-hit rate, and total remote generation, extraction, and
-   reader calls per training document and epoch, plus wall time under the pinned concurrency
-   regime.
-
-Use local or existing cached machinery where possible. Any paid or external model call requires
-explicit user approval. These spikes set feasibility thresholds before full RL; they make no
-privacy claim.
-
-## Stop conditions
-
-- context assertions do not distinguish truthful generalization from placeholders;
-- count pressure pushes actions beyond the supported semantic boundary or creates a utility
-  cliff at unsupported lattice levels;
-- accepted count rises without context or delivered-utility variation;
-- schema/structural scores dominate context scores;
-- symbolic restoration is reported as remote semantic retention;
-- reader instability is comparable to rollout score differences;
-- teacher proposals require open-ended relation types or unsupported world knowledge;
-- policy movement concentrates on linked decisions while fallback/counterfactual paths are inert;
-- count score improves while held-out realized privacy worsens.
-
-Failures are findings under the pinned design. Do not repair them with per-model calibration,
-post-hoc weights, relaxed gates, or selective document removal.
+PERSON/holder relations and generic has_status/has_category remain excluded (see the decision
+log); disconnection from this inventory never removes a ranker decision or implies zero utility
+relevance.
+
+### Arguments, orientation, answers
+
+A relation has exactly one subject and one-or-more objects. Argument forms are disjoint: linked
+(controlled span, S-label + level) or context literal (exact uncontrolled text). Every relation
+needs ≥ 1 linked argument; a context literal can never be a gated answer (it survives the
+placeholder render, so a literal answer is placeholder-answerable by construction). Consequently
+QA orientation is chosen so that **the answered argument is always a controlled span**:
+
+- **forward** (`answer_role: object`) — subject named in the question at a level, object answers;
+- **reverse** (`answer_role: subject`) — object named in the question (level or literal), subject
+  answers. For one linked + one literal argument, the literal is always the question locator and
+  the linked argument's role forces `answer_role`.
+
+Answer targets, scored by `_context_answer_score`:
+
+- `linked_decision {decision_id, required_property}` — the reader's free-form answer resolves
+  against the decision's frozen semantic chain (`answer_aliases`), then binary credit iff the
+  resolved node entails the required property. No token-overlap partial credit.
+- `linked_decision_set {members: [...]}` — set-valued QA: the reader answers with a JSON array
+  (dedicated set-read prompt, `read_context_set_batch`); score = one-to-one per-member recall.
+  At threshold 1.0 the gate demands every member readable on orig and rep and ≥ 1 member hidden
+  on placeholder. Extra predictions (e.g. literals) are ignored — literals are pre-excluded from
+  privacy scoring by construction.
+- `literal {expected_values}` — lexical `fact_score` against the exact grounded text.
+
+Compound rows (one subject + N objects: set-valued forward, compound span locator, multi-literal
+reverse) carry all arguments in evidence and decompose into pair fact keys everywhere identity
+matters (dedup, gleaning targeting, coverage).
+
+### QA modalities
+
+Six question shapes are live (examples illustrative, off-corpus entities):
+
+| shape | question form | answer | producer |
+|---|---|---|---|
+| span → span (forward) | "Which medication was prescribed or used to treat the *endocrine condition*?" | object level, e.g. *thyroid hormone replacement* | primary/gleaning teacher (freely authored); stage forward template |
+| span → span (reverse) | "For what medical condition was the *thyroid hormone replacement* prescribed?" | subject level, e.g. *endocrine condition* | reverse framing (ambiguity flips); stage reverse + singleton fallback |
+| literal → span | "What single medical condition or diagnosis were *thyroid labs* ordered to evaluate or treat?" | subject level | teacher literal probes (compile forces the linked role to answer); stage literal-reverse (single literal) |
+| {literals} → span | "What single medical condition were *bmp, lipid panel, and a1c* ordered to evaluate?" | subject level — the compound locator pins one condition where a single generic literal cannot | stage literal-reverse (≥ 2-literal group) |
+| {spans} → span | "For what single medical condition were *loop diuretic* and *beta blocker* all prescribed?" | subject level | stage compound span locator (ambiguous-group fallback) |
+| span → {spans} | "List EVERY distinct medication that the document says was prescribed to treat the patient's *endocrine condition*." | JSON array; `linked_decision_set`, one-to-one member recall over the controlled object set | stage set-valued forward (ambiguous-group fallback) |
+
+For ambiguous groups the stage tries the shapes in a fixed order — per-object reverse flips, then
+set-valued forward, then compound span reverse — stopping as soon as the group's pairs are
+covered. `span → literal` (a literal as the ANSWER) is deliberately not a live modality: an
+uncontrolled literal survives the placeholder render, so such a QA is placeholder-answerable by
+construction; the `literal` answer target survives only for cached legacy artifacts, and the
+compiler forces the linked argument into answer position for every new literal-bearing relation.
+
+### Locator and answer level pinning
+
+Terminology, precisely: a **span** is a detected CONTROLLED occurrence — it carries a decision and
+a lattice profile, and the ranker acts on it. A **literal** is an UNCONTROLLED exact source span —
+no decision, never rewritten, so it appears verbatim in every render.
+
+A span-locator question never contains the span's surface; it names the span by a generalization
+level. The two pinned levels of a span↔span QA are chosen differently:
+
+- **Answer span: `required_property` = the SUPPORTED level — the coarsest that passes the reader
+  gate.** Deterministic rows search the answer decision's levels coarsest → finest and keep the
+  first three-point-gate pass; teacher rows pin the teacher's supported level (same semantics).
+  Example (reverse): "For what medical condition was the *loop diuretic* prescribed?" with
+  `required_property: heart disease` — the coarsest subject level the reader confirmed on both
+  `doc_orig` and the representative render.
+  **The reward band is "at or finer than the supported level."** Scoring is chain entailment:
+  the reader's answer resolves to a chain node by its aliases, and credit requires that node to
+  entail `required_property`. The chain is linear specific → coarse, so every node from
+  KEEP/surface up through the supported level entails it and scores 1.0; anything coarser scores
+  0. QA therefore rewards ANY ranking inside the band, and pressure toward the coarse end of the
+  band comes from the count/privacy objective, not from QA — that division of labor is
+  intentional.
+- **Question locator span.** Deterministic rows pin the locator at the FINEST legal level
+  (escalated past a level that equals/contains a FOREIGN protected surface): the locator is the
+  given premise, not the measured fact, and the most specific wording maximizes the reader's
+  ability to ground it in the rendered document. Teacher rows are teacher-authored — the prompt
+  directs "the most specific level that still conveys the relation", a raw-surface echo is
+  mechanically substituted with the teacher's selected level, and the leakage repair may recolor
+  it — so finest is a tendency there, not a guarantee. Reverse flips inherit the locator level of
+  their seed (finest for opportunity seeds, the teacher's object level for teacher-attempt
+  seeds).
+
+**Documented gaps (RL-scoring assumptions, not yet gate-certified):**
+
+1. **Finer-band READABILITY is untested.** The scoring side of the reward band is guaranteed by
+   entailment (above), but the gate certifies readability at exactly one (locator level, answer
+   level) combination — the supported level. Whether the reader still answers the question when
+   `doc_p` renders the answer decision FINER, and whether the finer node's `answer_aliases`
+   actually resolve, is assumed, never gated. A finer level that is unreadable in practice scores
+   0 at RL time and under-rewards finer-than-required rankings for that decision.
+2. **The frozen locator level can steer the policy.** The question text freezes the locator at one
+   level; at RL time the policy renders that decision at whatever level it ranks, and the reader
+   must bridge the question wording to the rendered wording. That bridge is untested across
+   levels, so reward may be maximized by ranking the locator decision at exactly the frozen level
+   — a spurious preference the gate never checked for.
+
+**Literal locators are policy-invariant** — a literal is never rewritten in any render, so the
+question locator grounds identically under every action vector and cannot steer the policy. This
+makes `literal/s → span` the RL-safest locator form; gap 1 (the answer side) still applies to it
+unchanged. Closing both gaps would mean certifying additional (locator level × answer level)
+combinations at gate time (a bounded sweep, at reader-call cost); that is future work, recorded
+here so the assumption is explicit rather than silent.
+
+## Opportunity mining and escalation
+
+`relation_support_opportunities` enumerates typed subject × object pairs (linked spans from the
+teacher span inventory × linked spans + context literals), grounds each pair through the same
+anchor derivation the compiler uses, then applies a lexical cue gate. The miner's cue survives
+(unlike the compiler's, below) because it is the only precision filter on a combinatorial
+enumeration.
+
+**Judge mining (escalation).** Opt-in, default on: cue-MISSES go to a MedGemma
+(`medgemma-4b-it`, local llama-swap endpoint) accept-only relation judge
+(`RelationSupportCascade`), so the judge can only widen the cue-matched set. Mechanics:
+
+- **Structural junk prefilter** before any judge call: a pending pair is skipped only when the
+  surface structure PROVES it non-assertive — coordinated list siblings (only list punctuation and
+  and/or between the arguments, e.g. a history enumeration) or an argument under an explicit
+  negation cue. Absence-of-signal rules (no cue word, large distance) are deliberately NOT used —
+  they drop real relations. This keeps the accept-biased judge from converting list co-occurrence
+  into junk seeds.
+- **Recall-oriented premise**: the judge reads ALL occurrence clauses of both arguments (every
+  mention of a linked argument's decision, every occurrence of a literal), not just the anchor
+  quote — the supporting evidence often sits at a different mention than the grounded one.
+  Verdicts are batched (`judge_batch`) into one model round per document.
+- **Judge-gated relation**: for `causes_or_explains` the cue is necessary but NOT sufficient — the
+  block-level cue accepts every condition × condition pair sharing a causal word — so cue-PASSES
+  are also judged; for that relation the judge is a precision filter and the escalated set is not
+  a cue-only superset. For every other relation it is.
+- Accepted opportunities record `recovered_by_escalation`, and the manifest
+  `relation_escalation_policy` (per-scope minimum opportunity counts, coverage fractions, caps)
+  drives the escalation accounting and gleaning trigger.
+
+No-regression invariant: with the escalator off, the result is exactly the cue gate.
+
+The **context-literal prefilter** (opt-in) widens the object space: the gazetteer proposer only
+emits test/procedure/status/category literals, so drug/symptom/condition literal objects are
+structurally unreachable without it. One MedGemma set-call per (controlled condition, relation)
+enumerates related literals, verbatim-located in the source and typed by the relation slot.
+Augment-only (union with the gazetteer) so no currently-accepted pair can be dropped.
+
+Opportunities are the shared recall ledger: escalation accounting, the deterministic stage's seed,
+reverse-framing's flip candidates, and gleaning's "missed" targets all read it.
+
+## Deterministic relation stage
+
+Opt-in (`--relation-deterministic-stage`); runs BETWEEN the primary teacher pass and gleaning so
+the paid repair pass only sees what free generation could not keep. Seeded from ALL accepted
+opportunities, deduplicated against primary keeps by fact key.
+
+Generation plans, per (relation, subject decision) group of span pairs:
+
+1. **Singleton** (one object): forward template QA (subject locator at a level, object answers);
+   on gate failure at every level, retry as the reverse flip before giving up.
+2. **Ambiguous group** (≥ 2 objects): per-object reverse flips first, then — while any pair is
+   still unkept — a **set-valued forward** QA (answer = the full controlled object set at finest
+   levels, single trial), then a **compound span-locator reverse** (all object levels in one
+   question pinning a single subject, answer-level searched).
+3. **Literal pairs**: the literal-reverse builder — the literal object(s) become the question
+   locator, the controlled condition answers; ≥ 2 literals form a compound locator that
+   disambiguates where one generic literal cannot. Stage seed = all accepted opportunities (the
+   standalone post-gleaning pass keeps the narrower judge-recovered seed when the stage is off).
+
+**Answer-level search (the teacher-prior replacement).** Deterministic rows have no
+teacher-proposed supported level, so trials walk the answer decision's levels coarsest → finest
+and the FIRST three-point-gate pass wins — the coarsest supported level, the same semantics as the
+teacher's prior. A static skip list drops bare type-word levels ("medication", "medical
+condition", …) before spending reader calls. Only a plan's FINAL failed trial leaves a rejection
+record, so speculative trials cannot flood the rejection channel or distort gleaning targets.
+
+**Question locators** sit at the finest legal level, escalated past any level that equals or
+contains a FOREIGN protected surface (a level echoing another decision's raw surface reads as a
+locator for that span and would trip the leak gate).
+
+Span-pair plans compile through the normal `compile_relations` path (every teacher-proposal guard
+applies); compound/set/literal rows are built directly (the compiler is two-argument) and carry
+the full evidence contract. All stage keeps run `run_id: deterministic_stage`,
+`teacher_id: deterministic`.
+
+Measured (5-doc A/B at identical settings): +65% kept relation QAs at zero teacher cost, primary
+pass byte-identical; deterministic-only coverage of teacher-primary facts is ~35% (bounded by
+miner recall, 13/20 mined), so the stage complements the primary teacher rather than replacing it.
+
+## Quality gates
+
+### Compile-time (deterministic, per proposal)
+
+- argument resolution against frozen IDs; sibling remap when a repeated value's label grounds at a
+  different mention; argument-type contract per relation; self-pair rejection;
+- anchor derivation: clause → adjacent clauses → plan-section/problem-block/speaker-turn, never
+  across problem switches; exact grounding of every argument in the anchor;
+- polarity consistency and source-contradiction checks; hedge/modality is a non-blocking
+  diagnostic (routes back to repair only if the reader then fails the row);
+- `literal_will_be_substituted`: a context literal that names a detected controlled entity is
+  rejected (or promoted to a linked argument when lattice-resolvable);
+- **leakage**: answer-token overlap with the question (with answer-type words and, for reverse
+  rows, locator tokens exempt) triggers deterministic level recoloring, else rejection;
+  protected-locator and protected-answer checks run the question/answers against every controlled
+  decision's surfaces with per-term legal-level exemptions. A protected-locator collision caused
+  solely by an unrecolorable context literal is tagged (`leak_source: context_literal`) and is
+  dead weight — no author can fix it, so it is never repair-targeted;
+- duplicate fact-group dedup within a pass;
+- the compiler's own lexical cue gate is DISABLED (`RELATION_CUE_GATES_DISABLED`): for an authored
+  proposal the reader gate is the semantic acceptance test; the maintained cue lexicon was not
+  sustainable on informal clinical speech. The miner keeps its cue (see above).
+
+### Reader gate (three-point, per candidate)
+
+`validate_context_assertions` renders three contexts — `doc_orig`, the joint representative
+anchor (every linked decision at its required level, greedy-injective fills, co-referent
+protected-term hiding matched to deployment), and the all-placeholder floor — excerpts only the
+assertion's own transcript turns, and reads each with the pinned reader. Keep iff orig ≥ t and
+rep ≥ t and placeholder < t, with optional stability repetitions and option permutations
+(manifest-pinned; production 1/1). Set rows route to the JSON-array set reader; scoring is the
+per-member recall above. A gate failure with orig ≥ t and rep < t triggers a coarser-readable
+lattice probe recorded as diagnostic evidence.
+
+Gate rejections carry `teacher_id`/`run_id` for attribution.
+
+## Teacher
+
+### Primary call
+
+One pinned, cached, batched relation-proposal call per document with eligible controlled spans:
+`openai/gpt-oss-120b` via OpenRouter, routed provider `deepinfra/turbo`, no fallbacks, strict JSON
+response schema (S-label-bound linked arguments, `linked`/`context` kinds, ≤ 12 relations,
+one candidate-accounting row per displayed label). The teacher authors questions, accepted
+answers, and scoring contracts; code owns IDs, vocabulary, validation, and never treats proposals
+as gold. Abstention is recorded, never retried for coverage. Prompt, model, provider, and schema
+are cache pins.
+
+### Repair + glean (secondary pass)
+
+Opt-in paid second pass over ONLY the facts worth a teacher call. Target selection
+(`_gleaning_targets`) builds a deduplicated, prioritized set (ambiguous > fixable > missed):
+
+- **ambiguous** — a rejected relation with a co-valid same-type answer in scope (re-author with a
+  distinguishing source detail);
+- **fixable** — a rejection whose reason is in the fix-hint taxonomy (protected locator/answer,
+  answer leakage, invalid property/question/evidence, placeholder-answerable, hedged, mispaired
+  literal);
+- **missed** — an accepted opportunity nothing attempted.
+
+Three guards keep the paid channel honest:
+
+1. **Kept-fact guard** — a pair fact covered by ANY kept row (compound rows decomposed) is never
+   re-targeted, and compound attempts (kept or rejected) count as proposed so their pairs cannot
+   resurrect as missed.
+2. **Reader-outcome routing** (`_reader_outcome_route`) — a rejection whose stored three-point
+   scores show orig/rep verdict disagreement or placeholder-only readability is a
+   **lattice suspect** (a data defect; surfaced per doc in
+   `relation_coverage.reader_routed_out`, never gleaned); a deterministic-authored relation the
+   reader confirmed on NO render is **reader-verified no-relation** (miner co-occurrence junk;
+   dropped, never re-authored). Teacher-authored rejections are exempt from the no-relation route.
+   This is deliberately post-hoc filtering by reader outcome instead of tightening the
+   recall-oriented miner/judge.
+3. Dead-weight literal-collision leaks (above) are excluded from the fixable taxonomy.
+
+The repair prompt restricts DETECTED SPANS and source clauses to the targets' regions, groups
+targets by shared source region, states each distinct fix hint ONCE in a FIX GUIDE keyed by tag,
+and batches ≤ 20 targets per call. Same privacy/response contract as the primary; the primary
+prompt is untouched (cache-safe).
+
+After gleaning, kept rows are rebuilt as `pre_teacher + stage keeps + merge(primary, secondary)`:
+merge prefers the primary formulation by fact key; secondary rows duplicating a stage-covered pair
+are dropped before the merge; stage keeps rejoin directly (compound rows cannot ride the two-arg
+merge).
+
+**Post-gleaning deterministic passes.** Reverse framing flips every object of an ambiguous
+(relation, subject) group across ALL forward attempts (primary + gleaning + judge-accepted
+opportunities) in an isolated doc-global pass, deduped against everything kept; the standalone
+literal-reverse pass runs only when the stage is off (the stage supersedes it with the wider
+seed).
+
+**Measured economics (67-doc v15 build, new lattice env):** 616 kept relation QAs
+(149 primary / 391 stage / 65 reverse framing / 11 gleaning), mean 9.2 per doc (median 7); the
+reader-outcome router excluded 1,985 no-relation and 392 lattice-suspect rejections from repair;
+gleaning returned 14 keeps from 49 paid batches. Gleaning is a safety net, not a load-bearing
+stage.
+
+## Utility assertions and scoring
+
+Two measurement families: **context assertions on `doc_p`** and **delivered assertions on
+`out_final`**. Weights: family budgets split equally across fact groups, then across a group's
+assertions; missing families keep the fixed denominator without renormalization.
+
+### Context probes
+
+- `contextual_relation` — the relation QAs above; the live context family.
+- `semantic_property` — deterministic category/function probes ("what kind of thing is this
+  span"), admitted by role-cue regexes with an optional MedGemma informativeness judge
+  (`--informative-context-judge`) for cue misses (free when the entity already carries mined
+  relation evidence). The family is currently DISABLED after measuring 1 kept assertion against
+  114 role-cue rejections on a development slice; generation and judge machinery are retained
+  dormant.
+
+### Delivered / schema probes
+
+Deterministic, adapter-owned (`AciTaskAdapter.deterministic_candidates`); truth comes from the
+human reference or the fixed task schema, never from ceiling output or teacher interpretation:
+
+- `content` (linked, `contains`) — a reference-backed controlled value must survive into
+  `out_final` (lexical `fact_score`); the omission channel.
+- `field` (global, `field_value`) — exact agreement of DEMOGRAPHIC fields and per-condition
+  ASSESSMENT row fields (e.g. status/category) between the parsed output and the reference.
+- `structure` (global, `required_sections`) — required note sections present and parseable, with
+  expected row shapes/counts for assessment and plan; structural compliance is capped by the
+  manifest's structural budget so it can never substitute for semantic retention.
+- `exact_relation` (`exact_relation`, PLAN section) — symbolic relation preservation: the
+  plan row for a condition still carries its expected treatment/test values after the round trip.
+  A placeholder-heavy pipeline can pass this while failing the context assertion for the same
+  fact — the two families are deliberately not collapsible.
+
+Runtime scoring (`score_utility`) replays each context assertion against the rollout's `doc_p`
+with the same reader, same per-assertion turn excerpts, and the same answer-target scorers (set
+rows via the set reader); delivered contracts are deterministic. Cache keys are
+document/action-vector level.
+
+## Invariants (unchanged and load-bearing)
+
+1. Detect once; QA and RL consume the same frozen environment.
+2. Assertions precede questions; teacher proposals are not gold.
+3. Measurement (family) and routing (scope) are orthogonal; missing coverage never removes a
+   ranker decision or implies zero relevance.
+4. Pins are transitive: detector, lattice profiles/embindex, environment, teacher
+   (model+provider+prompt+schema), reader, manifest, and builder flags all key caches; a pin
+   mismatch invalidates dependents.
+5. Thresholds are preregistered; attacker results cannot tune QA gates.
+6. Failures are findings: no per-model calibration, post-hoc weights, relaxed gates, or selective
+   document removal. Method comparisons only at matched realized privacy and identical settings.
+
+## Artifact
+
+`build_utility_artifact` emits one artifact: assertions (with evidence: arguments, argument
+spans, reader turns, validation scores, run/teacher attribution), the full rejection ledger
+(stable reason taxonomy + detail reasons + attribution), `relation_generation` attempts,
+`relation_support_opportunities`, `relation_escalation` (per-doc primary/stage/gleaning
+accounting, prompt hashes, batch counts), `relation_coverage` (unresolved targets by kind +
+`reader_routed_out`), candidate accounting, and pins. Sidecar views: assertions, qa-pairs, and
+the qa-audit trio. Infrastructure failure is an explicit state, never a silent zero score.
 
 ## Sources
 
 - [Interactive ranker v2](RL/interactive-ranker-v2.md)
-- [Interactive ranker v2 decision log](RL/interactive-ranker-v2-decision-log.md)
-- [Interactive ranker v2 diagnostics](RL/interactive-ranker-v2-diagnostics.md)
-- [QA builder v2 decision log](RL/qa-builder-v2-decision-log.md)
+- [QA builder v2 decision log](RL/qa-builder-v2-decision-log.md) — historical normative design,
+  PERSON-relation removal, migration narrative
 - [Training-task environment](RL/training-task-env.md)
-- [RL environment issue register](../issues/2026-07-08-rl-env-and-lattice-count-issue-register.md)
-- [Detector noise-gate limits](../issues/2026-07-10-detector-junk-and-noise-gate-limits.md)
-- `results/qa_pairs_pv4_super.txt` and the 2026-07-12 failure analyses are auxiliary evidence
-  about the retired pipeline, not requirements.
+- Gleaning+repair taxonomy plan: `docs/plans/qa-relation-gleaning-repair.md`
+- Validation artifacts: `results/qa_v2_stage_ab/` (5-doc A/B arms, deterministic-only coverage,
+  gate-failure classification report), `results/qa_v2_aci_full_v15/` (67-doc build)
