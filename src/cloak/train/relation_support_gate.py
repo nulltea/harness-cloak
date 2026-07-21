@@ -62,8 +62,14 @@ _RELATION_RULES = {
     "contraindicated_because_of": (
         "Relation rule: a CONTRAINDICATION claim ('must NOT be given X because they have Y') is TRUE "
         "only if the excerpt says X is avoided, held, stopped, not started, or unsafe BECAUSE of Y. "
-        "If the excerpt says the patient takes / continues / is treated with X (for any problem), or "
-        "merely mentions X and Y near each other, that is NOT a contraindication — answer false."
+        "If the excerpt says the patient takes / continues / starts / is treated with X (for any "
+        "problem), or merely mentions X and Y near each other, that is NOT a contraindication — "
+        "answer false.\n"
+        "Ground your answer: to answer true you MUST quote, in a \"cue\" field, the exact "
+        "consecutive words from the excerpt that state the avoidance (e.g. 'avoid', 'hold off on', "
+        "'stop the', 'we can't use ... because', 'not safe given'). If you cannot quote such an "
+        "avoidance phrase, answer false with \"cue\": \"\". A phrase you infer but cannot quote "
+        "does not count — a treatment sentence never becomes a contraindication by inference."
     ),
     "causes_or_explains": (
         "Relation rule: a CAUSAL claim ('X causes or explains Y') is TRUE only if the excerpt "
@@ -112,10 +118,13 @@ _RELATION_EXAMPLES = {
     "contraindicated_because_of": (
         "EXCERPT: \"[doctor] given your peptic ulcer we need to avoid nsaids like ibuprofen .\"\n"
         "CANDIDATE: the patient must NOT be given ibuprofen because they have peptic ulcer\n"
-        "{\"asserted\": true, \"why\": \"explicitly avoiding ibuprofen due to the ulcer\"}\n"
+        "{\"asserted\": true, \"cue\": \"we need to avoid\", \"why\": \"explicitly avoiding ibuprofen due to the ulcer\"}\n"
         "EXCERPT: \"[patient] i take allopurinol for my gout .\"\n"
         "CANDIDATE: the patient must NOT be given allopurinol because they have gout\n"
-        "{\"asserted\": false, \"why\": \"taken to treat the gout; not contraindicated\"}"
+        "{\"asserted\": false, \"cue\": \"\", \"why\": \"taken to treat the gout; not contraindicated\"}\n"
+        "EXCERPT: \"[doctor] for your epilepsy , let's increase the lamotrigine to twice a day .\"\n"
+        "CANDIDATE: the patient must NOT be given lamotrigine because they have epilepsy\n"
+        "{\"asserted\": false, \"cue\": \"\", \"why\": \"increased to treat the epilepsy; no avoidance stated\"}"
     ),
     "causes_or_explains": (
         "EXCERPT: \"[doctor] your shortness of breath is due to your pneumonia .\"\n"
@@ -184,7 +193,9 @@ def _subject_object_surfaces(arguments: Sequence[Mapping]) -> tuple[str | None, 
 # Relations whose accept-on-error default is flipped to REJECT: causes_or_explains ranges over every
 # condition x condition permutation, so a parse glitch that defaulted to accept would leak a junk
 # causal pair. Its yield is low and cue-recoverable, so a dropped-on-error causal claim is cheap.
-_REJECT_ON_ERROR_RELATIONS = frozenset({"causes_or_explains"})
+# contraindicated_because_of is adversative: co-occurrence usually asserts the OPPOSITE relation
+# (the drug treats the condition), so accept-on-glitch is the wrong prior there too.
+_REJECT_ON_ERROR_RELATIONS = frozenset({"causes_or_explains", "contraindicated_because_of"})
 
 
 def build_medgemma_judge(client, *, accept_on_error: bool = True) -> Callable[..., bool]:

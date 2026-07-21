@@ -1115,8 +1115,14 @@ def test_reader_clause_contraindication_orientation_is_mirror_of_other_relations
         "decision_requirements": requirements,
         "evidence": {"arguments": arguments},
     }, occurrences, decisions)
-    assert forward == "is a medical condition that makes the loop diuretic unsuitable"
-    assert reverse == "is a treatment made unsuitable by the endocrine condition"
+    assert forward == (
+        "is a medical condition stated to make the loop diuretic unsuitable, avoided, or "
+        "stopped — NOT a condition that the loop diuretic treats; if the DOCUMENT states no "
+        "such contraindication, reply NONE")
+    assert reverse == (
+        "is a medication or procedure the DOCUMENT says is avoided, stopped, or must not be "
+        "used because of the endocrine condition — NOT one prescribed or given to treat the "
+        "endocrine condition; if the DOCUMENT states no such contraindication, reply NONE")
 
 
 def test_reader_clause_literal_locator_is_quoted_verbatim():
@@ -1203,6 +1209,77 @@ def test_reader_clause_degrades_to_none_instead_of_raising():
     # non-relation row shape (no arguments)
     assert qa_builder._relation_reader_clause(
         {**base, "evidence": {}}, occurrences, decisions) is None
+
+
+def _treating_conflict_fixture():
+    occurrences, decisions = _clause_fixture()
+
+    def relation_row(relation, subject_occ, object_arg, run_id="deterministic_stage"):
+        return {
+            "family": "context", "subtype": "contextual_relation", "relation": relation,
+            "question": f"q-{relation}-{subject_occ}",
+            "evidence": {
+                "arguments": [
+                    {"role": "subject", "kind": "linked", "occurrence_id": subject_occ},
+                    object_arg,
+                ],
+                "run_id": run_id, "teacher_id": "deterministic",
+            },
+        }
+
+    return occurrences, decisions, relation_row
+
+
+def test_treating_conflict_gate_drops_inverted_contraindication():
+    occurrences, decisions, relation_row = _treating_conflict_fixture()
+    # kept treating fact: condition (dc) treated with drug (dd)
+    treating = relation_row(
+        "prescribed_with", "o-c", {"role": "object", "kind": "linked", "occurrence_id": "o-d"})
+    # inverted contraindication about the SAME pair, roles flipped per the relation contract
+    inverted = relation_row(
+        "contraindicated_because_of", "o-d",
+        {"role": "object", "kind": "linked", "occurrence_id": "o-c"})
+    kept, rejections = qa_builder._treating_conflict_filter(
+        [treating, inverted], occurrences, decisions, doc_id="d1")
+    assert [row["relation"] for row in kept] == ["prescribed_with"]
+    assert len(rejections) == 1
+    assert rejections[0]["detail_reason"] == "treating_relation_conflict"
+    assert rejections[0]["reason"] == "invalid"
+    assert rejections[0]["relation"] == "contraindicated_because_of"
+    assert rejections[0]["evidence"]["run_id"] == "deterministic_stage"
+
+
+def test_treating_conflict_gate_matches_literal_against_linked_span():
+    occurrences, decisions, relation_row = _treating_conflict_fixture()
+    # treating fact names the drug as a LITERAL matching the linked decision's surface
+    for decision in decisions:
+        if decision["decision_id"] == "dd":
+            decision["canonical_key"] = "thyroid pill"
+    occurrences["o-d"]["surface"] = "thyroid pill"
+    treating = relation_row(
+        "prescribed_with", "o-c", {"role": "object", "kind": "context", "literal": "Thyroid Pill"})
+    inverted = relation_row(
+        "contraindicated_because_of", "o-d",
+        {"role": "object", "kind": "linked", "occurrence_id": "o-c"})
+    kept, rejections = qa_builder._treating_conflict_filter(
+        [treating, inverted], occurrences, decisions, doc_id="d1")
+    assert [row["relation"] for row in kept] == ["prescribed_with"]
+    assert len(rejections) == 1
+
+
+def test_treating_conflict_gate_spares_unrelated_contraindication():
+    occurrences, decisions, relation_row = _treating_conflict_fixture()
+    treating = relation_row(
+        "prescribed_with", "o-c", {"role": "object", "kind": "linked", "occurrence_id": "o-d"})
+    # contraindication pairs a DIFFERENT treatment (o-e) with the condition: no conflict
+    legitimate = relation_row(
+        "contraindicated_because_of", "o-e",
+        {"role": "object", "kind": "linked", "occurrence_id": "o-c"})
+    kept, rejections = qa_builder._treating_conflict_filter(
+        [treating, legitimate], occurrences, decisions, doc_id="d1")
+    assert sorted(row["relation"] for row in kept) == [
+        "contraindicated_because_of", "prescribed_with"]
+    assert rejections == []
 
 
 class _PromptCapture:

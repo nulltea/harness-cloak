@@ -625,10 +625,18 @@ _RELATION_READER_CLAUSES = {
         "is a test or exam ordered to evaluate or monitor {loc}",
     ("tests_for", "subject"):
         "is the medical condition that {loc} was ordered to evaluate or monitor",
+    # contraindicated_because_of clauses force POLARITY, not just type+locality: the corpus's
+    # dominant (treatment, condition) co-occurrence asserts the OPPOSITE relation (the drug
+    # treats the condition), and an unconstrained extractive reader happily returns the
+    # prescribed drug (the 5-doc inverted-contraindication audit). The explicit NOT-prescribed
+    # contrast + per-clause NONE reminder push the reader to decline treatment sentences.
     ("contraindicated_because_of", "object"):
-        "is a medical condition that makes {loc} unsuitable",
+        "is a medical condition stated to make {loc} unsuitable, avoided, or stopped — NOT a "
+        "condition that {loc} treats; if the DOCUMENT states no such contraindication, reply NONE",
     ("contraindicated_because_of", "subject"):
-        "is a treatment made unsuitable by {loc}",
+        "is a medication or procedure the DOCUMENT says is avoided, stopped, or must not be used "
+        "because of {loc} — NOT one prescribed or given to treat {loc}; if the DOCUMENT states no "
+        "such contraindication, reply NONE",
     ("causes_or_explains", "object"):
         "is a condition, symptom, or finding caused or explained by {loc}",
     ("causes_or_explains", "subject"):
@@ -645,7 +653,9 @@ _RELATION_READER_CLAUSES_COMPOUND = {
     ("tests_for", "subject"):
         "is the single medical condition that {loc} were all ordered to evaluate or monitor",
     ("contraindicated_because_of", "subject"):
-        "is a treatment made unsuitable by all of {loc}",
+        "is a medication or procedure the DOCUMENT says is avoided, stopped, or must not be used "
+        "because of all of {loc} — NOT one prescribed or given to treat them; if the DOCUMENT "
+        "states no such contraindication, reply NONE",
     ("causes_or_explains", "subject"):
         "is the single underlying condition that causes or explains all of {loc}",
 }
@@ -4108,6 +4118,118 @@ def _pair_fact_keys(rows: Sequence[Mapping], occurrences: Mapping[str, Mapping])
             except ValueError:
                 continue
     return keys
+
+
+def _argument_identity_atoms(
+    argument: Mapping,
+    occurrences: Mapping[str, Mapping],
+    decisions_by_id: Mapping[str, Mapping],
+) -> frozenset:
+    """Normalized identity atoms for cross-relation pair matching: decision id plus canonical
+    surface for a linked argument, canonical text for a literal — so a literal and a linked span
+    of the same value unify (the inverted-contraindication audit needed surface+literal
+    normalization to cover every case decision-id matching alone missed)."""
+    atoms: set = set()
+    if argument.get("kind") == "linked":
+        occurrence = occurrences.get(str(argument.get("occurrence_id"))) or {}
+        decision_id = occurrence.get("decision_id")
+        if decision_id is not None:
+            atoms.add(("decision", str(decision_id)))
+            decision = decisions_by_id.get(str(decision_id)) or {}
+            for value in (occurrence.get("surface"), decision.get("canonical_key")):
+                normalized = canon(str(value)) if value else ""
+                if normalized:
+                    atoms.add(("value", normalized))
+    elif argument.get("kind") == "context":
+        literal = canon(str(argument.get("literal", "")))
+        if literal:
+            atoms.add(("value", literal))
+    return frozenset(atoms)
+
+
+_TREATING_RELATIONS = frozenset({"prescribed_with", "procedure_for"})
+
+
+def _treating_conflict_filter(
+    accepted: Sequence[Mapping],
+    occurrences: Mapping[str, Mapping],
+    decisions: Sequence[Mapping],
+    *,
+    doc_id: str,
+) -> tuple[list[dict], list[dict]]:
+    """Kept-assertion cross-gate for contraindicated_because_of.
+
+    A kept contraindication row whose (treatment, condition) pair is also covered by a KEPT
+    prescribed_with / procedure_for row asserts both "given for" and "avoided because of" about
+    the same pair; the treating assertion is the corpus-grounded one (measured on the 5-doc v4
+    audit: every inverted contraindication the accept-biased escalation admitted had its treating
+    twin kept). Pair identity is unordered and value-normalized (_argument_identity_atoms), so the
+    role flip between the relations (contraindication subject = the treatment) and literal-vs-span
+    argument mismatches both match. Matches KEPT rows only, never the opportunity ledger — the
+    ledger contains both directions by construction. Returns (kept, rejection_records)."""
+    decisions_by_id = {str(decision["decision_id"]): decision for decision in decisions}
+
+    def row_pairs(row: Mapping) -> list[tuple[frozenset, frozenset]]:
+        arguments = list(dict(row.get("evidence") or {}).get("arguments") or [])
+        subjects = [a for a in arguments if a.get("role") == "subject"]
+        objects = [a for a in arguments if a.get("role") == "object"]
+        if len(subjects) != 1 or not objects:
+            return []
+        subject_atoms = _argument_identity_atoms(subjects[0], occurrences, decisions_by_id)
+        return [
+            (subject_atoms, _argument_identity_atoms(obj, occurrences, decisions_by_id))
+            for obj in objects
+        ]
+
+    treating_pairs = [
+        pair
+        for row in accepted
+        if row.get("subtype") == "contextual_relation"
+        and str(row.get("relation")) in _TREATING_RELATIONS
+        for pair in row_pairs(row)
+        if pair[0] and pair[1]
+    ]
+
+    def conflicts(pair: tuple[frozenset, frozenset]) -> bool:
+        a, b = pair
+        if not a or not b:
+            return False
+        return any(
+            (a & c and b & d) or (a & d and b & c) for c, d in treating_pairs
+        )
+
+    kept: list[dict] = []
+    rejections: list[dict] = []
+    for row in accepted:
+        if not (
+            row.get("subtype") == "contextual_relation"
+            and str(row.get("relation")) == "contraindicated_because_of"
+            and any(conflicts(pair) for pair in row_pairs(row))
+        ):
+            kept.append(dict(row))
+            continue
+        row_evidence = dict(row.get("evidence") or {})
+        evidence = {
+            "source": "treating_conflict_gate",
+            "arguments": _rejection_safe_arguments(list(row_evidence.get("arguments") or [])),
+        }
+        for authorship_key in ("teacher_id", "run_id"):
+            if row_evidence.get(authorship_key):
+                evidence[authorship_key] = row_evidence[authorship_key]
+        record = _rejection_record(
+            reason="invalid",
+            detail_reason="treating_relation_conflict",
+            attempt={
+                "doc_id": doc_id,
+                "source": "treating_conflict_gate",
+                "subtype": row.get("subtype"),
+                "occurrence_ids": list(row.get("occurrence_ids") or []),
+            },
+            evidence=evidence,
+        )
+        record["relation"] = row.get("relation")
+        rejections.append(record)
+    return kept, rejections
 
 
 def _remap_to_lexically_groundable_siblings(
@@ -8704,6 +8826,16 @@ def build_utility_artifact(
                     "status": "kept", "reason": "accepted",
                     "teacher_id": "deterministic", "run_id": "literal_reverse",
                 })
+        # Kept-assertion cross-gate: runs after EVERY producer (primary, stage, gleaning merge,
+        # reverse framing, literal reverse) so any producer's treating keep can veto an inverted
+        # contraindication, and its rejections land before coverage accounting. The new
+        # detail_reason is outside the fix-hint taxonomy, so a vetoed pair is never
+        # repair-targeted, and — having been attempted — can never resurrect as "missed".
+        accepted, treating_conflicts = _treating_conflict_filter(
+            accepted, occurrences, decisions, doc_id=doc_id,
+        )
+        for record in treating_conflicts:
+            preserve_rejection(record, doc_id=doc_id)
         doc_rejections = [row for row in rejection_records if row.get("doc_id") == doc_id]
         coverage_targets = _gleaning_targets(
             source,

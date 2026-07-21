@@ -3602,10 +3602,24 @@ def test_medgemma_judge_parses_and_is_accept_biased_on_error():
     assert build_medgemma_judge(_StubClient("garbage"))(premise="p", claim="c") is True
     assert build_medgemma_judge(_StubClient("garbage"), accept_on_error=False)(premise="p", claim="c") is False
     # causes_or_explains flips to REJECT-on-error (combinatorial; can't afford accept-on-glitch),
-    # while other relations keep the recall-first accept-on-error default.
+    # and contraindicated_because_of too (adversative: co-occurrence usually asserts the OPPOSITE
+    # relation), while other relations keep the recall-first accept-on-error default.
     j = build_medgemma_judge(_StubClient("garbage"))
     assert j(premise="p", claim="c", relation="causes_or_explains") is False
+    assert j(premise="p", claim="c", relation="contraindicated_because_of") is False
     assert j(premise="p", claim="c", relation="prescribed_with") is True
+
+
+def test_contraindication_judge_rule_requires_quoted_avoidance_cue():
+    from cloak.train.relation_support_gate import _judge_system
+    contra = _judge_system("contraindicated_because_of")
+    # extractive-quote grounding (same defense as the causal rule): true requires quoting the
+    # exact avoidance phrase in a "cue" field, else false
+    assert 'quote, in a "cue" field' in contra
+    assert "cannot quote" in contra
+    # the inversion trap is a worked example: a drug titrated FOR a condition is not contraindicated
+    assert "increase the lamotrigine" in contra
+    assert '"asserted": false, "cue": ""' in contra
 
 
 def test_judge_system_is_per_relation_isolated():
