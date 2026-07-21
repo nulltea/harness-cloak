@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-21
+updated: 2026-07-22
 tags: [qa, reward-design, utility-components, context-preservation, credit-routing,
        interactive-ranker, spec, deterministic-relations, gleaning]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
@@ -95,14 +95,20 @@ The QA build proper. Production flags:
   (augment-only; requires escalation);
 - `--relation-deterministic-stage` — template relation QAs between primary and gleaning (below);
 - `--relation-teacher-gleaning` — the paid repair+glean second pass (requires the manifest
-  `relation_escalation_policy`).
+  `relation_escalation_policy`);
+- `--reader-finer-level-check [hard|soft]` — reward-band certification: re-render each
+  gate-passing relation QA with the ANSWER decision at every level FINER than its supported level
+  and re-read. `soft` records the per-level scores on the kept row; `hard` (bare flag) REJECTS a
+  QA with an unreadable finer level, routed `lattice_suspect` (never repair-targeted). Both modes
+  emit the lattice-producer worklist (`*.finer-level-failures.jsonl` — hard-mode rejections stash
+  question/target/scores on the rejection evidence so the emitter covers them too).
 
 Every enabled option is recorded in the artifact pins; disabled options leave the build
 byte-identical to the option-free path. The threshold manifest
 (`data/qa_v2/relation_gate_manifest.json`) pins the reader (medgemma-4b-it, prompt
-`qa-context-reader-v4`, single-span response schema, revision `qa-reader-r5`), reader threshold
-1.0, stability repetitions/permutations, and the family budgets (context 0.6 / delivered 0.4,
-structural cap 0.1).
+`qa-context-reader-v4`, single-span response schema version 3, revision `qa-reader-r5`), reader
+threshold 1.0, stability repetitions/permutations, and the family budgets (context 0.6 /
+delivered 0.4, structural cap 0.1). Builder pin: `qa-builder-v2-assertion-compiler-v15`.
 
 ## QA model
 
@@ -140,7 +146,18 @@ Answer targets, scored by `_context_answer_score`:
 
 - `linked_decision {decision_id, required_property}` — the reader's free-form answer resolves
   against the decision's frozen semantic chain (`answer_aliases`), then binary credit iff the
-  resolved node entails the required property. No token-overlap partial credit.
+  resolved node entails the required property. No token-overlap partial credit. The chain's
+  specific → coarse order is the decision's AUTHORED profile ladder (load-validated monotone in
+  the profile's own `level_counts`) — never the global cross-profile `coarseness_rank`, which is
+  miscalibrated across profiles and inverted entailment edges before 2026-07-21.
+  **Resolution rule (reader schema v3, capped contiguity):** an alias must appear as a CONTIGUOUS
+  stemmed subsequence of the reply, and the reply may carry at most 6 meaningful tokens beyond
+  the alias (`_ANSWER_EXTRA_TOKEN_CAP`). The former token-SET subset rule credited replies that
+  merely CONTAINED an alias — whole-sentence echoes and scattered tokens scored 1.0, unearned
+  reward at RL time — while strict exact equality measured 32/37 flips as false negatives
+  (hedge prefixes, dose/qualifier tails, compound spans, all ≤ 6 extra tokens vs echoes at 26).
+  The cap sits in that measured gap, was frozen before the re-gate, and is never retuned per
+  result.
 - `linked_decision_set {members: [...]}` — set-valued QA: the reader answers with a JSON array
   (dedicated set-read prompt, `read_context_set_batch`); score = one-to-one per-member recall.
   At threshold 1.0 the gate demands every member readable on orig and rep and ≥ 1 member hidden
@@ -204,14 +221,15 @@ level. The two pinned levels of a span↔span QA are chosen differently:
   their seed (finest for opportunity seeds, the teacher's object level for teacher-attempt
   seeds).
 
-**Documented gaps (RL-scoring assumptions, not yet gate-certified):**
+**Documented gaps (RL-scoring assumptions):**
 
-1. **Finer-band READABILITY is untested.** The scoring side of the reward band is guaranteed by
-   entailment (above), but the gate certifies readability at exactly one (locator level, answer
-   level) combination — the supported level. Whether the reader still answers the question when
-   `doc_p` renders the answer decision FINER, and whether the finer node's `answer_aliases`
-   actually resolve, is assumed, never gated. A finer level that is unreadable in practice scores
-   0 at RL time and under-rewards finer-than-required rankings for that decision.
+1. **Finer-band READABILITY** — now measured by the opt-in `--reader-finer-level-check`
+   (`_finer_level_readability`): every gate-passing relation QA is re-rendered with the answer
+   decision at each finer level and re-read, exactly the RL-time semantics. `soft` records and
+   emits the worklist; `hard` rejects unreadable-band QAs (routed `lattice_suspect`). Worklist
+   root-causing on the 5-doc smoke attributed failures mostly to reader artifacts plus one
+   intra-profile lattice defect (an inverted filler rung, since fixed); `no_joint_arm` marks
+   level-fill collisions (a render limitation, not a bad level).
 2. **The frozen locator level can steer the policy.** The question text freezes the locator at one
    level; at RL time the policy renders that decision at whatever level it ranks, and the reader
    must bridge the question wording to the rendered wording. That bridge is untested across
@@ -251,6 +269,15 @@ enumeration.
   block-level cue accepts every condition × condition pair sharing a causal word — so cue-PASSES
   are also judged; for that relation the judge is a precision filter and the escalated set is not
   a cue-only superset. For every other relation it is.
+- **Adversative-relation defenses (`contraindicated_because_of`)**: this is the inventory's only
+  relation whose dominant co-occurrence pattern asserts the OPPOSITE relation (a drug near a
+  condition usually treats it), so the accept-biased escalator had an inverted prior there — a
+  5-doc audit found every escalation-recovered contraindication seed inverted. Defenses: the
+  judge rule is quote-grounded (true requires quoting the exact avoidance phrase in a `cue`
+  field, same defense as the causal rule) with an inversion-trap worked example, and the relation
+  joins `causes_or_explains` in the reject-on-error set (accept-on-glitch is the wrong prior for
+  an adversative claim). A kept-assertion cross-gate downstream (see Quality gates) catches what
+  the judge still passes.
 - Accepted opportunities record `recovered_by_escalation`, and the manifest
   `relation_escalation_policy` (per-scope minimum opportunity counts, coverage fractions, caps)
   drives the escalation accounting and gleaning trigger.
@@ -328,6 +355,19 @@ miner recall, 13/20 mined), so the stage complements the primary teacher rather 
   proposal the reader gate is the semantic acceptance test; the maintained cue lexicon was not
   sustainable on informal clinical speech. The miner keeps its cue (see above).
 
+### Kept-assertion cross-gate (treating conflict, post-producer)
+
+`_treating_conflict_filter` runs after EVERY producer (primary, stage, gleaning merge, reverse
+framing, literal reverse): a kept `contraindicated_because_of` row whose (treatment, condition)
+pair is also covered by a KEPT `prescribed_with`/`procedure_for` row asserts both "given for" and
+"avoided because of" about the same pair — the treating assertion is the corpus-grounded one, so
+the contraindication is rejected (`invalid` / `treating_relation_conflict`, never
+repair-targeted). Pair identity is unordered and value-normalized (decision id + canonical
+surface + literal text), so the role flip between the relations and literal-vs-span argument
+mismatches both match; it compares KEPT rows only, never the opportunity ledger (which contains
+both directions by construction). Audit separation: 6/6 inverted rows caught, 0/2 legitimate
+keeps false-fired, and the follow-up rebuild confirmed 0 false vetoes.
+
 ### Reader gate (three-point, per candidate)
 
 `validate_context_assertions` renders three contexts — `doc_orig`, the joint representative
@@ -354,7 +394,11 @@ clause is FROZEN onto the assertion row (`reader_clause`) before the first gate 
 verbatim on all three renders, both lattice probes (the coarser-locator diagnostic recomputes it
 because it re-levels the locator), and runtime scoring — gate and runtime certify the same
 instrument. An untypesettable or non-relation row gets no clause and the constraint line is
-omitted.
+omitted. The `contraindicated_because_of` clauses additionally force POLARITY (an explicit
+"NOT one prescribed or given to treat …" contrast plus a per-clause NONE reminder): type+locality
+constraints alone walk the extractive reader to the co-occurring prescribed drug, the inverted
+reading (audited: 8/8 such gate passes declined after tightening, zero over-tightening on
+genuine contraindications).
 
 Gate rejections carry `teacher_id`/`run_id` for attribution.
 
@@ -392,9 +436,13 @@ Three guards keep the paid channel honest:
    **lattice suspect** (a data defect; surfaced per doc in
    `relation_coverage.reader_routed_out`, never gleaned); a deterministic-authored relation the
    reader confirmed on NO render is **reader-verified no-relation** (miner co-occurrence junk;
-   dropped, never re-authored). Teacher-authored rejections are exempt from the no-relation route.
-   This is deliberately post-hoc filtering by reader outcome instead of tightening the
-   recall-oriented miner/judge.
+   dropped, never re-authored); a rejection readable on ALL THREE renders (orig, rep, AND the
+   all-placeholder floor) is **floor-answerable** — the floor cannot discriminate the fact and
+   re-authoring cannot change what the placeholder render reveals, so it is never gleaned (any
+   authorship; compile-time placeholder-answerable rejections carry no reader scores and keep
+   their fixable path — a mispaired literal IS re-authorable). Teacher-authored rejections are
+   exempt from the no-relation route. This is deliberately post-hoc filtering by reader outcome
+   instead of tightening the recall-oriented miner/judge.
 3. Dead-weight literal-collision leaks (above) are excluded from the fixable taxonomy.
 
 The repair prompt restricts DETECTED SPANS and source clauses to the targets' regions, groups
@@ -413,11 +461,11 @@ opportunities) in an isolated doc-global pass, deduped against everything kept; 
 literal-reverse pass runs only when the stage is off (the stage supersedes it with the wider
 seed).
 
-**Measured economics (67-doc v15 build, new lattice env):** 616 kept relation QAs
-(149 primary / 391 stage / 65 reverse framing / 11 gleaning), mean 9.2 per doc (median 7); the
-reader-outcome router excluded 1,985 no-relation and 392 lattice-suspect rejections from repair;
-gleaning returned 14 keeps from 49 paid batches. Gleaning is a safety net, not a load-bearing
-stage.
+**Measured economics (67-doc v15 build, new lattice env — PRE-v4-reader/scorer-v3; the v16
+re-gate re-measures all of it):** 616 kept relation QAs (149 primary / 391 stage / 65 reverse
+framing / 11 gleaning), mean 9.2 per doc (median 7); the reader-outcome router excluded 1,985
+no-relation and 392 lattice-suspect rejections from repair; gleaning returned 14 keeps from 49
+paid batches. Gleaning is a safety net, not a load-bearing stage.
 
 ## Utility assertions and scoring
 
@@ -489,4 +537,8 @@ the qa-audit trio. Infrastructure failure is an explicit state, never a silent z
 - [Training-task environment](RL/training-task-env.md)
 - Gleaning+repair taxonomy plan: `docs/plans/qa-relation-gleaning-repair.md`
 - Validation artifacts: `results/qa_v2_stage_ab/` (5-doc A/B arms, deterministic-only coverage,
-  gate-failure classification report), `results/qa_v2_aci_full_v15/` (67-doc build)
+  gate-failure classification report), `results/qa_v2_stage_ab/rebuild_v5/` (corrected-profile
+  5-doc smokes: v4 reader, polarity defenses, scorer A/B containment→strict→capped),
+  `results/qa_v2_aci_full_v15/` (67-doc build, pre-v4 reader),
+  `results/qa_v2_aci_full_v16/` (67-doc production re-gate on all of the above; in flight
+  2026-07-22)
