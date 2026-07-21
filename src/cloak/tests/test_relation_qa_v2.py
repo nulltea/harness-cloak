@@ -2482,6 +2482,126 @@ def test_gleaning_targets_drop_literal_collision_protected_locator():
     assert targets[0]["reason"] == "protected_locator"
 
 
+def test_finer_level_readability_certifies_reward_band():
+    decisions = [{
+        "decision_id": "d-c",
+        "canonical_key": "chf",
+        "actions": [
+            {"action_id": "keep-c", "mode": "keep", "legal": True},
+            {"action_id": "act-fine", "mode": "level", "legal": True, "coarseness_rank": 10,
+             "fill": "congestive heart failure",
+             "entails": ["congestive heart failure", "heart disease"]},
+            {"action_id": "act-coarse", "mode": "level", "legal": True, "coarseness_rank": 20,
+             "fill": "heart disease", "entails": ["heart disease"]},
+            {"action_id": "ph-c", "mode": "placeholder", "legal": True, "entails": []},
+        ],
+    }]
+    candidate = {
+        "question": "For what medical condition was the loop diuretic prescribed?",
+        "decision_requirements": {"d-c": "heart disease"},
+        "answer_target": {"kind": "linked_decision", "decision_id": "d-c",
+                          "required_property": "heart disease"},
+        "evidence": {"reader_turns": [0]},
+    }
+    chains_ok = {"d-c": [
+        {"node": "congestive heart failure", "answer_aliases": ["congestive heart failure"],
+         "entailed_properties": ["congestive heart failure", "heart disease"]},
+        {"node": "heart disease", "answer_aliases": ["heart disease"],
+         "entailed_properties": ["heart disease"]},
+    ]}
+
+    def render(doc_id, vector):
+        return ("on congestive heart failure meds" if vector.get("d-c") == "act-fine"
+                else "on heart disease meds")
+
+    def reader(questions, context):
+        return ["congestive heart failure" if "congestive heart failure" in context
+                else "heart disease"] * len(questions)
+
+    scores = qa_builder._finer_level_readability(
+        candidate, decisions, [], doc_id="d", render_action_vector=render,
+        reader=reader, chain_by_decision=chains_ok)
+    # the finer render is read and its node ENTAILS the supported level -> band certified
+    assert scores == {"congestive heart failure": 1.0}
+
+    # broken finer alias: the reader echo cannot resolve -> unreadable finer level recorded as 0
+    chains_broken = {"d-c": [
+        {"node": "congestive heart failure", "answer_aliases": [],
+         "entailed_properties": ["congestive heart failure", "heart disease"]},
+        {"node": "heart disease", "answer_aliases": ["heart disease"],
+         "entailed_properties": ["heart disease"]},
+    ]}
+    scores = qa_builder._finer_level_readability(
+        candidate, decisions, [], doc_id="d", render_action_vector=render,
+        reader=reader, chain_by_decision=chains_broken)
+    assert scores == {"congestive heart failure": 0.0}
+
+    # supported level already finest -> empty band -> no check
+    finest_pinned = {**candidate,
+                     "decision_requirements": {"d-c": "congestive heart failure"},
+                     "answer_target": {"kind": "linked_decision", "decision_id": "d-c",
+                                       "required_property": "congestive heart failure"}}
+    assert qa_builder._finer_level_readability(
+        finest_pinned, decisions, [], doc_id="d", render_action_vector=render,
+        reader=reader, chain_by_decision=chains_ok) is None
+    # set rows are skipped (members pinned finest)
+    set_row = {**candidate, "answer_target": {"kind": "linked_decision_set", "members": []}}
+    assert qa_builder._finer_level_readability(
+        set_row, decisions, [], doc_id="d", render_action_vector=render,
+        reader=reader, chain_by_decision=chains_ok) is None
+
+
+def test_write_finer_level_failures_emits_lattice_worklist(tmp_path):
+    import sys
+    from pathlib import Path as _Path
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[3] / "scripts"))
+    import build_qa_utility_artifact as bqa
+    artifact = {
+        "reader_threshold": 1.0,
+        "documents": {"aci/DX": {
+            "decisions": [{"decision_id": "d-c", "canonical_key": "chf",
+                           "runtime_type": "health-condition"}],
+            "occurrences": [
+                {"occurrence_id": "cond", "decision_id": "d-c", "surface": "chf"},
+                {"occurrence_id": "drug1", "decision_id": "d-1", "surface": "lasix"}],
+        }},
+        "assertions": {
+            "a1": {  # one unreadable finer level -> emitted
+                "subtype": "contextual_relation", "relation": "prescribed_with",
+                "doc_id": "aci/DX",
+                "question": "For what medical condition was the loop diuretic prescribed?",
+                "answer_target": {"kind": "linked_decision", "decision_id": "d-c",
+                                  "required_property": "heart disease"},
+                "evidence": {"reader_turns": [0], "arguments": [
+                    {"role": "subject", "kind": "linked", "occurrence_id": "cond"},
+                    {"role": "object", "kind": "linked", "occurrence_id": "drug1"}],
+                    "validation": {"finer_levels": {
+                        "congestive heart failure": 0.0, "cardiac failure": 1.0}}},
+            },
+            "a2": {  # full band readable -> NOT emitted
+                "subtype": "contextual_relation", "relation": "tests_for", "doc_id": "aci/DX",
+                "question": "q2?", "answer_target": {"kind": "linked_decision",
+                                                     "decision_id": "d-c",
+                                                     "required_property": "heart disease"},
+                "evidence": {"reader_turns": [0], "arguments": [],
+                             "validation": {"finer_levels": {"cardiac failure": 1.0}}},
+            },
+        },
+    }
+    sources = {"aci/DX": "chf on lasix daily."}
+
+    path, count = bqa.write_finer_level_failures(artifact, sources, tmp_path / "probe.json")
+
+    assert count == 1 and path.name == "probe.finer-level-failures.jsonl"
+    [row] = [json.loads(line) for line in path.read_text().splitlines()]
+    assert row["profile"] == {"key": "chf", "runtime_type": "health-condition"}
+    assert row["levels_rejected"] == ["congestive heart failure"]
+    assert row["levels_accepted"] == ["cardiac failure"]
+    assert row["relation"] == {"type": "prescribed_with", "subject": "chf", "object": "lasix",
+                               "supported_level": "heart disease"}
+    assert row["doc_context"] == "chf on lasix daily."
+
+
 def test_reader_outcome_route_signatures():
     def rejection(original, representative, placeholder, teacher_id=None):
         evidence = {"validation": {"scores": {

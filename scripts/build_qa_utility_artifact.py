@@ -272,6 +272,9 @@ def build_from_files(
     deterministic_relation_stage = bool(getattr(args, "relation_deterministic_stage", False))
     if deterministic_relation_stage:
         pins["relation_deterministic_stage"] = True
+    finer_level_check = bool(getattr(args, "reader_finer_level_check", False))
+    if finer_level_check:
+        pins["reader_finer_level_check"] = True
     return build_utility_artifact(
         frozen_environment,
         AciTaskAdapter(references),
@@ -292,6 +295,7 @@ def build_from_files(
         context_prefilter=context_prefilter,
         deterministic_relation_stage=deterministic_relation_stage,
         set_reader=read_context_set_batch if reader is read_context_batch else None,
+        finer_level_check=finer_level_check,
     )
 
 
@@ -379,7 +383,76 @@ def parse_args(argv=None):
             "Facts kept here are excluded from the paid gleaning targets. Opt-in (off by default)."
         ),
     )
+    parser.add_argument(
+        "--reader-finer-level-check",
+        action="store_true",
+        help=(
+            "reward-band certification: for every KEPT relation QA, re-render the representative "
+            "with the answer decision at each level FINER than its supported level and re-read, "
+            "recording per-level readability on the row's validation evidence (never a "
+            "rejection). Adds ~one local reader call per kept row per finer level. Opt-in."
+        ),
+    )
     return parser.parse_args(argv)
+
+
+def write_finer_level_failures(
+    artifact: dict, source_documents: Mapping[str, str], output: Path,
+) -> tuple[Path, int]:
+    """Lattice-producer worklist from the reward-band certification: one JSONL row per kept
+    relation QA with >=1 UNREADABLE finer answer level. Each row names the answer decision's
+    profile, the finer levels that failed/passed the reader, the relation (type, subject,
+    object, supported level), the question, and the doc_orig excerpt the reader actually saw."""
+    from cloak.train.qa_builder import _reader_excerpt
+
+    threshold = float(artifact.get("reader_threshold") or 1.0)
+    rows_out: list[str] = []
+    for row in artifact.get("assertions", {}).values():
+        if row.get("subtype") != "contextual_relation":
+            continue
+        evidence = row.get("evidence") or {}
+        finer_levels = (evidence.get("validation") or {}).get("finer_levels") or {}
+        rejected = sorted(level for level, score in finer_levels.items() if score < threshold)
+        if not rejected:
+            continue
+        accepted = sorted(level for level, score in finer_levels.items() if score >= threshold)
+        doc_id = str(row.get("doc_id"))
+        document = artifact["documents"][doc_id]
+        target = row.get("answer_target") or {}
+        decision = next(
+            (d for d in document.get("decisions", [])
+             if str(d.get("decision_id")) == str(target.get("decision_id"))), {})
+        occurrences = {str(o["occurrence_id"]): o for o in document.get("occurrences", [])}
+
+        def describe(argument):
+            if argument.get("kind") == "context":
+                return str(argument.get("literal") or "")
+            occurrence = occurrences.get(str(argument.get("occurrence_id"))) or {}
+            return str(occurrence.get("surface") or argument.get("surface") or "")
+
+        arguments = list(evidence.get("arguments") or [])
+        subject = next((a for a in arguments if a.get("role") == "subject"), {})
+        objects = [describe(a) for a in arguments if a.get("role") == "object"]
+        rows_out.append(json.dumps({
+            "profile": {
+                "key": str(decision.get("canonical_key") or ""),
+                "runtime_type": str(decision.get("runtime_type") or ""),
+            },
+            "levels_rejected": rejected,
+            "levels_accepted": accepted,
+            "relation": {
+                "type": row.get("relation"),
+                "subject": describe(subject),
+                "object": objects[0] if len(objects) == 1 else objects,
+                "supported_level": str(target.get("required_property") or ""),
+            },
+            "question": row.get("question"),
+            "doc_id": doc_id,
+            "doc_context": _reader_excerpt(source_documents.get(doc_id, ""), evidence),
+        }, sort_keys=True))
+    path = output.with_name(f"{output.stem}.finer-level-failures.jsonl")
+    path.write_text("\n".join(rows_out) + ("\n" if rows_out else ""))
+    return path, len(rows_out)
 
 
 def write_artifacts(artifact: dict, output: Path) -> tuple[Path, Path]:
@@ -425,6 +498,15 @@ def main(
         f"qa_audit={','.join(map(str, qa_audit_paths))}",
         flush=True,
     )
+    if getattr(args, "reader_finer_level_check", False):
+        source_documents = {
+            doc_id: row["text"] for doc_id, row in _source_rows(args.corpus, args.doc_id).items()
+        }
+        failures_path, failure_count = write_finer_level_failures(
+            artifact, source_documents, output,
+        )
+        print(f"finer-level failures (lattice worklist): {failure_count} -> {failures_path}",
+              flush=True)
 
 
 if __name__ == "__main__":

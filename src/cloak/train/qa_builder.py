@@ -7136,6 +7136,7 @@ def build_utility_artifact(
     context_prefilter: "Callable[[str, Mapping], Sequence[Mapping]] | None" = None,
     deterministic_relation_stage: bool = False,
     set_reader: "Callable[[list[str], str], Sequence[str]] | None" = None,
+    finer_level_check: bool = False,
 ) -> dict:
     """Build and validate one artifact through deterministic candidates and optional escalation.
 
@@ -7475,6 +7476,16 @@ def build_utility_artifact(
                     "joint_anchor_hash": anchor["action_vector_hash"],
                     "property_level": requirements,
                 }
+                # Opt-in reward-band certification: per-finer-level readability of the ANSWER
+                # decision, recorded on the kept row (never a rejection; see the helper).
+                if finer_level_check:
+                    finer_scores = _finer_level_readability(
+                        candidate, decisions, protected_terms,
+                        doc_id=doc_id, render_action_vector=render_action_vector,
+                        reader=reader, chain_by_decision=chain_by_decision,
+                    )
+                    if finer_scores is not None:
+                        evidence_row = {**evidence_row, "finer_levels": finer_scores}
                 row["evidence"] = {
                     **dict(row.get("evidence") or {}),
                     "validation": evidence_row,
@@ -8735,6 +8746,79 @@ def _diagnose_coarser_readable(
                     "chain": list(levels),
                 }
     return None
+
+
+def _finer_level_readability(
+    candidate: Mapping,
+    decisions: Sequence[Mapping],
+    protected_terms: Sequence[str],
+    *,
+    doc_id: str,
+    render_action_vector: Callable[[str, Mapping[str, str]], str],
+    reader: Callable[[list[str], str], Sequence[str]],
+    chain_by_decision: Mapping[str, Sequence[Mapping]],
+) -> dict[str, float] | None:
+    """Reward-band certification for a KEPT relation QA (opt-in; see the spec's level-pinning
+    gaps). The three-point gate certifies readability only at the SUPPORTED answer level; at RL
+    time the policy may rank the answer decision FINER, and scoring then relies on the reader
+    echoing the finer rendered text and its chain aliases resolving. This check makes that
+    assumption measured: re-render the representative with the ANSWER decision at each finer
+    level (question unchanged -- the answer level never appears in it) and score the read against
+    the row's frozen required_property, exactly the RL-time semantics. Returns {finer_level:
+    score}; never changes the verdict -- an unreadable finer level is lattice-owned data, not
+    grounds to reject a QA that is valid at its supported level."""
+    target = candidate.get("answer_target") or {}
+    if target.get("kind") != "linked_decision":
+        return None  # set members are pinned at their finest level: the band below is empty
+    decision_id = str(target.get("decision_id"))
+    supported = str(target.get("required_property") or "")
+    decisions_by_id = {str(d["decision_id"]): d for d in decisions}
+    decision = decisions_by_id.get(decision_id)
+    if decision is None or not supported:
+        return None
+    levels = _ordered_decision_levels(decision)  # finest -> coarsest
+    if supported not in levels:
+        return None
+    finer_levels = levels[:levels.index(supported)]
+    if not finer_levels:
+        return None
+    requirements = dict(candidate.get("decision_requirements") or {})
+    scores: dict[str, float] = {}
+    for finer in finer_levels:
+        probe = dict(candidate)
+        probe["decision_requirements"] = {**requirements, decision_id: finer}
+        try:
+            probe_anchor = build_joint_representative_anchor(probe, decisions)
+        except ValueError:
+            scores[str(finer)] = 0.0  # no arm renders this level jointly -> unreadable in deploy
+            continue
+        probe_vector = dict(probe_anchor["action_vector"])
+        for other in decisions:  # mirror the deployed co-referent leak guard
+            other_id = str(other["decision_id"])
+            surface = str(other.get("canonical_key") or "")
+            if surface and any(
+                canon(surface) != canon(term) and _contains(surface, term)
+                for term in protected_terms
+            ):
+                hiding = _hiding_action_id(
+                    other,
+                    excluded_level_fill_keys=_selected_level_fill_keys(
+                        decisions,
+                        probe_vector,
+                        exclude_decision_id=other_id,
+                    ),
+                )
+                if hiding is not None:
+                    probe_vector[other_id] = hiding
+        probe_context = render_action_vector(doc_id, probe_vector)
+        answer = reader(
+            [_permuted_reader_question(candidate, 0)],
+            _reader_excerpt(probe_context, candidate.get("evidence") or {}),
+        )[0]
+        # scored against the ORIGINAL row (frozen required_property): the finer node must
+        # resolve via its aliases and entail the supported level, as it must at RL time
+        scores[str(finer)] = _context_answer_score(candidate, answer, chain_by_decision)
+    return scores
 
 
 def _answer_score(answer: str, accepted_values: Sequence[str]) -> float:
