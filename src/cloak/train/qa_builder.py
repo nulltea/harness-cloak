@@ -4780,6 +4780,11 @@ def _reader_outcome_route(rejection: Mapping, reader_threshold: float = 1.0) -> 
       ladder: reader-verified co-occurrence junk from the recall-oriented miner. Teacher-authored
       rejections are NOT routed here -- their questions carried real judgment, so their existing
       repair paths stand.
+    * "floor_answerable" -- readable EVERYWHERE including the all-placeholder floor (orig, rep,
+      placeholder all at/above threshold): the floor cannot discriminate this fact, and
+      re-authoring the question does not change what the placeholder render reveals -- never a
+      repair/glean target. (Compile-time placeholder-answerable rejections carry no reader
+      scores and keep their fixable path: a mispaired literal IS re-authorable.)
     * None -- no exclusion (no reader scores, or a pattern the repair taxonomy handles).
     """
     if str(rejection.get("detail_reason")) == "finer_level_unreadable":
@@ -4793,6 +4798,8 @@ def _reader_outcome_route(rejection: Mapping, reader_threshold: float = 1.0) -> 
     original = float(scores.get("original", 0.0)) >= reader_threshold
     representative = float(scores.get("representative", 0.0)) >= reader_threshold
     placeholder = float(scores.get("placeholder", 0.0)) >= reader_threshold
+    if original and representative and placeholder:
+        return "floor_answerable"
     if original != representative or (not original and not representative and placeholder):
         return "lattice_suspect"
     if (not original and not representative and not placeholder

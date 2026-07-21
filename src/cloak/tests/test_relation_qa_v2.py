@@ -2639,8 +2639,10 @@ def test_reader_outcome_route_signatures():
     assert route(rejection(0.0, 0.0, 0.0, teacher_id="deterministic")) == "no_relation"
     assert route(rejection(0.0, 0.0, 0.0)) is None
     assert route(rejection(0.0, 0.0, 0.0, teacher_id="gpt_oss")) is None
-    # placeholder-answerable (1,1,1) stays with its fixable-taxonomy repair path
-    assert route(rejection(1.0, 1.0, 1.0)) is None
+    # readable everywhere INCLUDING the placeholder floor (1,1,1): the floor cannot
+    # discriminate the fact and re-authoring cannot change that -- excluded from repair/glean
+    assert route(rejection(1.0, 1.0, 1.0)) == "floor_answerable"
+    assert route(rejection(1.0, 1.0, 1.0, teacher_id="gpt_oss")) == "floor_answerable"
     # no reader scores (compile-time rejection) -> untouched
     assert route({"evidence": {}}) is None
     # hard finer-level-check rejection: lattice-owned, never repair-targeted -- routed on the
