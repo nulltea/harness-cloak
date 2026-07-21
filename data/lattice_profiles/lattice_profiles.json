@@ -20448,7 +20448,8 @@
       },
       "levonorgestrel": {
         "aliases": [
-          "levonorgestrel"
+          "levonorgestrel",
+          "pill"
         ],
         "count": 1,
         "entry_origin": "observed-surface",
@@ -21514,7 +21515,8 @@
       },
       "menthol": {
         "aliases": [
-          "menthol"
+          "menthol",
+          "anti-inflammatory"
         ],
         "count": 1,
         "entry_origin": "observed-surface",
@@ -27946,54 +27948,6 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:abducens nerve palsy"
         ]
       },
-      "abduction": {
-        "aliases": [
-          "joint displacement event",
-          "movement-related trauma",
-          "limb deviation injury"
-        ],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "clinical health state": 250,
-          "musculoskeletal disorder": 200,
-          "traumatic joint injury": 50
-        },
-        "level_grounding": {
-          "clinical health state": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'clinical health state' best-effort real-world magnitude estimate (250); replaces deleted corpus-membership frequency count; not certifying",
-            "member_set_ref": null,
-            "selector": "subclass_of",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "musculoskeletal disorder": {
-            "count_basis": "real-world-reference-estimate",
-            "count_evidence": "'musculoskeletal disorder' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
-            "member_set_ref": null,
-            "selector": "subclass_of",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "traumatic joint injury": {
-            "count_basis": "manual-estimate",
-            "count_evidence": "'traumatic joint injury' best-effort real-world class-size estimate (50); corpus-membership gave batch-frequency 1; not certifying",
-            "member_set_ref": null,
-            "selector": "subclass_of",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "traumatic joint injury",
-          "musculoskeletal disorder",
-          "clinical health state"
-        ],
-        "source_ids": [
-          "producer:drug-health-procedure-nemotron-3-super:health-condition:abduction"
-        ]
-      },
       "abnormal growth": {
         "aliases": [
           "ectopic proliferation",
@@ -32773,55 +32727,6 @@
           "producer:drug-health-procedure-nemotron-3-super:health-condition:blood pressures"
         ]
       },
-      "blood sugar": {
-        "aliases": [
-          "blood glucose",
-          "serum glucose",
-          "plasma glucose",
-          "glycemic level"
-        ],
-        "count": 1,
-        "entry_origin": "observed-surface",
-        "level_counts": {
-          "clinical health state": 238,
-          "glucose metabolism disorder": 58,
-          "metabolic disorder": 2000
-        },
-        "level_grounding": {
-          "clinical health state": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'clinical health state' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "existing profile",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "glucose metabolism disorder": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'glucose metabolism disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "expert estimate",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
-          "metabolic disorder": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'metabolic disorder' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "expert estimate",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          }
-        },
-        "levels": [
-          "glucose metabolism disorder",
-          "clinical health state",
-          "metabolic disorder"
-        ],
-        "source_ids": [
-          "producer:levelfix-all:levelfix:health-condition:blood sugar"
-        ]
-      },
       "bloom syndrome": {
         "aliases": [
           "bloom-torre-machacek syndrome",
@@ -36939,7 +36844,7 @@
         "count": 1,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "clinical health state": 238,
+          "clinical health state": 5000,
           "medical condition": 75000,
           "metabolic disorder": 2000
         },
@@ -36970,8 +36875,8 @@
           }
         },
         "levels": [
-          "clinical health state",
           "metabolic disorder",
+          "clinical health state",
           "medical condition"
         ],
         "source_ids": [
@@ -41272,6 +41177,66 @@
         ],
         "source_ids": [
           "producer:drug-health-procedure-nemotron-3-super:health-condition:hidradenoma"
+        ]
+      },
+      "high blood sugar": {
+        "aliases": [
+          "elevated glucose in blood",
+          "elevated glucose in plasma",
+          "high glycemic level",
+          "hyperglycemia"
+        ],
+        "count": 1,
+        "entity_type_flag": "CORRECTED: original ladder's first rung ('glucose metabolism disorder') mislabeled this as a diagnosed disorder. High blood sugar / hyperglycemia is a lab/clinical finding (ICD-10 R73, Elevated blood glucose level), distinct from diabetes mellitus (E08-E13) \u2014 same sign-vs-disease category error previously flagged on 'polyuria.' A person can have transient, stress-induced, or prediabetic hyperglycemia without a diagnosed metabolic disorder, so routing this entity directly into 'disorder' overstates the claim.",
+        "entry_origin": "observed-surface",
+        "level_counts": {
+          "clinical finding": 60000,
+          "elevated glucose finding": 8,
+          "medical condition": 75000,
+          "metabolic/endocrine clinical finding": 200
+        },
+        "level_grounding": {
+          "clinical finding": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'clinical finding' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying. Held at 60000 to match the value used in the 'polyuria' entry from the same anchor cluster.",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "elevated glucose finding": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'elevated glucose finding' set from ICD-10 R73 (Elevated blood glucose level: R73.0 abnormal glucose tolerance test, R73.01 impaired fasting glucose, R73.02 impaired glucose tolerance, R73.03 prediabetes, R73.09 other abnormal glucose, R73.9 hyperglycemia unspecified), on the order of 6-8 distinct coded entities. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 R73",
+            "selector": "Belongs to the elevated blood glucose finding category (ICD-10 R73) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "medical condition": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'medical condition' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying. Held at 75000, matching the anchor cluster used by nausea or vomiting, crestor, dentures, and polyuria \u2014 flagged corpus-wide as still unreconciled against the separate 500000 cluster.",
+            "member_set_ref": null,
+            "selector": "canonical_vocabulary_slice",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          },
+          "metabolic/endocrine clinical finding": {
+            "count_basis": "real-world-reference-estimate",
+            "count_evidence": "'metabolic/endocrine clinical finding' set from ICD-10 R70-R79 (other abnormal blood chemistry findings: glucose, lipids, electrolytes, blood proteins, enzymes) plus E70-E90 metabolic-finding-adjacent codes not yet rising to a diagnosed disorder, on the order of 150-250 distinct coded entities. Not derived from this run's per-entry counts; still not certifying.",
+            "member_set_ref": "ICD-10 R70-R79",
+            "selector": "Belongs to the metabolic/endocrine abnormal-finding category (ICD-10 R70-R79) in the canonical vocabulary.",
+            "source_family": "model-proposed",
+            "status": "model-proposed"
+          }
+        },
+        "levels": [
+          "elevated glucose finding",
+          "metabolic/endocrine clinical finding",
+          "clinical finding",
+          "medical condition"
+        ],
+        "source_ids": [
+          "producer:levelfix-all:levelfix:health-condition:blood sugar"
         ]
       },
       "high cholesterol": {
@@ -50408,20 +50373,11 @@
         "count": 1,
         "entry_origin": "observed-surface",
         "level_counts": {
-          "clinical health state": 238,
           "disease": 15000,
           "medical condition": 75000,
           "substance use disorder": 100
         },
         "level_grounding": {
-          "clinical health state": {
-            "count_basis": "model-proposed-corpus-median",
-            "count_evidence": "'clinical health state' count is the corpus median of gate-checked model-proposed anonymity-set counts for this label, adjusted for monotonicity by isotonic pooling where chain order disagreed; not certifying",
-            "member_set_ref": null,
-            "selector": "canonical",
-            "source_family": "model-proposed",
-            "status": "model-proposed"
-          },
           "disease": {
             "count_basis": "real-world-reference-estimate",
             "count_evidence": "'disease' set from a best-effort real-world magnitude estimate (see data/lattice_sources/reference/), not derived from this run's per-entry counts; still not certifying",
@@ -50449,7 +50405,6 @@
         },
         "levels": [
           "substance use disorder",
-          "clinical health state",
           "disease",
           "medical condition"
         ],
