@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-22
+updated: 2026-07-23
 tags: [rl, ranker, diagnostics, gates, thresholds, preregistration, calibration, spec]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-decision-log.md,
@@ -282,6 +282,46 @@ failure action: reject profile, reject checkpoint, or report unsupported
 definition. Margins express the smallest operationally meaningful regression, not the observed
 effect and not a per-model calibration knob.
 
+### Architecture-fitness spike
+
+The semantic architecture spike emits these measurement families under one matched profile split,
+utility-case manifest, three-seed tuple, trainable diagnostic-head budget, projection width, shared
+diagnostic-head identity, encoder revision, and cache manifest:
+
+- relation representation: candidate-only, independent shared-model bi-encoder, and ordered joint
+  pair;
+- semantic privacy transfer: held-out count-distribution, ordering, rank, and calibration metrics;
+- context readout: local CLS/mean, bidirectional target pooling, and full-document
+  candidate-conditioned attention;
+- action history: none, corrected utility-only GRU, and selected-action cross-attention;
+- metadata shortcut: metadata-only, legacy FiLM/GRU, and semantic actors;
+- lambda controller: lambda-zero identity, monotonicity, and selected exact-versus-predicted privacy;
+- decision order: first occurrence, reverse, and three seeded legal walks;
+- operational cost: cache bytes/build time, peak memory, and incremental latency;
+- contamination boundary: ACI-only context is labeled
+  `development_only_encoder_contaminated`.
+
+Every representation, context, and history arm uses the same projection width and downstream
+diagnostic head. Trainable parameter counts are reported by module; unused parameter padding is
+forbidden. Required interventions cover context and candidate swaps, source/candidate reversal,
+relevant and irrelevant prior-action changes, memory-row permutation, target-marker and
+full-document ablations, non-middle utility cases, and count-metadata mutation after privacy
+inference.
+
+Relative promotion uses a paired 95% bootstrap confidence interval over the three frozen seeds.
+The selected arm must beat both primary baselines on its load-bearing held-out outcome metric,
+must not regress local-only utility, and must pass shortcut, selectivity, invariance, decision-order,
+and operational-budget checks. Selected-action memory is retained only when it beats no history on
+multi-decision utility; otherwise the selected history arm is `none`. The GRU is never promoted as
+an automatic fallback.
+
+Absolute operational and invariance boundaries are valid only after registration in the threshold
+manifest. When all relative checks pass but any required absolute boundary is absent, the report
+must emit `promotion_verdict: NEEDS_THRESHOLD_REGISTRATION`; it must not infer a passing boundary
+from the observed arm results. An ACI-only report cannot emit `PROMOTE` for encoder selection or
+out-of-corpus context generalization even when every threshold is registered. A separately frozen
+non-ACI clinical manifest is required to lift that boundary.
+
 ## Threshold manifest
 
 The pre-training run writes a content-addressed manifest with at least:
@@ -325,6 +365,25 @@ acceptance:
   utility_metrics:
   utility_noninferiority_margin:
   minimum_supported_documents:
+
+architecture_spike:
+  report_hash:
+  profile_split_hash:
+  utility_cases_hash:
+  seeds: [seed_1, seed_2, seed_3]
+  trainable_head_budget:
+  projection_width:
+  diagnostic_head_hash:
+  encoder_revision:
+  cache_manifest_hash:
+  bootstrap_confidence_level: 0.95
+  max_incremental_latency_ms:
+  max_peak_memory_bytes:
+  max_cache_bytes:
+  max_cache_build_seconds:
+  max_order_utility_range:
+  non_aci_manifest_hash:
+  promotion_verdict: PROMOTE | REJECT | NEEDS_THRESHOLD_REGISTRATION | NEEDS_NON_ACI_VALIDATION | DEVELOPMENT_ONLY_ENCODER_CONTAMINATED
 ```
 
 Empty fields are invalid for a run that depends on the corresponding decision. A manifest may
