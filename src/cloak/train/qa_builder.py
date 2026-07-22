@@ -7207,6 +7207,216 @@ def freeze_v2_environment_from_legacy_arms(
     return frozen
 
 
+_COUNT_GROUNDING_STATUSES = frozenset({
+    "certifying", "model-proposed", "proposal-universe",
+})
+
+
+def _admissible_level_count(row: Mapping, level: str) -> tuple[float | None, dict | None]:
+    """Return one row-local admitted count, or an explicit provisional null pair.
+
+    This deliberately does not call ``lookup_count``: that index merges equal level strings
+    across profiles and therefore cannot establish the meaning of this decision's action.
+    """
+    raw_count = (row.get("level_counts") or {}).get(level)
+    grounding = (row.get("level_grounding") or {}).get(level)
+    if (
+        isinstance(raw_count, bool)
+        or not isinstance(raw_count, Real)
+        or not isfinite(float(raw_count))
+        or float(raw_count) < 1.0
+        or not isinstance(grounding, Mapping)
+    ):
+        return None, None
+    status = grounding.get("status")
+    if status not in _COUNT_GROUNDING_STATUSES or not grounding.get("source_family"):
+        return None, None
+    if status == "certifying" and not grounding.get("member_set_ref"):
+        return None, None
+    if status == "model-proposed" and not (
+        grounding.get("selector") and grounding.get("count_evidence")
+    ):
+        return None, None
+    if status == "proposal-universe" and not (
+        grounding.get("member_set_ref") or grounding.get("generated_universe_ref")
+    ):
+        return None, None
+    return float(raw_count), deepcopy(dict(grounding))
+
+
+def _matched_profile_entry(
+    decision: Mapping,
+    occurrences_by_id: Mapping[str, Mapping],
+    profile_artifact: Mapping,
+) -> tuple[str | None, Mapping | None]:
+    """Resolve only the profile identity frozen by the detector-era match.
+
+    Missing, conflicting, or now-absent entries are provisional. Re-running a semantic matcher
+    here would change the frozen detection contract and is intentionally forbidden.
+    """
+    entries = {
+        str(profile_match["entry"])
+        for occurrence_id in decision.get("occurrence_ids", [])
+        if isinstance((occurrence := occurrences_by_id.get(str(occurrence_id))), Mapping)
+        and isinstance((profile_match := occurrence.get("profile_match")), Mapping)
+        and profile_match.get("entry")
+    }
+    if len(entries) != 1:
+        return None, None
+    entry = next(iter(entries))
+    runtime_type = str(decision.get("runtime_type", ""))
+    row = (profile_artifact.get("profiles") or {}).get(runtime_type, {}).get(entry)
+    if not isinstance(row, Mapping):
+        return None, None
+    return f"{runtime_type}:{entry}", row
+
+
+def migrate_frozen_environment_count_provenance(
+    frozen_environment: Mapping,
+    profile_artifact: Mapping,
+) -> dict:
+    """Enrich frozen action menus with profile-row counts without re-running detection.
+
+    Occurrences and all non-menu decision fields are copied verbatim. Existing action IDs remain
+    stable because their mode/fill/legal semantics and legacy ``aset`` fields are unchanged;
+    count provenance is reward metadata covered by the menu/document/environment hashes.
+    """
+    migrated_documents: dict[str, dict] = {}
+    for doc_id, source_document in frozen_environment.get("documents", {}).items():
+        document = deepcopy(dict(source_document))
+        occurrences_by_id = {
+            str(row["occurrence_id"]): row for row in source_document.get("occurrences", [])
+        }
+        migrated_decisions = []
+        for source_decision in source_document.get("decisions", []):
+            decision = deepcopy(dict(source_decision))
+            if decision.get("ranker_selectable", True):
+                profile_id, profile_row = _matched_profile_entry(
+                    source_decision, occurrences_by_id, profile_artifact,
+                )
+                decision["profile_id"] = profile_id
+                authored_levels = list(profile_row.get("levels", [])) if profile_row else []
+                frozen_levels = [
+                    str(action.get("fill", ""))
+                    for action in source_decision.get("actions", [])
+                    if action.get("mode") == "level"
+                ]
+                merged_authored_levels = [
+                    level for level in authored_levels if level in frozen_levels
+                ]
+                for frozen_index, level in enumerate(frozen_levels):
+                    if level in merged_authored_levels:
+                        continue
+                    next_present = next((
+                        candidate for candidate in frozen_levels[frozen_index + 1:]
+                        if candidate in merged_authored_levels
+                    ), None)
+                    if next_present is None:
+                        merged_authored_levels.append(level)
+                    else:
+                        merged_authored_levels.insert(
+                            merged_authored_levels.index(next_present), level,
+                        )
+                migrated_actions = []
+                for source_action in source_decision.get("actions", []):
+                    action = deepcopy(dict(source_action))
+                    mode = action.get("mode")
+                    if mode == "level":
+                        level = str(action.get("fill", ""))
+                        # When the frozen rung no longer exists in the current row, retain its
+                        # frozen authored position but make its evidence explicitly provisional.
+                        action["authored_level_index"] = merged_authored_levels.index(level)
+                        count, grounding = (
+                            _admissible_level_count(profile_row, level)
+                            if profile_row is not None and level in authored_levels
+                            else (None, None)
+                        )
+                        action["count"] = count
+                        action["count_grounding"] = grounding
+                    else:
+                        for field in ("authored_level_index", "count", "count_grounding"):
+                            action.pop(field, None)
+                    migrated_actions.append(action)
+                decision["actions"] = migrated_actions
+                decision["action_menu_hash"] = _stable_hash(migrated_actions)
+            migrated_decisions.append(decision)
+        document["decisions"] = migrated_decisions
+        document.pop("environment_document_hash", None)
+        document["environment_document_hash"] = _stable_hash(document)
+        migrated_documents[str(doc_id)] = document
+    migrated = {
+        "artifact_version": "occurrence-decisions-v2",
+        "documents": migrated_documents,
+    }
+    migrated["environment_hash"] = _stable_hash(migrated)
+    return migrated
+
+
+def compare_frozen_environment_semantics(reference: Mapping, candidate: Mapping) -> dict:
+    """Compare frozen identity and action semantics, excluding count-only metadata."""
+    differences: list[str] = []
+    reference_documents = reference.get("documents", {})
+    candidate_documents = candidate.get("documents", {})
+    if list(reference_documents) != list(candidate_documents):
+        differences.append(
+            "document_ids: "
+            f"reference={list(reference_documents)!r} candidate={list(candidate_documents)!r}"
+        )
+    for doc_id in reference_documents:
+        if doc_id not in candidate_documents:
+            continue
+        left_document = reference_documents[doc_id]
+        right_document = candidate_documents[doc_id]
+        left_occurrences = [row.get("occurrence_id") for row in left_document.get("occurrences", [])]
+        right_occurrences = [row.get("occurrence_id") for row in right_document.get("occurrences", [])]
+        if left_occurrences != right_occurrences:
+            differences.append(
+                f"{doc_id}:occurrence_ids: reference={left_occurrences!r} "
+                f"candidate={right_occurrences!r}"
+            )
+        left_decisions = left_document.get("decisions", [])
+        right_decisions = right_document.get("decisions", [])
+        left_ids = [row.get("decision_id") for row in left_decisions]
+        right_ids = [row.get("decision_id") for row in right_decisions]
+        if left_ids != right_ids:
+            differences.append(
+                f"{doc_id}:decision_ids: reference={left_ids!r} candidate={right_ids!r}"
+            )
+        right_by_id = {row.get("decision_id"): row for row in right_decisions}
+        for left in left_decisions:
+            decision_id = left.get("decision_id")
+            right = right_by_id.get(decision_id)
+            if right is None:
+                continue
+            for field in ("action_id", "fill", "mode"):
+                left_values = [action.get(field) for action in left.get("actions", [])]
+                right_values = [action.get(field) for action in right.get("actions", [])]
+                if left_values != right_values:
+                    differences.append(
+                        f"{doc_id}:{decision_id}:{field}s: reference={left_values!r} "
+                        f"candidate={right_values!r}"
+                    )
+            left_order = [
+                action.get("fill") for action in left.get("actions", [])
+                if action.get("mode") == "level"
+            ]
+            right_order = [
+                action.get("fill") for action in right.get("actions", [])
+                if action.get("mode") == "level"
+            ]
+            if left_order != right_order:
+                differences.append(
+                    f"{doc_id}:{decision_id}:authored_order: reference={left_order!r} "
+                    f"candidate={right_order!r}"
+                )
+    return {
+        "verdict": "semantic change" if differences else "count-only compatible",
+        "differences": differences,
+        "reference_document_count": len(reference_documents),
+        "candidate_document_count": len(candidate_documents),
+    }
+
+
 def render_frozen_action_vector(
     source: str,
     frozen_document: Mapping,

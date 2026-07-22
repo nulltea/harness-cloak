@@ -15,6 +15,7 @@ Output: data/ranker_env.json
 Run: PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_ranker_env.py
 """
 import argparse
+import hashlib
 import json
 import random
 import time
@@ -43,8 +44,8 @@ def inert_runtime_floors() -> dict[str, float]:
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n-docs", type=int, default=16,
-                    help="docs loaded per corpus (must match the arms artifact's coverage)")
+    ap.add_argument("--n-docs", type=int,
+                    help="embedded documents to emit in total; legacy mode defaults to 16")
     ap.add_argument("--corpora", default=",".join(CORPORA),
                     help="comma-separated registered corpus names (e.g. include lexsum)")
     ap.add_argument("--arms", default=str(ARTIFACT),
@@ -64,24 +65,34 @@ def main():
     art = raw_art
     if not args.legacy_v1:
         requested = args.corpora.split(",")
-        embedded_documents = {
-            doc_id: entry["v2_frozen_input"]
-            for corpus in requested for doc_id, entry in art.get(corpus, {}).items()
-            if isinstance(entry, dict) and isinstance(entry.get("v2_frozen_input"), dict)
-        }
+        embedded_documents = {}
+        for corpus in requested:
+            for doc_id, entry in art.get(corpus, {}).items():
+                if args.n_docs is not None and len(embedded_documents) >= args.n_docs:
+                    break
+                if isinstance(entry, dict) and isinstance(entry.get("v2_frozen_input"), dict):
+                    embedded_documents[doc_id] = entry["v2_frozen_input"]
+            if args.n_docs is not None and len(embedded_documents) >= args.n_docs:
+                break
         if embedded_documents:
+            frozen_version = (
+                (arms_meta.get("v2_frozen_environment") or {}).get("artifact_version")
+                or "occurrence-decisions-v1"
+            )
             frozen = {
-                "artifact_version": "occurrence-decisions-v1",
+                "artifact_version": frozen_version,
                 "documents": embedded_documents,
-                "environment_hash": (
-                    (arms_meta.get("v2_frozen_environment") or {}).get("environment_hash")
-                ),
             }
+            payload = json.dumps(
+                frozen, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
+            ).encode("utf-8")
+            frozen["environment_hash"] = "sha256:" + hashlib.sha256(payload).hexdigest()
         else:
             source_documents = {}
             for corpus in requested:
                 source_documents.update({
-                    row["id"]: row["text"] for row in load_task_docs(corpus, args.n_docs)
+                    row["id"]: row["text"]
+                    for row in load_task_docs(corpus, args.n_docs or 16)
                 })
             frozen = freeze_v2_environment_from_legacy_arms(
                 legacy_arms_ranker_environment(art), art,
@@ -100,8 +111,16 @@ def main():
         # Recompute via the compatibility freezer after limiting corpora only when
         # building all requested docs; per-doc hashes remain canonical either way.
         env = {
-            "artifact_version": "ranker-v2-environment-v1",
-            "compatibility_adapter": "legacy-arms-policy-free-v1",
+            "artifact_version": (
+                "ranker-v2-environment-v2"
+                if frozen["artifact_version"] == "occurrence-decisions-v2"
+                else "ranker-v2-environment-v1"
+            ),
+            "compatibility_adapter": (
+                "frozen-arms-count-provenance-v1"
+                if frozen["artifact_version"] == "occurrence-decisions-v2"
+                else "legacy-arms-policy-free-v1"
+            ),
             "frozen_environment": frozen,
             "corpora": {
                 corpus: {
@@ -140,7 +159,7 @@ def main():
                             "p6": "all-MiniLM-L6-v2 cos(fill, original)"},
            "corpora": {}}
     for corpus in args.corpora.split(","):
-        docs = {d["id"]: d for d in load_task_docs(corpus, args.n_docs)}
+        docs = {d["id"]: d for d in load_task_docs(corpus, args.n_docs or 16)}
         if args.skip_probes:
             probes = {}
         else:

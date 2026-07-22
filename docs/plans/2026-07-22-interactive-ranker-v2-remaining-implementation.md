@@ -81,8 +81,20 @@ artifacts, pytest.
   provisional loss at the same `1/G` weight.
 - Count reward is experimental shaping, not measured privacy. Final comparisons use attacker
   outcomes at matched realized privacy and identical settings.
-- The complete-count gate is fail-closed: 100% explicit admitted level counts, zero fallback
-  gradient, zero nonmonotone profiles, and zero missing policy occurrence mappings.
+- **Data-defect handling (Timo, 2026-07-22):** some level of bad lattice-profile and QA-build
+  data is acceptable while the direction is being validated. Subagents FILE every discovered
+  data issue to `docs/issues/YYYY-MM-DD-<slug>.md` (evidence, affected decisions/profiles,
+  proposed fix) and continue — data quality never blocks RL implementation or smoke training.
+  Canonical profile edits still require Timo's explicit confirmation; the default action is
+  file-and-continue, not fix.
+- The complete-count gate is fail-closed for validated-result runs: 100% explicit admitted level
+  counts, zero fallback gradient, zero nonmonotone profiles, zero missing policy occurrence
+  mappings. For direction-validation (smoke/initial) runs a **provisional count state** is
+  permitted: a decision whose matched profile entry lacks valid own-`level_counts` or grounding
+  is tagged (reusing the `flat_count_signal` semantics — its non-placeholder levels score 0,
+  placeholder 1), fully reported in the gate report, and filed as an issue. Never silently
+  repaired, dropped, sorted, or defaulted; the provisional tag list rides the count-state
+  artifact so no validated claim can be made from a provisional run.
 - Run the smallest representative real-data vertical slice before full training. Passing unit tests
   or synthetic fixtures alone is not completion.
 
@@ -299,6 +311,26 @@ Do not begin a later boundary while a hard gate in an earlier boundary fails.
 **Produces:** `results/ranker_v2/environment/ranker-env.json` with
 `artifact_version=ranker-v2-environment-v2`, stable policy decisions, authored action order, and
 explicit count provenance.
+
+**Count-sourcing directive (Timo, 2026-07-22 — supersedes any conflicting step wording):** the
+reward-facing action count is the matched profile entry's OWN `level_counts[level]`, with
+provenance from its `level_grounding[level]` record — NEVER `aset`/`aset_count`.
+`aset_count`/`lookup_count` aggregates one level string across ALL profiles by max, which is
+exactly what produced the nonmonotone menus (global `heart disease: 400` > `thoracic disease:
+390`); the profile loader already validates each profile's own ladder monotone in its own
+`level_counts`, so per-profile sourcing makes menu monotonicity hold by construction. `aset`
+keeps its existing non-reward jobs unchanged (ranker policy feature, BC target selection,
+hiding/representative-anchor selection). Profile repairs are then only for entries whose own
+`level_counts`/`level_grounding` are missing or internally inconsistent for levels reachable by
+policy decisions; cross-profile count inconsistency is not a defect under per-profile sourcing
+(K_ref's profile-balanced percentile handles cross-profile normalization).
+
+**Priority demotion (Timo, 2026-07-22):** repair work in this task is subordinate to delivering
+the RL loop. Steps 3–6 shrink to: run the diagnostics, file the found defects to `docs/issues/`,
+and tag unresolved entries provisional per the Global Constraints. Promote a repaired profile
+artifact only if repairs turn out to be trivial and Timo confirms; otherwise proceed to Steps
+7–12 (per-profile count sourcing + frozen-arms migration) with provisional tags and keep moving
+toward smoke training.
 
 - [ ] **Step 1: Add failing environment-contract fixtures**
 
@@ -577,8 +609,12 @@ explicit count provenance.
   ```
 
   The gate reports every level's value, grounding status, source family, evidence reference, and
-  clause result. It raises before state publication unless explicit coverage is 1.0, fallback
-  gradient mass is 0.0, missing policy mappings are 0, and nonmonotone profiles are 0.
+  clause result. In strict mode (validated runs) it raises before state publication unless
+  explicit coverage is 1.0, fallback gradient mass is 0.0, missing policy mappings are 0, and
+  nonmonotone profiles are 0. In provisional mode (direction-validation runs, per Global
+  Constraints) gap decisions are tagged `flat_count_signal`-style instead of raising, the tag
+  list is embedded in the published state artifact, and each gap is filed to `docs/issues/`;
+  nonmonotone OWN-profile ladders and missing occurrence mappings still raise in both modes.
   The admitted status set for this experiment is exactly `certifying`, `model-proposed`, and
   `proposal-universe`. Model-proposed counts remain an experimental shaping signal and are reported
   separately; legacy defaults, inferred row fallbacks, and sentinel values are rejected.

@@ -1,5 +1,7 @@
 import importlib
+import json
 import sys
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -329,3 +331,164 @@ def test_action_table_accepts_set_for_qa_v2_lattice_roles(monkeypatch):
     )
 
     assert list(table) == ["arthritis"]
+
+
+def _frozen_arms_fixture() -> tuple[dict, dict]:
+    occurrence = {
+        "occurrence_id": "sha256:occurrence",
+        "start": 0,
+        "end": 7,
+        "surface": "aspirin",
+        "aliases": [],
+        "runtime_type": "drug",
+        "polarity": "unknown",
+        "detector_provenance": {"source": "frozen-fixture", "score": 0.9},
+        "overlap_disposition": "accepted",
+        "decision_id": "sha256:decision",
+        "controlled": True,
+        "profile_match": {"outcome": "exact", "entry": "aspirin"},
+    }
+    decision = {
+        "decision_id": "sha256:decision",
+        "runtime_type": "drug",
+        "canonical_key": "aspirin",
+        "occurrence_ids": ["sha256:occurrence"],
+        "controlled": True,
+        "ranker_selectable": True,
+        "actions": [
+            {"action_id": "sha256:level", "mode": "level", "fill": "analgesic",
+             "legal": True, "aset": 99.0, "coarseness_rank": 99.0,
+             "entails": ["analgesic"]},
+            {"action_id": "sha256:keep", "mode": "keep", "fill": "aspirin",
+             "keep": True, "source_identity": True, "legal": True,
+             "entails": ["aspirin"]},
+            {"action_id": "sha256:placeholder", "mode": "placeholder", "fill": None,
+             "legal": True, "placeholder_type": "drug", "entails": []},
+        ],
+        "action_menu_hash": "sha256:old-menu",
+        "protected_aliases": [],
+        "semantic_chain": [],
+    }
+    document = {
+        "corpus": "aci",
+        "occurrences": [occurrence],
+        "decisions": [decision],
+        "environment_document_hash": "sha256:old-document",
+        "detector_diagnostics": {"accepted": [{"surface": "aspirin"}]},
+    }
+    arms = {
+        "_meta": {"detector": {"model": "frozen-fixture"}},
+        "aci": {
+            "aci/D1": {"v2_frozen_input": document},
+            "aci/D2": {"v2_frozen_input": deepcopy(document)},
+        },
+    }
+    profiles = {
+        "schema_version": 1,
+        "profiles": {"drug": {"aspirin": {
+            "levels": ["analgesic"],
+            "level_counts": {"analgesic": 17.0},
+            "level_grounding": {"analgesic": {
+                "status": "certifying",
+                "source_family": "fixture-universe",
+                "member_set_ref": "fixture:analgesics",
+                "selector": "fixture.parent",
+            }},
+        }}},
+    }
+    return arms, profiles
+
+
+def test_from_arms_migration_reuses_frozen_detection_and_limits_documents():
+    mod = _module()
+    arms, profiles = _frozen_arms_fixture()
+    arms_before = deepcopy(arms)
+    profiles_before = deepcopy(profiles)
+
+    migrated = mod.migrate_arms_artifact(arms, profiles, n_docs=1)
+
+    assert list(migrated["aci"]) == ["aci/D1"]
+    source = arms_before["aci"]["aci/D1"]["v2_frozen_input"]
+    candidate = migrated["aci"]["aci/D1"]["v2_frozen_input"]
+    assert candidate["occurrences"] == source["occurrences"]
+    source_decision = source["decisions"][0]
+    candidate_decision = candidate["decisions"][0]
+    assert {
+        key: value for key, value in candidate_decision.items()
+        if key not in {"actions", "action_menu_hash", "profile_id"}
+    } == {
+        key: value for key, value in source_decision.items()
+        if key not in {"actions", "action_menu_hash", "profile_id"}
+    }
+    assert candidate_decision["actions"][0]["count"] == 17.0
+    assert candidate_decision["actions"][0]["aset"] == 99.0
+    assert migrated["_meta"]["count_migration_audit"]["documents"] == 1
+    assert migrated["_meta"]["count_migration_audit"]["missing_policy_mappings"] == 0
+    assert migrated["_meta"]["count_migration_audit"]["nonmonotone_non_null"] == 0
+    assert arms == arms_before
+    assert profiles == profiles_before
+
+
+def test_from_arms_cli_never_loads_detector_or_source_corpora(tmp_path, monkeypatch):
+    mod = _module()
+    arms, profiles = _frozen_arms_fixture()
+    arms_path = tmp_path / "source-arms.json"
+    profiles_path = tmp_path / "profiles.json"
+    out_path = tmp_path / "migrated-arms.json"
+    arms_path.write_text(json.dumps(arms))
+    profiles_path.write_text(json.dumps(profiles))
+    monkeypatch.setattr(mod, "Detector", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("migration must not initialize a detector")
+    ))
+    monkeypatch.setattr(mod, "load_task_docs", lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("migration must not reload source corpora")
+    ))
+    monkeypatch.setattr(sys, "argv", [
+        "build_arms_artifact.py",
+        "--from-arms", str(arms_path),
+        "--profiles", str(profiles_path),
+        "--n-docs", "1",
+        "--out", str(out_path),
+    ])
+
+    mod.main()
+
+    output = json.loads(out_path.read_text())
+    assert list(output["aci"]) == ["aci/D1"]
+    assert json.loads(profiles_path.read_text()) == profiles
+
+
+def test_from_arms_cli_routes_detected_profile_mutation_to_hard_error_queue(
+    tmp_path, monkeypatch,
+):
+    mod = _module()
+    arms, profiles = _frozen_arms_fixture()
+    arms_path = tmp_path / "source-arms.json"
+    profiles_path = tmp_path / "profiles.json"
+    out_path = tmp_path / "migrated-arms.json"
+    queue_path = tmp_path / "mutation-queue.jsonl"
+    arms_path.write_text(json.dumps(arms))
+    profiles_path.write_text(json.dumps(profiles))
+    real_migration = mod.migrate_arms_artifact
+
+    def mutate_then_migrate(source, profile_artifact, *, n_docs=None):
+        migrated = real_migration(source, profile_artifact, n_docs=n_docs)
+        profiles_path.write_text("{}")
+        return migrated
+
+    monkeypatch.setattr(mod, "migrate_arms_artifact", mutate_then_migrate)
+    monkeypatch.setattr(sys, "argv", [
+        "build_arms_artifact.py",
+        "--from-arms", str(arms_path),
+        "--profiles", str(profiles_path),
+        "--profile-mutation-queue", str(queue_path),
+        "--out", str(out_path),
+    ])
+
+    with pytest.raises(RuntimeError, match="profile artifact changed during migration"):
+        mod.main()
+
+    queued = json.loads(queue_path.read_text())
+    assert queued["kind"] == "canonical-profile-mutation"
+    assert queued["status"] == "hard-error"
+    assert not out_path.exists()

@@ -9,16 +9,18 @@ diagnostics, training env) load the artifact instead of re-detecting.
 Run: PYTHONPATH=src:scripts .venv/bin/python -u scripts/build_arms_artifact.py
 """
 import argparse
+import hashlib
 import json
 import sys
 import time
+from copy import deepcopy
 from pathlib import Path
 
 import cloak.span_gate as span_gate
 from cloak.anonymity import aset_count
 from cloak.corpora import load_task_docs
 from cloak.detect import Detector, FINE_LABELS, GLINER_LABELS, QA_V2_CLINICAL_LABELS
-from cloak.lattice_profiles import resolve_missing_drug_aliases
+from cloak.lattice_profiles import DEFAULT_PROFILE_PATH, resolve_missing_drug_aliases
 from cloak.probe import fill_proximity, walk_risk
 from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE
 from cloak.substitute import freeze_policy_free_candidates, prepare_spans_for_substitution
@@ -26,6 +28,7 @@ from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
 from cloak.train.qa_builder import (
     freeze_v2_environment_from_legacy_arms,
     legacy_arms_ranker_environment,
+    migrate_frozen_environment_count_provenance,
 )
 
 sys.path.append(str(Path(__file__).resolve().parent / "spikes"))
@@ -180,13 +183,19 @@ def v2_action_table(
 
 def parse_args(argv=None):
     ap = argparse.ArgumentParser()
-    ap.add_argument("--n-docs", type=int, default=LIMIT,
-                    help="docs detected per corpus (pilot scale > 16 needs more docs)")
+    ap.add_argument("--n-docs", type=int,
+                    help="documents to migrate in total; detection mode defaults to 16 per corpus")
     ap.add_argument("--corpora", default=",".join(CORPORA),
                     help="comma-separated registered corpus names")
     ap.add_argument("--out", default=str(ARTIFACT),
                     help="output artifact path (default: the frozen historical artifact — "
                          "override for a pilot artifact; NEVER overwrite the frozen one)")
+    ap.add_argument("--from-arms",
+                    help="migrate embedded v2_frozen_input without detection or corpus reload")
+    ap.add_argument("--profiles", default=str(DEFAULT_PROFILE_PATH),
+                    help="read-only profile artifact used for row-local count provenance")
+    ap.add_argument("--profile-mutation-queue",
+                    help="hard-error queue for a detected mutation of --profiles")
     ap.add_argument("--detector-model",
                     help="GLiNER checkpoint/path for detection; omit for Detector's default")
     ap.add_argument("--threshold", type=float,
@@ -224,6 +233,115 @@ def parse_args(argv=None):
                 + ", ".join(nonclinical)
             )
     return args
+
+
+def migrate_arms_artifact(
+    source_artifact: dict,
+    profile_artifact: dict,
+    *,
+    n_docs: int | None = None,
+) -> dict:
+    """Migrate embedded frozen documents while preserving detector-era records verbatim."""
+    selected: list[tuple[str, str, dict]] = []
+    for corpus, documents in source_artifact.items():
+        if corpus == "_meta" or not isinstance(documents, dict):
+            continue
+        for doc_id, entry in documents.items():
+            if n_docs is not None and len(selected) >= n_docs:
+                break
+            if not isinstance(entry, dict) or not isinstance(entry.get("v2_frozen_input"), dict):
+                raise ValueError(f"{corpus}:{doc_id} lacks embedded v2_frozen_input")
+            selected.append((corpus, doc_id, entry))
+        if n_docs is not None and len(selected) >= n_docs:
+            break
+    if not selected:
+        raise ValueError("--from-arms selected no embedded frozen documents")
+    frozen = {
+        "artifact_version": "occurrence-decisions-v1",
+        "documents": {
+            doc_id: deepcopy(entry["v2_frozen_input"])
+            for _corpus, doc_id, entry in selected
+        },
+    }
+    migrated_frozen = migrate_frozen_environment_count_provenance(
+        frozen, profile_artifact,
+    )
+    migrated = {"_meta": deepcopy(source_artifact.get("_meta", {}))}
+    source_audit = migrated["_meta"].pop("environment_audit", None)
+    if source_audit is not None:
+        migrated["_meta"]["source_environment_audit"] = source_audit
+    migrated["_meta"]["v2_frozen_environment"] = {
+        "artifact_version": migrated_frozen["artifact_version"],
+        "environment_hash": migrated_frozen["environment_hash"],
+        "count_sourcing": "matched-profile-row-level-counts-v1",
+    }
+    for corpus, doc_id, entry in selected:
+        migrated.setdefault(corpus, {})[doc_id] = deepcopy(entry)
+        migrated[corpus][doc_id]["v2_frozen_input"] = migrated_frozen["documents"][doc_id]
+    migrated["_meta"]["count_migration_audit"] = _count_migration_audit(migrated_frozen)
+    return migrated
+
+
+def _count_migration_audit(frozen_environment: dict) -> dict:
+    nulls_by_type: dict[str, int] = {}
+    unmatched_by_type: dict[str, int] = {}
+    level_actions = 0
+    selectable_decisions = 0
+    missing_policy_mappings = 0
+    nonmonotone = 0
+    for document in frozen_environment["documents"].values():
+        occurrences = {
+            str(row["occurrence_id"]): row for row in document.get("occurrences", [])
+        }
+        for decision in document.get("decisions", []):
+            if not decision.get("ranker_selectable", True):
+                continue
+            selectable_decisions += 1
+            runtime_type = str(decision.get("runtime_type", ""))
+            if "profile_id" not in decision:
+                missing_policy_mappings += 1
+            elif decision["profile_id"] is None:
+                unmatched_by_type[runtime_type] = unmatched_by_type.get(runtime_type, 0) + 1
+            for occurrence_id in decision.get("occurrence_ids", []):
+                occurrence = occurrences.get(str(occurrence_id))
+                if occurrence is None or occurrence.get("decision_id") != decision.get("decision_id"):
+                    missing_policy_mappings += 1
+            levels = [
+                action for action in decision.get("actions", [])
+                if action.get("mode") == "level" and action.get("legal", True)
+            ]
+            level_actions += len(levels)
+            for action in levels:
+                if action.get("count") is None:
+                    nulls_by_type[runtime_type] = nulls_by_type.get(runtime_type, 0) + 1
+            admitted = [
+                action for action in sorted(
+                    levels, key=lambda row: int(row["authored_level_index"]),
+                )
+                if action.get("count") is not None
+            ]
+            if any(
+                float(right["count"]) < float(left["count"])
+                for left, right in zip(admitted, admitted[1:])
+            ):
+                nonmonotone += 1
+    audit = {
+        "version": "frozen-count-migration-audit-v1",
+        "documents": len(frozen_environment["documents"]),
+        "decisions": sum(
+            len(document.get("decisions", []))
+            for document in frozen_environment["documents"].values()
+        ),
+        "ranker_selectable_decisions": selectable_decisions,
+        "level_actions": level_actions,
+        "missing_policy_mappings": missing_policy_mappings,
+        "nonmonotone_non_null": nonmonotone,
+        "provisional_null_level_actions_by_type": dict(sorted(nulls_by_type.items())),
+        "unmatched_profile_decisions_by_type": dict(sorted(unmatched_by_type.items())),
+    }
+    payload = json.dumps(audit, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    audit["audit_hash"] = "sha256:" + hashlib.sha256(payload).hexdigest()
+    return audit
 
 
 def make_detector(args, profile: str):
@@ -308,6 +426,53 @@ def main():
     corpora = args.corpora.split(",")
 
     t0 = time.time()
+    if args.from_arms:
+        profile_path = Path(args.profiles)
+        profile_bytes = profile_path.read_bytes()
+        profile_hash = hashlib.sha256(profile_bytes).hexdigest()
+        profile_artifact = json.loads(profile_bytes)
+        source_artifact = json.loads(Path(args.from_arms).read_text())
+        art = migrate_arms_artifact(
+            source_artifact, profile_artifact, n_docs=args.n_docs,
+        )
+        after_hash = hashlib.sha256(profile_path.read_bytes()).hexdigest()
+        if after_hash != profile_hash:
+            queue_path = Path(
+                args.profile_mutation_queue
+                or out.with_name(f"{out.stem}.profile-mutation-queue.jsonl")
+            )
+            queue_path.parent.mkdir(parents=True, exist_ok=True)
+            queue_entry = {
+                "kind": "canonical-profile-mutation",
+                "profile_path": str(profile_path),
+                "before_sha256": profile_hash,
+                "after_sha256": after_hash,
+                "source_arms": args.from_arms,
+                "status": "hard-error",
+            }
+            queue_path.write_text(json.dumps(queue_entry, sort_keys=True) + "\n")
+            raise RuntimeError(
+                f"profile artifact changed during migration; queued hard error at {queue_path}"
+            )
+        art["_meta"]["count_migration"] = {
+            "source_arms": args.from_arms,
+            "profile_path": str(profile_path),
+            "profile_sha256": profile_hash,
+            "detector_rerun": False,
+            "external_model_calls": 0,
+        }
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(art, indent=1))
+        document_count = sum(
+            len(documents) for corpus, documents in art.items() if corpus != "_meta"
+        )
+        print(
+            f"wall {time.time()-t0:.3f}s -> {out}; "
+            f"migrated_docs={document_count}; detector_rerun=false; model_calls=0",
+            flush=True,
+        )
+        return
+
     qa_v2 = args.detector_config == "qa-v2-clinical"
     detectors: dict[str, Detector] = {}   # one detector per distinct profile (reuses the load)
     art = {}
@@ -317,7 +482,7 @@ def main():
         det = detectors.setdefault(profile, None)
         if det is None:
             det = detectors[profile] = make_detector(args, profile)
-        docs = load_task_docs(corpus, args.n_docs)
+        docs = load_task_docs(corpus, args.n_docs if args.n_docs is not None else LIMIT)
         art[corpus] = {}
         for d in docs:
             source_documents[d["id"]] = d["text"]
