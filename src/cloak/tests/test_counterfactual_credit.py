@@ -171,11 +171,14 @@ def _replayed(document=None, *, entropies=None):
         logits_by_decision[decision.decision_id] = logits
         steps.append(ReplayedStep(
             decision_id=decision.decision_id,
-            legal_action_ids=menu,
             selected_action_id=f"{decision.decision_id}-middle",
+            legal_action_ids=menu,
             log_prob=log_probs[1],
-            entropy=torch.tensor(float(entropies[decision.decision_id])),
             log_probs=log_probs,
+            count_log_probs=log_probs,
+            utility_logits=log_probs,
+            predicted_privacy=torch.zeros_like(log_probs),
+            entropy=torch.tensor(float(entropies[decision.decision_id])),
         ))
     return ReplayedTrajectory(
         doc_id=document.doc_id,

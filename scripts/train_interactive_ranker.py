@@ -15,6 +15,7 @@ from typing import Any
 import torch
 
 from cloak.train.count_reward import CountReward
+from cloak.train.profile_count import ProfileCountTargets
 from cloak.train.interactive_ranker import (
     CacheOnlyMissError,
     behavior_clone,
@@ -29,7 +30,10 @@ from cloak.train.interactive_ranker import (
     write_exit_winners,
 )
 from cloak.train.ranker import ConditionalRankerPolicy, LambdaProfile
+from cloak.train.ranker_privacy import PrivacyCheckpointContract
 from cloak.train.ranker_environment import load_ranker_environment
+from cloak.train.ranker_representation import RankerRepresentationStore
+from cloak.train.semantic_ranker import SemanticRankerPolicy
 from cloak.train.utility_cache import UtilityCache, stable_hash
 
 
@@ -43,6 +47,26 @@ _HARD_TRAINING_GATES = {
     "nonmonotone_profiles": 0,
     "lambda_zero_identity": "exact",
 }
+
+
+def _hybrid_count_supervision(
+    architecture: str,
+    count_source: CountReward | ProfileCountTargets,
+) -> dict[str, CountReward | ProfileCountTargets]:
+    """Route exact targets only to semantic shaping; retain legacy reward unchanged."""
+
+    if architecture == "semantic-v1":
+        if not isinstance(count_source, ProfileCountTargets):
+            raise TypeError("semantic-v1 training requires ProfileCountTargets")
+        return {
+            "count_reward": count_source,
+            "profile_targets": count_source,
+        }
+    if architecture == "legacy-film-gru":
+        if not isinstance(count_source, CountReward):
+            raise TypeError("legacy-film-gru training requires CountReward")
+        return {"count_reward": count_source}
+    raise ValueError(f"unsupported policy architecture: {architecture}")
 
 
 class _PolicyArgumentParser(argparse.ArgumentParser):
@@ -168,6 +192,9 @@ def _validate_train_artifacts(
     bc_checkpoint: dict,
     *,
     bc_checkpoint_hash: str,
+    policy_architecture: str = "legacy-film-gru",
+    representation_manifest_hash: str | None = None,
+    privacy_checkpoint_hash: str | None = None,
 ) -> dict[str, Any]:
     """Validate the complete frozen trainer binding without mutating runtime state."""
 
@@ -179,16 +206,24 @@ def _validate_train_artifacts(
     count_hash = count_state.get("artifact_hash")
     utility_hash = utility_artifact.get("artifact_hash")
     if count_state.get("environment_hash") != environment_hash:
-        raise ValueError("count state environment hash mismatch")
+        raise ValueError("count supervision environment hash mismatch")
     if utility_artifact.get("environment_hash") != environment_hash:
         raise ValueError("utility artifact environment hash mismatch")
-    count_gate = count_state.get("gate_report", {})
-    if count_gate.get("verdict") != "PASS":
-        raise ValueError("count gate did not pass")
-    if count_gate.get("missing_policy_mappings"):
-        raise ValueError("count mapping gate did not pass")
-    if count_gate.get("nonmonotone_profiles"):
-        raise ValueError("count monotonicity gate did not pass")
+    if policy_architecture == "legacy-film-gru":
+        count_gate = count_state.get("gate_report", {})
+        if count_gate.get("verdict") != "PASS":
+            raise ValueError("count gate did not pass")
+        if count_gate.get("missing_policy_mappings"):
+            raise ValueError("count mapping gate did not pass")
+        if count_gate.get("nonmonotone_profiles"):
+            raise ValueError("count monotonicity gate did not pass")
+    elif policy_architecture == "semantic-v1":
+        if count_state.get("artifact_version") != "ranker-v2-profile-count-targets-v1":
+            raise ValueError("unsupported profile count target artifact")
+        if not representation_manifest_hash or not privacy_checkpoint_hash:
+            raise ValueError("semantic training artifact hashes are incomplete")
+    else:
+        raise ValueError(f"unsupported policy architecture: {policy_architecture}")
 
     if threshold_manifest.get("environment_hash") != environment_hash:
         raise ValueError("threshold environment hash mismatch")
@@ -249,8 +284,16 @@ def _validate_train_artifacts(
         raise ValueError("unsupported ExIt winner artifact")
     expected_common = {
         "environment_hash": environment_hash,
-        "count_state_hash": count_hash,
         "utility_artifact_hash": utility_hash,
+        **(
+            {"count_state_hash": count_hash}
+            if policy_architecture == "legacy-film-gru"
+            else {
+                "profile_target_artifact_hash": count_hash,
+                "representation_manifest_hash": representation_manifest_hash,
+                "privacy_checkpoint_hash": privacy_checkpoint_hash,
+            }
+        ),
     }
     exit_pins = exit_winners.get("pins", {})
     if any(exit_pins.get(key) != value for key, value in expected_common.items()):
@@ -273,19 +316,35 @@ def _validate_train_artifacts(
         "profiles": profiles,
         "counterfactual_budget": budget,
         "endpoint_budget": int(endpoint_budget_float),
-        "artifact_pins": {
-            "environment_hash": environment_hash,
-            "utility_artifact_hash": str(utility_hash),
-            "count_state_hash": str(count_hash),
-            "lambda_menu_hash": menu_hash,
-            "threshold_manifest_hash": threshold_hash,
-            "exit_winners_hash": exit_hash,
-            "bc_checkpoint_hash": bc_checkpoint_hash,
-        },
+        "artifact_pins": (
+            {
+                "environment_hash": environment_hash,
+                "utility_artifact_hash": str(utility_hash),
+                "count_state_hash": str(count_hash),
+                "lambda_menu_hash": menu_hash,
+                "threshold_manifest_hash": threshold_hash,
+                "exit_winners_hash": exit_hash,
+                "bc_checkpoint_hash": bc_checkpoint_hash,
+            }
+            if policy_architecture == "legacy-film-gru"
+            else {
+                "environment_hash": environment_hash,
+                "utility_artifact_hash": str(utility_hash),
+                "profile_target_artifact_hash": str(count_hash),
+                "representation_manifest_hash": str(representation_manifest_hash),
+                "privacy_checkpoint_hash": str(privacy_checkpoint_hash),
+                "lambda_menu_hash": menu_hash,
+                "threshold_manifest_hash": threshold_hash,
+            }
+        ),
     }
 
 
-def _load_inputs(args) -> tuple[dict, tuple, dict, CountReward, dict, UtilityCache, str]:
+def _load_inputs(
+    args,
+) -> tuple[
+    dict, tuple, dict, CountReward | ProfileCountTargets, dict, UtilityCache, str,
+]:
     environment_artifact = _read_json(args.environment)
     environment_hash = environment_artifact.get("frozen_environment", {}).get(
         "environment_hash"
@@ -303,10 +362,16 @@ def _load_inputs(args) -> tuple[dict, tuple, dict, CountReward, dict, UtilityCac
         documents = tuple(documents_by_id[doc_id] for doc_id in selected_ids)
     else:
         documents = tuple(documents_by_id.values())
-    count_state = _read_json(args.count_state)
-    if count_state.get("environment_hash") != environment_hash:
-        raise ValueError("count state environment hash mismatch")
-    count_reward = CountReward.from_artifact(count_state)
+    if args.policy_architecture == "semantic-v1":
+        count_state = _read_json(args.profile_count_targets)
+        if count_state.get("environment_hash") != environment_hash:
+            raise ValueError("profile count targets environment hash mismatch")
+        count_reward = ProfileCountTargets.from_artifact(count_state)
+    else:
+        count_state = _read_json(args.count_state)
+        if count_state.get("environment_hash") != environment_hash:
+            raise ValueError("count state environment hash mismatch")
+        count_reward = CountReward.from_artifact(count_state)
     utility_artifact = _read_json(args.utility_artifact)
     if utility_artifact.get("environment_hash") != environment_hash:
         raise ValueError("utility artifact environment hash mismatch")
@@ -340,6 +405,104 @@ def _policy(
     )
 
 
+def _privacy_checkpoint_contract(path: str | Path) -> PrivacyCheckpointContract:
+    checkpoint = torch.load(Path(path), map_location="cpu", weights_only=True)
+    if checkpoint.get("checkpoint_version") != "ranker-v2-semantic-privacy-v1":
+        raise ValueError("unsupported semantic privacy checkpoint")
+    raw = checkpoint.get("contract")
+    if not isinstance(raw, dict):
+        raise ValueError("semantic privacy checkpoint lacks its frozen contract")
+    values = dict(raw)
+    values["count_basis_categories"] = tuple(values.get("count_basis_categories", ()))
+    values["seeds"] = tuple(values.get("seeds", ()))
+    return PrivacyCheckpointContract(**values)
+
+
+def _semantic_training_policy(
+    args,
+    documents: tuple,
+    profiles: tuple[LambdaProfile, ...],
+) -> SemanticRankerPolicy:
+    """Build the semantic trainer from frozen local artifacts without an encoder."""
+
+    store = RankerRepresentationStore.open(Path(args.representation_manifest))
+    contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
+    encoder = store.manifest["encoder"]
+    hidden_size = int(encoder["hidden_size"])
+    if contract.pair_dim != 5 * hidden_size:
+        raise ValueError("semantic privacy pair dimension differs from representations")
+    runtime_types = tuple(sorted({
+        decision.runtime_type
+        for document in documents
+        for decision in document.policy_decisions
+    }))
+    if not runtime_types:
+        raise ValueError("semantic training selected no runtime types")
+    head_count = 8 if hidden_size % 8 == 0 else 1
+    supported_profiles = profiles
+    if max(float(profile.value) for profile in profiles) == 0.0:
+        supported_profiles = (
+            *profiles,
+            LambdaProfile("bc-controller-unused", 1.0),
+        )
+    return SemanticRankerPolicy.from_privacy_checkpoint(
+        representation_store=store,
+        privacy_checkpoint=Path(args.privacy_checkpoint),
+        privacy_checkpoint_contract=contract,
+        supported_profiles=supported_profiles,
+        max_lambda=max(float(profile.value) for profile in supported_profiles),
+        token_dim=hidden_size,
+        pair_dim=contract.pair_dim,
+        relation_dim=hidden_size,
+        context_dim=hidden_size,
+        history_dim=hidden_size,
+        utility_hidden_dim=hidden_size,
+        num_heads=head_count,
+        runtime_types=runtime_types,
+        dropout=0.0,
+    )
+
+
+def _policy_input_pins(
+    args,
+    *,
+    environment_hash: str,
+    count_artifact: dict,
+    utility_artifact: dict,
+) -> dict[str, str]:
+    if args.policy_architecture == "legacy-film-gru":
+        return {
+            "environment_hash": environment_hash,
+            "count_state_hash": count_artifact.get("artifact_hash"),
+            "utility_artifact_hash": utility_artifact.get("artifact_hash"),
+        }
+    manifest = _read_json(args.representation_manifest)
+    manifest_hash = manifest.get("manifest_hash")
+    contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
+    expected = (
+        environment_hash,
+        count_artifact.get("artifact_hash"),
+        manifest_hash,
+    )
+    actual = (
+        contract.environment_hash,
+        contract.profile_target_artifact_hash,
+        contract.representation_manifest_hash,
+    )
+    if expected != actual:
+        raise ValueError("semantic privacy checkpoint artifact pins differ")
+    pins = {
+        "environment_hash": environment_hash,
+        "profile_target_artifact_hash": count_artifact.get("artifact_hash"),
+        "representation_manifest_hash": manifest_hash,
+        "privacy_checkpoint_hash": _file_hash(args.privacy_checkpoint),
+        "utility_artifact_hash": utility_artifact.get("artifact_hash"),
+    }
+    if any(not isinstance(value, str) or not value for value in pins.values()):
+        raise ValueError("semantic policy input pins are incomplete")
+    return pins
+
+
 def _point_payload(point) -> dict[str, Any]:
     return {
         "doc_id": point.trajectory.doc_id,
@@ -357,8 +520,12 @@ def _run_bc(args) -> None:
         environment_hash,
     ) = _load_inputs(args)
     torch.manual_seed(args.seed)
-    policy = _policy(
-        count_reward, environment_hash, encoder_pin=args.encoder_pin,
+    policy = (
+        _semantic_training_policy(args, documents, (LAMBDA_ZERO,))
+        if args.policy_architecture == "semantic-v1"
+        else _policy(
+            count_reward, environment_hash, encoder_pin=args.encoder_pin,
+        )
     )
     optimizer = torch.optim.Adam(policy.parameters(), lr=args.learning_rate)
     report = behavior_clone(
@@ -379,16 +546,25 @@ def _run_bc(args) -> None:
         reader_workers=args.reader_workers,
         cache_only=args.cache_only,
     )
+    input_pins = _policy_input_pins(
+        args,
+        environment_hash=environment_hash,
+        count_artifact=count_state,
+        utility_artifact=utility_artifact,
+    )
     checkpoint = {
         "checkpoint_version": "ranker-v2-bc-v1",
         "policy_state_dict": policy.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
-        "policy_config": {"encoder_pin": args.encoder_pin},
-        "pins": {
-            "environment_hash": environment_hash,
-            "count_state_hash": count_state.get("artifact_hash"),
-            "utility_artifact_hash": utility_artifact.get("artifact_hash"),
-        },
+        "policy_config": (
+            {
+                "policy_architecture": "semantic-v1",
+                "encoder_pin": args.encoder_pin,
+            }
+            if args.policy_architecture == "semantic-v1"
+            else {"encoder_pin": args.encoder_pin}
+        ),
+        "pins": input_pins,
         "bc": {
             "epoch_losses": report.epoch_losses,
             "action_mode_counts": dict(report.action_mode_counts),
@@ -415,17 +591,24 @@ def _run_exit_collect(args) -> None:
     checkpoint = torch.load(args.checkpoint, map_location="cpu", weights_only=True)
     if checkpoint.get("checkpoint_version") != "ranker-v2-bc-v1":
         raise ValueError("unsupported behavior-cloning checkpoint")
-    expected_pins = {
-        "environment_hash": environment_hash,
-        "count_state_hash": count_state.get("artifact_hash"),
-        "utility_artifact_hash": utility_artifact.get("artifact_hash"),
-    }
+    expected_pins = _policy_input_pins(
+        args,
+        environment_hash=environment_hash,
+        count_artifact=count_state,
+        utility_artifact=utility_artifact,
+    )
     if checkpoint.get("pins") != expected_pins:
         raise ValueError("behavior-cloning checkpoint artifact pins differ")
-    encoder_pin = checkpoint.get("policy_config", {}).get("encoder_pin")
-    if not isinstance(encoder_pin, str) or not encoder_pin:
-        raise ValueError("behavior-cloning checkpoint lacks encoder pin")
-    policy = _policy(count_reward, environment_hash, encoder_pin=encoder_pin)
+    config = checkpoint.get("policy_config", {})
+    if config.get("policy_architecture", "legacy-film-gru") != args.policy_architecture:
+        raise ValueError("behavior-cloning checkpoint policy architecture differs")
+    encoder_pin = config.get("encoder_pin")
+    if args.policy_architecture == "semantic-v1":
+        policy = _semantic_training_policy(args, documents, (LAMBDA_ZERO,))
+    else:
+        if not isinstance(encoder_pin, str) or not encoder_pin:
+            raise ValueError("behavior-cloning checkpoint lacks encoder pin")
+        policy = _policy(count_reward, environment_hash, encoder_pin=encoder_pin)
     policy.load_state_dict(checkpoint["policy_state_dict"])
     policy.eval()
     generator = torch.Generator().manual_seed(args.seed)
@@ -591,6 +774,23 @@ def _run_train(args) -> None:
     bc_checkpoint = torch.load(
         args.bc_checkpoint, map_location="cpu", weights_only=True,
     )
+    representation_manifest_hash = None
+    privacy_checkpoint_hash = None
+    if args.policy_architecture == "semantic-v1":
+        representation_manifest = _read_json(args.representation_manifest)
+        representation_manifest_hash = representation_manifest.get("manifest_hash")
+        if not isinstance(representation_manifest_hash, str) or not representation_manifest_hash:
+            raise ValueError("representation manifest lacks manifest_hash")
+        privacy_checkpoint_hash = _file_hash(args.privacy_checkpoint)
+        privacy_contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
+        if (
+            privacy_contract.environment_hash != environment_hash
+            or privacy_contract.profile_target_artifact_hash
+            != count_state.get("artifact_hash")
+            or privacy_contract.representation_manifest_hash
+            != representation_manifest_hash
+        ):
+            raise ValueError("semantic privacy checkpoint artifact pins differ")
     validated = _validate_train_artifacts(
         environment,
         count_state,
@@ -600,19 +800,31 @@ def _run_train(args) -> None:
         exit_winners,
         bc_checkpoint,
         bc_checkpoint_hash=_file_hash(args.bc_checkpoint),
+        policy_architecture=args.policy_architecture,
+        representation_manifest_hash=representation_manifest_hash,
+        privacy_checkpoint_hash=privacy_checkpoint_hash,
     )
     profiles = validated["profiles"]
-    checkpoint_encoder = bc_checkpoint.get("policy_config", {}).get("encoder_pin")
-    if checkpoint_encoder != args.encoder_pin:
-        raise ValueError("trainer encoder pin differs from BC checkpoint")
+    if args.policy_architecture == "legacy-film-gru":
+        checkpoint_encoder = bc_checkpoint.get("policy_config", {}).get("encoder_pin")
+        if checkpoint_encoder != args.encoder_pin:
+            raise ValueError("trainer encoder pin differs from BC checkpoint")
+    elif bc_checkpoint.get("policy_config", {}).get(
+        "policy_architecture"
+    ) != "semantic-v1":
+        raise ValueError("trainer semantic architecture differs from BC checkpoint")
     code_revision = _code_revision()
     torch.manual_seed(args.seed)
     generator = torch.Generator().manual_seed(args.seed)
-    policy = _policy(
-        count_reward,
-        environment_hash,
-        encoder_pin=args.encoder_pin,
-        profiles=profiles,
+    policy = (
+        _semantic_training_policy(args, documents, profiles)
+        if args.policy_architecture == "semantic-v1"
+        else _policy(
+            count_reward,
+            environment_hash,
+            encoder_pin=args.encoder_pin,
+            profiles=profiles,
+        )
     )
     optimizer = torch.optim.Adam(policy.parameters(), lr=args.learning_rate)
     schedule = build_latin_cycle_schedule(documents, profiles, seed=args.seed)
@@ -669,12 +881,16 @@ def _run_train(args) -> None:
             architecture_pin=architecture_pin,
             code_revision=code_revision,
         )
-    reference_policy = _policy(
-        count_reward,
-        environment_hash,
-        encoder_pin=args.encoder_pin,
-        profiles=profiles,
-        encoder=policy.encoder,
+    reference_policy = (
+        _semantic_training_policy(args, documents, profiles)
+        if args.policy_architecture == "semantic-v1"
+        else _policy(
+            count_reward,
+            environment_hash,
+            encoder_pin=args.encoder_pin,
+            profiles=profiles,
+            encoder=policy.encoder,
+        )
     )
     reference_policy.load_state_dict(reference_state, strict=True)
     reference_policy.eval()
@@ -708,7 +924,7 @@ def _run_train(args) -> None:
         optimizer=optimizer,
         utility_artifact=utility_artifact,
         environment_hash=environment_hash,
-        count_reward=count_reward,
+        **_hybrid_count_supervision(args.policy_architecture, count_reward),
         cache=cache,
         threshold_manifest=threshold_manifest,
         max_epochs=args.max_epochs,
@@ -730,12 +946,16 @@ def _run_train(args) -> None:
     )
 
     zero_profiles = (profiles[0],)
-    control = _policy(
-        count_reward,
-        environment_hash,
-        encoder_pin=args.encoder_pin,
-        profiles=zero_profiles,
-        encoder=policy.encoder,
+    control = (
+        _semantic_training_policy(args, documents, profiles)
+        if args.policy_architecture == "semantic-v1"
+        else _policy(
+            count_reward,
+            environment_hash,
+            encoder_pin=args.encoder_pin,
+            profiles=zero_profiles,
+            encoder=policy.encoder,
+        )
     )
     control_optimizer = torch.optim.Adam(
         control.parameters(), lr=args.learning_rate,
@@ -748,12 +968,16 @@ def _run_train(args) -> None:
         exit_winners=exit_winners,
         optimizer=control_optimizer,
     )
-    control_reference = _policy(
-        count_reward,
-        environment_hash,
-        encoder_pin=args.encoder_pin,
-        profiles=zero_profiles,
-        encoder=policy.encoder,
+    control_reference = (
+        _semantic_training_policy(args, documents, profiles)
+        if args.policy_architecture == "semantic-v1"
+        else _policy(
+            count_reward,
+            environment_hash,
+            encoder_pin=args.encoder_pin,
+            profiles=zero_profiles,
+            encoder=policy.encoder,
+        )
     )
     control_reference.load_state_dict(control_warm.reference_state_dict, strict=True)
     control_reference.eval()
@@ -793,7 +1017,7 @@ def _run_train(args) -> None:
         optimizer=control_optimizer,
         utility_artifact=utility_artifact,
         environment_hash=environment_hash,
-        count_reward=count_reward,
+        **_hybrid_count_supervision(args.policy_architecture, count_reward),
         cache=cache,
         threshold_manifest=threshold_manifest,
         max_epochs=args.max_epochs,

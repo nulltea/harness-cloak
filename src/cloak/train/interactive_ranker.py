@@ -22,6 +22,7 @@ from cloak.train.ranker_environment import (
     RankerDocument,
 )
 from cloak.train.count_reward import CountReward, expected_count_loss
+from cloak.train.profile_count import ProfileCountTargets
 from cloak.train.utility_cache import UtilityCache, UtilityRequest, UtilityResult, stable_hash
 from cloak.train.utility_credit import (
     DocumentUtilityCredit,
@@ -49,11 +50,14 @@ class SampledTrajectory:
 @dataclass(frozen=True)
 class ReplayedStep:
     decision_id: str
-    legal_action_ids: tuple[str, ...]
     selected_action_id: str
+    legal_action_ids: tuple[str, ...]
     log_prob: torch.Tensor
-    entropy: torch.Tensor
     log_probs: torch.Tensor
+    count_log_probs: torch.Tensor
+    utility_logits: torch.Tensor
+    predicted_privacy: torch.Tensor
+    entropy: torch.Tensor
 
 
 @dataclass(frozen=True)
@@ -211,6 +215,12 @@ class DocumentTrainingResult:
     cache_metrics: Mapping[str, Any]
     action_vector_hashes: tuple[str, ...] = ()
     runtime_type_metrics: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+    parameter_group_gradient_norms: Mapping[str, Mapping[str, float]] = field(
+        default_factory=dict
+    )
+    alpha_diagnostics: Mapping[str, float] = field(default_factory=dict)
+    privacy_diagnostics: Mapping[str, Any] = field(default_factory=dict)
+    lambda_zero_identity_failures: int = 0
 
     def __post_init__(self) -> None:
         for name in (
@@ -225,6 +235,20 @@ class DocumentTrainingResult:
                 key: MappingProxyType(dict(value))
                 for key, value in self.runtime_type_metrics.items()
             }),
+        )
+        object.__setattr__(
+            self,
+            "parameter_group_gradient_norms",
+            MappingProxyType({
+                key: MappingProxyType(dict(value))
+                for key, value in self.parameter_group_gradient_norms.items()
+            }),
+        )
+        object.__setattr__(
+            self, "alpha_diagnostics", MappingProxyType(dict(self.alpha_diagnostics))
+        )
+        object.__setattr__(
+            self, "privacy_diagnostics", MappingProxyType(dict(self.privacy_diagnostics))
         )
 
 
@@ -310,6 +334,17 @@ def _import_unconditioned_state(
     policy.load_state_dict(imported, strict=True)
 
 
+def _policy_architecture_name(policy: Any) -> str:
+    declared = getattr(policy, "policy_architecture", None)
+    if declared is not None:
+        if declared not in {"semantic-v1", "legacy-film-gru"}:
+            raise ValueError(f"unsupported policy architecture: {declared}")
+        return declared
+    if type(policy).__name__ == "SemanticRankerPolicy":
+        return "semantic-v1"
+    return "legacy-film-gru"
+
+
 @torch.no_grad()
 def assert_exact_profile_identity(
     policy: TrajectoryPolicy,
@@ -335,6 +370,27 @@ def assert_exact_profile_identity(
                 )
 
 
+@torch.no_grad()
+def assert_exact_lambda_zero_identity(
+    policy: TrajectoryPolicy,
+    documents: Sequence[RankerDocument],
+    lambda_zero: Any,
+) -> None:
+    """Require the semantic controller's exact lambda-zero utility bypass."""
+
+    if float(lambda_zero.value) != 0.0:
+        raise ValueError("semantic warm start requires lambda zero")
+    for document in documents:
+        trajectory = behavior_clone_trajectory(document, lambda_zero)
+        replayed = replay_trajectory(policy, document, trajectory, lambda_zero)
+        for step in replayed.steps:
+            expected = torch.log_softmax(step.utility_logits, dim=0)
+            if not torch.equal(step.log_probs, expected):
+                raise ValueError(
+                    f"lambda-zero identity failed before warm start for {document.doc_id}"
+                )
+
+
 def initialize_hybrid_warm_start(
     policy: torch.nn.Module,
     documents: Sequence[RankerDocument],
@@ -344,7 +400,7 @@ def initialize_hybrid_warm_start(
     exit_winners: Mapping,
     optimizer: torch.optim.Optimizer,
 ) -> WarmStartResult:
-    """Import BC weights, assert identity, and clone verified winners per profile."""
+    """Import BC weights and clone verified winners without changing privacy control."""
 
     documents = tuple(documents)
     profiles = tuple(profiles)
@@ -354,7 +410,18 @@ def initialize_hybrid_warm_start(
     if exit_winners.get("artifact_version") != "ranker-v2-exit-winners-v1":
         raise ValueError("unsupported ExIt winner artifact")
     _import_unconditioned_state(policy, bc_state_dict)
-    assert_exact_profile_identity(policy, documents, profiles)
+    architecture = _policy_architecture_name(policy)
+    if architecture == "semantic-v1":
+        zero_profiles = tuple(
+            profile for profile in profiles if float(profile.value) == 0.0
+        )
+        if len(zero_profiles) != 1:
+            raise ValueError("semantic warm start requires exactly one lambda-zero profile")
+        clone_profiles = zero_profiles
+        assert_exact_lambda_zero_identity(policy, documents, zero_profiles[0])
+    else:
+        clone_profiles = profiles
+        assert_exact_profile_identity(policy, documents, profiles)
     winners = []
     for row in exit_winners.get("documents", ()):
         if row.get("verification_status") != "verified" or row.get("winner") is None:
@@ -375,7 +442,7 @@ def initialize_hybrid_warm_start(
     total_loss = 0.0
     target_count = 0
     for document, vector in winners:
-        for profile in profiles:
+        for profile in clone_profiles:
             trajectory = _trajectory_from_action_vector(document, vector, profile)
             optimizer.zero_grad(set_to_none=True)
             replayed = replay_trajectory(policy, document, trajectory, profile)
@@ -400,11 +467,56 @@ def initialize_hybrid_warm_start(
     )
 
 
+def expected_profile_count_loss(
+    replay_steps: Sequence[ReplayedStep],
+    targets: ProfileCountTargets,
+    lambda_value: float,
+    decision_count: int,
+    rollout_count: int,
+) -> torch.Tensor:
+    """Exact profile-relative shaping loss over the count-detached distribution."""
+
+    steps = tuple(replay_steps)
+    if not steps:
+        raise ValueError("profile count loss requires replay steps")
+    if not isinstance(targets, ProfileCountTargets):
+        raise TypeError("profile count loss requires ProfileCountTargets")
+    if (
+        isinstance(lambda_value, bool)
+        or not isinstance(lambda_value, int | float)
+        or not math.isfinite(float(lambda_value))
+        or float(lambda_value) < 0.0
+        or not isinstance(decision_count, int)
+        or isinstance(decision_count, bool)
+        or decision_count <= 0
+        or not isinstance(rollout_count, int)
+        or isinstance(rollout_count, bool)
+        or rollout_count <= 0
+    ):
+        raise ValueError("profile count loss normalization is invalid")
+    expectations = []
+    for step in steps:
+        if (
+            step.count_log_probs.ndim != 1
+            or len(step.count_log_probs) != len(step.legal_action_ids)
+            or not bool(torch.isfinite(step.count_log_probs).all())
+        ):
+            raise ValueError("profile count loss received an invalid distribution")
+        exact = targets.action_scores(
+            step.decision_id, step.legal_action_ids,
+        ).to(step.count_log_probs)
+        expectations.append(torch.sum(step.count_log_probs.exp() * exact))
+    return -torch.stack(expectations).sum() * (
+        float(lambda_value) / decision_count / rollout_count
+    )
+
+
 def compose_hybrid_document_objective(
     replayed: Sequence[ReplayedTrajectory],
     *,
     utility_loss: torch.Tensor,
-    count_reward: CountReward,
+    count_reward: CountReward | None = None,
+    profile_targets: ProfileCountTargets | None = None,
     lambda_value: float,
     beta: float,
     eta: float,
@@ -435,13 +547,27 @@ def compose_hybrid_document_objective(
     replay_steps = tuple(
         step for trajectory in replayed for step in trajectory.steps
     )
-    count = expected_count_loss(
-        replay_steps,
-        count_reward,
-        lambda_value=float(lambda_value),
-        decision_count=decision_count,
-        rollout_count=len(replayed),
-    )
+    if (count_reward is None) == (profile_targets is None):
+        raise ValueError(
+            "hybrid objective requires exactly one count supervision artifact"
+        )
+    if profile_targets is not None:
+        count = expected_profile_count_loss(
+            replay_steps,
+            profile_targets,
+            lambda_value=float(lambda_value),
+            decision_count=decision_count,
+            rollout_count=len(replayed),
+        )
+    else:
+        assert count_reward is not None
+        count = expected_count_loss(
+            replay_steps,
+            count_reward,
+            lambda_value=float(lambda_value),
+            decision_count=decision_count,
+            rollout_count=len(replayed),
+        )
     entropy = torch.stack([step.entropy for step in replay_steps]).sum() / len(replayed)
     if reference_log_probs is None:
         if eta != 0.0:
@@ -656,6 +782,14 @@ class TrajectoryPolicy(Protocol):
         legal_action_ids: Sequence[str],
         profile: Any,
     ) -> torch.Tensor: ...
+
+    def distribution(
+        self,
+        state: Any,
+        decision: RankerDecision,
+        legal_action_ids: Sequence[str],
+        profile: Any,
+    ) -> Any: ...
 
     def advance(
         self, state: Any, decision: RankerDecision, action_id: str
@@ -924,6 +1058,40 @@ def _checked_log_probs(
     return log_probs
 
 
+def _checked_semantic_distribution(
+    policy: TrajectoryPolicy,
+    state: Any,
+    decision: RankerDecision,
+    menu: tuple[str, ...],
+    profile: Any,
+) -> Any:
+    distribution = getattr(policy, "distribution", None)
+    if not callable(distribution):
+        raise ValueError(
+            "semantic-v1 replay requires a complete distribution, not scalar log-probs"
+        )
+    row = distribution(state, decision, menu, profile)
+    if tuple(getattr(row, "action_ids", ())) != menu:
+        raise ValueError(
+            f"semantic complete distribution menu differs for {decision.decision_id}"
+        )
+    for name in (
+        "log_probs", "count_log_probs", "utility_logits", "predicted_privacy",
+    ):
+        tensor = getattr(row, name, None)
+        if (
+            not isinstance(tensor, torch.Tensor)
+            or tensor.ndim != 1
+            or len(tensor) != len(menu)
+            or not bool(torch.isfinite(tensor).all())
+        ):
+            raise ValueError(
+                f"semantic complete distribution has invalid {name} for "
+                f"{decision.decision_id}"
+            )
+    return row
+
+
 @torch.no_grad()
 def sample_trajectory(
     policy: TrajectoryPolicy,
@@ -1011,17 +1179,34 @@ def replay_trajectory(
         if trajectory.action_vector[decision.decision_id] != sampled.selected_action_id:
             raise ValueError(f"trajectory action vector differs for {decision.decision_id}")
 
-        log_probs = _checked_log_probs(policy, state, decision, menu, lambda_profile)
+        if _policy_architecture_name(policy) == "semantic-v1":
+            distribution = _checked_semantic_distribution(
+                policy, state, decision, menu, lambda_profile,
+            )
+            log_probs = distribution.log_probs
+            count_log_probs = distribution.count_log_probs
+            utility_logits = distribution.utility_logits
+            predicted_privacy = distribution.predicted_privacy
+        else:
+            log_probs = _checked_log_probs(
+                policy, state, decision, menu, lambda_profile,
+            )
+            count_log_probs = log_probs
+            utility_logits = log_probs
+            predicted_privacy = torch.zeros_like(log_probs)
         selected_index = menu.index(sampled.selected_action_id)
         selected_log_prob = log_probs[selected_index]
         entropy = -(log_probs.exp() * log_probs).sum()
         replayed.append(ReplayedStep(
             decision_id=decision.decision_id,
-            legal_action_ids=menu,
             selected_action_id=sampled.selected_action_id,
+            legal_action_ids=menu,
             log_prob=selected_log_prob,
-            entropy=entropy,
             log_probs=log_probs,
+            count_log_probs=count_log_probs,
+            utility_logits=utility_logits,
+            predicted_privacy=predicted_privacy,
+            entropy=entropy,
         ))
 
         action = _action_by_id(decision, sampled.selected_action_id)
@@ -1116,6 +1301,11 @@ def behavior_clone(
         raise ValueError("behavior cloning requires at least one document")
     if epochs <= 0:
         raise ValueError("behavior cloning epochs must be positive")
+    if (
+        _policy_architecture_name(policy) == "semantic-v1"
+        and float(lambda_zero.value) != 0.0
+    ):
+        raise ValueError("semantic behavior cloning requires lambda zero")
     trajectories = tuple(
         behavior_clone_trajectory(document, lambda_zero)
         for document in documents
@@ -1403,6 +1593,11 @@ def _gradient_norm(
 ) -> float:
     if not term.requires_grad:
         return 0.0
+    parameters = tuple(
+        parameter for parameter in parameters if parameter.requires_grad
+    )
+    if not parameters:
+        return 0.0
     gradients = torch.autograd.grad(
         term,
         parameters,
@@ -1416,6 +1611,78 @@ def _gradient_norm(
     return math.sqrt(squared)
 
 
+def _unique_parameters(
+    values: Sequence[torch.nn.Parameter],
+) -> tuple[torch.nn.Parameter, ...]:
+    seen: set[int] = set()
+    result = []
+    for parameter in values:
+        if id(parameter) not in seen:
+            seen.add(id(parameter))
+            result.append(parameter)
+    return tuple(result)
+
+
+def semantic_parameter_groups(
+    policy: torch.nn.Module,
+) -> Mapping[str, tuple[torch.nn.Parameter, ...]]:
+    """Return disjoint semantic ownership groups used only for diagnostics."""
+
+    if _policy_architecture_name(policy) != "semantic-v1":
+        return MappingProxyType({})
+
+    def declared_or_modules(method_name: str, module_names: Sequence[str]):
+        method = getattr(policy, method_name, None)
+        if callable(method):
+            return _unique_parameters(tuple(method()))
+        parameters = []
+        for name in module_names:
+            module = getattr(policy, name, None)
+            if isinstance(module, torch.nn.Module):
+                parameters.extend(module.parameters())
+        return _unique_parameters(tuple(parameters))
+
+    utility = declared_or_modules("utility_parameters", (
+        "utility_projection", "context_readout", "context_to_relation",
+        "interaction_projection", "action_mode_embedding",
+        "runtime_type_embedding", "utility_head",
+    ))
+    history = declared_or_modules("history_parameters", ("memory",))
+    privacy = declared_or_modules("privacy_parameters", ("privacy_head",))
+    alpha = (getattr(policy, "alpha_raw"),)
+    if not isinstance(alpha[0], torch.nn.Parameter):
+        raise ValueError("semantic-v1 policy lacks alpha_raw")
+    groups = {
+        "utility": utility,
+        "history": history,
+        "privacy": privacy,
+        "alpha": alpha,
+    }
+    owners: dict[int, str] = {}
+    for name, parameters in groups.items():
+        for parameter in parameters:
+            prior = owners.setdefault(id(parameter), name)
+            if prior != name:
+                raise ValueError(
+                    f"semantic parameter belongs to both {prior} and {name}"
+                )
+    return MappingProxyType(groups)
+
+
+def semantic_gradient_diagnostics(
+    terms: Mapping[str, torch.Tensor],
+    policy: torch.nn.Module,
+) -> Mapping[str, Mapping[str, float]]:
+    groups = semantic_parameter_groups(policy)
+    return MappingProxyType({
+        name: MappingProxyType({
+            group: _gradient_norm(term, parameters)
+            for group, parameters in groups.items()
+        })
+        for name, term in terms.items()
+    })
+
+
 def train_hybrid_document_group(
     policy: torch.nn.Module,
     reference_policy: TrajectoryPolicy | None,
@@ -1425,7 +1692,8 @@ def train_hybrid_document_group(
     rollouts: int,
     utility_artifact: Mapping,
     environment_hash: str,
-    count_reward: CountReward,
+    count_reward: CountReward | ProfileCountTargets,
+    profile_targets: ProfileCountTargets | None = None,
     cache: UtilityCache,
     optimizer: torch.optim.Optimizer,
     beta: float,
@@ -1448,6 +1716,11 @@ def train_hybrid_document_group(
 
     if rollouts < 2:
         raise ValueError("hybrid training requires at least two rollouts")
+    architecture = _policy_architecture_name(policy)
+    if architecture == "semantic-v1" and profile_targets is None:
+        raise ValueError("semantic-v1 hybrid training requires profile count targets")
+    if architecture == "legacy-film-gru" and profile_targets is not None:
+        raise ValueError("legacy hybrid training cannot use profile count targets")
     if max_grad_norm is not None and (
         not math.isfinite(float(max_grad_norm)) or max_grad_norm <= 0.0
     ):
@@ -1550,7 +1823,8 @@ def train_hybrid_document_group(
     objective = compose_hybrid_document_objective(
         replayed,
         utility_loss=utility_loss,
-        count_reward=count_reward,
+        count_reward=count_reward if profile_targets is None else None,
+        profile_targets=profile_targets,
         lambda_value=float(profile.value),
         beta=beta,
         eta=eta,
@@ -1574,6 +1848,28 @@ def train_hybrid_document_group(
         name: _gradient_norm(term, parameters)
         for name, term in family_terms.items()
     }
+    parameter_group_gradient_norms = (
+        semantic_gradient_diagnostics(family_terms, policy)
+        if architecture == "semantic-v1"
+        else {}
+    )
+    alpha_diagnostics: dict[str, float] = {}
+    if architecture == "semantic-v1":
+        alpha_raw = getattr(policy, "alpha_raw")
+        alpha_gradient = torch.autograd.grad(
+            objective.total, alpha_raw, retain_graph=True, allow_unused=True,
+        )[0]
+        alpha_value = getattr(policy, "alpha", None)
+        if callable(alpha_value):
+            alpha_value = alpha_value()
+        if not isinstance(alpha_value, torch.Tensor):
+            alpha_value = torch.nn.functional.softplus(alpha_raw)
+        alpha_diagnostics = {
+            "value": float(alpha_value.detach()),
+            "gradient": (
+                float(alpha_gradient.detach()) if alpha_gradient is not None else 0.0
+            ),
+        }
     absolute_mass.update({
         name: abs(float(family_terms[name].detach()))
         for name in ("count", "entropy", "KL")
@@ -1654,6 +1950,65 @@ def train_hybrid_document_group(
     cache_metrics.setdefault("cache_hits", cache.hits - hits_before)
     cache_metrics["requested_rollouts"] = rollouts
     cache_metrics["stages"] = stage_cache_metrics
+    privacy_diagnostics: dict[str, Any] = {}
+    lambda_zero_identity_failures = 0
+    if architecture == "semantic-v1":
+        assert profile_targets is not None
+        target_rows = {
+            row.action_id: row for row in profile_targets.target_rows()
+        }
+        level_counts = Counter(
+            row.decision_id for row in target_rows.values() if row.mode == "level"
+        )
+        selected_count = 0
+        predicted_sum = 0.0
+        exact_sum = 0.0
+        absolute_error_sum = 0.0
+        strata: dict[str, dict[str, float]] = {}
+        for replay in replayed:
+            for step in replay.steps:
+                selected_index = step.legal_action_ids.index(step.selected_action_id)
+                predicted = float(step.predicted_privacy[selected_index].detach())
+                exact = float(profile_targets.action_scores(
+                    step.decision_id, (step.selected_action_id,),
+                )[0])
+                target = target_rows[step.selected_action_id]
+                normalization = (
+                    "singleton_profile"
+                    if level_counts[step.decision_id] == 1
+                    else "multi_level_profile"
+                )
+                provenance = target.grounding_status or f"{target.mode}_endpoint"
+                source_family = target.source_family or "none"
+                stratum = (
+                    f"{normalization}|grounding_status={provenance}|"
+                    f"source_family={source_family}"
+                )
+                values = strata.setdefault(stratum, {
+                    "count": 0, "predicted_sum": 0.0, "exact_sum": 0.0,
+                    "absolute_error_sum": 0.0,
+                })
+                error = abs(predicted - exact)
+                values["count"] += 1
+                values["predicted_sum"] += predicted
+                values["exact_sum"] += exact
+                values["absolute_error_sum"] += error
+                selected_count += 1
+                predicted_sum += predicted
+                exact_sum += exact
+                absolute_error_sum += error
+                if float(profile.value) == 0.0 and not torch.equal(
+                    step.log_probs,
+                    torch.log_softmax(step.utility_logits, dim=0),
+                ):
+                    lambda_zero_identity_failures += 1
+        privacy_diagnostics = {
+            "selected_count": selected_count,
+            "predicted_sum": predicted_sum,
+            "exact_sum": exact_sum,
+            "absolute_error_sum": absolute_error_sum,
+            "strata": strata,
+        }
     return DocumentTrainingResult(
         doc_id=document.doc_id,
         corpus=document.corpus,
@@ -1675,6 +2030,10 @@ def train_hybrid_document_group(
             for trajectory in trajectories
         ),
         runtime_type_metrics=type_rows,
+        parameter_group_gradient_norms=parameter_group_gradient_norms,
+        alpha_diagnostics=alpha_diagnostics,
+        privacy_diagnostics=privacy_diagnostics,
+        lambda_zero_identity_failures=lambda_zero_identity_failures,
     )
 
 
@@ -1736,7 +2095,7 @@ def build_epoch_report(
     }
     numeric_scheduler["delta_u"] = [row.get("delta_u", {}) for row in scheduler_rows]
     numeric_scheduler["groups"] = scheduler_rows
-    return {
+    report = {
         "report_version": "ranker-v2-epoch-report-v1",
         "epoch": epoch,
         "document_groups": len(groups),
@@ -1788,6 +2147,99 @@ def build_epoch_report(
         "scheduler": numeric_scheduler,
         "cache": numeric_cache,
     }
+    semantic_rows = [
+        group for group in groups if group.parameter_group_gradient_norms
+    ]
+    if semantic_rows:
+        semantic_families = tuple(
+            semantic_rows[0].parameter_group_gradient_norms
+        )
+        parameter_groups = tuple(
+            next(iter(
+                semantic_rows[0].parameter_group_gradient_norms.values()
+            ))
+        )
+        if any(
+            tuple(row.parameter_group_gradient_norms) != semantic_families
+            or any(
+                tuple(values) != parameter_groups
+                for values in row.parameter_group_gradient_norms.values()
+            )
+            for row in semantic_rows
+        ):
+            raise ValueError("epoch groups have inconsistent semantic diagnostics")
+
+        selected_count = sum(
+            int(row.privacy_diagnostics.get("selected_count", 0))
+            for row in semantic_rows
+        )
+        selected = {
+            "count": selected_count,
+            "predicted_mean": (
+                sum(float(row.privacy_diagnostics.get("predicted_sum", 0.0))
+                    for row in semantic_rows) / selected_count
+                if selected_count else None
+            ),
+            "exact_mean": (
+                sum(float(row.privacy_diagnostics.get("exact_sum", 0.0))
+                    for row in semantic_rows) / selected_count
+                if selected_count else None
+            ),
+            "mean_absolute_error": (
+                sum(float(row.privacy_diagnostics.get("absolute_error_sum", 0.0))
+                    for row in semantic_rows) / selected_count
+                if selected_count else None
+            ),
+        }
+        strata_totals: dict[str, dict[str, float]] = {}
+        for row in semantic_rows:
+            for name, values in row.privacy_diagnostics.get("strata", {}).items():
+                total = strata_totals.setdefault(name, {
+                    "count": 0, "predicted_sum": 0.0, "exact_sum": 0.0,
+                    "absolute_error_sum": 0.0,
+                })
+                for key in total:
+                    total[key] += values.get(key, 0)
+        privacy_strata = {
+            name: {
+                "count": int(values["count"]),
+                "predicted_mean": values["predicted_sum"] / values["count"],
+                "exact_mean": values["exact_sum"] / values["count"],
+                "mean_absolute_error": (
+                    values["absolute_error_sum"] / values["count"]
+                ),
+            }
+            for name, values in sorted(strata_totals.items())
+            if values["count"]
+        }
+        alpha_by_lambda = {}
+        for profile_name in sorted({row.profile_name for row in semantic_rows}):
+            rows = [row for row in semantic_rows if row.profile_name == profile_name]
+            alpha_by_lambda[profile_name] = {
+                key: _mean([
+                    float(row.alpha_diagnostics[key]) for row in rows
+                ])
+                for key in ("value", "gradient")
+            }
+        report["semantic_diagnostics"] = {
+            "parameter_group_gradient_norms": {
+                family: {
+                    group: _mean([
+                        row.parameter_group_gradient_norms[family][group]
+                        for row in semantic_rows
+                    ])
+                    for group in parameter_groups
+                }
+                for family in semantic_families
+            },
+            "alpha_by_lambda": alpha_by_lambda,
+            "selected_privacy": selected,
+            "privacy_strata": privacy_strata,
+            "lambda_zero_identity_failures": sum(
+                row.lambda_zero_identity_failures for row in semantic_rows
+            ),
+        }
+    return report
 
 
 def _canonical_vector_hash(values: Sequence[str]) -> str:
@@ -1839,6 +2291,7 @@ def train_hybrid_policy(
     utility_artifact: Mapping,
     environment_hash: str,
     count_reward: Any,
+    profile_targets: ProfileCountTargets | None = None,
     cache: Any,
     threshold_manifest: Mapping,
     max_epochs: int,
@@ -1889,6 +2342,7 @@ def train_hybrid_policy(
                 utility_artifact=utility_artifact,
                 environment_hash=environment_hash,
                 count_reward=count_reward,
+                profile_targets=profile_targets,
                 cache=cache,
                 optimizer=optimizer,
                 beta=beta,
@@ -1933,7 +2387,7 @@ def train_hybrid_policy(
     )
 
 
-_HYBRID_ARTIFACT_PIN_KEYS = frozenset({
+_LEGACY_ARTIFACT_PIN_KEYS = frozenset({
     "environment_hash",
     "utility_artifact_hash",
     "count_state_hash",
@@ -1943,20 +2397,83 @@ _HYBRID_ARTIFACT_PIN_KEYS = frozenset({
     "bc_checkpoint_hash",
 })
 
+_SEMANTIC_ARTIFACT_PIN_KEYS = frozenset({
+    "environment_hash",
+    "utility_artifact_hash",
+    "profile_target_artifact_hash",
+    "representation_manifest_hash",
+    "privacy_checkpoint_hash",
+    "lambda_menu_hash",
+    "threshold_manifest_hash",
+})
 
-def _validate_hybrid_pins(pins: Mapping[str, str]) -> dict[str, str]:
-    if set(pins) != _HYBRID_ARTIFACT_PIN_KEYS or any(
+
+def _validate_hybrid_pins(
+    pins: Mapping[str, str], architecture: str,
+) -> dict[str, str]:
+    expected = (
+        _SEMANTIC_ARTIFACT_PIN_KEYS
+        if architecture == "semantic-v1"
+        else _LEGACY_ARTIFACT_PIN_KEYS
+    )
+    if set(pins) != expected or any(
         not isinstance(value, str) or not value for value in pins.values()
     ):
         raise ValueError("hybrid checkpoint artifact pins are incomplete")
     return dict(sorted(pins.items()))
 
 
+def _semantic_policy_contract(policy: torch.nn.Module) -> dict[str, Any]:
+    store = getattr(policy, "representation_store", None)
+    manifest = getattr(store, "manifest", {})
+    encoder_revision = getattr(policy, "encoder_revision", None)
+    if encoder_revision is None and isinstance(manifest, Mapping):
+        encoder = manifest.get("encoder", {})
+        if isinstance(encoder, Mapping):
+            encoder_revision = encoder.get("revision")
+    context_mode = getattr(policy, "context_mode", None)
+    if context_mode is None:
+        context_mode = getattr(getattr(policy, "context_readout", None), "context_mode", None)
+    history_mode = getattr(policy, "history_mode", None)
+    if history_mode is None:
+        history_mode = getattr(getattr(policy, "memory", None), "history_mode", None)
+    feature_schema = getattr(policy, "feature_schema", (
+        "utility_relation", "candidate_context", "context_relation_interaction",
+        "action_mode", "runtime_type", "selected_history",
+    ))
+    controller_transform = getattr(
+        policy, "controller_transform", "log1p-over-log1p-max-v1",
+    )
+    contract = {
+        "encoder_revision": encoder_revision,
+        "context_mode": context_mode,
+        "history_mode": history_mode,
+        "feature_schema": list(feature_schema),
+        "controller_transform": controller_transform,
+    }
+    if (
+        not all(isinstance(contract[key], str) and contract[key] for key in (
+            "encoder_revision", "context_mode", "history_mode",
+            "controller_transform",
+        ))
+        or not contract["feature_schema"]
+        or any(
+            not isinstance(value, str) or not value
+            for value in contract["feature_schema"]
+        )
+    ):
+        raise ValueError("semantic policy checkpoint contract is incomplete")
+    return contract
+
+
 def policy_architecture_pin(policy: torch.nn.Module) -> str:
     """Hash the conditional policy's structural contract, excluding learned values."""
 
+    architecture = _policy_architecture_name(policy)
     profiles = getattr(policy, "supported_profiles", ())
+    supported_values = getattr(policy, "supported_lambda_values", ())
     payload = {
+        "policy_architecture": architecture,
         "class": f"{type(policy).__module__}.{type(policy).__qualname__}",
         "profiles": [
             {"name": profile.name, "value": float(profile.value)}
@@ -1974,6 +2491,11 @@ def policy_architecture_pin(policy: torch.nn.Module) -> str:
             for key, value in policy.state_dict().items()
         },
     }
+    if architecture == "semantic-v1":
+        payload["supported_lambda_values"] = [
+            float(value) for value in supported_values
+        ]
+        payload["semantic_contract"] = _semantic_policy_contract(policy)
     return stable_hash(payload)
 
 
@@ -2023,14 +2545,20 @@ def save_hybrid_checkpoint(
 
     if epoch < 0:
         raise ValueError("hybrid checkpoint epoch must be nonnegative")
-    pins = _validate_hybrid_pins(artifact_pins)
+    architecture = _policy_architecture_name(policy)
+    pins = _validate_hybrid_pins(artifact_pins, architecture)
     if not architecture_pin or not code_revision or not cache_paths or not training_config or any(
         not isinstance(key, str) or not isinstance(value, str) or not key or not value
         for key, value in cache_paths.items()
     ):
         raise ValueError("hybrid checkpoint architecture/cache/revision pins are incomplete")
     payload = {
-        "checkpoint_version": "ranker-v2-hybrid-checkpoint-v1",
+        "checkpoint_version": (
+            "ranker-v2-semantic-policy-v1"
+            if architecture == "semantic-v1"
+            else "ranker-v2-hybrid-checkpoint-v1"
+        ),
+        "policy_architecture": architecture,
         "policy_state_dict": policy.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "epoch": int(epoch),
@@ -2049,6 +2577,8 @@ def save_hybrid_checkpoint(
         "kl_enabled": bool(kl_enabled),
         "epoch_reports": tuple(dict(row) for row in epoch_reports),
     }
+    if architecture == "semantic-v1":
+        payload["semantic_contract"] = _semantic_policy_contract(policy)
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_name(destination.name + ".tmp")
@@ -2071,10 +2601,23 @@ def load_hybrid_checkpoint(
     """Validate every frozen pin before restoring any mutable trainer state."""
 
     checkpoint = torch.load(path, map_location="cpu", weights_only=True)
-    if checkpoint.get("checkpoint_version") != "ranker-v2-hybrid-checkpoint-v1":
-        raise ValueError("unsupported hybrid checkpoint")
+    architecture = _policy_architecture_name(policy)
+    expected_version = (
+        "ranker-v2-semantic-policy-v1"
+        if architecture == "semantic-v1"
+        else "ranker-v2-hybrid-checkpoint-v1"
+    )
+    if (
+        checkpoint.get("policy_architecture", "legacy-film-gru") != architecture
+        or checkpoint.get("checkpoint_version") != expected_version
+    ):
+        raise ValueError("hybrid checkpoint policy architecture differs")
+    if architecture == "semantic-v1" and checkpoint.get(
+        "semantic_contract"
+    ) != _semantic_policy_contract(policy):
+        raise ValueError("semantic checkpoint architecture contract differs")
     if checkpoint.get("artifact_pins") != _validate_hybrid_pins(
-        expected_artifact_pins
+        expected_artifact_pins, architecture,
     ):
         raise ValueError("hybrid checkpoint artifact pins differ")
     if checkpoint.get("architecture_pin") != expected_architecture_pin:

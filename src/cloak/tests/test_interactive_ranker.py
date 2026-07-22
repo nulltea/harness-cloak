@@ -1,5 +1,6 @@
+import math
 from dataclasses import FrozenInstanceError, fields, replace
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 
 import pytest
 import torch
@@ -102,6 +103,124 @@ class StubPolicy(torch.nn.Module):
 
     def advance(self, state, decision, action_id):
         return (*state, action_id)
+
+
+class SemanticGradientPolicy(torch.nn.Module):
+    policy_architecture = "semantic-v1"
+    encoder_revision = "stub-encoder-revision"
+    context_mode = "full-candidate-attention"
+    history_mode = "selected-cross-attention"
+    feature_schema = (
+        "utility_relation",
+        "candidate_context",
+        "context_relation_interaction",
+        "action_mode",
+        "runtime_type",
+        "selected_history",
+    )
+    controller_transform = "log1p-over-log1p-max-v1"
+
+    def __init__(self):
+        super().__init__()
+        self.utility_scores = torch.nn.Parameter(torch.tensor([0.0, 2.0, 0.0]))
+        self.history_scale = torch.nn.Parameter(torch.tensor(0.25))
+        self.privacy_scale = torch.nn.Parameter(torch.tensor(0.5))
+        self.alpha_raw = torch.nn.Parameter(
+            torch.tensor(math.log(math.expm1(1.0)))
+        )
+        self.max_lambda = 2.0
+        self.distribution_calls = 0
+
+    @property
+    def alpha(self):
+        return torch.nn.functional.softplus(self.alpha_raw)
+
+    def utility_parameters(self):
+        return (self.utility_scores,)
+
+    def history_parameters(self):
+        return (self.history_scale,)
+
+    def privacy_parameters(self):
+        return (self.privacy_scale,)
+
+    def begin_document(self, document, profile):
+        return ()
+
+    def distribution(self, state, decision, legal_action_ids, profile):
+        self.distribution_calls += 1
+        mode_indices = {
+            action.action_id: {
+                "level": 0,
+                "keep": 1,
+                "placeholder": 2,
+            }[action.mode]
+            for action in decision.actions
+        }
+        indices = torch.tensor([mode_indices[row] for row in legal_action_ids])
+        history_direction = torch.tensor([0.0, 1.0, -1.0])[indices]
+        utility = (
+            self.utility_scores[indices]
+            + len(state) * self.history_scale * history_direction
+        )
+        predicted = torch.tensor([0.5, 0.0, 1.0])[indices]
+        mu = predicted + self.privacy_scale * torch.tensor([0.2, -0.1, 0.1])[indices]
+        sigma = torch.full_like(mu, 0.25)
+        if float(profile.value) == 0.0:
+            combined = utility
+            count_combined = utility.detach()
+        else:
+            magnitude = math.log1p(float(profile.value)) / math.log1p(self.max_lambda)
+            controller = self.alpha * magnitude * predicted.detach()
+            combined = utility + controller
+            count_combined = utility.detach() + controller
+        return SimpleNamespace(
+            action_ids=tuple(legal_action_ids),
+            utility_logits=utility,
+            mu_log_count=mu,
+            sigma_log_count=sigma,
+            predicted_privacy=predicted,
+            combined_logits=combined,
+            log_probs=torch.log_softmax(combined, dim=0),
+            count_log_probs=torch.log_softmax(count_combined, dim=0),
+        )
+
+    def log_probs(self, state, decision, legal_action_ids, profile):
+        return self.distribution(
+            state, decision, legal_action_ids, profile
+        ).log_probs
+
+    def advance(self, state, decision, action_id):
+        return (*state, action_id)
+
+
+def _profile_targets():
+    from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
+
+    rows = {}
+    decision_actions = {}
+    for decision in _document().policy_decisions:
+        decision_actions[decision.decision_id] = tuple(
+            action.action_id for action in decision.actions
+        )
+        for action in decision.actions:
+            score = {"level": 0.5, "keep": 0.0, "placeholder": 1.0}[action.mode]
+            rows[action.action_id] = ProfileActionTarget(
+                decision_id=decision.decision_id,
+                action_id=action.action_id,
+                profile_id=str(decision.profile_id),
+                runtime_type=decision.runtime_type,
+                mode=action.mode,
+                log_count=0.5 if action.mode == "level" else None,
+                profile_score=score,
+                grounding_status="grounded" if action.mode == "level" else None,
+                source_family="fixture" if action.mode == "level" else None,
+            )
+    return ProfileCountTargets(
+        rows,
+        decision_actions,
+        {decision_id: True for decision_id in decision_actions},
+    )
 
 
 def test_public_trajectory_dataclasses_are_exact_frozen_and_opaque():
@@ -244,6 +363,172 @@ def test_replay_returns_gradient_tensors_and_complete_ordered_distributions():
     assert policy.scores.grad is not None
 
 
+def test_semantic_replay_captures_both_distributions_from_one_forward_per_step():
+    from cloak.train.interactive_ranker import (
+        ReplayedStep,
+        behavior_clone_trajectory,
+        replay_trajectory,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    assert [field.name for field in fields(ReplayedStep)] == [
+        "decision_id",
+        "selected_action_id",
+        "legal_action_ids",
+        "log_prob",
+        "log_probs",
+        "count_log_probs",
+        "utility_logits",
+        "predicted_privacy",
+        "entropy",
+    ]
+    policy = SemanticGradientPolicy()
+    profile = LambdaProfile("high", 2.0)
+    trajectory = behavior_clone_trajectory(_document(), profile)
+
+    replayed = replay_trajectory(policy, _document(), trajectory, profile)
+
+    assert policy.distribution_calls == len(trajectory.steps)
+    assert all(step.count_log_probs.requires_grad for step in replayed.steps)
+    assert all(step.utility_logits.requires_grad for step in replayed.steps)
+    assert all(step.predicted_privacy.shape == step.log_probs.shape for step in replayed.steps)
+    assert all(
+        torch.equal(step.log_prob, step.log_probs[
+            step.legal_action_ids.index(step.selected_action_id)
+        ])
+        for step in replayed.steps
+    )
+
+
+def test_semantic_replay_fails_closed_when_policy_only_returns_scalar_log_probs():
+    from cloak.train.interactive_ranker import (
+        behavior_clone_trajectory,
+        replay_trajectory,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    class IncompleteSemanticPolicy(StubPolicy):
+        policy_architecture = "semantic-v1"
+
+    profile = LambdaProfile("high", 2.0)
+    trajectory = behavior_clone_trajectory(_document(), profile)
+    with pytest.raises(ValueError, match="complete distribution"):
+        replay_trajectory(
+            IncompleteSemanticPolicy(), _document(), trajectory, profile
+        )
+
+
+def _two_action_semantic_step(policy, profile):
+    from cloak.train.interactive_ranker import ReplayedStep
+
+    decision = _document().policy_decisions[0]
+    legal = ("alpha-keep", "alpha-placeholder")
+    row = policy.distribution((), decision, legal, profile)
+    selected_index = legal.index("alpha-keep")
+    return row, ReplayedStep(
+        decision_id=decision.decision_id,
+        selected_action_id="alpha-keep",
+        legal_action_ids=legal,
+        log_prob=row.log_probs[selected_index],
+        log_probs=row.log_probs,
+        count_log_probs=row.count_log_probs,
+        utility_logits=row.utility_logits,
+        predicted_privacy=row.predicted_privacy,
+        entropy=-(row.log_probs.exp() * row.log_probs).sum(),
+    )
+
+
+def test_semantic_expected_profile_count_loss_uses_detached_count_distribution():
+    from cloak.train.interactive_ranker import expected_profile_count_loss
+    from cloak.train.ranker import LambdaProfile
+
+    policy = SemanticGradientPolicy()
+    profile = LambdaProfile("high", 2.0)
+    row, step = _two_action_semantic_step(policy, profile)
+
+    loss = expected_profile_count_loss(
+        (step,),
+        _profile_targets(),
+        lambda_value=profile.value,
+        decision_count=1,
+        rollout_count=1,
+    )
+
+    exact = torch.tensor([0.0, 1.0], dtype=row.count_log_probs.dtype)
+    assert torch.equal(loss, -2.0 * torch.sum(row.count_log_probs.exp() * exact))
+
+
+def test_semantic_hybrid_objective_uses_profile_targets_not_legacy_count_reward():
+    from cloak.train.interactive_ranker import (
+        ReplayedTrajectory,
+        compose_hybrid_document_objective,
+        expected_profile_count_loss,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    policy = SemanticGradientPolicy()
+    profile = LambdaProfile("high", 2.0)
+    _, step = _two_action_semantic_step(policy, profile)
+    replayed = (ReplayedTrajectory(
+        doc_id=_document().doc_id,
+        lambda_profile=profile,
+        steps=(step,),
+    ),)
+    utility = -step.log_prob
+
+    objective = compose_hybrid_document_objective(
+        replayed,
+        utility_loss=utility,
+        profile_targets=_profile_targets(),
+        lambda_value=profile.value,
+        beta=0.0,
+        eta=0.0,
+        reference_log_probs=None,
+    )
+
+    assert torch.equal(
+        objective.count,
+        expected_profile_count_loss(
+            (step,), _profile_targets(), profile.value, 1, 1,
+        ),
+    )
+
+
+def test_semantic_utility_and_exact_count_alpha_gradients_oppose_with_isolation():
+    from cloak.train.interactive_ranker import (
+        _gradient_norm,
+        expected_profile_count_loss,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    policy = SemanticGradientPolicy()
+    profile = LambdaProfile("high", 2.0)
+    row, step = _two_action_semantic_step(policy, profile)
+    utility_loss = -row.log_probs[0]
+    count_loss = expected_profile_count_loss(
+        (step,),
+        _profile_targets(),
+        lambda_value=profile.value,
+        decision_count=1,
+        rollout_count=1,
+    )
+
+    assert _gradient_norm(count_loss, policy.utility_parameters()) == 0.0
+    assert _gradient_norm(count_loss, policy.history_parameters()) == 0.0
+    assert _gradient_norm(utility_loss, policy.privacy_parameters()) == 0.0
+    assert _gradient_norm(count_loss, (policy.alpha_raw,)) > 0.0
+    assert _gradient_norm(utility_loss, (policy.alpha_raw,)) > 0.0
+    alpha_count_grad = torch.autograd.grad(
+        count_loss, policy.alpha_raw, retain_graph=True
+    )[0]
+    alpha_utility_grad = torch.autograd.grad(
+        utility_loss, policy.alpha_raw, retain_graph=True
+    )[0]
+    assert torch.sign(alpha_count_grad) != torch.sign(alpha_utility_grad)
+    assert alpha_count_grad < 0.0
+    assert alpha_utility_grad > 0.0
+
+
 def test_replay_raises_when_sampled_menu_or_claimed_state_differs():
     from cloak.train.interactive_ranker import replay_trajectory, sample_trajectory
 
@@ -304,11 +589,14 @@ def _replayed(log_probabilities):
         steps = tuple(
             ReplayedStep(
                 decision_id=decision_id,
-                legal_action_ids=(f"{decision_id}-selected",),
                 selected_action_id=f"{decision_id}-selected",
+                legal_action_ids=(f"{decision_id}-selected",),
                 log_prob=log_prob,
-                entropy=torch.zeros((), requires_grad=True),
                 log_probs=log_prob.reshape(1),
+                count_log_probs=log_prob.reshape(1),
+                utility_logits=log_prob.reshape(1),
+                predicted_privacy=torch.zeros(1),
+                entropy=torch.zeros((), requires_grad=True),
             )
             for decision_id, log_prob in zip(("p1", "p2"), values, strict=True)
         )
@@ -620,6 +908,78 @@ def test_behavior_clone_trains_cross_entropy_and_records_stable_id_distributions
     assert report.runtime_type_counts == {"TYPE": 2}
     assert tuple(report.trajectories[0].action_vector) == ("alpha", "beta")
     assert not torch.equal(policy.scores.detach(), initial)
+
+
+def test_semantic_behavior_clone_updates_only_utility_and_history_at_lambda_zero():
+    from cloak.train.interactive_ranker import behavior_clone
+    from cloak.train.ranker import LambdaProfile
+
+    policy = SemanticGradientPolicy()
+    optimizer = torch.optim.SGD(policy.parameters(), lr=0.2)
+    utility_before = policy.utility_scores.detach().clone()
+    history_before = policy.history_scale.detach().clone()
+    privacy_before = policy.privacy_scale.detach().clone()
+    alpha_before = policy.alpha_raw.detach().clone()
+
+    behavior_clone(
+        policy,
+        (_document(),),
+        lambda_zero=LambdaProfile("zero", 0.0),
+        optimizer=optimizer,
+        epochs=1,
+    )
+
+    assert not torch.equal(policy.utility_scores.detach(), utility_before)
+    assert not torch.equal(policy.history_scale.detach(), history_before)
+    assert torch.equal(policy.privacy_scale.detach(), privacy_before)
+    assert torch.equal(policy.alpha_raw.detach(), alpha_before)
+
+
+def test_semantic_warm_start_clones_each_verified_winner_once_at_lambda_zero():
+    from cloak.train.interactive_ranker import initialize_hybrid_warm_start
+    from cloak.train.ranker import LambdaProfile
+
+    policy = SemanticGradientPolicy()
+    bc_state = {
+        name: value.detach().clone()
+        for name, value in policy.state_dict().items()
+    }
+    privacy_before = policy.privacy_scale.detach().clone()
+    alpha_before = policy.alpha_raw.detach().clone()
+    optimizer = torch.optim.SGD(policy.parameters(), lr=0.1)
+    winner = {
+        "artifact_version": "ranker-v2-exit-winners-v1",
+        "documents": [{
+            "doc_id": _document().doc_id,
+            "verification_status": "verified",
+            "winner": {
+                "action_vector": {
+                    "alpha": "alpha-keep",
+                    "beta": "beta-level",
+                },
+            },
+        }],
+    }
+    profiles = (
+        LambdaProfile("zero", 0.0),
+        LambdaProfile("middle", 1.0),
+        LambdaProfile("high", 2.0),
+    )
+
+    result = initialize_hybrid_warm_start(
+        policy,
+        (_document(),),
+        profiles,
+        bc_state_dict=bc_state,
+        exit_winners=winner,
+        optimizer=optimizer,
+    )
+
+    assert result.identity_verified is True
+    assert result.verified_winner_count == 1
+    assert result.clone_target_count == len(_document().policy_decisions)
+    assert torch.equal(policy.privacy_scale.detach(), privacy_before)
+    assert torch.equal(policy.alpha_raw.detach(), alpha_before)
 
 
 def test_trajectory_point_recomputes_fixed_denominator_utility_and_count_score():
@@ -1097,6 +1457,81 @@ def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
         ])
 
 
+def test_train_orchestration_selects_exact_profile_targets_only_for_semantic():
+    import train_interactive_ranker
+
+    targets = _profile_targets()
+    semantic = train_interactive_ranker._hybrid_count_supervision(
+        "semantic-v1", targets,
+    )
+    legacy_reward = _count_reward()
+    legacy = train_interactive_ranker._hybrid_count_supervision(
+        "legacy-film-gru", legacy_reward,
+    )
+
+    assert semantic == {
+        "count_reward": targets,
+        "profile_targets": targets,
+    }
+    assert legacy == {"count_reward": legacy_reward}
+    with pytest.raises(TypeError, match="ProfileCountTargets"):
+        train_interactive_ranker._hybrid_count_supervision(
+            "semantic-v1", legacy_reward,
+        )
+    with pytest.raises(TypeError, match="CountReward"):
+        train_interactive_ranker._hybrid_count_supervision(
+            "legacy-film-gru", targets,
+        )
+
+
+def test_semantic_cli_factory_uses_only_frozen_local_artifact_contracts(monkeypatch):
+    import train_interactive_ranker
+    from cloak.train.ranker import LambdaProfile
+
+    contract = SimpleNamespace(pair_dim=20)
+    store = SimpleNamespace(manifest={"encoder": {"hidden_size": 4}})
+    captured = {}
+    sentinel = object()
+
+    monkeypatch.setattr(
+        train_interactive_ranker.RankerRepresentationStore,
+        "open",
+        lambda path: store,
+    )
+    monkeypatch.setattr(
+        train_interactive_ranker,
+        "_privacy_checkpoint_contract",
+        lambda path: contract,
+    )
+    monkeypatch.setattr(
+        train_interactive_ranker.SemanticRankerPolicy,
+        "from_privacy_checkpoint",
+        lambda **kwargs: captured.update(kwargs) or sentinel,
+    )
+    args = SimpleNamespace(
+        representation_manifest="representations.json",
+        privacy_checkpoint="privacy.pt",
+    )
+    profiles = (
+        LambdaProfile("zero", 0.0),
+        LambdaProfile("high", 2.0),
+    )
+
+    result = train_interactive_ranker._semantic_training_policy(
+        args, (_document(),), profiles,
+    )
+
+    assert result is sentinel
+    assert captured["representation_store"] is store
+    assert captured["privacy_checkpoint_contract"] is contract
+    assert captured["supported_profiles"] == profiles
+    assert captured["max_lambda"] == 2.0
+    assert captured["token_dim"] == captured["relation_dim"] == 4
+    assert captured["pair_dim"] == 20
+    assert captured["num_heads"] == 1
+    assert captured["runtime_types"] == ("TYPE",)
+
+
 def test_train_cli_dispatches_train_and_preserves_cache_only_stop(monkeypatch, capsys):
     import train_interactive_ranker
     from cloak.train.interactive_ranker import CacheOnlyMissError
@@ -1152,11 +1587,14 @@ def _objective_fixture():
         steps = tuple(
             ReplayedStep(
                 decision_id=decision_id,
-                legal_action_ids=(f"{decision_id}-selected", f"{decision_id}-other"),
                 selected_action_id=f"{decision_id}-selected",
+                legal_action_ids=(f"{decision_id}-selected", f"{decision_id}-other"),
                 log_prob=log_probs[0],
-                entropy=-(log_probs.exp() * log_probs).sum(),
                 log_probs=log_probs,
+                count_log_probs=log_probs,
+                utility_logits=log_probs,
+                predicted_privacy=torch.zeros_like(log_probs),
+                entropy=-(log_probs.exp() * log_probs).sum(),
             )
             for decision_id in ("first", "second")
         )
@@ -1430,6 +1868,66 @@ def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_familie
     assert result.runtime_type_metrics["TYPE"]["count_score"] >= 0.0
 
 
+def test_semantic_hybrid_step_routes_profile_loss_and_emits_owned_gradients(tmp_path):
+    from cloak.train.interactive_ranker import train_hybrid_document_group
+    from cloak.train.ranker import LambdaProfile
+    from cloak.train.utility_cache import UtilityCache
+
+    policy = SemanticGradientPolicy()
+    optimizer = torch.optim.SGD(policy.parameters(), lr=0.05)
+
+    def scorer(requests, **kwargs):
+        kwargs["cache"].last_batch_metrics = {}
+        return [_utility_result(request.action_vector, 0.5) for request in requests]
+
+    def scheduler(*args, **kwargs):
+        del args, kwargs
+        return (), {
+            "budget": 0, "uniform_allocation": 0, "priority_allocation": 0,
+            "cache_hits": 0, "delta_u": {}, "skip_reasons": {},
+        }
+
+    def executor(requests, *args, **kwargs):
+        assert requests == ()
+        kwargs["cache"].last_batch_metrics = {}
+        return {}, dict(kwargs["scheduler_diagnostics"])
+
+    result = train_hybrid_document_group(
+        policy,
+        None,
+        _document(),
+        LambdaProfile("high", 2.0),
+        rollouts=2,
+        utility_artifact=_utility_artifact(),
+        environment_hash="env-hash",
+        count_reward=_profile_targets(),
+        profile_targets=_profile_targets(),
+        cache=UtilityCache(tmp_path / "cache.jsonl"),
+        optimizer=optimizer,
+        beta=0.0,
+        eta=0.0,
+        counterfactual_budget=0,
+        endpoint_budget=0,
+        pair_history={},
+        seed=2,
+        current_round=0,
+        remote_workers=1,
+        reader_workers=1,
+        generator=torch.Generator().manual_seed(5),
+        score_batch=scorer,
+        scheduler=scheduler,
+        counterfactual_executor=executor,
+    )
+
+    assert result.parameter_group_gradient_norms["count"]["utility"] == 0.0
+    assert result.parameter_group_gradient_norms["count"]["history"] == 0.0
+    assert result.parameter_group_gradient_norms["count"]["alpha"] > 0.0
+    assert result.parameter_group_gradient_norms["fallback"]["privacy"] == 0.0
+    assert result.alpha_diagnostics["value"] >= 0.0
+    assert result.privacy_diagnostics["selected_count"] == 4
+    assert result.privacy_diagnostics["strata"]
+
+
 def test_epoch_report_keeps_scheduler_budget_separate_from_reward_magnitude(tmp_path):
     from cloak.train.interactive_ranker import DocumentTrainingResult, build_epoch_report
 
@@ -1487,6 +1985,71 @@ def test_epoch_report_keeps_scheduler_budget_separate_from_reward_magnitude(tmp_
         "collisions": 1,
         "action_modes": {"level": 2, "placeholder": 2},
     }
+
+
+def test_epoch_report_extends_semantic_gradient_alpha_privacy_diagnostics():
+    from cloak.train.interactive_ranker import DocumentTrainingResult, build_epoch_report
+
+    families = (
+        "linked", "residual", "fallback", "counterfactual",
+        "count", "entropy", "KL",
+    )
+    groups = {name: 0.0 for name in ("utility", "history", "privacy", "alpha")}
+    parameter_norms = {name: dict(groups) for name in families}
+    parameter_norms["count"]["alpha"] = 0.75
+    parameter_norms["linked"]["utility"] = 0.5
+    row = DocumentTrainingResult(
+        doc_id="fixture/doc",
+        corpus="fixture",
+        profile_name="lambda-two",
+        rollout_count=1,
+        loss=0.1,
+        utility=0.2,
+        count_score=0.3,
+        entropy=0.4,
+        collision_count=0,
+        action_modes={"keep": 1},
+        runtime_type_exposure={"TYPE": 1},
+        gradient_norms={name: 0.1 for name in families},
+        absolute_weighted_mass={name: 0.2 for name in families},
+        scheduler_diagnostics={"budget": 0},
+        cache_metrics={},
+        parameter_group_gradient_norms=parameter_norms,
+        alpha_diagnostics={"value": 1.0, "gradient": -0.25},
+        privacy_diagnostics={
+            "selected_count": 2,
+            "predicted_sum": 1.1,
+            "exact_sum": 1.0,
+            "absolute_error_sum": 0.3,
+            "strata": {
+                "singleton_profile|grounded": {
+                    "count": 1,
+                    "predicted_sum": 0.6,
+                    "exact_sum": 0.5,
+                    "absolute_error_sum": 0.1,
+                },
+            },
+        },
+        lambda_zero_identity_failures=1,
+    )
+
+    report = build_epoch_report(0, (row,))
+    diagnostics = report["semantic_diagnostics"]
+
+    assert diagnostics["parameter_group_gradient_norms"]["count"] == {
+        "utility": 0.0, "history": 0.0, "privacy": 0.0, "alpha": 0.75,
+    }
+    assert diagnostics["alpha_by_lambda"]["lambda-two"] == {
+        "value": 1.0, "gradient": -0.25,
+    }
+    assert diagnostics["selected_privacy"] == {
+        "count": 2,
+        "predicted_mean": pytest.approx(0.55),
+        "exact_mean": pytest.approx(0.5),
+        "mean_absolute_error": pytest.approx(0.15),
+    }
+    assert diagnostics["privacy_strata"]["singleton_profile|grounded"]["count"] == 1
+    assert diagnostics["lambda_zero_identity_failures"] == 1
 
 
 def test_failed_counterfactual_execution_does_not_advance_pair_history(tmp_path):
@@ -1681,6 +2244,173 @@ def test_hybrid_checkpoint_refuses_any_pin_mismatch_before_loading_state(tmp_pat
             expected_training_config={"learning_rate": 0.1, "beta": 0.0, "eta": 0.0},
         )
     assert torch.equal(policy.scores.detach(), before)
+
+
+def _semantic_checkpoint_pins():
+    return {
+        "environment_hash": "env",
+        "utility_artifact_hash": "utility",
+        "profile_target_artifact_hash": "profile-targets",
+        "representation_manifest_hash": "representations",
+        "privacy_checkpoint_hash": "privacy",
+        "lambda_menu_hash": "menu",
+        "threshold_manifest_hash": "threshold",
+    }
+
+
+def test_semantic_checkpoint_publishes_frozen_contract_and_round_trips(tmp_path):
+    from cloak.train.interactive_ranker import (
+        build_latin_cycle_schedule,
+        load_hybrid_checkpoint,
+        policy_architecture_pin,
+        save_hybrid_checkpoint,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    policy = SemanticGradientPolicy()
+    optimizer = torch.optim.Adam(policy.parameters(), lr=0.01)
+    generator = torch.Generator().manual_seed(4)
+    schedule = build_latin_cycle_schedule(
+        (_document(),), (LambdaProfile("zero", 0.0),), seed=7,
+    )
+    architecture_pin = policy_architecture_pin(policy)
+    path = tmp_path / "semantic.pt"
+    save_hybrid_checkpoint(
+        path,
+        policy=policy,
+        optimizer=optimizer,
+        epoch=2,
+        generator=generator,
+        schedule=schedule,
+        artifact_pins=_semantic_checkpoint_pins(),
+        architecture_pin=architecture_pin,
+        cache_paths={"utility": "cache"},
+        code_revision="revision",
+        training_config={"learning_rate": 0.01, "beta": 0.0, "eta": 0.0},
+        pair_history={},
+        kl_enabled=False,
+        epoch_reports=(),
+    )
+    payload = torch.load(path, map_location="cpu", weights_only=True)
+
+    assert payload["checkpoint_version"] == "ranker-v2-semantic-policy-v1"
+    assert payload["policy_architecture"] == "semantic-v1"
+    assert payload["semantic_contract"] == {
+        "encoder_revision": "stub-encoder-revision",
+        "context_mode": "full-candidate-attention",
+        "history_mode": "selected-cross-attention",
+        "feature_schema": list(policy.feature_schema),
+        "controller_transform": "log1p-over-log1p-max-v1",
+    }
+    saved = policy.alpha_raw.detach().clone()
+    with torch.no_grad():
+        policy.alpha_raw.add_(5.0)
+    load_hybrid_checkpoint(
+        path,
+        policy=policy,
+        optimizer=optimizer,
+        generator=generator,
+        expected_artifact_pins=_semantic_checkpoint_pins(),
+        expected_architecture_pin=architecture_pin,
+        expected_cache_paths={"utility": "cache"},
+        expected_code_revision="revision",
+        expected_training_config={"learning_rate": 0.01, "beta": 0.0, "eta": 0.0},
+    )
+    assert torch.equal(policy.alpha_raw.detach(), saved)
+
+
+def test_semantic_and_legacy_checkpoints_reject_each_other_before_tensor_load(tmp_path):
+    from cloak.train.interactive_ranker import (
+        build_latin_cycle_schedule,
+        load_hybrid_checkpoint,
+        policy_architecture_pin,
+        save_hybrid_checkpoint,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    semantic = SemanticGradientPolicy()
+    semantic_optimizer = torch.optim.SGD(semantic.parameters(), lr=0.1)
+    generator = torch.Generator().manual_seed(1)
+    schedule = build_latin_cycle_schedule(
+        (_document(),), (LambdaProfile("zero", 0.0),), seed=0,
+    )
+    path = tmp_path / "semantic.pt"
+    save_hybrid_checkpoint(
+        path,
+        policy=semantic,
+        optimizer=semantic_optimizer,
+        epoch=0,
+        generator=generator,
+        schedule=schedule,
+        artifact_pins=_semantic_checkpoint_pins(),
+        architecture_pin=policy_architecture_pin(semantic),
+        cache_paths={"utility": "cache"},
+        code_revision="revision",
+        training_config={"learning_rate": 0.1},
+        pair_history={},
+        kl_enabled=False,
+        epoch_reports=(),
+    )
+    legacy = StubPolicy()
+    legacy_before = legacy.scores.detach().clone()
+
+    with pytest.raises(ValueError, match="architecture"):
+        load_hybrid_checkpoint(
+            path,
+            policy=legacy,
+            optimizer=torch.optim.SGD(legacy.parameters(), lr=0.1),
+            generator=torch.Generator(),
+            expected_artifact_pins={
+                "environment_hash": "env", "utility_artifact_hash": "utility",
+                "count_state_hash": "count", "lambda_menu_hash": "menu",
+                "threshold_manifest_hash": "threshold", "exit_winners_hash": "exit",
+                "bc_checkpoint_hash": "bc",
+            },
+            expected_architecture_pin=policy_architecture_pin(legacy),
+            expected_cache_paths={"utility": "cache"},
+            expected_code_revision="revision",
+            expected_training_config={"learning_rate": 0.1},
+        )
+    assert torch.equal(legacy.scores.detach(), legacy_before)
+
+    legacy_path = tmp_path / "legacy.pt"
+    legacy_optimizer = torch.optim.SGD(legacy.parameters(), lr=0.1)
+    legacy_pins = {
+        "environment_hash": "env", "utility_artifact_hash": "utility",
+        "count_state_hash": "count", "lambda_menu_hash": "menu",
+        "threshold_manifest_hash": "threshold", "exit_winners_hash": "exit",
+        "bc_checkpoint_hash": "bc",
+    }
+    save_hybrid_checkpoint(
+        legacy_path,
+        policy=legacy,
+        optimizer=legacy_optimizer,
+        epoch=0,
+        generator=torch.Generator().manual_seed(1),
+        schedule=schedule,
+        artifact_pins=legacy_pins,
+        architecture_pin=policy_architecture_pin(legacy),
+        cache_paths={"utility": "cache"},
+        code_revision="revision",
+        training_config={"learning_rate": 0.1},
+        pair_history={},
+        kl_enabled=False,
+        epoch_reports=(),
+    )
+    semantic_before = semantic.alpha_raw.detach().clone()
+    with pytest.raises(ValueError, match="architecture"):
+        load_hybrid_checkpoint(
+            legacy_path,
+            policy=semantic,
+            optimizer=semantic_optimizer,
+            generator=torch.Generator(),
+            expected_artifact_pins=_semantic_checkpoint_pins(),
+            expected_architecture_pin=policy_architecture_pin(semantic),
+            expected_cache_paths={"utility": "cache"},
+            expected_code_revision="revision",
+            expected_training_config={"learning_rate": 0.1},
+        )
+    assert torch.equal(semantic.alpha_raw.detach(), semantic_before)
 
 
 def test_kl_enables_only_when_frozen_collapse_threshold_fires():
