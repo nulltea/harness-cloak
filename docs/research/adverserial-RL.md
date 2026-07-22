@@ -2,9 +2,11 @@
 type: research
 status: current
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-13
 tags: [rl, grpo, reward-modeling, frozen-model, goodhart, surrogate-reward, background, d2]
-companion: [../plans/2026-07-02-roundtrip-grpo-training.md, ../plans/2026-07-02-codesign-next-stage.md]
+companion: [../plans/2026-07-02-roundtrip-grpo-training.md,
+            ../plans/2026-07-02-codesign-next-stage.md,
+            research-wiki/training/2026-07-13-RL-ranker-v4-qa-utility-smoke.md]
 ---
 
 # RL background: training against frozen models, and what the round trip is called

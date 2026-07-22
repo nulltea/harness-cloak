@@ -1,3 +1,6 @@
+import sys
+from types import SimpleNamespace
+
 import cloak.extract as ex
 
 
@@ -11,6 +14,31 @@ def test_placeholder_bare_bracket_stripped_is_restored():
     assert out == "acute exacerbation of arthritis"
     assert stats["ph_swapped"] == 1
     assert stats["ph_residue"] == 0
+
+
+def test_semantic_model_loads_pinned_hf_revision(monkeypatch):
+    seen = {}
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_id, **kwargs):
+            seen["model_id"] = model_id
+            seen["kwargs"] = kwargs
+
+    monkeypatch.setitem(
+        sys.modules,
+        "sentence_transformers",
+        SimpleNamespace(SentenceTransformer=FakeSentenceTransformer),
+    )
+    ex._semantic_model.cache_clear()
+    try:
+        ex._semantic_model()
+    finally:
+        ex._semantic_model.cache_clear()
+
+    assert seen == {
+        "model_id": "sentence-transformers/all-MiniLM-L6-v2",
+        "kwargs": {"revision": "1110a243fdf4706b3f48f1d95db1a4f5529b4d41"},
+    }
 
 
 def test_placeholder_bracketed_form_still_restored():
