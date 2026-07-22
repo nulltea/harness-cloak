@@ -11,6 +11,13 @@ companion: ../../docs/specs/RL/interactive-ranker-v2.md
 
 # RL-ranker v5 interactive count-conditioned policy
 
+> **Superseded before running (2026-07-22, same day):** the FiLM/GRU conditional architecture this
+> record planned was superseded by the semantic prototype
+> (`docs/specs/RL/ranker-v2-architecture.md`) before any optimizer run. No run occurred; status
+> stays `planned` permanently. Successor record: RL-ranker v6
+> (`2026-07-22-RL-ranker-v6-semantic-privacy-context.md`). The preregistered smoke documents and
+> deterministic split carry forward to v6.
+
 ## Objective & hypothesis
 
 Train one sequential policy over the frozen ranker-v2 action menus, conditioned on a supported

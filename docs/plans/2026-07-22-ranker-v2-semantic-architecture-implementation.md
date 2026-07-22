@@ -45,11 +45,12 @@ utility and privacy projections and strict gradient boundaries.
   transcript context; read the five companion RL architecture/reward specs before Task 1.
 - Preserve unrelated local changes, including `.superpowers/sdd/task-3-report.md` and uncommitted
   specification files. Never reset, clean, or overwrite user work.
-- Follow the root `AGENTS.md` model table exactly. Implementation agents use GPT-5.6 Terra High by
-  default; Terra Medium is allowed only for mechanical artifact/CLI edits. GPT-5.6 Sol High is
-  review-only and must never implement. Never enable fast/priority service mode.
-- Do not create commits unless the user explicitly requests them. Task boundaries and review reports
-  replace the writing-plans skill's usual commit step.
+- **Roles (Timo, 2026-07-22, supersedes any conflicting model directive):** implementation runs
+  through the `codex:rescue` subagent on GPT-5.6 Sol High; the coordinating Claude session (Fable)
+  reviews every task diff against the task contract and review gates (ponytail-critical: reuse,
+  simplicity, shortest working diff; small findings fixed directly by the coordinator), then
+  commits path-scoped after each accepted task (`git diff --cached --name-only` checked first).
+  LLM prompt strings are never delegated to codex.
 - Use TDD: add the focused failing test, run it and observe the intended failure, implement the
   smallest production change, then run the focused suite and task review gate.
 - Do not install or upgrade a production dependency.
@@ -157,6 +158,11 @@ CLI entry point.
 - Create: `src/cloak/train/profile_count.py`
 - Create: `scripts/build_profile_count_targets.py`
 - Create: `src/cloak/tests/test_profile_count.py`
+
+**Reuse note (ponytail):** count admission is already implemented — reuse `count_reward.py`'s
+provenance/evidence admission helpers (`_level_clause_results`-family logic) rather than
+re-implementing the clause checks; only the profile-relative normalization and target schema are
+new here.
 
 **Interfaces:**
 
@@ -995,9 +1001,11 @@ absolute thresholds and non-ACI boundary are satisfied.
   semantic artifacts. Assert a missing remote result exits with the existing machine-readable
   cache-miss contract and launches no call. Assert all checkpoint pins survive save/load.
 
-- [ ] **Step 3: Build the two-document frozen representation cache**
+- [ ] **Step 3: Build the smoke-slice frozen representation cache**
 
-  Use the same two documents selected by the existing preflight artifact. Verify GPU availability,
+  Use the three preregistered smoke documents from the RL-ranker v5 record and preflight
+  (`aci/D2N001`, `aci/D2N048`, `aci/D2N002` — both-family / delivered-only / repeated-decision
+  coverage). Verify GPU availability,
   build unbuffered, record wall time/peak memory, and inspect manifest hashes, token counts,
   occurrence coverage, relation counts, and cache files.
 
@@ -1010,7 +1018,7 @@ absolute thresholds and non-ACI boundary are satisfied.
 
 - [ ] **Step 5: Run cache-only BC, ExIt, and one hybrid step**
 
-  Use two documents, at least two rollouts, one lambda-zero and one nonzero episode, one scheduled
+  Use the same three smoke documents, at least two rollouts, one lambda-zero and one nonzero episode, one scheduled
   counterfactual when cached, and the semantic policy. If cache entries are absent, stop and report
   exact remote-task and context-reader work counts; request approval before any live call.
 
@@ -1072,10 +1080,10 @@ After each task, the coordinator reviews:
 5. artifact identity and fail-closed behavior;
 6. no unrelated edits or silent scope expansion.
 
-Critical whole-change review uses GPT-5.6 Sol High only after implementation is complete. If an
-independent Claude review is requested, use `claude-opus-4-8` High through `delegate-to-claude` by
-default; reserve `claude-fable-5` High for demonstrated unresolved architecture/research issues.
-Neither reviewer implements fixes unless the user separately delegates implementation.
+The coordinating Claude session performs the critical whole-change review after Task 9 (it
+reviewed every task and holds the full context); one additional independent codex
+`adversarial-review` pass is requested only if that review leaves unresolved
+architecture/correctness risk.
 
 ## Final Definition of Done
 
