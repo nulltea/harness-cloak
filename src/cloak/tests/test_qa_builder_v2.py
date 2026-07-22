@@ -16,7 +16,9 @@ from cloak.train.qa_builder import (
     build_joint_representative_anchor,
     compile_relational_assertions,
     freeze_ranker_environment,
+    finalize_utility_scoring,
     package_utility_artifact,
+    prepare_utility_scoring,
     relation_teacher_prompt,
     score_utility,
     validate_context_assertions,
@@ -878,6 +880,51 @@ def test_runtime_scores_context_assertions_per_assertion():
     assert all(len(questions) == 1 for questions, _ in calls)
     assert result["component_scores"] == {"c1": 1.0, "c2": 1.0, "d1": 1.0}
     assert result["utility"] == pytest.approx(1.0)
+
+
+def test_staged_runtime_scoring_is_identical_to_direct_scoring():
+    artifact = {
+        "reader_pin": TEST_READER_PIN,
+        "documents": {"d1": {"utility_weight_denominator": 2.0}},
+        "assertions": {
+            "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
+                   "question": "Q", "accepted_values": ["answer"], "weight": 0.5},
+            "d1": {"assertion_id": "d1", "doc_id": "d1", "family": "delivered",
+                   "scoring_contract": {"kind": "contains", "value": "delivered"},
+                   "weight": 0.5},
+        },
+    }
+
+    def reader(questions, context, clauses=None):
+        return ["answer"]
+
+    _pin_reader(reader)
+    direct = score_utility(
+        artifact, "d1", doc_p="context", out_final="delivered", reader=reader,
+    )
+    prepared = prepare_utility_scoring(
+        artifact, "d1", doc_p="context", out_final="delivered",
+    )
+    staged = finalize_utility_scoring(prepared, ["answer"])
+
+    assert staged == direct == {
+        "component_scores": {"c1": 1.0, "d1": 1.0}, "utility": 0.5,
+    }
+
+
+def test_batched_context_reader_refresh_only_bypasses_reader_transport_cache():
+    calls = []
+
+    class Client:
+        def generate(self, prompt, **kwargs):
+            calls.append(kwargs)
+            return "answer"
+
+    reader = BatchedContextReader(client=Client())
+    reader(["Q"], "context")
+    reader(["Q"], "context", refresh=True)
+
+    assert calls == [{}, {"refresh": True}]
 
 
 def test_runtime_linked_answer_scored_by_lattice_entailment(monkeypatch):

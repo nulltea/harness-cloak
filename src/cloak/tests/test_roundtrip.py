@@ -87,6 +87,36 @@ def test_reader_refresh_reaches_reader_but_never_gen(monkeypatch):
     assert gen_refreshes == [False, False]
 
 
+def test_utility_reader_refresh_is_forwarded_without_refreshing_generation(monkeypatch):
+    generation_kwargs = []
+    scoring_refresh = []
+
+    class Remote:
+        def generate(self, prompt, **kwargs):
+            generation_kwargs.append(kwargs)
+            return "out-p"
+
+    def fake_score(
+        artifact, doc_id, *, doc_p, out_final, reader, set_reader=None,
+        reader_refresh=False,
+    ):
+        scoring_refresh.append(reader_refresh)
+        return {"component_scores": {"a": 1.0}, "utility": 1.0}
+
+    monkeypatch.setattr(rt, "_remote", lambda: Remote())
+    monkeypatch.setattr(rt, "invert", lambda out_p, replacements: ("out-final", {}))
+    monkeypatch.setattr(rt, "score_utility", fake_score)
+
+    result = rt.roundtrip_batch([{
+        "corpus": "clinical", "doc_id": "d", "doc_p": "p", "R": [],
+        "probes": [], "utility_artifact": {},
+    }], workers=1, reader_refresh=True)
+
+    assert result[0]["recall"] == 1.0
+    assert scoring_refresh == [True]
+    assert generation_kwargs == [{}]
+
+
 def test_roundtrip_batch_no_probes_gives_none(monkeypatch):
     stub = _StubClient(["anything"])
     monkeypatch.setattr(rt, "_remote", lambda: stub)

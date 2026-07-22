@@ -17,6 +17,8 @@ from cloak.runtime_types import placeholder_token, placeholder_type_token
 from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 from cloak.train.qa_audit import build_qa_audit
 
+UTILITY_SCORER_VERSION = "qa-utility-runtime-v1"
+
 RELATION_TEACHER_MODEL = "openai/gpt-oss-120b"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
 # Pin a reliable OpenRouter provider: the free Nemotron route was intermittently
@@ -812,7 +814,9 @@ class BatchedContextReader:
             )
         self._client = client
 
-    def _read_one(self, question: str, context: str, clause: str | None = None) -> str:
+    def _read_one(
+        self, question: str, context: str, clause: str | None = None, *, refresh: bool = False,
+    ) -> str:
         # qa-context-reader-v4: the optional relation-constraint line restates the QA as the
         # relation the answer must satisfy (see _relation_reader_clause). Without a clause the
         # template is the same minus that line (legacy rows, non-relation probes).
@@ -824,13 +828,18 @@ class BatchedContextReader:
         if clause:
             lines.append(f"Your ANSWER must satisfy the relation: ANSWER {clause}.")
         prompt = "\n".join(lines) + f"\n\nDOCUMENT:\n{context}\n\nQUESTION: {question}"
-        raw = self._client.generate(prompt).strip()
+        raw = (
+            self._client.generate(prompt, refresh=True)
+            if refresh else self._client.generate(prompt)
+        ).strip()
         if raw.startswith("```") and raw.endswith("```"):
             raw = raw.strip("`").strip()
         raw = raw.strip().strip('"').strip("'").strip()
         return "" if raw.upper() == "NONE" else raw
 
-    def _read_set_one(self, question: str, context: str, clause: str | None = None) -> str:
+    def _read_set_one(
+        self, question: str, context: str, clause: str | None = None, *, refresh: bool = False,
+    ) -> str:
         # Set-valued read (validated wrapper: scripts/spikes/set_valued_gate_probe.py): the raw
         # JSON-array reply is returned verbatim; _context_answer_score parses and scores recall.
         lines = [
@@ -841,23 +850,28 @@ class BatchedContextReader:
         if clause:
             lines.append(f"Every answer must satisfy the relation: ANSWER {clause}.")
         prompt = "\n".join(lines) + f"\n\nDOCUMENT:\n{context}\n\nQUESTION: {question}"
-        return self._client.generate(prompt).strip()
+        return (
+            self._client.generate(prompt, refresh=True)
+            if refresh else self._client.generate(prompt)
+        ).strip()
 
     def read_set(
         self, questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+        *, refresh: bool = False,
     ) -> list[str]:
         clauses = clauses if clauses is not None else [None] * len(questions)
         return [
-            self._read_set_one(question, context, clause)
+            self._read_set_one(question, context, clause, refresh=refresh)
             for question, clause in zip(questions, clauses, strict=True)
         ]
 
     def __call__(
         self, questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+        *, refresh: bool = False,
     ) -> list[str]:
         clauses = clauses if clauses is not None else [None] * len(questions)
         return [
-            self._read_one(question, context, clause)
+            self._read_one(question, context, clause, refresh=refresh)
             for question, clause in zip(questions, clauses, strict=True)
         ]
 
@@ -867,11 +881,12 @@ _batched_context_reader = None
 
 def read_context_batch(
     questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+    *, refresh: bool = False,
 ) -> list[str]:
     global _batched_context_reader
     if _batched_context_reader is None:
         _batched_context_reader = BatchedContextReader()
-    return _batched_context_reader(questions, context, clauses)
+    return _batched_context_reader(questions, context, clauses, refresh=refresh)
 
 
 read_context_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
@@ -879,12 +894,18 @@ read_context_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
 
 def read_context_set_batch(
     questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
+    *, refresh: bool = False,
 ) -> list[str]:
     """Set-valued reads (same pinned reader model/endpoint, JSON-array response contract)."""
     global _batched_context_reader
     if _batched_context_reader is None:
         _batched_context_reader = BatchedContextReader()
-    return _batched_context_reader.read_set(questions, context, clauses)
+    return _batched_context_reader.read_set(
+        questions, context, clauses, refresh=refresh,
+    )
+
+
+read_context_set_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
 
 
 class AciTaskAdapter:
@@ -10005,51 +10026,33 @@ def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: 
     raise ValueError(f"unsupported delivered scoring contract: {contract}")
 
 
-def score_utility(
-    artifact: Mapping,
-    doc_id: str,
-    *,
-    doc_p: str,
-    out_final: str,
-    reader: Callable[[list[str], str, list[str | None]], Sequence[str]],
-    set_reader: Callable[[list[str], str, list[str | None]], Sequence[str]] | None = None,
+def prepare_utility_scoring(
+    artifact: Mapping, doc_id: str, *, doc_p: str, out_final: str,
 ) -> dict:
-    """Score one document with one context-reader batch and deterministic delivered checks."""
-    _validated_build_reader_pin(reader, artifact)
+    """Prepare deterministic scores and exact per-assertion reader work."""
     assertions = [
         row for row in artifact.get("assertions", {}).values()
         if row.get("doc_id") == doc_id and row.get("status", "accepted") == "accepted"
     ]
     assertions.sort(key=lambda row: str(row["assertion_id"]))
     context_rows = [row for row in assertions if row.get("family") == "context"]
-    # Match the gate exactly: typed-directive question + per-assertion turn
-    # excerpt of doc_p (same stored turn indices), so an assertion accepted on
-    # its excerpt at build time is scored on the same excerpt at runtime.
-    context_answers = []
+    context_work = []
     for row in context_rows:
-        question = _permuted_reader_question(row, 0)
-        reader_evidence = row.get("evidence") or {}
-        row_reader = (
-            set_reader
-            if set_reader is not None
-            and (row.get("answer_target") or {}).get("kind") == "linked_decision_set"
-            else reader
-        )
-        context_answers += row_reader(
-            [question], _reader_excerpt(doc_p, reader_evidence), [row.get("reader_clause")]
-        )
-    if len(context_answers) != len(context_rows):
-        raise ValueError("reader returned the wrong number of answers")
-
+        context_work.append({
+            "assertion_id": str(row["assertion_id"]),
+            "question": _permuted_reader_question(row, 0),
+            "context": _reader_excerpt(doc_p, row.get("evidence") or {}),
+            "reader_clause": row.get("reader_clause"),
+            "set_valued": (
+                (row.get("answer_target") or {}).get("kind")
+                == "linked_decision_set"
+            ),
+        })
     chain_by_decision = {
         str(decision["decision_id"]): decision.get("semantic_chain", [])
         for decision in artifact["documents"][doc_id].get("decisions", [])
     }
     scores: dict[str, float] = {}
-    for row, answer in zip(context_rows, context_answers):
-        scores[str(row["assertion_id"])] = _context_answer_score(
-            row, answer, chain_by_decision
-        )
     parsed_output = _parse_aci_note(out_final)
     for row in assertions:
         if row.get("family") != "delivered":
@@ -10058,11 +10061,98 @@ def score_utility(
         scores[str(row["assertion_id"])] = _score_delivered_contract(
             contract, out_final, parsed_output
         )
+    return {
+        "assertions": assertions,
+        "context_rows": context_rows,
+        "context_work": context_work,
+        "chain_by_decision": chain_by_decision,
+        "deterministic_scores": scores,
+        "utility_weight_denominator": float(
+            artifact["documents"][doc_id]["utility_weight_denominator"]
+        ),
+    }
+
+
+def finalize_utility_scoring(
+    prepared: Mapping, context_answers: Sequence[str],
+) -> dict:
+    """Reconstruct and validate one complete frozen component vector."""
+    context_rows = prepared["context_rows"]
+    if len(context_answers) != len(context_rows):
+        raise ValueError("reader returned the wrong number of answers")
+    scores = dict(prepared["deterministic_scores"])
+    for row, answer in zip(context_rows, context_answers, strict=True):
+        scores[str(row["assertion_id"])] = _context_answer_score(
+            row, answer, prepared["chain_by_decision"],
+        )
+    assertions = prepared["assertions"]
+    expected_ids = {str(row["assertion_id"]) for row in assertions}
+    if set(scores) != expected_ids:
+        raise ValueError("utility scoring did not produce exact assertion coverage")
+    if any(
+        not isinstance(score, Real) or not isfinite(float(score))
+        or not 0.0 <= float(score) <= 1.0
+        for score in scores.values()
+    ):
+        raise ValueError("utility scoring produced an invalid component score")
 
     numerator = sum(float(row["weight"]) * scores[str(row["assertion_id"])]
                     for row in assertions)
-    denominator = float(
-        artifact["documents"][doc_id]["utility_weight_denominator"]
-    )
+    denominator = float(prepared["utility_weight_denominator"])
     utility = numerator / denominator if denominator else 0.0
     return {"component_scores": scores, "utility": utility}
+
+
+def _call_runtime_reader(
+    reader: Callable, question: str, context: str, clause: str | None, refresh: bool,
+) -> Sequence[str]:
+    if not refresh:
+        return reader([question], context, [clause])
+    parameters = inspect.signature(reader).parameters.values()
+    supports_refresh = any(
+        parameter.name == "refresh" or parameter.kind == parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+    if not supports_refresh:
+        raise ValueError("reader_refresh requires a reader that accepts refresh")
+    return reader([question], context, [clause], refresh=True)
+
+
+def validate_utility_reader_pin(reader: Callable, artifact: Mapping) -> None:
+    """Require the runtime reader to match the utility artifact's frozen pin."""
+    _validated_build_reader_pin(reader, artifact)
+
+
+def score_utility(
+    artifact: Mapping,
+    doc_id: str,
+    *,
+    doc_p: str,
+    out_final: str,
+    reader: Callable[[list[str], str, list[str | None]], Sequence[str]],
+    set_reader: Callable[[list[str], str, list[str | None]], Sequence[str]] | None = None,
+    reader_refresh: bool = False,
+) -> dict:
+    """Score one document with one reader request per context assertion."""
+    _validated_build_reader_pin(reader, artifact)
+    prepared = prepare_utility_scoring(
+        artifact, doc_id, doc_p=doc_p, out_final=out_final,
+    )
+    if any(item["set_valued"] for item in prepared["context_work"]):
+        if set_reader is None:
+            set_reader = reader
+        _validated_build_reader_pin(set_reader, artifact)
+    context_answers = []
+    for item in prepared["context_work"]:
+        row_reader = set_reader if item["set_valued"] else reader
+        answers = _call_runtime_reader(
+            row_reader,
+            item["question"],
+            item["context"],
+            item["reader_clause"],
+            reader_refresh,
+        )
+        if len(answers) != 1:
+            raise ValueError("reader returned the wrong number of answers")
+        context_answers.append(answers[0])
+    return finalize_utility_scoring(prepared, context_answers)
