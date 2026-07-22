@@ -383,6 +383,60 @@ def test_provisional_utility_loss_rejects_missing_or_extra_credit_pairs():
         provisional_utility_loss(_replayed((logs[:2], logs[2:])), credit)
 
 
+def test_hybrid_utility_loss_substitutes_pair_terms_in_place_and_divides_once():
+    from cloak.train.interactive_ranker import hybrid_utility_loss
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    logs = tuple(
+        torch.tensor(value, requires_grad=True)
+        for value in (-0.1, -0.2, -0.3, -0.4)
+    )
+    pair_loss = torch.tensor(0.7, requires_grad=True)
+    credit = DocumentUtilityCredit(
+        document_utility=(0.0, 0.0), linked_utility={}, residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (0, "p1"): 1.0, (0, "p2"): 2.0,
+            (1, "p1"): -1.0, (1, "p2"): -2.0,
+        },
+        route={"p1": "linked", "p2": "document"},
+    )
+
+    loss = hybrid_utility_loss(
+        _replayed((logs[:2], logs[2:])),
+        credit,
+        {(0, "p2"): pair_loss},
+    )
+
+    assert loss.item() == pytest.approx(-0.15)
+    loss.backward()
+    assert logs[0].grad.item() == pytest.approx(-0.5)
+    assert logs[1].grad is None
+    assert logs[2].grad.item() == pytest.approx(0.5)
+    assert logs[3].grad.item() == pytest.approx(1.0)
+    assert pair_loss.grad.item() == pytest.approx(0.5)
+
+
+def test_hybrid_utility_loss_rejects_unknown_pair_or_nonscalar_loss():
+    from cloak.train.interactive_ranker import hybrid_utility_loss
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    logs = tuple(torch.tensor(-0.1, requires_grad=True) for _ in range(4))
+    replayed = _replayed((logs[:2], logs[2:]))
+    credit = DocumentUtilityCredit(
+        document_utility=(0.0, 0.0), linked_utility={}, residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (0, "p1"): 0.0, (0, "p2"): 0.0,
+            (1, "p1"): 0.0, (1, "p2"): 0.0,
+        },
+        route={"p1": "linked", "p2": "document"},
+    )
+
+    with pytest.raises(ValueError, match="unknown counterfactual loss pairs"):
+        hybrid_utility_loss(replayed, credit, {(2, "p1"): torch.tensor(0.0)})
+    with pytest.raises(ValueError, match="scalar tensor"):
+        hybrid_utility_loss(replayed, credit, {(0, "p1"): torch.zeros(2)})
+
+
 def _count_reward(*, alpha_level=0.2, beta_level=0.9):
     from cloak.train.count_reward import CountActionScore, CountReward
 

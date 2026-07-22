@@ -167,6 +167,58 @@ def provisional_utility_loss(
     return torch.stack(terms).sum() / rollout_count
 
 
+def hybrid_utility_loss(
+    replayed: Sequence["ReplayedTrajectory"],
+    provisional_credit: DocumentUtilityCredit,
+    counterfactual_losses: Mapping[tuple[int, str], torch.Tensor],
+) -> torch.Tensor:
+    """Substitute measured pair losses for provisional terms, once per pair."""
+
+    rollout_count = len(replayed)
+    if rollout_count == 0:
+        raise ValueError("hybrid utility loss requires at least one rollout")
+    if (
+        len(provisional_credit.document_utility) != rollout_count
+        or len(provisional_credit.residual_utility) != rollout_count
+        or any(
+            len(values) != rollout_count
+            for values in provisional_credit.linked_utility.values()
+        )
+    ):
+        raise ValueError("utility credit rollout count differs from replayed trajectories")
+
+    replayed_pairs: set[tuple[int, str]] = set()
+    step_by_pair: dict[tuple[int, str], ReplayedStep] = {}
+    for rollout_index, trajectory in enumerate(replayed):
+        for step in trajectory.steps:
+            pair = (rollout_index, step.decision_id)
+            if pair in replayed_pairs:
+                raise ValueError(f"replayed trajectory repeats decision {step.decision_id!r}")
+            replayed_pairs.add(pair)
+            step_by_pair[pair] = step
+    if replayed_pairs != set(provisional_credit.provisional_advantage):
+        raise ValueError("credit pairs differ from replayed trajectory pairs")
+    unknown = sorted(set(counterfactual_losses) - replayed_pairs)
+    if unknown:
+        raise ValueError(f"unknown counterfactual loss pairs: {unknown}")
+    for pair, loss in counterfactual_losses.items():
+        if not isinstance(loss, torch.Tensor) or loss.ndim != 0:
+            raise ValueError(f"counterfactual loss for {pair} must be a scalar tensor")
+        if not bool(torch.isfinite(loss)):
+            raise ValueError(f"counterfactual loss for {pair} is non-finite")
+
+    terms = []
+    for pair in sorted(replayed_pairs):
+        if pair in counterfactual_losses:
+            terms.append(counterfactual_losses[pair])
+        else:
+            terms.append(
+                -float(provisional_credit.provisional_advantage[pair])
+                * step_by_pair[pair].log_prob
+            )
+    return torch.stack(terms).sum() / rollout_count
+
+
 class TrajectoryPolicy(Protocol):
     def begin_document(self, document: RankerDocument, profile: Any) -> Any: ...
 
