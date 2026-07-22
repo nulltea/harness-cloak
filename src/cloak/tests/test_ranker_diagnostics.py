@@ -537,3 +537,114 @@ def test_preflight_cli_cleanly_stops_and_writes_exact_cache_misses(
     )
     assert line.endswith("dispatched=false")
     assert report["missing"]
+
+
+def _training_artifact_fixtures():
+    from cloak.train.utility_cache import stable_hash
+
+    environment = {
+        "artifact_version": "ranker-v2-environment-v2",
+        "frozen_environment": {"environment_hash": "env", "documents": {}},
+    }
+    count_state = {
+        "artifact_version": "count-reward-state-v1",
+        "environment_hash": "env",
+        "gate_report": {
+            "verdict": "PASS",
+            "missing_policy_mappings": [],
+            "nonmonotone_profiles": [],
+        },
+    }
+    count_state["artifact_hash"] = stable_hash(count_state)
+    utility = {
+        "artifact_version": "utility-assertions-v2",
+        "environment_hash": "env",
+    }
+    utility["artifact_hash"] = stable_hash(utility)
+    menu = {
+        "artifact_version": "ranker-v2-lambda-menu-v1",
+        "verdict": "PASS",
+        "values": [0.0, 1.0, 3.0],
+        "profile_names": ["zero", "middle", "high"],
+    }
+    menu["artifact_hash"] = stable_hash(menu)
+    threshold = {
+        "artifact_version": "ranker-v2-threshold-manifest-v1",
+        "environment_hash": "env",
+        "utility_component_artifact_hash": utility["artifact_hash"],
+        "count_artifact_hash": count_state["artifact_hash"],
+        "hard_gates": {
+            "explicit_count_coverage": 1.0,
+            "fallback_count_gradient_mass": 0.0,
+            "missing_occurrence_decision_mappings": 0,
+            "nonmonotone_profiles": 0,
+            "lambda_zero_identity": "exact",
+        },
+        "feasibility_gates": {
+            "min_adjacent_winner_change": 0.2,
+        },
+        "scheduler": {
+            "call_budget": 5,
+            "endpoint_fraction": 0.2,
+        },
+    }
+    threshold["artifact_hash"] = stable_hash(threshold)
+    exit_winners = {
+        "artifact_version": "ranker-v2-exit-winners-v1",
+        "pins": {
+            "environment_hash": "env",
+            "count_state_hash": count_state["artifact_hash"],
+            "utility_artifact_hash": utility["artifact_hash"],
+            "policy_checkpoint_hash": "bc-file",
+        },
+        "documents": [],
+    }
+    exit_winners["artifact_hash"] = stable_hash(exit_winners)
+    bc_checkpoint = {
+        "checkpoint_version": "ranker-v2-bc-v1",
+        "pins": {
+            "environment_hash": "env",
+            "count_state_hash": count_state["artifact_hash"],
+            "utility_artifact_hash": utility["artifact_hash"],
+        },
+        "policy_config": {"encoder_pin": "stub"},
+        "policy_state_dict": {},
+    }
+    return environment, count_state, utility, menu, threshold, exit_winners, bc_checkpoint
+
+
+def test_train_artifact_validation_accepts_only_hash_bound_passing_gates():
+    from train_interactive_ranker import _validate_train_artifacts
+
+    fixtures = _training_artifact_fixtures()
+    validated = _validate_train_artifacts(
+        *fixtures,
+        bc_checkpoint_hash="bc-file",
+    )
+
+    assert [profile.name for profile in validated["profiles"]] == [
+        "zero", "middle", "high",
+    ]
+    assert validated["counterfactual_budget"] == 5
+    assert validated["endpoint_budget"] == 1
+    assert validated["artifact_pins"]["lambda_menu_hash"] == fixtures[3][
+        "artifact_hash"
+    ]
+
+    broken = list(fixtures)
+    broken[1] = dict(fixtures[1], gate_report={
+        **fixtures[1]["gate_report"],
+        "missing_policy_mappings": ["gap"],
+    })
+    with pytest.raises(ValueError, match="mapping gate"):
+        _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")
+
+    broken = list(fixtures)
+    broken[4] = dict(fixtures[4], utility_component_artifact_hash="different")
+    with pytest.raises(ValueError, match="utility artifact hash"):
+        _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")
+
+    broken = list(fixtures)
+    broken[2] = dict(fixtures[2], unexpected_stale_field=True)
+    with pytest.raises(ValueError, match="utility artifact hash"):
+        _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")

@@ -1008,7 +1008,9 @@ def test_interactive_cli_has_only_task_subcommands_and_requires_all_artifact_pat
     with pytest.raises(SystemExit):
         parser.parse_args([command, *common[:-2], *extra])
 
-    assert set(parser._subparsers._group_actions[0].choices) == {"bc", "exit-collect"}
+    assert set(parser._subparsers._group_actions[0].choices) == {
+        "bc", "exit-collect", "train",
+    }
 
 
 def test_interactive_cli_cache_only_miss_is_machine_readable_and_nonzero(
@@ -1041,3 +1043,752 @@ def test_interactive_cli_cache_only_miss_is_machine_readable_and_nonzero(
         "CACHE_ONLY_MISS phase=initial remote_tasks=3 "
         "context_reader_work_items=7"
     )
+
+
+def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
+    import train_interactive_ranker
+
+    parser = train_interactive_ranker.build_parser()
+    args = parser.parse_args([
+        "train",
+        "--environment", "environment.json",
+        "--count-state", "count.json",
+        "--utility-artifact", "utility.json",
+        "--utility-cache", "cache.jsonl",
+        "--threshold-manifest", "threshold.json",
+        "--lambda-menu", "menu.json",
+        "--exit-winners", "exit.json",
+        "--bc-checkpoint", "bc.pt",
+        "--out-checkpoint", "conditional.pt",
+        "--kl-reference-checkpoint", "reference.pt",
+        "--epoch-reports", "epochs.jsonl",
+        "--fixed-lambda-zero-control", "control.pt",
+        "--max-docs", "3",
+        "--max-epochs", "4",
+        "--rollouts", "2",
+        "--remote-workers", "2",
+        "--reader-workers", "3",
+        "--seed", "17",
+        "--cache-only",
+    ])
+
+    assert args.command == "train"
+    assert args.fixed_lambda_zero_control == "control.pt"
+    assert args.max_docs == 3 and args.max_epochs == 4 and args.rollouts == 2
+    assert args.cache_only is True
+    train_actions = parser._subparsers._group_actions[0].choices["train"]._actions
+    option_names = {option for action in train_actions for option in action.option_strings}
+    assert not any(
+        token in option
+        for option in option_names
+        for token in ("bypass", "skip-gate", "ignore-gate")
+    )
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            "train",
+            "--environment", "environment.json",
+            "--count-state", "count.json",
+            "--utility-artifact", "utility.json",
+            "--utility-cache", "cache.jsonl",
+        ])
+
+
+def test_train_cli_dispatches_train_and_preserves_cache_only_stop(monkeypatch, capsys):
+    import train_interactive_ranker
+    from cloak.train.interactive_ranker import CacheOnlyMissError
+
+    def blocked(args):
+        assert args.command == "train"
+        raise CacheOnlyMissError(
+            phase="counterfactual", remote_tasks=2,
+            context_reader_work_items=5,
+        )
+
+    monkeypatch.setattr(train_interactive_ranker, "_run_train", blocked, raising=False)
+    with pytest.raises(SystemExit) as captured:
+        train_interactive_ranker.main([
+            "train",
+            "--environment", "environment.json",
+            "--count-state", "count.json",
+            "--utility-artifact", "utility.json",
+            "--utility-cache", "cache.jsonl",
+            "--threshold-manifest", "threshold.json",
+            "--lambda-menu", "menu.json",
+            "--exit-winners", "exit.json",
+            "--bc-checkpoint", "bc.pt",
+            "--out-checkpoint", "conditional.pt",
+            "--kl-reference-checkpoint", "reference.pt",
+            "--epoch-reports", "epochs.jsonl",
+            "--fixed-lambda-zero-control", "control.pt",
+            "--max-epochs", "1",
+            "--rollouts", "2",
+            "--cache-only",
+        ])
+
+    assert captured.value.code == 2
+    assert capsys.readouterr().err.strip() == (
+        "CACHE_ONLY_MISS phase=counterfactual remote_tasks=2 "
+        "context_reader_work_items=5"
+    )
+
+
+def _objective_fixture():
+    from cloak.train.count_reward import CountActionScore, CountReward
+    from cloak.train.interactive_ranker import (
+        ReplayedStep,
+        ReplayedTrajectory,
+    )
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    probability = torch.tensor([0.75, 0.25], dtype=torch.float64)
+    log_probs = probability.log().requires_grad_()
+    trajectories = []
+    for rollout_index in range(2):
+        steps = tuple(
+            ReplayedStep(
+                decision_id=decision_id,
+                legal_action_ids=(f"{decision_id}-selected", f"{decision_id}-other"),
+                selected_action_id=f"{decision_id}-selected",
+                log_prob=log_probs[0],
+                entropy=-(log_probs.exp() * log_probs).sum(),
+                log_probs=log_probs,
+            )
+            for decision_id in ("first", "second")
+        )
+        trajectories.append(ReplayedTrajectory(
+            doc_id="fixture",
+            lambda_profile="lambda-two",
+            steps=steps,
+        ))
+    action_rows = {}
+    decision_actions = {}
+    for decision_id in ("first", "second"):
+        ids = (f"{decision_id}-selected", f"{decision_id}-other")
+        decision_actions[decision_id] = ids
+        for action_id, score in zip(ids, (0.0, 1.0), strict=True):
+            action_rows[action_id] = CountActionScore(
+                action_id=action_id,
+                decision_id=decision_id,
+                runtime_type="TYPE",
+                profile_id="profile",
+                mode="level",
+                count=1.0,
+                score=score,
+                grounding_status="certifying",
+                source_family="fixture",
+                evidence_ref="fixture",
+            )
+    credit = DocumentUtilityCredit(
+        document_utility=(0.5, 0.5),
+        linked_utility={"first": (0.5, 0.5)},
+        residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (0, "first"): 1.0,
+            (0, "second"): 2.0,
+            (1, "first"): 0.0,
+            (1, "second"): -1.0,
+        },
+        route={"first": "linked", "second": "document"},
+    )
+    return tuple(trajectories), CountReward(action_rows, decision_actions), credit
+
+
+def test_hybrid_document_objective_matches_two_rollout_two_decision_equation():
+    from cloak.train.interactive_ranker import (
+        compose_hybrid_document_objective,
+        hybrid_utility_loss,
+    )
+
+    replayed, count_reward, credit = _objective_fixture()
+    counterfactual = {(0, "second"): replayed[0].steps[1].log_prob * 0.0 + 0.3}
+    utility = hybrid_utility_loss(replayed, credit, counterfactual)
+    reference = tuple(
+        tuple(torch.log(torch.tensor([0.5, 0.5], dtype=torch.float64)) for _ in row.steps)
+        for row in replayed
+    )
+
+    objective = compose_hybrid_document_objective(
+        replayed,
+        utility_loss=utility,
+        count_reward=count_reward,
+        lambda_value=2.0,
+        beta=0.1,
+        eta=0.2,
+        reference_log_probs=reference,
+    )
+
+    per_step_entropy = -(0.75 * torch.log(torch.tensor(0.75))
+                         + 0.25 * torch.log(torch.tensor(0.25)))
+    per_step_kl = (0.75 * torch.log(torch.tensor(1.5))
+                   + 0.25 * torch.log(torch.tensor(0.5)))
+    assert float(objective.utility.detach()) == pytest.approx(0.15)
+    assert float(objective.count.detach()) == pytest.approx(-0.5)
+    assert float(objective.entropy.detach()) == pytest.approx(2 * per_step_entropy)
+    assert float(objective.kl.detach()) == pytest.approx(2 * per_step_kl)
+    assert float(objective.total.detach()) == pytest.approx(
+        0.15 - 0.5 - 0.1 * 2 * per_step_entropy + 0.2 * 2 * per_step_kl
+    )
+    assert objective.beta == 0.1
+    assert objective.eta == 0.2
+
+
+def test_count_gradient_survives_tied_utility_and_is_not_divided_twice():
+    from cloak.train.interactive_ranker import (
+        compose_hybrid_document_objective,
+        hybrid_utility_loss,
+    )
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    replayed, count_reward, _ = _objective_fixture()
+    tied = DocumentUtilityCredit(
+        document_utility=(0.5, 0.5),
+        linked_utility={"first": (0.5, 0.5)},
+        residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (rollout, decision): 0.0
+            for rollout in range(2)
+            for decision in ("first", "second")
+        },
+        route={"first": "linked", "second": "document"},
+    )
+    utility = hybrid_utility_loss(replayed, tied, {})
+    objective = compose_hybrid_document_objective(
+        replayed,
+        utility_loss=utility,
+        count_reward=count_reward,
+        lambda_value=2.0,
+        beta=0.0,
+        eta=0.0,
+        reference_log_probs=None,
+    )
+
+    assert float(utility.detach()) == 0.0
+    assert float(objective.count.detach()) == pytest.approx(-0.5)
+    objective.total.backward()
+    assert replayed[0].steps[0].log_probs.grad is not None
+    assert torch.count_nonzero(replayed[0].steps[0].log_probs.grad) > 0
+
+
+def test_absolute_weighted_mass_does_not_cancel_opposite_rollout_terms():
+    from cloak.train.interactive_ranker import _utility_family_terms_and_mass
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    replayed, _, _ = _objective_fixture()
+    credit = DocumentUtilityCredit(
+        document_utility=(1.0, 0.0),
+        linked_utility={},
+        residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (rollout, decision): (1.0 if rollout == 0 else -1.0)
+            for rollout in range(2)
+            for decision in ("first", "second")
+        },
+        route={"first": "document", "second": "document"},
+    )
+
+    losses, masses = _utility_family_terms_and_mass(replayed, credit, {})
+
+    assert float(losses["fallback"].detach()) == pytest.approx(0.0)
+    assert masses["fallback"] > 0.0
+
+
+def test_seeded_latin_cycle_balances_every_document_and_records_exposure():
+    from cloak.train.interactive_ranker import (
+        build_latin_cycle_schedule,
+        profile_exposure_report,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    documents = tuple(
+        replace(_document(), doc_id=f"fixture/{index}", corpus=("a" if index < 2 else "b"))
+        for index in range(4)
+    )
+    profiles = tuple(
+        LambdaProfile(name, value)
+        for name, value in (("zero", 0.0), ("middle", 1.0), ("high", 3.0))
+    )
+    schedule = build_latin_cycle_schedule(documents, profiles, seed=19)
+    assignments = {
+        document.doc_id: tuple(
+            schedule.profile_for(document.doc_id, epoch).name
+            for epoch in range(len(profiles))
+        )
+        for document in documents
+    }
+
+    assert all(set(values) == {profile.name for profile in profiles}
+               for values in assignments.values())
+    assert schedule == build_latin_cycle_schedule(documents, profiles, seed=19)
+    assert schedule != build_latin_cycle_schedule(documents, profiles, seed=20)
+    report = profile_exposure_report(documents, schedule, range(len(profiles)))
+    assert all(
+        count == 1
+        for profiles_by_document in report["by_document"].values()
+        for count in profiles_by_document.values()
+    )
+    assert sum(report["by_profile"].values()) == len(documents) * len(profiles)
+    assert set(report["by_corpus"]) == {"a", "b"}
+    assert set(report["by_type"]) == {"TYPE"}
+
+
+def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_families(
+    tmp_path,
+):
+    import copy
+
+    from cloak.train.interactive_ranker import train_hybrid_document_group
+    from cloak.train.ranker import LambdaProfile
+    from cloak.train.utility_cache import UtilityCache
+
+    policy = StubPolicy()
+    reference = copy.deepcopy(policy)
+    optimizer = torch.optim.SGD(policy.parameters(), lr=0.1)
+    initial = policy.scores.detach().clone()
+    score_calls = []
+
+    def scorer(requests, **kwargs):
+        score_calls.append((len(requests), kwargs["reader_refresh"]))
+        kwargs["cache"].last_batch_metrics = {
+            "cache_hits": 1, "transport_calls": 2, "reader_work_items": 3,
+        }
+        return [_utility_result(request.action_vector, 0.5) for request in requests]
+
+    def scheduler(documents, trajectories, replayed, **kwargs):
+        assert set(documents) == {"fixture/doc"}
+        assert len(trajectories) == len(replayed) == 2
+        assert kwargs["budget"] == 5
+        assert all(row.lambda_profile.name == "lambda-two" for row in trajectories)
+        return (), {
+            "budget": 5,
+            "uniform_allocation": 1,
+            "priority_allocation": 4,
+            "cache_hits": 0,
+            "delta_u": {"count": 0},
+            "skip_reasons": {},
+        }
+
+    def executor(requests, documents, trajectories, replayed, **kwargs):
+        assert requests == ()
+        kwargs["cache"].last_batch_metrics = {
+            "cache_hits": 2, "transport_calls": 3, "reader_work_items": 4,
+        }
+        return {}, dict(kwargs["scheduler_diagnostics"])
+
+    result = train_hybrid_document_group(
+        policy,
+        reference,
+        _document(),
+        LambdaProfile("lambda-two", 2.0),
+        rollouts=2,
+        utility_artifact=_utility_artifact(),
+        environment_hash="env-hash",
+        count_reward=_count_reward(),
+        cache=UtilityCache(tmp_path / "cache.jsonl"),
+        optimizer=optimizer,
+        beta=0.01,
+        eta=0.0,
+        counterfactual_budget=5,
+        endpoint_budget=1,
+        pair_history={},
+        seed=7,
+        current_round=0,
+        remote_workers=1,
+        reader_workers=1,
+        generator=torch.Generator().manual_seed(3),
+        score_batch=scorer,
+        scheduler=scheduler,
+        counterfactual_executor=executor,
+    )
+
+    assert not torch.equal(policy.scores.detach(), initial)
+    assert policy.grad_modes[:4] == [False, False, False, False]
+    assert all(policy.grad_modes[index] for index in range(4, len(policy.grad_modes)))
+    assert score_calls == [(2, False)]
+    assert set(result.gradient_norms) == {
+        "linked", "residual", "fallback", "counterfactual",
+        "count", "entropy", "KL",
+    }
+    assert set(result.absolute_weighted_mass) == set(result.gradient_norms)
+    assert result.absolute_weighted_mass["count"] > 0.0
+    assert result.rollout_count == 2
+    assert result.profile_name == "lambda-two"
+    assert result.scheduler_diagnostics["budget"] == 5
+    assert result.cache_metrics["requested_rollouts"] == 2
+    assert result.cache_metrics["cache_hits"] == 3
+    assert result.cache_metrics["transport_calls"] == 5
+    assert result.cache_metrics["reader_work_items"] == 7
+    assert set(result.cache_metrics["stages"]) == {"trajectory", "counterfactual"}
+    assert result.action_modes
+    assert result.runtime_type_exposure == {"TYPE": 2}
+    assert result.runtime_type_metrics["TYPE"]["exposure"] == 2
+    assert result.runtime_type_metrics["TYPE"]["action_modes"]
+    assert result.runtime_type_metrics["TYPE"]["count_score"] >= 0.0
+
+
+def test_epoch_report_keeps_scheduler_budget_separate_from_reward_magnitude(tmp_path):
+    from cloak.train.interactive_ranker import DocumentTrainingResult, build_epoch_report
+
+    group = DocumentTrainingResult(
+        doc_id="fixture/doc",
+        corpus="fixture",
+        profile_name="lambda-two",
+        rollout_count=2,
+        loss=1.25,
+        utility=0.5,
+        count_score=0.7,
+        entropy=0.4,
+        collision_count=1,
+        action_modes={"level": 2, "placeholder": 2},
+        runtime_type_exposure={"TYPE": 2},
+        gradient_norms={name: 0.1 for name in (
+            "linked", "residual", "fallback", "counterfactual",
+            "count", "entropy", "KL",
+        )},
+        absolute_weighted_mass={name: 0.2 for name in (
+            "linked", "residual", "fallback", "counterfactual",
+            "count", "entropy", "KL",
+        )},
+        scheduler_diagnostics={"budget": 5, "delta_u": {"mean_abs": 0.8}},
+        cache_metrics={"cache_hits": 3, "remote_tasks": 1},
+        runtime_type_metrics={
+            "TYPE": {
+                "exposure": 2,
+                "utility": 0.5,
+                "count_score": 0.7,
+                "entropy": 0.4,
+                "collisions": 1,
+                "action_modes": {"level": 2, "placeholder": 2},
+            },
+        },
+    )
+
+    report = build_epoch_report(4, (group,))
+
+    assert report["epoch"] == 4
+    assert report["term_families"]["counterfactual"] == {
+        "detached_gradient_norm": pytest.approx(0.1),
+        "absolute_weighted_mass": pytest.approx(0.2),
+    }
+    assert report["scheduler"]["budget"] == 5
+    assert "delta_u" in report["scheduler"]
+    assert report["cache"] == {"cache_hits": 3, "remote_tasks": 1}
+    assert report["profiles"]["lambda-two"]["utility"] == pytest.approx(0.5)
+    assert report["corpora"]["fixture"]["count_score"] == pytest.approx(0.7)
+    assert report["runtime_types"]["TYPE"] == {
+        "exposure": 2,
+        "utility": pytest.approx(0.5),
+        "count_score": pytest.approx(0.7),
+        "entropy": pytest.approx(0.4),
+        "collisions": 1,
+        "action_modes": {"level": 2, "placeholder": 2},
+    }
+
+
+def test_failed_counterfactual_execution_does_not_advance_pair_history(tmp_path):
+    import copy
+
+    from cloak.train.counterfactuals import CounterfactualRequest
+    from cloak.train.interactive_ranker import train_hybrid_document_group
+    from cloak.train.ranker import LambdaProfile
+    from cloak.train.utility_cache import UtilityCache
+
+    policy = StubPolicy()
+    history = {}
+
+    def scorer(requests, **kwargs):
+        return [_utility_result(request.action_vector, 0.5) for request in requests]
+
+    def scheduler(documents, trajectories, replayed, **kwargs):
+        del documents, replayed, kwargs
+        step = trajectories[0].steps[0]
+        alternative = next(
+            action_id for action_id in step.legal_action_ids
+            if action_id != step.selected_action_id
+        )
+        return (CounterfactualRequest(
+            doc_id=trajectories[0].doc_id,
+            rollout_index=0,
+            decision_id=step.decision_id,
+            selected_action_id=step.selected_action_id,
+            alternative_action_id=alternative,
+            direction="fixture",
+            priority_tier=0,
+        ),), {"budget": 5}
+
+    def failed_executor(*args, **kwargs):
+        raise RuntimeError("fixture scoring failure")
+
+    with pytest.raises(RuntimeError, match="fixture scoring failure"):
+        train_hybrid_document_group(
+            policy,
+            copy.deepcopy(policy),
+            _document(),
+            LambdaProfile("lambda-two", 2.0),
+            rollouts=2,
+            utility_artifact=_utility_artifact(),
+            environment_hash="env-hash",
+            count_reward=_count_reward(),
+            cache=UtilityCache(tmp_path / "cache.jsonl"),
+            optimizer=torch.optim.SGD(policy.parameters(), lr=0.1),
+            beta=0.0,
+            eta=0.0,
+            counterfactual_budget=5,
+            endpoint_budget=1,
+            pair_history=history,
+            seed=0,
+            current_round=4,
+            remote_workers=1,
+            reader_workers=1,
+            generator=torch.Generator().manual_seed(2),
+            score_batch=scorer,
+            scheduler=scheduler,
+            counterfactual_executor=failed_executor,
+        )
+
+    assert history == {}
+
+
+def test_hybrid_checkpoint_round_trip_restores_optimizer_rng_schedule_and_pins(
+    tmp_path,
+):
+    import random
+
+    from cloak.train.interactive_ranker import (
+        build_latin_cycle_schedule,
+        load_hybrid_checkpoint,
+        save_hybrid_checkpoint,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    policy = StubPolicy()
+    optimizer = torch.optim.Adam(policy.parameters(), lr=0.01)
+    profiles = (LambdaProfile("zero", 0.0), LambdaProfile("high", 2.0))
+    schedule = build_latin_cycle_schedule((_document(),), profiles, seed=11)
+    generator = torch.Generator().manual_seed(23)
+    pins = {
+        "environment_hash": "env",
+        "utility_artifact_hash": "utility",
+        "count_state_hash": "count",
+        "lambda_menu_hash": "menu",
+        "threshold_manifest_hash": "threshold",
+        "exit_winners_hash": "exit",
+        "bc_checkpoint_hash": "bc",
+    }
+    architecture_pin = "sha256:architecture"
+    path = tmp_path / "checkpoint.pt"
+    save_hybrid_checkpoint(
+        path,
+        policy=policy,
+        optimizer=optimizer,
+        epoch=3,
+        generator=generator,
+        schedule=schedule,
+        artifact_pins=pins,
+        architecture_pin=architecture_pin,
+        cache_paths={"utility": "cache.jsonl"},
+        code_revision="revision",
+        training_config={"learning_rate": 0.01, "beta": 0.1, "eta": 0.2},
+        pair_history={("doc", 0, "decision", "a", "b"): 2},
+        kl_enabled=True,
+        epoch_reports=({"epoch": 3},),
+    )
+    saved_scores = policy.scores.detach().clone()
+    saved_generator_state = generator.get_state().clone()
+    with torch.no_grad():
+        policy.scores.add_(10.0)
+    generator.manual_seed(99)
+    random.seed(99)
+
+    resumed = load_hybrid_checkpoint(
+        path,
+        policy=policy,
+        optimizer=optimizer,
+        generator=generator,
+        expected_artifact_pins=pins,
+        expected_architecture_pin=architecture_pin,
+        expected_cache_paths={"utility": "cache.jsonl"},
+        expected_code_revision="revision",
+        expected_training_config={"learning_rate": 0.01, "beta": 0.1, "eta": 0.2},
+    )
+
+    assert torch.equal(policy.scores.detach(), saved_scores)
+    assert torch.equal(generator.get_state(), saved_generator_state)
+    assert resumed["epoch"] == 3
+    assert resumed["schedule"] == schedule
+    assert resumed["kl_enabled"] is True
+    assert resumed["pair_history"] == {("doc", 0, "decision", "a", "b"): 2}
+    assert resumed["epoch_reports"] == ({"epoch": 3},)
+    assert resumed["training_config"] == {
+        "learning_rate": 0.01, "beta": 0.1, "eta": 0.2,
+    }
+
+
+def test_hybrid_checkpoint_refuses_any_pin_mismatch_before_loading_state(tmp_path):
+    from cloak.train.interactive_ranker import (
+        build_latin_cycle_schedule,
+        load_hybrid_checkpoint,
+        save_hybrid_checkpoint,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    policy = StubPolicy()
+    optimizer = torch.optim.SGD(policy.parameters(), lr=0.1)
+    generator = torch.Generator().manual_seed(1)
+    schedule = build_latin_cycle_schedule(
+        (_document(),), (LambdaProfile("zero", 0.0),), seed=0,
+    )
+    pins = {
+        "environment_hash": "env", "utility_artifact_hash": "utility",
+        "count_state_hash": "count", "lambda_menu_hash": "menu",
+        "threshold_manifest_hash": "threshold", "exit_winners_hash": "exit",
+        "bc_checkpoint_hash": "bc",
+    }
+    path = tmp_path / "checkpoint.pt"
+    save_hybrid_checkpoint(
+        path,
+        policy=policy,
+        optimizer=optimizer,
+        epoch=0,
+        generator=generator,
+        schedule=schedule,
+        artifact_pins=pins,
+        architecture_pin="architecture",
+        cache_paths={"utility": "cache"},
+        code_revision="revision",
+        training_config={"learning_rate": 0.1, "beta": 0.0, "eta": 0.0},
+        pair_history={},
+        kl_enabled=False,
+        epoch_reports=(),
+    )
+    before = policy.scores.detach().clone()
+    mismatched = dict(pins, lambda_menu_hash="different")
+
+    with pytest.raises(ValueError, match="artifact pins"):
+        load_hybrid_checkpoint(
+            path,
+            policy=policy,
+            optimizer=optimizer,
+            generator=generator,
+            expected_artifact_pins=mismatched,
+            expected_architecture_pin="architecture",
+            expected_cache_paths={"utility": "cache"},
+            expected_code_revision="revision",
+            expected_training_config={"learning_rate": 0.1, "beta": 0.0, "eta": 0.0},
+        )
+    assert torch.equal(policy.scores.detach(), before)
+
+
+def test_kl_enables_only_when_frozen_collapse_threshold_fires():
+    from cloak.train.interactive_ranker import collapse_rule_fires
+
+    manifest = {"feasibility_gates": {"min_adjacent_winner_change": 0.2}}
+    assert collapse_rule_fires(
+        manifest, {"conditional_responsiveness": {"adjacent_winner_change": 0.1}},
+    ) is True
+    assert collapse_rule_fires(
+        manifest, {"conditional_responsiveness": {"adjacent_winner_change": 0.3}},
+    ) is False
+    with pytest.raises(ValueError, match="responsiveness"):
+        collapse_rule_fires(manifest, {})
+
+
+def test_hybrid_training_loop_uses_latin_profiles_and_enables_kl_after_block():
+    from cloak.train.interactive_ranker import (
+        DocumentTrainingResult,
+        build_latin_cycle_schedule,
+        train_hybrid_policy,
+    )
+    from cloak.train.ranker import LambdaProfile
+
+    documents = tuple(
+        replace(_document(), doc_id=f"fixture/{index}") for index in range(3)
+    )
+    profiles = (
+        LambdaProfile("zero", 0.0),
+        LambdaProfile("middle", 1.0),
+        LambdaProfile("high", 2.0),
+    )
+    schedule = build_latin_cycle_schedule(documents, profiles, seed=13)
+    calls = []
+    checkpoints = []
+
+    def group_trainer(policy, reference_policy, document, profile, **kwargs):
+        del policy, reference_policy
+        calls.append((kwargs["current_round"], document.doc_id, profile.name, kwargs["eta"]))
+        families = {
+            name: 0.0 for name in (
+                "linked", "residual", "fallback", "counterfactual",
+                "count", "entropy", "KL",
+            )
+        }
+        return DocumentTrainingResult(
+            doc_id=document.doc_id,
+            corpus=document.corpus,
+            profile_name=profile.name,
+            rollout_count=2,
+            loss=0.0,
+            utility=0.5,
+            count_score=profile.value / 2.0,
+            entropy=0.4,
+            collision_count=0,
+            action_modes={"level": 2},
+            runtime_type_exposure={"TYPE": 2},
+            gradient_norms=families,
+            absolute_weighted_mass=families,
+            scheduler_diagnostics={
+                "budget": 5, "uniform_allocation": 1,
+                "priority_allocation": 4, "delta_u": {"count": 0},
+            },
+            cache_metrics={"cache_hits": 0},
+            action_vector_hashes=("sha256:same", "sha256:same"),
+        )
+
+    result = train_hybrid_policy(
+        policy=object(),
+        reference_policy=object(),
+        documents=documents,
+        profiles=profiles,
+        schedule=schedule,
+        optimizer=object(),
+        utility_artifact={},
+        environment_hash="env",
+        count_reward=object(),
+        cache=object(),
+        threshold_manifest={
+            "feasibility_gates": {"min_adjacent_winner_change": 0.2},
+        },
+        max_epochs=4,
+        rollouts=2,
+        beta=0.01,
+        eta=0.3,
+        counterfactual_budget=5,
+        endpoint_budget=1,
+        pair_history={},
+        seed=7,
+        remote_workers=1,
+        reader_workers=1,
+        generator=torch.Generator().manual_seed(4),
+        group_trainer=group_trainer,
+        epoch_callback=lambda epoch, reports, history, enabled: checkpoints.append(
+            (epoch, len(reports), dict(history), enabled)
+        ),
+    )
+
+    first_block = calls[: len(documents) * len(profiles)]
+    for document in documents:
+        assert {
+            profile for _, doc_id, profile, _ in first_block
+            if doc_id == document.doc_id
+        } == {profile.name for profile in profiles}
+    assert all(eta == 0.0 for *_, eta in first_block)
+    assert all(eta == 0.3 for *_, eta in calls[len(first_block):])
+    assert result.kl_enabled is True
+    assert len(result.epoch_reports) == 4
+    assert result.epoch_reports[2]["conditional_responsiveness"] == {
+        "eligible_adjacent_pairs": 6,
+        "changed_adjacent_pairs": 0,
+        "adjacent_winner_change": 0.0,
+    }
+    assert result.epoch_reports[0]["exposure"]["by_profile"]
+    assert [row[:2] for row in checkpoints] == [(0, 1), (1, 2), (2, 3), (3, 4)]
+    assert checkpoints[2][3] is True

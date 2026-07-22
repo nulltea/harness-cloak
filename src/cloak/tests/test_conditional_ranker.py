@@ -407,3 +407,95 @@ def test_legacy_ranker_policy_contract_and_feature_dimension_are_unchanged():
         "net.4.weight", "net.4.bias",
     ]
     assert legacy.log_probs(features, [0, 1]).shape == (2,)
+
+
+def test_warm_start_imports_single_profile_weights_then_clones_exit_winner_everywhere():
+    from cloak.train.interactive_ranker import initialize_hybrid_warm_start
+
+    LambdaProfile, _, ConditionalRankerPolicy = _symbols()
+    document = _document()
+    source = ConditionalRankerPolicy(
+        count_reward=_count_reward(document),
+        supported_profiles=(LambdaProfile("utility", 0.0),),
+        max_menu_value=0.0,
+        environment_hash="sha256:fixture-environment",
+        encoder_pin="stub-encoder-v1",
+        encoder=StubEncoder(),
+        hidden_dim=12,
+    )
+    with torch.no_grad():
+        source.head[-1].bias.fill_(0.25)
+    target, _, _ = _policy()
+    winner = {
+        "artifact_version": "ranker-v2-exit-winners-v1",
+        "documents": [{
+            "doc_id": document.doc_id,
+            "verification_status": "verified",
+            "winner": {
+                "action_vector": {
+                    "alpha": "alpha-level-1",
+                    "beta": "beta-level-1",
+                },
+            },
+        }],
+    }
+    optimizer = torch.optim.SGD(target.parameters(), lr=0.05)
+
+    result = initialize_hybrid_warm_start(
+        target,
+        (document,),
+        _profiles(),
+        bc_state_dict=source.state_dict(),
+        exit_winners=winner,
+        optimizer=optimizer,
+    )
+
+    assert result.identity_verified is True
+    assert result.verified_winner_count == 1
+    assert result.clone_target_count == len(_profiles()) * 2
+    assert result.clone_loss > 0.0
+    assert torch.equal(target.head[-1].bias, source.head[-1].bias)
+    assert set(result.reference_state_dict) == set(target.state_dict())
+    saved = result.reference_state_dict["head.2.bias"].clone()
+    with torch.no_grad():
+        target.head[-1].bias.add_(1.0)
+    assert torch.equal(result.reference_state_dict["head.2.bias"], saved)
+
+
+def test_warm_start_rejects_nonidentical_profiles_before_exit_updates():
+    from cloak.train.interactive_ranker import assert_exact_profile_identity
+
+    policy, document, _ = _policy()
+    count_row = (
+        policy.action_feature_offset
+        + policy.action_feature_names.index("count_score")
+    )
+    with torch.no_grad():
+        policy.film.weight[count_row, policy.profile_embedding_dim] = 1.0
+
+    with pytest.raises(ValueError, match="profile identity"):
+        assert_exact_profile_identity(policy, (document,), _profiles())
+
+
+def test_policy_architecture_pin_binds_layout_not_learned_weights():
+    from cloak.train.interactive_ranker import policy_architecture_pin
+
+    first, _, _ = _policy()
+    second, _, _ = _policy()
+    assert policy_architecture_pin(first) == policy_architecture_pin(second)
+    with torch.no_grad():
+        second.head[-1].bias.add_(1.0)
+    assert policy_architecture_pin(first) == policy_architecture_pin(second)
+
+    _, _, ConditionalRankerPolicy = _symbols()
+    document = _document()
+    different = ConditionalRankerPolicy(
+        count_reward=_count_reward(document),
+        supported_profiles=_profiles(),
+        max_menu_value=3.0,
+        environment_hash="sha256:fixture-environment",
+        encoder_pin="stub-encoder-v1",
+        encoder=StubEncoder(),
+        hidden_dim=10,
+    )
+    assert policy_architecture_pin(first) != policy_architecture_pin(different)

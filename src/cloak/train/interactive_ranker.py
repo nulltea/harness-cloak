@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import math
 import os
+import random
 from collections import Counter
 from collections.abc import Callable, Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
@@ -19,9 +21,13 @@ from cloak.train.ranker_environment import (
     RankerDecision,
     RankerDocument,
 )
-from cloak.train.count_reward import CountReward
+from cloak.train.count_reward import CountReward, expected_count_loss
 from cloak.train.utility_cache import UtilityCache, UtilityRequest, UtilityResult, stable_hash
-from cloak.train.utility_credit import DocumentUtilityCredit, document_utility
+from cloak.train.utility_credit import (
+    DocumentUtilityCredit,
+    document_utility,
+    provisional_credit,
+)
 
 
 @dataclass(frozen=True)
@@ -127,6 +133,427 @@ class CacheOnlyMissError(RuntimeError):
             f"cache-only {phase} miss: remote_tasks={remote_tasks} "
             f"context_reader_work_items={context_reader_work_items}"
         )
+
+
+@dataclass(frozen=True)
+class HybridDocumentObjective:
+    total: torch.Tensor
+    utility: torch.Tensor
+    count: torch.Tensor
+    entropy: torch.Tensor
+    kl: torch.Tensor
+    beta: float
+    eta: float
+
+
+@dataclass(frozen=True)
+class LatinCycleSchedule:
+    profile_names: tuple[str, ...]
+    profile_values: tuple[float, ...]
+    offsets_by_document: Mapping[str, int]
+    seed: int
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "offsets_by_document",
+            MappingProxyType(dict(self.offsets_by_document)),
+        )
+
+    def profile_for(self, doc_id: str, epoch: int):
+        if epoch < 0:
+            raise ValueError("schedule epoch must be nonnegative")
+        try:
+            offset = self.offsets_by_document[doc_id]
+        except KeyError as error:
+            raise ValueError(f"schedule lacks document {doc_id}") from error
+        from cloak.train.ranker import LambdaProfile
+
+        index = (offset + epoch) % len(self.profile_names)
+        return LambdaProfile(self.profile_names[index], self.profile_values[index])
+
+
+@dataclass(frozen=True)
+class WarmStartResult:
+    identity_verified: bool
+    verified_winner_count: int
+    clone_target_count: int
+    clone_loss: float
+    reference_state_dict: Mapping[str, torch.Tensor]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "reference_state_dict",
+            MappingProxyType({
+                key: value.detach().clone()
+                for key, value in self.reference_state_dict.items()
+            }),
+        )
+
+
+@dataclass(frozen=True)
+class DocumentTrainingResult:
+    doc_id: str
+    corpus: str
+    profile_name: str
+    rollout_count: int
+    loss: float
+    utility: float
+    count_score: float
+    entropy: float
+    collision_count: int
+    action_modes: Mapping[str, int]
+    runtime_type_exposure: Mapping[str, int]
+    gradient_norms: Mapping[str, float]
+    absolute_weighted_mass: Mapping[str, float]
+    scheduler_diagnostics: Mapping[str, Any]
+    cache_metrics: Mapping[str, Any]
+    action_vector_hashes: tuple[str, ...] = ()
+    runtime_type_metrics: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        for name in (
+            "action_modes", "runtime_type_exposure", "gradient_norms",
+            "absolute_weighted_mass", "scheduler_diagnostics", "cache_metrics",
+        ):
+            object.__setattr__(self, name, MappingProxyType(dict(getattr(self, name))))
+        object.__setattr__(
+            self,
+            "runtime_type_metrics",
+            MappingProxyType({
+                key: MappingProxyType(dict(value))
+                for key, value in self.runtime_type_metrics.items()
+            }),
+        )
+
+
+@dataclass(frozen=True)
+class HybridTrainingResult:
+    epoch_reports: tuple[Mapping[str, Any], ...]
+    schedule: LatinCycleSchedule
+    pair_history: Mapping
+    kl_enabled: bool
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "epoch_reports",
+            tuple(MappingProxyType(dict(row)) for row in self.epoch_reports),
+        )
+        object.__setattr__(
+            self, "pair_history", MappingProxyType(dict(self.pair_history)),
+        )
+
+
+def _trajectory_from_action_vector(
+    document: RankerDocument,
+    action_vector: Mapping[str, str],
+    profile: Any,
+) -> SampledTrajectory:
+    occurrence_by_id, _ = _occurrence_maps(document)
+    reserved = tuple(_fixed_fill_claims(document, occurrence_by_id))
+    expected = {decision.decision_id for decision in document.policy_decisions}
+    if set(action_vector) != expected:
+        raise ValueError(f"stored action vector differs for {document.doc_id}")
+    claimed: dict[str, str] = {}
+    steps = []
+    ordered_vector = {}
+    for decision in document.policy_decisions:
+        menu = legal_action_ids(decision, claimed, reserved)
+        selected = str(action_vector[decision.decision_id])
+        if selected not in menu:
+            raise ValueError(
+                f"stored action is dynamically illegal for {decision.decision_id}"
+            )
+        claimed_before = tuple(sorted(claimed))
+        action = _action_by_id(decision, selected)
+        if action.mode == "level":
+            assert action.fill is not None
+            claimed.setdefault(_fill_key(action.fill), decision.decision_id)
+        steps.append(SampledStep(
+            decision_id=decision.decision_id,
+            legal_action_ids=menu,
+            selected_action_id=selected,
+            claimed_fills_before=claimed_before,
+        ))
+        ordered_vector[decision.decision_id] = selected
+    return SampledTrajectory(
+        doc_id=document.doc_id,
+        lambda_profile=profile,
+        steps=tuple(steps),
+        action_vector=MappingProxyType(ordered_vector),
+    )
+
+
+def _import_unconditioned_state(
+    policy: torch.nn.Module,
+    source_state: Mapping[str, torch.Tensor],
+) -> None:
+    target = policy.state_dict()
+    if set(source_state) != set(target):
+        raise ValueError("BC checkpoint parameters differ from conditional policy")
+    imported = {}
+    for name, target_value in target.items():
+        source_value = source_state[name]
+        if source_value.shape == target_value.shape:
+            imported[name] = source_value.detach().clone()
+        elif (
+            name == "profile_embeddings.weight"
+            and source_value.ndim == 2
+            and source_value.shape[0] == 1
+            and source_value.shape[1] == target_value.shape[1]
+        ):
+            imported[name] = source_value.detach().expand_as(target_value).clone()
+        else:
+            raise ValueError(f"BC parameter shape differs: {name}")
+    policy.load_state_dict(imported, strict=True)
+
+
+@torch.no_grad()
+def assert_exact_profile_identity(
+    policy: TrajectoryPolicy,
+    documents: Sequence[RankerDocument],
+    profiles: Sequence[Any],
+) -> None:
+    """Require byte-identical distributions before conditioning updates."""
+
+    profiles = tuple(profiles)
+    if not profiles:
+        raise ValueError("profile identity requires at least one profile")
+    for document in documents:
+        base = behavior_clone_trajectory(document, profiles[0])
+        expected = replay_trajectory(policy, document, base, profiles[0])
+        for profile in profiles[1:]:
+            candidate = replay_trajectory(policy, document, base, profile)
+            if len(candidate.steps) != len(expected.steps) or any(
+                not torch.equal(left.log_probs, right.log_probs)
+                for left, right in zip(expected.steps, candidate.steps, strict=True)
+            ):
+                raise ValueError(
+                    f"profile identity failed before conditional updates for {document.doc_id}"
+                )
+
+
+def initialize_hybrid_warm_start(
+    policy: torch.nn.Module,
+    documents: Sequence[RankerDocument],
+    profiles: Sequence[Any],
+    *,
+    bc_state_dict: Mapping[str, torch.Tensor],
+    exit_winners: Mapping,
+    optimizer: torch.optim.Optimizer,
+) -> WarmStartResult:
+    """Import BC weights, assert identity, and clone verified winners per profile."""
+
+    documents = tuple(documents)
+    profiles = tuple(profiles)
+    documents_by_id = {document.doc_id: document for document in documents}
+    if len(documents_by_id) != len(documents) or not documents:
+        raise ValueError("warm start requires unique nonempty documents")
+    if exit_winners.get("artifact_version") != "ranker-v2-exit-winners-v1":
+        raise ValueError("unsupported ExIt winner artifact")
+    _import_unconditioned_state(policy, bc_state_dict)
+    assert_exact_profile_identity(policy, documents, profiles)
+    winners = []
+    for row in exit_winners.get("documents", ()):
+        if row.get("verification_status") != "verified" or row.get("winner") is None:
+            continue
+        doc_id = str(row.get("doc_id"))
+        if doc_id not in documents_by_id:
+            raise ValueError(f"ExIt winner document is unavailable: {doc_id}")
+        winner = row["winner"]
+        if not isinstance(winner, Mapping) or not isinstance(
+            winner.get("action_vector"), Mapping
+        ):
+            raise ValueError(f"ExIt winner vector is invalid: {doc_id}")
+        winners.append((documents_by_id[doc_id], winner["action_vector"]))
+
+    train = getattr(policy, "train", None)
+    if callable(train):
+        train()
+    total_loss = 0.0
+    target_count = 0
+    for document, vector in winners:
+        for profile in profiles:
+            trajectory = _trajectory_from_action_vector(document, vector, profile)
+            optimizer.zero_grad(set_to_none=True)
+            replayed = replay_trajectory(policy, document, trajectory, profile)
+            if not replayed.steps:
+                raise ValueError("verified ExIt winner has no policy decisions")
+            loss = -torch.stack([step.log_prob for step in replayed.steps]).mean()
+            if not bool(torch.isfinite(loss)):
+                raise ValueError("non-finite ExIt clone loss")
+            loss.backward()
+            optimizer.step()
+            total_loss += float(loss.detach()) * len(replayed.steps)
+            target_count += len(replayed.steps)
+    reference = {
+        key: value.detach().clone() for key, value in policy.state_dict().items()
+    }
+    return WarmStartResult(
+        identity_verified=True,
+        verified_winner_count=len(winners),
+        clone_target_count=target_count,
+        clone_loss=total_loss / target_count if target_count else 0.0,
+        reference_state_dict=reference,
+    )
+
+
+def compose_hybrid_document_objective(
+    replayed: Sequence[ReplayedTrajectory],
+    *,
+    utility_loss: torch.Tensor,
+    count_reward: CountReward,
+    lambda_value: float,
+    beta: float,
+    eta: float,
+    reference_log_probs: Sequence[Sequence[torch.Tensor]] | None,
+) -> HybridDocumentObjective:
+    """Compose the rollout-normalized hybrid objective for one document group."""
+
+    replayed = tuple(replayed)
+    if not replayed:
+        raise ValueError("hybrid objective requires at least one rollout")
+    if utility_loss.ndim != 0 or not bool(torch.isfinite(utility_loss)):
+        raise ValueError("hybrid utility loss must be a finite scalar")
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, int | float)
+        or not math.isfinite(float(value))
+        or float(value) < 0.0
+        for value in (lambda_value, beta, eta)
+    ):
+        raise ValueError("lambda, beta, and eta must be finite and nonnegative")
+    decision_count = len(replayed[0].steps)
+    if decision_count == 0 or any(
+        len(trajectory.steps) != decision_count for trajectory in replayed
+    ):
+        raise ValueError("hybrid objective requires equal nonempty decision walks")
+    if len({trajectory.doc_id for trajectory in replayed}) != 1:
+        raise ValueError("hybrid objective rollouts must share one document")
+    replay_steps = tuple(
+        step for trajectory in replayed for step in trajectory.steps
+    )
+    count = expected_count_loss(
+        replay_steps,
+        count_reward,
+        lambda_value=float(lambda_value),
+        decision_count=decision_count,
+        rollout_count=len(replayed),
+    )
+    entropy = torch.stack([step.entropy for step in replay_steps]).sum() / len(replayed)
+    if reference_log_probs is None:
+        if eta != 0.0:
+            raise ValueError("positive KL coefficient requires reference distributions")
+        kl = utility_loss.new_zeros(())
+    else:
+        reference = tuple(tuple(row) for row in reference_log_probs)
+        if len(reference) != len(replayed) or any(
+            len(row) != decision_count for row in reference
+        ):
+            raise ValueError("reference distributions differ from replayed trajectories")
+        kl_terms = []
+        for trajectory, reference_row in zip(replayed, reference, strict=True):
+            for step, reference_step in zip(
+                trajectory.steps, reference_row, strict=True,
+            ):
+                reference_step = reference_step.to(
+                    device=step.log_probs.device, dtype=step.log_probs.dtype,
+                )
+                if reference_step.shape != step.log_probs.shape or not bool(
+                    torch.isfinite(reference_step).all()
+                ):
+                    raise ValueError("reference distribution differs from replay menu")
+                kl_terms.append(torch.sum(
+                    step.log_probs.exp() * (step.log_probs - reference_step)
+                ))
+        kl = torch.stack(kl_terms).sum() / len(replayed)
+    total = utility_loss + count - float(beta) * entropy + float(eta) * kl
+    if not all(bool(torch.isfinite(value)) for value in (count, entropy, kl, total)):
+        raise ValueError("hybrid objective contains a non-finite term")
+    return HybridDocumentObjective(
+        total=total,
+        utility=utility_loss,
+        count=count,
+        entropy=entropy,
+        kl=kl,
+        beta=float(beta),
+        eta=float(eta),
+    )
+
+
+def build_latin_cycle_schedule(
+    documents: Sequence[RankerDocument],
+    profiles: Sequence[Any],
+    *,
+    seed: int,
+) -> LatinCycleSchedule:
+    """Freeze seeded per-document offsets for a balanced profile cycle."""
+
+    documents = tuple(documents)
+    profiles = tuple(profiles)
+    if not documents or len({document.doc_id for document in documents}) != len(documents):
+        raise ValueError("Latin cycle requires unique nonempty documents")
+    names = tuple(str(profile.name) for profile in profiles)
+    values = tuple(float(profile.value) for profile in profiles)
+    if not names or len(set(names)) != len(names):
+        raise ValueError("Latin cycle requires unique nonempty profiles")
+    if any(not name for name in names) or any(
+        not math.isfinite(value) or value < 0.0 for value in values
+    ):
+        raise ValueError("Latin cycle profiles are invalid")
+    permutation = list(range(len(profiles)))
+    random.Random(seed).shuffle(permutation)
+    offsets = {
+        doc_id: permutation[index % len(permutation)]
+        for index, doc_id in enumerate(sorted(document.doc_id for document in documents))
+    }
+    return LatinCycleSchedule(
+        profile_names=names,
+        profile_values=values,
+        offsets_by_document=offsets,
+        seed=int(seed),
+    )
+
+
+def profile_exposure_report(
+    documents: Sequence[RankerDocument],
+    schedule: LatinCycleSchedule,
+    epochs: Collection[int],
+) -> dict[str, Any]:
+    """Count scheduled document-group and decision exposure without reward weighting."""
+
+    by_document: dict[str, Counter[str]] = {}
+    by_corpus: dict[str, Counter[str]] = {}
+    by_type: dict[str, Counter[str]] = {}
+    by_profile: Counter[str] = Counter()
+    for document in documents:
+        document_counts: Counter[str] = Counter()
+        corpus_counts = by_corpus.setdefault(document.corpus, Counter())
+        runtime_types = Counter(
+            decision.runtime_type for decision in document.policy_decisions
+        )
+        for epoch in epochs:
+            profile = schedule.profile_for(document.doc_id, int(epoch))
+            document_counts[profile.name] += 1
+            corpus_counts[profile.name] += 1
+            by_profile[profile.name] += 1
+            for runtime_type, count in runtime_types.items():
+                by_type.setdefault(runtime_type, Counter())[profile.name] += count
+        by_document[document.doc_id] = document_counts
+    return {
+        "by_document": {
+            key: dict(sorted(value.items())) for key, value in sorted(by_document.items())
+        },
+        "by_corpus": {
+            key: dict(sorted(value.items())) for key, value in sorted(by_corpus.items())
+        },
+        "by_type": {
+            key: dict(sorted(value.items())) for key, value in sorted(by_type.items())
+        },
+        "by_profile": dict(sorted(by_profile.items())),
+    }
 
 
 def provisional_utility_loss(
@@ -888,6 +1315,815 @@ def score_trajectories(
         )
         for trajectory, result in zip(trajectories, results, strict=True)
     )
+
+
+def _leave_one_out(values: Sequence[float]) -> tuple[float, ...]:
+    values = tuple(float(value) for value in values)
+    if len(values) < 2:
+        raise ValueError("hybrid utility diagnostics require at least two rollouts")
+    total = sum(values)
+    return tuple(
+        value - (total - value) / (len(values) - 1) for value in values
+    )
+
+
+def _utility_family_terms_and_mass(
+    replayed: Sequence[ReplayedTrajectory],
+    credit: DocumentUtilityCredit,
+    counterfactual_losses: Mapping[tuple[int, str], torch.Tensor],
+) -> tuple[dict[str, torch.Tensor], dict[str, float]]:
+    rollout_count = len(replayed)
+    prototype = replayed[0].steps[0].log_prob
+    terms: dict[str, list[torch.Tensor]] = {
+        "linked": [], "residual": [], "fallback": [], "counterfactual": [],
+    }
+    residual = _leave_one_out(credit.residual_utility)
+    document = _leave_one_out(credit.document_utility)
+    linked = {
+        decision_id: _leave_one_out(values)
+        for decision_id, values in credit.linked_utility.items()
+    }
+    for rollout_index, trajectory in enumerate(replayed):
+        for step in trajectory.steps:
+            pair = (rollout_index, step.decision_id)
+            if pair in counterfactual_losses:
+                terms["counterfactual"].append(counterfactual_losses[pair])
+                continue
+            route = credit.route[step.decision_id]
+            if route == "linked":
+                terms["linked"].append(
+                    -linked[step.decision_id][rollout_index] * step.log_prob
+                )
+                terms["residual"].append(
+                    -residual[rollout_index] * step.log_prob
+                )
+            elif route == "document":
+                terms["fallback"].append(
+                    -document[rollout_index] * step.log_prob
+                )
+            else:
+                raise ValueError(f"unsupported utility credit route: {route}")
+    losses = {
+        name: (
+            torch.stack(rows).sum() / rollout_count
+            if rows else prototype.new_zeros(())
+        )
+        for name, rows in terms.items()
+    }
+    masses = {
+        name: sum(abs(float(row.detach())) for row in rows) / rollout_count
+        for name, rows in terms.items()
+    }
+    return losses, masses
+
+
+def _reference_distributions(
+    reference_policy: TrajectoryPolicy | None,
+    document: RankerDocument,
+    trajectories: Sequence[SampledTrajectory],
+    profile: Any,
+) -> tuple[tuple[torch.Tensor, ...], ...] | None:
+    if reference_policy is None:
+        return None
+    with torch.no_grad():
+        return tuple(
+            tuple(
+                step.log_probs.detach().clone()
+                for step in replay_trajectory(
+                    reference_policy, document, trajectory, profile,
+                ).steps
+            )
+            for trajectory in trajectories
+        )
+
+
+def _gradient_norm(
+    term: torch.Tensor,
+    parameters: Sequence[torch.nn.Parameter],
+) -> float:
+    if not term.requires_grad:
+        return 0.0
+    gradients = torch.autograd.grad(
+        term,
+        parameters,
+        retain_graph=True,
+        allow_unused=True,
+    )
+    squared = sum(
+        float(torch.sum(gradient.detach() ** 2))
+        for gradient in gradients if gradient is not None
+    )
+    return math.sqrt(squared)
+
+
+def train_hybrid_document_group(
+    policy: torch.nn.Module,
+    reference_policy: TrajectoryPolicy | None,
+    document: RankerDocument,
+    profile: Any,
+    *,
+    rollouts: int,
+    utility_artifact: Mapping,
+    environment_hash: str,
+    count_reward: CountReward,
+    cache: UtilityCache,
+    optimizer: torch.optim.Optimizer,
+    beta: float,
+    eta: float,
+    counterfactual_budget: int,
+    endpoint_budget: int,
+    pair_history: Mapping,
+    seed: int,
+    current_round: int,
+    remote_workers: int,
+    reader_workers: int,
+    generator: torch.Generator,
+    score_batch: Callable[..., Sequence[UtilityResult]] | None = None,
+    scheduler: Callable | None = None,
+    counterfactual_executor: Callable | None = None,
+    cache_only: bool = False,
+    max_grad_norm: float | None = None,
+) -> DocumentTrainingResult:
+    """Run one complete sampled/scored/replayed optimizer step for a document group."""
+
+    if rollouts < 2:
+        raise ValueError("hybrid training requires at least two rollouts")
+    if max_grad_norm is not None and (
+        not math.isfinite(float(max_grad_norm)) or max_grad_norm <= 0.0
+    ):
+        raise ValueError("frozen max_grad_norm must be finite and positive")
+    from cloak.train.counterfactuals import (
+        execute_counterfactuals,
+        pair_history_key,
+        schedule_counterfactuals,
+    )
+
+    scheduler = scheduler or schedule_counterfactuals
+    counterfactual_executor = counterfactual_executor or execute_counterfactuals
+    trajectories = tuple(
+        sample_trajectory(
+            policy, document, profile, greedy=False, generator=generator,
+        )
+        for _ in range(rollouts)
+    )
+    hits_before = cache.hits
+    points = score_trajectories(
+        (document,),
+        trajectories,
+        utility_artifact=utility_artifact,
+        environment_hash=environment_hash,
+        count_reward=count_reward,
+        cache=cache,
+        remote_workers=remote_workers,
+        reader_workers=reader_workers,
+        score_batch=score_batch,
+        cache_only=cache_only,
+    )
+    trajectory_cache_metrics = dict(cache.last_batch_metrics)
+    credit = provisional_credit(
+        tuple(point.component_scores for point in points),
+        utility_artifact,
+        document.doc_id,
+    )
+    replayed = tuple(
+        replay_trajectory(policy, document, trajectory, profile)
+        for trajectory in trajectories
+    )
+    requests, scheduler_diagnostics = scheduler(
+        {document.doc_id: document},
+        trajectories,
+        replayed,
+        utility_artifact=utility_artifact,
+        credit_routes={document.doc_id: credit.route},
+        pair_history=pair_history,
+        budget=counterfactual_budget,
+        endpoint_budget=endpoint_budget,
+        seed=seed,
+        current_round=current_round,
+    )
+    if cache_only and requests:
+        utility_requests = []
+        for request in requests:
+            alternative = dict(trajectories[request.rollout_index].action_vector)
+            alternative[request.decision_id] = request.alternative_action_id
+            utility_requests.append(UtilityRequest(
+                document=document,
+                action_vector=alternative,
+                utility_artifact=utility_artifact,
+                environment_hash=environment_hash,
+            ))
+        _require_cached(
+            utility_requests,
+            cache=cache,
+            reader_refresh=False,
+            phase="counterfactual",
+        )
+    counterfactual_losses, scheduler_diagnostics = counterfactual_executor(
+        requests,
+        {document.doc_id: document},
+        trajectories,
+        replayed,
+        utility_artifact=utility_artifact,
+        environment_hash=environment_hash,
+        cache=cache,
+        remote_workers=remote_workers,
+        reader_workers=reader_workers,
+        scheduler_diagnostics=scheduler_diagnostics,
+        score_batch=score_batch,
+    )
+    counterfactual_cache_metrics = dict(cache.last_batch_metrics)
+    if requests:
+        if not isinstance(pair_history, dict):
+            raise ValueError("counterfactual pair history must be mutable during training")
+        for request in requests:
+            pair_history[pair_history_key(
+                request.doc_id,
+                request.rollout_index,
+                request.decision_id,
+                request.selected_action_id,
+                request.alternative_action_id,
+            )] = current_round
+    utility_loss = hybrid_utility_loss(replayed, credit, counterfactual_losses)
+    reference_log_probs = _reference_distributions(
+        reference_policy, document, trajectories, profile,
+    )
+    objective = compose_hybrid_document_objective(
+        replayed,
+        utility_loss=utility_loss,
+        count_reward=count_reward,
+        lambda_value=float(profile.value),
+        beta=beta,
+        eta=eta,
+        reference_log_probs=reference_log_probs,
+    )
+    family_terms, absolute_mass = _utility_family_terms_and_mass(
+        replayed, credit, counterfactual_losses,
+    )
+    family_terms.update({
+        "count": objective.count,
+        "entropy": -float(beta) * objective.entropy,
+        "KL": float(eta) * objective.kl,
+    })
+    reconstructed = torch.stack(tuple(family_terms.values())).sum()
+    if not torch.allclose(reconstructed, objective.total, rtol=0.0, atol=1e-7):
+        raise ValueError("hybrid family terms do not reconstruct the objective")
+    parameters = tuple(
+        parameter for parameter in policy.parameters() if parameter.requires_grad
+    )
+    gradient_norms = {
+        name: _gradient_norm(term, parameters)
+        for name, term in family_terms.items()
+    }
+    absolute_mass.update({
+        name: abs(float(family_terms[name].detach()))
+        for name in ("count", "entropy", "KL")
+    })
+    optimizer.zero_grad(set_to_none=True)
+    objective.total.backward()
+    if max_grad_norm is not None:
+        torch.nn.utils.clip_grad_norm_(parameters, float(max_grad_norm))
+    if any(
+        parameter.grad is not None and not bool(torch.isfinite(parameter.grad).all())
+        for parameter in parameters
+    ):
+        raise ValueError("hybrid optimizer produced a non-finite gradient")
+    optimizer.step()
+
+    decisions = {
+        decision.decision_id: decision for decision in document.policy_decisions
+    }
+    modes: Counter[str] = Counter()
+    collisions = 0
+    for trajectory in trajectories:
+        for step in trajectory.steps:
+            action = _action_by_id(
+                decisions[step.decision_id], step.selected_action_id,
+            )
+            modes[action.mode] += 1
+            collisions += len(step.legal_action_ids) < len(
+                decisions[step.decision_id].actions
+            )
+    type_exposure = Counter(
+        decision.runtime_type for decision in document.policy_decisions
+    )
+    type_rows: dict[str, dict[str, Any]] = {}
+    for runtime_type, exposure in sorted(type_exposure.items()):
+        selected_scores = []
+        entropies = []
+        type_modes: Counter[str] = Counter()
+        type_collisions = 0
+        for trajectory, replay in zip(trajectories, replayed, strict=True):
+            replay_by_decision = {
+                step.decision_id: step for step in replay.steps
+            }
+            for step in trajectory.steps:
+                decision = decisions[step.decision_id]
+                if decision.runtime_type != runtime_type:
+                    continue
+                action = _action_by_id(decision, step.selected_action_id)
+                type_modes[action.mode] += 1
+                type_collisions += len(step.legal_action_ids) < len(decision.actions)
+                selected_scores.append(float(count_reward.action_scores(
+                    decision.decision_id, (step.selected_action_id,),
+                )[0]))
+                entropies.append(float(
+                    replay_by_decision[step.decision_id].entropy.detach()
+                ))
+        type_rows[runtime_type] = {
+            "exposure": exposure,
+            "utility": sum(credit.document_utility) / rollouts,
+            "count_score": _mean(selected_scores),
+            "entropy": _mean(entropies),
+            "collisions": type_collisions,
+            "action_modes": dict(sorted(type_modes.items())),
+        }
+    stage_cache_metrics = {
+        "trajectory": trajectory_cache_metrics,
+        "counterfactual": counterfactual_cache_metrics,
+    }
+    numeric_cache_keys = {
+        key
+        for row in stage_cache_metrics.values()
+        for key, value in row.items()
+        if isinstance(value, int | float) and not isinstance(value, bool)
+    }
+    cache_metrics = {
+        key: sum(float(row.get(key, 0.0)) for row in stage_cache_metrics.values())
+        for key in sorted(numeric_cache_keys)
+    }
+    cache_metrics.setdefault("cache_hits", cache.hits - hits_before)
+    cache_metrics["requested_rollouts"] = rollouts
+    cache_metrics["stages"] = stage_cache_metrics
+    return DocumentTrainingResult(
+        doc_id=document.doc_id,
+        corpus=document.corpus,
+        profile_name=str(profile.name),
+        rollout_count=rollouts,
+        loss=float(objective.total.detach()),
+        utility=sum(credit.document_utility) / rollouts,
+        count_score=sum(point.count_score for point in points) / rollouts,
+        entropy=float(objective.entropy.detach()),
+        collision_count=collisions,
+        action_modes=dict(sorted(modes.items())),
+        runtime_type_exposure=dict(sorted(type_exposure.items())),
+        gradient_norms=gradient_norms,
+        absolute_weighted_mass=absolute_mass,
+        scheduler_diagnostics=scheduler_diagnostics,
+        cache_metrics=cache_metrics,
+        action_vector_hashes=tuple(
+            stable_hash(list(_vector_key(document, trajectory.action_vector)))
+            for trajectory in trajectories
+        ),
+        runtime_type_metrics=type_rows,
+    )
+
+
+def _mean(rows: Sequence[float]) -> float:
+    return sum(rows) / len(rows) if rows else 0.0
+
+
+def build_epoch_report(
+    epoch: int,
+    groups: Sequence[DocumentTrainingResult],
+) -> dict[str, Any]:
+    """Aggregate detached training diagnostics without mixing allocation and reward."""
+
+    groups = tuple(groups)
+    if epoch < 0 or not groups:
+        raise ValueError("epoch report requires a nonnegative epoch and document groups")
+    families = tuple(groups[0].gradient_norms)
+    if any(
+        tuple(group.gradient_norms) != families
+        or tuple(group.absolute_weighted_mass) != families
+        for group in groups
+    ):
+        raise ValueError("epoch groups have inconsistent diagnostic families")
+
+    def strata(key):
+        grouped: dict[str, list[DocumentTrainingResult]] = {}
+        for group in groups:
+            grouped.setdefault(str(key(group)), []).append(group)
+        return {
+            name: {
+                "groups": len(rows),
+                "utility": _mean([row.utility for row in rows]),
+                "count_score": _mean([row.count_score for row in rows]),
+                "entropy": _mean([row.entropy for row in rows]),
+                "collisions": sum(row.collision_count for row in rows),
+                "action_modes": dict(sorted(sum(
+                    (Counter(row.action_modes) for row in rows), Counter()
+                ).items())),
+            }
+            for name, rows in sorted(grouped.items())
+        }
+
+    runtime_types: dict[str, int] = Counter()
+    runtime_rows: dict[str, list[Mapping[str, Any]]] = {}
+    for group in groups:
+        runtime_types.update(group.runtime_type_exposure)
+        for runtime_type, row in group.runtime_type_metrics.items():
+            runtime_rows.setdefault(runtime_type, []).append(row)
+    scheduler_rows = [dict(group.scheduler_diagnostics) for group in groups]
+    cache_rows = [dict(group.cache_metrics) for group in groups]
+    numeric_scheduler = {
+        key: sum(float(row.get(key, 0)) for row in scheduler_rows)
+        for key in ("budget", "uniform_allocation", "priority_allocation", "cache_hits")
+    }
+    numeric_cache = {
+        key: sum(float(row.get(key, 0)) for row in cache_rows)
+        for key in sorted({key for row in cache_rows for key in row})
+        if all(isinstance(row.get(key, 0), int | float) for row in cache_rows)
+    }
+    numeric_scheduler["delta_u"] = [row.get("delta_u", {}) for row in scheduler_rows]
+    numeric_scheduler["groups"] = scheduler_rows
+    return {
+        "report_version": "ranker-v2-epoch-report-v1",
+        "epoch": epoch,
+        "document_groups": len(groups),
+        "loss": _mean([group.loss for group in groups]),
+        "term_families": {
+            family: {
+                "detached_gradient_norm": _mean([
+                    group.gradient_norms[family] for group in groups
+                ]),
+                "absolute_weighted_mass": sum(
+                    group.absolute_weighted_mass[family] for group in groups
+                ),
+            }
+            for family in families
+        },
+        "profiles": strata(lambda row: row.profile_name),
+        "corpora": strata(lambda row: row.corpus),
+        "runtime_types": {
+            name: {
+                "exposure": count,
+                "utility": _mean([
+                    float(row["utility"]) for row in runtime_rows.get(name, ())
+                ]),
+                "count_score": _mean([
+                    float(row["count_score"]) for row in runtime_rows.get(name, ())
+                ]),
+                "entropy": _mean([
+                    float(row["entropy"]) for row in runtime_rows.get(name, ())
+                ]),
+                "collisions": sum(
+                    int(row["collisions"]) for row in runtime_rows.get(name, ())
+                ),
+                "action_modes": dict(sorted(sum(
+                    (
+                        Counter(row["action_modes"])
+                        for row in runtime_rows.get(name, ())
+                    ),
+                    Counter(),
+                ).items())),
+            }
+            for name, count in sorted(runtime_types.items())
+        },
+        "conditional_samples": {
+            group.doc_id: {
+                group.profile_name: list(group.action_vector_hashes),
+            }
+            for group in groups
+        },
+        "scheduler": numeric_scheduler,
+        "cache": numeric_cache,
+    }
+
+
+def _canonical_vector_hash(values: Sequence[str]) -> str:
+    counts = Counter(values)
+    if not counts:
+        raise ValueError("conditional responsiveness lacks sampled vectors")
+    maximum = max(counts.values())
+    return min(value for value, count in counts.items() if count == maximum)
+
+
+def _block_responsiveness(
+    reports: Sequence[Mapping],
+    profile_names: Sequence[str],
+) -> dict[str, int | float]:
+    samples: dict[str, dict[str, str]] = {}
+    for report in reports:
+        for doc_id, profile_rows in report.get("conditional_samples", {}).items():
+            for profile_name, hashes in profile_rows.items():
+                if profile_name in samples.setdefault(doc_id, {}):
+                    raise ValueError("profile block repeats a document/profile assignment")
+                samples[doc_id][profile_name] = _canonical_vector_hash(hashes)
+    expected = set(profile_names)
+    incomplete = sorted(
+        doc_id for doc_id, rows in samples.items() if set(rows) != expected
+    )
+    if incomplete:
+        raise ValueError(f"profile block has incomplete document exposure: {incomplete}")
+    eligible = 0
+    changed = 0
+    for rows in samples.values():
+        for left, right in zip(profile_names, profile_names[1:]):
+            eligible += 1
+            changed += rows[left] != rows[right]
+    return {
+        "eligible_adjacent_pairs": eligible,
+        "changed_adjacent_pairs": changed,
+        "adjacent_winner_change": changed / eligible if eligible else 0.0,
+    }
+
+
+def train_hybrid_policy(
+    *,
+    policy: Any,
+    reference_policy: Any,
+    documents: Sequence[RankerDocument],
+    profiles: Sequence[Any],
+    schedule: LatinCycleSchedule,
+    optimizer: Any,
+    utility_artifact: Mapping,
+    environment_hash: str,
+    count_reward: Any,
+    cache: Any,
+    threshold_manifest: Mapping,
+    max_epochs: int,
+    rollouts: int,
+    beta: float,
+    eta: float,
+    counterfactual_budget: int,
+    endpoint_budget: int,
+    pair_history: Mapping,
+    seed: int,
+    remote_workers: int,
+    reader_workers: int,
+    generator: torch.Generator,
+    start_epoch: int = 0,
+    existing_reports: Sequence[Mapping] = (),
+    kl_enabled: bool = False,
+    cache_only: bool = False,
+    max_grad_norm: float | None = None,
+    score_batch: Callable[..., Sequence[UtilityResult]] | None = None,
+    group_trainer: Callable = train_hybrid_document_group,
+    epoch_callback: Callable[[int, Sequence[Mapping], Mapping, bool], None] | None = None,
+) -> HybridTrainingResult:
+    """Train document groups in a seeded balanced profile cycle."""
+
+    documents = tuple(documents)
+    profiles = tuple(profiles)
+    if max_epochs <= start_epoch or start_epoch < 0:
+        raise ValueError("hybrid epoch range must contain at least one epoch")
+    if not documents or not profiles:
+        raise ValueError("hybrid training requires documents and profiles")
+    if schedule.profile_names != tuple(profile.name for profile in profiles) or (
+        set(schedule.offsets_by_document) != {document.doc_id for document in documents}
+    ):
+        raise ValueError("hybrid schedule differs from documents or profiles")
+    reports = [dict(row) for row in existing_reports]
+    history = pair_history if isinstance(pair_history, dict) else dict(pair_history)
+    for epoch in range(start_epoch, max_epochs):
+        epoch_kl_enabled = kl_enabled
+        groups = []
+        for document_index, document in enumerate(documents):
+            profile = schedule.profile_for(document.doc_id, epoch)
+            groups.append(group_trainer(
+                policy,
+                reference_policy,
+                document,
+                profile,
+                rollouts=rollouts,
+                utility_artifact=utility_artifact,
+                environment_hash=environment_hash,
+                count_reward=count_reward,
+                cache=cache,
+                optimizer=optimizer,
+                beta=beta,
+                eta=eta if epoch_kl_enabled else 0.0,
+                counterfactual_budget=counterfactual_budget,
+                endpoint_budget=endpoint_budget,
+                pair_history=history,
+                seed=seed + epoch * len(documents) + document_index,
+                current_round=epoch,
+                remote_workers=remote_workers,
+                reader_workers=reader_workers,
+                generator=generator,
+                score_batch=score_batch,
+                cache_only=cache_only,
+                max_grad_norm=max_grad_norm,
+            ))
+        report = build_epoch_report(epoch, groups)
+        report["exposure"] = profile_exposure_report(documents, schedule, (epoch,))
+        if len(profiles) > 1 and (epoch + 1) % len(profiles) == 0:
+            block = (*reports, report)[-len(profiles):]
+            responsiveness = _block_responsiveness(
+                block, tuple(profile.name for profile in profiles),
+            )
+            report["conditional_responsiveness"] = responsiveness
+            if not kl_enabled and collapse_rule_fires(threshold_manifest, report):
+                kl_enabled = True
+        else:
+            report["conditional_responsiveness"] = {
+                "eligible_adjacent_pairs": 0,
+                "changed_adjacent_pairs": 0,
+                "adjacent_winner_change": None,
+            }
+        report["kl_enabled_for_epoch"] = bool(eta > 0.0 and epoch_kl_enabled)
+        reports.append(report)
+        if epoch_callback is not None:
+            epoch_callback(epoch, tuple(reports), history, kl_enabled)
+    return HybridTrainingResult(
+        epoch_reports=tuple(reports),
+        schedule=schedule,
+        pair_history=history,
+        kl_enabled=kl_enabled,
+    )
+
+
+_HYBRID_ARTIFACT_PIN_KEYS = frozenset({
+    "environment_hash",
+    "utility_artifact_hash",
+    "count_state_hash",
+    "lambda_menu_hash",
+    "threshold_manifest_hash",
+    "exit_winners_hash",
+    "bc_checkpoint_hash",
+})
+
+
+def _validate_hybrid_pins(pins: Mapping[str, str]) -> dict[str, str]:
+    if set(pins) != _HYBRID_ARTIFACT_PIN_KEYS or any(
+        not isinstance(value, str) or not value for value in pins.values()
+    ):
+        raise ValueError("hybrid checkpoint artifact pins are incomplete")
+    return dict(sorted(pins.items()))
+
+
+def policy_architecture_pin(policy: torch.nn.Module) -> str:
+    """Hash the conditional policy's structural contract, excluding learned values."""
+
+    profiles = getattr(policy, "supported_profiles", ())
+    payload = {
+        "class": f"{type(policy).__module__}.{type(policy).__qualname__}",
+        "profiles": [
+            {"name": profile.name, "value": float(profile.value)}
+            for profile in profiles
+        ],
+        "max_menu_value": getattr(policy, "max_menu_value", None),
+        "encoder_pin": getattr(policy, "encoder_pin", None),
+        "encoder_dim": getattr(policy, "encoder_dim", None),
+        "hidden_dim": getattr(policy, "hidden_dim", None),
+        "context_window": getattr(policy, "context_window", None),
+        "profile_embedding_dim": getattr(policy, "profile_embedding_dim", None),
+        "action_feature_names": list(getattr(policy, "action_feature_names", ())),
+        "state_layout": {
+            key: {"shape": list(value.shape), "dtype": str(value.dtype)}
+            for key, value in policy.state_dict().items()
+        },
+    }
+    return stable_hash(payload)
+
+
+def _schedule_payload(schedule: LatinCycleSchedule) -> dict[str, Any]:
+    return {
+        "profile_names": schedule.profile_names,
+        "profile_values": schedule.profile_values,
+        "offsets_by_document": dict(schedule.offsets_by_document),
+        "seed": schedule.seed,
+    }
+
+
+def _schedule_from_payload(payload: Mapping) -> LatinCycleSchedule:
+    if set(payload) != {
+        "profile_names", "profile_values", "offsets_by_document", "seed",
+    }:
+        raise ValueError("hybrid checkpoint schedule state is invalid")
+    return LatinCycleSchedule(
+        profile_names=tuple(payload["profile_names"]),
+        profile_values=tuple(float(value) for value in payload["profile_values"]),
+        offsets_by_document={
+            str(key): int(value)
+            for key, value in payload["offsets_by_document"].items()
+        },
+        seed=int(payload["seed"]),
+    )
+
+
+def save_hybrid_checkpoint(
+    path: str | Path,
+    *,
+    policy: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    epoch: int,
+    generator: torch.Generator,
+    schedule: LatinCycleSchedule,
+    artifact_pins: Mapping[str, str],
+    architecture_pin: str,
+    cache_paths: Mapping[str, str],
+    code_revision: str,
+    training_config: Mapping[str, Any],
+    pair_history: Mapping,
+    kl_enabled: bool,
+    epoch_reports: Sequence[Mapping],
+) -> None:
+    """Atomically save all mutable trainer and reproducibility state."""
+
+    if epoch < 0:
+        raise ValueError("hybrid checkpoint epoch must be nonnegative")
+    pins = _validate_hybrid_pins(artifact_pins)
+    if not architecture_pin or not code_revision or not cache_paths or not training_config or any(
+        not isinstance(key, str) or not isinstance(value, str) or not key or not value
+        for key, value in cache_paths.items()
+    ):
+        raise ValueError("hybrid checkpoint architecture/cache/revision pins are incomplete")
+    payload = {
+        "checkpoint_version": "ranker-v2-hybrid-checkpoint-v1",
+        "policy_state_dict": policy.state_dict(),
+        "optimizer_state_dict": optimizer.state_dict(),
+        "epoch": int(epoch),
+        "rng_states": {
+            "python": random.getstate(),
+            "torch": torch.get_rng_state(),
+            "generator": generator.get_state(),
+        },
+        "schedule": _schedule_payload(schedule),
+        "artifact_pins": pins,
+        "architecture_pin": architecture_pin,
+        "cache_paths": dict(sorted(cache_paths.items())),
+        "code_revision": code_revision,
+        "training_config": dict(sorted(training_config.items())),
+        "pair_history": dict(pair_history),
+        "kl_enabled": bool(kl_enabled),
+        "epoch_reports": tuple(dict(row) for row in epoch_reports),
+    }
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(destination.name + ".tmp")
+    torch.save(payload, temporary)
+    os.replace(temporary, destination)
+
+
+def load_hybrid_checkpoint(
+    path: str | Path,
+    *,
+    policy: torch.nn.Module,
+    optimizer: torch.optim.Optimizer,
+    generator: torch.Generator,
+    expected_artifact_pins: Mapping[str, str],
+    expected_architecture_pin: str,
+    expected_cache_paths: Mapping[str, str],
+    expected_code_revision: str,
+    expected_training_config: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Validate every frozen pin before restoring any mutable trainer state."""
+
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    if checkpoint.get("checkpoint_version") != "ranker-v2-hybrid-checkpoint-v1":
+        raise ValueError("unsupported hybrid checkpoint")
+    if checkpoint.get("artifact_pins") != _validate_hybrid_pins(
+        expected_artifact_pins
+    ):
+        raise ValueError("hybrid checkpoint artifact pins differ")
+    if checkpoint.get("architecture_pin") != expected_architecture_pin:
+        raise ValueError("hybrid checkpoint architecture pin differs")
+    if checkpoint.get("cache_paths") != dict(sorted(expected_cache_paths.items())):
+        raise ValueError("hybrid checkpoint cache paths differ")
+    if checkpoint.get("code_revision") != expected_code_revision:
+        raise ValueError("hybrid checkpoint code revision differs")
+    if checkpoint.get("training_config") != dict(sorted(expected_training_config.items())):
+        raise ValueError("hybrid checkpoint training configuration differs")
+    schedule = _schedule_from_payload(checkpoint.get("schedule", {}))
+    rng = checkpoint.get("rng_states")
+    if not isinstance(rng, Mapping) or set(rng) != {"python", "torch", "generator"}:
+        raise ValueError("hybrid checkpoint RNG state is incomplete")
+    policy.load_state_dict(checkpoint["policy_state_dict"], strict=True)
+    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    random.setstate(rng["python"])
+    torch.set_rng_state(rng["torch"])
+    generator.set_state(rng["generator"])
+    return {
+        "epoch": int(checkpoint["epoch"]),
+        "schedule": schedule,
+        "pair_history": dict(checkpoint.get("pair_history", {})),
+        "kl_enabled": bool(checkpoint.get("kl_enabled", False)),
+        "epoch_reports": tuple(checkpoint.get("epoch_reports", ())),
+        "training_config": dict(checkpoint["training_config"]),
+    }
+
+
+def collapse_rule_fires(
+    threshold_manifest: Mapping,
+    epoch_report: Mapping,
+) -> bool:
+    """Apply the frozen adjacent-profile responsiveness boundary exactly once."""
+
+    try:
+        threshold = float(
+            threshold_manifest["feasibility_gates"]["min_adjacent_winner_change"]
+        )
+        observed = float(
+            epoch_report["conditional_responsiveness"]["adjacent_winner_change"]
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ValueError("collapse responsiveness rule is incomplete") from error
+    if not all(math.isfinite(value) and 0.0 <= value <= 1.0 for value in (
+        threshold, observed,
+    )):
+        raise ValueError("collapse responsiveness rule is invalid")
+    return observed < threshold
 
 
 def collect_exit_winners(
