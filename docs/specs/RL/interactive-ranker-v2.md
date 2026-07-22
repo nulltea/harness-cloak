@@ -4,10 +4,12 @@ status: current
 created: 2026-07-12
 updated: 2026-07-22
 tags: [rl, ranker, interactive-policy, reward-design, credit-assignment, counterfactual,
-       anonymity-counts, lambda-conditioning, pareto, spec]
+       anonymity-counts, lambda-conditioning, semantic-privacy, pareto, spec]
 supersedes: docs/specs/RL/count-privacy-reward.md
 companion: [docs/specs/RL/interactive-ranker-v2-decision-log.md,
             docs/specs/RL/interactive-ranker-v2-diagnostics.md,
+            docs/specs/RL/ranker-v2-architecture.md,
+            docs/specs/RL/ranker-v2-architecture-decision-log.md,
             docs/specs/qa-builder-v2.md,
             docs/specs/RL/training-task-env.md,
             docs/specs/RL/leakage-probe-reward.md,
@@ -16,17 +18,21 @@ companion: [docs/specs/RL/interactive-ranker-v2-decision-log.md,
 
 # Interactive ranker v2 — conditional privacy–utility policy with structured credit
 
-**Status: normative design, not implemented.** This specification replaces the ranker reward,
-credit-assignment, and operating-point design in the round-trip ranker spec. The infiller and
-the pinned round-trip generation/reader machinery remain governed by their existing specs
-unless this document explicitly changes their interface.
+**Status: normative design; reward-flow implementation exists, selected architecture remains to
+be implemented and validated.** This specification replaces the ranker reward, credit-assignment,
+and operating-point design in the round-trip ranker spec. The companion
+`ranker-v2-architecture.md` is normative for model inputs, representations, and controller
+factorization. The infiller and pinned round-trip generation/reader machinery remain governed by
+their existing specs unless this document explicitly changes their interface.
 
-The ranker is one lambda-conditioned sequential policy. For every detected, ranker-controlled
-distinct detected value it chooses KEEP, a lattice generalization, or placeholder. It learns document task utility
-from the full remote round trip, uses assertion dependencies as cheap provisional credit
-routing, corrects that routing with sparse one-decision counterfactuals, and receives exact local
-count shaping. A finite menu of lambda profiles lets one deployed checkpoint change its privacy–utility
-preference per document or session.
+The ranker is one sequential policy with an explicit lambda controller. For every distinct
+ranker-controlled detected value it chooses KEEP, a lattice generalization, or placeholder. Its
+utility tower learns document-task preservation from the full remote round trip. A separately
+pretrained semantic privacy head predicts each source-to-candidate abstraction's log-count
+distribution, while exact own-profile counts provide the local shaping target. Assertion
+dependencies route cheap provisional utility credit and sparse one-decision counterfactuals
+correct that routing. A finite lambda menu lets one checkpoint change its privacy--utility
+preference per document or session without changing either semantic representation.
 
 Count shaping is an experimental leakage approximation. It is never a privacy measurement or
 guarantee. All method comparisons remain utility versus held-out LLM re-identification success
@@ -49,6 +55,10 @@ at matched realized privacy and identical settings.
    group.
 5. **Realized privacy remains external.** Count score, lambda, KEEP rate, and lattice depth are
    diagnostics. The held-out attacker on `doc_p` and `out_final` supplies the privacy axis.
+6. **Semantic and controller gradients are separated.** Exact count shaping cannot update the
+   utility tower or selected-action memory. Privacy-head supervision cannot update utility
+   parameters. During hybrid RL, utility and exact count objectives may both update the one global
+   controller scale because their opposition determines its finite operating range.
 
 ## Definitions
 
@@ -58,14 +68,20 @@ at matched realized privacy and identical settings.
   `decision_id`. Rule-masked PERSON/CODE values and entries with no policy choice are excluded.
 - **Fixed decision** — a rewrite decision present in the frozen environment but outside the
   ranker's action space. It never receives a policy gradient.
-- **Action state `h_j`** — document context aggregated around decision `j`'s occurrences,
-  previous selected decisions, dynamic legal mask, action features, and selected lambda profile.
+- **Semantic action state `h_j`** — candidate-conditioned document context around decision `j`'s
+  occurrences, source-to-candidate utility relation, selected-action utility memory, and dynamic
+  legal mask. It excludes lambda, counts, predicted privacy, authored level position, and menu
+  size.
 - **Utility assertion `q`** — one accepted context or delivered assertion scored from the complete
   round trip.
 - **Policy dependency set** — the unique policy decisions in assertion `q`'s
   `policy_dependency_decision_ids`. It is derived from frozen occurrence routing, never from
   measurement family or scope.
-- **Count score `p_j(a)`** — type-normalized bounded score for action `a` at decision `j`.
+- **Exact count target `p_j(a)`** — frozen own-profile-relative score in `[0,1]` derived from the
+  admitted `level_counts` for action `a` at decision `j`; used by shaping and diagnostics, never as
+  an actor feature.
+- **Predicted privacy score `p_hat_j(a)`** — profile-menu normalization of the frozen semantic
+  privacy head's predicted log-count mean; used by the deployed controller.
 - **Document count score `P_count`** — equal mean of selected action scores over `D_d`.
 - **Supported lambda menu `Lambda`** — three to five pre-registered operating profiles,
   including zero, served by one conditional checkpoint.
@@ -116,70 +132,67 @@ rank(document, frozen_occurrences_and_decisions, lambda_profile) -> action_per_d
 The caller selects one supported profile before ranking the document. Changing profiles within
 one document is unsupported because it changes the objective mid-trajectory.
 
+First-occurrence order is the selected prototype's canonical factorization. Selected-action
+memory contains only earlier decisions in this order and has no selection-step positional
+embedding. Order sensitivity is measured by replaying development documents under deterministic
+reverse-order and seeded-order diagnostic walks while preserving legal-mask semantics. Material
+utility or action changes reopen a two-pass draft-and-refine policy; they do not authorize silent
+training-time order randomization.
+
 ### Lambda conditioning
 
-The policy receives both:
-
-- a normalized ordered magnitude, `log1p(lambda) / log1p(max(Lambda))`; and
-- a learned embedding or one-hot identity for the supported profile.
-
-A scalar added uniformly to every action logit would cancel under softmax. Conditioning must
-interact with action features. The preferred head uses FiLM or explicit cross-features:
+Lambda does not enter the utility tower, semantic privacy head, document attention, relation
+features, or selected-action memory. The separately produced scores combine only at the action
+logit:
 
 ```text
-z_s(a) = head(FiLM([ctx_s ; action_features_s(a)], lambda_embedding))
+z_j(a, lambda) = u_theta(h_j, a) + alpha * g(lambda) * p_hat_j(a)
+
+alpha = softplus(alpha_raw)
+g(lambda) = log1p(lambda) / log1p(max(Lambda))
 ```
 
-At minimum, tests must show that changing lambda changes relative logits for a fixed span and
-action menu. The retired `log10_active_floor` feature slot is replaced and renamed; floor
-terminology must not survive in the v2 interface.
+`g` is fixed by the supported numeric menu. There is no profile embedding, one-hot identity,
+FiLM, per-profile slope, or profile-specific head. `alpha` is one globally shared nonnegative
+scalar. At lambda zero the controller is identically zero for every parameter value, so combined
+logits equal utility logits exactly, not merely at initialization.
 
-Initialize conditioning as an identity transformation: FiLM scale heads emit one, FiLM bias
-heads emit zero, profile embeddings start at zero, and any explicit lambda cross-feature branch
-is zero-initialized. Before conditional optimization, every supported profile must therefore
-reproduce the same unconditioned logits for identical state and legal menu. This is a tested
-initialization invariant, not an expectation left to random initialization.
+The semantic privacy head is frozen before hybrid RL. Utility losses and exact count shaping both
+may update `alpha`; that shared scalar is where utility and privacy pressure balance. Exact count
+shaping cannot update `u_theta`, and utility losses cannot update the privacy head. `alpha` is
+frozen with the checkpoint before held-out evaluation and is never calibrated separately by
+profile, type, corpus, method, or evaluation set.
 
 ## Count shaping
 
-### Type-normalized action score
+### Profile-relative exact target
 
-For a non-placeholder action with count `K_j(a)` and runtime type `T_j`:
+For a lattice-level action with admitted own-profile count `K_j(a)`:
 
 ```text
-p_j(a) = clip(log10(max(K_j(a), 1)) / log10(K_ref[T_j]), 0, 1)
+ell_j(a) = log(max(K_j(a), 1))
+denom_j = max_b_in_profile_levels ell_j(b)
+p_j(a) = clip(ell_j(a) / denom_j, 0, 1)
+
 p_j(KEEP) = 0
 p_j(placeholder) = 1
 ```
 
-`K_ref` is versioned reward state and is frozen before lambda selection. Resolve it per type in
-this order:
+The denominator is computed only across that matched profile's lattice levels; KEEP and
+placeholder do not enter it. A one-level profile assigns its sole level score one and is tagged
+`singleton_profile_normalization`, including when its count is one. A profile with two or more
+levels whose admitted level log counts are all zero is flat and fails the validated
+privacy-head/count gate. Equal profile-relative scores across different profiles do not claim equal
+anonymity-set size.
 
-1. Use a grounded universe size when all rewarded counts for the type are defined against that
-   coherent universe.
-2. Otherwise collect finite, positive, non-placeholder level counts from the frozen training
-   artifact. If at least 20 distinct profiles contribute, use the profile-balanced 95th
-   percentile: first take the maximum valid count within each profile, then take the percentile
-   across profiles. This prevents deep profiles from receiving more reference weight merely
-   because they contain more levels.
-3. With fewer than 20 contributing profiles, use the maximum profile-level value and tag the
-   type `low_reference_support`.
-4. If every contributing value is one, mark the type `flat_count_signal`: its non-placeholder
-   levels score zero and only the placeholder endpoint supplies count pressure.
+Only counts admitted by the complete-count gate enter this target. Fail-closed `1.0`,
+legacy-default `1000.0`, missing `level_counts`, row-level fallback counts, and generic sentinels
+are not estimates. Reject by provenance/schema, not numeric value: explicit evidenced estimates
+equal to `1` or `1000` remain valid. Model-proposed counts are permitted only as separately
+reported experimental shaping supervision and never become formal privacy labels.
 
-Counts above `K_ref` clip to one. Clipping rate, reference provenance, profile support, and the
-distribution of adjacent `delta p` values are mandatory gate outputs.
-
-Only counts admitted by the complete-count gate below enter this calculation. Fail-closed
-`1.0`, legacy-default `1000.0`, missing `level_counts`, row-level fallback counts, and the
-`GENERIC` sentinel are not estimates and cannot enter `K_ref` or lattice-level shaping. Reject
-by provenance/schema, not numeric value: an explicit evidenced estimate equal to `1` or `1000`
-remains valid.
-
-Type normalization is provisional. The evidence that triggers a profile-relative or
-source-family-relative ablation is pinned in the
-[decision log](interactive-ranker-v2-decision-log.md); a trigger causes diagnosis and a new
-reward version, never retroactive renormalization.
+The retained direct-count fallback in `ranker-v2-architecture.md` uses strict type normalization.
+It is a separate architecture and reward version, not a silent runtime substitution.
 
 ### Document score and exact local objective
 
@@ -200,17 +213,25 @@ revisited in a future formal privacy audit against occurrence-aware attackers; i
 that repetition is harmless.**
 
 Do not pass sampled `P_count` through document RLOO. At every sampled state, optimize the
-expected immediate count score over the complete legal menu:
+expected immediate exact count target over the complete legal menu. Construct a count-gradient
+policy view that detaches semantic outputs but preserves the controller scale:
 
 ```text
+pi_count(a | h, lambda) = softmax(mask(
+    stop_gradient(u_theta(h, a))
+    + alpha * g(lambda) * stop_gradient(p_hat(a))))
+
 L_count = -(1/G) sum_g,k [lambda_d / |D_d|]
-                         sum_a pi(a | h_gk, lambda_d) p_k(a)
+                         sum_a pi_count(a | h_gk, lambda_d) p_k(a)
 ```
 
-This gives every legal action a dense, exact count gradient without remote calls. It captures
-the immediate count value but not the effect of an early action on later injectivity masks.
-The gate reports collision frequency and count opportunity lost through collisions. A material
-effect triggers a privacy-return-to-go ablation; v2 does not add that variance preemptively.
+This gives every legal action a dense exact-target gradient without remote calls, but only
+`alpha` receives that gradient. Utility and counterfactual losses use the ordinary policy and may
+also update `alpha`; without this opposing utility gradient, privacy-only optimization would drive
+the scale toward saturated privacy pressure. The objective captures immediate count value but not
+the effect of an early action on later injectivity masks. The gate reports collision frequency and
+count opportunity lost through collisions. A material effect triggers a privacy-return-to-go
+ablation; v2 does not add that variance preemptively.
 
 ## Utility assertions and structured credit
 
@@ -384,6 +405,18 @@ whose trajectory log-probability is the sum over decisions. The complete minibat
 L = mean_d L_utility(d) + L_count - beta * entropy + eta * KL(pi || pi_ref)
 ```
 
+Gradient ownership is:
+
+```text
+L_utility, entropy, KL --> utility tower, selected-action memory, alpha
+L_count                --> alpha only
+L_privacy              --> privacy projection and semantic privacy head only
+```
+
+The semantic privacy head remains frozen throughout hybrid RL. The exact target in `L_count`
+therefore cannot turn the predicted privacy score into an opaque policy preference, while the
+utility gradient prevents the globally shared controller scale from optimizing privacy alone.
+
 RLOO tie filtering is applied at the assertion-credit level: a span with tied linked and residual
 advantages contributes no provisional utility term, but its count objective remains active.
 Counterfactual pairs with `delta_U = 0` are retained in diagnostics and supply no pairwise
@@ -400,7 +433,7 @@ enabled only by a pre-registered collapse rule; it is never tuned separately per
 Before optimization:
 
 - freeze one detector span artifact shared by QA and RL;
-- freeze action menus, counts, count provenance, and type references;
+- freeze action menus, own-profile counts, count provenance, and normalization tags;
 - freeze accepted utility assertions and routing fields;
 - freeze remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches;
 - run reward-support, count-health, lambda-menu, and determinism gates.
@@ -433,6 +466,20 @@ would silently change the action space or reward definition.
 KEEP remains the explicit score-zero endpoint and placeholder the explicit score-one endpoint;
 neither is required to carry a lattice count.
 
+### Semantic privacy-head pretraining
+
+Before policy optimization, train the privacy projection and log-count distribution head from the
+ordered source-to-candidate relation encoding. Split by complete profile so no source surface,
+candidate menu, or count trajectory crosses train and validation. Optimize log-count likelihood,
+within-menu ordering, and profile-relative calibration. KEEP and placeholder have fixed endpoint
+scores and do not enter learned-head calibration metrics.
+
+The head must beat authored-position, action-mode/type, profile-memorization, and candidate-only
+baselines on profile-held-out data. Freeze the validated head before behavior cloning, ExIt, lambda
+selection, and hybrid RL. Failure blocks the semantic prototype and triggers the separately logged
+direct-count fallback evaluation; it does not permit true count or authored position to enter the
+semantic actor.
+
 ### Behavior-cloning initialization
 
 Retain the existing deterministic behavior-cloning teacher as a support-preserving
@@ -456,10 +503,9 @@ Lambda and count score do not affect ExIt selection. Complete winner cloning may
 passenger actions; this is accepted only as initialization. The hybrid stage supplies the
 structured and causal correction.
 
-ExIt samples and verifies trajectories under the lambda-zero input. After a winner is verified,
-clone its identical action targets once under every supported profile input. This adds no remote
-calls and preserves the utility warm start across all profile embeddings before count-conditioned
-optimization begins.
+ExIt samples and verifies trajectories under lambda zero. Clone each verified winner once into
+the shared utility tower and selected-action memory. No profile replication is needed because the
+semantic policy has no lambda identity input and the controller is exactly zero at lambda zero.
 
 ### Lambda-conditioned hybrid optimization
 
@@ -578,22 +624,29 @@ before full RL and held-out evaluation.
 ### Count health
 
 - The complete-count pre-training gate passes at 100% level coverage before lambda selection.
-- Report `K_ref`, provenance, profile support, clipping rate, flat-menu rate, and adjacent
-  `delta p` distributions per type.
+- Report own-profile denominators, provenance, singleton-profile rate, flat-menu rate, and
+  adjacent exact-target `delta p` distributions per type and provenance.
 - Report expected count-gradient mass by type, profile, and provenance.
 - Assert that fallback/default provenance contributes exactly zero lattice-level gradient mass.
 - Count score monotonicity follows the stored counts; any lattice/count non-monotonicity blocks
   the run rather than being silently repaired or excluded at reward time.
+- Report profile-held-out semantic-head log-count likelihood, multiplicative error, interval
+  coverage, within-menu ordering, profile-relative calibration, paraphrase stability, and lexical
+  counterexamples separately for grounded and experimental count provenance.
 
 ### Conditional-policy responsiveness
 
-- Fixed-document logits differ across supported profiles for action menus with non-flat count
-  scores.
-- Greedy `P_count` is non-decreasing across supported profiles on development documents.
+- Fixed-state logits differ across supported lambda values only through
+  `alpha * g(lambda) * p_hat`; utility and privacy predictions remain lambda-invariant.
+- For a fixed state and legal menu, expected predicted privacy is non-decreasing with lambda.
+- Greedy predicted and exact `P_count` are reported across supported profiles on development
+  documents; whole-document non-monotonicity is diagnosed because earlier actions can change later
+  legal menus and prediction error can invert exact count ordering.
 - KEEP, level, and placeholder rates are reported by profile and type.
 - Every supported profile receives balanced document/corpus/type exposure during training.
 - Lambda zero is compared against a utility-only fixed-condition control to price conditional
   interference.
+- Deterministic reverse-order and seeded-order replays quantify first-occurrence-order sensitivity.
 
 ### Counterfactual scheduler
 
@@ -641,8 +694,14 @@ never calibrated away.
   passes again.
 - **Conditional collapse:** all profiles produce one policy or high profiles collapse to
   placeholder everywhere. Fail the responsiveness/menu gate.
-- **Type-normalization distortion:** any revisit trigger in the decision log fires. Run the
-  declared normalization ablation; do not rewrite the completed run's score.
+- **Semantic privacy transfer failure:** the head memorizes profiles, misorders unseen menus, or
+  fails calibration/paraphrase/lexical-counterexample gates. Reject the semantic prototype and
+  evaluate the strict direct-count fallback; do not expose true counts to the utility tower.
+- **Profile-normalization distortion:** profile-relative progress produces misleading cross-profile
+  privacy pressure. Diagnose against raw-count and realized-attacker outcomes and run the logged
+  strict type-normalized fallback as a new reward version; do not rewrite a completed run.
+- **Order sensitivity:** reverse or seeded decision walks materially change utility or actions.
+  Reopen two-pass draft-and-refine inference; do not silently randomize training order.
 - **Interaction miss:** one-decision counterfactuals disagree systematically with multi-decision
   assertion behavior. Add a multi-decision intervention ablation rather than pretending independent
   credit.
@@ -654,10 +713,14 @@ never calibrated away.
 The implementation should deepen these modules rather than scatter reward arithmetic through
 the trainer:
 
-- **Conditional policy interface:** `log_probs(state, legal, lambda_profile)` and
-  `sample(state, legal, lambda_profile)` own conditioning and dynamic-mask semantics.
-- **Count objective interface:** versioned type references plus
-  `action_scores(decision, legal) -> scores, provenance` hide normalization and diagnostics.
+- **Semantic policy interface:** `semantic_scores(state, legal) -> utility_logits,
+  predicted_logcount_distribution` owns candidate-conditioned context and selected-action memory;
+  neither output depends on lambda or true counts.
+- **Controller interface:** `combine(utility_logits, predicted_privacy, lambda) -> logits` owns the
+  fixed `g`, one nonnegative `alpha`, and exact lambda-zero identity.
+- **Exact count-target interface:** versioned own-profile counts plus
+  `action_targets(decision, legal) -> scores, provenance` hide profile normalization and
+  diagnostics; targets never enter actor features.
 - **Utility credit interface:** `credit(assertion_vector, occurrence_to_decision,
   policy_dependency_decision_ids, credit_routing, rollout_group)` returns per-policy-decision
   provisional advantages without knowing policy internals.
@@ -667,17 +730,20 @@ the trainer:
 - **Lambda-menu selector:** consumes a frozen trajectory pool and emits values, switch points,
   replay report, and hashes. It is offline and cannot inspect final attacker results.
 
-Expected code destinations are `src/cloak/train/ranker.py` for policy conditioning,
-`src/cloak/train/reward.py` or a dedicated deep reward module for count/credit calculation,
-`src/cloak/train/roundtrip.py` for assertion-vector output, and `scripts/train_ranker.py` for
-orchestration only. Exact paths may change during implementation planning, but the interfaces
-and separation of responsibilities are normative.
+Expected code destinations are focused model modules under `src/cloak/train/` for frozen encoding,
+semantic privacy, document context, selected-action memory, and the additive controller;
+`src/cloak/train/interactive_ranker.py` for trajectory/loss assembly;
+`src/cloak/train/roundtrip.py` for assertion-vector output; and
+`scripts/train_interactive_ranker.py` for orchestration only. Exact paths are fixed by the
+implementation plan, but these responsibility boundaries are normative.
 
 ## Artifacts
 
 - frozen detector/span artifact shared by QA and RL;
 - versioned utility-assertion artifact with routing fields and fixed per-document denominators;
-- type count-reference artifact and count-health report;
+- own-profile count-target artifact and count-health report;
+- frozen semantic privacy-head checkpoint with profile-held-out calibration report;
+- frozen document/relation encoder identity and content-addressed token/relation caches;
 - lambda calibration pool, switch points, replay report, and supported-menu manifest;
 - counterfactual pair cache and scheduler report;
 - conditional-policy training record under `research-wiki/training/` written before the run;
@@ -693,5 +759,9 @@ and separation of responsibilities are normative.
   profile-matching alternatives and honesty boundaries.
 - [Interactive ranker v2 decision log](interactive-ranker-v2-decision-log.md) — chosen forks and
   rejected alternatives.
+- [Ranker v2 architecture](ranker-v2-architecture.md) — normative model inputs, semantic privacy
+  head, context readout, selected-action memory, and additive controller.
+- [Ranker v2 architecture decision log](ranker-v2-architecture-decision-log.md) — architecture
+  alternatives and escalation evidence.
 - [QA builder v2](../qa-builder-v2.md) — implemented shared assertion artifact and scoring
   contract.

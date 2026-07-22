@@ -1,6 +1,6 @@
 ---
 type: plan
-status: current
+status: partial
 created: 2026-07-22
 updated: 2026-07-22
 tags: [rl, ranker, qa-builder, count-reward, structured-credit, implementation]
@@ -10,9 +10,18 @@ companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/qa-builder-v2.md,
             docs/plans/2026-07-22-core-rl-v2-qa-builder-alignment.md,
             docs/dev/logs/2026-07-22-rl-v2-implementation-inventory.md]
+superseded_by: docs/plans/2026-07-22-ranker-v2-semantic-architecture-implementation.md
 ---
 
 # Interactive Ranker v2 Remaining Implementation Plan
+
+> **Superseded for model architecture and post-WIP validation.** Tasks 1--12 produced the current
+> direct-count/FiLM/GRU WIP through commit `28631e8`. That policy is now a diagnostic baseline, not
+> the selected architecture. Use
+> `docs/plans/2026-07-22-ranker-v2-semantic-architecture-implementation.md` for all subsequent model,
+> reward-normalization, training, and vertical-slice work. Tasks 14--15 remain deferred and must be
+> replanned after the semantic prototype passes its gates. The historical model assignment below
+> is also superseded by the current root `AGENTS.md` model-selection rules.
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > `superpowers:subagent-driven-development` to implement this plan task-by-task. Steps use
@@ -24,8 +33,9 @@ companion: [docs/specs/RL/interactive-ranker-v2.md,
 > retrievable via `git show codex/qa-builder-v2-clean:<path>`; (2) Task 2 no longer re-runs
 > detection — the environment is rebuilt from the existing frozen arms artifact; (3) lattice
 > profile repairs stop for Timo's explicit confirmation before promotion; (4) Tasks 14–15 are a
-> deferred second phase requiring a separate green light; (5) implementation runs on GPT-5.6
-> Sol High via `codex:rescue` with the coordinating Claude session as reviewer; (6) the
+> deferred second phase requiring a separate green light; (5) future agent assignments follow the
+> current root `AGENTS.md` model table—GPT-5.6 Sol High is review-only, never implementation, and
+> fast/priority service mode is prohibited; (6) the
 > counterfactual scheduler drops the "low-confidence links" input (v16 stores no confidence
 > scalar).
 

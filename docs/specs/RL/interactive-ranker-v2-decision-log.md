@@ -223,9 +223,10 @@ that cause unintended all-placeholder collapse are rejected before the training 
 frozen. The normative spec must define this protocol algorithmically, including provenance,
 tie handling, clustering, minimum-support gates, and freeze rules.
 
-The policy receives both ordered lambda magnitude and a supported-profile identity embedding.
-This avoids requiring interpolation while still exposing the direction and relative strength
-of the operating preference.
+**Architecture amendment (2026-07-22).** The finite numeric menu and balanced exposure remain
+approved. The later architecture decision removes the supported-profile identity embedding:
+lambda enters only through the explicit additive controller in
+`ranker-v2-architecture.md`. No behavior is promised between supported numeric values.
 
 **Rejected alternatives.** Ship one checkpoint per lambda; expose a continuous lambda slider.
 Separate checkpoints are expensive to train and operationally awkward. A continuous slider
@@ -233,11 +234,10 @@ requires reliable interpolation at values that were not directly trained or vali
 
 ## Conditional initialization preserves the utility warm start
 
-**Decision.** Initialize FiLM conditioning to identity, profile embeddings to zero, and explicit
-lambda interaction branches to zero, making every supported profile reproduce the same
-unconditioned policy before hybrid training. Utility-only ExIt samples and verifies at lambda
-zero, then behavior-clones each verified winner under every supported profile input using local
-compute only.
+**Superseded architecture detail.** The original decision initialized FiLM and profile embeddings
+to preserve the warm start. The selected additive controller removes both. Lambda-zero equality is
+now an exact structural identity, and ExIt clones a winner once into the shared utility policy.
+The retained decision is utility-only initialization, not the obsolete conditioning mechanism.
 
 **Rejected alternative.** Train BC/ExIt through only one randomly initialized profile path and
 leave other profile embeddings untouched until hybrid RL. That would confound conditional
@@ -245,7 +245,8 @@ interference with initialization damage and discard the support-preserving warm 
 
 ## Count scores are normalized within runtime type
 
-**Decision.** Convert an action's count into a bounded score using a fixed reference count for
+**Superseded for the selected semantic prototype; retained for the direct-count fallback.** The
+original decision converted an action's count into a bounded score using a fixed reference count for
 its runtime type:
 
 ```text
@@ -295,7 +296,9 @@ Type normalization is provisional and must be revisited if any of these signals 
   lambda selection, gate run, and training record; it is never applied retroactively.
 
 The first response to a trigger is diagnosis and an ablation, not automatic renormalization.
-Degenerate behavior under the pinned type-normalized design remains a reportable result.
+Degenerate behavior under the type-normalized fallback remains a reportable result. The selected
+semantic prototype instead uses own-profile log-count normalization for both privacy-head
+supervision and the exact local target, as recorded in the architecture decision log.
 
 ## Document count score is an equal mean over controlled decisions
 
