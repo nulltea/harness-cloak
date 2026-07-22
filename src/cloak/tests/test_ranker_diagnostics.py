@@ -648,3 +648,85 @@ def test_train_artifact_validation_accepts_only_hash_bound_passing_gates():
     broken[2] = dict(fixtures[2], unexpected_stale_field=True)
     with pytest.raises(ValueError, match="utility artifact hash"):
         _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")
+
+
+def _privacy_metrics(nll, pairwise, calibration):
+    return {
+        "overall": {
+            "nll": nll,
+            "within_menu_pairwise_accuracy": pairwise,
+            "profile_relative_calibration_error": calibration,
+        },
+        "by_runtime_type": {
+            "drug": {}, "health-condition": {},
+        },
+        "by_grounding_status": {
+            "certifying": {}, "model-proposed": {},
+        },
+        "by_source_family": {"fixture": {}},
+    }
+
+
+def _privacy_seed_report():
+    baselines = {
+        "authored_position_mode_type": _privacy_metrics(2.0, 0.6, 0.3),
+        "mode_type_only": _privacy_metrics(2.1, 0.55, 0.35),
+        "candidate_only": _privacy_metrics(1.8, 0.65, 0.25),
+        "train_profile_mean": _privacy_metrics(2.3, 0.5, 0.4),
+    }
+    return {
+        "seed": 11,
+        "profile_held_out": True,
+        "splits": {
+            "dev": {
+                "semantic": _privacy_metrics(1.0, 0.8, 0.1),
+                "baselines": baselines,
+            },
+            "test": {
+                "semantic": _privacy_metrics(1.1, 0.75, 0.12),
+                "baselines": baselines,
+            },
+        },
+    }
+
+
+def test_privacy_diagnostic_manifest_requires_held_out_metrics_and_all_baselines():
+    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+
+    manifest = build_privacy_diagnostic_manifest(
+        [_privacy_seed_report()],
+        split_manifest_hash="sha256:split",
+        metric_report_hash="sha256:metrics",
+    )
+
+    assert manifest["artifact_version"] == "ranker-v2-semantic-privacy-diagnostic-v1"
+    assert manifest["profile_held_out"] is True
+    assert manifest["relative_promotion"]["verdict"] == "PASS"
+    assert manifest["aci_document_generalization_claimed"] is False
+    assert set(manifest["required_baselines"]) == {
+        "authored_position_mode_type",
+        "mode_type_only",
+        "candidate_only",
+        "train_profile_mean",
+    }
+    assert manifest["artifact_hash"].startswith("sha256:")
+
+    incomplete = _privacy_seed_report()
+    del incomplete["splits"]["test"]["baselines"]["candidate_only"]
+    with pytest.raises(ValueError, match="baseline"):
+        build_privacy_diagnostic_manifest(
+            [incomplete],
+            split_manifest_hash="sha256:split",
+            metric_report_hash="sha256:metrics",
+        )
+
+    unsupported = _privacy_seed_report()
+    unsupported["splits"]["test"]["semantic"]["overall"][
+        "within_menu_pairwise_accuracy"
+    ] = None
+    manifest = build_privacy_diagnostic_manifest(
+        [unsupported],
+        split_manifest_hash="sha256:split",
+        metric_report_hash="sha256:metrics",
+    )
+    assert manifest["relative_promotion"]["verdict"] == "FAIL"

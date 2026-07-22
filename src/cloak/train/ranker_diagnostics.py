@@ -16,6 +16,7 @@ from cloak.train.lambda_menu import (
     deduplicate_action_vectors,
     document_frontier,
 )
+from cloak.train.ranker_privacy import REQUIRED_BASELINES
 from cloak.train.ranker_environment import RankerDocument
 from cloak.train.utility_cache import UtilityCache, UtilityRequest, stable_hash
 from cloak.train.utility_credit import document_utility
@@ -25,6 +26,7 @@ DIAGNOSTIC_VERSION = "ranker-v2-diagnostics-v1"
 SPIKE_VERSION = "ranker-v2-diagnostic-spike-v1"
 THRESHOLD_RULES_VERSION = "ranker-v2-threshold-rules-v1"
 THRESHOLD_MANIFEST_VERSION = "ranker-v2-threshold-manifest-v1"
+PRIVACY_DIAGNOSTIC_VERSION = "ranker-v2-semantic-privacy-diagnostic-v1"
 
 _EMPIRICAL_FIELDS = (
     "feasibility_gates.min_distinct_points_per_document",
@@ -898,3 +900,110 @@ def reader_jitter_from_cache(
     return {
         split: tuple(values) for split, values in sorted(by_split.items())
     }
+
+
+def build_privacy_diagnostic_manifest(
+    seed_reports: Sequence[Mapping],
+    *,
+    split_manifest_hash: str,
+    metric_report_hash: str,
+) -> dict[str, Any]:
+    """Freeze profile-held-out relative promotion against every required baseline."""
+    if not seed_reports:
+        raise ValueError("privacy diagnostics require seed reports")
+    if not split_manifest_hash or not metric_report_hash:
+        raise ValueError("privacy diagnostic hashes are required")
+
+    seed_verdicts = []
+    frozen_reports = []
+    expected_baselines = set(REQUIRED_BASELINES)
+    for report in seed_reports:
+        if report.get("profile_held_out") is not True:
+            raise ValueError("privacy diagnostics require profile-held-out reports")
+        splits = report.get("splits")
+        if not isinstance(splits, Mapping) or set(splits) != {"dev", "test"}:
+            raise ValueError("privacy diagnostics require dev and test splits")
+        for split_name, split_report in splits.items():
+            if not isinstance(split_report, Mapping):
+                raise ValueError(f"privacy {split_name} report must be a mapping")
+            semantic = split_report.get("semantic")
+            baselines = split_report.get("baselines")
+            if not isinstance(semantic, Mapping) or not isinstance(baselines, Mapping):
+                raise ValueError(f"privacy {split_name} report is incomplete")
+            if set(baselines) != expected_baselines:
+                raise ValueError(f"privacy {split_name} baseline coverage mismatch")
+            for name, metrics in {"semantic": semantic, **baselines}.items():
+                if not isinstance(metrics, Mapping):
+                    raise ValueError(f"privacy metrics are invalid for {name}")
+                for stratum in ("overall", "by_runtime_type", "by_grounding_status"):
+                    if not isinstance(metrics.get(stratum), Mapping) or not metrics[stratum]:
+                        raise ValueError(
+                            f"privacy metrics omit {stratum} for {split_name}:{name}"
+                        )
+
+        test_report = splits["test"]
+        semantic_overall = test_report["semantic"]["overall"]
+        comparisons = {}
+
+        def better(metric: str, baseline: Mapping, *, higher: bool) -> bool:
+            semantic_value = semantic_overall.get(metric)
+            baseline_value = baseline.get(metric)
+            if (
+                isinstance(semantic_value, bool)
+                or isinstance(baseline_value, bool)
+                or not isinstance(semantic_value, int | float)
+                or not isinstance(baseline_value, int | float)
+                or not math.isfinite(float(semantic_value))
+                or not math.isfinite(float(baseline_value))
+            ):
+                return False
+            return (
+                semantic_value > baseline_value
+                if higher else semantic_value < baseline_value
+            )
+
+        for baseline_name, baseline_report in test_report["baselines"].items():
+            baseline_overall = baseline_report["overall"]
+            passes = {
+                "nll": better("nll", baseline_overall, higher=False),
+                "within_menu_pairwise_accuracy": better(
+                    "within_menu_pairwise_accuracy", baseline_overall, higher=True
+                ),
+                "profile_relative_calibration_error": better(
+                    "profile_relative_calibration_error", baseline_overall, higher=False
+                ),
+            }
+            comparisons[baseline_name] = {
+                "metrics": passes,
+                "verdict": "PASS" if all(passes.values()) else "FAIL",
+            }
+        seed_verdicts.append({
+            "seed": report.get("seed"),
+            "comparisons": comparisons,
+            "verdict": (
+                "PASS"
+                if all(row["verdict"] == "PASS" for row in comparisons.values())
+                else "FAIL"
+            ),
+        })
+        frozen_reports.append(deepcopy(dict(report)))
+
+    manifest = {
+        "artifact_version": PRIVACY_DIAGNOSTIC_VERSION,
+        "profile_held_out": True,
+        "aci_document_generalization_claimed": False,
+        "split_manifest_hash": split_manifest_hash,
+        "metric_report_hash": metric_report_hash,
+        "required_baselines": list(REQUIRED_BASELINES),
+        "seed_reports": frozen_reports,
+        "relative_promotion": {
+            "seed_verdicts": seed_verdicts,
+            "verdict": (
+                "PASS"
+                if all(row["verdict"] == "PASS" for row in seed_verdicts)
+                else "FAIL"
+            ),
+        },
+    }
+    manifest["artifact_hash"] = stable_hash(manifest)
+    return manifest
