@@ -461,11 +461,18 @@ opportunities) in an isolated doc-global pass, deduped against everything kept; 
 literal-reverse pass runs only when the stage is off (the stage supersedes it with the wider
 seed).
 
-**Measured economics (67-doc v15 build, new lattice env — PRE-v4-reader/scorer-v3; the v16
-re-gate re-measures all of it):** 616 kept relation QAs (149 primary / 391 stage / 65 reverse
-framing / 11 gleaning), mean 9.2 per doc (median 7); the reader-outcome router excluded 1,985
-no-relation and 392 lattice-suspect rejections from repair; gleaning returned 14 keeps from 49
-paid batches. Gleaning is a safety net, not a load-bearing stage.
+**Measured economics (67-doc v16 production build, 2026-07-22 — v4 reader, scorer v3, polarity
+defenses, corrected profiles, HARD finer-level check, gleaning on):** 634 kept relation QAs
+(139 primary / 378 stage / 113 reverse framing / 4 gleaning), mean 9.5 per doc (median 8,
+63/67 docs covered). Reverse framing nearly doubled vs v15 (65 → 113): the relation-constrained
+reader unlocks reverse keeps the distractor-prone v3 reader failed. The hard finer-level check
+rejected 43 QAs (`finer_level_unreadable`, = the lattice worklist, 23 docs); the
+treating-conflict cross-gate vetoed 19; the reader-outcome router excluded 1,614 no-relation,
+397 lattice-suspect, and 25 floor-answerable rejections from repair. Gleaning returned **0**
+keeps from 47 paid batches (216 targets) — v15 returned 14/49 — confirming gleaning as a safety
+net whose remaining targets are now dominated by facts the stronger deterministic+reverse
+channels already exhausted. (v15 baseline, pre-v4-reader: 616 kept — 149 primary / 391 stage /
+65 reverse / 11 gleaning, mean 9.2.)
 
 ## Utility assertions and scoring
 
@@ -540,5 +547,4 @@ the qa-audit trio. Infrastructure failure is an explicit state, never a silent z
   gate-failure classification report), `results/qa_v2_stage_ab/rebuild_v5/` (corrected-profile
   5-doc smokes: v4 reader, polarity defenses, scorer A/B containment→strict→capped),
   `results/qa_v2_aci_full_v15/` (67-doc build, pre-v4 reader),
-  `results/qa_v2_aci_full_v16/` (67-doc production re-gate on all of the above; in flight
-  2026-07-22)
+  `results/qa_v2_aci_full_v16/` (67-doc production re-gate on all of the above, 2026-07-22)
