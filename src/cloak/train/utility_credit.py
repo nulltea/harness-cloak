@@ -1,93 +1,278 @@
-"""Ranker-v2 routing of frozen utility component vectors to policy decisions."""
+"""Fixed-denominator structured utility credit for ranker-v2 rollouts."""
 from __future__ import annotations
 
-from collections import defaultdict
+import math
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from types import MappingProxyType
 
 
-def _loo_advantages(values: Sequence[float]) -> list[float]:
-    if len(values) < 2:
-        raise ValueError("provisional utility credit requires at least two rollouts")
-    total = sum(values)
-    return [value - (total - value) / (len(values) - 1) for value in values]
+@dataclass(frozen=True)
+class DocumentUtilityCredit:
+    document_utility: tuple[float, ...]
+    linked_utility: Mapping[str, tuple[float, ...]]
+    residual_utility: tuple[float, ...]
+    provisional_advantage: Mapping[tuple[int, str], float]
+    route: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "linked_utility",
+            MappingProxyType({
+                str(decision_id): tuple(values)
+                for decision_id, values in self.linked_utility.items()
+            }),
+        )
+        object.__setattr__(
+            self,
+            "provisional_advantage",
+            MappingProxyType(dict(self.provisional_advantage)),
+        )
+        object.__setattr__(self, "route", MappingProxyType(dict(self.route)))
+
+
+@dataclass(frozen=True)
+class _Partitions:
+    denominator: float
+    policy_decision_ids: tuple[str, ...]
+    assertions: Mapping[str, Mapping]
+    weights: Mapping[str, float]
+    linked_by_decision: Mapping[str, frozenset[str]]
+    residual_ids: frozenset[str]
+
+
+def _partitions(artifact: Mapping, doc_id: str) -> _Partitions:
+    if artifact.get("artifact_version") != "utility-assertions-v2":
+        raise ValueError("structured utility credit requires utility-assertions-v2")
+    documents = artifact.get("documents")
+    if not isinstance(documents, Mapping) or doc_id not in documents:
+        raise ValueError(f"utility artifact lacks document {doc_id!r}")
+    document = documents[doc_id]
+    if not isinstance(document, Mapping):
+        raise ValueError(f"utility document {doc_id!r} must be a mapping")
+
+    denominator = document.get("utility_weight_denominator")
+    if (
+        isinstance(denominator, bool)
+        or not isinstance(denominator, int | float)
+        or not math.isfinite(float(denominator))
+        or float(denominator) <= 0.0
+    ):
+        raise ValueError("utility_weight_denominator must be finite and positive")
+
+    raw_decisions = document.get("policy_decision_ids")
+    if (
+        not isinstance(raw_decisions, list | tuple)
+        or any(not isinstance(value, str) or not value for value in raw_decisions)
+        or len(raw_decisions) != len(set(raw_decisions))
+    ):
+        raise ValueError("policy_decision_ids must be unique non-empty strings")
+    policy_decision_ids = tuple(raw_decisions)
+    policy_decision_set = set(policy_decision_ids)
+
+    raw_assertion_ids = document.get("assertion_ids")
+    if (
+        not isinstance(raw_assertion_ids, list | tuple)
+        or any(not isinstance(value, str) or not value for value in raw_assertion_ids)
+        or len(raw_assertion_ids) != len(set(raw_assertion_ids))
+    ):
+        raise ValueError("document assertion_ids must be unique non-empty strings")
+    all_assertions = artifact.get("assertions")
+    if not isinstance(all_assertions, Mapping):
+        raise ValueError("utility artifact assertions must be a mapping")
+
+    assertions: dict[str, Mapping] = {}
+    weights: dict[str, float] = {}
+    linked_by_decision: dict[str, set[str]] = {}
+    residual_ids: set[str] = set()
+    for assertion_id in raw_assertion_ids:
+        row = all_assertions.get(assertion_id)
+        if not isinstance(row, Mapping):
+            raise ValueError(f"utility artifact lacks assertion {assertion_id!r}")
+        if row.get("assertion_id") != assertion_id or row.get("doc_id") != doc_id:
+            raise ValueError(f"utility assertion {assertion_id!r} binding mismatch")
+        if row.get("status", "accepted") != "accepted":
+            raise ValueError(f"document lists non-accepted assertion {assertion_id!r}")
+        weight = row.get("weight")
+        if (
+            isinstance(weight, bool)
+            or not isinstance(weight, int | float)
+            or not math.isfinite(float(weight))
+            or float(weight) < 0.0
+        ):
+            raise ValueError(f"utility assertion {assertion_id!r} has invalid weight")
+
+        routing = row.get("credit_routing")
+        raw_dependencies = row.get("policy_dependency_decision_ids")
+        if not isinstance(raw_dependencies, list | tuple) or any(
+            not isinstance(value, str) or not value for value in raw_dependencies
+        ):
+            raise ValueError(
+                f"utility assertion {assertion_id!r} has invalid policy dependencies"
+            )
+        dependencies = set(raw_dependencies)
+        unknown = sorted(dependencies - policy_decision_set)
+        if unknown:
+            raise ValueError(
+                f"utility assertion {assertion_id!r} names non-policy decisions: {unknown}"
+            )
+        if routing == "linked":
+            if not dependencies:
+                raise ValueError(
+                    f"linked utility assertion {assertion_id!r} has no policy dependency"
+                )
+            for decision_id in dependencies:
+                linked_by_decision.setdefault(decision_id, set()).add(assertion_id)
+        elif routing == "residual":
+            if dependencies:
+                raise ValueError(
+                    f"residual utility assertion {assertion_id!r} has policy dependencies"
+                )
+            residual_ids.add(assertion_id)
+        else:
+            raise ValueError(
+                f"utility assertion {assertion_id!r} has invalid credit_routing"
+            )
+        assertions[assertion_id] = row
+        weights[assertion_id] = float(weight)
+
+    return _Partitions(
+        denominator=float(denominator),
+        policy_decision_ids=policy_decision_ids,
+        assertions=MappingProxyType(assertions),
+        weights=MappingProxyType(weights),
+        linked_by_decision=MappingProxyType({
+            decision_id: frozenset(assertion_ids)
+            for decision_id, assertion_ids in linked_by_decision.items()
+        }),
+        residual_ids=frozenset(residual_ids),
+    )
+
+
+def _validate_vectors(
+    component_vectors: Sequence[Mapping[str, float]], assertion_ids: frozenset[str],
+) -> None:
+    for rollout_index, vector in enumerate(component_vectors):
+        if not isinstance(vector, Mapping):
+            raise ValueError(f"rollout {rollout_index} component vector must be a mapping")
+        missing = sorted(assertion_ids - set(vector))
+        if missing:
+            raise ValueError(
+                f"rollout {rollout_index} missing assertion scores: {missing}"
+            )
+        invalid = sorted(
+            assertion_id for assertion_id in assertion_ids
+            if (
+                isinstance(vector[assertion_id], bool)
+                or not isinstance(vector[assertion_id], int | float)
+                or not math.isfinite(float(vector[assertion_id]))
+                or not 0.0 <= float(vector[assertion_id]) <= 1.0
+            )
+        )
+        if invalid:
+            raise ValueError(
+                f"rollout {rollout_index} has invalid assertion scores: {invalid}"
+            )
 
 
 def _weighted_scores(
-    vectors: Sequence[Mapping[str, float]],
-    assertion_ids: set[str],
+    component_vectors: Sequence[Mapping[str, float]],
+    assertion_ids: frozenset[str],
     weights: Mapping[str, float],
     denominator: float,
-) -> list[float]:
-    if not assertion_ids:
-        return [0.0] * len(vectors)
-    return [
-        sum(weights[assertion_id] * float(vector[assertion_id])
-            for assertion_id in assertion_ids) / denominator
-        for vector in vectors
-    ]
+) -> tuple[float, ...]:
+    return tuple(
+        sum(
+            weights[assertion_id] * float(vector[assertion_id])
+            for assertion_id in assertion_ids
+        ) / denominator
+        for vector in component_vectors
+    )
 
 
-def provisional_advantages(
-    component_vectors: Sequence[Mapping[str, float]],
-    artifact: Mapping,
-    *,
-    doc_id: str,
-) -> list[dict[str, float]]:
-    """Compute ranker-v2 linked/global/fallback LOO advantages for one document group."""
-    document = artifact["documents"][doc_id]
-    denominator = float(document["utility_weight_denominator"])
-    if denominator <= 0:
-        raise ValueError("utility_weight_denominator must be positive")
-    decisions = [str(value) for value in document["controlled_decision_ids"]]
-    occurrence_to_decision = {
-        str(key): str(value)
-        for key, value in document.get("occurrence_to_decision", {}).items()
-    }
-    assertions = {
-        str(assertion_id): row
-        for assertion_id, row in artifact.get("assertions", {}).items()
-        if row.get("doc_id") == doc_id and row.get("status", "accepted") == "accepted"
-    }
-    weights = {
-        assertion_id: float(row["weight"])
-        for assertion_id, row in assertions.items()
-    }
-    linked_by_decision: dict[str, set[str]] = defaultdict(set)
-    global_ids = set()
-    for assertion_id, row in assertions.items():
-        occurrence_ids = [str(value) for value in row.get("occurrence_ids", [])]
-        if row.get("scope") == "global" or not occurrence_ids:
-            global_ids.add(assertion_id)
-            continue
-        for decision_id in {
-            occurrence_to_decision[occurrence_id]
-            for occurrence_id in occurrence_ids
-        }:
-            linked_by_decision[decision_id].add(assertion_id)
+def _loo_advantages(values: Sequence[float]) -> tuple[float, ...]:
+    rollout_count = len(values)
+    if rollout_count < 2:
+        raise ValueError("provisional utility credit requires at least two rollouts")
+    total = sum(values)
+    return tuple(
+        value - (total - value) / (rollout_count - 1)
+        for value in values
+    )
 
-    global_advantages = _loo_advantages(_weighted_scores(
-        component_vectors, global_ids, weights, denominator
-    ))
-    document_advantages = _loo_advantages(_weighted_scores(
-        component_vectors, set(assertions), weights, denominator
-    ))
-    linked_advantages = {
-        decision_id: _loo_advantages(_weighted_scores(
-            component_vectors, assertion_ids, weights, denominator
-        ))
-        for decision_id, assertion_ids in linked_by_decision.items()
+
+def document_utility(
+    component_scores: Mapping[str, float], artifact: Mapping, doc_id: str,
+) -> float:
+    """Aggregate all accepted assertions with the stored fixed denominator."""
+    partitions = _partitions(artifact, doc_id)
+    assertion_ids = frozenset(partitions.assertions)
+    try:
+        _validate_vectors([component_scores], assertion_ids)
+    except ValueError as error:
+        message = str(error).replace("rollout 0 ", "")
+        raise ValueError(message) from error
+    return _weighted_scores(
+        [component_scores], assertion_ids, partitions.weights, partitions.denominator,
+    )[0]
+
+
+def provisional_credit(
+    component_vectors: Sequence[Mapping[str, float]], artifact: Mapping, doc_id: str,
+) -> DocumentUtilityCredit:
+    """Partition v2 assertions and compute unnormalized leave-one-out credit."""
+    if len(component_vectors) < 2:
+        raise ValueError("provisional utility credit requires at least two rollouts")
+    partitions = _partitions(artifact, doc_id)
+    all_ids = frozenset(partitions.assertions)
+    _validate_vectors(component_vectors, all_ids)
+
+    document_scores = _weighted_scores(
+        component_vectors, all_ids, partitions.weights, partitions.denominator,
+    )
+    residual_scores = _weighted_scores(
+        component_vectors,
+        partitions.residual_ids,
+        partitions.weights,
+        partitions.denominator,
+    )
+    linked_scores = {
+        decision_id: _weighted_scores(
+            component_vectors,
+            assertion_ids,
+            partitions.weights,
+            partitions.denominator,
+        )
+        for decision_id, assertion_ids in partitions.linked_by_decision.items()
     }
 
-    result = []
-    for rollout_index in range(len(component_vectors)):
-        row = {}
-        for decision_id in decisions:
-            if decision_id in linked_by_decision:
-                row[decision_id] = (
-                    linked_advantages[decision_id][rollout_index]
-                    + global_advantages[rollout_index]
-                )
-            else:
-                row[decision_id] = document_advantages[rollout_index]
-        result.append(row)
-    return result
+    document_advantage = _loo_advantages(document_scores)
+    residual_advantage = _loo_advantages(residual_scores)
+    linked_advantage = {
+        decision_id: _loo_advantages(values)
+        for decision_id, values in linked_scores.items()
+    }
+    route = {
+        decision_id: (
+            "linked" if decision_id in partitions.linked_by_decision else "document"
+        )
+        for decision_id in partitions.policy_decision_ids
+    }
+    provisional_advantage = {
+        (rollout_index, decision_id): (
+            linked_advantage[decision_id][rollout_index]
+            + residual_advantage[rollout_index]
+            if route[decision_id] == "linked"
+            else document_advantage[rollout_index]
+        )
+        for rollout_index in range(len(component_vectors))
+        for decision_id in partitions.policy_decision_ids
+    }
+    return DocumentUtilityCredit(
+        document_utility=document_scores,
+        linked_utility=linked_scores,
+        residual_utility=residual_scores,
+        provisional_advantage=provisional_advantage,
+        route=route,
+    )

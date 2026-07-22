@@ -294,3 +294,90 @@ def test_operations_reject_unordered_policy_decisions(operation):
             interactive.replay_trajectory(
                 StubPolicy(), document, trajectory, "profile"
             )
+
+
+def _replayed(log_probabilities):
+    from cloak.train.interactive_ranker import ReplayedStep, ReplayedTrajectory
+
+    trajectories = []
+    for rollout_index, values in enumerate(log_probabilities):
+        steps = tuple(
+            ReplayedStep(
+                decision_id=decision_id,
+                legal_action_ids=(f"{decision_id}-selected",),
+                selected_action_id=f"{decision_id}-selected",
+                log_prob=log_prob,
+                entropy=torch.zeros((), requires_grad=True),
+                log_probs=log_prob.reshape(1),
+            )
+            for decision_id, log_prob in zip(("p1", "p2"), values, strict=True)
+        )
+        trajectories.append(ReplayedTrajectory(
+            doc_id="d1", lambda_profile=f"profile-{rollout_index}", steps=steps,
+        ))
+    return tuple(trajectories)
+
+
+def test_provisional_utility_loss_has_one_term_per_pair_and_divides_only_by_rollouts():
+    from cloak.train.interactive_ranker import provisional_utility_loss
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    logs = tuple(
+        torch.tensor(value, requires_grad=True)
+        for value in (-0.1, -0.2, -0.3, -0.4)
+    )
+    replayed = _replayed((logs[:2], logs[2:]))
+    credit = DocumentUtilityCredit(
+        document_utility=(0.0, 0.0), linked_utility={}, residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (0, "p1"): 1.0, (0, "p2"): 2.0,
+            (1, "p1"): -1.0, (1, "p2"): -2.0,
+        },
+        route={"p1": "linked", "p2": "document"},
+    )
+
+    loss = provisional_utility_loss(replayed, credit)
+
+    assert loss.item() == pytest.approx(-0.3)
+    loss.backward()
+    assert [value.grad.item() for value in logs] == pytest.approx([
+        -0.5, -1.0, 0.5, 1.0,
+    ])
+
+
+def test_tied_pair_contributes_a_zero_term_without_detaching_its_log_probability():
+    from cloak.train.interactive_ranker import provisional_utility_loss
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    logs = tuple(
+        torch.tensor(value, requires_grad=True)
+        for value in (-0.1, -0.2, -0.3, -0.4)
+    )
+    credit = DocumentUtilityCredit(
+        document_utility=(0.0, 0.0), linked_utility={}, residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (0, "p1"): 1.0, (0, "p2"): 0.0,
+            (1, "p1"): -1.0, (1, "p2"): 0.0,
+        },
+        route={"p1": "linked", "p2": "linked"},
+    )
+
+    loss = provisional_utility_loss(_replayed((logs[:2], logs[2:])), credit)
+    loss.backward()
+
+    assert logs[1].grad is not None and logs[1].grad.item() == 0.0
+    assert logs[3].grad is not None and logs[3].grad.item() == 0.0
+
+
+def test_provisional_utility_loss_rejects_missing_or_extra_credit_pairs():
+    from cloak.train.interactive_ranker import provisional_utility_loss
+    from cloak.train.utility_credit import DocumentUtilityCredit
+
+    logs = tuple(torch.tensor(-0.1, requires_grad=True) for _ in range(4))
+    credit = DocumentUtilityCredit(
+        document_utility=(0.0, 0.0), linked_utility={}, residual_utility=(0.0, 0.0),
+        provisional_advantage={(0, "p1"): 0.0}, route={"p1": "linked"},
+    )
+
+    with pytest.raises(ValueError, match="credit pairs differ from replayed trajectory pairs"):
+        provisional_utility_loss(_replayed((logs[:2], logs[2:])), credit)

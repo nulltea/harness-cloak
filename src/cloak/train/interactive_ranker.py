@@ -15,6 +15,7 @@ from cloak.train.ranker_environment import (
     RankerDecision,
     RankerDocument,
 )
+from cloak.train.utility_credit import DocumentUtilityCredit
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,44 @@ class ReplayedTrajectory:
     doc_id: str
     lambda_profile: str
     steps: tuple[ReplayedStep, ...]
+
+
+def provisional_utility_loss(
+    replayed: Sequence["ReplayedTrajectory"],
+    credit: DocumentUtilityCredit,
+) -> torch.Tensor:
+    """Return the rollout-normalized provisional REINFORCE utility term."""
+    rollout_count = len(replayed)
+    if rollout_count == 0:
+        raise ValueError("provisional utility loss requires at least one rollout")
+    if (
+        len(credit.document_utility) != rollout_count
+        or len(credit.residual_utility) != rollout_count
+        or any(len(values) != rollout_count for values in credit.linked_utility.values())
+    ):
+        raise ValueError("utility credit rollout count differs from replayed trajectories")
+
+    replayed_pairs: set[tuple[int, str]] = set()
+    terms: list[torch.Tensor] = []
+    for rollout_index, trajectory in enumerate(replayed):
+        seen_decisions: set[str] = set()
+        for step in trajectory.steps:
+            if step.decision_id in seen_decisions:
+                raise ValueError(
+                    f"replayed trajectory repeats decision {step.decision_id!r}"
+                )
+            seen_decisions.add(step.decision_id)
+            pair = (rollout_index, step.decision_id)
+            replayed_pairs.add(pair)
+            if pair not in credit.provisional_advantage:
+                continue
+            terms.append(-float(credit.provisional_advantage[pair]) * step.log_prob)
+
+    if replayed_pairs != set(credit.provisional_advantage):
+        raise ValueError("credit pairs differ from replayed trajectory pairs")
+    if not terms:
+        raise ValueError("provisional utility loss requires at least one decision pair")
+    return torch.stack(terms).sum() / rollout_count
 
 
 class TrajectoryPolicy(Protocol):
