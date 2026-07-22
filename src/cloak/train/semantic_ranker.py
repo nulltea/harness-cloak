@@ -2,14 +2,28 @@
 from __future__ import annotations
 
 import hashlib
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
 import torch
 from torch import nn
+from torch.nn import functional as F
 
-from cloak.train.ranker_environment import RankerDecision, RankerDocument
-from cloak.train.ranker_representation import DocumentTokenBank, RelationFeatures
+from cloak.train.ranker import LambdaProfile
+from cloak.train.ranker_environment import RankerAction, RankerDecision, RankerDocument
+from cloak.train.ranker_privacy import (
+    PrivacyCheckpointContract,
+    SemanticPrivacyHead,
+    load_privacy_checkpoint,
+    profile_normalize_predictions,
+)
+from cloak.train.ranker_representation import (
+    DocumentTokenBank,
+    RankerRepresentationStore,
+    RelationFeatures,
+)
 
 
 ORDINARY_ROLE = 0
@@ -48,6 +62,25 @@ class SelectedActionRecord:
     action_mode_id: int
     runtime_type_id: int
     source_position_pool: torch.Tensor
+
+
+@dataclass(frozen=True)
+class SemanticPolicyState:
+    document: RankerDocument
+    profile: LambdaProfile
+    selected_records: tuple[SelectedActionRecord, ...]
+
+
+@dataclass(frozen=True)
+class ActionDistribution:
+    action_ids: tuple[str, ...]
+    utility_logits: torch.Tensor
+    mu_log_count: torch.Tensor
+    sigma_log_count: torch.Tensor
+    predicted_privacy: torch.Tensor
+    combined_logits: torch.Tensor
+    log_probs: torch.Tensor
+    count_log_probs: torch.Tensor
 
 
 def stack_utility_relations(
@@ -521,10 +554,14 @@ class SelectedActionMemory(nn.Module):
             dropout=dropout,
             batch_first=True,
         )
-        self.utility_gru = nn.GRU(
-            input_size=history_dim,
-            hidden_size=history_dim,
-            batch_first=True,
+        self.utility_gru = (
+            nn.GRU(
+                input_size=history_dim,
+                hidden_size=history_dim,
+                batch_first=True,
+            )
+            if history_mode == "utility-gru"
+            else None
         )
 
     def build_record(
@@ -667,6 +704,7 @@ class SelectedActionMemory(nn.Module):
 
         rows = self._record_rows(records)
         if self.history_mode == "utility-gru":
+            assert self.utility_gru is not None
             _, hidden = self.utility_gru(rows.unsqueeze(0))
             return hidden[-1].expand(action_count, -1)
 
@@ -678,6 +716,419 @@ class SelectedActionMemory(nn.Module):
             need_weights=False,
         )
         return output.squeeze(0)
+
+
+class SemanticRankerPolicy(nn.Module):
+    """Compose count-blind utility semantics with a frozen privacy controller.
+
+    The utility tower consumes only frozen relation features, candidate-conditioned
+    document context, an explicit context-relation interaction, categorical
+    mode/type embeddings, and selected utility history. Lambda and privacy enter
+    only through the final scalar additive controller.
+    """
+
+    def __init__(
+        self,
+        *,
+        representation_store: RankerRepresentationStore,
+        privacy_head: nn.Module,
+        supported_profiles: Sequence[LambdaProfile],
+        max_lambda: float,
+        token_dim: int,
+        pair_dim: int,
+        relation_dim: int,
+        context_dim: int,
+        history_dim: int,
+        utility_hidden_dim: int,
+        num_heads: int,
+        runtime_types: Sequence[str],
+        dropout: float = 0.0,
+    ):
+        super().__init__()
+        dimensions = (
+            token_dim,
+            pair_dim,
+            relation_dim,
+            context_dim,
+            history_dim,
+            utility_hidden_dim,
+            num_heads,
+        )
+        if min(dimensions) <= 0:
+            raise ValueError("semantic policy dimensions must be positive")
+        if not math.isfinite(max_lambda) or max_lambda <= 0.0:
+            raise ValueError("semantic policy max_lambda must be positive")
+        profiles = tuple(supported_profiles)
+        if not profiles:
+            raise ValueError("semantic policy requires supported lambda values")
+        profile_values = tuple(float(profile.value) for profile in profiles)
+        if (
+            any(
+                not isinstance(profile, LambdaProfile)
+                or not math.isfinite(profile.value)
+                or profile.value < 0.0
+                for profile in profiles
+            )
+            or len(profile_values) != len(set(profile_values))
+            or 0.0 not in profile_values
+            or max(profile_values) != float(max_lambda)
+        ):
+            raise ValueError("semantic policy lambda menu is invalid")
+        runtime_types = tuple(str(value) for value in runtime_types)
+        if (
+            not runtime_types
+            or any(not value for value in runtime_types)
+            or len(runtime_types) != len(set(runtime_types))
+        ):
+            raise ValueError("semantic policy runtime types are invalid")
+        if not isinstance(privacy_head, nn.Module):
+            raise TypeError("semantic policy privacy head must be a module")
+        declared_pair_dim = getattr(privacy_head, "pair_dim", pair_dim)
+        if declared_pair_dim != pair_dim:
+            raise ValueError("semantic policy privacy pair dimension differs")
+
+        self.representation_store = representation_store
+        self.privacy_head = privacy_head
+        self.supported_lambda_values = profile_values
+        self.max_lambda = float(max_lambda)
+        self.pair_dim = int(pair_dim)
+        self.relation_dim = int(relation_dim)
+        self.context_dim = int(context_dim)
+        self.history_dim = int(history_dim)
+        self.runtime_types = runtime_types
+        self.runtime_type_ids = {
+            value: index for index, value in enumerate(runtime_types)
+        }
+        self.action_mode_ids = {"level": 0, "keep": 1, "placeholder": 2}
+
+        self.utility_projection = nn.Linear(pair_dim, relation_dim)
+        self.context_readout = CandidateContextReadout(
+            token_dim=token_dim,
+            relation_dim=relation_dim,
+            context_dim=context_dim,
+            num_heads=num_heads,
+            context_mode=PRODUCTION_CONTEXT_MODE,
+            dropout=dropout,
+            production=True,
+        )
+        self.context_to_relation = nn.Linear(context_dim, relation_dim)
+        self.interaction_projection = nn.Linear(relation_dim, relation_dim)
+        self.action_mode_embedding = nn.Embedding(
+            len(self.action_mode_ids), relation_dim
+        )
+        self.runtime_type_embedding = nn.Embedding(
+            len(runtime_types), relation_dim
+        )
+        self.memory = SelectedActionMemory(
+            relation_dim=relation_dim,
+            context_dim=context_dim,
+            history_dim=history_dim,
+            num_heads=num_heads,
+            action_mode_count=len(self.action_mode_ids),
+            runtime_type_count=len(runtime_types),
+            history_mode=PRODUCTION_HISTORY_MODE,
+            dropout=dropout,
+            production=True,
+        )
+        utility_input_dim = (
+            relation_dim
+            + context_dim
+            + relation_dim
+            + relation_dim
+            + relation_dim
+            + history_dim
+        )
+        self.utility_head = nn.Sequential(
+            nn.Linear(utility_input_dim, utility_hidden_dim),
+            nn.GELU(),
+            nn.Linear(utility_hidden_dim, 1),
+        )
+        self.alpha_raw = nn.Parameter(
+            torch.tensor(math.log(math.expm1(1.0)), dtype=torch.float32)
+        )
+
+        for parameter in self.privacy_head.parameters():
+            parameter.requires_grad_(False)
+        self.privacy_head.eval()
+
+    @classmethod
+    def from_privacy_checkpoint(
+        cls,
+        *,
+        privacy_checkpoint: Path,
+        privacy_checkpoint_contract: PrivacyCheckpointContract,
+        **kwargs,
+    ) -> "SemanticRankerPolicy":
+        """Load a fail-closed privacy checkpoint and freeze it in the policy."""
+        supplied_pair_dim = kwargs.pop("pair_dim", privacy_checkpoint_contract.pair_dim)
+        if supplied_pair_dim != privacy_checkpoint_contract.pair_dim:
+            raise ValueError("semantic policy pair dimension differs from checkpoint")
+        privacy_head = SemanticPrivacyHead(
+            pair_dim=privacy_checkpoint_contract.pair_dim,
+            projection_dim=privacy_checkpoint_contract.projection_dim,
+            hidden_dim=privacy_checkpoint_contract.hidden_dim,
+            count_basis_size=privacy_checkpoint_contract.count_basis_size,
+        )
+        load_privacy_checkpoint(
+            privacy_checkpoint,
+            privacy_head,
+            privacy_checkpoint_contract,
+        )
+        return cls(
+            privacy_head=privacy_head,
+            pair_dim=supplied_pair_dim,
+            **kwargs,
+        )
+
+    @property
+    def alpha(self) -> torch.Tensor:
+        return F.softplus(self.alpha_raw)
+
+    def train(self, mode: bool = True) -> "SemanticRankerPolicy":
+        super().train(mode)
+        self.privacy_head.eval()
+        return self
+
+    def _validate_profile(self, profile: LambdaProfile) -> float:
+        if not isinstance(profile, LambdaProfile):
+            raise TypeError("semantic policy requires a LambdaProfile")
+        value = float(profile.value)
+        if value not in self.supported_lambda_values:
+            raise ValueError("unsupported lambda value")
+        return value
+
+    def begin_document(
+        self, document: RankerDocument, profile: LambdaProfile
+    ) -> SemanticPolicyState:
+        self._validate_profile(profile)
+        if not isinstance(document, RankerDocument):
+            raise TypeError("semantic policy requires a RankerDocument")
+        return SemanticPolicyState(
+            document=document,
+            profile=profile,
+            selected_records=(),
+        )
+
+    def _validate_state(
+        self,
+        state: SemanticPolicyState,
+        decision: RankerDecision,
+        profile: LambdaProfile,
+    ) -> None:
+        if not isinstance(state, SemanticPolicyState):
+            raise TypeError("semantic policy state is invalid")
+        profile_value = self._validate_profile(profile)
+        if profile_value != float(state.profile.value):
+            raise ValueError("lambda value changed within document")
+        matches = tuple(
+            row
+            for row in state.document.policy_decisions
+            if row.decision_id == decision.decision_id
+        )
+        if len(matches) != 1 or matches[0] != decision:
+            raise ValueError("decision does not belong to semantic policy state")
+
+    @property
+    def _device(self) -> torch.device:
+        return self.utility_projection.weight.device
+
+    def _decision_inputs(
+        self,
+        state: SemanticPolicyState,
+        decision: RankerDecision,
+    ) -> tuple[
+        tuple[RankerAction, ...],
+        torch.Tensor,
+        DocumentTokenBank,
+        DecisionTokenFeatures,
+    ]:
+        actions = tuple(decision.actions)
+        if not actions or len({action.action_id for action in actions}) != len(actions):
+            raise ValueError("semantic policy decision menu is invalid")
+        if any(action.runtime_type != decision.runtime_type for action in actions):
+            raise ValueError("semantic policy action runtime type differs")
+        if decision.runtime_type not in self.runtime_type_ids:
+            raise ValueError("semantic policy runtime type is unsupported")
+        relations = tuple(
+            self.representation_store.relation(decision.decision_id, action.action_id)
+            for action in actions
+        )
+        pair_features = stack_utility_relations(relations).to(
+            device=self._device,
+            dtype=self.utility_projection.weight.dtype,
+        )
+        if pair_features.shape[1] != self.pair_dim:
+            raise ValueError("semantic policy relation pair dimension differs")
+
+        stored_bank = self.representation_store.document(state.document.doc_id)
+        features = build_decision_token_features(
+            stored_bank, state.document, decision
+        )
+        token_bank = DocumentTokenBank(
+            doc_id=stored_bank.doc_id,
+            states=stored_bank.states.to(
+                device=self._device,
+                dtype=self.utility_projection.weight.dtype,
+            ),
+            offsets=stored_bank.offsets.to(device=self._device),
+            chunk_membership=stored_bank.chunk_membership,
+        )
+        device_features = DecisionTokenFeatures(
+            role_ids=features.role_ids.to(device=self._device),
+            relative_position_ids=features.relative_position_ids.to(
+                device=self._device
+            ),
+            document_position_ids=features.document_position_ids.to(
+                device=self._device
+            ),
+            occurrence_token_indices=features.occurrence_token_indices,
+        )
+        return actions, pair_features, token_bank, device_features
+
+    def _category_ids(
+        self, actions: Sequence[RankerAction], decision: RankerDecision
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        try:
+            mode_values = [self.action_mode_ids[action.mode] for action in actions]
+            runtime_value = self.runtime_type_ids[decision.runtime_type]
+        except KeyError as exc:
+            raise ValueError(
+                "semantic policy categorical value is unsupported"
+            ) from exc
+        modes = torch.tensor(mode_values, dtype=torch.long, device=self._device)
+        runtime_types = torch.full(
+            (len(actions),), runtime_value, dtype=torch.long, device=self._device
+        )
+        return modes, runtime_types
+
+    def distribution(
+        self,
+        state: SemanticPolicyState,
+        decision: RankerDecision,
+        legal_action_ids: Sequence[str],
+        profile: LambdaProfile,
+    ) -> ActionDistribution:
+        self._validate_state(state, decision, profile)
+        actions, pair_features, token_bank, features = self._decision_inputs(
+            state, decision
+        )
+        complete_ids = tuple(action.action_id for action in actions)
+        legal_ids = tuple(str(value) for value in legal_action_ids)
+        if (
+            not legal_ids
+            or len(legal_ids) != len(set(legal_ids))
+            or any(action_id not in complete_ids for action_id in legal_ids)
+        ):
+            raise ValueError("semantic policy legal action menu is invalid")
+
+        utility_relations = self.utility_projection(pair_features)
+        contexts = self.context_readout(
+            token_bank, features, utility_relations
+        )
+        histories = self.memory(
+            torch.cat([utility_relations, contexts], dim=-1),
+            state.selected_records,
+        )
+        mode_ids, runtime_type_ids = self._category_ids(actions, decision)
+        interaction = self.interaction_projection(
+            utility_relations * self.context_to_relation(contexts)
+        )
+        utility_inputs = torch.cat(
+            [
+                utility_relations,
+                contexts,
+                interaction,
+                self.action_mode_embedding(mode_ids),
+                self.runtime_type_embedding(runtime_type_ids),
+                histories,
+            ],
+            dim=-1,
+        )
+        complete_utility = self.utility_head(utility_inputs).squeeze(-1)
+
+        with torch.no_grad():
+            privacy_prediction = self.privacy_head(pair_features)
+            complete_privacy = profile_normalize_predictions(
+                privacy_prediction,
+                tuple(action.mode for action in actions),
+            )
+        legal_indices = torch.tensor(
+            [complete_ids.index(action_id) for action_id in legal_ids],
+            dtype=torch.long,
+            device=self._device,
+        )
+        utility_logits = complete_utility.index_select(0, legal_indices)
+        mu_log_count = privacy_prediction.mu_log_count.index_select(
+            0, legal_indices
+        )
+        sigma_log_count = privacy_prediction.sigma_log_count.index_select(
+            0, legal_indices
+        )
+        predicted_privacy = complete_privacy.index_select(0, legal_indices)
+
+        lambda_value = float(profile.value)
+        if lambda_value == 0.0:
+            combined_logits = utility_logits
+            count_combined = utility_logits.detach()
+        else:
+            magnitude = math.log1p(lambda_value) / math.log1p(self.max_lambda)
+            controller = self.alpha * magnitude * predicted_privacy.detach()
+            combined_logits = utility_logits + controller
+            count_combined = utility_logits.detach() + controller
+        return ActionDistribution(
+            action_ids=legal_ids,
+            utility_logits=utility_logits,
+            mu_log_count=mu_log_count,
+            sigma_log_count=sigma_log_count,
+            predicted_privacy=predicted_privacy,
+            combined_logits=combined_logits,
+            log_probs=torch.log_softmax(combined_logits, dim=0),
+            count_log_probs=torch.log_softmax(count_combined, dim=0),
+        )
+
+    def log_probs(
+        self,
+        state: SemanticPolicyState,
+        decision: RankerDecision,
+        legal_action_ids: Sequence[str],
+        profile: LambdaProfile,
+    ) -> torch.Tensor:
+        return self.distribution(
+            state, decision, legal_action_ids, profile
+        ).log_probs
+
+    def advance(
+        self,
+        state: SemanticPolicyState,
+        decision: RankerDecision,
+        action_id: str,
+    ) -> SemanticPolicyState:
+        self._validate_state(state, decision, state.profile)
+        matches = tuple(
+            action for action in decision.actions if action.action_id == action_id
+        )
+        if len(matches) != 1:
+            raise ValueError("selected semantic policy action is unknown")
+        action = matches[0]
+        _, pair_features, _, features = self._decision_inputs(state, decision)
+        selected_index = tuple(
+            row.action_id for row in decision.actions
+        ).index(action_id)
+        selected_relation = self.utility_projection(
+            pair_features[selected_index:selected_index + 1]
+        ).squeeze(0)
+        mode_ids, runtime_type_ids = self._category_ids((action,), decision)
+        record = self.memory.build_record(
+            utility_relation=selected_relation,
+            action_mode_id=int(mode_ids[0].item()),
+            runtime_type_id=int(runtime_type_ids[0].item()),
+            decision_features=features,
+        )
+        return SemanticPolicyState(
+            document=state.document,
+            profile=state.profile,
+            selected_records=(*state.selected_records, record),
+        )
 
 
 def production_decision_order(

@@ -989,6 +989,7 @@ def test_interactive_cli_has_only_task_subcommands_and_requires_all_artifact_pat
 
     parser = train_interactive_ranker.build_parser()
     common = [
+        "--policy-architecture", "legacy-film-gru",
         "--environment", "environment.json",
         "--count-state", "count.json",
         "--utility-artifact", "utility.json",
@@ -1028,6 +1029,7 @@ def test_interactive_cli_cache_only_miss_is_machine_readable_and_nonzero(
     with pytest.raises(SystemExit) as captured:
         train_interactive_ranker.main([
             "exit-collect",
+            "--policy-architecture", "legacy-film-gru",
             "--environment", "environment.json",
             "--count-state", "count.json",
             "--utility-artifact", "utility.json",
@@ -1051,6 +1053,7 @@ def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
     parser = train_interactive_ranker.build_parser()
     args = parser.parse_args([
         "train",
+        "--policy-architecture", "legacy-film-gru",
         "--environment", "environment.json",
         "--count-state", "count.json",
         "--utility-artifact", "utility.json",
@@ -1086,6 +1089,7 @@ def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
     with pytest.raises(SystemExit):
         parser.parse_args([
             "train",
+            "--policy-architecture", "legacy-film-gru",
             "--environment", "environment.json",
             "--count-state", "count.json",
             "--utility-artifact", "utility.json",
@@ -1108,6 +1112,7 @@ def test_train_cli_dispatches_train_and_preserves_cache_only_stop(monkeypatch, c
     with pytest.raises(SystemExit) as captured:
         train_interactive_ranker.main([
             "train",
+            "--policy-architecture", "legacy-film-gru",
             "--environment", "environment.json",
             "--count-state", "count.json",
             "--utility-artifact", "utility.json",

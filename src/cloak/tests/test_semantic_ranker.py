@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import inspect
+import math
 from dataclasses import fields, replace
 from pathlib import Path
 from types import MappingProxyType
@@ -8,9 +9,20 @@ from types import MappingProxyType
 import pytest
 import torch
 
-from cloak.train.ranker_environment import RankerDecision, RankerDocument
-from cloak.train.ranker_representation import DocumentTokenBank, RelationFeatures
 import cloak.train.semantic_ranker as semantic_ranker_module
+from cloak.train.ranker import LambdaProfile
+from cloak.train.ranker_environment import (
+    RankerAction,
+    RankerDecision,
+    RankerDocument,
+)
+from cloak.train.ranker_privacy import (
+    PrivacyCheckpointContract,
+    PrivacyPrediction,
+    SemanticPrivacyHead,
+    save_privacy_checkpoint,
+)
+from cloak.train.ranker_representation import DocumentTokenBank, RelationFeatures
 from cloak.train.semantic_ranker import (
     CONTEXT_MODES,
     CURRENT_OCCURRENCE_ROLE,
@@ -79,10 +91,14 @@ def _fixture() -> tuple[DocumentTokenBank, RankerDocument, RankerDecision]:
         occurrence_ids=("current-first", "current-second"),
         actions=(),
     )
+    source_text = list("x" * 80)
+    source_text[10:15] = "aaaaa"
+    source_text[30:35] = "bbbbb"
+    source_text[40:45] = "ccccc"
     document = RankerDocument(
         doc_id="fixture/doc",
         corpus="fixture",
-        text="x" * 80,
+        text="".join(source_text),
         occurrences=occurrences,
         policy_decisions=(decision,),
         fixed_decisions=(),
@@ -564,3 +580,503 @@ def test_order_helpers_preserve_frozen_production_first_occurrence_walk():
     assert set(first_seeded) == set(frozen)
     assert document.policy_decisions is frozen
     assert semantic_ranker_module.production_decision_order(document) is frozen
+
+
+class _StubRepresentationStore:
+    def __init__(
+        self,
+        bank: DocumentTokenBank,
+        relations: tuple[RelationFeatures, ...],
+    ):
+        self.bank = bank
+        self.relations = {
+            (relation.decision_id, relation.action_id): relation
+            for relation in relations
+        }
+        self.target_counts = {
+            relation.action_id: index + 1
+            for index, relation in enumerate(relations)
+        }
+
+    def document(self, doc_id: str) -> DocumentTokenBank:
+        if doc_id != self.bank.doc_id:
+            raise KeyError(doc_id)
+        return self.bank
+
+    def relation(self, decision_id: str, action_id: str) -> RelationFeatures:
+        return self.relations[(decision_id, action_id)]
+
+
+class _StubPrivacyHead(torch.nn.Module):
+    pair_dim = 4
+
+    def __init__(self):
+        super().__init__()
+        self.privacy_projection = torch.nn.Linear(4, 1, bias=False)
+        with torch.no_grad():
+            self.privacy_projection.weight.copy_(
+                torch.tensor([[1.0, 0.0, 0.0, 0.0]])
+            )
+
+    def forward(self, pair_features, *, count_basis=None):
+        assert count_basis is None
+        raw = self.privacy_projection(pair_features).squeeze(-1)
+        return PrivacyPrediction(
+            mu_log_count=torch.nn.functional.softplus(raw),
+            sigma_log_count=torch.full_like(raw, 0.25),
+        )
+
+
+def _semantic_fixture():
+    bank, document, original = _fixture()
+    document = replace(
+        document,
+        occurrences=tuple(
+            MappingProxyType({
+                **occurrence,
+                "controlled": False,
+                "decision_id": None,
+            })
+            if occurrence["occurrence_id"] == "other"
+            else occurrence
+            for occurrence in document.occurrences
+        ),
+    )
+    actions = (
+        RankerAction(
+            action_id="current-level-low",
+            mode="level",
+            fill="broad place",
+            authored_level_index=0,
+            runtime_type="LOC",
+        ),
+        RankerAction(
+            action_id="current-level-high",
+            mode="level",
+            fill="specific place",
+            authored_level_index=1,
+            runtime_type="LOC",
+        ),
+        RankerAction(
+            action_id="current-keep",
+            mode="keep",
+            fill="source",
+            authored_level_index=None,
+            runtime_type="LOC",
+        ),
+        RankerAction(
+            action_id="current-placeholder",
+            mode="placeholder",
+            fill=None,
+            authored_level_index=None,
+            runtime_type="LOC",
+        ),
+    )
+    decision = replace(
+        original,
+        profile_id="LOC:source",
+        runtime_type="LOC",
+        actions=actions,
+    )
+    document = replace(document, policy_decisions=(decision,))
+    pair_rows = (
+        torch.tensor([0.25, 1.0, 0.0, 0.0]),
+        torch.tensor([1.50, 0.0, 1.0, 0.0]),
+        torch.tensor([4.00, 0.0, 0.0, 1.0]),
+        torch.tensor([-2.0, 1.0, 1.0, 0.0]),
+    )
+    relations = tuple(
+        RelationFeatures(
+            decision_id=decision.decision_id,
+            action_id=action.action_id,
+            type_mean=torch.zeros(1),
+            source_mean=torch.zeros(1),
+            candidate_mean=torch.zeros(1),
+            pair=pair,
+            candidate_only=torch.zeros(1),
+            independent_pair=torch.zeros(1),
+        )
+        for action, pair in zip(actions, pair_rows, strict=True)
+    )
+    return _StubRepresentationStore(bank, relations), document, decision
+
+
+def _semantic_policy(*, privacy_head=None):
+    store, document, decision = _semantic_fixture()
+    profiles = (
+        LambdaProfile("utility", 0.0),
+        LambdaProfile("balanced", 1.0),
+        LambdaProfile("privacy", 3.0),
+    )
+    torch.manual_seed(31)
+    policy = semantic_ranker_module.SemanticRankerPolicy(
+        representation_store=store,
+        privacy_head=privacy_head or _StubPrivacyHead(),
+        supported_profiles=profiles,
+        max_lambda=3.0,
+        token_dim=4,
+        pair_dim=4,
+        relation_dim=4,
+        context_dim=4,
+        history_dim=4,
+        utility_hidden_dim=8,
+        num_heads=1,
+        runtime_types=("LOC",),
+        dropout=0.0,
+    )
+    policy.eval()
+    return policy, store, document, decision, profiles
+
+
+def _full_menu(decision: RankerDecision) -> tuple[str, ...]:
+    return tuple(action.action_id for action in decision.actions)
+
+
+def test_policy_interfaces_and_zero_lambda_are_exact_identities():
+    policy, _, document, decision, profiles = _semantic_policy()
+    state = policy.begin_document(document, profiles[0])
+    distribution = policy.distribution(
+        state, decision, _full_menu(decision), profiles[0]
+    )
+
+    assert [field.name for field in fields(
+        semantic_ranker_module.SemanticPolicyState
+    )] == ["document", "profile", "selected_records"]
+    assert [field.name for field in fields(
+        semantic_ranker_module.ActionDistribution
+    )] == [
+        "action_ids",
+        "utility_logits",
+        "mu_log_count",
+        "sigma_log_count",
+        "predicted_privacy",
+        "combined_logits",
+        "log_probs",
+        "count_log_probs",
+    ]
+    assert distribution.combined_logits is distribution.utility_logits
+    assert torch.equal(distribution.combined_logits, distribution.utility_logits)
+    assert torch.equal(
+        distribution.log_probs,
+        torch.log_softmax(distribution.utility_logits, dim=0),
+    )
+    assert torch.equal(
+        policy.log_probs(state, decision, _full_menu(decision), profiles[0]),
+        distribution.log_probs,
+    )
+    assert policy.alpha.item() >= 0.0
+    assert policy.alpha.item() == pytest.approx(1.0)
+
+
+def test_policy_count_metadata_mutation_after_inference_is_a_noop_shortcut():
+    policy, store, document, decision, profiles = _semantic_policy()
+    state = policy.begin_document(document, profiles[1])
+    before = policy.distribution(
+        state, decision, _full_menu(decision), profiles[1]
+    )
+
+    store.target_counts = {
+        action_id: 10_000 - value
+        for action_id, value in store.target_counts.items()
+    }
+    after = policy.distribution(
+        state, decision, _full_menu(decision), profiles[1]
+    )
+
+    assert torch.equal(after.utility_logits, before.utility_logits)
+    assert torch.equal(after.predicted_privacy, before.predicted_privacy)
+    assert torch.equal(after.combined_logits, before.combined_logits)
+
+
+def test_policy_authored_index_mutation_cannot_change_semantic_predictions():
+    policy, _, document, decision, profiles = _semantic_policy()
+    baseline = policy.distribution(
+        policy.begin_document(document, profiles[1]),
+        decision,
+        _full_menu(decision),
+        profiles[1],
+    )
+    changed_actions = tuple(
+        replace(
+            action,
+            authored_level_index=(
+                100 - int(action.authored_level_index)
+                if action.authored_level_index is not None
+                else None
+            ),
+        )
+        for action in decision.actions
+    )
+    changed_decision = replace(decision, actions=changed_actions)
+    changed_document = replace(
+        document, policy_decisions=(changed_decision,)
+    )
+    changed = policy.distribution(
+        policy.begin_document(changed_document, profiles[1]),
+        changed_decision,
+        _full_menu(changed_decision),
+        profiles[1],
+    )
+
+    assert torch.equal(changed.utility_logits, baseline.utility_logits)
+    assert torch.equal(changed.mu_log_count, baseline.mu_log_count)
+    assert torch.equal(changed.sigma_log_count, baseline.sigma_log_count)
+
+
+def test_lambda_changes_only_detached_additive_controller_term():
+    policy, _, document, decision, profiles = _semantic_policy()
+    rows = [
+        policy.distribution(
+            policy.begin_document(document, profile),
+            decision,
+            _full_menu(decision),
+            profile,
+        )
+        for profile in profiles
+    ]
+
+    assert all(torch.equal(rows[0].utility_logits, row.utility_logits) for row in rows)
+    assert all(
+        torch.equal(rows[0].predicted_privacy, row.predicted_privacy)
+        for row in rows
+    )
+    for profile, row in zip(profiles[1:], rows[1:], strict=True):
+        magnitude = math.log1p(profile.value) / math.log1p(policy.max_lambda)
+        expected = (
+            row.utility_logits
+            + policy.alpha * magnitude * row.predicted_privacy.detach()
+        )
+        assert torch.equal(row.combined_logits, expected)
+
+
+def test_policy_complete_menu_privacy_normalization_precedes_legal_masking():
+    policy, _, document, decision, profiles = _semantic_policy()
+    state = policy.begin_document(document, profiles[1])
+    full = policy.distribution(state, decision, _full_menu(decision), profiles[1])
+    masked_ids = (
+        "current-level-low",
+        "current-keep",
+        "current-placeholder",
+    )
+    masked = policy.distribution(state, decision, masked_ids, profiles[1])
+
+    low_index = full.action_ids.index("current-level-low")
+    assert full.predicted_privacy[low_index] < 1.0
+    assert torch.equal(masked.predicted_privacy[0], full.predicted_privacy[low_index])
+    assert masked.predicted_privacy[1].item() == 0.0
+    assert masked.predicted_privacy[2].item() == 1.0
+
+
+def test_policy_expected_predicted_privacy_is_locally_lambda_monotone():
+    policy, _, document, decision, profiles = _semantic_policy()
+    expected_privacy = []
+    for profile in profiles:
+        row = policy.distribution(
+            policy.begin_document(document, profile),
+            decision,
+            _full_menu(decision),
+            profile,
+        )
+        expected_privacy.append(
+            float(
+                (row.log_probs.exp() * row.predicted_privacy).sum().detach()
+            )
+        )
+
+    assert expected_privacy == sorted(expected_privacy)
+
+
+def test_policy_count_gradient_view_updates_only_global_controller():
+    policy, _, document, decision, profiles = _semantic_policy()
+    row = policy.distribution(
+        policy.begin_document(document, profiles[1]),
+        decision,
+        _full_menu(decision),
+        profiles[1],
+    )
+
+    (-row.count_log_probs[-1]).backward()
+
+    assert policy.alpha_raw.grad is not None
+    assert torch.isfinite(policy.alpha_raw.grad)
+    assert all(
+        parameter.grad is None
+        for name, parameter in policy.named_parameters()
+        if name != "alpha_raw"
+    )
+
+
+def test_policy_advance_appends_one_selected_record_and_protocol_replays():
+    from cloak.train.interactive_ranker import replay_trajectory, sample_trajectory
+
+    policy, _, document, decision, profiles = _semantic_policy()
+    initial = policy.begin_document(document, profiles[1])
+    advanced = policy.advance(initial, decision, "current-level-low")
+
+    assert initial.selected_records == ()
+    assert len(advanced.selected_records) == 1
+    assert advanced.document is initial.document
+    generator = torch.Generator().manual_seed(5)
+    trajectory = sample_trajectory(
+        policy, document, profiles[1], greedy=False, generator=generator
+    )
+    replayed = replay_trajectory(policy, document, trajectory, profiles[1])
+    assert len(trajectory.steps) == len(replayed.steps) == 1
+    assert replayed.steps[0].log_probs.shape == (4,)
+
+
+def test_policy_state_dict_has_no_legacy_or_shortcut_parameters():
+    policy, _, _, _, _ = _semantic_policy()
+    names = tuple(policy.state_dict())
+    prohibited = (
+        "profile_embedding",
+        "film",
+        "count_feature",
+        "menu_size",
+        "authored",
+        "gru",
+    )
+
+    assert not any(token in name.casefold() for name in names for token in prohibited)
+    assert policy.utility_projection.in_features == 4
+    assert policy.utility_head[0].in_features == 24
+    assert (
+        policy.utility_projection
+        is not policy.privacy_head.privacy_projection
+    )
+    assert policy.memory.history_mode == "selected-cross-attention"
+    assert not any(isinstance(module, torch.nn.GRU) for module in policy.modules())
+    for method in (policy.distribution, policy.log_probs, policy.advance):
+        argument_names = tuple(inspect.signature(method).parameters)
+        assert not any(
+            token in argument.casefold()
+            for argument in argument_names
+            for token in (
+                "count",
+                "authored",
+                "menu_size",
+                "profile_id",
+                "assertion",
+                "dependency",
+            )
+        )
+    assert all(
+        not parameter.requires_grad
+        for parameter in policy.privacy_head.parameters()
+    )
+    assert policy.privacy_head.training is False
+
+
+def _privacy_contract() -> PrivacyCheckpointContract:
+    return PrivacyCheckpointContract(
+        environment_hash="sha256:environment",
+        profile_target_artifact_hash="sha256:targets",
+        representation_manifest_hash="sha256:representations",
+        encoder_revision="stub-revision",
+        split_manifest_hash="sha256:splits",
+        pair_dim=4,
+        projection_dim=4,
+        hidden_dim=4,
+        count_basis_size=0,
+        count_basis_categories=(),
+        rho=0.1,
+        gamma=0.2,
+        seeds=(3, 5, 7),
+        training_seed=5,
+        metric_report_hash="sha256:metrics",
+    )
+
+
+def test_policy_factory_loads_and_freezes_validated_privacy_checkpoint(tmp_path):
+    store, document, decision = _semantic_fixture()
+    contract = _privacy_contract()
+    source = SemanticPrivacyHead(
+        pair_dim=4, projection_dim=4, hidden_dim=4
+    )
+    with torch.no_grad():
+        source.privacy_projection.weight.fill_(0.125)
+    checkpoint = tmp_path / "privacy.pt"
+    save_privacy_checkpoint(checkpoint, source, contract)
+
+    policy = semantic_ranker_module.SemanticRankerPolicy.from_privacy_checkpoint(
+        representation_store=store,
+        privacy_checkpoint=checkpoint,
+        privacy_checkpoint_contract=contract,
+        supported_profiles=(
+            LambdaProfile("utility", 0.0),
+            LambdaProfile("privacy", 3.0),
+        ),
+        max_lambda=3.0,
+        token_dim=4,
+        relation_dim=4,
+        context_dim=4,
+        history_dim=4,
+        utility_hidden_dim=8,
+        num_heads=1,
+        runtime_types=("LOC",),
+        dropout=0.0,
+    )
+
+    assert torch.equal(
+        policy.privacy_head.privacy_projection.weight,
+        source.privacy_projection.weight,
+    )
+    assert all(
+        not parameter.requires_grad
+        for parameter in policy.privacy_head.parameters()
+    )
+    row = policy.distribution(
+        policy.begin_document(document, LambdaProfile("utility", 0.0)),
+        decision,
+        _full_menu(decision),
+        LambdaProfile("utility", 0.0),
+    )
+    assert torch.isfinite(row.mu_log_count).all()
+
+
+def test_policy_cli_requires_explicit_architecture_specific_artifacts():
+    import train_interactive_ranker
+
+    parser = train_interactive_ranker.build_parser()
+    shared = [
+        "bc",
+        "--environment", "environment.json",
+        "--utility-artifact", "utility.json",
+        "--utility-cache", "utility.jsonl",
+        "--out-checkpoint", "policy.pt",
+    ]
+    legacy = parser.parse_args([
+        *shared,
+        "--policy-architecture", "legacy-film-gru",
+        "--count-state", "count.json",
+    ])
+    semantic = parser.parse_args([
+        *shared,
+        "--policy-architecture", "semantic-v1",
+        "--representation-manifest", "representations.json",
+        "--privacy-checkpoint", "privacy.pt",
+        "--profile-count-targets", "targets.json",
+    ])
+
+    assert legacy.policy_architecture == "legacy-film-gru"
+    assert legacy.count_state == "count.json"
+    assert semantic.policy_architecture == "semantic-v1"
+    assert semantic.representation_manifest == "representations.json"
+    assert semantic.privacy_checkpoint == "privacy.pt"
+    assert semantic.profile_count_targets == "targets.json"
+    with pytest.raises(SystemExit):
+        parser.parse_args([*shared, "--count-state", "count.json"])
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            *shared,
+            "--policy-architecture", "legacy-film-gru",
+            "--representation-manifest", "representations.json",
+            "--privacy-checkpoint", "privacy.pt",
+            "--profile-count-targets", "targets.json",
+        ])
+    with pytest.raises(SystemExit):
+        parser.parse_args([
+            *shared,
+            "--policy-architecture", "semantic-v1",
+            "--count-state", "count.json",
+        ])

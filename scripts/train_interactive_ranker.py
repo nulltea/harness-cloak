@@ -34,6 +34,7 @@ from cloak.train.utility_cache import UtilityCache, stable_hash
 
 
 LAMBDA_ZERO = LambdaProfile("lambda-zero", 0.0)
+POLICY_ARCHITECTURES = ("semantic-v1", "legacy-film-gru")
 
 _HARD_TRAINING_GATES = {
     "explicit_count_coverage": 1.0,
@@ -44,9 +45,40 @@ _HARD_TRAINING_GATES = {
 }
 
 
+class _PolicyArgumentParser(argparse.ArgumentParser):
+    def parse_args(self, args=None, namespace=None):
+        parsed = super().parse_args(args, namespace)
+        architecture = parsed.policy_architecture
+        if architecture == "semantic-v1":
+            missing = [
+                option
+                for option, value in (
+                    ("--representation-manifest", parsed.representation_manifest),
+                    ("--privacy-checkpoint", parsed.privacy_checkpoint),
+                    ("--profile-count-targets", parsed.profile_count_targets),
+                )
+                if not value
+            ]
+        else:
+            missing = ["--count-state"] if not parsed.count_state else []
+        if missing:
+            self.error(
+                f"{architecture} requires {', '.join(missing)}"
+            )
+        return parsed
+
+
 def _add_artifact_paths(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--policy-architecture",
+        required=True,
+        choices=POLICY_ARCHITECTURES,
+    )
     parser.add_argument("--environment", required=True)
-    parser.add_argument("--count-state", required=True)
+    parser.add_argument("--count-state")
+    parser.add_argument("--representation-manifest")
+    parser.add_argument("--privacy-checkpoint")
+    parser.add_argument("--profile-count-targets")
     parser.add_argument("--utility-artifact", required=True)
     parser.add_argument("--utility-cache", required=True)
 
@@ -65,7 +97,7 @@ def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser()
+    parser = _PolicyArgumentParser()
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     bc = subcommands.add_parser("bc")
