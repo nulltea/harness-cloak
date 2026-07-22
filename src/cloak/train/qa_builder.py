@@ -6408,6 +6408,26 @@ def assign_static_weights(
     return weighted, state
 
 
+def policy_routing(
+    assertion: Mapping,
+    occurrence_to_decision: Mapping[str, str | None],
+    policy_decision_ids: Collection[str],
+) -> tuple[list[str], str]:
+    """Derive policy credit from occurrence links, excluding fixed decisions."""
+    occurrence_ids = [str(value) for value in assertion.get("occurrence_ids", [])]
+    missing = sorted(set(occurrence_ids) - set(occurrence_to_decision))
+    if missing:
+        raise ValueError(f"unknown occurrence links: {missing}")
+    policy_ids = {str(value) for value in policy_decision_ids}
+    dependencies = sorted({
+        decision_id
+        for occurrence_id in occurrence_ids
+        if (decision_id := occurrence_to_decision[occurrence_id]) is not None
+        and decision_id in policy_ids
+    })
+    return dependencies, "linked" if dependencies else "residual"
+
+
 def package_utility_artifact(
     frozen_environment: Mapping,
     candidates_by_document: Mapping[str, Sequence[Mapping]],
@@ -6443,14 +6463,25 @@ def package_utility_artifact(
             raise ValueError(
                 f"unknown decision links for {doc_id}: {dangling_decisions}"
             )
-        controlled = [
+        policy_decision_ids = [
             str(row["decision_id"])
             for row in environment_document.get("decisions", [])
-            if row.get("controlled", True)
+            if row.get("ranker_selectable") is True
         ]
+        fixed_decision_ids = [
+            str(row["decision_id"])
+            for row in environment_document.get("decisions", [])
+            if row.get("ranker_selectable") is not True
+        ]
+        occurrence_to_decision = {
+            occurrence_id: (
+                None if row.get("decision_id") is None else str(row["decision_id"])
+            )
+            for occurrence_id, row in occurrences.items()
+        }
+        policy_dependencies: set[str] = set()
         compiled = []
         compiled_ids = set()
-        linked_decisions = set()
         for candidate in candidates_by_document.get(doc_id, []):
             row = {**dict(candidate), "doc_id": doc_id, "status": "accepted"}
             scope = row.get("scope")
@@ -6474,13 +6505,20 @@ def package_utility_artifact(
                 raise ValueError(
                     f"uncontrolled occurrence links for {doc_id}: {uncontrolled}"
                 )
-            for occurrence_id in occurrence_ids:
-                decision_id = occurrences[occurrence_id].get("decision_id")
-                if decision_id is not None:
-                    linked_decisions.add(str(decision_id))
+            dependencies, credit_routing = policy_routing(
+                {"occurrence_ids": occurrence_ids},
+                occurrence_to_decision,
+                policy_decision_ids,
+            )
+            row["policy_dependency_decision_ids"] = dependencies
+            row["credit_routing"] = credit_routing
+            policy_dependencies.update(dependencies)
             identity_payload = {
                 key: value for key, value in row.items()
-                if key not in {"assertion_id", "weight", "status"}
+                if key not in {
+                    "assertion_id", "weight", "status",
+                    "policy_dependency_decision_ids", "credit_routing",
+                }
             }
             assertion_id = str(row.get("assertion_id") or _stable_hash(identity_payload))
             if assertion_id in assertions or assertion_id in compiled_ids:
@@ -6505,11 +6543,9 @@ def package_utility_artifact(
             ),
             **weight_state,
             "assertion_ids": [row["assertion_id"] for row in weighted],
-            "controlled_decision_ids": controlled,
-            "occurrence_to_decision": {
-                occurrence_id: str(row["decision_id"])
-                for occurrence_id, row in occurrences.items()
-            },
+            "policy_decision_ids": policy_decision_ids,
+            "fixed_decision_ids": fixed_decision_ids,
+            "occurrence_to_decision": occurrence_to_decision,
             "decision_keys": [{
                 "decision_id": str(row["decision_id"]),
                 "runtime_type": row.get("runtime_type"),
@@ -6517,8 +6553,9 @@ def package_utility_artifact(
             } for row in environment_document.get("decisions", [])],
             "occurrences": deepcopy(environment_document.get("occurrences", [])),
             "decisions": deepcopy(environment_document.get("decisions", [])),
-            "uncovered_decision_ids": [
-                decision_id for decision_id in controlled if decision_id not in linked_decisions
+            "uncovered_policy_decision_ids": [
+                decision_id for decision_id in policy_decision_ids
+                if decision_id not in policy_dependencies
             ],
         }
 
@@ -6527,7 +6564,7 @@ def package_utility_artifact(
     ]
     structural_cap = _validated_structural_cap(all_candidates, structural_cap)
     artifact = {
-        "artifact_version": "utility-assertions-v1",
+        "artifact_version": "utility-assertions-v2",
         "environment_hash": frozen_environment.get("environment_hash"),
         **dict(pins),
         "family_budgets": dict(family_budgets),

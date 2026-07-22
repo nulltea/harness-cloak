@@ -22,6 +22,235 @@ TEST_READER_PIN = {
 }
 
 
+def _write_migration_fixture(tmp_path: Path, *, semantic_change: bool = False):
+    policy_action = {
+        "action_id": "action-policy", "mode": "level", "fill": "general",
+    }
+    fixed_action = {
+        "action_id": "action-fixed", "mode": "placeholder", "fill": None,
+    }
+    old_decisions = [
+        {"decision_id": "policy-a", "ranker_selectable": True,
+         "actions": [policy_action]},
+        {"decision_id": "fixed-a", "ranker_selectable": False,
+         "actions": [fixed_action]},
+    ]
+    new_decisions = json.loads(json.dumps(old_decisions))
+    new_decisions[0]["actions"][0].update({
+        "count": 10, "count_grounding": {"source": "fixture"},
+        "authored_level_index": 0,
+    })
+    if semantic_change:
+        new_decisions[0]["actions"][0]["fill"] = "changed-general"
+    occurrences = [
+        {"occurrence_id": "o-policy", "decision_id": "policy-a", "controlled": True},
+        {"occurrence_id": "o-fixed", "decision_id": "fixed-a", "controlled": True},
+        {"occurrence_id": "o-null", "decision_id": None, "controlled": False},
+    ]
+    assertion_rows = [
+        ("a-policy", ["o-policy"], "context", "contextual_relation"),
+        ("a-fixed", ["o-fixed"], "delivered", "content"),
+        ("a-mixed", ["o-policy", "o-fixed", "o-policy"], "delivered", "content"),
+        ("a-global", [], "delivered", "structure"),
+    ]
+    assertions = {
+        assertion_id: {
+            "assertion_id": assertion_id,
+            "doc_id": "d1",
+            "status": "accepted",
+            "scope": "linked" if occurrence_ids else "global",
+            "occurrence_ids": occurrence_ids,
+            "family": family,
+            "subtype": subtype,
+            "group_id": assertion_id,
+            "weight": 0.25,
+            "scoring_contract": {"kind": "fixture"},
+            "evidence": {"validation": {"scores": {
+                "original": 1.0, "representative": 0.75, "placeholder": 0.0,
+            }}},
+        }
+        for assertion_id, occurrence_ids, family, subtype in assertion_rows
+    }
+    old_artifact = {
+        "artifact_version": "utility-assertions-v1",
+        "artifact_hash": "sha256:old-artifact",
+        "environment_hash": "sha256:old-environment",
+        "family_budgets": {"context": 0.5, "delivered": 0.5},
+        "documents": {"d1": {
+            "environment_document_hash": "sha256:old-document",
+            "measurement_state": "measured",
+            "utility_weight_denominator": 1.0,
+            "present_family_budgets": ["context", "delivered"],
+            "missing_family_budgets": [],
+            "assertion_ids": list(assertions),
+            "controlled_decision_ids": ["policy-a", "fixed-a"],
+            "occurrence_to_decision": {
+                "o-policy": "policy-a", "o-fixed": "fixed-a", "o-null": None,
+            },
+            "decision_keys": [],
+            "occurrences": occurrences,
+            "decisions": old_decisions,
+            "uncovered_decision_ids": [],
+        }},
+        "assertions": assertions,
+        "rejections": {"summary_by_reason": {}, "records": []},
+    }
+    new_environment = {
+        "artifact_version": "ranker-v2-environment-v2",
+        "frozen_environment": {
+            "artifact_version": "occurrence-decisions-v2",
+            "environment_hash": "sha256:new-environment",
+            "documents": {"d1": {
+                "environment_document_hash": "sha256:new-document",
+                "occurrences": occurrences,
+                "decisions": new_decisions,
+            }},
+        },
+    }
+    input_path = tmp_path / "input.utility"
+    environment_path = tmp_path / "ranker-env.json"
+    output_path = tmp_path / "output.utility"
+    report_path = tmp_path / "migration-report.json"
+    input_path.write_text(json.dumps(old_artifact))
+    environment_path.write_text(json.dumps(new_environment))
+    return input_path, environment_path, output_path, report_path
+
+
+def _run_migration(input_path, environment_path, output_path, report_path):
+    repo = Path(__file__).resolve().parents[3]
+    return subprocess.run(
+        [
+            sys.executable, str(repo / "scripts/migrate_qa_utility_artifact.py"),
+            "--input", str(input_path),
+            "--environment", str(environment_path),
+            "--out", str(output_path),
+            "--report", str(report_path),
+        ],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_migration_cli_rebinds_count_only_environment_with_canonical_routing(tmp_path):
+    paths = _write_migration_fixture(tmp_path)
+    result = _run_migration(*paths)
+
+    assert result.returncode == 0, result.stderr
+    artifact = json.loads(paths[2].read_text())
+    report = json.loads(paths[3].read_text())
+    assert artifact["artifact_version"] == "utility-assertions-v2"
+    assert artifact["documents"]["d1"]["occurrence_to_decision"]["o-null"] is None
+    rows = artifact["assertions"]
+    assert rows["a-policy"]["policy_dependency_decision_ids"] == ["policy-a"]
+    assert rows["a-fixed"]["credit_routing"] == "residual"
+    assert rows["a-mixed"]["policy_dependency_decision_ids"] == ["policy-a"]
+    assert rows["a-global"]["credit_routing"] == "residual"
+    assert report["status"] == "count-only compatible"
+    assert report["document_utility_parity"]["identical"] is True
+    assert report["document_utility_parity"]["cached_vector_names"] == [
+        "original", "placeholder", "representative",
+    ]
+    assert report["document_utility_parity"]["cached_score_count"] == 12
+
+
+def test_migration_cli_rejects_semantic_environment_change(tmp_path):
+    paths = _write_migration_fixture(tmp_path, semantic_change=True)
+    result = _run_migration(*paths)
+
+    assert result.returncode != 0
+    assert not paths[2].exists()
+    report = json.loads(paths[3].read_text())
+    assert report["status"] == "qa_rebuild_required"
+    assert report["compatibility"]["verdict"] == "semantic change"
+
+
+def test_real_v16_migration_uses_task2_pinned_compatibility_reference(tmp_path):
+    repo = Path(__file__).resolve().parents[3]
+    result = _run_migration(
+        repo / "results/qa_v2_aci_full_v16/aci_full.utility",
+        repo / "results/ranker_v2/environment/ranker-env.json",
+        tmp_path / "aci-full.utility",
+        tmp_path / "migration-report.json",
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads((tmp_path / "migration-report.json").read_text())
+    assert report["compatibility"]["verdict"] == "count-only compatible"
+    assert report["compatibility"]["reference"] == (
+        "results/qa_v2_aci_full/ranker-env.json"
+    )
+    assert report["input_inventory_audit"]["difference_count"] == 26
+    assert report["input_inventory_audit"]["unknown_assertion_occurrence_links"] == 0
+    assert report["input_inventory_audit"]["stale_joint_anchor_assertions"] == 8
+    assert report["document_utility_parity"]["cached_component_count"] == 634
+    assert report["document_utility_parity"]["cached_score_count"] == 1_902
+
+
+def test_real_policy_scoped_utility_artifact_passes_routing_and_denominator_gates():
+    repo = Path(__file__).resolve().parents[3]
+    artifact_path = repo / "results/ranker_v2/qa/aci-full.utility"
+    report_path = repo / "results/ranker_v2/qa/migration-report.json"
+    assert artifact_path.exists(), "run migrate_qa_utility_artifact.py first"
+    artifact = json.loads(artifact_path.read_text())
+    report = json.loads(report_path.read_text())
+
+    assert artifact["artifact_version"] == "utility-assertions-v2"
+    assert len(artifact["documents"]) == 67
+    assert len(artifact["assertions"]) == 1_357
+    assert sum(
+        len(document["policy_decision_ids"])
+        for document in artifact["documents"].values()
+    ) == 705
+    assert sum(
+        len(document["fixed_decision_ids"])
+        for document in artifact["documents"].values()
+    ) == 208
+
+    for doc_id, document in artifact["documents"].items():
+        policy_ids = set(document["policy_decision_ids"])
+        fixed_ids = set(document["fixed_decision_ids"])
+        assert policy_ids.isdisjoint(fixed_ids)
+        assert "controlled_decision_ids" not in document
+        assert all(
+            value is None or isinstance(value, str)
+            for value in document["occurrence_to_decision"].values()
+        )
+        covered = set()
+        weight_sum = 0.0
+        for assertion_id in document["assertion_ids"]:
+            assertion = artifact["assertions"][assertion_id]
+            assert assertion["doc_id"] == doc_id
+            assert set(assertion["occurrence_ids"]).issubset(
+                document["occurrence_to_decision"]
+            )
+            dependencies = set(assertion["policy_dependency_decision_ids"])
+            assert dependencies.issubset(policy_ids)
+            assert dependencies.isdisjoint(fixed_ids)
+            assert assertion["credit_routing"] == (
+                "linked" if dependencies else "residual"
+            )
+            covered.update(dependencies)
+            weight_sum += float(assertion["weight"])
+        assert document["uncovered_policy_decision_ids"] == [
+            decision_id for decision_id in document["policy_decision_ids"]
+            if decision_id not in covered
+        ]
+        expected_weight = sum(
+            float(artifact["family_budgets"][family])
+            for family in document["present_family_budgets"]
+        )
+        denominator = float(document["utility_weight_denominator"])
+        assert weight_sum / denominator == pytest.approx(
+            expected_weight / denominator, abs=1e-12
+        )
+
+    assert report["document_utility_parity"]["identical"] is True
+    assert report["counts"]["policy_decisions"] == 705
+    assert report["counts"]["fixed_decisions"] == 208
+
+
 def _d2n002_fixture():
     source = (
         "The patient is diagnosed with hypothyroidism. "
@@ -390,7 +619,8 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
     assert teacher.calls == 1
     assert artifact["teacher_pin"] == teacher.pin
     assert artifact["reader_pin"] == TEST_READER_PIN
-    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v15"
+    assert artifact["artifact_version"] == "utility-assertions-v2"
+    assert artifact["builder_pin"] == "qa-builder-v2-assertion-compiler-v16"
     assert all(subtypes.count(subtype) > 0 for subtype in (
         "structure", "field", "content", "exact_relation",
         "contextual_relation",
@@ -405,7 +635,13 @@ def test_d2n002_acceptance_exports_substantive_artifact_without_external_calls(
         any(action["mode"] == "keep" and action["keep"] for action in decision["actions"])
         for decision in document["decisions"]
     )
-    assert set(decisions.values()).issubset(document["controlled_decision_ids"])
+    assert set(decisions.values()).issubset(document["policy_decision_ids"])
+    assert document["fixed_decision_ids"] == []
+    assert "controlled_decision_ids" not in document
+    assert all(
+        "policy_dependency_decision_ids" in row and "credit_routing" in row
+        for row in artifact["assertions"].values()
+    )
     rejections = artifact["rejections"]["records"]
     assert len(rejections) >= 2
     required_rejection_fields = {

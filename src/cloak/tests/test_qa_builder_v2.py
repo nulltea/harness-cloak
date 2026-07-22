@@ -1393,18 +1393,22 @@ def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
     assert calls[0][1:4] == ("d1", "ROLLOUT DOC_P", "DELIVERED OUT_FINAL")
 
 
-def test_compile_artifact_assigns_stable_ids_weights_and_uncovered_decisions():
+def test_compile_artifact_assigns_policy_routing_and_preserves_null_mappings():
     environment = {
         "environment_hash": "env-hash",
         "documents": {
             "d1": {
                 "occurrences": [
-                    {"occurrence_id": "o1", "decision_id": "dec1"},
-                    {"occurrence_id": "o2", "decision_id": "dec2"},
+                    {"occurrence_id": "o-policy", "decision_id": "policy-a"},
+                    {"occurrence_id": "o-fixed", "decision_id": "fixed-a"},
+                    {"occurrence_id": "o-unmapped", "decision_id": None,
+                     "controlled": False},
                 ],
                 "decisions": [
-                    {"decision_id": "dec1", "controlled": True},
-                    {"decision_id": "dec2", "controlled": True},
+                    {"decision_id": "policy-a", "controlled": True,
+                     "ranker_selectable": True},
+                    {"decision_id": "fixed-a", "controlled": True,
+                     "ranker_selectable": False},
                 ],
             }
         },
@@ -1412,11 +1416,18 @@ def test_compile_artifact_assigns_stable_ids_weights_and_uncovered_decisions():
     candidates = {
         "d1": [
             {"family": "context", "scope": "linked", "subtype": "semantic_property",
-             "occurrence_ids": ["o1"], "group_id": "hypothyroid:category",
+             "occurrence_ids": ["o-policy"], "group_id": "policy-only",
              "question": "What category?", "accepted_values": ["endocrine"]},
-            {"family": "delivered", "scope": "global", "subtype": "content",
-             "occurrence_ids": [], "group_id": "document:age",
+            {"family": "delivered", "scope": "linked", "subtype": "content",
+             "occurrence_ids": ["o-fixed"], "group_id": "fixed-only",
              "scoring_contract": {"kind": "contains", "value": "62-year-old"}},
+            {"family": "delivered", "scope": "linked", "subtype": "content",
+             "occurrence_ids": ["o-fixed", "o-policy", "o-policy"],
+             "group_id": "mixed",
+             "scoring_contract": {"kind": "contains", "value": "stable"}},
+            {"family": "delivered", "scope": "global", "subtype": "content",
+             "occurrence_ids": [], "group_id": "global",
+             "scoring_contract": {"kind": "contains", "value": "PLAN"}},
         ]
     }
 
@@ -1435,12 +1446,35 @@ def test_compile_artifact_assigns_stable_ids_weights_and_uncovered_decisions():
 
     assert first == second
     assert first["artifact_hash"].startswith("sha256:")
-    assert len(first["assertions"]) == 2
-    assert first["documents"]["d1"]["uncovered_decision_ids"] == ["dec2"]
+    assert first["artifact_version"] == "utility-assertions-v2"
+    assert len(first["assertions"]) == 4
+    rows = {row["group_id"]: row for row in first["assertions"].values()}
+    assert rows["policy-only"]["policy_dependency_decision_ids"] == ["policy-a"]
+    assert rows["policy-only"]["credit_routing"] == "linked"
+    assert rows["fixed-only"]["policy_dependency_decision_ids"] == []
+    assert rows["fixed-only"]["credit_routing"] == "residual"
+    assert rows["mixed"]["policy_dependency_decision_ids"] == ["policy-a"]
+    assert rows["mixed"]["credit_routing"] == "linked"
+    assert rows["global"]["policy_dependency_decision_ids"] == []
+    assert rows["global"]["credit_routing"] == "residual"
+    document = first["documents"]["d1"]
+    assert document["policy_decision_ids"] == ["policy-a"]
+    assert document["fixed_decision_ids"] == ["fixed-a"]
+    assert document["uncovered_policy_decision_ids"] == []
+    assert "controlled_decision_ids" not in document
     assert first["documents"]["d1"]["occurrence_to_decision"] == {
-        "o1": "dec1", "o2": "dec2"
+        "o-policy": "policy-a", "o-fixed": "fixed-a", "o-unmapped": None,
     }
     assert first["documents"]["d1"]["utility_weight_denominator"] == pytest.approx(1.0)
+
+
+def test_policy_routing_rejects_unknown_occurrence_ids():
+    with pytest.raises(ValueError, match="unknown occurrence links"):
+        qa_builder.policy_routing(
+            {"occurrence_ids": ["missing"]},
+            {"known": "policy-a"},
+            {"policy-a"},
+        )
 
 
 def test_compile_artifact_rejects_invalid_scope_links():

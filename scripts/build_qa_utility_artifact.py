@@ -228,7 +228,7 @@ def build_from_files(
         # (relation, subject) group flips every object (teacher-proposed + judge-accepted) to an
         # answer_role=subject QA, gated in an isolated doc-global pass (see docs/handoffs/
         # 2026-07-20-qa-relation-ambiguity-and-open-tasks.md). v13: semantic_property probes disabled.
-        "builder_pin": "qa-builder-v2-assertion-compiler-v15",
+        "builder_pin": "qa-builder-v2-assertion-compiler-v16",
         "detector_pin": detector_pin or None,
         "teacher_pin": teacher_pin,
         "environment_audit_hash": environment_audit.get("audit_hash") or None,

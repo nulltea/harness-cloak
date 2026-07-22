@@ -2,14 +2,37 @@
 type: reference
 status: current
 created: 2026-07-18
-updated: 2026-07-19
-tags: [qa-v2, debt, cue-gate, relation-teacher, hedge-guard, repair-prompt]
+updated: 2026-07-22
+tags: [qa-v2, debt, cue-gate, relation-teacher, hedge-guard, repair-prompt, artifact-migration]
 ---
 
 # QA-builder debt log
 
 Deliberate shortcuts and dormant code in the QA-v2 builder, so they get tracked instead of
 rotting. One section per item; remove the section when the debt is paid.
+
+## Open: v16 utility inventory drift from its pinned environment (2026-07-22)
+
+The policy-routing migration found that the v16 utility artifact's embedded occurrence/decision
+inventory is not semantically identical to the environment pinned for its count-only migration.
+The content-free comparison records 26 differences: 7 occurrence-ID lists, 5 decision-ID lists,
+4 action-ID lists, 4 fill lists, 2 mode lists, and 4 authored-order lists. Eight context
+assertions in document `aci/D2N049` retain joint-anchor vectors containing an action identity that
+is absent from the corrected environment.
+
+This does not block the policy-routing artifact: zero accepted assertion occurrence links are
+unknown in the corrected environment, and assertion IDs, scoring contracts, weights, and cached
+fixed-denominator document utilities are unchanged. The migration uses the Task 2 accepted
+count-only proof against `results/qa_v2_aci_full/ranker-env.json`; it does not reinterpret the
+embedded QA-build inventory as that proof. Evidence is in
+[`results/ranker_v2/qa/migration-report.json`](../../results/ranker_v2/qa/migration-report.json)
+under `compatibility` and `input_inventory_audit`.
+
+Follow-up: either refresh the eight stored joint-anchor vectors through a locally justified
+provenance-only migration, or rebuild those assertions when an approved QA rebuild is next run.
+Do not auto-rewrite the vectors: they are historical gate evidence. The trainer's current artifact
+gate checks each vector's self-hash but does not check every selected action against the live menu,
+so a focused validation fix should accompany whichever resolution is chosen.
 
 ## Compiler relation cue gates: disabled, not yet removed (2026-07-18)
 
