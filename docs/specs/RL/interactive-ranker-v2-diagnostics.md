@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-22
 tags: [rl, ranker, diagnostics, gates, thresholds, preregistration, calibration, spec]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-decision-log.md,
@@ -64,7 +64,7 @@ These decide whether the frozen environment contains enough variation to justify
 - supported switch points for selecting lambda profiles;
 - adjacent-profile winner-change rate;
 - nonzero counterfactual utility differences;
-- linked, global, and complete-document fallback utility coverage;
+- linked, residual, and complete-document fallback utility coverage;
 - flat count menus and adjacent count-score separation;
 - corpus/type/decision support at each lambda profile;
 - injectivity collisions and lost future count opportunity.
@@ -115,7 +115,7 @@ Use only frozen train/development artifacts:
 - rule-policy anchors;
 - support-scan and cached rollout trajectories;
 - cached adjacent-decision counterfactuals;
-- frozen utility component vectors and occurrence-to-decision mappings;
+- frozen utility assertion vectors and occurrence-to-decision mappings;
 - admitted explicit counts, count provenance, and type references;
 - deterministic reader-refresh replicates used to estimate residual score jitter.
 
@@ -129,8 +129,8 @@ For every document, corpus, runtime type, and supported decision class where app
 - number and spread of nondominated points and positive lambda switch points;
 - winner signatures across candidate lambda values;
 - utility quantization step and reader-jitter distribution;
-- linked/global/fallback utility-component counts;
-- decisions with no accepted linked component;
+- linked/residual/fallback utility-assertion counts;
+- policy decisions with no linked assertion;
 - counterfactual `delta_U` zero rate, sign balance, and magnitude distribution;
 - flat-menu rate, clipped count-score rate, and adjacent `delta p` distribution;
 - collision event rate and lost count opportunity;
@@ -225,13 +225,14 @@ source-family-relative ablation in a new run, not retroactive score repair.
 At every epoch, report detached gradient norm and absolute weighted advantage mass from:
 
 - linked utility credit;
-- document-global utility credit;
+- residual utility credit;
 - complete-document fallback credit;
 - bounded counterfactual pair credit;
 - analytic count credit;
 - entropy and KL regularization.
 
-Stratify by corpus, runtime type, lambda profile, and linked-versus-unlinked decision status.
+Stratify by corpus, runtime type, lambda profile, and linked-versus-uncovered policy-decision
+status.
 This report detects one estimator or coverage class dominating the heterogeneous credit mixture.
 It is diagnostic unless a dominance threshold and response are frozen before the run.
 
@@ -243,7 +244,7 @@ measured, endpoint/direction balance, and `delta_U` distribution. Thresholds mus
 - environment quantization producing true zero differences;
 - insufficient measurement budget;
 - a policy already confident on utility-equivalent actions;
-- missing utility components for uncovered decisions.
+- missing utility assertions for uncovered decisions.
 
 The scheduler's priority score never scales reward or pair-loss magnitude.
 
@@ -353,4 +354,3 @@ equalize privacy.
 - per-epoch credit-mixture and conditional-responsiveness reports;
 - final statistical adjudication report at matched realized privacy;
 - companion training record linking every artifact hash.
-

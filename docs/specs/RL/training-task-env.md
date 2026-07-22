@@ -1,16 +1,21 @@
 ---
 type: reference
-status: current
+status: stale
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-22
 tags: [rl, reward-design, training-task, qa-construction, task-necessity, placeholder-gaming,
        granularity-ladder, schema-task, decision-probes, spec]
 companion: [docs/specs/RL/roundtrip-ranker-infiller.md,
             docs/issues/2026-07-06-placeholder-gaming-reward-qa-necessity.md,
             docs/issues/2026-07-08-rl-env-and-lattice-count-issue-register.md]
+superseded_by: docs/specs/RL/interactive-ranker-v2.md
 ---
 
 # Training-task environment for round-trip RL — design alternatives
+
+**Status: stale predecessor.** The ladder, decision, schema, and carrier components below remain
+historical design inputs, but they are not the live ranker-v2 reward contract. The normative
+contract is [interactive ranker v2](interactive-ranker-v2.md).
 
 What task should the remote model execute during RL training, and how should the reward read
 its output, so that **truthful generalization measurably beats placeholder exactly where it

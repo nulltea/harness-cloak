@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-22
 tags: [rl, ranker, interactive-policy, reward-design, credit-assignment, counterfactual,
        anonymity-counts, lambda-conditioning, pareto, spec]
 supersedes: docs/specs/RL/count-privacy-reward.md
@@ -23,9 +23,9 @@ unless this document explicitly changes their interface.
 
 The ranker is one lambda-conditioned sequential policy. For every detected, ranker-controlled
 distinct detected value it chooses KEEP, a lattice generalization, or placeholder. It learns document task utility
-from the full remote round trip, uses probe links as cheap provisional credit routing, corrects
-that routing with sparse one-decision counterfactuals, and receives exact local count shaping. A
-finite menu of lambda profiles lets one deployed checkpoint change its privacy–utility
+from the full remote round trip, uses assertion dependencies as cheap provisional credit
+routing, corrects that routing with sparse one-decision counterfactuals, and receives exact local
+count shaping. A finite menu of lambda profiles lets one deployed checkpoint change its privacy–utility
 preference per document or session.
 
 Count shaping is an experimental leakage approximation. It is never a privacy measurement or
@@ -41,9 +41,9 @@ at matched realized privacy and identical settings.
 2. **Reward scope follows causal scope.** Utility is a document outcome; count score is an
    analytic per-action quantity. They use different credit paths rather than one shared scalar
    advantage.
-3. **Probe links route; they do not certify causality.** Linked probes provide cheap provisional
-   credit. Unlinked/global criteria remain active. Sparse counterfactuals supply contextual
-   causal comparisons.
+3. **Assertion dependencies route; they do not certify causality.** Linked assertions provide
+   cheap provisional credit. Residual assertions remain active. Sparse counterfactuals supply
+   contextual causal comparisons.
 4. **One declared preference per document.** Lambda is selected from a finite supported menu and
    held fixed across the complete sequential action trajectory and all rollouts in its RLOO
    group.
@@ -53,16 +53,18 @@ at matched realized privacy and identical settings.
 ## Definitions
 
 - **Occurrence `s`** — one detector output at one document offset with a stable `span_id`.
-- **Controlled decision set `D_d`** — one policy decision per `(document, runtime type,
+- **Policy decision set `D_d`** — one ranker-controlled decision per `(document, runtime type,
   normalized canonical profile/surface)`. All equivalent occurrences map to the same stable
   `decision_id`. Rule-masked PERSON/CODE values and entries with no policy choice are excluded.
+- **Fixed decision** — a rewrite decision present in the frozen environment but outside the
+  ranker's action space. It never receives a policy gradient.
 - **Action state `h_j`** — document context aggregated around decision `j`'s occurrences,
   previous selected decisions, dynamic legal mask, action features, and selected lambda profile.
-- **Utility component `u_q`** — one validated probe, decision, schema, or document-global score
-  produced from the complete round trip.
-- **Dependency set `O_q`** — stable occurrence IDs to which component `q` is provisionally
-  linked. Credit maps those occurrences to their decision IDs. `O_q = empty` denotes a
-  document-global or unlinked component.
+- **Utility assertion `q`** — one accepted context or delivered assertion scored from the complete
+  round trip.
+- **Policy dependency set** — the unique policy decisions in assertion `q`'s
+  `policy_dependency_decision_ids`. It is derived from frozen occurrence routing, never from
+  measurement family or scope.
 - **Count score `p_j(a)`** — type-normalized bounded score for action `a` at decision `j`.
 - **Document count score `P_count`** — equal mean of selected action scores over `D_d`.
 - **Supported lambda menu `Lambda`** — three to five pre-registered operating profiles,
@@ -72,9 +74,29 @@ at matched realized privacy and identical settings.
 - **Passenger action** — an action cloned or reinforced because its complete trajectory won,
   without evidence that the action contributed to the win.
 
+The shared QA-to-RL artifact exposes these routing fields:
+
+```yaml
+document:
+  policy_decision_ids: [decision_id]
+  fixed_decision_ids: [decision_id]
+  uncovered_policy_decision_ids: [decision_id]
+  occurrence_to_decision: {occurrence_id: decision_id_or_null}
+assertion:
+  occurrence_ids: [occurrence_id]
+  policy_dependency_decision_ids: [decision_id]
+  credit_routing: linked | residual
+```
+
+`credit_routing=linked` exactly when the assertion has at least one policy dependency; otherwise
+it is `residual`, including globally scoped assertions and assertions linked only to fixed rewrite
+decisions. A mixed fixed/policy hyperedge routes once to each unique policy dependency and never
+to a fixed decision. `uncovered_policy_decision_ids` is the set of policy decisions absent from
+every assertion's `policy_dependency_decision_ids`.
+
 ## Episode and policy
 
-The policy factorizes over controlled decisions in deterministic first-occurrence walk order:
+The policy factorizes over policy decisions in deterministic first-occurrence walk order:
 
 ```text
 pi(a | d, lambda) = product_j pi(a_j | h_j, lambda)
@@ -165,7 +187,7 @@ reward version, never retroactive renormalization.
 P_count(d, a) = (1 / |D_d|) sum_j p_j(a_j)
 ```
 
-Every controlled decision has equal weight. Repeated occurrences of the same normalized value
+Every policy decision has equal weight. Repeated occurrences of the same normalized value
 do not multiply its count contribution: an anonymity count describes one distinct attribute
 value, not the number of times it appears. Report contribution by type/profile/provenance and
 report occurrence multiplicity separately.
@@ -190,30 +212,40 @@ the immediate count value but not the effect of an early action on later injecti
 The gate reports collision frequency and count opportunity lost through collisions. A material
 effect triggers a privacy-return-to-go ablation; v2 does not add that variance preemptively.
 
-## Utility components and structured credit
+## Utility assertions and structured credit
 
-The complete round trip produces a component vector rather than only a scalar:
-
-```text
-u_g = {probe_id: score, decision_id: score, schema_id: score, global_id: score}
-```
-
-Existing carrier weights remain pinned by the training-task environment. Ranker v2 changes
-credit routing, not the meaning or weight of those utility components.
-
-### Linked component credit
-
-For decision `j`, map every linked occurrence to its frozen decision ID and let
-`Q_j = {q : any occurrence in O_q maps to j}`. Its linked score in rollout `g` is:
+The complete round trip produces an assertion vector rather than only a scalar:
 
 ```text
-U_link[g,j] = weighted_mean(u[g,q] for q in Q_j)
+u_g = {assertion_id: score}
+U(g, Q) = sum_{q in Q} w_q u_g[q] / Z_d
+Z_d = utility_weight_denominator stored for document d
 ```
 
-If a probe depends on occurrences mapping to several decisions, the component enters every
-linked decision's score. Multiple occurrences mapping to one decision do not duplicate the
-component or policy log-probability. This is provisional many-to-many routing, not a claim that
-each decision independently caused the outcome.
+`w_q` is the assertion weight stored by the QA artifact. `Z_d` is fixed even when a measurement
+family is missing; a subset is never renormalized by its own weight sum. `U(g, empty) = 0`.
+
+One scorer submission may flatten every context assertion from a rollout batch into one bounded
+work queue. Each assertion retains its own pinned question, reader clause, turn excerpt, answer
+kind, and cache identity. This scheduling does not imply one wire/model generation per rollout:
+the pinned reader may issue multiple bounded transport calls. One generation is permitted only
+if a separately validated multi-question reader provides that property; the live implementation
+retains the existing per-assertion reader semantics.
+
+### Linked assertion credit
+
+For policy decision `j`, let `Q_j` be the assertions whose
+`policy_dependency_decision_ids` contain `j`. Its linked score in rollout `g` is:
+
+```text
+U_link[g,j] = U(g, {q : j in policy_dependency_decision_ids[q]})
+```
+
+If an assertion depends on occurrences mapping to several policy decisions, it enters every
+unique policy dependency's score once. Multiple occurrences mapping to one policy decision do
+not duplicate the assertion or policy log-probability. Fixed decisions never receive credit.
+This is provisional many-to-many routing, not a claim that each policy decision independently
+caused the outcome.
 
 Within one document/lambda group, compute leave-one-out advantages independently per span:
 
@@ -221,40 +253,42 @@ Within one document/lambda group, compute leave-one-out advantages independently
 A_link[g,j] = U_link[g,j] - loo_mean(U_link[-g,j])
 ```
 
-No standard-deviation normalization is allowed. A linked component that is constant across the
+No standard-deviation normalization is allowed. A linked assertion that is constant across the
 group supplies no policy gradient.
 
-### Global component credit
+### Residual assertion credit
 
-Let `Q_global = {q : O_q is empty}`. Compute:
+Residual means not linked to a policy decision; it is independent of measurement family and
+assertion scope. Compute:
 
 ```text
-U_global[g] = weighted_mean(u[g,q] for q in Q_global)
-A_global[g] = U_global[g] - loo_mean(U_global[-g])
+U_residual[g] = U(g, {q : credit_routing[q] = residual})
+A_residual[g] = U_residual[g] - loo_mean(U_residual[-g])
 ```
 
-Every controlled decision receives `A_global`. This preserves utility credit for decisions with no
-accepted linked QA and captures schema/coherence or other unassigned document effects.
+Every policy decision with linked assertions receives `A_residual` in addition to its linked
+advantage. This captures globally scoped assertions, fixed-only assertions, and other effects
+that cannot route to a policy decision.
 
-Linked components are not included again in `U_global`; the partition prevents double
-counting. If a document has no global components, `A_global = 0`.
+An assertion with `credit_routing=linked` is prohibited from entering `U_residual`; the partition
+prevents double counting. If a document has no residual assertions, `A_residual = 0`.
 
-For a decision with no linked components, global-only credit may still be empty or too thin. Define
-the complete document score over every utility component:
+For a policy decision with no linked assertions, residual-only credit may still be empty or too
+thin. Define the complete document score over every accepted assertion:
 
 ```text
-U_document[g] = weighted_mean(u[g,q] for all q)
+U_document[g] = U(g, all accepted assertions for d)
 A_document[g] = U_document[g] - loo_mean(U_document[-g])
 ```
 
 Use this coarse complete-document advantage only as the fallback for uncovered decisions. It is
-not added to decisions that already receive linked credit.
+prohibited from being added to a decision that already receives linked credit.
 
 The provisional utility advantage is:
 
 ```text
-A_provisional[g,j] = A_link[g,j] + A_global[g]   if Q_j is non-empty
-A_provisional[g,j] = A_document[g]               otherwise
+A_provisional[g,j] = A_link[g,j] + A_residual[g]  when j has linked assertions
+A_provisional[g,j] = A_document[g]                otherwise
 ```
 
 Therefore, absence of an accepted QA link never implies zero utility relevance. It falls back
@@ -275,8 +309,8 @@ Run the complete pinned remote task, extraction, and reader pipeline:
 delta_U[g,j] = U_total(d, a_g) - U_total(d, a_cf)
 ```
 
-`U_total` uses the complete, normally weighted utility component set. This allows a decision with
-no linked QA to receive causal evidence through effects on other probes or global criteria.
+`U_total` is `U(g, all accepted assertions for d)` with the fixed `Z_d`. This allows a decision
+with no linked assertion to receive causal evidence through effects on other assertions.
 
 Convert the policy's full-menu probabilities into a distribution restricted to the evaluated
 pair:
@@ -312,11 +346,11 @@ Counterfactuals consume a fixed number of additional round trips per epoch or tr
 The default scheduler reserves 20% of calls for seeded uniform sampling over all eligible
 decision-rollout pairs. The remaining 80% is allocated lexicographically:
 
-1. decisions with no accepted linked utility component across any mapped occurrence;
-2. decisions linked only through multi-decision or low-confidence dependencies;
+1. decisions with no linked assertion;
+2. decisions with multi-decision (hyperedge) links;
 3. high policy entropy at the current supported lambda;
-4. adjacent action pairs without a cached utility slope;
-5. oldest previously measured pair, preventing priority-tier starvation.
+4. unseen adjacent action pairs;
+5. oldest measured pair, preventing priority-tier starvation.
 
 Within one priority tier, sample uniformly and deterministically from the run seed. Priority
 controls measurement allocation only; it never multiplies `delta_U` or the loss. Cache keys
@@ -350,7 +384,7 @@ whose trajectory log-probability is the sum over decisions. The complete minibat
 L = mean_d L_utility(d) + L_count - beta * entropy + eta * KL(pi || pi_ref)
 ```
 
-RLOO tie filtering is applied at the component-credit level: a span with tied linked and global
+RLOO tie filtering is applied at the assertion-credit level: a span with tied linked and residual
 advantages contributes no provisional utility term, but its count objective remains active.
 Counterfactual pairs with `delta_U = 0` are retained in diagnostics and supply no pairwise
 utility gradient.
@@ -367,7 +401,7 @@ Before optimization:
 
 - freeze one detector span artifact shared by QA and RL;
 - freeze action menus, counts, count provenance, and type references;
-- freeze accepted utility components and dependency sets;
+- freeze accepted utility assertions and routing fields;
 - freeze remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches;
 - run reward-support, count-health, lambda-menu, and determinism gates.
 
@@ -455,7 +489,7 @@ Build a frozen per-document pool containing:
 - support-scan and ExIt sampled trajectories with valid cached utility;
 - adjacent single-span counterfactual trajectories already measured by the support scan.
 
-Deduplicate exact action vectors. Store pure `U_total`, `P_count`, component scores, count
+Deduplicate exact action vectors. Store pure `U_total`, `P_count`, assertion scores, count
 provenance, and the complete reward/environment version. Require at least three distinct
 `(U,P)` points for a document to contribute switch points; other documents remain in replay
 validation but not threshold estimation.
@@ -530,11 +564,12 @@ before full RL and held-out evaluation.
 
 - Round-trip determinism and reader-jitter gates from the predecessor spec pass under the live
   pinned environment.
-- Utility components are returned separately with stable IDs and dependency sets.
-- Every corpus reports linked and global components, decisions with no links, occurrence
+- Utility assertions are returned separately with stable assertion IDs and routing fields.
+- Every corpus reports linked and residual assertions, decisions with no links, occurrence
   multiplicity, and rejection reasons.
-- Synthetic tests verify that occurrence links map to the correct decisions, linked credit
-  reaches only linked decisions, global credit reaches all controlled decisions, uncovered
+- Synthetic tests verify that occurrence links map to the correct policy decisions, linked credit
+  reaches only policy dependencies, residual credit reaches every linked policy decision and no
+  fixed decision, uncovered
   decisions receive complete-document fallback credit, and linked decisions do not receive a
   duplicate complete-document term.
 - Counterfactual tests verify one-decision intervention across every mapped occurrence,
@@ -566,8 +601,9 @@ before full RL and held-out evaluation.
   reported.
 - No eligible decision has zero selection probability.
 - Selection priority never enters reward or loss magnitude.
-- Decisions without linked probes receive both global provisional credit when available and highest
-  counterfactual priority.
+- Decisions without linked assertions receive complete-document fallback credit and highest
+  counterfactual priority. Multi-decision links are the next priority; dependency confidence is
+  neither stored nor derived from provenance.
 
 ## Evaluation and verdict
 
@@ -575,7 +611,7 @@ Evaluate every supported profile of the single checkpoint independently. For eac
 
 - measure utility on `out_final` with task metrics and whole-task regression metrics;
 - measure re-identification/inference attack success on `doc_p` and leak-through on `out_final`;
-- report count score, action modes, per-type behavior, probe coverage, and count provenance as
+- report count score, action modes, per-type behavior, assertion coverage, and count provenance as
   diagnostics;
 - compare against rule baselines and external methods only at matched realized privacy and
   identical settings.
@@ -594,9 +630,9 @@ never calibrated away.
 
 ## Failure modes and stop conditions
 
-- **QA coverage capture:** policy movement concentrates on decisions with accepted probes while
-  uncovered decisions remain static. Check global credit and scheduler allocation; do not drop
-  the uncovered decisions.
+- **QA coverage capture:** policy movement concentrates on decisions with linked assertions while
+  uncovered decisions remain static. Check complete-document fallback credit and scheduler
+  allocation; do not drop the uncovered decisions.
 - **Passenger persistence:** ExIt-cloned actions survive despite negative adjacent
   counterfactual utility. Price with measured pairwise disagreement and increase only the
   pre-registered counterfactual budget in a new run.
@@ -608,7 +644,7 @@ never calibrated away.
 - **Type-normalization distortion:** any revisit trigger in the decision log fires. Run the
   declared normalization ablation; do not rewrite the completed run's score.
 - **Interaction miss:** one-decision counterfactuals disagree systematically with multi-decision
-  probe behavior. Add a multi-decision intervention ablation rather than pretending independent
+  assertion behavior. Add a multi-decision intervention ablation rather than pretending independent
   credit.
 - **Proxy/attacker inversion:** count score rises while realized privacy worsens. This is the
   central falsification of count-driven shaping and must terminate claims based on it.
@@ -622,24 +658,25 @@ the trainer:
   `sample(state, legal, lambda_profile)` own conditioning and dynamic-mask semantics.
 - **Count objective interface:** versioned type references plus
   `action_scores(decision, legal) -> scores, provenance` hide normalization and diagnostics.
-- **Utility credit interface:** `credit(component_vector, occurrence_to_decision,
-  dependency_sets, rollout_group)` returns per-decision provisional advantages without knowing
-  policy internals.
-- **Counterfactual scheduler interface:** consumes coverage, link confidence, entropy, pair
-  history, and a fixed budget; returns intervention requests. It never sees or scales rewards.
+- **Utility credit interface:** `credit(assertion_vector, occurrence_to_decision,
+  policy_dependency_decision_ids, credit_routing, rollout_group)` returns per-policy-decision
+  provisional advantages without knowing policy internals.
+- **Counterfactual scheduler interface:** consumes linked-assertion coverage, hyperedge status,
+  entropy, pair history, and a fixed budget; returns intervention requests. It never sees or
+  scales rewards.
 - **Lambda-menu selector:** consumes a frozen trajectory pool and emits values, switch points,
   replay report, and hashes. It is offline and cannot inspect final attacker results.
 
 Expected code destinations are `src/cloak/train/ranker.py` for policy conditioning,
 `src/cloak/train/reward.py` or a dedicated deep reward module for count/credit calculation,
-`src/cloak/train/roundtrip.py` for component-vector output, and `scripts/train_ranker.py` for
+`src/cloak/train/roundtrip.py` for assertion-vector output, and `scripts/train_ranker.py` for
 orchestration only. Exact paths may change during implementation planning, but the interfaces
 and separation of responsibilities are normative.
 
 ## Artifacts
 
 - frozen detector/span artifact shared by QA and RL;
-- versioned utility-component artifact with dependency sets;
+- versioned utility-assertion artifact with routing fields and fixed per-document denominators;
 - type count-reference artifact and count-health report;
 - lambda calibration pool, switch points, replay report, and supported-menu manifest;
 - counterfactual pair cache and scheduler report;
@@ -650,11 +687,11 @@ and separation of responsibilities are normative.
 
 - [Round-trip ranker and infiller](roundtrip-ranker-infiller.md) — pinned remote reward,
   determinism, ExIt/RLOO history, and infiller stages.
-- [Training-task environment](training-task-env.md) — ladder, decision, schema, and carrier
-  utility components.
+- [Training-task environment](training-task-env.md) — historical ladder, decision, schema, and
+  carrier inputs; not the live ranker-v2 reward contract.
 - [Leakage-probe reward options](leakage-probe-reward.md) — count, span-recovery, and
   profile-matching alternatives and honesty boundaries.
 - [Interactive ranker v2 decision log](interactive-ranker-v2-decision-log.md) — chosen forks and
   rejected alternatives.
-- [QA builder v2 draft](../qa-builder-v2.md) — shared artifact and future reward-codesign
-  requirements.
+- [QA builder v2](../qa-builder-v2.md) — implemented shared assertion artifact and scoring
+  contract.

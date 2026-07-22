@@ -478,23 +478,24 @@ channels already exhausted. (v15 baseline, pre-v4-reader: 616 kept — 149 prima
 
 Two measurement families: **context assertions on `doc_p`** and **delivered assertions on
 `out_final`**. Weights: family budgets split equally across fact groups, then across a group's
-assertions; missing families keep the fixed denominator without renormalization.
+assertions. The document's stored `utility_weight_denominator` is fixed even when a family is
+missing; present assertions are never renormalized by their own weight sum.
 
-### Context probes
+### Context assertions
 
 `contextual_relation` — the relation QAs above; the live context family.
-### Delivered / schema probes
+### Delivered / schema assertions
 
 Deterministic, adapter-owned (`AciTaskAdapter.deterministic_candidates`); truth comes from the
 human reference or the fixed task schema, never from ceiling output or teacher interpretation:
 
-- `content` (linked, `contains`) — a reference-backed controlled value must survive into
+- `content` (occurrence-scoped, `contains`) — a reference-backed controlled value must survive into
   `out_final` (lexical `fact_score`); the omission channel.
-- `field` (global, `field_value`) — exact agreement of DEMOGRAPHIC fields and per-condition
+- `field` (globally scoped, `field_value`) — exact agreement of DEMOGRAPHIC fields and per-condition
   ASSESSMENT row fields (e.g. status/category) between the parsed output and the reference.
-- `structure` (global, `required_sections`) — required note sections present and parseable, with
-  expected row shapes/counts for assessment and plan; structural compliance is capped by the
-  manifest's structural budget so it can never substitute for semantic retention.
+- `structure` (globally scoped, `required_sections`) — required note sections present and
+  parseable, with expected row shapes/counts for assessment and plan; structural compliance is
+  capped by the manifest's structural budget so it can never substitute for semantic retention.
 - `exact_relation` (`exact_relation`, PLAN section) — symbolic relation preservation: the
   plan row for a condition still carries its expected treatment/test values after the round trip.
   A placeholder-heavy pipeline can pass this while failing the context assertion for the same
@@ -502,8 +503,13 @@ human reference or the fixed task schema, never from ceiling output or teacher i
 
 Runtime scoring (`score_utility`) replays each context assertion against the rollout's `doc_p`
 with the same reader, same per-assertion turn excerpts, and the same answer-target scorers (set
-rows via the set reader); delivered contracts are deterministic. Cache keys are
-document/action-vector level.
+rows via the set reader); delivered contracts are deterministic. One scorer submission may
+flatten every context assertion from a rollout batch into one bounded work queue, but each
+assertion retains its own pinned question, reader clause, turn excerpt, answer kind, and cache
+identity. This is not a claim of one wire/model generation per rollout: the pinned reader may
+issue multiple bounded transport calls. One generation is permitted only if a separately
+validated multi-question reader supplies that property. The live implementation preserves the
+existing per-assertion reader semantics. Cache keys remain document/action-vector level.
 
 ### Retired `semantic_property` probes
 
@@ -517,8 +523,8 @@ roughly 182 attempts, mostly `no_task_role_cue`). The machinery remains dormant 
 
 1. Detect once; QA and RL consume the same frozen environment.
 2. Assertions precede questions; teacher proposals are not gold.
-3. Measurement (family) and routing (scope) are orthogonal; missing coverage never removes a
-   ranker decision or implies zero relevance.
+3. Measurement family and assertion scope are orthogonal to policy credit routing; missing
+   coverage never removes a ranker decision or implies zero relevance.
 4. Pins are transitive: detector, lattice profiles/embindex, environment, teacher
    (model+provider+prompt+schema), reader, manifest, and builder flags all key caches; a pin
    mismatch invalidates dependents.
@@ -527,6 +533,27 @@ roughly 182 attempts, mostly `no_task_role_cue`). The machinery remains dormant 
    document removal. Method comparisons only at matched realized privacy and identical settings.
 
 ## Artifact
+
+The shared QA-to-RL artifact exposes these routing fields:
+
+```yaml
+document:
+  policy_decision_ids: [decision_id]
+  fixed_decision_ids: [decision_id]
+  uncovered_policy_decision_ids: [decision_id]
+  occurrence_to_decision: {occurrence_id: decision_id_or_null}
+assertion:
+  occurrence_ids: [occurrence_id]
+  policy_dependency_decision_ids: [decision_id]
+  credit_routing: linked | residual
+```
+
+`credit_routing=linked` exactly when the assertion has at least one policy dependency; otherwise
+it is `residual`, including globally scoped assertions and assertions linked only to fixed rewrite
+decisions. A mixed fixed/policy hyperedge routes once to each unique policy dependency and never
+to a fixed decision. Measurement family and scope do not determine routing. (The assertion `scope`
+field stores the measurement scopes as the literals `linked`/`global`; those enum values name
+occurrence linkage, not credit routing — only `credit_routing` decides credit.)
 
 `build_utility_artifact` emits one artifact: assertions (with evidence: arguments, argument
 spans, reader turns, validation scores, run/teacher attribution), the full rejection ledger

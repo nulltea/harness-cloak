@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-12
+updated: 2026-07-22
 tags: [rl, ranker, reward-design, credit-assignment, decision-log, privacy, utility]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-diagnostics.md,
@@ -355,3 +355,31 @@ approximate provisional policy-gradient term for that tested span and rollout.
 advantage; broadcast only the complete document advantage. Blending double-counts linked
 probes and introduces another sensitive coefficient. Complete-document-only credit discards
 the approved probe-routing information and restores the current passenger-action problem.
+
+## The v16 assertion artifact is the live QA-to-RL contract
+
+**Decision.** Selectively port the contract-alignment changes from the clean branch: round-trip
+utility is an assertion-ID score vector, and every assertion subset is divided by the document's
+fixed stored `utility_weight_denominator`. Missing families do not change that denominator. The
+artifact partitions policy decisions from fixed rewrite decisions, maps occurrences to either
+kind or null, and stores each assertion's unique policy dependencies plus `linked` or `residual`
+routing. Linked means at least one policy dependency. Global assertions and fixed-only links are
+residual; mixed fixed/policy hyperedges route once to each unique policy dependency and never
+give a gradient to a fixed decision. This entry supersedes this log's earlier probe-component
+and linked/global wording for the live ranker-v2 contract.
+
+Runtime scoring preserves per-assertion question, clause, excerpt, answer-kind, and cache
+identity while allowing one scorer submission to schedule a bounded work queue across a rollout
+batch. That batching does not promise one reader transport call or model generation per rollout;
+only a separately validated multi-question reader could establish that property.
+
+The counterfactual scheduler uses, in order after its uniform reserve: no linked assertion,
+multi-decision (hyperedge) links, high policy entropy, an unseen adjacent pair, and the oldest
+measured pair. The v16 artifact stores no dependency-confidence scalar, and none is derived from
+provenance. This scheduler rule supersedes the earlier link-confidence wording in this log.
+
+**Rejected alternatives.** Renormalize only the families present in a document; give gradients
+to fixed decisions; treat fixed-only links as linked policy credit; invent dependency confidence
+from provenance; merge the divergent branch wholesale. The first three change the reward or
+policy routing, the fourth fabricates absent artifact state, and the last imports unrelated drift
+instead of the reviewed contract corrections.
