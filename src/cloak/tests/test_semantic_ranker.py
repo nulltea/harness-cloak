@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import replace
+import inspect
+from dataclasses import fields, replace
 from pathlib import Path
 from types import MappingProxyType
 
@@ -335,3 +336,231 @@ def test_context_modes_are_explicit_ablation_surfaces_and_production_is_full_onl
         production=True,
     )
     assert production.context_mode == "full-candidate-attention"
+
+
+def _memory(history_mode: str = "selected-cross-attention"):
+    memory = semantic_ranker_module.SelectedActionMemory(
+        relation_dim=4,
+        context_dim=4,
+        history_dim=4,
+        num_heads=1,
+        action_mode_count=3,
+        runtime_type_count=4,
+        history_mode=history_mode,
+        dropout=0.0,
+    )
+    with torch.no_grad():
+        memory.record_projection.weight.zero_()
+        memory.record_projection.bias.zero_()
+        memory.record_projection.weight[:, :4].copy_(torch.eye(4))
+        memory.query_projection.weight.zero_()
+        memory.query_projection.bias.zero_()
+        memory.query_projection.weight[:, :4].copy_(torch.eye(4))
+        memory.action_mode_embedding.weight.zero_()
+        memory.runtime_type_embedding.weight.zero_()
+        memory.source_position_embedding.weight.zero_()
+    _identity_attention(memory.cross_attention)
+    memory.eval()
+    return memory
+
+
+def _record(utility_relation: torch.Tensor):
+    return semantic_ranker_module.SelectedActionRecord(
+        utility_relation=utility_relation,
+        action_mode_id=1,
+        runtime_type_id=2,
+        source_position_pool=torch.zeros(4),
+    )
+
+
+def test_memory_empty_prefix_and_none_history_are_exact_zero():
+    queries = torch.randn(3, 8)
+    selected = _memory()
+    no_history = _memory("none")
+    expected = torch.zeros(3, 4)
+
+    assert torch.equal(selected(queries, ()), expected)
+    assert torch.equal(no_history(queries, (_record(torch.ones(4)),)), expected)
+
+
+def test_memory_rows_are_permutation_invariant_within_one_causal_prefix():
+    memory = _memory()
+    queries = torch.tensor([
+        [20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        [0.0, 20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+    ])
+    records = (
+        _record(torch.tensor([1.0, 0.0, 0.0, 0.0])),
+        _record(torch.tensor([0.0, 1.0, 0.0, 0.0])),
+        _record(torch.tensor([0.0, 0.0, 1.0, 0.0])),
+    )
+
+    forward = memory(queries, records)
+    reversed_rows = memory(queries, tuple(reversed(records)))
+
+    assert torch.allclose(forward, reversed_rows, atol=1e-6, rtol=1e-6)
+
+
+def test_memory_intervention_is_candidate_conditioned_and_selective():
+    memory = _memory()
+    query = torch.tensor([
+        [20.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+    ])
+    relevant = _record(torch.tensor([1.0, 0.0, 0.0, 0.0]))
+    unrelated = _record(torch.tensor([0.0, 1.0, 0.0, 0.0]))
+    baseline = memory(query, (relevant, unrelated))
+    relevant_changed = memory(
+        query,
+        (_record(torch.tensor([2.0, 0.0, 0.0, 0.0])), unrelated),
+    )
+    unrelated_changed = memory(
+        query,
+        (relevant, _record(torch.tensor([0.0, 2.0, 0.0, 0.0]))),
+    )
+
+    assert not torch.allclose(relevant_changed, baseline, atol=0.5, rtol=0)
+    assert torch.allclose(unrelated_changed, baseline, atol=1e-3, rtol=0)
+
+
+def test_memory_repeated_surface_decision_builds_one_record_with_all_positions():
+    bank, document, decision = _fixture()
+    features = build_decision_token_features(bank, document, decision)
+    memory = _memory()
+    with torch.no_grad():
+        rows = torch.arange(16, dtype=torch.float32).unsqueeze(1).expand(-1, 4)
+        memory.source_position_embedding.weight.copy_(rows)
+
+    record = memory.build_record(
+        utility_relation=torch.ones(4),
+        action_mode_id=1,
+        runtime_type_id=2,
+        decision_features=features,
+    )
+
+    assert isinstance(record, semantic_ranker_module.SelectedActionRecord)
+    assert record.source_position_pool.shape == (4,)
+    assert torch.equal(record.source_position_pool, torch.full((4,), 5.0))
+
+
+@pytest.mark.parametrize(
+    "history_mode",
+    semantic_ranker_module.HISTORY_MODES,
+)
+def test_history_modes_share_output_width_and_record_fields(history_mode):
+    memory = _memory(history_mode)
+    output = memory(
+        torch.randn(2, 8),
+        (_record(torch.ones(4)), _record(torch.arange(4, dtype=torch.float32))),
+    )
+
+    assert output.shape == (2, 4)
+    assert memory.record_projection.in_features == 16
+    assert memory.record_projection.out_features == 4
+
+
+def test_history_production_accepts_selected_cross_attention_only():
+    for history_mode in ("none", "utility-gru"):
+        with pytest.raises(ValueError, match="production"):
+            semantic_ranker_module.SelectedActionMemory(
+                relation_dim=4,
+                context_dim=4,
+                history_dim=4,
+                num_heads=1,
+                action_mode_count=3,
+                runtime_type_count=4,
+                history_mode=history_mode,
+                production=True,
+            )
+
+
+def test_memory_has_only_allowed_fields_one_cross_attention_and_no_step_state():
+    assert [field.name for field in fields(
+        semantic_ranker_module.SelectedActionRecord
+    )] == [
+        "utility_relation",
+        "action_mode_id",
+        "runtime_type_id",
+        "source_position_pool",
+    ]
+    memory = _memory()
+    attentions = [
+        module
+        for module in memory.modules()
+        if isinstance(module, torch.nn.MultiheadAttention)
+    ]
+    assert attentions == [memory.cross_attention]
+    assert all("step" not in name for name, _ in memory.named_parameters())
+    source = "\n".join((
+        inspect.getsource(semantic_ranker_module.SelectedActionRecord),
+        inspect.getsource(semantic_ranker_module.SelectedActionMemory),
+    )).casefold()
+    for prohibited in (
+        "_decision_action_inputs",
+        "predicted_privacy",
+        "authored_index",
+        "authored_level_index",
+        "menu_size",
+        "profile_id",
+        "profile_identity",
+        "assertion_id",
+        "qa_assertion",
+        "dependency_id",
+        "qa_dependency",
+        "lambda",
+    ):
+        assert prohibited not in source
+
+
+def test_count_privacy_only_loss_has_no_gradient_path_to_memory_parameters():
+    memory = _memory()
+    shared_relation = torch.ones(1, 4, requires_grad=True)
+    record = _record(shared_relation.squeeze(0))
+    memory(torch.cat([shared_relation, torch.zeros(1, 4)], dim=-1), (record,))
+    privacy_projection = torch.nn.Linear(4, 1)
+
+    privacy_projection(shared_relation).sum().backward()
+
+    assert all(parameter.grad is None for parameter in memory.parameters())
+    assert shared_relation.grad is not None
+
+
+def _ordered_document() -> RankerDocument:
+    decisions = tuple(
+        RankerDecision(
+            decision_id=decision_id,
+            profile_id=f"TYPE:{decision_id}",
+            runtime_type="TYPE",
+            canonical_key=decision_id,
+            occurrence_ids=(f"occurrence-{decision_id}",),
+            actions=(),
+        )
+        for decision_id in ("first", "second", "third", "fourth")
+    )
+    return RankerDocument(
+        doc_id="ordered/doc",
+        corpus="fixture",
+        text="ordered",
+        occurrences=(),
+        policy_decisions=decisions,
+        fixed_decisions=(),
+    )
+
+
+def test_order_helpers_preserve_frozen_production_first_occurrence_walk():
+    document = _ordered_document()
+    frozen = document.policy_decisions
+
+    assert semantic_ranker_module.production_decision_order(document) is frozen
+    assert semantic_ranker_module.reverse_diagnostic_decision_order(
+        document
+    ) == tuple(reversed(frozen))
+    first_seeded = semantic_ranker_module.seeded_diagnostic_decision_order(
+        document, seed=17
+    )
+    second_seeded = semantic_ranker_module.seeded_diagnostic_decision_order(
+        document, seed=17
+    )
+    assert first_seeded == second_seeded
+    assert set(first_seeded) == set(frozen)
+    assert document.policy_decisions is frozen
+    assert semantic_ranker_module.production_decision_order(document) is frozen

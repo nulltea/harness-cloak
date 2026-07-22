@@ -1,6 +1,7 @@
-"""Candidate-conditioned frozen-document context features for Ranker-v2."""
+"""Candidate-conditioned context and selected-action memory for Ranker-v2."""
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
@@ -23,6 +24,12 @@ CONTEXT_MODES = (
     "full-candidate-attention",
 )
 PRODUCTION_CONTEXT_MODE = "full-candidate-attention"
+HISTORY_MODES = (
+    "none",
+    "utility-gru",
+    "selected-cross-attention",
+)
+PRODUCTION_HISTORY_MODE = "selected-cross-attention"
 
 
 @dataclass(frozen=True)
@@ -31,6 +38,16 @@ class DecisionTokenFeatures:
     relative_position_ids: torch.Tensor
     document_position_ids: torch.Tensor
     occurrence_token_indices: tuple[tuple[int, ...], ...]
+
+
+@dataclass(frozen=True)
+class SelectedActionRecord:
+    """One count-blind utility-semantic record for a previously selected decision."""
+
+    utility_relation: torch.Tensor
+    action_mode_id: int
+    runtime_type_id: int
+    source_position_pool: torch.Tensor
 
 
 def stack_utility_relations(
@@ -435,3 +452,257 @@ class CandidateContextReadout(nn.Module):
             token_bank, decision_features, utility_relations
         )
         return context
+
+
+class SelectedActionMemory(nn.Module):
+    """Retrieve earlier selected utility semantics for each current candidate.
+
+    The record interface deliberately exposes only the selected action's utility
+    relation, mode, runtime type, and original occurrence positions. Privacy
+    supervision is a separate branch and must not consume this module's output or
+    update its projection and attention parameters.
+    """
+
+    def __init__(
+        self,
+        *,
+        relation_dim: int,
+        context_dim: int,
+        history_dim: int,
+        num_heads: int,
+        action_mode_count: int,
+        runtime_type_count: int,
+        history_mode: str = PRODUCTION_HISTORY_MODE,
+        dropout: float = 0.0,
+        production: bool = False,
+    ):
+        super().__init__()
+        dimensions = (
+            relation_dim,
+            context_dim,
+            history_dim,
+            num_heads,
+            action_mode_count,
+            runtime_type_count,
+        )
+        if min(dimensions) <= 0:
+            raise ValueError("history dimensions and category sizes must be positive")
+        if history_dim % num_heads:
+            raise ValueError("history dimension must be divisible by head count")
+        if history_mode not in HISTORY_MODES:
+            raise ValueError(f"unsupported history_mode: {history_mode}")
+        if production and history_mode != PRODUCTION_HISTORY_MODE:
+            raise ValueError("production accepts only selected-cross-attention history")
+        if not 0.0 <= dropout < 1.0:
+            raise ValueError("history dropout must be in [0, 1)")
+
+        self.relation_dim = int(relation_dim)
+        self.context_dim = int(context_dim)
+        self.history_dim = int(history_dim)
+        self.action_mode_count = int(action_mode_count)
+        self.runtime_type_count = int(runtime_type_count)
+        self.history_mode = history_mode
+        self.production = bool(production)
+
+        self.action_mode_embedding = nn.Embedding(action_mode_count, history_dim)
+        self.runtime_type_embedding = nn.Embedding(runtime_type_count, history_dim)
+        self.source_position_embedding = nn.Embedding(
+            DOCUMENT_POSITION_BINS, history_dim
+        )
+        self.record_projection = nn.Linear(
+            relation_dim + 3 * history_dim, history_dim
+        )
+        self.query_projection = nn.Linear(
+            relation_dim + context_dim, history_dim
+        )
+        self.cross_attention = nn.MultiheadAttention(
+            embed_dim=history_dim,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True,
+        )
+        self.utility_gru = nn.GRU(
+            input_size=history_dim,
+            hidden_size=history_dim,
+            batch_first=True,
+        )
+
+    def build_record(
+        self,
+        *,
+        utility_relation: torch.Tensor,
+        action_mode_id: int,
+        runtime_type_id: int,
+        decision_features: DecisionTokenFeatures,
+    ) -> SelectedActionRecord:
+        """Build one decision-level record, pooling every original occurrence."""
+        if utility_relation.ndim != 1 or utility_relation.shape[0] != self.relation_dim:
+            raise ValueError("selected utility relation has an invalid shape")
+        if utility_relation.device != self.record_projection.weight.device:
+            raise ValueError("selected utility relation is on a different device")
+        if utility_relation.dtype != self.record_projection.weight.dtype:
+            raise ValueError("selected utility relation has a different dtype")
+        self._validate_category_id(
+            action_mode_id, self.action_mode_count, "action mode"
+        )
+        self._validate_category_id(
+            runtime_type_id, self.runtime_type_count, "runtime type"
+        )
+        positions = decision_features.document_position_ids
+        if (
+            positions.ndim != 1
+            or positions.dtype != torch.int64
+            or positions.numel() == 0
+            or torch.any(positions < 0)
+            or torch.any(positions >= DOCUMENT_POSITION_BINS)
+        ):
+            raise ValueError("selected source positions are invalid")
+        if positions.device != self.source_position_embedding.weight.device:
+            raise ValueError("selected source positions are on a different device")
+        if not decision_features.occurrence_token_indices:
+            raise ValueError("selected decision has no original occurrences")
+
+        occurrence_positions = []
+        for indices in decision_features.occurrence_token_indices:
+            if not indices or any(
+                index < 0 or index >= positions.numel() for index in indices
+            ):
+                raise ValueError("selected occurrence token indices are invalid")
+            index_tensor = torch.tensor(
+                indices, dtype=torch.long, device=positions.device
+            )
+            occurrence_positions.append(
+                self.source_position_embedding(
+                    positions.index_select(0, index_tensor)
+                ).mean(dim=0)
+            )
+        source_position_pool = torch.stack(occurrence_positions).mean(dim=0)
+        return SelectedActionRecord(
+            utility_relation=utility_relation,
+            action_mode_id=action_mode_id,
+            runtime_type_id=runtime_type_id,
+            source_position_pool=source_position_pool,
+        )
+
+    @staticmethod
+    def _validate_category_id(value: int, upper: int, name: str) -> None:
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int)
+            or not 0 <= value < upper
+        ):
+            raise ValueError(f"selected {name} id is invalid")
+
+    def _record_rows(
+        self, records: tuple[SelectedActionRecord, ...]
+    ) -> torch.Tensor:
+        device = self.record_projection.weight.device
+        dtype = self.record_projection.weight.dtype
+        utility_relations = []
+        source_positions = []
+        action_modes = []
+        runtime_types = []
+        for record in records:
+            if not isinstance(record, SelectedActionRecord):
+                raise TypeError(
+                    "history records must be SelectedActionRecord instances"
+                )
+            if (
+                record.utility_relation.ndim != 1
+                or record.utility_relation.shape[0] != self.relation_dim
+                or record.utility_relation.device != device
+                or record.utility_relation.dtype != dtype
+            ):
+                raise ValueError("history utility relation is invalid")
+            if (
+                record.source_position_pool.ndim != 1
+                or record.source_position_pool.shape[0] != self.history_dim
+                or record.source_position_pool.device != device
+                or record.source_position_pool.dtype != dtype
+            ):
+                raise ValueError("history source-position pool is invalid")
+            self._validate_category_id(
+                record.action_mode_id, self.action_mode_count, "action mode"
+            )
+            self._validate_category_id(
+                record.runtime_type_id, self.runtime_type_count, "runtime type"
+            )
+            utility_relations.append(record.utility_relation)
+            source_positions.append(record.source_position_pool)
+            action_modes.append(record.action_mode_id)
+            runtime_types.append(record.runtime_type_id)
+
+        action_mode_ids = torch.tensor(action_modes, dtype=torch.long, device=device)
+        runtime_type_ids = torch.tensor(runtime_types, dtype=torch.long, device=device)
+        row_inputs = torch.cat(
+            [
+                torch.stack(utility_relations),
+                self.action_mode_embedding(action_mode_ids),
+                self.runtime_type_embedding(runtime_type_ids),
+                torch.stack(source_positions),
+            ],
+            dim=-1,
+        )
+        return self.record_projection(row_inputs)
+
+    def forward(
+        self,
+        candidate_queries: torch.Tensor,
+        records: tuple[SelectedActionRecord, ...],
+    ) -> torch.Tensor:
+        """Return candidate histories with a common width for every ablation arm."""
+        if (
+            candidate_queries.ndim != 2
+            or candidate_queries.shape[0] == 0
+            or candidate_queries.shape[1] != self.relation_dim + self.context_dim
+            or candidate_queries.device != self.query_projection.weight.device
+            or candidate_queries.dtype != self.query_projection.weight.dtype
+        ):
+            raise ValueError("candidate history queries are invalid")
+        if not isinstance(records, tuple):
+            raise TypeError("history records must be a tuple")
+        action_count = int(candidate_queries.shape[0])
+        if self.history_mode == "none" or not records:
+            return candidate_queries.new_zeros((action_count, self.history_dim))
+
+        rows = self._record_rows(records)
+        if self.history_mode == "utility-gru":
+            _, hidden = self.utility_gru(rows.unsqueeze(0))
+            return hidden[-1].expand(action_count, -1)
+
+        queries = self.query_projection(candidate_queries)
+        output, _ = self.cross_attention(
+            queries.unsqueeze(0),
+            rows.unsqueeze(0),
+            rows.unsqueeze(0),
+            need_weights=False,
+        )
+        return output.squeeze(0)
+
+
+def production_decision_order(
+    document: RankerDocument,
+) -> tuple[RankerDecision, ...]:
+    """Return the loader-frozen first-occurrence walk without copying or sorting."""
+    return document.policy_decisions
+
+
+def reverse_diagnostic_decision_order(
+    document: RankerDocument,
+) -> tuple[RankerDecision, ...]:
+    """Return a reverse replay order; callers must reapply dynamic legality."""
+    return tuple(reversed(production_decision_order(document)))
+
+
+def seeded_diagnostic_decision_order(
+    document: RankerDocument, *, seed: int
+) -> tuple[RankerDecision, ...]:
+    """Return a stable seeded replay order without mutating production order."""
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise TypeError("diagnostic replay seed must be an integer")
+
+    def replay_key(decision: RankerDecision) -> bytes:
+        value = f"{seed}\0{decision.decision_id}".encode("utf-8")
+        return hashlib.sha256(value).digest()
+
+    return tuple(sorted(production_decision_order(document), key=replay_key))
