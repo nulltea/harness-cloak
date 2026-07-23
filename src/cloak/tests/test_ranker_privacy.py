@@ -647,3 +647,25 @@ def test_metric_subset_survives_diverged_log_error():
     )
     metrics = _metric_subset(examples, prediction, [0.1, 0.2, 0.3], (0, 1, 2))
     assert metrics["median_multiplicative_error"] < 2.0
+
+
+def test_normalization_survives_all_zero_predictions():
+    """Saturated all-zero predicted means must yield zero scores, not a crash."""
+    import torch
+
+    from cloak.train.ranker_privacy import (
+        PrivacyPrediction,
+        _normalize_level_means,
+        profile_normalize_predictions,
+    )
+
+    zero_means = torch.zeros(3)
+    normalized = _normalize_level_means(zero_means, [slice(0, 3)])
+    assert torch.equal(normalized, torch.zeros(3))
+
+    prediction = PrivacyPrediction(
+        mu_log_count=torch.zeros(4), sigma_log_count=torch.full((4,), 0.5)
+    )
+    scores = profile_normalize_predictions(prediction, ["keep", "level", "level", "placeholder"])
+    assert scores[0].item() == 0.0 and scores[3].item() == 1.0
+    assert scores[1].item() == 0.0 and scores[2].item() == 0.0

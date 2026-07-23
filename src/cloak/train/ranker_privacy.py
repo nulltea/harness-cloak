@@ -326,9 +326,11 @@ def profile_normalize_predictions(
         result[level_indices[0]] = 1.0
     else:
         level_means = prediction.mu_log_count[level_indices]
-        denominator = level_means.max()
-        if denominator <= 0:
-            raise ValueError("predicted multi-level menu has zero normalization denominator")
+        # Degenerate all-zero predictions (softplus underflow) normalize to zero
+        # scores rather than crashing the policy forward; endpoints stay exact.
+        denominator = level_means.max().clamp_min(
+            torch.finfo(level_means.dtype).tiny
+        )
         result[level_indices] = torch.clamp(level_means / denominator, 0.0, 1.0)
     result[modes.index("keep")] = 0.0
     result[modes.index("placeholder")] = 1.0
@@ -362,9 +364,11 @@ def _normalize_level_means(
         if profile_means.numel() == 1:
             normalized[profile_slice] = 1.0
             continue
-        denominator = profile_means.max()
-        if denominator <= 0:
-            raise ValueError("predicted multi-level profile has zero denominator")
+        # A saturated head can predict exactly zero for every level (softplus
+        # underflow). That is a degenerate PREDICTION, not a flat TARGET (targets
+        # are gated upstream), so clamp the denominator instead of aborting the
+        # run: all-zero means normalize to zero scores and keep training alive.
+        denominator = profile_means.max().clamp_min(torch.finfo(means.dtype).tiny)
         normalized[profile_slice] = torch.clamp(
             profile_means / denominator, 0.0, 1.0
         )
