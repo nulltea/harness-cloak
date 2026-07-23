@@ -1,0 +1,1089 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HarnessCloak · Interactive Ranker v2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+<div class="sheet">
+  <span class="crosshair tl"></span><span class="crosshair tr"></span>
+  <span class="crosshair bl"></span><span class="crosshair br"></span>
+
+  <div class="topnav" id="site-nav"></div>
+
+  <header class="masthead">
+    <h1 class="title">Interactive Ranker v2<span class="title-sub">Semantic policy architecture and structured reinforcement learning</span></h1>
+    <div class="rev">normative design report · 2026-07-23</div>
+    <div class="abstract">
+      <div class="abstract-label">Abstract</div>
+      <p class="subtitle">Interactive Ranker v2 is a selected, unvalidated architecture for choosing KEEP, truthful lattice generalizations, or placeholders under a user-selected privacy-utility setting. A frozen clinical encoder provides complete-document context and ordered source-to-candidate semantics. Separate trainable branches produce a utility logit and a profile-relative predicted privacy score; an explicit additive lambda controller combines them without exposing true counts to the actor. Training uses full round-trip task utility, assertion-routed document RLOO, sparse one-decision counterfactual correction, and exact own-profile count shaping restricted to the controller scale. Count remains an experimental proxy; final method comparisons require held-out attacker outcomes at matched realized privacy.</p>
+    </div>
+  </header>
+
+  <section id="introduction">
+    <header class="section-head">
+      <div class="section-num">§01</div>
+      <h2 class="section-title">Introduction</h2>
+      <div class="section-meta">objective · separation · status</div>
+    </header>
+    <p class="lede">Ranker v2 chooses one legal rewrite per controlled value while keeping task utility, semantic privacy prediction, exact count shaping, and realized privacy evaluation as four distinct objects.</p>
+    <div class="prose">
+      <p>The policy acts on each distinct detected value in a document. It may keep the source text, choose a truthful lattice generalization, or use a typed placeholder. Utility is measured only after the complete privacy round trip: rewrite <code>doc_orig</code> into <code>doc_p</code>, run the remote task, locally unperturb <code>out_p</code>, and score <code>out_final</code>. Privacy pressure comes from a separately pretrained semantic head that predicts how the candidate changes the source profile's log count.</p>
+      <p><strong>The architectural rule.</strong> The utility tower never sees true counts, predicted privacy, lattice position, menu size, or lambda. The privacy head never sees document context, task assertions, action history, or lambda. Their outputs meet only in an explicit additive controller. This blocks the direct metadata shortcut in which the actor can optimize count reward without learning the candidate's meaning.</p>
+      <p><strong>Status.</strong> This page documents the selected prototype and the normative RL design. Reward-flow and <code>semantic-v1</code> model implementations exist in the main worktree, but representative real-data validation and the architecture promotion gates remain incomplete. Count shaping is experimental. Realized privacy is still measured by a held-out inference or re-identification attacker on <code>doc_p</code> and <code>out_final</code>.</p>
+    </div>
+  </section>
+
+  <section id="model-internals">
+    <header class="section-head">
+      <div class="section-num">§02</div><h2 class="section-title">Ranker Model Architecture</h2>
+      <div class="section-meta">semantic-v1 · implemented computation graph</div>
+    </header>
+
+    <div class="diagram-frame" style="width:min(1504px,calc(100vw - 48px));box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
+      <div class="diagram-cap">
+        <span class="l">FIG · M1: Ranker v2 semantic policy architecture</span>
+        <span>green = embedding/tensor · rust = linear · blue = attention · gray = normalization</span>
+      </div>
+      <svg viewBox="0 0 1480 1826" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="model-title model-desc" style="display:block;width:100%;min-width:1180px;max-width:none;height:auto;background:transparent">
+        <title id="model-title">Ranker v2 semantic policy architecture</title>
+        <desc id="model-desc">A detailed top-to-bottom computation graph. A shared frozen BioClinical ModernBERT-base encoder produces a document token bank and ordered source-to-candidate relation features. Function-specific shapes distinguish embeddings and tensors, linear projections, attention modules, activations, and normalization. The utility tower combines candidate-conditioned document attention with selected-action cross-attention. The privacy tower predicts a log-count distribution. An explicit additive controller applies predicted privacy as an alpha-scaled lambda bias.</desc>
+        <defs>
+          <marker id="model-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
+          <style>
+            .mg{fill:#faf9f5;stroke:#747980;stroke-width:1.4;stroke-dasharray:7 6}
+            .min{fill:#f2f0eb;stroke:#34393e;stroke-width:1.35}
+            .mem{fill:#dbe8df;stroke:#496454;stroke-width:1.35}
+            .matt{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.45}
+            .mlin{fill:#ead8d5;stroke:#8d554f;stroke-width:1.45}
+            .mnorm{fill:#e7e6e3;stroke:#555b61;stroke-width:1.45}
+            .mact{fill:#e3ebdf;stroke:#59704f;stroke-width:1.4}
+            .mctl{fill:#eee8ef;stroke:#7a5e76;stroke-width:1.45}
+            .mt{fill:#1c2024;font:500 13px 'JetBrains Mono',monospace}
+            .ms{fill:#62686e;font:400 10px 'JetBrains Mono',monospace}
+            .mk{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.5px}
+            .ml{fill:none;stroke:#34393e;stroke-width:1.4}
+            .mld{fill:none;stroke:#777c82;stroke-width:1.1;stroke-dasharray:4 4}
+            .mlb{fill:none;stroke:#a06079;stroke-width:1.8}
+          </style>
+        </defs>
+        <rect width="1480" height="1826" fill="transparent"/>
+
+        <text x="42" y="30" class="mk">SHARED FROZEN ENCODER</text>
+        <rect x="28" y="44" width="1424" height="246" rx="16" class="mg"/>
+
+        <rect x="68" y="78" width="260" height="54" rx="6" class="min"/>
+        <text x="198" y="100" text-anchor="middle" class="mt">Document chunks</text>
+        <text x="198" y="119" text-anchor="middle" class="ms">512 tokens · 64 overlap</text>
+
+        <rect x="68" y="188" width="300" height="62" rx="6" class="min"/>
+        <text x="218" y="212" text-anchor="middle" class="mt">TYPE · SOURCE · CANDIDATE</text>
+        <text x="218" y="233" text-anchor="middle" class="ms">ordered relation sequence</text>
+
+        <rect x="456" y="100" width="290" height="112" rx="9" class="mem"/>
+        <text x="601" y="136" text-anchor="middle" class="mt">BioClinical ModernBERT-base</text>
+        <text x="601" y="161" text-anchor="middle" class="ms">frozen shared encoder · h = 768</text>
+        <text x="601" y="185" text-anchor="middle" class="ms">bidirectional token states</text>
+
+        <path d="M328 105H452" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M368 219H420C440 219 438 188 452 180" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="888" y="70" width="200" height="54" rx="7" class="mem"/>
+        <text x="988" y="92" text-anchor="middle" class="mt">H_doc</text>
+        <text x="988" y="111" text-anchor="middle" class="ms">token bank [T × 768]</text>
+        <path d="M746 128H850C870 128 868 104 884 97" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="858" y="168" width="260" height="62" rx="7" class="mem"/>
+        <text x="988" y="192" text-anchor="middle" class="mt">Field-aware means</text>
+        <text x="988" y="213" text-anchor="middle" class="ms">type · source · candidate [768]</text>
+        <path d="M746 184H854" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="1188" y="154" width="210" height="76" rx="8" class="min"/>
+        <text x="1293" y="179" text-anchor="middle" class="mt">Pair composition</text>
+        <text x="1293" y="201" text-anchor="middle" class="ms">concat · difference · product</text>
+        <path d="M1118 199H1184" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="1211" y="246" width="164" height="40" rx="7" class="mem"/>
+        <text x="1293" y="263" text-anchor="middle" class="mt">r_pair</text>
+        <text x="1293" y="279" text-anchor="middle" class="ms">[A × 3840]</text>
+        <path d="M1293 230V242" class="ml" marker-end="url(#model-arrow)"/>
+
+        <g transform="translate(0,-104)">
+        <text x="42" y="430" class="mk">UTILITY SCORING</text>
+        <rect x="28" y="444" width="982" height="1122" rx="16" class="mg"/>
+
+        <rect x="60" y="480" width="522" height="300" rx="13" class="mg"/>
+        <text x="82" y="506" class="mk">TOKEN FEATURE FUSION</text>
+
+        <polygon points="92,536 294,536 280,594 106,594" class="mlin"/>
+        <text x="193" y="560" text-anchor="middle" class="mt">Linear</text>
+        <text x="193" y="579" text-anchor="middle" class="ms">H_doc 768 → 768</text>
+        <path d="M988 228V402H193V532" class="mld" marker-end="url(#model-arrow)"/>
+
+        <rect x="78" y="634" width="132" height="52" rx="7" class="mem"/>
+        <text x="144" y="655" text-anchor="middle" class="mt">E_role</text>
+        <text x="144" y="673" text-anchor="middle" class="ms">3 × 768</text>
+        <rect x="226" y="634" width="142" height="52" rx="7" class="mem"/>
+        <text x="297" y="655" text-anchor="middle" class="mt">E_relative</text>
+        <text x="297" y="673" text-anchor="middle" class="ms">17 × 768</text>
+        <rect x="384" y="634" width="166" height="52" rx="7" class="mem"/>
+        <text x="467" y="655" text-anchor="middle" class="mt">E_doc-position</text>
+        <text x="467" y="673" text-anchor="middle" class="ms">16 × 768</text>
+
+        <circle cx="321" cy="724" r="25" class="min"/>
+        <text x="321" y="730" text-anchor="middle" class="mt">+</text>
+        <path d="M193 594V612C193 620 287 682 308 700" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M144 686V700C144 708 274 710 292 717" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M297 686V696" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M467 686V700C467 708 368 710 350 717" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="392" y="704" width="160" height="42" rx="7" class="mem"/>
+        <text x="472" y="721" text-anchor="middle" class="mt">Augmented tokens</text>
+        <text x="472" y="738" text-anchor="middle" class="ms">H_doc + M_j</text>
+        <path d="M346 724H388" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="694,490 914,490 899,550 709,550" class="mlin"/>
+        <text x="804" y="515" text-anchor="middle" class="mt">Utility projection</text>
+        <text x="804" y="535" text-anchor="middle" class="ms">Linear 3840 → 768</text>
+        <path d="M1293 390V402H804V486" class="mld" marker-end="url(#model-arrow)"/>
+
+        <rect x="734" y="570" width="140" height="44" rx="7" class="mem"/>
+        <text x="804" y="588" text-anchor="middle" class="mt">r_U</text>
+        <text x="804" y="605" text-anchor="middle" class="ms">[A × 768]</text>
+        <path d="M804 550V566" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="694,648 914,648 899,706 709,706" class="mlin"/>
+        <text x="804" y="672" text-anchor="middle" class="mt">Query projection</text>
+        <text x="804" y="692" text-anchor="middle" class="ms">Linear 768 → 768</text>
+        <path d="M804 614V644" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="92" y="828" width="224" height="72" rx="8" class="matt"/>
+        <text x="204" y="854" text-anchor="middle" class="mt">Target attention</text>
+        <text x="204" y="875" text-anchor="middle" class="ms">MHA · 8 heads</text>
+        <text x="204" y="891" text-anchor="middle" class="ms">occurrence summaries + E_occ-pos</text>
+        <rect x="350" y="828" width="224" height="72" rx="8" class="matt"/>
+        <text x="462" y="854" text-anchor="middle" class="mt">Local attention</text>
+        <text x="462" y="875" text-anchor="middle" class="ms">MHA · 8 heads</text>
+        <text x="462" y="891" text-anchor="middle" class="ms">target-containing chunks</text>
+        <rect x="608" y="828" width="224" height="72" rx="8" class="matt"/>
+        <text x="720" y="854" text-anchor="middle" class="mt">Global attention</text>
+        <text x="720" y="875" text-anchor="middle" class="ms">MHA · 8 heads</text>
+        <text x="720" y="891" text-anchor="middle" class="ms">complete token bank</text>
+
+        <path d="M472 746V790H204V824" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M472 746V790H462V824" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M472 746V790H720V824" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M804 706V802H204V824" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M804 706V802H462V824" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M804 706V802H720V824" class="ml" marker-end="url(#model-arrow)"/>
+
+        <circle cx="462" cy="948" r="25" class="min"/>
+        <text x="462" y="953" text-anchor="middle" class="mt">⊕</text>
+        <path d="M204 900V928H437" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M462 900V919" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M720 900V928H487" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="352,998 572,998 557,1056 367,1056" class="mlin"/>
+        <text x="462" y="1022" text-anchor="middle" class="mt">Context projection</text>
+        <text x="462" y="1042" text-anchor="middle" class="ms">Linear 2304 → 768</text>
+        <path d="M462 973V994" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="392" y="1074" width="140" height="44" rx="7" class="mem"/>
+        <text x="462" y="1092" text-anchor="middle" class="mt">c_context</text>
+        <text x="462" y="1109" text-anchor="middle" class="ms">[A × 768]</text>
+        <path d="M462 1056V1070" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="60" y="1142" width="892" height="194" rx="13" class="mg"/>
+        <text x="82" y="1168" class="mk">SELECTED-ACTION MEMORY</text>
+
+        <rect x="82" y="1190" width="220" height="58" rx="6" class="min"/>
+        <text x="192" y="1213" text-anchor="middle" class="mt">Earlier selections</text>
+        <text x="192" y="1233" text-anchor="middle" class="ms">r_U + mode/type/position embeddings</text>
+
+        <polygon points="326,1190 526,1190 512,1248 340,1248" class="mlin"/>
+        <text x="426" y="1214" text-anchor="middle" class="mt">Memory KV</text>
+        <text x="426" y="1234" text-anchor="middle" class="ms">Linear 3072 → 768</text>
+        <path d="M302 1219H322" class="ml" marker-end="url(#model-arrow)"/>
+
+        <circle cx="662" cy="1198" r="22" class="min"/>
+        <text x="662" y="1203" text-anchor="middle" class="mt">⊕</text>
+        <text x="662" y="1173" text-anchor="middle" class="ms">[r_U ; c]</text>
+        <path d="M804 614V1130C804 1150 706 1158 680 1182" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M532 1096H604C630 1096 642 1150 654 1174" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="702,1190 902,1190 888,1248 716,1248" class="mlin"/>
+        <text x="802" y="1214" text-anchor="middle" class="mt">Memory query</text>
+        <text x="802" y="1234" text-anchor="middle" class="ms">Linear 1536 → 768</text>
+        <path d="M684 1198H698" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="326" y="1268" width="576" height="54" rx="8" class="matt"/>
+        <text x="614" y="1290" text-anchor="middle" class="mt">Selected-action cross-attention</text>
+        <text x="614" y="1310" text-anchor="middle" class="ms">MHA · 8 heads · output h_hist [A × 768]</text>
+        <path d="M426 1248V1264" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M802 1248V1264" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="76" y="1372" width="150" height="48" rx="7" class="mem"/>
+        <text x="151" y="1392" text-anchor="middle" class="mt">E_mode</text>
+        <text x="151" y="1409" text-anchor="middle" class="ms">3 × 768</text>
+        <rect x="244" y="1372" width="170" height="48" rx="7" class="mem"/>
+        <text x="329" y="1392" text-anchor="middle" class="mt">E_runtime-type</text>
+        <text x="329" y="1409" text-anchor="middle" class="ms">N_type × 768</text>
+
+        <circle cx="488" cy="1396" r="22" class="min"/>
+        <text x="488" y="1401" text-anchor="middle" class="mt">⊙</text>
+        <text x="488" y="1362" text-anchor="middle" class="ms">r_U × Linear(c)</text>
+        <path d="M462 1118V1340C462 1352 478 1364 483 1371" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="548" y="1368" width="216" height="56" rx="6" class="min"/>
+        <text x="656" y="1391" text-anchor="middle" class="mt">Feature concat</text>
+        <text x="656" y="1411" text-anchor="middle" class="ms">6 fields · [A × 4608]</text>
+        <path d="M226 1396H544" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M414 1396H544" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M510 1396H544" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M614 1322V1364" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M804 614V1352C804 1364 748 1358 720 1366" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="790" y="1354" width="180" height="186" rx="12" class="mg"/>
+        <text x="810" y="1378" class="mk">UTILITY MLP</text>
+        <polygon points="816,1394 944,1394 934,1438 826,1438" class="mlin"/>
+        <text x="880" y="1421" text-anchor="middle" class="mt">4608 → 768</text>
+        <polygon points="842,1452 918,1452 904,1492 856,1492" class="mact"/>
+        <text x="880" y="1477" text-anchor="middle" class="mt">GELU</text>
+        <polygon points="816,1506 944,1506 934,1536 826,1536" class="mlin"/>
+        <text x="880" y="1527" text-anchor="middle" class="mt">768 → 1</text>
+        <path d="M764 1396H786" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M880 1438V1448" class="ml" marker-end="url(#model-arrow)"/>
+        <path d="M880 1492V1502" class="ml" marker-end="url(#model-arrow)"/>
+
+        <text x="1048" y="430" class="mk">SEMANTIC PRIVACY ESTIMATION</text>
+        <rect x="1038" y="444" width="414" height="844" rx="16" class="mg"/>
+
+        <rect x="1072" y="486" width="168" height="48" rx="7" class="mem"/>
+        <text x="1156" y="506" text-anchor="middle" class="mt">count-basis token</text>
+        <text x="1156" y="523" text-anchor="middle" class="ms">optional categorical B</text>
+
+        <circle cx="1294" cy="566" r="24" class="min"/>
+        <text x="1294" y="571" text-anchor="middle" class="mt">⊕</text>
+        <text x="1294" y="531" text-anchor="middle" class="ms">[r_pair ; B]</text>
+        <path d="M1293 390H1422V566H1322" class="mld" marker-end="url(#model-arrow)"/>
+        <path d="M1156 534V552H1266" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="1100,624 1388,624 1372,684 1116,684" class="mlin"/>
+        <text x="1244" y="649" text-anchor="middle" class="mt">Privacy projection</text>
+        <text x="1244" y="669" text-anchor="middle" class="ms">Linear (3840 + B) → 256</text>
+        <path d="M1294 590V608C1294 616 1258 614 1248 620" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="1120,720 1368,720 1354,776 1134,776" class="mlin"/>
+        <text x="1244" y="744" text-anchor="middle" class="mt">Hidden projection</text>
+        <text x="1244" y="764" text-anchor="middle" class="ms">Linear 256 → 256</text>
+        <path d="M1244 684V716" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="1198,808 1290,808 1274,852 1214,852" class="mact"/>
+        <text x="1244" y="835" text-anchor="middle" class="mt">GELU</text>
+        <path d="M1244 776V804" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="1120,886 1368,886 1354,942 1134,942" class="mlin"/>
+        <text x="1244" y="910" text-anchor="middle" class="mt">Distribution projection</text>
+        <text x="1244" y="930" text-anchor="middle" class="ms">Linear 256 → 2</text>
+        <path d="M1244 852V882" class="ml" marker-end="url(#model-arrow)"/>
+
+        <polygon points="1120,976 1368,976 1352,1034 1136,1034" class="mact"/>
+        <text x="1244" y="999" text-anchor="middle" class="mt">Softplus</text>
+        <text x="1244" y="1019" text-anchor="middle" class="ms">positive mu_logK and sigma_logK</text>
+        <path d="M1244 942V972" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="1120" y="1068" width="248" height="72" rx="7" class="mem"/>
+        <text x="1244" y="1093" text-anchor="middle" class="mt">Log-count distribution</text>
+        <text x="1244" y="1114" text-anchor="middle" class="ms">mu_logK · sigma_logK</text>
+        <text x="1244" y="1132" text-anchor="middle" class="ms">sigma retained for audit</text>
+        <path d="M1244 1034V1064" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="1102" y="1170" width="284" height="74" class="mnorm"/>
+        <text x="1244" y="1195" text-anchor="middle" class="mt">Profile-menu normalization</text>
+        <text x="1244" y="1216" text-anchor="middle" class="ms">mu / max(level mu)</text>
+        <text x="1244" y="1235" text-anchor="middle" class="ms">KEEP = 0 · placeholder = 1</text>
+        <path d="M1244 1140V1166" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="1174" y="1270" width="140" height="44" rx="7" class="mem"/>
+        <text x="1244" y="1290" text-anchor="middle" class="mt">p_hat(a)</text>
+        <text x="1244" y="1307" text-anchor="middle" class="ms">profile-relative</text>
+        <path d="M1244 1244V1266" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="814" y="1578" width="132" height="44" rx="7" class="mem"/>
+        <text x="880" y="1597" text-anchor="middle" class="mt">u(a)</text>
+        <text x="880" y="1614" text-anchor="middle" class="ms">utility logit</text>
+        <path d="M880 1536V1574" class="ml" marker-end="url(#model-arrow)"/>
+
+        <text x="42" y="1642" class="mk">ADDITIVE LAMBDA CONTROLLER</text>
+        <rect x="28" y="1656" width="1424" height="238" rx="16" class="mg"/>
+
+        <circle cx="742" cy="1734" r="32" class="min"/>
+        <text x="742" y="1729" text-anchor="middle" class="mt">+</text>
+        <text x="742" y="1747" text-anchor="middle" class="ms">combined z</text>
+
+        <path d="M880 1622V1680C880 1700 792 1695 765 1715" class="ml" marker-end="url(#model-arrow)"/>
+        <text x="820" y="1688" text-anchor="middle" class="ms">u(a)</text>
+
+        <path d="M1244 1314V1608C1244 1630 1318 1636 1318 1678H804C782 1678 773 1695 760 1711" class="mlb" marker-end="url(#model-arrow)"/>
+        <text x="1190" y="1659" text-anchor="middle" class="ms">privacy bias</text>
+
+        <circle cx="1190" cy="1678" r="23" class="mctl"/>
+        <text x="1190" y="1683" text-anchor="middle" class="mt">p̂</text>
+        <circle cx="1056" cy="1678" r="23" class="mctl"/>
+        <text x="1056" y="1683" text-anchor="middle" class="mt">g(λ)</text>
+        <circle cx="922" cy="1678" r="23" class="mctl"/>
+        <text x="922" y="1684" text-anchor="middle" style="fill:#a06079;font:600 18px Georgia,serif">α</text>
+        <text x="922" y="1717" text-anchor="middle" class="ms">softplus(alpha_raw)</text>
+        <text x="1056" y="1717" text-anchor="middle" class="ms">fixed lambda transform</text>
+        <text x="1122" y="1742" text-anchor="middle" class="ms">b(a,lambda) = alpha · g(lambda) · p_hat(a)</text>
+
+        <rect x="650" y="1792" width="184" height="46" rx="6" class="min"/>
+        <text x="742" y="1820" text-anchor="middle" class="mt">Legal-action gather</text>
+        <path d="M742 1766V1788" class="ml" marker-end="url(#model-arrow)"/>
+
+        <rect x="662" y="1856" width="160" height="46" class="mnorm"/>
+        <text x="742" y="1884" text-anchor="middle" class="mt">log_softmax</text>
+        <path d="M742 1838V1852" class="ml" marker-end="url(#model-arrow)"/>
+
+        <text x="742" y="1924" text-anchor="middle" class="mt">pi(a | s, lambda)</text>
+        <path d="M742 1902V1910" class="ml" marker-end="url(#model-arrow)"/>
+        </g>
+      </svg>
+    </div>
+
+    <p class="lede">The implemented policy is a shallow, factorized attention model over frozen 768-dimensional clinical representations, not a Transformer stack.</p>
+    <div class="prose">
+      <p>The current trainer fixes <code>relation_dim = context_dim = history_dim = utility_hidden_dim = 768</code>, uses eight attention heads, and sets dropout to zero. The ordered relation vector concatenates type, source, candidate, signed difference, and elementwise product fields, so <code>pair_dim = 3840</code>. The semantic privacy checkpoint controls its own projection widths; the current training CLI defaults both to 256.</p>
+      <p><strong>Context readout.</strong> The document projection is summed with role, signed relative-position, and document-position embeddings. A candidate query drives three independent <code>nn.MultiheadAttention</code> modules over occurrence summaries, target-containing tokens, and every source token. Their outputs concatenate and project back to 768 dimensions.</p>
+      <p><strong>Selected-action memory.</strong> Each earlier selected decision becomes one 768-wide key/value row. The current candidate's relation and document context form the query. One eight-head cross-attention layer returns a candidate-specific history vector. Empty memory returns an exact zero vector.</p>
+      <p><strong>Normalization.</strong> The current model has no <code>LayerNorm</code>, batch normalization, or residual MLP blocks. The only normalizations are semantic profile-menu normalization of predicted log counts and the final legal-action <code>log_softmax</code>.</p>
+      <p><strong>Controller parameters.</strong> The trainable scalar <code>alpha = softplus(alpha_raw)</code> scales the fixed <code>g(lambda)</code> transform on the deployed privacy-bias path. By contrast, <code>gamma</code> weights profile-relative Huber calibration only while pretraining the privacy head. It is absent from policy inference and hybrid-RL logits.</p>
+    </div>
+  </section>
+
+
+  <section id="preliminaries">
+    <header class="section-head">
+      <div class="section-num">§03</div><h2 class="section-title">Preliminaries</h2>
+      <div class="section-meta">objects · scores · causal scope</div>
+    </header>
+    <table class="spec spec--wide">
+      <thead><tr><th style="width:22%">term</th><th>definition</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Occurrence</strong></td><td>One frozen detector output at one document offset. Occurrences preserve evidence and routing identity.</td></tr>
+        <tr><td><strong>Policy decision</strong></td><td>One action for all occurrences sharing document, runtime type, and normalized canonical profile or surface.</td></tr>
+        <tr><td><strong>Legal action</strong></td><td>KEEP, one truthful lattice level, or placeholder after dynamic injectivity masking.</td></tr>
+        <tr><td><strong>Utility logit <code>u</code></strong></td><td>Candidate-conditioned judgment of whether an action preserves task-relevant document meaning.</td></tr>
+        <tr><td><strong>Predicted privacy <code>p_hat</code></strong></td><td>Profile-relative normalization of the semantic privacy head's predicted log-count mean. It is a deployed control signal, not a privacy guarantee.</td></tr>
+        <tr><td><strong>Exact target <code>p</code></strong></td><td>Frozen profile-relative score computed from admitted <code>level_counts</code>. It is training supervision and a diagnostic, never an actor feature.</td></tr>
+        <tr><td><strong>Lambda</strong></td><td>One user-selected operating preference held fixed for a complete document episode and its rollout group.</td></tr>
+        <tr><td><strong>Assertion</strong></td><td>A QA-builder v2 context or delivered-utility measurement with a stable ID, weight, and dependency routing.</td></tr>
+        <tr><td><strong>Counterfactual</strong></td><td>A complete round-trip rerun after changing exactly one policy decision across all of its occurrences.</td></tr>
+      </tbody>
+    </table>
+    <div class="two-col">
+      <div>
+        <h4>Decision scope</h4>
+        <ul>
+          <li>Detector spans remain occurrence-level evidence.</li>
+          <li>Actions and policy gradients are decision-level.</li>
+          <li>Repeated occurrences share one selected action.</li>
+          <li>First occurrence fixes deterministic walk order.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Reward scope</h4>
+        <ul>
+          <li>Utility is a document outcome.</li>
+          <li>Assertion links route cheap provisional credit.</li>
+          <li>Counterfactuals supply local causal correction.</li>
+          <li>Count value is analytic per legal action.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+
+  <section id="architecture">
+    <header class="section-head">
+      <div class="section-num">§04</div><h2 class="section-title">Training Architecture</h2>
+      <div class="section-meta">frozen semantics · trainable readout · explicit control</div>
+    </header>
+    <div class="prose">
+      <p>The same pinned clinical encoder serves two cached paths. The document path encodes every source token in overlapping chunks. The relation path jointly encodes runtime type, source surface, and candidate wording. Frozen shared computation is followed by separate trainable utility and privacy projections, so branch-specific supervision cannot modify the other branch.</p>
+    </div>
+
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · T1: Training-time semantic and gradient separation</span>
+        <span>green = frozen · blue = utility · red = privacy · rose = lambda control</span>
+      </div>
+      <svg viewBox="0 0 1180 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc" style="display:block;width:100%;height:auto;background:transparent">
+        <title id="arch-title">Interactive Ranker v2 model architecture</title>
+        <desc id="arch-desc">A frozen BioClinical ModernBERT encoder creates a complete document token bank and an ordered source-to-candidate relation. Trainable candidate-conditioned attention and selected-action memory produce a utility logit. A separate semantic privacy head predicts a log-count distribution. An explicit lambda controller adds predicted privacy to utility before legal masking and softmax.</desc>
+        <defs>
+          <marker id="arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
+          <style>
+            .ab{fill:#f8f7f3;stroke:#747980;stroke-width:1.4;stroke-dasharray:7 6}
+            .am{fill:#f2f0eb;stroke:#34393e;stroke-width:1.4}
+            .af{fill:#d9e7de;stroke:#496454;stroke-width:1.4}
+            .au{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.4}
+            .ap{fill:#f1ddda;stroke:#9a5c54;stroke-width:1.4}
+            .ac{fill:#eee8ef;stroke:#7a5e76;stroke-width:1.4}
+            .at{fill:#1c2024;font:500 15px 'JetBrains Mono',monospace}
+            .as{fill:#62686e;font:400 11px 'JetBrains Mono',monospace}
+            .ak{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.6px}
+            .al{fill:none;stroke:#34393e;stroke-width:1.5}
+            .alu{fill:none;stroke:#3d6f9d;stroke-width:1.8}
+            .alp{fill:none;stroke:#ad665e;stroke-width:1.8}
+            .ald{fill:none;stroke:#777c82;stroke-width:1.2;stroke-dasharray:4 4}
+          </style>
+        </defs>
+        <rect width="1180" height="760" fill="transparent"/>
+
+        <text x="28" y="34" class="ak">FROZEN SEMANTIC COMPUTE</text>
+        <rect x="20" y="48" width="655" height="334" rx="16" class="ab"/>
+
+        <rect x="42" y="83" width="112" height="50" rx="6" class="am"/>
+        <text x="98" y="104" text-anchor="middle" class="at">doc_orig</text>
+        <text x="98" y="120" text-anchor="middle" class="as">complete source</text>
+
+        <rect x="188" y="78" width="154" height="60" rx="6" class="am"/>
+        <text x="265" y="101" text-anchor="middle" class="at">512-token chunks</text>
+        <text x="265" y="119" text-anchor="middle" class="as">64-token overlap</text>
+
+        <rect x="378" y="70" width="188" height="76" rx="7" class="af"/>
+        <text x="472" y="96" text-anchor="middle" class="at">BioClinical</text>
+        <text x="472" y="114" text-anchor="middle" class="at">ModernBERT-base</text>
+        <text x="472" y="132" text-anchor="middle" class="as">frozen · pinned revision</text>
+
+        <rect x="594" y="78" width="60" height="60" rx="7" class="af"/>
+        <text x="624" y="101" text-anchor="middle" class="at">H_doc</text>
+        <text x="624" y="119" text-anchor="middle" class="as">token bank</text>
+
+        <rect x="42" y="224" width="190" height="114" rx="7" class="am"/>
+        <text x="137" y="248" text-anchor="middle" class="at">ordered relation</text>
+        <text x="58" y="274" class="as">[TYPE] health-condition</text>
+        <text x="58" y="294" class="as">[SOURCE] kidney transplant</text>
+        <text x="58" y="314" class="as" style="font-size:9px">[CANDIDATE] organ transplant</text>
+
+        <rect x="270" y="232" width="184" height="96" rx="7" class="af"/>
+        <text x="362" y="258" text-anchor="middle" class="at">shared pair encoder</text>
+        <text x="362" y="279" text-anchor="middle" class="as">field-aware means</text>
+        <text x="362" y="298" text-anchor="middle" class="as">difference + product</text>
+        <text x="362" y="316" text-anchor="middle" class="as">same frozen checkpoint</text>
+
+        <rect x="492" y="250" width="86" height="60" rx="7" class="af"/>
+        <text x="535" y="276" text-anchor="middle" class="at">r_pair</text>
+        <text x="535" y="295" text-anchor="middle" class="as">fixed relation</text>
+
+        <rect x="604" y="224" width="50" height="42" rx="6" class="au"/>
+        <text x="629" y="250" text-anchor="middle" class="at">r_U</text>
+        <rect x="604" y="294" width="50" height="42" rx="6" class="ap"/>
+        <text x="629" y="320" text-anchor="middle" class="at">r_P</text>
+
+        <path d="M154 108H184" class="al" marker-end="url(#arch-arrow)"/>
+        <path d="M342 108H374" class="al" marker-end="url(#arch-arrow)"/>
+        <path d="M566 108H590" class="al" marker-end="url(#arch-arrow)"/>
+        <path d="M232 281H266" class="al" marker-end="url(#arch-arrow)"/>
+        <path d="M454 280H488" class="al" marker-end="url(#arch-arrow)"/>
+        <path d="M578 272C592 272 590 245 600 245" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M578 288C592 288 590 315 600 315" class="alp" marker-end="url(#arch-arrow)"/>
+
+        <text x="706" y="34" class="ak">TRAINABLE UTILITY PATH</text>
+        <rect x="696" y="48" width="464" height="334" rx="16" class="ab"/>
+
+        <rect x="720" y="78" width="164" height="70" rx="7" class="au"/>
+        <text x="802" y="102" text-anchor="middle" class="at">target attention</text>
+        <text x="802" y="120" text-anchor="middle" class="as">all mapped occurrences</text>
+        <text x="802" y="137" text-anchor="middle" class="as">source positions retained</text>
+
+        <rect x="720" y="166" width="164" height="70" rx="7" class="au"/>
+        <text x="802" y="190" text-anchor="middle" class="at">local attention</text>
+        <text x="802" y="208" text-anchor="middle" class="as">target chunks</text>
+        <text x="802" y="225" text-anchor="middle" class="as">candidate query</text>
+
+        <rect x="720" y="254" width="164" height="70" rx="7" class="au"/>
+        <text x="802" y="278" text-anchor="middle" class="at">global attention</text>
+        <text x="802" y="296" text-anchor="middle" class="as">complete H_doc</text>
+        <text x="802" y="313" text-anchor="middle" class="as">candidate query</text>
+
+        <rect x="916" y="110" width="202" height="66" rx="7" class="au"/>
+        <text x="1017" y="136" text-anchor="middle" class="at">context projection</text>
+        <text x="1017" y="156" text-anchor="middle" class="as">target + local + global</text>
+
+        <rect x="916" y="212" width="202" height="66" rx="7" class="au"/>
+        <text x="1017" y="238" text-anchor="middle" class="at">selected-action memory</text>
+        <text x="1017" y="258" text-anchor="middle" class="as">one cross-attention block</text>
+
+        <rect x="916" y="306" width="202" height="52" rx="7" class="au"/>
+        <text x="1017" y="329" text-anchor="middle" class="at">utility tower</text>
+        <text x="1017" y="347" text-anchor="middle" class="as">u_theta(h, a)</text>
+
+        <path d="M654 108C680 108 686 113 716 113" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M654 108C680 108 686 201 716 201" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M654 108C680 108 686 289 716 289" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M654 245C686 245 688 113 716 113" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M654 245C684 245 688 225 716 225" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M654 245C686 245 688 289 716 289" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M884 113C900 113 900 130 912 143" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M884 201H906C916 201 916 176 916 160" class="alu"/>
+        <path d="M884 289H902C912 289 912 176 916 160" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M1017 176V208" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M1017 278V302" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M1017 176C1100 180 1136 220 1118 306" class="alu" marker-end="url(#arch-arrow)"/>
+
+        <text x="28" y="420" class="ak">SEMANTIC PRIVACY + EXPLICIT CONTROLLER</text>
+        <rect x="20" y="434" width="1140" height="294" rx="16" class="ab"/>
+
+        <rect x="48" y="488" width="180" height="82" rx="7" class="ap"/>
+        <text x="138" y="514" text-anchor="middle" class="at">semantic privacy head</text>
+        <text x="138" y="534" text-anchor="middle" class="as">source → candidate</text>
+        <text x="138" y="552" text-anchor="middle" class="as">mu_logK · sigma_logK</text>
+
+        <rect x="270" y="488" width="188" height="82" rx="7" class="ap"/>
+        <text x="364" y="514" text-anchor="middle" class="at">profile normalization</text>
+        <text x="364" y="534" text-anchor="middle" class="as">mu / max menu mu</text>
+        <text x="364" y="552" text-anchor="middle" class="as">KEEP 0 · placeholder 1</text>
+
+        <rect x="48" y="626" width="180" height="54" rx="7" class="am"/>
+        <text x="138" y="649" text-anchor="middle" class="at">exact level_counts</text>
+        <text x="138" y="667" text-anchor="middle" class="as">training target only</text>
+
+        <circle cx="630" cy="545" r="36" class="ac"/>
+        <text x="630" y="540" text-anchor="middle" class="at">+</text>
+        <text x="630" y="559" text-anchor="middle" class="as">logit sum</text>
+
+        <rect x="482" y="630" width="156" height="50" rx="7" class="ac"/>
+        <text x="560" y="651" text-anchor="middle" class="at">lambda profile</text>
+        <text x="560" y="669" text-anchor="middle" class="as">fixed g(lambda)</text>
+
+        <rect x="680" y="630" width="132" height="50" rx="7" class="ac"/>
+        <text x="746" y="651" text-anchor="middle" class="at">alpha ≥ 0</text>
+        <text x="746" y="669" text-anchor="middle" class="as">one global scale</text>
+
+        <rect x="856" y="508" width="96" height="72" rx="7" class="ac"/>
+        <text x="904" y="533" text-anchor="middle" class="at">z(a,lambda)</text>
+        <text x="904" y="553" text-anchor="middle" class="as">combined</text>
+        <text x="904" y="570" text-anchor="middle" class="as">action logit</text>
+
+        <rect x="984" y="508" width="84" height="72" rx="7" class="am"/>
+        <text x="1026" y="533" text-anchor="middle" class="at">legal</text>
+        <text x="1026" y="553" text-anchor="middle" class="as">dynamic</text>
+        <text x="1026" y="570" text-anchor="middle" class="as">mask</text>
+
+        <rect x="1092" y="508" width="48" height="72" rx="7" class="am"/>
+        <text x="1116" y="539" text-anchor="middle" class="at">pi</text>
+        <text x="1116" y="558" text-anchor="middle" class="as">soft</text>
+        <text x="1116" y="574" text-anchor="middle" class="as">max</text>
+
+        <path d="M629 336C629 398 150 398 138 484" class="alp" marker-end="url(#arch-arrow)"/>
+        <path d="M228 529H266" class="alp" marker-end="url(#arch-arrow)"/>
+        <path d="M458 529C530 529 548 545 590 545" class="alp" marker-end="url(#arch-arrow)"/>
+        <path d="M1017 358C1017 412 666 402 646 515" class="alu" marker-end="url(#arch-arrow)"/>
+        <path d="M638 655H676" class="alp" marker-end="url(#arch-arrow)"/>
+        <path d="M746 630C746 590 688 564 664 554" class="alp" marker-end="url(#arch-arrow)"/>
+        <path d="M666 545H852" class="alp" marker-end="url(#arch-arrow)"/>
+        <path d="M952 544H980" class="al" marker-end="url(#arch-arrow)"/>
+        <path d="M1068 544H1088" class="al" marker-end="url(#arch-arrow)"/>
+        <path d="M138 626V574" class="ald" marker-end="url(#arch-arrow)"/>
+        <text x="148" y="605" class="as">pretrain</text>
+        <path d="M228 653C350 653 395 702 746 680" class="ald" marker-end="url(#arch-arrow)"/>
+
+        <text x="270" y="600" class="as">predicted privacy shapes deployed odds</text>
+        <text x="48" y="708" class="as">dashed supervision: exact counts update alpha only during hybrid RL; they never enter the actor</text>
+      </svg>
+    </div>
+
+    <div class="prose">
+      <p><strong>Complete document observability.</strong> The frozen encoder is <code>thomas-sounack/BioClinical-ModernBERT-base</code> at revision <code>c3648aa87af95837c809e6f0c5f85d08160db437</code>, with hidden size 768 and remote model code disabled. It processes the entire document in 512-token inputs with 64 source-token overlap and no silent truncation. Target markers distinguish the current decision, other controlled occurrences, ordinary tokens, relative target distance, and source position. Candidate queries retrieve target, local, repeated-occurrence, and long-range evidence from the cached token bank.</p>
+      <p><strong>Candidate semantics.</strong> The pair input is ordered as type, source, then candidate. Field means, signed candidate-minus-source features, and elementwise products preserve both shared meaning and abstraction direction. KEEP and placeholder traverse the same relation path as lattice levels.</p>
+      <p><strong>Action history.</strong> Earlier selected decisions become count-blind utility-memory rows. Each current candidate queries this memory through one cross-attention block. There is no GRU, no selection-step embedding, and no future-action visibility. Empty history returns exactly zero.</p>
+    </div>
+  </section>
+
+  <section id="controller">
+    <header class="section-head">
+      <div class="section-num">§05</div><h2 class="section-title">Privacy Signal and Controller</h2>
+      <div class="section-meta">log-count prediction · profile scale · lambda</div>
+    </header>
+    <div class="prose">
+      <p>The privacy head predicts a distribution over log count for each lattice level. Approximate magnitude remains auditable, but only the predicted mean after profile-menu normalization enters the policy. KEEP and placeholder are fixed endpoints.</p>
+    </div>
+    <table class="spec spec--wide">
+      <thead><tr><th>quantity</th><th>definition</th><th>policy role</th></tr></thead>
+      <tbody>
+        <tr><td><code>mu_logK(a)</code></td><td><code>softplus(mu_raw(a))</code></td><td>Predicted log-count mean.</td></tr>
+        <tr><td><code>sigma_logK(a)</code></td><td><code>sigma_min + softplus(sigma_raw(a))</code></td><td>Audit, calibration, and abstention diagnostic only.</td></tr>
+        <tr><td><code>p_hat(a)</code></td><td><code>clip(mu_logK(a) / max_b mu_logK(b), 0, 1)</code></td><td>Predicted profile-relative privacy progress used in deployed logits.</td></tr>
+        <tr><td><code>p(a)</code></td><td><code>clip(log K(a) / max_b log K(b), 0, 1)</code></td><td>Exact target from admitted own-profile counts. Training and diagnostics only.</td></tr>
+        <tr><td><code>g(lambda)</code></td><td><code>log1p(lambda) / log1p(max Lambda)</code></td><td>Fixed strength for one supported operating profile.</td></tr>
+      </tbody>
+    </table>
+    <div class="two-col">
+      <div>
+        <h4>Combined logit</h4>
+        <p><code>z(a, lambda) = u(a) + alpha · g(lambda) · p_hat(a)</code></p>
+        <p><code>alpha = softplus(alpha_raw)</code></p>
+        <p>After the dynamic legal mask, softmax converts <code>z</code> into the action distribution.</p>
+      </div>
+      <div>
+        <h4>How privacy changes selection</h4>
+        <p><code>log pi(a)/pi(b) = u(a)-u(b) + alpha·g(lambda)·(p_hat(a)-p_hat(b))</code></p>
+        <p>At lambda zero, privacy contributes exactly zero. At larger lambda, a candidate needs enough predicted privacy gain to overcome any utility disadvantage.</p>
+      </div>
+    </div>
+    <div class="prose">
+      <p><strong>Why the head is pretrained.</strong> Profile-held-out count supervision forces the head to learn source-to-candidate abstraction before policy optimization. It must beat authored position, action mode and type, stable identity, and candidate-only baselines. The validated head is frozen during hybrid RL so the policy cannot bend <code>p_hat</code> into an uncalibrated preference.</p>
+      <p><strong>Privacy pretraining loss.</strong> <code>L_privacy = L_logcount_nll + rho · L_pairwise_rank + gamma · L_huber(p_hat, p)</code>. The likelihood preserves approximate count magnitude and uncertainty, the pairwise term checks ordering within a profile menu, and the Huber term calibrates the score consumed by the controller.</p>
+      <p><strong>What exact counts do.</strong> Exact <code>level_counts</code> do not select actions directly and do not update the utility tower. They evaluate the current privacy contribution over the complete legal menu and update only the global scale <code>alpha</code>. Utility gradients oppose unbounded privacy pressure and also reach <code>alpha</code>, allowing one scalar to settle the useful range of the finite lambda menu.</p>
+    </div>
+  </section>
+
+  <section id="rl-process">
+    <header class="section-head">
+      <div class="section-num">§06</div><h2 class="section-title">Reinforcement Learning Process</h2>
+      <div class="section-meta">freeze · initialize · sample · measure · correct</div>
+    </header>
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · T2: Training process and reward flow</span>
+        <span>solid = rollout data · dashed = supervision or gradient ownership</span>
+      </div>
+      <svg viewBox="0 0 1180 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rl-title rl-desc" style="display:block;width:100%;height:auto;background:transparent">
+        <title id="rl-title">Interactive Ranker v2 reinforcement learning process</title>
+        <desc id="rl-desc">The process freezes detector, utility, count, and remote environment artifacts; pretrains and freezes the semantic privacy head; initializes utility at lambda zero; then runs balanced lambda-conditioned rollout groups. Complete round trips produce assertion vectors for provisional RLOO credit and sparse one-decision counterfactual correction. Exact count targets update only the controller scale.</desc>
+        <defs>
+          <marker id="rl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
+          <style>
+            .rb{fill:#f8f7f3;stroke:#747980;stroke-width:1.4;stroke-dasharray:7 6}
+            .rm{fill:#f2f0eb;stroke:#34393e;stroke-width:1.4}
+            .rf{fill:#d9e7de;stroke:#496454;stroke-width:1.4}
+            .ru{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.4}
+            .rp{fill:#f1ddda;stroke:#9a5c54;stroke-width:1.4}
+            .rc{fill:#e9e1ed;stroke:#765e82;stroke-width:1.4}
+            .rt{fill:#1c2024;font:500 14px 'JetBrains Mono',monospace}
+            .rs{fill:#62686e;font:400 10.5px 'JetBrains Mono',monospace}
+            .rk{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.6px}
+            .rl{fill:none;stroke:#34393e;stroke-width:1.45}
+            .rlu{fill:none;stroke:#3d6f9d;stroke-width:1.75}
+            .rlp{fill:none;stroke:#ad665e;stroke-width:1.75}
+            .rlc{fill:none;stroke:#765e82;stroke-width:1.75}
+            .rld{fill:none;stroke:#777c82;stroke-width:1.2;stroke-dasharray:4 4}
+          </style>
+        </defs>
+        <rect width="1180" height="800" fill="transparent"/>
+
+        <text x="28" y="32" class="rk">01 · FREEZE THE ENVIRONMENT</text>
+        <rect x="20" y="46" width="1140" height="154" rx="16" class="rb"/>
+        <rect x="44" y="82" width="200" height="78" rx="7" class="rf"/>
+        <text x="144" y="107" text-anchor="middle" class="rt">detector artifact</text>
+        <text x="144" y="127" text-anchor="middle" class="rs">occurrences → decisions</text>
+        <text x="144" y="145" text-anchor="middle" class="rs">menus · first-occurrence order</text>
+
+        <rect x="274" y="82" width="200" height="78" rx="7" class="rf"/>
+        <text x="374" y="107" text-anchor="middle" class="rt">QA assertion artifact</text>
+        <text x="374" y="127" text-anchor="middle" class="rs">context + delivered scores</text>
+        <text x="374" y="145" text-anchor="middle" class="rs">weights · dependencies · Z_d</text>
+
+        <rect x="504" y="82" width="200" height="78" rx="7" class="rf"/>
+        <text x="604" y="107" text-anchor="middle" class="rt">count artifact</text>
+        <text x="604" y="127" text-anchor="middle" class="rs">100% explicit level coverage</text>
+        <text x="604" y="145" text-anchor="middle" class="rs">provenance · monotonicity</text>
+
+        <rect x="734" y="82" width="200" height="78" rx="7" class="rf"/>
+        <text x="834" y="107" text-anchor="middle" class="rt">round-trip environment</text>
+        <text x="834" y="127" text-anchor="middle" class="rs">remote task · extractor</text>
+        <text x="834" y="145" text-anchor="middle" class="rs">reader · scorer · caches</text>
+
+        <rect x="964" y="82" width="172" height="78" rx="7" class="rf"/>
+        <text x="1050" y="107" text-anchor="middle" class="rt">lambda protocol</text>
+        <text x="1050" y="127" text-anchor="middle" class="rs">finite-menu rules</text>
+        <text x="1050" y="145" text-anchor="middle" class="rs">includes lambda = 0</text>
+
+        <text x="28" y="238" class="rk">02 · BUILD A SEMANTIC STARTING POINT</text>
+        <rect x="20" y="252" width="1140" height="152" rx="16" class="rb"/>
+        <rect x="54" y="288" width="260" height="78" rx="7" class="rp"/>
+        <text x="184" y="313" text-anchor="middle" class="rt">privacy-head pretraining</text>
+        <text x="184" y="333" text-anchor="middle" class="rs">profile-held-out log-count</text>
+        <text x="184" y="351" text-anchor="middle" class="rs">calibration + ordering → freeze</text>
+
+        <rect x="374" y="288" width="188" height="78" rx="7" class="ru"/>
+        <text x="468" y="313" text-anchor="middle" class="rt">behavior cloning</text>
+        <text x="468" y="333" text-anchor="middle" class="rs">support-preserving</text>
+        <text x="468" y="351" text-anchor="middle" class="rs">lambda-independent</text>
+
+        <rect x="622" y="288" width="236" height="78" rx="7" class="ru"/>
+        <text x="740" y="313" text-anchor="middle" class="rt">utility-only ExIt</text>
+        <text x="740" y="333" text-anchor="middle" class="rs">lambda = 0 · pure U_total</text>
+        <text x="740" y="351" text-anchor="middle" class="rs">verified winner cloning</text>
+
+        <rect x="918" y="288" width="188" height="78" rx="7" class="rm"/>
+        <text x="1012" y="313" text-anchor="middle" class="rt">calibration + menu</text>
+        <text x="1012" y="333" text-anchor="middle" class="rs">nondominated (U,P)</text>
+        <text x="1012" y="351" text-anchor="middle" class="rs">switch points → freeze values</text>
+
+        <path d="M314 327H370" class="rld" marker-end="url(#rl-arrow)"/>
+        <path d="M562 327H618" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M858 327H914" class="rl" marker-end="url(#rl-arrow)"/>
+
+        <text x="28" y="442" class="rk">03 · LAMBDA-CONDITIONED HYBRID EPISODE</text>
+        <rect x="20" y="456" width="1140" height="320" rx="16" class="rb"/>
+
+        <rect x="42" y="494" width="146" height="68" rx="7" class="rm"/>
+        <text x="115" y="518" text-anchor="middle" class="rt">choose lambda</text>
+        <text x="115" y="538" text-anchor="middle" class="rs">balanced Latin cycle</text>
+        <text x="115" y="554" text-anchor="middle" class="rs">one value per group</text>
+
+        <rect x="224" y="494" width="170" height="68" rx="7" class="ru"/>
+        <text x="309" y="518" text-anchor="middle" class="rt">sequential policy</text>
+        <text x="309" y="538" text-anchor="middle" class="rs">first-occurrence walk</text>
+        <text x="309" y="554" text-anchor="middle" class="rs">dynamic legal mask</text>
+
+        <rect x="430" y="494" width="136" height="68" rx="7" class="ru"/>
+        <text x="498" y="518" text-anchor="middle" class="rt">G rollouts</text>
+        <text x="498" y="538" text-anchor="middle" class="rs">complete action</text>
+        <text x="498" y="554" text-anchor="middle" class="rs">trajectories</text>
+
+        <rect x="602" y="486" width="208" height="84" rx="7" class="rf"/>
+        <text x="706" y="509" text-anchor="middle" class="rt">complete round trip</text>
+        <text x="706" y="530" text-anchor="middle" class="rs">doc_orig → doc_p → remote</text>
+        <text x="706" y="548" text-anchor="middle" class="rs">out_p → unperturb → out_final</text>
+        <text x="706" y="563" text-anchor="middle" class="rs">score full assertion vector</text>
+
+        <rect x="846" y="486" width="272" height="84" rx="7" class="ru"/>
+        <text x="982" y="509" text-anchor="middle" class="rt">provisional utility credit</text>
+        <text x="982" y="530" text-anchor="middle" class="rs">linked RLOO + residual RLOO</text>
+        <text x="982" y="548" text-anchor="middle" class="rs">uncovered → document fallback</text>
+        <text x="982" y="563" text-anchor="middle" class="rs">fixed Z_d · no SD normalization</text>
+
+        <path d="M188 528H220" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M394 528H426" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M566 528H598" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M810 528H842" class="rlu" marker-end="url(#rl-arrow)"/>
+
+        <rect x="42" y="632" width="214" height="94" rx="7" class="rp"/>
+        <text x="149" y="656" text-anchor="middle" class="rt">exact count objective</text>
+        <text x="149" y="677" text-anchor="middle" class="rs">full legal menu expectation</text>
+        <text x="149" y="695" text-anchor="middle" class="rs">stopgrad u + stopgrad p_hat</text>
+        <text x="149" y="713" text-anchor="middle" class="rs">gradient → alpha only</text>
+
+        <rect x="300" y="632" width="250" height="94" rx="7" class="rc"/>
+        <text x="425" y="656" text-anchor="middle" class="rt">priority counterfactual</text>
+        <text x="425" y="677" text-anchor="middle" class="rs">change one decision, all occurrences</text>
+        <text x="425" y="695" text-anchor="middle" class="rs">rerun full round trip + full vector</text>
+        <text x="425" y="713" text-anchor="middle" class="rs">adjacent first · endpoints reserved</text>
+
+        <rect x="594" y="632" width="218" height="94" rx="7" class="rc"/>
+        <text x="703" y="656" text-anchor="middle" class="rt">in-place correction</text>
+        <text x="703" y="677" text-anchor="middle" class="rs">delta_U over evaluated pair</text>
+        <text x="703" y="695" text-anchor="middle" class="rs">replace provisional 1/G term</text>
+        <text x="703" y="713" text-anchor="middle" class="rs">never add duplicate utility credit</text>
+
+        <rect x="856" y="624" width="262" height="110" rx="7" class="rm"/>
+        <text x="987" y="648" text-anchor="middle" class="rt">joint optimization</text>
+        <text x="987" y="670" text-anchor="middle" class="rs">utility / CF → utility + alpha</text>
+        <text x="987" y="688" text-anchor="middle" class="rs">exact count → alpha only</text>
+        <text x="987" y="706" text-anchor="middle" class="rs">entropy + KL regularization</text>
+        <text x="987" y="724" text-anchor="middle" class="rs">privacy head remains frozen</text>
+
+        <path d="M309 562C309 592 190 594 174 628" class="rlp" marker-end="url(#rl-arrow)"/>
+        <path d="M982 570C982 606 474 588 438 628" class="rlc" marker-end="url(#rl-arrow)"/>
+        <path d="M982 570V620" class="rlu" marker-end="url(#rl-arrow)"/>
+        <text x="992" y="600" class="rs">untested terms</text>
+        <path d="M550 679H590" class="rlc" marker-end="url(#rl-arrow)"/>
+        <path d="M812 679H852" class="rlc" marker-end="url(#rl-arrow)"/>
+        <path d="M149 726V750H987V738" class="rlp" marker-end="url(#rl-arrow)"/>
+      </svg>
+    </div>
+
+    <div class="prose">
+      <p><strong>Freeze first.</strong> The detector artifact, action menus, counts and provenance, accepted QA assertions, remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches form one versioned environment. Changing any item invalidates cached utility, lambda calibration, and trained-policy comparisons together.</p>
+      <p><strong>One lambda per episode.</strong> A seeded balanced Latin-cycle schedule gives every document every supported lambda profile over each complete block. Independent random sampling is disallowed because it can confound operating preference with corpus or type exposure.</p>
+      <p><strong>One complete round trip per measured trajectory.</strong> Context assertions are scored on <code>doc_p</code>; delivered assertions are scored on <code>out_final</code>. Both contribute to the same fixed-denominator utility vector. Counterfactuals regenerate <code>doc_p</code>, rerun the remote task and local extraction, then rescore the complete vector.</p>
+    </div>
+  </section>
+
+  <section id="credit-and-loss">
+    <header class="section-head">
+      <div class="section-num">§07</div><h2 class="section-title">Credit Assignment and Loss</h2>
+      <div class="section-meta">routing hints · RLOO · causal replacement</div>
+    </header>
+    <div class="prose">
+      <p>Document utility does not become one undifferentiated advantage. QA dependencies route cheap provisional evidence to the decisions that may matter. Sparse one-decision interventions then correct the highest-value uncertain cases.</p>
+    </div>
+    <table class="spec spec--wide">
+      <thead><tr><th>path</th><th>computation</th><th>recipient</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Linked</strong></td><td>RLOO over assertions whose unique policy dependencies contain decision <code>j</code>.</td><td>That linked decision once, even when several occurrences map to it.</td></tr>
+        <tr><td><strong>Residual</strong></td><td>RLOO over assertions with no policy dependency, including global and fixed-only effects.</td><td>Added to every decision that already has linked credit.</td></tr>
+        <tr><td><strong>Fallback</strong></td><td>RLOO over the complete assertion vector.</td><td>Only decisions with no linked assertions. Missing QA never means zero utility.</td></tr>
+        <tr><td><strong>Counterfactual</strong></td><td>Measured <code>delta_U</code> between the selected action and one legal alternative.</td><td>Replaces that decision's provisional term under the same <code>1/G</code> weighting.</td></tr>
+      </tbody>
+    </table>
+    <div class="two-col">
+      <div>
+        <h4>Utility objective</h4>
+        <p><code>U(g,Q) = sum_q w_q u_g[q] / Z_d</code></p>
+        <p><code>A[g,j] = U[g,j] - loo_mean(U[-g,j])</code></p>
+        <p>No standard-deviation normalization. A constant assertion supplies no gradient.</p>
+      </div>
+      <div>
+        <h4>Counterfactual pair</h4>
+        <p><code>q_pair = pi(a) / (pi(a) + pi(b))</code></p>
+        <p><code>L_cf = -delta_U · (q_pair - 1/2)</code></p>
+        <p>The pairwise loss favors the measured better action and is bounded as confidence grows.</p>
+      </div>
+    </div>
+    <div class="prose">
+      <p><strong>Exact count view.</strong> <code>pi_count = softmax(mask(stopgrad(u) + alpha · g(lambda) · stopgrad(p_hat)))</code>. The dense objective is the negative expected exact target over every legal action, weighted by <code>lambda / |D_d|</code> and the same rollout-group factor <code>1/G</code>. Only <code>alpha</code> receives this gradient.</p>
+      <p><strong>Overall loss.</strong> <code>L = mean_d L_utility(d) + L_count - beta · entropy + eta · KL(pi || pi_ref)</code>. Counterfactual terms replace their corresponding provisional utility terms; they are not averaged into a separate unweighted bonus.</p>
+      <p><strong>Scheduler.</strong> Counterfactual budget first covers decisions with no linked assertions, then multi-decision links and uncertain or stale measured pairs, while reserving nonzero probability for every eligible decision. Adjacent finer or coarser actions are preferred, with a pre-registered minority of KEEP and placeholder endpoint tests.</p>
+    </div>
+  </section>
+
+  <section id="training-and-gates">
+    <header class="section-head">
+      <div class="section-num">§08</div><h2 class="section-title">Training Sequence and Gates</h2>
+      <div class="section-meta">fail closed · validate shortcuts · freeze interfaces</div>
+    </header>
+    <table class="spec spec--wide">
+      <thead><tr><th style="width:18%">stage</th><th>required action</th><th>blocking evidence</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Count gate</strong></td><td>Require explicit finite counts and grounding for every trainable lattice level, with non-decreasing counts from fine to coarse.</td><td>Any missing, default, fallback, sentinel, or non-monotone level blocks the run.</td></tr>
+        <tr><td><strong>Pair-encoder spike</strong></td><td>Compare joint relation encoding against candidate-only and independent bi-encoder baselines on profile-held-out relations.</td><td>Failure on direction, hard negatives, contextual utility ranking, or unseen profiles blocks hybrid RL.</td></tr>
+        <tr><td><strong>Privacy pretraining</strong></td><td>Fit log-count likelihood, within-menu ordering, and profile-relative calibration.</td><td>Failure to beat position, type, identity, and candidate-only shortcuts rejects the semantic prototype.</td></tr>
+        <tr><td><strong>Context spike</strong></td><td>Test local, long-range, repeated-occurrence, and multi-decision utility with context and candidate swaps.</td><td>Metadata-only success or source-region invisibility blocks promotion.</td></tr>
+        <tr><td><strong>History spike</strong></td><td>Compare no history, corrected utility-only GRU, and selected-action cross-attention.</td><td>No multi-decision gain or permutation/selectivity failure removes action history.</td></tr>
+        <tr><td><strong>Lambda menu</strong></td><td>Select observed switch points from the upper convex envelope of cached <code>(U,P)</code> trajectories.</td><td>Fewer than three distinct responsive profiles stops conditional RL.</td></tr>
+        <tr><td><strong>Held-out evaluation</strong></td><td>Evaluate every supported lambda independently for utility and attacker outcomes.</td><td>Lambda-zero utility regression or count/attacker inversion rejects the relevant claim.</td></tr>
+      </tbody>
+    </table>
+    <div class="prose">
+      <p><strong>Lambda menu selection.</strong> Start at zero, then choose three to five supported values from observed per-document utility and count switch points. Values are snapped to observed thresholds and replayed. Redundant profiles are merged rather than padded with invented precision.</p>
+      <p><strong>Encoder caveat.</strong> The pinned clinical encoder saw all ACI-BENCH documents during pretraining. ACI artifacts may support development diagnostics and pipeline training, but they cannot select the encoder or establish out-of-corpus generalization. Those claims require a non-ACI clinical validation corpus.</p>
+    </div>
+  </section>
+
+
+  <section id="document-inference">
+    <header class="section-head">
+      <div class="section-num">§09</div><h2 class="section-title">Document Inference</h2>
+      <div class="section-meta">local ranking · dynamic legality · remote round trip</div>
+    </header>
+    <p class="lede">Inference selects one supported lambda, walks frozen policy decisions once in first-occurrence order, and returns a complete action vector before any remote task call.</p>
+
+    <div class="diagram-frame">
+      <div class="diagram-cap">
+        <span class="l">FIG · I1: Deployed document inference</span>
+        <span>green = frozen/local · blue = ranker · amber = untrusted remote · dashed feedback = sequential state</span>
+      </div>
+      <svg viewBox="0 0 1180 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="infer-title infer-desc" style="display:block;width:100%;height:auto;background:transparent">
+        <title id="infer-title">Interactive Ranker v2 deployed document inference process</title>
+        <desc id="infer-desc">A local detector and lattice artifact produce grouped policy decisions and legal actions. Frozen document and relation representations feed the semantic ranker. The ranker walks decisions in first-occurrence order, applies dynamic injectivity constraints, chooses an action, updates selected-action memory, and rewrites all mapped occurrences. Only the anonymized document reaches the remote model. A local substitution record restores the remote output into the final answer.</desc>
+        <defs>
+          <marker id="infer-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
+          <style>
+            .ib{fill:#f8f7f3;stroke:#747980;stroke-width:1.4;stroke-dasharray:7 6}
+            .ii{fill:#f2f0eb;stroke:#34393e;stroke-width:1.35}
+            .if{fill:#d9e7de;stroke:#496454;stroke-width:1.35}
+            .iu{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.35}
+            .ir{fill:#f7ead2;stroke:#9b6a2d;stroke-width:1.35}
+            .it{fill:#1c2024;font:500 13px 'JetBrains Mono',monospace}
+            .is{fill:#62686e;font:400 10px 'JetBrains Mono',monospace}
+            .ik{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.5px}
+            .il{fill:none;stroke:#34393e;stroke-width:1.35}
+            .ilu{fill:none;stroke:#3d6f9d;stroke-width:1.65}
+            .ilr{fill:none;stroke:#a16f31;stroke-width:1.65}
+            .ild{fill:none;stroke:#777c82;stroke-width:1.1;stroke-dasharray:4 4}
+          </style>
+        </defs>
+        <rect width="1180" height="720" fill="transparent"/>
+
+        <text x="28" y="30" class="ik">LOCAL PREPARATION</text>
+        <rect x="20" y="44" width="1140" height="150" rx="15" class="ib"/>
+        <rect x="44" y="82" width="120" height="66" rx="6" class="ii"/>
+        <text x="104" y="108" text-anchor="middle" class="it">doc_orig</text>
+        <text x="104" y="128" text-anchor="middle" class="is">private source</text>
+        <rect x="196" y="72" width="194" height="86" rx="6" class="if"/>
+        <text x="293" y="97" text-anchor="middle" class="it">detect + group</text>
+        <text x="293" y="117" text-anchor="middle" class="is">occurrences → decisions</text>
+        <text x="293" y="135" text-anchor="middle" class="is">lattice menus · stable IDs</text>
+        <text x="293" y="151" text-anchor="middle" class="is">first-occurrence order</text>
+        <rect x="430" y="72" width="216" height="86" rx="6" class="if"/>
+        <text x="538" y="97" text-anchor="middle" class="it">representation store</text>
+        <text x="538" y="117" text-anchor="middle" class="is">H_doc + r_pair per action</text>
+        <text x="538" y="135" text-anchor="middle" class="is">pinned encoder revision</text>
+        <text x="538" y="151" text-anchor="middle" class="is">cache or local encode</text>
+        <rect x="686" y="72" width="196" height="86" rx="6" class="iu"/>
+        <text x="784" y="97" text-anchor="middle" class="it">begin document</text>
+        <text x="784" y="117" text-anchor="middle" class="is">supported lambda fixed</text>
+        <text x="784" y="135" text-anchor="middle" class="is">selected memory = empty</text>
+        <text x="784" y="151" text-anchor="middle" class="is">claimed fills = fixed claims</text>
+        <rect x="930" y="82" width="188" height="66" rx="6" class="ii"/>
+        <text x="1024" y="108" text-anchor="middle" class="it">user lambda profile</text>
+        <text x="1024" y="128" text-anchor="middle" class="is">one finite supported value</text>
+        <path d="M164 115H192" class="il" marker-end="url(#infer-arrow)"/>
+        <path d="M390 115H426" class="il" marker-end="url(#infer-arrow)"/>
+        <path d="M646 115H682" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M930 115H886" class="ilu" marker-end="url(#infer-arrow)"/>
+
+        <text x="28" y="232" class="ik">SEQUENTIAL LOCAL RANKING</text>
+        <rect x="20" y="246" width="742" height="344" rx="15" class="ib"/>
+        <rect x="44" y="286" width="130" height="72" rx="6" class="ii"/>
+        <text x="109" y="310" text-anchor="middle" class="it">next decision</text>
+        <text x="109" y="330" text-anchor="middle" class="is">first-occurrence</text>
+        <text x="109" y="347" text-anchor="middle" class="is">walk order</text>
+        <rect x="206" y="286" width="142" height="72" rx="6" class="iu"/>
+        <text x="277" y="310" text-anchor="middle" class="it">legal action IDs</text>
+        <text x="277" y="330" text-anchor="middle" class="is">KEEP · levels · PH</text>
+        <text x="277" y="347" text-anchor="middle" class="is">remove fill collisions</text>
+        <rect x="380" y="278" width="172" height="88" rx="6" class="iu"/>
+        <text x="466" y="303" text-anchor="middle" class="it">semantic-v1 forward</text>
+        <text x="466" y="323" text-anchor="middle" class="is">u + alpha·g(lambda)·p_hat</text>
+        <text x="466" y="341" text-anchor="middle" class="is">legal gather</text>
+        <text x="466" y="358" text-anchor="middle" class="is">log_softmax → log pi</text>
+        <rect x="584" y="286" width="148" height="72" rx="6" class="iu"/>
+        <text x="658" y="310" text-anchor="middle" class="it">select action</text>
+        <text x="658" y="330" text-anchor="middle" class="is">deployment argmax</text>
+        <text x="658" y="347" text-anchor="middle" class="is">stable action ID</text>
+
+        <rect x="118" y="424" width="186" height="88" rx="6" class="iu"/>
+        <text x="211" y="449" text-anchor="middle" class="it">apply decision</text>
+        <text x="211" y="469" text-anchor="middle" class="is">rewrite every mapped</text>
+        <text x="211" y="487" text-anchor="middle" class="is">occurrence consistently</text>
+        <text x="211" y="504" text-anchor="middle" class="is">record inverse mapping R</text>
+        <rect x="344" y="424" width="196" height="88" rx="6" class="iu"/>
+        <text x="442" y="449" text-anchor="middle" class="it">advance state</text>
+        <text x="442" y="469" text-anchor="middle" class="is">append selected memory row</text>
+        <text x="442" y="487" text-anchor="middle" class="is">claim selected level fill</text>
+        <text x="442" y="504" text-anchor="middle" class="is">lambda unchanged</text>
+        <rect x="580" y="430" width="152" height="76" rx="6" class="if"/>
+        <text x="656" y="455" text-anchor="middle" class="it">final action vector</text>
+        <text x="656" y="475" text-anchor="middle" class="is">one action / decision</text>
+        <text x="656" y="493" text-anchor="middle" class="is">doc_p + local R</text>
+
+        <path d="M174 322H202" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M348 322H376" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M552 322H580" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M658 358C658 396 250 392 211 420" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M304 468H340" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M540 468H576" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M442 424C442 394 109 400 109 362" class="ild" marker-end="url(#infer-arrow)"/>
+        <text x="270" y="395" class="is">repeat until no decisions remain</text>
+
+        <text x="796" y="232" class="ik">REMOTE TASK + LOCAL POST-PROCESSING</text>
+        <rect x="782" y="246" width="378" height="176" rx="15" class="ib"/>
+        <rect x="806" y="286" width="110" height="80" rx="6" class="ii"/>
+        <text x="861" y="312" text-anchor="middle" class="it">doc_p</text>
+        <text x="861" y="332" text-anchor="middle" class="is">only text sent</text>
+        <text x="861" y="349" text-anchor="middle" class="is">off-device</text>
+        <rect x="954" y="278" width="180" height="96" rx="6" class="ir"/>
+        <text x="1044" y="305" text-anchor="middle" class="it">remote task LLM</text>
+        <text x="1044" y="326" text-anchor="middle" class="is">untrusted closed box</text>
+        <text x="1044" y="344" text-anchor="middle" class="is">sees no doc_orig or R</text>
+        <text x="1044" y="362" text-anchor="middle" class="is">returns out_p</text>
+        <path d="M916 326H950" class="ilr" marker-end="url(#infer-arrow)"/>
+
+        <rect x="782" y="450" width="378" height="140" rx="15" class="ib"/>
+        <rect x="806" y="482" width="182" height="74" rx="6" class="if"/>
+        <text x="897" y="507" text-anchor="middle" class="it">local unperturb</text>
+        <text x="897" y="527" text-anchor="middle" class="is">out_p + substitution R</text>
+        <text x="897" y="545" text-anchor="middle" class="is">deterministic inversion</text>
+        <rect x="1022" y="482" width="112" height="74" rx="6" class="ii"/>
+        <text x="1078" y="508" text-anchor="middle" class="it">out_final</text>
+        <text x="1078" y="528" text-anchor="middle" class="is">delivered</text>
+        <text x="1078" y="545" text-anchor="middle" class="is">to caller</text>
+        <path d="M988 519H1018" class="il" marker-end="url(#infer-arrow)"/>
+        <path d="M1044 374C1044 430 940 442 918 478" class="ilr" marker-end="url(#infer-arrow)"/>
+        <path d="M732 468C770 468 772 519 802 519" class="il" marker-end="url(#infer-arrow)"/>
+        <path d="M732 468C770 468 774 326 802 326" class="ilu" marker-end="url(#infer-arrow)"/>
+
+        <rect x="20" y="626" width="1140" height="58" rx="8" class="ii"/>
+        <text x="590" y="650" text-anchor="middle" class="it">absent at inference</text>
+        <text x="590" y="670" text-anchor="middle" class="is">QA assertions · reader/scorer · RLOO · counterfactual calls · exact count targets · policy-gradient losses</text>
+      </svg>
+    </div>
+
+    <div class="prose">
+      <p><strong>One local pass.</strong> The caller chooses one supported lambda before ranking. The policy initializes empty selected-action memory and walks the frozen decision sequence. Dynamic legality removes any level fill already reserved or claimed. The model scores all actions in the complete menu, gathers the legal action IDs, and applies <code>log_softmax</code>. Deployment uses deterministic argmax.</p>
+      <p><strong>Decision-level action, occurrence-level rewrite.</strong> Selecting one action updates every occurrence mapped to that decision. The selected utility relation, action mode, runtime type, and source-position pool become one history row for later decisions. Repeated occurrences do not create repeated policy steps.</p>
+      <p><strong>Remote boundary.</strong> Ranking itself uses no QA probes, reader, reward model, exact count target, or counterfactual call. Only <code>doc_p</code> reaches the remote task model. The substitution record <code>R</code> stays local and combines with <code>out_p</code> to produce <code>out_final</code>.</p>
+    </div>
+  </section>
+
+  <section id="boundaries">
+    <header class="section-head">
+      <div class="section-num">§10</div><h2 class="section-title">Boundaries and Audit</h2>
+      <div class="section-meta">what the design means · what it does not prove</div>
+    </header>
+    <div class="two-col">
+      <div>
+        <h4>Normative invariants</h4>
+        <ul>
+          <li>Lambda zero exactly equals utility logits before masking.</li>
+          <li>True counts never enter semantic actor features.</li>
+          <li>Exact count gradients cannot update utility or memory.</li>
+          <li>Privacy-head training cannot update utility features.</li>
+          <li>QA links route credit but never certify causality.</li>
+          <li>Uncovered decisions never default to zero utility credit.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Open empirical questions</h4>
+        <ul>
+          <li>Can semantic log-count prediction transfer to unseen profiles?</li>
+          <li>Can one global alpha realize useful distinct operating points?</li>
+          <li>Does frozen candidate-conditioned attention expose enough context?</li>
+          <li>Does selected-action memory improve multi-decision utility?</li>
+          <li>Does higher count score track lower realized attacker success?</li>
+          <li>Does first-occurrence factorization create material order effects?</li>
+        </ul>
+      </div>
+    </div>
+    <div class="prose">
+      <p><strong>Repeated-context leakage.</strong> The exact document count score averages once per distinct policy decision, so repeated mentions do not multiply count reward. This is an explicit approximation, not a claim that repetition is harmless. Repeated values in different contexts may increase linkage or inference risk and require a future occurrence-aware attacker audit.</p>
+      <p><strong>Fallback architecture.</strong> If semantic privacy transfer fails or stricter count auditability is required, the retained factorized fallback uses grounded type-normalized counts directly in a separate privacy branch. It remains count-blind on the utility side, but it does not offer the semantic prototype's transfer claim.</p>
+      <p><strong>Verdict rule.</strong> Count score, KEEP rate, lattice depth, and lambda are diagnostics. A method is compared only by utility versus held-out attacker success at matched realized privacy and identical settings. If count score rises while attacker privacy worsens, the approximation is falsified in that region and the failure is reported rather than calibrated away.</p>
+    </div>
+  </section>
+
+  <footer class="colophon" style="margin-top:48px;">
+    <div>
+      <h5>Code</h5>
+      <ul>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/train/semantic_ranker.py">semantic_ranker.py</a> · model and inference state</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/train/ranker_privacy.py">ranker_privacy.py</a> · semantic privacy head</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/train/ranker_representation.py">ranker_representation.py</a> · frozen encoder store</li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/src/cloak/train/interactive_ranker.py">interactive_ranker.py</a> · trajectory and loss assembly</li>
+      </ul>
+    </div>
+    <div>
+      <h5>Normative Notes</h5>
+      <ul>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/specs/RL/ranker-v2-architecture.md">ranker-v2-architecture.md</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/specs/RL/interactive-ranker-v2.md">interactive-ranker-v2.md</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/specs/qa-builder-v2.md">qa-builder-v2.md</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/specs/RL/interactive-ranker-v2-diagnostics.md">interactive-ranker-v2-diagnostics.md</a></li>
+      </ul>
+    </div>
+    <div>
+      <h5>Design History</h5>
+      <ul>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/specs/RL/ranker-v2-architecture-decision-log.md">architecture decision log</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/specs/RL/interactive-ranker-v2-decision-log.md">RL decision log</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/plans/2026-07-22-ranker-v2-semantic-architecture-implementation.md">semantic architecture plan</a></li>
+        <li><a href="https://github.com/nulltea/harness-cloak/blob/main/docs/plans/2026-07-22-interactive-ranker-v2-remaining-implementation.md">remaining RL plan</a></li>
+      </ul>
+    </div>
+  </footer>
+</div>
+
+<script src="js/nav.js"></script>
+</body>
+</html>
