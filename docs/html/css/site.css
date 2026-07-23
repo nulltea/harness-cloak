@@ -1186,6 +1186,21 @@ html {
   white-space: nowrap;
 }
 
+/* FIG M1 Graphviz prototype: DOT owns graph structure, sizing, and routing. */
+.ranker-model-diagram__graph {
+  width: 100%;
+  min-width: 1180px;
+}
+.ranker-model-diagram__graph svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+.ranker-model-diagram__graph text {
+  font-family: "Courier New", Courier, monospace;
+}
+
 /* ────── RESULT PLOTS (PLOT-STYLE.md) ────── */
 /* data-plot analogue of .diagram-frame: bits-vs-recovery scatters (A1), layer×param
    heatmaps (A2), Gram/interference matrices (A3), privacy–utility curves (A4),

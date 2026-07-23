@@ -1,9 +1,11 @@
 ---
 type: plan
-status: current
+status: stale
 created: 2026-07-23
 updated: 2026-07-23
 tags: [html-report, diagrams, jsplumb, architecture]
+superseded_by: docs/plans/2026-07-23-graphviz-architecture-diagrams.md
+archive_reason: The jsPlumb spike preserved HTML nodes but failed the visual gate because dense orthogonal edges crossed nodes and could not form shared buses without diagram-specific routing hints.
 ---
 
 # HTML-Native Architecture Diagrams Implementation Plan
