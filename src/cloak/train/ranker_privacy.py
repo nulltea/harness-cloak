@@ -925,25 +925,40 @@ def _ordered_examples(
     return ordered, tuple(slices)
 
 
+def _prediction_inputs(
+    name: str,
+    examples: Sequence[PrivacyExample],
+    basis: CountBasisVocabulary | None,
+    device: torch.device | str = "cpu",
+) -> tuple[tuple, dict]:
+    """Build one model-call input set; hoistable out of the step loop and device-placed."""
+    if name in {"semantic", "candidate_only"}:
+        feature_name = "pair_features" if name == "semantic" else "candidate_only"
+        features = torch.stack(
+            [getattr(row, feature_name) for row in examples]
+        ).to(device=device)
+        indices = basis.encode(examples) if basis is not None else None
+        if isinstance(indices, torch.Tensor):
+            indices = indices.to(device=device)
+        return (features,), {"count_basis": indices}
+    positions = torch.tensor(
+        [row.authored_position for row in examples], dtype=torch.float32, device=device
+    )
+    return (
+        positions,
+        ["level"] * len(examples),
+        [row.runtime_type for row in examples],
+    ), {}
+
+
 def _model_prediction(
     name: str,
     model: nn.Module,
     examples: Sequence[PrivacyExample],
     basis: CountBasisVocabulary | None,
 ) -> PrivacyPrediction:
-    if name in {"semantic", "candidate_only"}:
-        feature_name = "pair_features" if name == "semantic" else "candidate_only"
-        features = torch.stack([getattr(row, feature_name) for row in examples])
-        indices = basis.encode(examples) if basis is not None else None
-        return model(features, count_basis=indices)
-    positions = torch.tensor(
-        [row.authored_position for row in examples], dtype=torch.float32
-    )
-    return model(
-        positions,
-        ["level"] * len(examples),
-        [row.runtime_type for row in examples],
-    )
+    args, kwargs = _prediction_inputs(name, examples, basis)
+    return model(*args, **kwargs)
 
 
 def train_privacy_seed(
@@ -958,8 +973,9 @@ def train_privacy_seed(
     learning_rate: float,
     max_steps: int,
     use_count_basis: bool,
+    device: str = "cpu",
 ) -> tuple[SemanticPrivacyHead, dict[str, Any]]:
-    """Train one CPU seed and return profile-held-out dev/test reports."""
+    """Train one seed on `device` and return profile-held-out dev/test reports (CPU eval)."""
     if max_steps <= 0 or learning_rate <= 0:
         raise ValueError("privacy training steps and learning rate must be positive")
     profiles = split_manifest.get("profiles")
@@ -998,22 +1014,28 @@ def train_privacy_seed(
     score_targets = torch.tensor(
         [row.profile_score_target for row in train_rows], dtype=torch.float32
     )
+    train_device = torch.device(device)
+    device_log_targets = log_targets.to(device=train_device)
+    device_score_targets = score_targets.to(device=train_device)
     for name, model in models.items():
+        model.to(train_device)
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
         model.train()
+        args, kwargs = _prediction_inputs(name, train_rows, basis, device=train_device)
         for _ in range(max_steps):
             optimizer.zero_grad(set_to_none=True)
-            prediction = _model_prediction(name, model, train_rows, basis)
+            prediction = model(*args, **kwargs)
             losses = privacy_training_loss(
                 prediction,
-                log_targets,
+                device_log_targets,
                 train_slices,
-                score_targets,
+                device_score_targets,
                 rho=rho,
                 gamma=gamma,
             )
             losses["total"].backward()
             optimizer.step()
+        model.to("cpu")
 
     train_mean = TrainProfileMeanBaseline.fit(train_rows)
     split_reports = {}

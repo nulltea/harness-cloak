@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+
+import torch
 from pathlib import Path
 from typing import Any
 
@@ -29,10 +31,6 @@ def _stable_hash(value: Any) -> str:
         value, sort_keys=True, separators=(",", ":"), ensure_ascii=True,
     ).encode("utf-8")
     return "sha256:" + hashlib.sha256(encoded).hexdigest()
-
-
-def _file_hash(path: Path) -> str:
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
@@ -75,6 +73,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float, default=1e-3)
     parser.add_argument("--max-steps", type=int, default=200)
     parser.add_argument("--use-count-basis", action="store_true")
+    parser.add_argument("--device", default="auto",
+                        help="training device: auto|cpu|cuda (eval stays on CPU)")
     return parser
 
 
@@ -87,6 +87,12 @@ def main() -> None:
         raise ValueError("privacy model dimensions must be positive")
     if args.max_steps <= 0:
         raise ValueError("--max-steps must be positive")
+    if args.device == "auto":
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+    elif args.device in {"cpu", "cuda"}:
+        device = args.device
+    else:
+        raise ValueError("--device must be auto, cpu, or cuda")
 
     environment_path = Path(args.environment)
     target_path = Path(args.profile_targets)
@@ -131,6 +137,7 @@ def main() -> None:
             learning_rate=args.learning_rate,
             max_steps=args.max_steps,
             use_count_basis=args.use_count_basis,
+            device=device,
         )
         models[seed] = model
         seed_reports.append(report)
@@ -146,7 +153,9 @@ def main() -> None:
     metric_report["artifact_hash"] = _stable_hash(metric_report)
     _write_json(out_dir / "metrics.json", metric_report)
 
-    representation_hash = _file_hash(representation_path)
+    representation_hash = store.manifest.get("manifest_hash")
+    if not isinstance(representation_hash, str) or not representation_hash:
+        raise ValueError("representation manifest lacks manifest hash")
     for seed in seeds:
         model = models[seed]
         contract = PrivacyCheckpointContract(
