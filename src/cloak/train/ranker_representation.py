@@ -416,8 +416,8 @@ class FrozenEncoderAdapter:
                 index for index, (start, end) in enumerate(offsets)
                 if not special_mask[index]
                 and end > start
-                and start >= field_start
-                and end <= field_end
+                and end > field_start
+                and start < field_end
             ]
             if not retained:
                 raise ValueError(f"{field_name} field has no retained tokens")
@@ -473,6 +473,10 @@ def load_pinned_encoder(
             ENCODER_ID,
             revision=ENCODER_REVISION,
             trust_remote_code=False,
+            **(
+                {"adapter_kwargs": {"local_files_only": True}}
+                if cache_only_model else {}
+            ),
             **local_kwargs,
         )
     except OSError as exc:

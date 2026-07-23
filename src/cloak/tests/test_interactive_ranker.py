@@ -1407,6 +1407,104 @@ def test_interactive_cli_cache_only_miss_is_machine_readable_and_nonzero(
     )
 
 
+@pytest.mark.parametrize(
+    ("command", "runner_name", "extra"),
+    [
+        ("bc", "_run_bc", ["--out-checkpoint", "bc.pt"]),
+        (
+            "exit-collect", "_run_exit_collect",
+            ["--checkpoint", "bc.pt", "--out", "exit.json", "--rollouts", "2"],
+        ),
+        (
+            "train", "_run_train",
+            [
+                "--threshold-manifest", "threshold.json",
+                "--lambda-menu", "menu.json",
+                "--exit-winners", "exit.json",
+                "--bc-checkpoint", "bc.pt",
+                "--out-checkpoint", "policy.pt",
+                "--kl-reference-checkpoint", "reference.pt",
+                "--epoch-reports", "epochs.jsonl",
+                "--fixed-lambda-zero-control", "control.pt",
+                "--max-epochs", "1", "--rollouts", "2",
+            ],
+        ),
+    ],
+)
+def test_semantic_cli_cache_only_stop_covers_every_training_stage(
+    monkeypatch, capsys, command, runner_name, extra,
+):
+    import train_interactive_ranker
+    from cloak.train.interactive_ranker import CacheOnlyMissError
+
+    calls = []
+
+    def blocked(args):
+        calls.append(args)
+        assert args.policy_architecture == "semantic-v1"
+        assert args.cache_only is True
+        assert args.representation_manifest == "representations.json"
+        assert args.privacy_checkpoint == "privacy.pt"
+        assert args.profile_count_targets == "profile-targets.json"
+        raise CacheOnlyMissError(
+            phase="initial", remote_tasks=4,
+            context_reader_work_items=6,
+        )
+
+    monkeypatch.setattr(train_interactive_ranker, runner_name, blocked)
+    with pytest.raises(SystemExit) as captured:
+        train_interactive_ranker.main([
+            command,
+            "--policy-architecture", "semantic-v1",
+            "--environment", "environment.json",
+            "--representation-manifest", "representations.json",
+            "--privacy-checkpoint", "privacy.pt",
+            "--profile-count-targets", "profile-targets.json",
+            "--utility-artifact", "utility.json",
+            "--utility-cache", "cache.jsonl",
+            "--cache-only",
+            *extra,
+        ])
+
+    assert captured.value.code == 2
+    assert len(calls) == 1
+    assert capsys.readouterr().err.strip() == (
+        "CACHE_ONLY_MISS phase=initial remote_tasks=4 "
+        "context_reader_work_items=6"
+    )
+
+
+def test_semantic_bc_config_round_trips_every_architecture_pin():
+    import train_interactive_ranker
+
+    policy = SimpleNamespace(
+        representation_store=SimpleNamespace(manifest={
+            "encoder": {"id": "encoder-model-pin"},
+        }),
+        encoder_revision="encoder-revision",
+        context_mode="full-candidate-attention",
+        history_mode="selected-cross-attention",
+        feature_schema=("utility_relation", "candidate_context"),
+        controller_transform="log1p-over-log1p-max-v1",
+    )
+
+    config = train_interactive_ranker._semantic_bc_policy_config(policy)
+    assert config == {
+        "policy_architecture": "semantic-v1",
+        "encoder_pin": "encoder-model-pin",
+        "encoder_revision": "encoder-revision",
+        "context_mode": "full-candidate-attention",
+        "history_mode": "selected-cross-attention",
+        "feature_schema": ["utility_relation", "candidate_context"],
+        "controller_transform": "log1p-over-log1p-max-v1",
+    }
+    train_interactive_ranker._validate_semantic_bc_policy_config(config, policy)
+    with pytest.raises(ValueError, match="semantic policy contract"):
+        train_interactive_ranker._validate_semantic_bc_policy_config(
+            dict(config, history_mode="none"), policy,
+        )
+
+
 def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
     import train_interactive_ranker
 

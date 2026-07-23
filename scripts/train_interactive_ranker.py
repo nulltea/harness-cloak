@@ -9,6 +9,7 @@ import math
 import os
 import subprocess
 import sys
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +18,7 @@ import torch
 from cloak.train.count_reward import CountReward
 from cloak.train.profile_count import ProfileCountTargets
 from cloak.train.interactive_ranker import (
+    _semantic_policy_contract,
     CacheOnlyMissError,
     behavior_clone,
     build_latin_cycle_schedule,
@@ -514,6 +516,43 @@ def _point_payload(point) -> dict[str, Any]:
     }
 
 
+def _semantic_bc_policy_config(
+    policy: torch.nn.Module,
+) -> dict[str, Any]:
+    """Freeze every semantic architecture field needed by later CLI stages."""
+
+    store = getattr(policy, "representation_store", None)
+    manifest = getattr(store, "manifest", {})
+    encoder = manifest.get("encoder", {}) if isinstance(manifest, Mapping) else {}
+    encoder_pin = encoder.get("id") if isinstance(encoder, Mapping) else None
+    if not isinstance(encoder_pin, str) or not encoder_pin:
+        raise ValueError("semantic BC encoder pin is incomplete")
+    return {
+        "policy_architecture": "semantic-v1",
+        "encoder_pin": encoder_pin,
+        **_semantic_policy_contract(policy),
+    }
+
+
+def _validate_semantic_bc_policy_config(
+    config: dict[str, Any],
+    policy: torch.nn.Module,
+) -> None:
+    """Reject semantic BC architecture drift before loading policy tensors."""
+
+    expected = {
+        "policy_architecture": "semantic-v1",
+        **_semantic_policy_contract(policy),
+    }
+    if (
+        not isinstance(config, dict)
+        or not isinstance(config.get("encoder_pin"), str)
+        or not config["encoder_pin"]
+        or any(config.get(key) != value for key, value in expected.items())
+    ):
+        raise ValueError("semantic policy contract differs from BC checkpoint")
+
+
 def _run_bc(args) -> None:
     (
         _, documents, count_state, count_reward, utility_artifact, cache,
@@ -557,10 +596,7 @@ def _run_bc(args) -> None:
         "policy_state_dict": policy.state_dict(),
         "optimizer_state_dict": optimizer.state_dict(),
         "policy_config": (
-            {
-                "policy_architecture": "semantic-v1",
-                "encoder_pin": args.encoder_pin,
-            }
+            _semantic_bc_policy_config(policy)
             if args.policy_architecture == "semantic-v1"
             else {"encoder_pin": args.encoder_pin}
         ),
@@ -605,6 +641,7 @@ def _run_exit_collect(args) -> None:
     encoder_pin = config.get("encoder_pin")
     if args.policy_architecture == "semantic-v1":
         policy = _semantic_training_policy(args, documents, (LAMBDA_ZERO,))
+        _validate_semantic_bc_policy_config(config, policy)
     else:
         if not isinstance(encoder_pin, str) or not encoder_pin:
             raise ValueError("behavior-cloning checkpoint lacks encoder pin")
@@ -826,6 +863,10 @@ def _run_train(args) -> None:
             profiles=profiles,
         )
     )
+    if args.policy_architecture == "semantic-v1":
+        _validate_semantic_bc_policy_config(
+            bc_checkpoint.get("policy_config", {}), policy,
+        )
     optimizer = torch.optim.Adam(policy.parameters(), lr=args.learning_rate)
     schedule = build_latin_cycle_schedule(documents, profiles, seed=args.seed)
     architecture_pin = policy_architecture_pin(policy)

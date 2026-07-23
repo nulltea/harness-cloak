@@ -349,6 +349,27 @@ def test_relation_pooling_is_field_aware_ordered_and_uses_separate_baselines():
     assert not torch.equal(forward.candidate_only, forward.candidate_mean)
 
 
+def test_relation_field_masks_accept_tokens_with_leading_space_offsets():
+    class LeadingSpaceOffsetTokenizer(StubTokenizer):
+        def _plain(self, text):
+            ids, offsets = super()._plain(text)
+            return ids, [
+                (start - 1, end)
+                if start > 0 and text[start - 1].isspace() else (start, end)
+                for start, end in offsets
+            ]
+
+    adapter = _adapter(tokenizer=LeadingSpaceOffsetTokenizer())
+
+    relation = adapter.encode_relation(
+        "d", "a", "health-condition", "kidney", "medicine",
+    )
+
+    assert relation.type_mean.shape == (6,)
+    assert relation.source_mean.shape == (6,)
+    assert relation.candidate_mean.shape == (6,)
+
+
 def test_relation_rejects_nonempty_field_with_no_retained_tokens():
     adapter = _adapter(tokenizer=StubTokenizer(dropped_terms=frozenset({"kidney"})))
 
@@ -588,6 +609,7 @@ def test_default_factory_is_pinned_frozen_and_cache_only(monkeypatch):
             "revision": ENCODER_REVISION,
             "trust_remote_code": False,
             "local_files_only": True,
+            "adapter_kwargs": {"local_files_only": True},
         }),
     ]
 
