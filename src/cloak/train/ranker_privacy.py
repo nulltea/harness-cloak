@@ -1021,12 +1021,37 @@ def train_privacy_seed(
     train_device = torch.device(device)
     device_log_targets = log_targets.to(device=train_device)
     device_score_targets = score_targets.to(device=train_device)
+    dev_rows, _dev_slices = _ordered_examples(split_rows["dev"])
+    dev_log_targets = torch.tensor(
+        [row.log_count_target for row in dev_rows], dtype=torch.float32
+    )
+    selection_interval = 50
+    selected_steps: dict[str, int] = {}
     for name, model in models.items():
         model.to(train_device)
         optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-        model.train()
+        dev_args, dev_kwargs = _prediction_inputs(name, dev_rows, basis, device=train_device)
+        device_dev_targets = dev_log_targets.to(device=train_device)
         args, kwargs = _prediction_inputs(name, train_rows, basis, device=train_device)
-        for _ in range(max_steps):
+
+        def _dev_nll() -> float:
+            model.eval()
+            with torch.inference_mode():
+                prediction = model(*dev_args, **dev_kwargs)
+                nll = 0.5 * (
+                    ((device_dev_targets - prediction.mu_log_count)
+                     / prediction.sigma_log_count) ** 2
+                ) + torch.log(prediction.sigma_log_count)
+                value = float(nll.mean())
+            model.train()
+            return value
+
+        # Dev-NLL model selection: an arbitrary final step count underfits at 200
+        # and overfits sigma by 2000; every model reports its own best-dev state.
+        best_nll = _dev_nll()
+        best_state = {key: value.clone() for key, value in model.state_dict().items()}
+        selected_steps[name] = 0
+        for step in range(1, max_steps + 1):
             optimizer.zero_grad(set_to_none=True)
             prediction = model(*args, **kwargs)
             losses = privacy_training_loss(
@@ -1039,6 +1064,15 @@ def train_privacy_seed(
             )
             losses["total"].backward()
             optimizer.step()
+            if step % selection_interval == 0 or step == max_steps:
+                dev_nll = _dev_nll()
+                if dev_nll < best_nll:
+                    best_nll = dev_nll
+                    best_state = {
+                        key: value.clone() for key, value in model.state_dict().items()
+                    }
+                    selected_steps[name] = step
+        model.load_state_dict(best_state)
         model.to("cpu")
 
     train_mean = TrainProfileMeanBaseline.fit(train_rows)
@@ -1066,6 +1100,7 @@ def train_privacy_seed(
         "seed": seed,
         "profile_held_out": True,
         "max_steps": max_steps,
+        "selected_steps": dict(sorted(selected_steps.items())),
         "count_basis_categories": list(basis.categories) if basis else [],
         "splits": split_reports,
     }
