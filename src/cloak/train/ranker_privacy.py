@@ -643,11 +643,12 @@ def _metric_subset(
         if len(sorted_errors) % 2
         else (sorted_errors[middle - 1] + sorted_errors[middle]) / 2
     )
-    multiplicative = sorted(math.exp(value) for value in errors)
+    # exp is monotone, so exponentiating only the central sorted log errors is
+    # order-identical and cannot overflow on one diverged prediction.
     median_multiplicative = (
-        multiplicative[middle]
-        if len(multiplicative) % 2
-        else (multiplicative[middle - 1] + multiplicative[middle]) / 2
+        math.exp(sorted_errors[middle])
+        if len(sorted_errors) % 2
+        else (math.exp(sorted_errors[middle - 1]) + math.exp(sorted_errors[middle])) / 2
     )
     return {
         "nll": sum(nll_values) / len(nll_values),

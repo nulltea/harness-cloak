@@ -589,6 +589,9 @@ def test_cli_runs_three_seed_stub_smoke_and_writes_bound_artifacts(
     split_manifest = json.loads((out_dir / "split-manifest.json").read_text())
     metrics = json.loads((out_dir / "metrics.json").read_text())
     diagnostics = json.loads((out_dir / "diagnostic-manifest.json").read_text())
+    representation_identity = json.loads(
+        representation_manifest.read_text()
+    )["manifest_hash"]
     assert split_manifest["artifact_version"] == "ranker-v2-profile-split-v1"
     assert [row["seed"] for row in metrics["seed_reports"]] == [11, 22, 33]
     assert set(diagnostics["required_baselines"]) == set(REQUIRED_BASELINES)
@@ -602,7 +605,7 @@ def test_cli_runs_three_seed_stub_smoke_and_writes_bound_artifacts(
         assert checkpoint["checkpoint_version"] == CHECKPOINT_VERSION
         assert contract["environment_hash"] == "sha256:environment"
         assert contract["profile_target_artifact_hash"] == targets["artifact_hash"]
-        assert contract["representation_manifest_hash"].startswith("sha256:")
+        assert contract["representation_manifest_hash"] == representation_identity
         assert contract["split_manifest_hash"] == split_manifest["artifact_hash"]
         assert contract["seeds"] == [11, 22, 33] or contract["seeds"] == (11, 22, 33)
         assert contract["metric_report_hash"] == metrics["artifact_hash"]
@@ -621,3 +624,26 @@ def test_cli_environment_hash_reader_rejects_mismatch(tmp_path: Path):
     path.write_text(json.dumps({"frozen_environment": {}}))
     with pytest.raises(ValueError, match="environment hash"):
         cli._environment_hash(path)
+
+
+def test_metric_subset_survives_diverged_log_error():
+    """One diverged |log error| (> 709) must not overflow the multiplicative metric."""
+    import torch
+
+    from cloak.train.ranker_privacy import PrivacyExample, PrivacyPrediction, _metric_subset
+
+    def example(target):
+        return PrivacyExample(
+            decision_id="d", action_id="a", profile_id="p", runtime_type="drug",
+            grounding_status="certifying", source_family="doid", authored_position=0,
+            pair_features=torch.zeros(4), candidate_only=torch.zeros(4),
+            log_count_target=target, profile_score_target=0.5,
+        )
+
+    examples = [example(1.0), example(2.0), example(3.0)]
+    prediction = PrivacyPrediction(
+        mu_log_count=torch.tensor([1.1, 2.1, 900.0]),
+        sigma_log_count=torch.tensor([0.5, 0.5, 0.5]),
+    )
+    metrics = _metric_subset(examples, prediction, [0.1, 0.2, 0.3], (0, 1, 2))
+    assert metrics["median_multiplicative_error"] < 2.0
