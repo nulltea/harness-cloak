@@ -11,7 +11,17 @@ from bench.privacy import (
     realized_privacy_score,
 )
 from bench.schema import BenchmarkConfig, BenchmarkScores, BenchmarkTrace
-from cloak.score import rouge_l
+
+_rouge_scorer = None
+
+
+def rouge_l(pred: str, refs: list[str]) -> float:
+    # Moved from the retired cloak.score (its only surviving consumer is here).
+    global _rouge_scorer
+    if _rouge_scorer is None:
+        from rouge_score import rouge_scorer
+        _rouge_scorer = rouge_scorer.RougeScorer(["rougeL"], use_stemmer=True)
+    return max(_rouge_scorer.score(r, pred)["rougeL"].fmeasure for r in refs)
 
 
 def echo_labels(trace: BenchmarkTrace) -> list[dict]:

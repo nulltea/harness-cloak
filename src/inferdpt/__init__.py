@@ -1,17 +1,3 @@
-from inferdpt.llm import LLMClient
-from inferdpt.tokeniser import Tokeniser
-from inferdpt.embeddings import VocabEmbeddings
-from inferdpt.rantext import Perturber
-from inferdpt.extraction import extract
-from inferdpt.pipeline import InferDPT, Result, default
-
-__all__ = [
-    "LLMClient",
-    "Tokeniser",
-    "VocabEmbeddings",
-    "Perturber",
-    "extract",
-    "InferDPT",
-    "Result",
-    "default",
-]
+"""Retired InferDPT namespace. Only probes/ and attacks/ remain (see
+docs/specs/probes.md, docs/specs/attacks.md); relocation into cloak is planned
+(docs/plans/2026-07-27-codebase-cleanup-refactor.md Phase 4)."""

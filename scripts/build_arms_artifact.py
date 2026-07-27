@@ -31,8 +31,27 @@ from cloak.train.qa_builder import (
     migrate_frozen_environment_count_provenance,
 )
 
-sys.path.append(str(Path(__file__).resolve().parent / "spikes"))
-from surrogate_validation import build_arms  # noqa: E402
+def build_arms(text: str, spans: list, tau: float) -> dict[str, tuple[str, list[dict]]]:
+    """Legacy-arms action tables (moved from the retired surrogate_validation spike)."""
+    from cloak.substitute import substitute
+
+    arms = {
+        "no_privacy": (text, []),
+        "tau_walk": substitute(text, spans, tau=tau),
+        "all_floor": substitute(text, spans, tau=-1.0),
+    }  # risk never < -1 -> coarsest level
+    out, R = text, []
+    for s in sorted(spans, key=lambda s: -s.start):
+        R.append({
+            "surface": s.text,
+            "type": s.type,
+            "action": "generalize",
+            "replacement": "[REDACTED]",
+        })
+        out = out[: s.start] + "[REDACTED]" + out[s.end :]
+    arms["suppression"] = (out, R[::-1])
+    return arms
+
 
 ARTIFACT = Path("data/task_arms_tau0.02.json")
 TAU = 0.02

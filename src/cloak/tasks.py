@@ -101,14 +101,3 @@ def doc_tasks(doc: dict, qa: dict) -> list[dict]:
 
 def fill(task: dict, text: str) -> str:
     return task["template"].format(doc=text, question=task.get("question", ""))
-
-
-if __name__ == "__main__":
-    from cloak.synthpai import load_docs
-    docs = load_docs(2)
-    qa = qa_pairs(docs)
-    for d in docs:
-        ts = doc_tasks(d, qa)
-        assert ts[0]["task_id"] == "summarize" and len(ts) >= 1
-        print(d["author"], [(t["task_id"], t.get("question", "")[:50]) for t in ts])
-    print("tasks.py self-check OK")
