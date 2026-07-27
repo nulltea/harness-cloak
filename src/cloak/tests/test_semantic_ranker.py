@@ -17,6 +17,7 @@ from cloak.train.ranker_environment import (
     RankerDocument,
 )
 from cloak.train.ranker_privacy import (
+    DirectCountPrivacyProvider,
     PrivacyCheckpointContract,
     PrivacyPrediction,
     SemanticPrivacyHead,
@@ -623,7 +624,7 @@ class _StubPrivacyHead(torch.nn.Module):
         raw = self.privacy_projection(pair_features).squeeze(-1)
         return PrivacyPrediction(
             mu_log_count=torch.nn.functional.softplus(raw),
-            sigma_log_count=torch.full_like(raw, 0.25),
+            sigma_log_count=torch.full_like(raw, 0.3),
         )
 
 
@@ -726,6 +727,51 @@ def _semantic_policy(*, privacy_head=None):
     )
     policy.eval()
     return policy, store, document, decision, profiles
+
+
+def _direct_count_policy():
+    store, document, decision = _semantic_fixture()
+    scores = (0.2, 0.7, 0.0, 1.0)
+    artifact = {
+        "artifact_hash": "sha256:direct-targets",
+        "environment_hash": "sha256:environment",
+        "action_targets": {
+            action.action_id: {
+                "action_id": action.action_id,
+                "decision_id": decision.decision_id,
+                "mode": action.mode,
+                "profile_score": score,
+                "log_count": 1.0 if action.mode == "level" else None,
+                "grounding_status": (
+                    "certifying" if action.mode == "level" else None
+                ),
+                "profile_id": decision.profile_id,
+            }
+            for action, score in zip(decision.actions, scores, strict=True)
+        },
+    }
+    profiles = (
+        LambdaProfile("utility", 0.0),
+        LambdaProfile("privacy", 3.0),
+    )
+    torch.manual_seed(31)
+    policy = semantic_ranker_module.SemanticRankerPolicy.from_direct_count_targets(
+        representation_store=store,
+        profile_count_targets=artifact,
+        supported_profiles=profiles,
+        max_lambda=3.0,
+        token_dim=4,
+        pair_dim=4,
+        relation_dim=4,
+        context_dim=4,
+        history_dim=4,
+        utility_hidden_dim=8,
+        num_heads=1,
+        runtime_types=("LOC",),
+        dropout=0.0,
+    )
+    policy.eval()
+    return policy, document, decision, profiles, scores
 
 
 def _full_menu(decision: RankerDecision) -> tuple[str, ...]:
@@ -847,6 +893,35 @@ def test_lambda_changes_only_detached_additive_controller_term():
             + policy.alpha * magnitude * row.predicted_privacy.detach()
         )
         assert torch.equal(row.combined_logits, expected)
+
+
+def test_direct_count_policy_composes_exact_artifact_scores():
+    from cloak.train.interactive_ranker import _semantic_policy_contract
+
+    policy, document, decision, profiles, scores = _direct_count_policy()
+    policy.encoder_revision = "stub-revision"
+
+    row = policy.distribution(
+        policy.begin_document(document, profiles[1]),
+        decision,
+        _full_menu(decision),
+        profiles[1],
+    )
+
+    expected_scores = torch.tensor(scores, dtype=row.utility_logits.dtype)
+    expected_logits = row.utility_logits + policy.alpha * expected_scores
+    assert isinstance(policy.privacy_provider, DirectCountPrivacyProvider)
+    assert policy.privacy_head is None
+    assert torch.equal(row.predicted_privacy, expected_scores)
+    assert torch.equal(row.combined_logits, expected_logits)
+    assert policy.privacy_signal == {
+        "kind": "direct-count",
+        "targets_artifact_hash": "sha256:direct-targets",
+        "environment_hash": "sha256:environment",
+    }
+    assert _semantic_policy_contract(policy)["privacy_signal"] == (
+        policy.privacy_signal
+    )
 
 
 def test_policy_complete_menu_privacy_normalization_precedes_legal_masking():
@@ -975,15 +1050,28 @@ def _privacy_contract() -> PrivacyCheckpointContract:
         encoder_revision="stub-revision",
         split_manifest_hash="sha256:splits",
         pair_dim=4,
-        projection_dim=4,
-        hidden_dim=4,
+        projection_dim=1,
+        hidden_dim=0,
         count_basis_size=0,
         count_basis_categories=(),
-        rho=0.1,
-        gamma=0.2,
+        rho=0.0,
+        gamma=1.0,
         seeds=(3, 5, 7),
         training_seed=5,
         metric_report_hash="sha256:metrics",
+        diagnostic_manifest_hash="sha256:diagnostics",
+        counterexample_set_hash="sha256:counterexamples",
+        run_protocol="promotion",
+        seed_count=3,
+        promotion_verdict="PROMOTE",
+        target_mean=1.0,
+        target_std=0.5,
+        sigma_fixed=0.7,
+        feature_schema="type-source-candidate-hadamard-v1",
+        optimizer="AdamW",
+        learning_rate=3e-4,
+        weight_decay=0.01,
+        gradient_clip=1.0,
     )
 
 
@@ -991,10 +1079,13 @@ def test_policy_factory_loads_and_freezes_validated_privacy_checkpoint(tmp_path)
     store, document, decision = _semantic_fixture()
     contract = _privacy_contract()
     source = SemanticPrivacyHead(
-        pair_dim=4, projection_dim=4, hidden_dim=4
+        pair_dim=4, projection_dim=1, hidden_dim=0
     )
     with torch.no_grad():
         source.privacy_projection.weight.fill_(0.125)
+        source.target_mean.fill_(contract.target_mean)
+        source.target_std.fill_(contract.target_std)
+        source.sigma_fixed.fill_(contract.sigma_fixed)
     checkpoint = tmp_path / "privacy.pt"
     save_privacy_checkpoint(checkpoint, source, contract)
 
@@ -1034,8 +1125,57 @@ def test_policy_factory_loads_and_freezes_validated_privacy_checkpoint(tmp_path)
     assert torch.isfinite(row.mu_log_count).all()
 
 
+def test_policy_factory_rejects_iteration_checkpoint_without_explicit_override(
+    tmp_path,
+):
+    store, _document, _decision = _semantic_fixture()
+    contract = replace(
+        _privacy_contract(),
+        seeds=(3,),
+        training_seed=3,
+        seed_count=1,
+        run_protocol="iteration",
+        promotion_verdict="NEEDS_MULTI_SEED_EVIDENCE",
+        counterexample_set_hash=None,
+    )
+    source = SemanticPrivacyHead(pair_dim=4, projection_dim=1, hidden_dim=0)
+    with torch.no_grad():
+        source.target_mean.fill_(contract.target_mean)
+        source.target_std.fill_(contract.target_std)
+        source.sigma_fixed.fill_(contract.sigma_fixed)
+    checkpoint = tmp_path / "iteration.pt"
+    save_privacy_checkpoint(checkpoint, source, contract)
+    kwargs = dict(
+        representation_store=store,
+        privacy_checkpoint=checkpoint,
+        privacy_checkpoint_contract=contract,
+        supported_profiles=(
+            LambdaProfile("utility", 0.0),
+            LambdaProfile("privacy", 3.0),
+        ),
+        max_lambda=3.0,
+        token_dim=4,
+        relation_dim=4,
+        context_dim=4,
+        history_dim=4,
+        utility_hidden_dim=8,
+        num_heads=1,
+        runtime_types=("LOC",),
+        dropout=0.0,
+    )
+
+    with pytest.raises(ValueError, match="promotion"):
+        semantic_ranker_module.SemanticRankerPolicy.from_privacy_checkpoint(
+            **kwargs
+        )
+    policy = semantic_ranker_module.SemanticRankerPolicy.from_privacy_checkpoint(
+        **kwargs, allow_development_privacy_checkpoint=True
+    )
+    assert policy.privacy_head.training is False
+
+
 def test_policy_cli_requires_explicit_architecture_specific_artifacts():
-    import train_interactive_ranker
+    from scripts import train_interactive_ranker
 
     parser = train_interactive_ranker.build_parser()
     shared = [
@@ -1054,6 +1194,12 @@ def test_policy_cli_requires_explicit_architecture_specific_artifacts():
         *shared,
         "--policy-architecture", "semantic-v1",
         "--representation-manifest", "representations.json",
+        "--profile-count-targets", "targets.json",
+    ])
+    learned = parser.parse_args([
+        *shared,
+        "--policy-architecture", "semantic-v1",
+        "--representation-manifest", "representations.json",
         "--privacy-checkpoint", "privacy.pt",
         "--profile-count-targets", "targets.json",
     ])
@@ -1062,8 +1208,9 @@ def test_policy_cli_requires_explicit_architecture_specific_artifacts():
     assert legacy.count_state == "count.json"
     assert semantic.policy_architecture == "semantic-v1"
     assert semantic.representation_manifest == "representations.json"
-    assert semantic.privacy_checkpoint == "privacy.pt"
+    assert semantic.privacy_checkpoint is None
     assert semantic.profile_count_targets == "targets.json"
+    assert learned.privacy_checkpoint == "privacy.pt"
     with pytest.raises(SystemExit):
         parser.parse_args([*shared, "--count-state", "count.json"])
     with pytest.raises(SystemExit):
@@ -1071,7 +1218,6 @@ def test_policy_cli_requires_explicit_architecture_specific_artifacts():
             *shared,
             "--policy-architecture", "legacy-film-gru",
             "--representation-manifest", "representations.json",
-            "--privacy-checkpoint", "privacy.pt",
             "--profile-count-targets", "targets.json",
         ])
     with pytest.raises(SystemExit):
@@ -1080,3 +1226,33 @@ def test_policy_cli_requires_explicit_architecture_specific_artifacts():
             "--policy-architecture", "semantic-v1",
             "--count-state", "count.json",
         ])
+
+
+def test_policy_caches_static_decision_inputs_and_invalidates_on_apply():
+    policy, store, document, decision, profiles = _semantic_policy()
+    document_calls = []
+    original_document = store.document
+
+    def counting_document(doc_id):
+        document_calls.append(doc_id)
+        return original_document(doc_id)
+
+    store.document = counting_document
+    state = policy.begin_document(document, profiles[0])
+    menu = tuple(action.action_id for action in decision.actions)
+
+    first = policy.distribution(state, decision, menu, profiles[0])
+    calls_after_first = len(document_calls)
+    second = policy.distribution(state, decision, menu, profiles[0])
+
+    assert calls_after_first >= 1
+    assert len(document_calls) == calls_after_first
+    assert torch.equal(first.log_probs, second.log_probs)
+
+    policy.float()
+    assert not policy._token_bank_cache
+    assert not policy._pair_feature_cache
+    assert not policy._decision_feature_cache
+    third = policy.distribution(state, decision, menu, profiles[0])
+    assert len(document_calls) > calls_after_first
+    assert torch.equal(first.log_probs, third.log_probs)

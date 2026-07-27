@@ -1000,6 +1000,10 @@ def assemble_action_vector(
             decision.runtime_type, counters[token_type]
         )
 
+    runtime_types = {
+        decision.decision_id: decision.runtime_type
+        for decision in (*document.policy_decisions, *document.fixed_decisions)
+    }
     replacements: list[dict] = []
     for occurrence in document.occurrences:
         decision_id = occurrence.get("decision_id")
@@ -1027,7 +1031,24 @@ def assemble_action_vector(
             "replacement": replacement,
             "action_id": action.action_id,
             "mode": action.mode,
+            # invert()'s R schema: keep/placeholder pass through, level = generalize.
+            "action": "generalize" if action.mode == "level" else action.mode,
+            "type": runtime_types[str(decision_id)],
         })
+
+    # One shared fill covering distinct surfaces within a decision has no unambiguous
+    # inverse; extraction must retain the generalization (legacy rule, train_ranker.py).
+    shared_fills: dict[tuple[str, str], list[dict]] = {}
+    for row in replacements:
+        if row["action"] != "generalize":
+            continue
+        shared_fills.setdefault(
+            (row["decision_id"], row["replacement"].casefold()), []
+        ).append(row)
+    for rows in shared_fills.values():
+        if len({row["surface"].casefold() for row in rows}) > 1:
+            for row in rows:
+                row["restore_policy"] = "retain_generalization"
 
     ordered = sorted(replacements, key=lambda row: (row["start"], row["end"]))
     for left, right in zip(ordered, ordered[1:]):
@@ -1116,9 +1137,10 @@ def sample_trajectory(
         if greedy:
             selected_index = int(torch.argmax(log_probs).item())
         else:
+            # Draw on CPU so the caller's CPU generator works for any policy device.
             selected_index = int(
                 torch.multinomial(
-                    log_probs.exp(), 1, generator=generator
+                    log_probs.exp().cpu(), 1, generator=generator
                 ).item()
             )
         selected_action_id = menu[selected_index]
@@ -2397,26 +2419,32 @@ _LEGACY_ARTIFACT_PIN_KEYS = frozenset({
     "bc_checkpoint_hash",
 })
 
-_SEMANTIC_ARTIFACT_PIN_KEYS = frozenset({
+_SEMANTIC_DIRECT_ARTIFACT_PIN_KEYS = frozenset({
     "environment_hash",
     "utility_artifact_hash",
     "profile_target_artifact_hash",
     "representation_manifest_hash",
-    "privacy_checkpoint_hash",
     "lambda_menu_hash",
     "threshold_manifest_hash",
 })
+_SEMANTIC_LEARNED_ARTIFACT_PIN_KEYS = (
+    _SEMANTIC_DIRECT_ARTIFACT_PIN_KEYS | {"privacy_checkpoint_hash"}
+)
 
 
 def _validate_hybrid_pins(
     pins: Mapping[str, str], architecture: str,
 ) -> dict[str, str]:
-    expected = (
-        _SEMANTIC_ARTIFACT_PIN_KEYS
-        if architecture == "semantic-v1"
-        else _LEGACY_ARTIFACT_PIN_KEYS
-    )
-    if set(pins) != expected or any(
+    supplied = set(pins)
+    if architecture == "semantic-v1":
+        expected = (
+            _SEMANTIC_LEARNED_ARTIFACT_PIN_KEYS
+            if "privacy_checkpoint_hash" in supplied
+            else _SEMANTIC_DIRECT_ARTIFACT_PIN_KEYS
+        )
+    else:
+        expected = _LEGACY_ARTIFACT_PIN_KEYS
+    if supplied != expected or any(
         not isinstance(value, str) or not value for value in pins.values()
     ):
         raise ValueError("hybrid checkpoint artifact pins are incomplete")
@@ -2451,6 +2479,11 @@ def _semantic_policy_contract(policy: torch.nn.Module) -> dict[str, Any]:
         "feature_schema": list(feature_schema),
         "controller_transform": controller_transform,
     }
+    privacy_signal = getattr(policy, "privacy_signal", None)
+    if privacy_signal is not None:
+        if not isinstance(privacy_signal, Mapping):
+            raise ValueError("semantic policy privacy signal provenance is invalid")
+        contract["privacy_signal"] = dict(privacy_signal)
     if (
         not all(isinstance(contract[key], str) and contract[key] for key in (
             "encoder_revision", "context_mode", "history_mode",
@@ -2887,14 +2920,25 @@ def write_exit_winners(
 ) -> dict[str, Any]:
     """Atomically publish a content-free, hash-bound ExIt calibration pool."""
 
-    required_pins = {
+    legacy_pins = frozenset({
         "environment_hash", "count_state_hash", "utility_artifact_hash",
         "policy_checkpoint_hash",
-    }
-    if set(pins) != required_pins or any(
+    })
+    semantic_pins = frozenset({
+        "environment_hash", "profile_target_artifact_hash",
+        "representation_manifest_hash", "utility_artifact_hash",
+        "policy_checkpoint_hash",
+    })
+    allowed_pin_sets = (
+        legacy_pins, semantic_pins, semantic_pins | {"privacy_checkpoint_hash"},
+    )
+    if set(pins) not in allowed_pin_sets or any(
         not isinstance(value, str) or not value for value in pins.values()
     ):
-        raise ValueError(f"ExIt pins must be exactly {sorted(required_pins)}")
+        raise ValueError(
+            "ExIt pins must match one architecture pin set exactly: "
+            f"{[sorted(values) for values in allowed_pin_sets]}"
+        )
     documents = []
     for record in collection.documents:
         documents.append({

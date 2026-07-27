@@ -1446,6 +1446,7 @@ def test_semantic_cli_cache_only_stop_covers_every_training_stage(
         assert args.representation_manifest == "representations.json"
         assert args.privacy_checkpoint == "privacy.pt"
         assert args.profile_count_targets == "profile-targets.json"
+        assert args.allow_development_privacy_checkpoint is True
         raise CacheOnlyMissError(
             phase="initial", remote_tasks=4,
             context_reader_work_items=6,
@@ -1460,6 +1461,7 @@ def test_semantic_cli_cache_only_stop_covers_every_training_stage(
             "--representation-manifest", "representations.json",
             "--privacy-checkpoint", "privacy.pt",
             "--profile-count-targets", "profile-targets.json",
+            "--allow-development-privacy-checkpoint",
             "--utility-artifact", "utility.json",
             "--utility-cache", "cache.jsonl",
             "--cache-only",
@@ -2625,3 +2627,63 @@ def test_hybrid_training_loop_uses_latin_profiles_and_enables_kl_after_block():
     assert result.epoch_reports[0]["exposure"]["by_profile"]
     assert [row[:2] for row in checkpoints] == [(0, 1), (1, 2), (2, 3), (3, 4)]
     assert checkpoints[2][3] is True
+
+
+def test_scope_demotion_moves_uncovered_and_out_of_scope_menus_to_fixed_keep():
+    import train_interactive_ranker
+
+    document = _document()
+    provider = SimpleNamespace(
+        has_targets=lambda decision_id, action_ids: decision_id == "alpha"
+    )
+
+    updated, demoted = (
+        train_interactive_ranker._demote_out_of_scope_decisions(
+            (document,), provider, scope_types=frozenset({"TYPE"})
+        )
+    )
+
+    assert demoted == 1
+    result = updated[0]
+    assert tuple(d.decision_id for d in result.policy_decisions) == ("alpha",)
+    assert result.fixed_decisions[-1].decision_id == "beta"
+    assert [a.mode for a in result.fixed_decisions[-1].actions] == ["keep"]
+    covered, unchanged = (
+        train_interactive_ranker._demote_out_of_scope_decisions(
+            (document,), SimpleNamespace(has_targets=lambda d, a: True),
+            scope_types=frozenset({"TYPE"}),
+        )
+    )
+    assert unchanged == 0
+    assert covered[0] is document
+
+    # Out-of-scope runtime type is demoted even with full coverage; provider=None
+    # (learned path) skips the coverage check but still enforces scope.
+    scoped, scope_demoted = (
+        train_interactive_ranker._demote_out_of_scope_decisions(
+            (document,), None, scope_types=frozenset({"OTHER"})
+        )
+    )
+    assert scope_demoted == 2
+    assert not scoped[0].policy_decisions
+    assert [d.decision_id for d in scoped[0].fixed_decisions[-2:]] == ["alpha", "beta"]
+
+
+def test_scope_demotion_rejects_menu_without_unique_keep():
+    import train_interactive_ranker
+
+    document = _document()
+    beta = document.policy_decisions[1]
+    no_keep = replace(
+        beta,
+        actions=tuple(a for a in beta.actions if a.mode != "keep"),
+    )
+    broken = replace(
+        document, policy_decisions=(document.policy_decisions[0], no_keep)
+    )
+
+    with pytest.raises(ValueError, match="unique keep action"):
+        train_interactive_ranker._demote_out_of_scope_decisions(
+            (broken,), SimpleNamespace(has_targets=lambda d, a: False),
+            scope_types=frozenset({"TYPE"}),
+        )

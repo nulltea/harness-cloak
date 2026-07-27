@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import hashlib
 import json
 import math
@@ -32,7 +33,11 @@ from cloak.train.interactive_ranker import (
     write_exit_winners,
 )
 from cloak.train.ranker import ConditionalRankerPolicy, LambdaProfile
-from cloak.train.ranker_privacy import PrivacyCheckpointContract
+from cloak.train.ranker_privacy import (
+    CHECKPOINT_VERSION,
+    DirectCountPrivacyProvider,
+    PrivacyCheckpointContract,
+)
 from cloak.train.ranker_environment import load_ranker_environment
 from cloak.train.ranker_representation import RankerRepresentationStore
 from cloak.train.semantic_ranker import SemanticRankerPolicy
@@ -80,7 +85,6 @@ class _PolicyArgumentParser(argparse.ArgumentParser):
                 option
                 for option, value in (
                     ("--representation-manifest", parsed.representation_manifest),
-                    ("--privacy-checkpoint", parsed.privacy_checkpoint),
                     ("--profile-count-targets", parsed.profile_count_targets),
                 )
                 if not value
@@ -105,6 +109,11 @@ def _add_artifact_paths(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--representation-manifest")
     parser.add_argument("--privacy-checkpoint")
     parser.add_argument("--profile-count-targets")
+    parser.add_argument(
+        "--allow-development-privacy-checkpoint",
+        action="store_true",
+        help="allow a non-promoted privacy checkpoint for development-only runs",
+    )
     parser.add_argument("--utility-artifact", required=True)
     parser.add_argument("--utility-cache", required=True)
 
@@ -114,6 +123,7 @@ def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--reader-workers", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cache-only", action="store_true")
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
     parser.add_argument(
         "--doc-id",
         dest="doc_ids",
@@ -222,7 +232,7 @@ def _validate_train_artifacts(
     elif policy_architecture == "semantic-v1":
         if count_state.get("artifact_version") != "ranker-v2-profile-count-targets-v1":
             raise ValueError("unsupported profile count target artifact")
-        if not representation_manifest_hash or not privacy_checkpoint_hash:
+        if not representation_manifest_hash:
             raise ValueError("semantic training artifact hashes are incomplete")
     else:
         raise ValueError(f"unsupported policy architecture: {policy_architecture}")
@@ -293,7 +303,11 @@ def _validate_train_artifacts(
             else {
                 "profile_target_artifact_hash": count_hash,
                 "representation_manifest_hash": representation_manifest_hash,
-                "privacy_checkpoint_hash": privacy_checkpoint_hash,
+                **(
+                    {"privacy_checkpoint_hash": privacy_checkpoint_hash}
+                    if privacy_checkpoint_hash is not None
+                    else {}
+                ),
             }
         ),
     }
@@ -334,12 +348,69 @@ def _validate_train_artifacts(
                 "utility_artifact_hash": str(utility_hash),
                 "profile_target_artifact_hash": str(count_hash),
                 "representation_manifest_hash": str(representation_manifest_hash),
-                "privacy_checkpoint_hash": str(privacy_checkpoint_hash),
+                **(
+                    {"privacy_checkpoint_hash": str(privacy_checkpoint_hash)}
+                    if privacy_checkpoint_hash is not None
+                    else {}
+                ),
                 "lambda_menu_hash": menu_hash,
                 "threshold_manifest_hash": threshold_hash,
             }
         ),
     }
+
+
+# Initial-RL scope (user decision 2026-07-23): the policy controls only the three
+# clinical menu types; PERSON/CODE stay fixed placeholders; everything else (LOC)
+# is demoted to fixed keep. Widen when the scope grows.
+RANKER_SCOPE_TYPES = frozenset({"drug", "health-condition", "medical-procedure"})
+
+
+def _demote_out_of_scope_decisions(
+    documents, provider, scope_types: frozenset[str] = RANKER_SCOPE_TYPES,
+):
+    """Demote out-of-scope or count-uncovered menus to fixed keep decisions.
+
+    Two demotion reasons: runtime type outside the initial-RL scope, and menus
+    without direct-count coverage (privacy-head-ineligible; see
+    docs/issues/2026-07-23-privacy-ineligible-decisions.md). `provider=None`
+    skips the coverage check (learned-checkpoint path).
+    """
+    demoted = 0
+    updated = []
+    for document in documents:
+        retained = []
+        demoted_fixed = []
+        for decision in document.policy_decisions:
+            in_scope = decision.runtime_type in scope_types
+            covered = provider is None or provider.has_targets(
+                decision.decision_id,
+                [action.action_id for action in decision.actions],
+            )
+            if in_scope and covered:
+                retained.append(decision)
+                continue
+            keep_actions = tuple(
+                action for action in decision.actions if action.mode == "keep"
+            )
+            if len(keep_actions) != 1:
+                raise ValueError(
+                    "demoted decision lacks a unique keep action: "
+                    f"{decision.decision_id}"
+                )
+            demoted_fixed.append(
+                dataclasses.replace(decision, actions=keep_actions)
+            )
+            demoted += 1
+        if demoted_fixed:
+            updated.append(dataclasses.replace(
+                document,
+                policy_decisions=tuple(retained),
+                fixed_decisions=(*document.fixed_decisions, *demoted_fixed),
+            ))
+        else:
+            updated.append(document)
+    return tuple(updated), demoted
 
 
 def _load_inputs(
@@ -369,6 +440,16 @@ def _load_inputs(
         if count_state.get("environment_hash") != environment_hash:
             raise ValueError("profile count targets environment hash mismatch")
         count_reward = ProfileCountTargets.from_artifact(count_state)
+        provider = (
+            None if getattr(args, "privacy_checkpoint", None)
+            else DirectCountPrivacyProvider(count_state)
+        )
+        documents, demoted = _demote_out_of_scope_decisions(documents, provider)
+        if demoted:
+            print(
+                f"ranker scope: demoted {demoted} out-of-scope or count-uncovered "
+                f"policy decisions to fixed keep (scope: {sorted(RANKER_SCOPE_TYPES)})"
+            )
     else:
         count_state = _read_json(args.count_state)
         if count_state.get("environment_hash") != environment_hash:
@@ -409,7 +490,7 @@ def _policy(
 
 def _privacy_checkpoint_contract(path: str | Path) -> PrivacyCheckpointContract:
     checkpoint = torch.load(Path(path), map_location="cpu", weights_only=True)
-    if checkpoint.get("checkpoint_version") != "ranker-v2-semantic-privacy-v1":
+    if checkpoint.get("checkpoint_version") != CHECKPOINT_VERSION:
         raise ValueError("unsupported semantic privacy checkpoint")
     raw = checkpoint.get("contract")
     if not isinstance(raw, dict):
@@ -428,11 +509,8 @@ def _semantic_training_policy(
     """Build the semantic trainer from frozen local artifacts without an encoder."""
 
     store = RankerRepresentationStore.open(Path(args.representation_manifest))
-    contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
     encoder = store.manifest["encoder"]
     hidden_size = int(encoder["hidden_size"])
-    if contract.pair_dim != 5 * hidden_size:
-        raise ValueError("semantic privacy pair dimension differs from representations")
     runtime_types = tuple(sorted({
         decision.runtime_type
         for document in documents
@@ -447,14 +525,12 @@ def _semantic_training_policy(
             *profiles,
             LambdaProfile("bc-controller-unused", 1.0),
         )
-    return SemanticRankerPolicy.from_privacy_checkpoint(
+    policy_kwargs = dict(
         representation_store=store,
-        privacy_checkpoint=Path(args.privacy_checkpoint),
-        privacy_checkpoint_contract=contract,
         supported_profiles=supported_profiles,
         max_lambda=max(float(profile.value) for profile in supported_profiles),
         token_dim=hidden_size,
-        pair_dim=contract.pair_dim,
+        pair_dim=5 * hidden_size,
         relation_dim=hidden_size,
         context_dim=hidden_size,
         history_dim=hidden_size,
@@ -463,6 +539,34 @@ def _semantic_training_policy(
         runtime_types=runtime_types,
         dropout=0.0,
     )
+    if args.privacy_checkpoint:
+        contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
+        if contract.pair_dim != 5 * hidden_size:
+            raise ValueError(
+                "semantic privacy pair dimension differs from representations"
+            )
+        policy = SemanticRankerPolicy.from_privacy_checkpoint(
+            privacy_checkpoint=Path(args.privacy_checkpoint),
+            privacy_checkpoint_contract=contract,
+            allow_development_privacy_checkpoint=getattr(
+                args, "allow_development_privacy_checkpoint", False
+            ),
+            **policy_kwargs,
+        )
+    else:
+        policy = SemanticRankerPolicy.from_direct_count_targets(
+            profile_count_targets=_read_json(args.profile_count_targets),
+            **policy_kwargs,
+        )
+    device = _resolve_device(args)
+    return policy if device == "cpu" else policy.to(device)
+
+
+def _resolve_device(args) -> str:
+    requested = getattr(args, "device", "cpu")
+    if requested == "auto":
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return requested
 
 
 def _policy_input_pins(
@@ -480,25 +584,40 @@ def _policy_input_pins(
         }
     manifest = _read_json(args.representation_manifest)
     manifest_hash = manifest.get("manifest_hash")
-    contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
-    expected = (
-        environment_hash,
-        count_artifact.get("artifact_hash"),
-        manifest_hash,
-    )
-    actual = (
-        contract.environment_hash,
-        contract.profile_target_artifact_hash,
-        contract.representation_manifest_hash,
-    )
-    if expected != actual:
-        raise ValueError("semantic privacy checkpoint artifact pins differ")
+    privacy_checkpoint_hash = None
+    if args.privacy_checkpoint:
+        contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
+        expected = (
+            environment_hash,
+            count_artifact.get("artifact_hash"),
+            manifest_hash,
+        )
+        actual = (
+            contract.environment_hash,
+            contract.profile_target_artifact_hash,
+            contract.representation_manifest_hash,
+        )
+        if expected != actual:
+            raise ValueError("semantic privacy checkpoint artifact pins differ")
+        privacy_checkpoint_hash = _file_hash(args.privacy_checkpoint)
+    else:
+        provider = DirectCountPrivacyProvider(count_artifact)
+        if provider.privacy_signal != {
+            "kind": "direct-count",
+            "targets_artifact_hash": count_artifact.get("artifact_hash"),
+            "environment_hash": environment_hash,
+        }:
+            raise ValueError("direct-count privacy signal artifact pins differ")
     pins = {
         "environment_hash": environment_hash,
         "profile_target_artifact_hash": count_artifact.get("artifact_hash"),
         "representation_manifest_hash": manifest_hash,
-        "privacy_checkpoint_hash": _file_hash(args.privacy_checkpoint),
         "utility_artifact_hash": utility_artifact.get("artifact_hash"),
+        **(
+            {"privacy_checkpoint_hash": privacy_checkpoint_hash}
+            if privacy_checkpoint_hash is not None
+            else {}
+        ),
     }
     if any(not isinstance(value, str) or not value for value in pins.values()):
         raise ValueError("semantic policy input pins are incomplete")
@@ -818,16 +937,24 @@ def _run_train(args) -> None:
         representation_manifest_hash = representation_manifest.get("manifest_hash")
         if not isinstance(representation_manifest_hash, str) or not representation_manifest_hash:
             raise ValueError("representation manifest lacks manifest_hash")
-        privacy_checkpoint_hash = _file_hash(args.privacy_checkpoint)
-        privacy_contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
-        if (
-            privacy_contract.environment_hash != environment_hash
-            or privacy_contract.profile_target_artifact_hash
-            != count_state.get("artifact_hash")
-            or privacy_contract.representation_manifest_hash
-            != representation_manifest_hash
-        ):
-            raise ValueError("semantic privacy checkpoint artifact pins differ")
+        if args.privacy_checkpoint:
+            privacy_checkpoint_hash = _file_hash(args.privacy_checkpoint)
+            privacy_contract = _privacy_checkpoint_contract(args.privacy_checkpoint)
+            privacy_contract.validate_for_policy()
+            if (
+                privacy_contract.environment_hash != environment_hash
+                or privacy_contract.profile_target_artifact_hash
+                != count_state.get("artifact_hash")
+                or privacy_contract.representation_manifest_hash
+                != representation_manifest_hash
+            ):
+                raise ValueError("semantic privacy checkpoint artifact pins differ")
+        else:
+            provider = DirectCountPrivacyProvider(count_state)
+            if provider.privacy_signal["environment_hash"] != environment_hash:
+                raise ValueError(
+                    "direct-count privacy signal environment hash differs"
+                )
     validated = _validate_train_artifacts(
         environment,
         count_state,

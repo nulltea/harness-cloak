@@ -14,10 +14,12 @@ from torch.nn import functional as F
 from cloak.train.ranker import LambdaProfile
 from cloak.train.ranker_environment import RankerAction, RankerDecision, RankerDocument
 from cloak.train.ranker_privacy import (
+    DirectCountPrivacyProvider,
     PrivacyCheckpointContract,
     SemanticPrivacyHead,
     load_privacy_checkpoint,
     profile_normalize_predictions,
+    validate_privacy_signal_for_policy,
 )
 from cloak.train.ranker_representation import (
     DocumentTokenBank,
@@ -731,7 +733,9 @@ class SemanticRankerPolicy(nn.Module):
         self,
         *,
         representation_store: RankerRepresentationStore,
-        privacy_head: nn.Module,
+        privacy_head: nn.Module | None = None,
+        privacy_provider: DirectCountPrivacyProvider | None = None,
+        privacy_signal: Mapping[str, str] | None = None,
         supported_profiles: Sequence[LambdaProfile],
         max_lambda: float,
         token_dim: int,
@@ -781,14 +785,34 @@ class SemanticRankerPolicy(nn.Module):
             or len(runtime_types) != len(set(runtime_types))
         ):
             raise ValueError("semantic policy runtime types are invalid")
-        if not isinstance(privacy_head, nn.Module):
-            raise TypeError("semantic policy privacy head must be a module")
-        declared_pair_dim = getattr(privacy_head, "pair_dim", pair_dim)
-        if declared_pair_dim != pair_dim:
-            raise ValueError("semantic policy privacy pair dimension differs")
+        if (privacy_head is None) == (privacy_provider is None):
+            raise ValueError(
+                "semantic policy requires exactly one privacy head or provider"
+            )
+        if privacy_head is not None:
+            if not isinstance(privacy_head, nn.Module):
+                raise TypeError("semantic policy privacy head must be a module")
+            declared_pair_dim = getattr(privacy_head, "pair_dim", pair_dim)
+            if declared_pair_dim != pair_dim:
+                raise ValueError("semantic policy privacy pair dimension differs")
+        if privacy_provider is not None and not isinstance(
+            privacy_provider, DirectCountPrivacyProvider
+        ):
+            raise TypeError(
+                "semantic policy direct privacy provider has the wrong type"
+            )
+        if privacy_signal is not None:
+            if privacy_signal.get("kind") == "direct-count":
+                validate_privacy_signal_for_policy(privacy_signal)
+            elif privacy_signal.get("kind") != "learned-head":
+                raise ValueError("semantic policy privacy signal kind is invalid")
 
         self.representation_store = representation_store
         self.privacy_head = privacy_head
+        self.privacy_provider = privacy_provider
+        self.privacy_signal = (
+            dict(privacy_signal) if privacy_signal is not None else None
+        )
         self.supported_lambda_values = profile_values
         self.max_lambda = float(max_lambda)
         self.pair_dim = int(pair_dim)
@@ -800,6 +824,12 @@ class SemanticRankerPolicy(nn.Module):
             value: index for index, value in enumerate(runtime_types)
         }
         self.action_mode_ids = {"level": 0, "keep": 1, "placeholder": 2}
+        # Frozen-store inputs are static per (document, decision); cache their
+        # device-converted forms so replay/rollout loops stop rebuilding them.
+        # Cleared by _apply on any device/dtype move.
+        self._token_bank_cache: dict[str, DocumentTokenBank] = {}
+        self._decision_feature_cache: dict[tuple[str, str], DecisionTokenFeatures] = {}
+        self._pair_feature_cache: dict[str, torch.Tensor] = {}
 
         self.utility_projection = nn.Linear(pair_dim, relation_dim)
         self.context_readout = CandidateContextReadout(
@@ -847,9 +877,10 @@ class SemanticRankerPolicy(nn.Module):
             torch.tensor(math.log(math.expm1(1.0)), dtype=torch.float32)
         )
 
-        for parameter in self.privacy_head.parameters():
-            parameter.requires_grad_(False)
-        self.privacy_head.eval()
+        if self.privacy_head is not None:
+            for parameter in self.privacy_head.parameters():
+                parameter.requires_grad_(False)
+            self.privacy_head.eval()
 
     @classmethod
     def from_privacy_checkpoint(
@@ -857,9 +888,22 @@ class SemanticRankerPolicy(nn.Module):
         *,
         privacy_checkpoint: Path,
         privacy_checkpoint_contract: PrivacyCheckpointContract,
+        allow_development_privacy_checkpoint: bool = False,
         **kwargs,
     ) -> "SemanticRankerPolicy":
         """Load a fail-closed privacy checkpoint and freeze it in the policy."""
+        privacy_signal = {
+            "kind": "learned-head",
+            "targets_artifact_hash": (
+                privacy_checkpoint_contract.profile_target_artifact_hash
+            ),
+            "environment_hash": privacy_checkpoint_contract.environment_hash,
+        }
+        validate_privacy_signal_for_policy(
+            privacy_signal,
+            learned_contract=privacy_checkpoint_contract,
+            allow_development_override=allow_development_privacy_checkpoint
+        )
         supplied_pair_dim = kwargs.pop("pair_dim", privacy_checkpoint_contract.pair_dim)
         if supplied_pair_dim != privacy_checkpoint_contract.pair_dim:
             raise ValueError("semantic policy pair dimension differs from checkpoint")
@@ -876,7 +920,23 @@ class SemanticRankerPolicy(nn.Module):
         )
         return cls(
             privacy_head=privacy_head,
+            privacy_signal=privacy_signal,
             pair_dim=supplied_pair_dim,
+            **kwargs,
+        )
+
+    @classmethod
+    def from_direct_count_targets(
+        cls,
+        *,
+        profile_count_targets: Mapping[str, object],
+        **kwargs,
+    ) -> "SemanticRankerPolicy":
+        """Build a policy whose privacy controller uses exact artifact scores."""
+        provider = DirectCountPrivacyProvider(profile_count_targets)
+        return cls(
+            privacy_provider=provider,
+            privacy_signal=provider.privacy_signal,
             **kwargs,
         )
 
@@ -886,7 +946,8 @@ class SemanticRankerPolicy(nn.Module):
 
     def train(self, mode: bool = True) -> "SemanticRankerPolicy":
         super().train(mode)
-        self.privacy_head.eval()
+        if self.privacy_head is not None:
+            self.privacy_head.eval()
         return self
 
     def _validate_profile(self, profile: LambdaProfile) -> float:
@@ -932,6 +993,13 @@ class SemanticRankerPolicy(nn.Module):
     def _device(self) -> torch.device:
         return self.utility_projection.weight.device
 
+    def _apply(self, fn, recurse=True):
+        # Device/dtype moves invalidate the cached device-converted store tensors.
+        self._token_bank_cache.clear()
+        self._decision_feature_cache.clear()
+        self._pair_feature_cache.clear()
+        return super()._apply(fn, recurse)
+
     def _decision_inputs(
         self,
         state: SemanticPolicyState,
@@ -949,40 +1017,55 @@ class SemanticRankerPolicy(nn.Module):
             raise ValueError("semantic policy action runtime type differs")
         if decision.runtime_type not in self.runtime_type_ids:
             raise ValueError("semantic policy runtime type is unsupported")
-        relations = tuple(
-            self.representation_store.relation(decision.decision_id, action.action_id)
-            for action in actions
-        )
-        pair_features = stack_utility_relations(relations).to(
-            device=self._device,
-            dtype=self.utility_projection.weight.dtype,
-        )
-        if pair_features.shape[1] != self.pair_dim:
-            raise ValueError("semantic policy relation pair dimension differs")
-
-        stored_bank = self.representation_store.document(state.document.doc_id)
-        features = build_decision_token_features(
-            stored_bank, state.document, decision
-        )
-        token_bank = DocumentTokenBank(
-            doc_id=stored_bank.doc_id,
-            states=stored_bank.states.to(
+        pair_features = self._pair_feature_cache.get(decision.decision_id)
+        if pair_features is None:
+            relations = tuple(
+                self.representation_store.relation(
+                    decision.decision_id, action.action_id
+                )
+                for action in actions
+            )
+            pair_features = stack_utility_relations(relations).to(
                 device=self._device,
                 dtype=self.utility_projection.weight.dtype,
-            ),
-            offsets=stored_bank.offsets.to(device=self._device),
-            chunk_membership=stored_bank.chunk_membership,
-        )
-        device_features = DecisionTokenFeatures(
-            role_ids=features.role_ids.to(device=self._device),
-            relative_position_ids=features.relative_position_ids.to(
-                device=self._device
-            ),
-            document_position_ids=features.document_position_ids.to(
-                device=self._device
-            ),
-            occurrence_token_indices=features.occurrence_token_indices,
-        )
+            )
+            if pair_features.shape[1] != self.pair_dim:
+                raise ValueError("semantic policy relation pair dimension differs")
+            self._pair_feature_cache[decision.decision_id] = pair_features
+
+        token_bank = self._token_bank_cache.get(state.document.doc_id)
+        if token_bank is None:
+            stored_bank = self.representation_store.document(state.document.doc_id)
+            token_bank = DocumentTokenBank(
+                doc_id=stored_bank.doc_id,
+                states=stored_bank.states.to(
+                    device=self._device,
+                    dtype=self.utility_projection.weight.dtype,
+                ),
+                offsets=stored_bank.offsets.to(device=self._device),
+                chunk_membership=stored_bank.chunk_membership,
+            )
+            self._token_bank_cache[state.document.doc_id] = token_bank
+
+        feature_key = (state.document.doc_id, decision.decision_id)
+        device_features = self._decision_feature_cache.get(feature_key)
+        if device_features is None:
+            features = build_decision_token_features(
+                self.representation_store.document(state.document.doc_id),
+                state.document,
+                decision,
+            )
+            device_features = DecisionTokenFeatures(
+                role_ids=features.role_ids.to(device=self._device),
+                relative_position_ids=features.relative_position_ids.to(
+                    device=self._device
+                ),
+                document_position_ids=features.document_position_ids.to(
+                    device=self._device
+                ),
+                occurrence_token_indices=features.occurrence_token_indices,
+            )
+            self._decision_feature_cache[feature_key] = device_features
         return actions, pair_features, token_bank, device_features
 
     def _category_ids(
@@ -1047,21 +1130,34 @@ class SemanticRankerPolicy(nn.Module):
         complete_utility = self.utility_head(utility_inputs).squeeze(-1)
 
         with torch.no_grad():
-            privacy_prediction = self.privacy_head(pair_features)
-            complete_privacy = profile_normalize_predictions(
-                privacy_prediction,
-                tuple(action.mode for action in actions),
-            )
+            if self.privacy_provider is not None:
+                complete_privacy = self.privacy_provider(
+                    (decision.decision_id,) * len(actions),
+                    complete_ids,
+                    device=self._device,
+                    dtype=complete_utility.dtype,
+                )
+                complete_mu_log_count = torch.zeros_like(complete_privacy)
+                complete_sigma_log_count = torch.zeros_like(complete_privacy)
+            else:
+                assert self.privacy_head is not None
+                privacy_prediction = self.privacy_head(pair_features)
+                complete_privacy = profile_normalize_predictions(
+                    privacy_prediction,
+                    tuple(action.mode for action in actions),
+                )
+                complete_mu_log_count = privacy_prediction.mu_log_count
+                complete_sigma_log_count = privacy_prediction.sigma_log_count
         legal_indices = torch.tensor(
             [complete_ids.index(action_id) for action_id in legal_ids],
             dtype=torch.long,
             device=self._device,
         )
         utility_logits = complete_utility.index_select(0, legal_indices)
-        mu_log_count = privacy_prediction.mu_log_count.index_select(
+        mu_log_count = complete_mu_log_count.index_select(
             0, legal_indices
         )
-        sigma_log_count = privacy_prediction.sigma_log_count.index_select(
+        sigma_log_count = complete_sigma_log_count.index_select(
             0, legal_indices
         )
         predicted_privacy = complete_privacy.index_select(0, legal_indices)
