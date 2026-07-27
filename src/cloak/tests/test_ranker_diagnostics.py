@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloak.train.count_reward import CountActionScore, CountReward
+from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
 from cloak.train.ranker_environment import RankerAction, RankerDecision, RankerDocument
 
 
@@ -69,24 +69,25 @@ def _documents():
 
 def _count_reward():
     rows = {
-        "fine": CountActionScore(
-            "fine", "decision", "TYPE", "profile", "level", 1.0, 0.1,
-            "certifying", "fixture", "evidence",
+        "fine": ProfileActionTarget(
+            "decision", "fine", "profile", "TYPE", "level", 1.0, 0.1,
+            "certifying", "fixture",
         ),
-        "coarse": CountActionScore(
-            "coarse", "decision", "TYPE", "profile", "level", 10.0, 0.6,
-            "certifying", "fixture", "evidence",
+        "coarse": ProfileActionTarget(
+            "decision", "coarse", "profile", "TYPE", "level", 10.0, 0.6,
+            "certifying", "fixture",
         ),
-        "keep": CountActionScore(
-            "keep", "decision", "TYPE", "profile", "keep", None, 0.0,
-            None, None, None,
+        "keep": ProfileActionTarget(
+            "decision", "keep", "profile", "TYPE", "keep", None, 0.0, None, None,
         ),
-        "placeholder": CountActionScore(
-            "placeholder", "decision", "TYPE", "profile", "placeholder", None,
-            1.0, None, None, None,
+        "placeholder": ProfileActionTarget(
+            "decision", "placeholder", "profile", "TYPE", "placeholder", None,
+            1.0, None, None,
         ),
     }
-    return CountReward(rows, {"decision": tuple(rows)})
+    return ProfileCountTargets(
+        rows, {"decision": tuple(rows)}, {"decision": True},
+    )
 
 
 def _point(name, utility, count_score, mode):
@@ -110,7 +111,7 @@ def _point(name, utility, count_score, mode):
         reward_pins={
             "environment_hash": "env",
             "utility_artifact_hash": "utility",
-            "count_state_hash": "count",
+            "profile_target_artifact_hash": "count",
             "execution_contract_version": "execution",
         },
         action_modes=(mode,),
@@ -176,11 +177,25 @@ def _utility_artifact():
 
 def _count_state():
     return {
-        "artifact_version": "count-reward-state-v1",
+        "artifact_version": "ranker-v2-profile-count-targets-v1",
         "artifact_hash": "count",
         "environment_hash": "env",
-        "gate_mode": "provisional",
-        "provisional_decision_tags": [],
+        "gate_mode": "diagnostic",
+        "profile_tags": {},
+        "action_targets": {
+            "fine": {
+                "action_id": "fine", "decision_id": "decision", "mode": "level",
+                "runtime_type": "TYPE", "profile_score": 0.1, "log_count": 1.0,
+                "grounding_status": "certifying", "source_family": "fixture",
+                "profile_id": "profile",
+            },
+            "coarse": {
+                "action_id": "coarse", "decision_id": "decision", "mode": "level",
+                "runtime_type": "TYPE", "profile_score": 0.6, "log_count": 10.0,
+                "grounding_status": "certifying", "source_family": "fixture",
+                "profile_id": "profile",
+            },
+        },
         "gate_report": {
             "verdict": "PASS",
             "strict_verdict": "PASS",
@@ -518,7 +533,8 @@ def test_preflight_cli_cleanly_stops_and_writes_exact_cache_misses(
     status = main([
         "--environment", str(root / "results/ranker_v2/environment/ranker-env.json"),
         "--utility-artifact", str(root / "results/ranker_v2/qa/aci-full.utility"),
-        "--count-state", str(root / "results/ranker_v2/reward/count-reward-state.json"),
+        "--profile-count-targets",
+        str(root / "results/ranker_v2/reward/profile-count-targets.json"),
         "--utility-cache", str(tmp_path / "empty-cache.jsonl"),
         "--exit-winners", str(tmp_path / "missing-exit-winners.json"),
         "--threshold-rules", str(rules),
@@ -547,7 +563,7 @@ def _training_artifact_fixtures():
         "frozen_environment": {"environment_hash": "env", "documents": {}},
     }
     count_state = {
-        "artifact_version": "count-reward-state-v1",
+        "artifact_version": "ranker-v2-profile-count-targets-v1",
         "environment_hash": "env",
         "gate_report": {
             "verdict": "PASS",
@@ -593,7 +609,8 @@ def _training_artifact_fixtures():
         "artifact_version": "ranker-v2-exit-winners-v1",
         "pins": {
             "environment_hash": "env",
-            "count_state_hash": count_state["artifact_hash"],
+            "profile_target_artifact_hash": count_state["artifact_hash"],
+            "representation_manifest_hash": "representations",
             "utility_artifact_hash": utility["artifact_hash"],
             "policy_checkpoint_hash": "bc-file",
         },
@@ -604,10 +621,11 @@ def _training_artifact_fixtures():
         "checkpoint_version": "ranker-v2-bc-v1",
         "pins": {
             "environment_hash": "env",
-            "count_state_hash": count_state["artifact_hash"],
+            "profile_target_artifact_hash": count_state["artifact_hash"],
+            "representation_manifest_hash": "representations",
             "utility_artifact_hash": utility["artifact_hash"],
         },
-        "policy_config": {"encoder_pin": "stub"},
+        "policy_config": {"policy_architecture": "semantic-v1"},
         "policy_state_dict": {},
     }
     return environment, count_state, utility, menu, threshold, exit_winners, bc_checkpoint
@@ -620,6 +638,7 @@ def test_train_artifact_validation_accepts_only_hash_bound_passing_gates():
     validated = _validate_train_artifacts(
         *fixtures,
         bc_checkpoint_hash="bc-file",
+        representation_manifest_hash="representations",
     )
 
     assert [profile.name for profile in validated["profiles"]] == [
@@ -632,22 +651,34 @@ def test_train_artifact_validation_accepts_only_hash_bound_passing_gates():
     ]
 
     broken = list(fixtures)
-    broken[1] = dict(fixtures[1], gate_report={
-        **fixtures[1]["gate_report"],
-        "missing_policy_mappings": ["gap"],
-    })
-    with pytest.raises(ValueError, match="mapping gate"):
-        _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")
+    broken[1] = dict(fixtures[1], artifact_version="count-reward-state-v1")
+    with pytest.raises(ValueError, match="profile count target artifact"):
+        _validate_train_artifacts(
+            *broken,
+            bc_checkpoint_hash="bc-file",
+            representation_manifest_hash="representations",
+        )
+
+    with pytest.raises(ValueError, match="artifact hashes are incomplete"):
+        _validate_train_artifacts(*fixtures, bc_checkpoint_hash="bc-file")
 
     broken = list(fixtures)
     broken[4] = dict(fixtures[4], utility_component_artifact_hash="different")
     with pytest.raises(ValueError, match="utility artifact hash"):
-        _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")
+        _validate_train_artifacts(
+            *broken,
+            bc_checkpoint_hash="bc-file",
+            representation_manifest_hash="representations",
+        )
 
     broken = list(fixtures)
     broken[2] = dict(fixtures[2], unexpected_stale_field=True)
     with pytest.raises(ValueError, match="utility artifact hash"):
-        _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")
+        _validate_train_artifacts(
+            *broken,
+            bc_checkpoint_hash="bc-file",
+            representation_manifest_hash="representations",
+        )
 
 
 def _privacy_metrics(nll, pairwise, calibration, regret=0.05):

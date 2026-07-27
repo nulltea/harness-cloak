@@ -19,8 +19,6 @@ from cloak.runtime_types import (
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 import build_probe_distractors as bpd  # noqa: E402
-import build_ranker_env as bre  # noqa: E402
-import train_ranker as tr  # noqa: E402
 
 
 def test_placeholder_token_normalization_and_regex():
@@ -69,10 +67,6 @@ def test_teacher_cache_is_runtime_type_keyed_and_filtered(monkeypatch, tmp_path)
         "chronic condition", "<HEALTH_CONDITION_1>",
     ]
     assert lat.lattice_for("unknownsurface", "ethnicity") == ["<ETHNICITY_1>"]
-
-
-def test_ranker_env_floors_are_inert_for_runtime_types():
-    assert bre.inert_runtime_floors() == {t: 1.0 for t in RUNTIME_TYPES}
 
 
 def test_fine_anonymity_fail_closed_counts():
@@ -153,22 +147,6 @@ def test_fine_probe_pool_build_and_walk_risk(monkeypatch, tmp_path):
     risk = walk_risk("Patient has a chronic condition.", "cond0", "a chronic condition",
                      "health-condition")
     assert 0.0 <= risk < 1.0
-
-
-def test_ranker_assembles_fine_placeholder_and_seeds_existing_counter():
-    text = "prior diabetes improved"
-    R_walk = [{"surface": "diabetes", "type": "health-condition", "action": "generalize",
-               "replacement": "chronic condition", "start": 6, "end": 14,
-               "lattice": ["chronic condition"]},
-              {"surface": "prior", "type": "health-condition", "action": "placeholder",
-               "replacement": "<HEALTH_CONDITION_3>", "start": 0, "end": 5}]
-    spans = [{"surface": "diabetes", "type": "health-condition", "start": 6,
-              "actions": [{"mode": "placeholder", "fill": None, "p6": 0.0,
-                           "walk_risk": 0.0}]}]
-    doc_p, R = tr.assemble(text, R_walk, spans,
-                           {"diabetes": spans[0]["actions"][0]})
-    assert "<HEALTH_CONDITION_4>" in doc_p
-    assert R[0]["type"] == "health-condition"
 
 
 def test_extract_accepts_fine_placeholders_and_type_sanity():

@@ -11,7 +11,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
-from cloak.train.ranker import LambdaProfile
+from cloak.train.ranker_environment import LambdaProfile
 from cloak.train.ranker_environment import RankerAction, RankerDecision, RankerDocument
 from cloak.train.ranker_privacy import (
     DirectCountPrivacyProvider,

@@ -10,7 +10,7 @@ import pytest
 import torch
 
 import cloak.train.semantic_ranker as semantic_ranker_module
-from cloak.train.ranker import LambdaProfile
+from cloak.train.ranker_environment import LambdaProfile
 from cloak.train.ranker_environment import (
     RankerAction,
     RankerDecision,
@@ -1185,11 +1185,6 @@ def test_policy_cli_requires_explicit_architecture_specific_artifacts():
         "--utility-cache", "utility.jsonl",
         "--out-checkpoint", "policy.pt",
     ]
-    legacy = parser.parse_args([
-        *shared,
-        "--policy-architecture", "legacy-film-gru",
-        "--count-state", "count.json",
-    ])
     semantic = parser.parse_args([
         *shared,
         "--policy-architecture", "semantic-v1",
@@ -1204,27 +1199,24 @@ def test_policy_cli_requires_explicit_architecture_specific_artifacts():
         "--profile-count-targets", "targets.json",
     ])
 
-    assert legacy.policy_architecture == "legacy-film-gru"
-    assert legacy.count_state == "count.json"
     assert semantic.policy_architecture == "semantic-v1"
     assert semantic.representation_manifest == "representations.json"
     assert semantic.privacy_checkpoint is None
     assert semantic.profile_count_targets == "targets.json"
     assert learned.privacy_checkpoint == "privacy.pt"
     with pytest.raises(SystemExit):
-        parser.parse_args([*shared, "--count-state", "count.json"])
+        parser.parse_args([*shared, "--profile-count-targets", "targets.json"])
     with pytest.raises(SystemExit):
         parser.parse_args([
             *shared,
-            "--policy-architecture", "legacy-film-gru",
+            "--policy-architecture", "semantic-v1",
             "--representation-manifest", "representations.json",
-            "--profile-count-targets", "targets.json",
         ])
     with pytest.raises(SystemExit):
         parser.parse_args([
             *shared,
             "--policy-architecture", "semantic-v1",
-            "--count-state", "count.json",
+            "--profile-count-targets", "targets.json",
         ])
 
 

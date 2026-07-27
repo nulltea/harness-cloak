@@ -14,10 +14,59 @@ from math import ceil, isfinite
 from numbers import Real
 
 from cloak.runtime_types import placeholder_token, placeholder_type_token
-from cloak.train.reward import QA_BASE_URL, QA_MODEL, canon, fact_score
 from cloak.train.qa_audit import build_qa_audit
 
 UTILITY_SCORER_VERSION = "qa-utility-runtime-v1"
+
+QA_MODEL = "medgemma-4b-it"  # THE context reader -- the SINGLE definition. Every reader path
+                            # (DEFAULT_CONTEXT_READER_PIN, BatchedContextReader) imports this;
+                            # do not hardcode a reader model elsewhere or add a per-call reader
+                            # override. Served generative whole-doc reader on llama-swap :8060,
+                            # temp0/greedy, non-thinking, batched via pmap (workers match -np 6).
+                            # Reader sweep (2026-07-19): medgemma > gemma 4 E4B on QA yield
+                            # (kept 47 vs 44, three_point_gate_failed 29 vs 31) at the same
+                            # local 4B cost; a 120B gpt-oss reader rejected MORE, so
+                            # gate-failure is not reader-capability-bound (see memory).
+QA_BASE_URL = "http://localhost:8060/v1"
+
+
+def canon(t: str) -> str:
+    """Canonicalize for restatement matching: spoken-vs-written variants seen in the
+    corpora ("doctor kumar"/"Dr. Kumar", "40 milligrams"/"40 mg"). ponytail: spelled-out
+    numbers/dates ("July thirty first") stay unmatched; add a number normalizer if probe
+    supply still short."""
+    t = re.sub(r"\bdr\.?(?=\s)", "doctor", t.lower())
+    return re.sub(r"\bmilligrams?\b", "mg", t)
+
+
+def fact_score(pred: str, gold: str) -> float:
+    """Fact-recall scorer v2 (re-pin 2026-07-06): canon-normalize -> NUMBER GATE (every gold
+    numeric token must appear in the answer, else 0 — kills unit false-positives like
+    "10 mg" vs "40 milligrams") -> containment (gold tokens subset of answer -> 1.0, so a
+    verbose-but-correct "AT&T Corporation" for "AT&T" is a hit) -> acronym (CHF == the initials
+    of "Congestive Heart Failure") -> token-F1 fallback. Residual under-scores: non-initial
+    abbreviations (HTN) and pure synonyms (renal == kidney)."""
+    p = re.findall(r"\w+", canon(pred)); g = re.findall(r"\w+", canon(gold))
+    if not g:
+        return float(not p)
+    if not p:
+        return 0.0
+    gnum = [t for t in g if t.isdigit()]
+    pnum = {t for t in p if t.isdigit()}
+    if gnum and not all(n in pnum for n in gnum):
+        return 0.0
+    ps, gs = set(p), set(g)
+    if gs <= ps:
+        return 1.0
+    def _acro(short, long_):
+        return len(short) == 1 and len(short[0]) >= 2 and short[0] == "".join(w[0] for w in long_)
+    if _acro(p, g) or _acro(g, p):
+        return 1.0
+    common = sum(min(p.count(t), g.count(t)) for t in gs)
+    if not common:
+        return 0.0
+    prec, rec = common / len(p), common / len(g)
+    return 2 * prec * rec / (prec + rec)
 
 RELATION_TEACHER_MODEL = "openai/gpt-oss-120b"
 RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"

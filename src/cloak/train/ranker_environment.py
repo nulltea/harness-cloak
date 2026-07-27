@@ -10,6 +10,12 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any
 
+
+@dataclass(frozen=True)
+class LambdaProfile:
+    name: str
+    value: float
+
 from cloak.corpora import load_task_docs
 
 

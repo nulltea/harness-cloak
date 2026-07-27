@@ -369,7 +369,7 @@ def test_semantic_replay_captures_both_distributions_from_one_forward_per_step()
         behavior_clone_trajectory,
         replay_trajectory,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     assert [field.name for field in fields(ReplayedStep)] == [
         "decision_id",
@@ -405,7 +405,7 @@ def test_semantic_replay_fails_closed_when_policy_only_returns_scalar_log_probs(
         behavior_clone_trajectory,
         replay_trajectory,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     class IncompleteSemanticPolicy(StubPolicy):
         policy_architecture = "semantic-v1"
@@ -440,7 +440,7 @@ def _two_action_semantic_step(policy, profile):
 
 def test_semantic_expected_profile_count_loss_uses_detached_count_distribution():
     from cloak.train.interactive_ranker import expected_profile_count_loss
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     profile = LambdaProfile("high", 2.0)
@@ -464,7 +464,7 @@ def test_semantic_hybrid_objective_uses_profile_targets_not_legacy_count_reward(
         compose_hybrid_document_objective,
         expected_profile_count_loss,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     profile = LambdaProfile("high", 2.0)
@@ -499,7 +499,7 @@ def test_semantic_utility_and_exact_count_alpha_gradients_oppose_with_isolation(
         _gradient_norm,
         expected_profile_count_loss,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     profile = LambdaProfile("high", 2.0)
@@ -726,7 +726,7 @@ def test_hybrid_utility_loss_rejects_unknown_pair_or_nonscalar_loss():
 
 
 def _count_reward(*, alpha_level=0.2, beta_level=0.9):
-    from cloak.train.count_reward import CountActionScore, CountReward
+    from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
 
     rows = {}
     decision_actions = {}
@@ -740,32 +740,34 @@ def _count_reward(*, alpha_level=0.2, beta_level=0.9):
                 "keep": 0.0,
                 "placeholder": 1.0,
             }[action.mode]
-            rows[action.action_id] = CountActionScore(
-                action_id=action.action_id,
+            rows[action.action_id] = ProfileActionTarget(
                 decision_id=decision.decision_id,
+                action_id=action.action_id,
+                profile_id=str(decision.profile_id),
                 runtime_type=decision.runtime_type,
-                profile_id=decision.profile_id,
                 mode=action.mode,
-                count=None,
-                score=score,
+                log_count=None,
+                profile_score=score,
                 grounding_status=None,
                 source_family=None,
-                evidence_ref=None,
             )
-    rows["other-placeholder"] = CountActionScore(
-        action_id="other-placeholder",
+    rows["other-placeholder"] = ProfileActionTarget(
         decision_id="other-document-decision",
-        runtime_type="TYPE",
+        action_id="other-placeholder",
         profile_id="profile-other",
+        runtime_type="TYPE",
         mode="placeholder",
-        count=None,
-        score=1.0,
+        log_count=None,
+        profile_score=1.0,
         grounding_status=None,
         source_family=None,
-        evidence_ref=None,
     )
     decision_actions["other-document-decision"] = ("other-placeholder",)
-    return CountReward(rows, decision_actions)
+    return ProfileCountTargets(
+        rows,
+        decision_actions,
+        {decision_id: True for decision_id in decision_actions},
+    )
 
 
 def _utility_artifact():
@@ -912,7 +914,7 @@ def test_behavior_clone_trains_cross_entropy_and_records_stable_id_distributions
 
 def test_semantic_behavior_clone_updates_only_utility_and_history_at_lambda_zero():
     from cloak.train.interactive_ranker import behavior_clone
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     optimizer = torch.optim.SGD(policy.parameters(), lr=0.2)
@@ -937,7 +939,7 @@ def test_semantic_behavior_clone_updates_only_utility_and_history_at_lambda_zero
 
 def test_semantic_warm_start_clones_each_verified_winner_once_at_lambda_zero():
     from cloak.train.interactive_ranker import initialize_hybrid_warm_start
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     bc_state = {
@@ -1314,7 +1316,8 @@ def test_exit_artifact_contains_only_ids_scores_and_pins(tmp_path):
         collection,
         pins={
             "environment_hash": "env-hash",
-            "count_state_hash": "count-hash",
+            "profile_target_artifact_hash": "targets-hash",
+            "representation_manifest_hash": "representations-hash",
             "utility_artifact_hash": "utility-hash",
             "policy_checkpoint_hash": "policy-hash",
         },
@@ -1349,16 +1352,17 @@ def test_interactive_cli_has_only_task_subcommands_and_requires_all_artifact_pat
 
     parser = train_interactive_ranker.build_parser()
     common = [
-        "--policy-architecture", "legacy-film-gru",
+        "--policy-architecture", "semantic-v1",
         "--environment", "environment.json",
-        "--count-state", "count.json",
+        "--representation-manifest", "representations.json",
+        "--profile-count-targets", "targets.json",
         "--utility-artifact", "utility.json",
         "--utility-cache", "cache.jsonl",
     ]
     args = parser.parse_args([command, *common, *extra])
     assert args.command == command
     assert vars(args)["environment"] == "environment.json"
-    assert vars(args)["count_state"] == "count.json"
+    assert vars(args)["profile_count_targets"] == "targets.json"
     assert vars(args)["utility_artifact"] == "utility.json"
     assert vars(args)["utility_cache"] == "cache.jsonl"
     selected = parser.parse_args([
@@ -1389,9 +1393,10 @@ def test_interactive_cli_cache_only_miss_is_machine_readable_and_nonzero(
     with pytest.raises(SystemExit) as captured:
         train_interactive_ranker.main([
             "exit-collect",
-            "--policy-architecture", "legacy-film-gru",
+            "--policy-architecture", "semantic-v1",
             "--environment", "environment.json",
-            "--count-state", "count.json",
+            "--representation-manifest", "representations.json",
+            "--profile-count-targets", "targets.json",
             "--utility-artifact", "utility.json",
             "--utility-cache", "cache.jsonl",
             "--checkpoint", "bc.pt",
@@ -1513,9 +1518,10 @@ def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
     parser = train_interactive_ranker.build_parser()
     args = parser.parse_args([
         "train",
-        "--policy-architecture", "legacy-film-gru",
+        "--policy-architecture", "semantic-v1",
         "--environment", "environment.json",
-        "--count-state", "count.json",
+        "--representation-manifest", "representations.json",
+        "--profile-count-targets", "targets.json",
         "--utility-artifact", "utility.json",
         "--utility-cache", "cache.jsonl",
         "--threshold-manifest", "threshold.json",
@@ -1549,44 +1555,16 @@ def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
     with pytest.raises(SystemExit):
         parser.parse_args([
             "train",
-            "--policy-architecture", "legacy-film-gru",
+            "--policy-architecture", "semantic-v1",
             "--environment", "environment.json",
-            "--count-state", "count.json",
             "--utility-artifact", "utility.json",
             "--utility-cache", "cache.jsonl",
         ])
 
 
-def test_train_orchestration_selects_exact_profile_targets_only_for_semantic():
-    import train_interactive_ranker
-
-    targets = _profile_targets()
-    semantic = train_interactive_ranker._hybrid_count_supervision(
-        "semantic-v1", targets,
-    )
-    legacy_reward = _count_reward()
-    legacy = train_interactive_ranker._hybrid_count_supervision(
-        "legacy-film-gru", legacy_reward,
-    )
-
-    assert semantic == {
-        "count_reward": targets,
-        "profile_targets": targets,
-    }
-    assert legacy == {"count_reward": legacy_reward}
-    with pytest.raises(TypeError, match="ProfileCountTargets"):
-        train_interactive_ranker._hybrid_count_supervision(
-            "semantic-v1", legacy_reward,
-        )
-    with pytest.raises(TypeError, match="CountReward"):
-        train_interactive_ranker._hybrid_count_supervision(
-            "legacy-film-gru", targets,
-        )
-
-
 def test_semantic_cli_factory_uses_only_frozen_local_artifact_contracts(monkeypatch):
     import train_interactive_ranker
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     contract = SimpleNamespace(pair_dim=20)
     store = SimpleNamespace(manifest={"encoder": {"hidden_size": 4}})
@@ -1647,9 +1625,10 @@ def test_train_cli_dispatches_train_and_preserves_cache_only_stop(monkeypatch, c
     with pytest.raises(SystemExit) as captured:
         train_interactive_ranker.main([
             "train",
-            "--policy-architecture", "legacy-film-gru",
+            "--policy-architecture", "semantic-v1",
             "--environment", "environment.json",
-            "--count-state", "count.json",
+            "--representation-manifest", "representations.json",
+            "--profile-count-targets", "targets.json",
             "--utility-artifact", "utility.json",
             "--utility-cache", "cache.jsonl",
             "--threshold-manifest", "threshold.json",
@@ -1673,11 +1652,11 @@ def test_train_cli_dispatches_train_and_preserves_cache_only_stop(monkeypatch, c
 
 
 def _objective_fixture():
-    from cloak.train.count_reward import CountActionScore, CountReward
     from cloak.train.interactive_ranker import (
         ReplayedStep,
         ReplayedTrajectory,
     )
+    from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
     from cloak.train.utility_credit import DocumentUtilityCredit
 
     probability = torch.tensor([0.75, 0.25], dtype=torch.float64)
@@ -1709,17 +1688,16 @@ def _objective_fixture():
         ids = (f"{decision_id}-selected", f"{decision_id}-other")
         decision_actions[decision_id] = ids
         for action_id, score in zip(ids, (0.0, 1.0), strict=True):
-            action_rows[action_id] = CountActionScore(
+            action_rows[action_id] = ProfileActionTarget(
                 action_id=action_id,
                 decision_id=decision_id,
                 runtime_type="TYPE",
                 profile_id="profile",
                 mode="level",
-                count=1.0,
-                score=score,
+                log_count=1.0,
+                profile_score=score,
                 grounding_status="certifying",
                 source_family="fixture",
-                evidence_ref="fixture",
             )
     credit = DocumentUtilityCredit(
         document_utility=(0.5, 0.5),
@@ -1733,7 +1711,12 @@ def _objective_fixture():
         },
         route={"first": "linked", "second": "document"},
     )
-    return tuple(trajectories), CountReward(action_rows, decision_actions), credit
+    targets = ProfileCountTargets(
+        action_rows,
+        decision_actions,
+        {decision_id: True for decision_id in decision_actions},
+    )
+    return tuple(trajectories), targets, credit
 
 
 def test_hybrid_document_objective_matches_two_rollout_two_decision_equation():
@@ -1742,7 +1725,7 @@ def test_hybrid_document_objective_matches_two_rollout_two_decision_equation():
         hybrid_utility_loss,
     )
 
-    replayed, count_reward, credit = _objective_fixture()
+    replayed, profile_targets, credit = _objective_fixture()
     counterfactual = {(0, "second"): replayed[0].steps[1].log_prob * 0.0 + 0.3}
     utility = hybrid_utility_loss(replayed, credit, counterfactual)
     reference = tuple(
@@ -1753,7 +1736,7 @@ def test_hybrid_document_objective_matches_two_rollout_two_decision_equation():
     objective = compose_hybrid_document_objective(
         replayed,
         utility_loss=utility,
-        count_reward=count_reward,
+        profile_targets=profile_targets,
         lambda_value=2.0,
         beta=0.1,
         eta=0.2,
@@ -1782,7 +1765,7 @@ def test_count_gradient_survives_tied_utility_and_is_not_divided_twice():
     )
     from cloak.train.utility_credit import DocumentUtilityCredit
 
-    replayed, count_reward, _ = _objective_fixture()
+    replayed, profile_targets, _ = _objective_fixture()
     tied = DocumentUtilityCredit(
         document_utility=(0.5, 0.5),
         linked_utility={"first": (0.5, 0.5)},
@@ -1798,7 +1781,7 @@ def test_count_gradient_survives_tied_utility_and_is_not_divided_twice():
     objective = compose_hybrid_document_objective(
         replayed,
         utility_loss=utility,
-        count_reward=count_reward,
+        profile_targets=profile_targets,
         lambda_value=2.0,
         beta=0.0,
         eta=0.0,
@@ -1840,7 +1823,7 @@ def test_seeded_latin_cycle_balances_every_document_and_records_exposure():
         build_latin_cycle_schedule,
         profile_exposure_report,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     documents = tuple(
         replace(_document(), doc_id=f"fixture/{index}", corpus=("a" if index < 2 else "b"))
@@ -1880,7 +1863,7 @@ def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_familie
     import copy
 
     from cloak.train.interactive_ranker import train_hybrid_document_group
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
     from cloak.train.utility_cache import UtilityCache
 
     policy = StubPolicy()
@@ -1925,7 +1908,7 @@ def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_familie
         rollouts=2,
         utility_artifact=_utility_artifact(),
         environment_hash="env-hash",
-        count_reward=_count_reward(),
+        profile_targets=_count_reward(),
         cache=UtilityCache(tmp_path / "cache.jsonl"),
         optimizer=optimizer,
         beta=0.01,
@@ -1970,7 +1953,7 @@ def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_familie
 
 def test_semantic_hybrid_step_routes_profile_loss_and_emits_owned_gradients(tmp_path):
     from cloak.train.interactive_ranker import train_hybrid_document_group
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
     from cloak.train.utility_cache import UtilityCache
 
     policy = SemanticGradientPolicy()
@@ -2000,7 +1983,6 @@ def test_semantic_hybrid_step_routes_profile_loss_and_emits_owned_gradients(tmp_
         rollouts=2,
         utility_artifact=_utility_artifact(),
         environment_hash="env-hash",
-        count_reward=_profile_targets(),
         profile_targets=_profile_targets(),
         cache=UtilityCache(tmp_path / "cache.jsonl"),
         optimizer=optimizer,
@@ -2157,7 +2139,7 @@ def test_failed_counterfactual_execution_does_not_advance_pair_history(tmp_path)
 
     from cloak.train.counterfactuals import CounterfactualRequest
     from cloak.train.interactive_ranker import train_hybrid_document_group
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
     from cloak.train.utility_cache import UtilityCache
 
     policy = StubPolicy()
@@ -2195,7 +2177,7 @@ def test_failed_counterfactual_execution_does_not_advance_pair_history(tmp_path)
             rollouts=2,
             utility_artifact=_utility_artifact(),
             environment_hash="env-hash",
-            count_reward=_count_reward(),
+            profile_targets=_count_reward(),
             cache=UtilityCache(tmp_path / "cache.jsonl"),
             optimizer=torch.optim.SGD(policy.parameters(), lr=0.1),
             beta=0.0,
@@ -2226,22 +2208,14 @@ def test_hybrid_checkpoint_round_trip_restores_optimizer_rng_schedule_and_pins(
         load_hybrid_checkpoint,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = StubPolicy()
     optimizer = torch.optim.Adam(policy.parameters(), lr=0.01)
     profiles = (LambdaProfile("zero", 0.0), LambdaProfile("high", 2.0))
     schedule = build_latin_cycle_schedule((_document(),), profiles, seed=11)
     generator = torch.Generator().manual_seed(23)
-    pins = {
-        "environment_hash": "env",
-        "utility_artifact_hash": "utility",
-        "count_state_hash": "count",
-        "lambda_menu_hash": "menu",
-        "threshold_manifest_hash": "threshold",
-        "exit_winners_hash": "exit",
-        "bc_checkpoint_hash": "bc",
-    }
+    pins = _semantic_checkpoint_pins()
     architecture_pin = "sha256:architecture"
     path = tmp_path / "checkpoint.pt"
     save_hybrid_checkpoint(
@@ -2297,7 +2271,7 @@ def test_hybrid_checkpoint_refuses_any_pin_mismatch_before_loading_state(tmp_pat
         load_hybrid_checkpoint,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = StubPolicy()
     optimizer = torch.optim.SGD(policy.parameters(), lr=0.1)
@@ -2305,12 +2279,7 @@ def test_hybrid_checkpoint_refuses_any_pin_mismatch_before_loading_state(tmp_pat
     schedule = build_latin_cycle_schedule(
         (_document(),), (LambdaProfile("zero", 0.0),), seed=0,
     )
-    pins = {
-        "environment_hash": "env", "utility_artifact_hash": "utility",
-        "count_state_hash": "count", "lambda_menu_hash": "menu",
-        "threshold_manifest_hash": "threshold", "exit_winners_hash": "exit",
-        "bc_checkpoint_hash": "bc",
-    }
+    pins = _semantic_checkpoint_pins()
     path = tmp_path / "checkpoint.pt"
     save_hybrid_checkpoint(
         path,
@@ -2365,7 +2334,7 @@ def test_semantic_checkpoint_publishes_frozen_contract_and_round_trips(tmp_path)
         policy_architecture_pin,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     optimizer = torch.optim.Adam(policy.parameters(), lr=0.01)
@@ -2426,7 +2395,7 @@ def test_semantic_and_legacy_checkpoints_reject_each_other_before_tensor_load(tm
         policy_architecture_pin,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     semantic = SemanticGradientPolicy()
     semantic_optimizer = torch.optim.SGD(semantic.parameters(), lr=0.1)
@@ -2460,12 +2429,7 @@ def test_semantic_and_legacy_checkpoints_reject_each_other_before_tensor_load(tm
             policy=legacy,
             optimizer=torch.optim.SGD(legacy.parameters(), lr=0.1),
             generator=torch.Generator(),
-            expected_artifact_pins={
-                "environment_hash": "env", "utility_artifact_hash": "utility",
-                "count_state_hash": "count", "lambda_menu_hash": "menu",
-                "threshold_manifest_hash": "threshold", "exit_winners_hash": "exit",
-                "bc_checkpoint_hash": "bc",
-            },
+            expected_artifact_pins=_semantic_checkpoint_pins(),
             expected_architecture_pin=policy_architecture_pin(legacy),
             expected_cache_paths={"utility": "cache"},
             expected_code_revision="revision",
@@ -2475,12 +2439,7 @@ def test_semantic_and_legacy_checkpoints_reject_each_other_before_tensor_load(tm
 
     legacy_path = tmp_path / "legacy.pt"
     legacy_optimizer = torch.optim.SGD(legacy.parameters(), lr=0.1)
-    legacy_pins = {
-        "environment_hash": "env", "utility_artifact_hash": "utility",
-        "count_state_hash": "count", "lambda_menu_hash": "menu",
-        "threshold_manifest_hash": "threshold", "exit_winners_hash": "exit",
-        "bc_checkpoint_hash": "bc",
-    }
+    legacy_pins = _semantic_checkpoint_pins()
     save_hybrid_checkpoint(
         legacy_path,
         policy=legacy,
@@ -2533,7 +2492,7 @@ def test_hybrid_training_loop_uses_latin_profiles_and_enables_kl_after_block():
         build_latin_cycle_schedule,
         train_hybrid_policy,
     )
-    from cloak.train.ranker import LambdaProfile
+    from cloak.train.ranker_environment import LambdaProfile
 
     documents = tuple(
         replace(_document(), doc_id=f"fixture/{index}") for index in range(3)
@@ -2587,7 +2546,7 @@ def test_hybrid_training_loop_uses_latin_profiles_and_enables_kl_after_block():
         optimizer=object(),
         utility_artifact={},
         environment_hash="env",
-        count_reward=object(),
+        profile_targets=object(),
         cache=object(),
         threshold_manifest={
             "feasibility_gates": {"min_adjacent_winner_change": 0.2},

@@ -9,7 +9,7 @@ from copy import deepcopy
 from statistics import mean
 from typing import Any
 
-from cloak.train.count_reward import CountReward
+from cloak.train.profile_count import ProfileCountTargets
 from cloak.train.interactive_ranker import assemble_action_vector, legal_action_ids
 from cloak.train.lambda_menu import (
     CalibrationPoint,
@@ -283,7 +283,7 @@ def _fixed_fills(document: RankerDocument) -> tuple[str, ...]:
 def _injectivity_measurements(
     points: Sequence[CalibrationPoint],
     documents: Mapping[str, RankerDocument],
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
 ) -> dict[str, Any]:
     collision_events = 0
     eligible_decisions = 0
@@ -347,7 +347,7 @@ def _injectivity_measurements(
 
 def _count_measurements(
     documents: Mapping[str, RankerDocument],
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
     count_state: Mapping,
 ) -> dict[str, Any]:
     flat = 0
@@ -379,12 +379,17 @@ def _count_measurements(
             by_type[decision.runtime_type].extend(adjacent)
     provenance = Counter()
     provenance_by_type: dict[str, Counter[str]] = defaultdict(Counter)
-    for row in count_state.get("action_scores", {}).values():
+    for row in count_state.get("action_targets", {}).values():
         if row.get("mode") == "level":
             label = str(row.get("grounding_status") or "provisional-null")
             provenance[label] += 1
             provenance_by_type[str(row.get("runtime_type") or "unknown")][label] += 1
     return {
+        # Measured over profile-relative targets: each ladder is normalized by its own
+        # maximum log-count, so a score of 1.0 is the profile ceiling (reached by
+        # construction) rather than a clipped type reference, and the tag count is the
+        # number of profiles carrying a normalization tag, not tagged decisions.
+        "basis": "profile-targets",
         "decision_count": decision_count,
         "flat_menu_count": flat,
         "flat_menu_fraction": flat / decision_count if decision_count else 0.0,
@@ -404,7 +409,7 @@ def _count_measurements(
             runtime_type: dict(sorted(values.items()))
             for runtime_type, values in sorted(provenance_by_type.items())
         },
-        "provisional_tag_count": len(count_state.get("provisional_decision_tags", ())),
+        "provisional_tag_count": len(count_state.get("profile_tags", ())),
     }
 
 
@@ -476,7 +481,7 @@ def build_diagnostic_spike(
     *,
     documents: Mapping[str, RankerDocument],
     utility_artifact: Mapping,
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
     count_state: Mapping,
     menu_artifact: Mapping,
     split_by_doc: Mapping[str, str],

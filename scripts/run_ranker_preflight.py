@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from cloak.train.count_reward import CountReward
+from cloak.train.profile_count import ProfileCountTargets
 from cloak.train.lambda_menu import (
     CalibrationTrajectory,
     build_anchor_trajectories,
@@ -25,6 +25,7 @@ from cloak.train.ranker_diagnostics import (
     validate_threshold_rules,
 )
 from cloak.train.ranker_environment import RankerDocument, load_ranker_environment
+from cloak.train.ranker_privacy import DirectCountPrivacyProvider
 from cloak.train.roundtrip import (
     UTILITY_EXECUTION_CONTRACT_VERSION,
     _cache_identity,
@@ -37,7 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("--environment", required=True)
     parser.add_argument("--utility-artifact", required=True)
-    parser.add_argument("--count-state", required=True)
+    parser.add_argument("--profile-count-targets", required=True)
     parser.add_argument("--utility-cache", required=True)
     parser.add_argument("--exit-winners", required=True)
     parser.add_argument("--threshold-rules", required=True)
@@ -144,7 +145,9 @@ def _exit_trajectories(
     if stored_hash != expected_hash:
         raise ValueError("ExIt winner artifact hash mismatch")
     pins = artifact.get("pins")
-    for name in ("environment_hash", "count_state_hash", "utility_artifact_hash"):
+    for name in (
+        "environment_hash", "profile_target_artifact_hash", "utility_artifact_hash",
+    ):
         if not isinstance(pins, Mapping) or pins.get(name) != expected_pins[name]:
             raise ValueError(f"ExIt winner {name} differs")
     trajectories = []
@@ -251,17 +254,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     environment_hash = _environment_hash(environment)
     documents = load_ranker_environment(Path(args.environment))
     utility_artifact = _read_json(args.utility_artifact)
-    count_state = _read_json(args.count_state)
+    count_state = _read_json(args.profile_count_targets)
     if utility_artifact.get("environment_hash") != environment_hash:
         raise ValueError("utility artifact environment hash differs")
     if count_state.get("environment_hash") != environment_hash:
-        raise ValueError("count state environment hash differs")
-    count_reward = CountReward.from_artifact(count_state)
+        raise ValueError("profile count targets environment hash differs")
+    count_reward = ProfileCountTargets.from_artifact(count_state)
+    # Calibrate exactly the decision set the trainer controls: out-of-scope and
+    # count-uncovered menus are fixed keeps there, so they carry no calibration point.
+    from train_interactive_ranker import _demote_out_of_scope_decisions
+
+    scoped, _demoted = _demote_out_of_scope_decisions(
+        tuple(documents.values()), DirectCountPrivacyProvider(count_state),
+    )
+    documents = {document.doc_id: document for document in scoped}
     rules = validate_threshold_rules(_read_json(args.threshold_rules))
     cache = UtilityCache(args.utility_cache)
     expected_exit_pins = {
         "environment_hash": environment_hash,
-        "count_state_hash": str(count_state.get("artifact_hash")),
+        "profile_target_artifact_hash": str(count_state.get("artifact_hash")),
         "utility_artifact_hash": str(utility_artifact.get("artifact_hash")),
     }
     exit_trajectories, exit_status = _exit_trajectories(
@@ -321,7 +332,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     reward_pins = {
         "environment_hash": environment_hash,
         "utility_artifact_hash": str(utility_artifact.get("artifact_hash")),
-        "count_state_hash": str(count_state.get("artifact_hash")),
+        "profile_target_artifact_hash": str(count_state.get("artifact_hash")),
         "execution_contract_version": UTILITY_EXECUTION_CONTRACT_VERSION,
     }
     points = tuple(
@@ -395,7 +406,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "report_version": "ranker-v2-preflight-gate-v1",
         "environment_hash": environment_hash,
         "clauses": {
-            "count_state": count_state.get("gate_report", {}).get("verdict"),
+            "profile_count_targets": count_state.get("gate_report", {}).get("verdict"),
             "missing_occurrence_decision_mappings": len(
                 count_state.get("gate_report", {}).get("missing_policy_mappings", ())
             ),

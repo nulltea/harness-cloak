@@ -8,7 +8,7 @@ from dataclasses import dataclass, replace
 from types import MappingProxyType
 from typing import Any
 
-from cloak.train.count_reward import CountReward
+from cloak.train.profile_count import ProfileCountTargets
 from cloak.train.interactive_ranker import legal_action_ids
 from cloak.train.ranker_environment import RankerAction, RankerDocument
 from cloak.train.utility_cache import UtilityResult
@@ -172,7 +172,7 @@ def _reserved_fixed_fills(document: RankerDocument) -> tuple[str, ...]:
 
 def _anchor_walk(
     document: RankerDocument,
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
     source: str,
     chooser,
 ) -> CalibrationTrajectory:
@@ -239,7 +239,7 @@ def _choose_mode(mode: str):
     return choose
 
 
-def _choose_minimum_count_non_keep(decision, menu, count_reward: CountReward) -> str:
+def _choose_minimum_count_non_keep(decision, menu, count_reward: ProfileCountTargets) -> str:
     actions = {action.action_id: action for action in decision.actions}
     candidates = tuple(
         action_id for action_id in menu if actions[action_id].mode != "keep"
@@ -281,7 +281,7 @@ def _choose_midpoint_level(decision, menu, _count_reward) -> str:
 
 def build_anchor_trajectories(
     document: RankerDocument,
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
 ) -> tuple[CalibrationTrajectory, ...]:
     """Build and exact-deduplicate the five deterministic calibration anchors."""
 
@@ -323,7 +323,7 @@ def calibration_point_from_result(
     trajectory: CalibrationTrajectory,
     result: UtilityResult,
     *,
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
     count_state: Mapping,
     utility_artifact: Mapping,
     reward_pins: Mapping[str, str],
@@ -336,7 +336,9 @@ def calibration_point_from_result(
         float(count_reward.action_scores(decision_id, (action_id,))[0])
         for decision_id, action_id in trajectory.ordered_action_vector
     ]
-    raw_provenance = count_state.get("action_scores", {})
+    # Profile-count targets carry no per-action evidence_ref (it is a gate-report field),
+    # so provenance records the four fields the target rows actually publish.
+    raw_provenance = count_state.get("action_targets", {})
     provenance = {}
     for _decision_id, action_id in trajectory.ordered_action_vector:
         row = raw_provenance.get(action_id)
@@ -344,10 +346,7 @@ def calibration_point_from_result(
             raise ValueError(f"count state lacks provenance for action {action_id}")
         provenance[action_id] = {
             key: row.get(key)
-            for key in (
-                "mode", "profile_id", "grounding_status", "source_family",
-                "evidence_ref",
-            )
+            for key in ("mode", "profile_id", "grounding_status", "source_family")
         }
     return CalibrationPoint(
         doc_id=trajectory.doc_id,

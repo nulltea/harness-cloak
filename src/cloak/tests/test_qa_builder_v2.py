@@ -4,7 +4,6 @@ from collections import Counter
 
 import pytest
 
-import cloak.train.roundtrip as roundtrip
 import cloak.train.qa_builder as qa_builder
 from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
@@ -1408,36 +1407,6 @@ def test_score_utility_passes_frozen_clause_to_reader():
     result = score_utility(artifact, "d1", doc_p="generalized", out_final="", reader=reader)
     assert result["component_scores"]["c1"] == 1.0
     assert seen == [[clause]]
-
-
-def test_roundtrip_utility_artifact_scores_doc_p_and_out_final(monkeypatch):
-    class Remote:
-        def generate(self, prompt):
-            return "REMOTE OUT_P"
-
-    calls = []
-
-    def fake_score(artifact, doc_id, *, doc_p, out_final, reader, set_reader=None):
-        calls.append((artifact, doc_id, doc_p, out_final, reader))
-        return {"component_scores": {"c1": 0.75}, "utility": 0.75}
-
-    monkeypatch.setattr(roundtrip, "_remote", lambda: Remote())
-    monkeypatch.setattr(roundtrip, "invert", lambda out_p, R: ("DELIVERED OUT_FINAL", None))
-    monkeypatch.setattr(roundtrip, "score_utility", fake_score, raising=False)
-
-    artifact = {"documents": {"d1": {}}, "assertions": {}}
-    result = roundtrip.roundtrip_batch([{
-        "corpus": "clinical",
-        "doc_id": "d1",
-        "doc_p": "ROLLOUT DOC_P",
-        "R": [],
-        "probes": [],
-        "utility_artifact": artifact,
-    }], workers=1)[0]
-
-    assert result["recall"] == pytest.approx(0.75)
-    assert result["component_scores"] == {"c1": 0.75}
-    assert calls[0][1:4] == ("d1", "ROLLOUT DOC_P", "DELIVERED OUT_FINAL")
 
 
 def test_compile_artifact_assigns_policy_routing_and_preserves_null_mappings():

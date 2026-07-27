@@ -21,7 +21,6 @@ from cloak.train.ranker_environment import (
     RankerDecision,
     RankerDocument,
 )
-from cloak.train.count_reward import CountReward, expected_count_loss
 from cloak.train.profile_count import ProfileCountTargets
 from cloak.train.utility_cache import UtilityCache, UtilityRequest, UtilityResult, stable_hash
 from cloak.train.utility_credit import (
@@ -171,7 +170,7 @@ class LatinCycleSchedule:
             offset = self.offsets_by_document[doc_id]
         except KeyError as error:
             raise ValueError(f"schedule lacks document {doc_id}") from error
-        from cloak.train.ranker import LambdaProfile
+        from cloak.train.ranker_environment import LambdaProfile
 
         index = (offset + epoch) % len(self.profile_names)
         return LambdaProfile(self.profile_names[index], self.profile_values[index])
@@ -320,17 +319,9 @@ def _import_unconditioned_state(
     imported = {}
     for name, target_value in target.items():
         source_value = source_state[name]
-        if source_value.shape == target_value.shape:
-            imported[name] = source_value.detach().clone()
-        elif (
-            name == "profile_embeddings.weight"
-            and source_value.ndim == 2
-            and source_value.shape[0] == 1
-            and source_value.shape[1] == target_value.shape[1]
-        ):
-            imported[name] = source_value.detach().expand_as(target_value).clone()
-        else:
+        if source_value.shape != target_value.shape:
             raise ValueError(f"BC parameter shape differs: {name}")
+        imported[name] = source_value.detach().clone()
     policy.load_state_dict(imported, strict=True)
 
 
@@ -343,31 +334,6 @@ def _policy_architecture_name(policy: Any) -> str:
     if type(policy).__name__ == "SemanticRankerPolicy":
         return "semantic-v1"
     return "legacy-film-gru"
-
-
-@torch.no_grad()
-def assert_exact_profile_identity(
-    policy: TrajectoryPolicy,
-    documents: Sequence[RankerDocument],
-    profiles: Sequence[Any],
-) -> None:
-    """Require byte-identical distributions before conditioning updates."""
-
-    profiles = tuple(profiles)
-    if not profiles:
-        raise ValueError("profile identity requires at least one profile")
-    for document in documents:
-        base = behavior_clone_trajectory(document, profiles[0])
-        expected = replay_trajectory(policy, document, base, profiles[0])
-        for profile in profiles[1:]:
-            candidate = replay_trajectory(policy, document, base, profile)
-            if len(candidate.steps) != len(expected.steps) or any(
-                not torch.equal(left.log_probs, right.log_probs)
-                for left, right in zip(expected.steps, candidate.steps, strict=True)
-            ):
-                raise ValueError(
-                    f"profile identity failed before conditional updates for {document.doc_id}"
-                )
 
 
 @torch.no_grad()
@@ -410,18 +376,13 @@ def initialize_hybrid_warm_start(
     if exit_winners.get("artifact_version") != "ranker-v2-exit-winners-v1":
         raise ValueError("unsupported ExIt winner artifact")
     _import_unconditioned_state(policy, bc_state_dict)
-    architecture = _policy_architecture_name(policy)
-    if architecture == "semantic-v1":
-        zero_profiles = tuple(
-            profile for profile in profiles if float(profile.value) == 0.0
-        )
-        if len(zero_profiles) != 1:
-            raise ValueError("semantic warm start requires exactly one lambda-zero profile")
-        clone_profiles = zero_profiles
-        assert_exact_lambda_zero_identity(policy, documents, zero_profiles[0])
-    else:
-        clone_profiles = profiles
-        assert_exact_profile_identity(policy, documents, profiles)
+    zero_profiles = tuple(
+        profile for profile in profiles if float(profile.value) == 0.0
+    )
+    if len(zero_profiles) != 1:
+        raise ValueError("semantic warm start requires exactly one lambda-zero profile")
+    clone_profiles = zero_profiles
+    assert_exact_lambda_zero_identity(policy, documents, zero_profiles[0])
     winners = []
     for row in exit_winners.get("documents", ()):
         if row.get("verification_status") != "verified" or row.get("winner") is None:
@@ -515,8 +476,7 @@ def compose_hybrid_document_objective(
     replayed: Sequence[ReplayedTrajectory],
     *,
     utility_loss: torch.Tensor,
-    count_reward: CountReward | None = None,
-    profile_targets: ProfileCountTargets | None = None,
+    profile_targets: ProfileCountTargets,
     lambda_value: float,
     beta: float,
     eta: float,
@@ -547,27 +507,13 @@ def compose_hybrid_document_objective(
     replay_steps = tuple(
         step for trajectory in replayed for step in trajectory.steps
     )
-    if (count_reward is None) == (profile_targets is None):
-        raise ValueError(
-            "hybrid objective requires exactly one count supervision artifact"
-        )
-    if profile_targets is not None:
-        count = expected_profile_count_loss(
-            replay_steps,
-            profile_targets,
-            lambda_value=float(lambda_value),
-            decision_count=decision_count,
-            rollout_count=len(replayed),
-        )
-    else:
-        assert count_reward is not None
-        count = expected_count_loss(
-            replay_steps,
-            count_reward,
-            lambda_value=float(lambda_value),
-            decision_count=decision_count,
-            rollout_count=len(replayed),
-        )
+    count = expected_profile_count_loss(
+        replay_steps,
+        profile_targets,
+        lambda_value=float(lambda_value),
+        decision_count=decision_count,
+        rollout_count=len(replayed),
+    )
     entropy = torch.stack([step.entropy for step in replay_steps]).sum() / len(replayed)
     if reference_log_probs is None:
         if eta != 0.0:
@@ -1386,7 +1332,7 @@ def trajectory_point(
     trajectory: SampledTrajectory,
     result: UtilityResult,
     *,
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
     utility_artifact: Mapping,
 ) -> TrajectoryPoint:
     """Bind a complete cached component vector to its pure U and diagnostic P_count."""
@@ -1476,7 +1422,7 @@ def score_trajectories(
     *,
     utility_artifact: Mapping,
     environment_hash: str,
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
     cache: UtilityCache,
     remote_workers: int,
     reader_workers: int,
@@ -1714,8 +1660,7 @@ def train_hybrid_document_group(
     rollouts: int,
     utility_artifact: Mapping,
     environment_hash: str,
-    count_reward: CountReward | ProfileCountTargets,
-    profile_targets: ProfileCountTargets | None = None,
+    profile_targets: ProfileCountTargets,
     cache: UtilityCache,
     optimizer: torch.optim.Optimizer,
     beta: float,
@@ -1739,10 +1684,6 @@ def train_hybrid_document_group(
     if rollouts < 2:
         raise ValueError("hybrid training requires at least two rollouts")
     architecture = _policy_architecture_name(policy)
-    if architecture == "semantic-v1" and profile_targets is None:
-        raise ValueError("semantic-v1 hybrid training requires profile count targets")
-    if architecture == "legacy-film-gru" and profile_targets is not None:
-        raise ValueError("legacy hybrid training cannot use profile count targets")
     if max_grad_norm is not None and (
         not math.isfinite(float(max_grad_norm)) or max_grad_norm <= 0.0
     ):
@@ -1767,7 +1708,7 @@ def train_hybrid_document_group(
         trajectories,
         utility_artifact=utility_artifact,
         environment_hash=environment_hash,
-        count_reward=count_reward,
+        count_reward=profile_targets,
         cache=cache,
         remote_workers=remote_workers,
         reader_workers=reader_workers,
@@ -1845,7 +1786,6 @@ def train_hybrid_document_group(
     objective = compose_hybrid_document_objective(
         replayed,
         utility_loss=utility_loss,
-        count_reward=count_reward if profile_targets is None else None,
         profile_targets=profile_targets,
         lambda_value=float(profile.value),
         beta=beta,
@@ -1941,7 +1881,7 @@ def train_hybrid_document_group(
                 action = _action_by_id(decision, step.selected_action_id)
                 type_modes[action.mode] += 1
                 type_collisions += len(step.legal_action_ids) < len(decision.actions)
-                selected_scores.append(float(count_reward.action_scores(
+                selected_scores.append(float(profile_targets.action_scores(
                     decision.decision_id, (step.selected_action_id,),
                 )[0]))
                 entropies.append(float(
@@ -1975,7 +1915,6 @@ def train_hybrid_document_group(
     privacy_diagnostics: dict[str, Any] = {}
     lambda_zero_identity_failures = 0
     if architecture == "semantic-v1":
-        assert profile_targets is not None
         target_rows = {
             row.action_id: row for row in profile_targets.target_rows()
         }
@@ -2312,8 +2251,7 @@ def train_hybrid_policy(
     optimizer: Any,
     utility_artifact: Mapping,
     environment_hash: str,
-    count_reward: Any,
-    profile_targets: ProfileCountTargets | None = None,
+    profile_targets: ProfileCountTargets,
     cache: Any,
     threshold_manifest: Mapping,
     max_epochs: int,
@@ -2363,7 +2301,6 @@ def train_hybrid_policy(
                 rollouts=rollouts,
                 utility_artifact=utility_artifact,
                 environment_hash=environment_hash,
-                count_reward=count_reward,
                 profile_targets=profile_targets,
                 cache=cache,
                 optimizer=optimizer,
@@ -2409,16 +2346,6 @@ def train_hybrid_policy(
     )
 
 
-_LEGACY_ARTIFACT_PIN_KEYS = frozenset({
-    "environment_hash",
-    "utility_artifact_hash",
-    "count_state_hash",
-    "lambda_menu_hash",
-    "threshold_manifest_hash",
-    "exit_winners_hash",
-    "bc_checkpoint_hash",
-})
-
 _SEMANTIC_DIRECT_ARTIFACT_PIN_KEYS = frozenset({
     "environment_hash",
     "utility_artifact_hash",
@@ -2432,18 +2359,13 @@ _SEMANTIC_LEARNED_ARTIFACT_PIN_KEYS = (
 )
 
 
-def _validate_hybrid_pins(
-    pins: Mapping[str, str], architecture: str,
-) -> dict[str, str]:
+def _validate_hybrid_pins(pins: Mapping[str, str]) -> dict[str, str]:
     supplied = set(pins)
-    if architecture == "semantic-v1":
-        expected = (
-            _SEMANTIC_LEARNED_ARTIFACT_PIN_KEYS
-            if "privacy_checkpoint_hash" in supplied
-            else _SEMANTIC_DIRECT_ARTIFACT_PIN_KEYS
-        )
-    else:
-        expected = _LEGACY_ARTIFACT_PIN_KEYS
+    expected = (
+        _SEMANTIC_LEARNED_ARTIFACT_PIN_KEYS
+        if "privacy_checkpoint_hash" in supplied
+        else _SEMANTIC_DIRECT_ARTIFACT_PIN_KEYS
+    )
     if supplied != expected or any(
         not isinstance(value, str) or not value for value in pins.values()
     ):
@@ -2579,7 +2501,7 @@ def save_hybrid_checkpoint(
     if epoch < 0:
         raise ValueError("hybrid checkpoint epoch must be nonnegative")
     architecture = _policy_architecture_name(policy)
-    pins = _validate_hybrid_pins(artifact_pins, architecture)
+    pins = _validate_hybrid_pins(artifact_pins)
     if not architecture_pin or not code_revision or not cache_paths or not training_config or any(
         not isinstance(key, str) or not isinstance(value, str) or not key or not value
         for key, value in cache_paths.items()
@@ -2649,9 +2571,7 @@ def load_hybrid_checkpoint(
         "semantic_contract"
     ) != _semantic_policy_contract(policy):
         raise ValueError("semantic checkpoint architecture contract differs")
-    if checkpoint.get("artifact_pins") != _validate_hybrid_pins(
-        expected_artifact_pins, architecture,
-    ):
+    if checkpoint.get("artifact_pins") != _validate_hybrid_pins(expected_artifact_pins):
         raise ValueError("hybrid checkpoint artifact pins differ")
     if checkpoint.get("architecture_pin") != expected_architecture_pin:
         raise ValueError("hybrid checkpoint architecture pin differs")
@@ -2710,7 +2630,7 @@ def collect_exit_winners(
     rollouts_per_document: int,
     utility_artifact: Mapping,
     environment_hash: str,
-    count_reward: CountReward,
+    count_reward: ProfileCountTargets,
     cache: UtilityCache,
     remote_workers: int,
     reader_workers: int,
@@ -2920,18 +2840,12 @@ def write_exit_winners(
 ) -> dict[str, Any]:
     """Atomically publish a content-free, hash-bound ExIt calibration pool."""
 
-    legacy_pins = frozenset({
-        "environment_hash", "count_state_hash", "utility_artifact_hash",
-        "policy_checkpoint_hash",
-    })
     semantic_pins = frozenset({
         "environment_hash", "profile_target_artifact_hash",
         "representation_manifest_hash", "utility_artifact_hash",
         "policy_checkpoint_hash",
     })
-    allowed_pin_sets = (
-        legacy_pins, semantic_pins, semantic_pins | {"privacy_checkpoint_hash"},
-    )
+    allowed_pin_sets = (semantic_pins, semantic_pins | {"privacy_checkpoint_hash"})
     if set(pins) not in allowed_pin_sets or any(
         not isinstance(value, str) or not value for value in pins.values()
     ):

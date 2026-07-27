@@ -28,7 +28,7 @@ from cloak.train.relation_support_gate import (
     build_informative_context_judge,
     build_medgemma_judge,
 )
-from cloak.train.reward import QA_BASE_URL
+from cloak.train.qa_builder import QA_BASE_URL
 
 RELATION_SUPPORT_JUDGE_MODEL = "medgemma-4b-it"
 

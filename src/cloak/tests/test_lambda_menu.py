@@ -35,7 +35,7 @@ def _point(
         reward_pins={
             "environment_hash": "env",
             "utility_artifact_hash": "utility",
-            "count_state_hash": "count",
+            "profile_target_artifact_hash": "count",
             "execution_contract_version": "execution",
         },
         action_modes=modes,
@@ -303,12 +303,12 @@ def test_calibration_pool_stores_complete_pins_components_and_count_provenance()
         result,
         count_reward=_count_reward(),
         count_state={
-            "action_scores": {
+            "action_targets": {
                 "fine": {
                     "mode": "level",
+                    "profile_id": "profile",
                     "grounding_status": "certifying",
                     "source_family": "fixture",
-                    "evidence_ref": "evidence",
                 },
             },
         },
@@ -316,7 +316,7 @@ def test_calibration_pool_stores_complete_pins_components_and_count_provenance()
         reward_pins={
             "environment_hash": "env",
             "utility_artifact_hash": "utility",
-            "count_state_hash": "count",
+            "profile_target_artifact_hash": "count",
             "execution_contract_version": "execution",
         },
     )
