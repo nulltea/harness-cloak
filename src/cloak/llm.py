@@ -107,6 +107,11 @@ class LLMClient:
 
     # Per-(base_url, model) locks shared across all instances; access via _registry_lock.
     _locks: dict[tuple[str, str], threading.Lock] = {}
+    # Striped locks for request-scoped single flight: identical cache paths always share
+    # a stripe (stampede protection), distinct requests almost always run concurrently.
+    _request_locks: tuple[threading.Lock, ...] = tuple(
+        threading.Lock() for _ in range(64)
+    )
 
     @classmethod
     def _lock_for(cls, base_url: str, model: str) -> threading.Lock:
@@ -117,6 +122,10 @@ class LLMClient:
                 lock = cls._locks[key] = threading.Lock()
         return lock
 
+    @classmethod
+    def _request_lock_for(cls, path: str) -> threading.Lock:
+        return cls._request_locks[hash(path) % len(cls._request_locks)]
+
     def __init__(
         self,
         model: str,
@@ -124,12 +133,16 @@ class LLMClient:
         base_url: str | None = None,
         api_key: str | None = None,
         single_flight: bool = False,
+        single_flight_scope: str = "model",
         max_retries: int | None = None,
         **defaults: object,
     ) -> None:
+        if single_flight_scope not in {"model", "request"}:
+            raise ValueError("single_flight_scope must be 'model' or 'request'")
         self.model = model
         self._defaults = defaults
         self.single_flight = single_flight
+        self.single_flight_scope = single_flight_scope
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL") or DEFAULT_BASE_URL
         # The OpenAI SDK already retries 408/409/429/>=500 with exponential backoff and honors
         # Retry-After; its default cap of 2 is too low for throttled free tiers (OpenRouter
@@ -158,7 +171,14 @@ class LLMClient:
             if cached is not None:
                 return cached
         if self.single_flight:
-            with self._lock_for(self.base_url, self.model):
+            # Request scope serializes only identical requests (same cache path), so
+            # distinct prompts use the server's parallel slots; without a cache path
+            # there is no stampede to prevent and the model-wide lock is kept.
+            if self.single_flight_scope == "request" and path:
+                lock = self._request_lock_for(path)
+            else:
+                lock = self._lock_for(self.base_url, self.model)
+            with lock:
                 if path and not refresh:
                     cached = _read_cache(path)
                     if cached is not None:

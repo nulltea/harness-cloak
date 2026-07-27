@@ -236,3 +236,50 @@ def test_cache_hit_does_not_acquire_lock(monkeypatch, tmp_path):
     finally:
         lock.release()
     assert result == ["hit"]
+
+
+def test_request_scope_overlaps_distinct_prompts(monkeypatch, tmp_path):
+    t = FakeTransport(delay=0.05)
+    monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path))
+    c = LLMClient(
+        "m", base_url="http://fake", temperature=0.0,
+        single_flight=True, single_flight_scope="request",
+    )
+    c._client = t
+
+    def worker(i):
+        c.chat([{"role": "user", "content": f"q{i}"}])
+
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(4)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert t.max_active > 1
+    assert len(t.calls) == 4
+
+
+def test_request_scope_still_dedupes_identical_prompts(monkeypatch, tmp_path):
+    t = FakeTransport(delay=0.05)
+    monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path))
+    c = LLMClient(
+        "m", base_url="http://fake", temperature=0.0,
+        single_flight=True, single_flight_scope="request",
+    )
+    c._client = t
+
+    def worker():
+        c.chat([{"role": "user", "content": "same"}])
+
+    threads = [threading.Thread(target=worker) for _ in range(4)]
+    for th in threads:
+        th.start()
+    for th in threads:
+        th.join()
+    assert t.max_active == 1
+    assert len(t.calls) == 1
+
+
+def test_request_scope_rejects_unknown_value():
+    with pytest.raises(ValueError, match="single_flight_scope"):
+        LLMClient("m", base_url="http://fake", single_flight_scope="bogus")
