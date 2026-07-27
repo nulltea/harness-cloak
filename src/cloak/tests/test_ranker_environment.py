@@ -14,9 +14,9 @@ REAL_ENVIRONMENT = ROOT / "results/ranker_v2/environment/ranker-env.json"
 
 def _module():
     try:
-        return importlib.import_module("cloak.train.ranker_environment")
+        return importlib.import_module("cloak.ranker.environment")
     except ModuleNotFoundError:
-        pytest.fail("cloak.train.ranker_environment is not implemented")
+        pytest.fail("cloak.ranker.environment is not implemented")
 
 
 def _hash(value) -> str:

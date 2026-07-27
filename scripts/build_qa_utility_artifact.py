@@ -9,21 +9,21 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from cloak.corpora import load_task_docs
-from cloak.train.qa_builder import (
+from cloak.qa.builder import (
     AciTaskAdapter, artifact_views, build_utility_artifact, llm_prefilter_context_candidates,
 )
-from cloak.train.qa_freeze import (
+from cloak.qa.freeze import (
     freeze_v2_environment_from_legacy_arms,
     render_frozen_action_vector,
 )
-from cloak.train.qa_scoring import QA_BASE_URL, read_context_batch, read_context_set_batch
-from cloak.train.qa_teacher import (
+from cloak.qa.scoring import QA_BASE_URL, read_context_batch, read_context_set_batch
+from cloak.qa.teacher import (
     RELATION_TEACHER_MODEL,
     RELATION_TEACHER_PROVIDER,
     OpenRouterRelationTeacher,
 )
-from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
-from cloak.train.relation_support_gate import (
+from cloak.qa.audit import build_environment_audit, write_audit_sidecars
+from cloak.qa.relation_support_gate import (
     RelationSupportCascade,
     build_informative_context_judge,
     build_medgemma_judge,
@@ -408,7 +408,7 @@ def write_finer_level_failures(
     relation QA with >=1 UNREADABLE finer answer level. Each row names the answer decision's
     profile, the finer levels that failed/passed the reader, the relation (type, subject,
     object, supported level), the question, and the doc_orig excerpt the reader actually saw."""
-    from cloak.train.qa_scoring import reader_excerpt
+    from cloak.qa.scoring import reader_excerpt
 
     threshold = float(artifact.get("reader_threshold") or 1.0)
 

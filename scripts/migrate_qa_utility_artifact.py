@@ -9,8 +9,8 @@ from copy import deepcopy
 from numbers import Real
 from pathlib import Path
 
-from cloak.train.qa_builder import policy_routing
-from cloak.train.qa_freeze import compare_frozen_environment_semantics
+from cloak.qa.builder import policy_routing
+from cloak.qa.freeze import compare_frozen_environment_semantics
 
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]

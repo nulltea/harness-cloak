@@ -17,10 +17,10 @@ from difflib import SequenceMatcher
 from pathlib import Path
 
 from cloak.corpora import load_task_docs
-from cloak.detect import strip_dose_suffix
-from cloak.lattice_profiles import SCHEMA_VERSION, validate_profile_artifact
-from cloak.profile_match import span_key
-from cloak.span_gate import gate_fingerprint, gate_spans
+from cloak.detection.detect import strip_dose_suffix
+from cloak.lattice.profiles import SCHEMA_VERSION, validate_profile_artifact
+from cloak.lattice.profile_match import span_key
+from cloak.detection.span_gate import gate_fingerprint, gate_spans
 
 DETECTOR_LABELS = [
     "condition",
@@ -293,7 +293,7 @@ def detect_clinical_spans(
     import torch
     from gliner import GLiNER
 
-    from cloak.detect import _chunks, _encoder_max_words, _install_gliner_bounds_guard
+    from cloak.detection.detect import _chunks, _encoder_max_words, _install_gliner_bounds_guard
 
     _install_gliner_bounds_guard()
     gliner = GLiNER.from_pretrained(model)

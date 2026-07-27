@@ -9,7 +9,7 @@ import sys
 from pathlib import Path
 
 from build_lattice_profiles import collect_rows, coverage_report, merge_rows
-from cloak.lattice_profiles import validate_profile_artifact
+from cloak.lattice.profiles import validate_profile_artifact
 
 SUPPORTED_SOURCES = {
     "onet-job-titles": {

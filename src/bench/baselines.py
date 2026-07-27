@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from cloak.lattice import lattice_for
+from cloak.lattice.core import lattice_for
 from cloak.runtime_types import PLACEHOLDER_RE, placeholder_token
 
 

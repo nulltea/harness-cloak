@@ -21,7 +21,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cloak.lattice_producer.reference_sources import DEFAULT_DOID_OBO, load_doid_index
+from cloak.lattice.producer.reference_sources import DEFAULT_DOID_OBO, load_doid_index
 
 PRECISION_BAR = 0.999
 RECALL_FLOOR = 0.10

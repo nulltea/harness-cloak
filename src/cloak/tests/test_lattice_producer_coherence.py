@@ -1,4 +1,4 @@
-from cloak.lattice_producer.coherence import (
+from cloak.lattice.producer.coherence import (
     apply_runtime_type_root_anchor,
     normalize_coherence,
     normalize_runtime_type,

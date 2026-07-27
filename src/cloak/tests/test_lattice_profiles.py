@@ -1,7 +1,7 @@
 import json
 
-from cloak.lattice import lattice_for
-from cloak.lattice_profiles import (
+from cloak.lattice.core import lattice_for
+from cloak.lattice.profiles import (
     load_profiles,
     lookup_count,
     lookup_levels,
@@ -10,7 +10,7 @@ from cloak.lattice_profiles import (
 
 
 def _clear_lattice_profile_caches():
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.profiles as lp
 
     lp._load_cached.cache_clear()
     lp._index_cached.cache_clear()
@@ -83,7 +83,7 @@ def test_lookup_entry_returns_canonical_for_canonical_and_alias(tmp_path):
     }
     p = tmp_path / "profiles.json"
     p.write_text(json.dumps(artifact))
-    from cloak.lattice_profiles import lookup_entry, lookup_levels
+    from cloak.lattice.profiles import lookup_entry, lookup_levels
     assert lookup_entry("Blorbitis", "health-condition", p) == \
         ("blorbitis", ["organ disease", "disease"])
     assert lookup_entry("blorb  inflammation", "health-condition", p) == \
@@ -288,8 +288,8 @@ def test_validate_rejects_bad_level_counts():
 
 
 def test_lattice_for_uses_profile_levels(monkeypatch, tmp_path):
-    import cloak.lattice as lat
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.core as lat
+    import cloak.lattice.profiles as lp
 
     art = _artifact()
     art["profiles"]["profession"]["editorial columnist"] = {
@@ -310,8 +310,8 @@ def test_lattice_for_uses_profile_levels(monkeypatch, tmp_path):
 
 
 def test_lattice_for_uses_profile_levels_for_loc_and_org(monkeypatch, tmp_path):
-    import cloak.lattice as lat
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.core as lat
+    import cloak.lattice.profiles as lp
 
     art = _artifact()
     art["profiles"]["LOC"] = {
@@ -343,7 +343,7 @@ def test_lattice_for_uses_profile_levels_for_loc_and_org(monkeypatch, tmp_path):
 
 
 def test_lattice_for_uses_profile_levels_for_drugs(monkeypatch, tmp_path):
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.profiles as lp
 
     art = _artifact()
     art["profiles"]["drug"] = {
@@ -366,7 +366,7 @@ def test_lattice_for_uses_profile_levels_for_drugs(monkeypatch, tmp_path):
 
 
 def test_lattice_for_uses_profile_levels_for_medical_procedures(monkeypatch, tmp_path):
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.profiles as lp
 
     art = _artifact()
     art["profiles"]["medical-procedure"] = {
@@ -392,7 +392,7 @@ def test_lattice_for_uses_profile_levels_for_medical_procedures(monkeypatch, tmp
 
 
 def test_lattice_for_uses_profile_levels_for_medical_facilities(monkeypatch, tmp_path):
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.profiles as lp
 
     art = _artifact()
     art["profiles"]["organization-medical-facility"] = {
@@ -418,9 +418,9 @@ def test_lattice_for_uses_profile_levels_for_medical_facilities(monkeypatch, tmp
 
 
 def test_substitute_uses_profile_levels(monkeypatch, tmp_path):
-    import cloak.lattice_profiles as lp
-    import cloak.substitute as sub
-    from cloak.detect import Span
+    import cloak.lattice.profiles as lp
+    import cloak.detection.span_prep as sub
+    from cloak.detection.detect import Span
 
     art = _artifact()
     art["profiles"]["profession"]["software developer"] = {
@@ -459,8 +459,8 @@ def test_substitute_uses_profile_levels(monkeypatch, tmp_path):
 
 
 def test_aset_count_uses_profile_count(monkeypatch, tmp_path):
-    import cloak.anonymity as anon
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.anonymity as anon
+    import cloak.lattice.profiles as lp
 
     art = _artifact()
     art["profiles"]["profession"]["editorial columnist"] = {
@@ -480,8 +480,8 @@ def test_aset_count_uses_profile_count(monkeypatch, tmp_path):
 
 
 def test_aset_count_uses_profile_level_counts_for_domain_types_and_fails_closed(monkeypatch, tmp_path):
-    import cloak.anonymity as anon
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.anonymity as anon
+    import cloak.lattice.profiles as lp
 
     art = _artifact()
     art["profiles"]["drug"] = {

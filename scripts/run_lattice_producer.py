@@ -7,8 +7,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from cloak.lattice_producer.graph import run_producer
-from cloak.lattice_producer.coverage import normalize_category_filters
+from cloak.lattice.producer.graph import run_producer
+from cloak.lattice.producer.coverage import normalize_category_filters
 
 PROPOSED_ROOT = Path("data/lattice_profiles/proposed")
 

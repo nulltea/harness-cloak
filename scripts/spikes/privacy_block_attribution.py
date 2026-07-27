@@ -14,15 +14,15 @@ from typing import Any
 
 import torch
 
-from cloak.train.ranker_environment import load_ranker_environment
-from cloak.train.ranker_privacy import (
+from cloak.ranker.environment import load_ranker_environment
+from cloak.ranker.privacy import (
     PREDICTION_TIE_TOLERANCE,
     PRIVACY_ATTRIBUTION_ARMS,
     PrivacyExample,
     load_privacy_examples,
     train_privacy_attribution_fold,
 )
-from cloak.train.ranker_representation import RankerRepresentationStore
+from cloak.ranker.representation import RankerRepresentationStore
 
 
 ARTIFACT_VERSION = "ranker-v2-privacy-block-attribution-v2"

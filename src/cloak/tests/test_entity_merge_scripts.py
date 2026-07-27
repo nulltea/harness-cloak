@@ -5,7 +5,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
 from calibrate_entity_merge_gate import build_eval_pairs, choose_threshold
-from cloak.lattice_producer.reference_sources import DoidNode
+from cloak.lattice.producer.reference_sources import DoidNode
 
 
 def _nodes():

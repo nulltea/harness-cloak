@@ -38,7 +38,7 @@ import random
 import re
 from collections import Counter
 
-from cloak.detect import GLINER_LABELS, FINE_DEM_PHRASE, FINE_TYPE_ROLLUP, relabel_dem
+from cloak.detection.detect import GLINER_LABELS, FINE_DEM_PHRASE, FINE_TYPE_ROLLUP, relabel_dem
 
 TYPE2PHRASE = {t: p for p, t in GLINER_LABELS.items()}   # TAB entity_type -> label phrase
 WINDOW_WORDS = 150
@@ -80,7 +80,7 @@ NEMOTRON_MAP = {
 }
 
 # --- v7 (--fine-dem): decompose the coarse DEM into fine leaves. Schema (leaf phrases, rollup, relabeler)
-# lives in cloak.detect (shared with the detector + gate). Nemotron demographic labels -> fine leaf
+# lives in cloak.detection.detect (shared with the detector + gate). Nemotron demographic labels -> fine leaf
 # (un-collapse of the old `-> DEM`); ambiguous ones (political_view/language/education_level/
 # employment_status/blood_type) are DROPPED (drop-not-invent).
 NEMOTRON_FINE_MAP = {

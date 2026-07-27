@@ -13,7 +13,7 @@ import json
 import time
 from collections import defaultdict
 
-from cloak.detect import Detector, rollup_type, relabel_dem
+from cloak.detection.detect import Detector, rollup_type, relabel_dem
 
 
 def gold_mentions(doc):

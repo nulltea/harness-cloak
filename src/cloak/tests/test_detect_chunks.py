@@ -1,5 +1,5 @@
 """_chunks: boundary placement and word-count cap."""
-from cloak.detect import _DEFAULT_MAX_CHARS, _chunks
+from cloak.detection.detect import _DEFAULT_MAX_CHARS, _chunks
 
 
 def _reassemble(text, chunks):

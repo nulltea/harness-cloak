@@ -3,7 +3,7 @@ import json
 import sys
 from pathlib import Path
 
-from cloak.detect import Span
+from cloak.detection.detect import Span
 
 
 def _load_gate_module():

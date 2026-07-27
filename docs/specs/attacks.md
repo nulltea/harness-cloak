@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-06-29
-updated: 2026-07-03
+updated: 2026-07-27
 tags: [attacks, reconstruction, embedding-inversion, masked-lm, rantext, guess-back,
        span-inversion, probe-shootout, spec]
 companion: docs/specs/probes.md
@@ -14,7 +14,7 @@ Attacks attempt to **recover the raw document from Doc_p** (the perturbed prompt
 model and adversary see). The privacy protection level reported in the literature is
 `1 − attack-success`. An attack's success is a **lower** bound on leakage (a probe upper-bounds
 it; see `docs/specs/probes.md`): a weak attack overstates privacy, so attacks are reported with
-the attacker named. Module: `src/inferdpt/attacks/` (`embedding_inversion.py`, `mask_bert.py`).
+the attacker named. Module: `src/cloak/attacks/` (`embedding_inversion.py`, `mask_bert.py`).
 
 Threat model (InferDPT): honest-but-curious remote model; the adversary knows the mechanism,
 the vocabulary V, the embedding map φ, and the budget ε, and only sees text (Doc_p), not vectors.

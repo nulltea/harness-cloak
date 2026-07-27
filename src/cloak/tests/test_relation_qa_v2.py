@@ -1,15 +1,15 @@
 import json
 
 import pytest
-import cloak.train.qa_builder as qa_builder
-import cloak.train.qa_review as qa_review
-import cloak.train.qa_scoring as qa_scoring
-import cloak.train.qa_teacher as qa_teacher
+import cloak.qa.builder as qa_builder
+import cloak.qa.review as qa_review
+import cloak.qa.scoring as qa_scoring
+import cloak.qa.teacher as qa_teacher
 
-from cloak.train.qa_builder import (
+from cloak.qa.builder import (
     compile_relational_assertions, relation_context_candidates, relation_evidence_windows,
 )
-from cloak.train.qa_teacher import (
+from cloak.qa.teacher import (
     OpenRouterRelationTeacher, relation_teacher_prompt, relation_teacher_response_format,
 )
 
@@ -2241,7 +2241,7 @@ def test_v4_compiler_uses_a_bounded_plan_section_anchor_for_treatment():
 def test_lattice_level_suspect_probe_flags_coarser_readable(monkeypatch):
     """The coarser-level diagnostic: a relation whose fine locator level is unreadable but a
     coarser legal level in the same chain reads -> report the offending surface + levels."""
-    import cloak.train.qa_builder as qb
+    import cloak.qa.builder as qb
 
     decisions = [{
         "decision_id": "d1", "canonical_key": "arthritis", "runtime_type": "health-condition",
@@ -2284,7 +2284,7 @@ def test_lattice_level_suspect_probe_flags_coarser_readable(monkeypatch):
 
 def test_lattice_level_suspect_probe_silent_when_no_level_reads(monkeypatch):
     """No coarser level reads -> genuine reader limit, not a data issue -> no suspect."""
-    import cloak.train.qa_builder as qb
+    import cloak.qa.builder as qb
 
     decisions = [{
         "decision_id": "d1", "canonical_key": "arthritis", "runtime_type": "health-condition",
@@ -3458,7 +3458,7 @@ def test_relation_repair_prompt_writes_each_fix_hint_once():
 
 
 # --- Relation-support escalation: no-regression invariant + accept-only cascade ---
-from cloak.train.relation_support_gate import RelationSupportCascade, build_medgemma_judge
+from cloak.qa.relation_support_gate import RelationSupportCascade, build_medgemma_judge
 
 
 def _cueless_env():
@@ -3614,7 +3614,7 @@ def test_medgemma_judge_parses_and_is_accept_biased_on_error():
 
 
 def test_contraindication_judge_rule_requires_quoted_avoidance_cue():
-    from cloak.train.relation_support_gate import _judge_system
+    from cloak.qa.relation_support_gate import _judge_system
     contra = _judge_system("contraindicated_because_of")
     # extractive-quote grounding (same defense as the causal rule): true requires quoting the
     # exact avoidance phrase in a "cue" field, else false
@@ -3626,7 +3626,7 @@ def test_contraindication_judge_rule_requires_quoted_avoidance_cue():
 
 
 def test_judge_system_is_per_relation_isolated():
-    from cloak.train.relation_support_gate import _judge_system
+    from cloak.qa.relation_support_gate import _judge_system
     causal = _judge_system("causes_or_explains")
     contra = _judge_system("contraindicated_because_of")
     prescribed = _judge_system("prescribed_with")
@@ -3648,7 +3648,7 @@ def test_judge_system_is_per_relation_isolated():
 
 
 def test_informative_context_judge_parses_and_is_accept_biased_on_error():
-    from cloak.train.relation_support_gate import build_informative_context_judge
+    from cloak.qa.relation_support_gate import build_informative_context_judge
 
     assert build_informative_context_judge(
         _StubClient('{"informative": true, "why": "x"}'))(locator="l", category="drug") is True
@@ -3709,7 +3709,7 @@ def test_cascade_judge_batch_is_medgemma_only_and_concurrent_safe():
 
 
 def test_claim_directionality_places_drug_test_first():
-    from cloak.train.relation_support_gate import _claim
+    from cloak.qa.relation_support_gate import _claim
     # miner passes subject=condition, object=drug/test/procedure for these relations
     assert _claim("prescribed_with", "afib", "digoxin") == "digoxin is a medication prescribed to treat afib"
     assert _claim("tests_for", "chronic back pain", "x-ray") == "x-ray is a test or scan done to investigate chronic back pain"
@@ -3720,7 +3720,7 @@ def test_claim_directionality_places_drug_test_first():
 
 
 def test_linked_answer_score_contiguity_and_verbosity_cap():
-    from cloak.train.qa_scoring import _linked_answer_score, _resolve_semantic_node
+    from cloak.qa.scoring import _linked_answer_score, _resolve_semantic_node
     chain = [
         {"answer_aliases": ["kidney stones"], "entailed_properties": ["urolithiasis", "kidney disease"]},
         {"answer_aliases": ["urolithiasis"], "entailed_properties": ["urolithiasis"]},
@@ -3752,8 +3752,8 @@ def test_linked_answer_score_contiguity_and_verbosity_cap():
 
 def test_all_occurrence_judge_premise_elides_middle_not_contiguous():
     """All-occurrence premise = the occurrence-clauses joined (2\\n13\\n14), NOT the span 2..14."""
-    from cloak.train.qa_builder import _all_occurrence_judge_premise
-    from cloak.train.qa_teacher import source_clause_spans
+    from cloak.qa.builder import _all_occurrence_judge_premise
+    from cloak.qa.teacher import source_clause_spans
     doc = (
         "[doctor] the patient has gout in the past history .\n"
         "[patient] okay yes .\n"
@@ -3786,7 +3786,7 @@ def test_all_occurrence_judge_premise_elides_middle_not_contiguous():
 
 
 def test_escalation_prefilter_coordination_and_negation():
-    from cloak.train.qa_builder import _escalation_prefilter_reason
+    from cloak.qa.builder import _escalation_prefilter_reason
     # coordination: three conditions in a flat list -> siblings, not a relation
     doc = "past medical history significant for gout , depression and hypertension ."
     g, d, h = doc.index("gout"), doc.index("depression"), doc.index("hypertension")

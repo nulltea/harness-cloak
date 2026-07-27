@@ -15,8 +15,8 @@ from build_arms_artifact import (
     QA_V2_CONTROLLED_TYPES,
 )
 from cloak.corpora import load_task_docs
-from cloak.detect import Detector, QA_V2_CLINICAL_LABELS
-from cloak.substitute import prepare_spans_for_substitution
+from cloak.detection.detect import Detector, QA_V2_CLINICAL_LABELS
+from cloak.detection.span_prep import prepare_spans_for_substitution
 
 
 THRESHOLDS = {

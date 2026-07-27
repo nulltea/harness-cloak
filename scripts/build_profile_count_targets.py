@@ -6,8 +6,8 @@ import json
 import sys
 from pathlib import Path
 
-from cloak.train.count_reward import CountGateError
-from cloak.train.profile_count import build_profile_count_targets
+from cloak.ranker.count_reward import CountGateError
+from cloak.ranker.profile_count import build_profile_count_targets
 
 
 def _canonical_json(payload: dict) -> str:

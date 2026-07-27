@@ -11,7 +11,7 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from cloak.lattice_profiles import SCHEMA_VERSION, validate_profile_artifact
+from cloak.lattice.profiles import SCHEMA_VERSION, validate_profile_artifact
 from cloak.runtime_types import PLACEHOLDER_ONLY_TYPES
 from lattice_sources.categorical import alias_rows
 from lattice_sources.common import ProfileRow, norm

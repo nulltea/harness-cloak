@@ -59,7 +59,7 @@ def _vectors():
 
 
 def test_public_credit_contract_is_exact_frozen_and_immutable():
-    from cloak.train.utility_credit import (
+    from cloak.reward.utility_credit import (
         DocumentUtilityCredit,
         document_utility,
         provisional_credit,
@@ -90,7 +90,7 @@ def test_public_credit_contract_is_exact_frozen_and_immutable():
 
 
 def test_partitions_policy_fixed_mixed_global_and_uncovered_credit():
-    from cloak.train.utility_credit import provisional_credit
+    from cloak.reward.utility_credit import provisional_credit
 
     credit = provisional_credit(_vectors(), _artifact(), "d1")
 
@@ -109,7 +109,7 @@ def test_partitions_policy_fixed_mixed_global_and_uncovered_credit():
 
 
 def test_scope_occurrences_and_removed_controlled_ids_cannot_change_routes():
-    from cloak.train.utility_credit import provisional_credit
+    from cloak.reward.utility_credit import provisional_credit
 
     artifact = _artifact()
     artifact["documents"]["d1"]["controlled_decision_ids"] = ["wrong"]
@@ -126,7 +126,7 @@ def test_scope_occurrences_and_removed_controlled_ids_cannot_change_routes():
 
 
 def test_mixed_hyperedge_routes_once_to_each_unique_policy_dependency():
-    from cloak.train.utility_credit import provisional_credit
+    from cloak.reward.utility_credit import provisional_credit
 
     artifact = _artifact()
     artifact["assertions"]["mixed"]["policy_dependency_decision_ids"] = [
@@ -139,7 +139,7 @@ def test_mixed_hyperedge_routes_once_to_each_unique_policy_dependency():
 
 
 def test_missing_family_uses_real_stored_fixed_denominator():
-    from cloak.train.utility_credit import document_utility, provisional_credit
+    from cloak.reward.utility_credit import document_utility, provisional_credit
 
     # Migrated v16 semantics: delivered budget 0.4, absent context budget 0.6,
     # stored denominator remains 1.0 rather than being recomputed to 0.4.
@@ -172,7 +172,7 @@ def test_missing_family_uses_real_stored_fixed_denominator():
 
 
 def test_missing_assertion_scores_report_all_missing_ids():
-    from cloak.train.utility_credit import document_utility, provisional_credit
+    from cloak.reward.utility_credit import document_utility, provisional_credit
 
     with pytest.raises(ValueError, match=r"missing assertion scores.*fixed.*global.*mixed"):
         document_utility({"policy": 1.0}, _artifact(), "d1")
@@ -185,7 +185,7 @@ def test_missing_assertion_scores_report_all_missing_ids():
 
 
 def test_tied_components_produce_zero_for_every_rollout_decision_pair():
-    from cloak.train.utility_credit import provisional_credit
+    from cloak.reward.utility_credit import provisional_credit
 
     tied = [_vectors()[0], dict(_vectors()[0]), dict(_vectors()[0])]
     credit = provisional_credit(tied, _artifact(), "d1")
@@ -200,7 +200,7 @@ def test_tied_components_produce_zero_for_every_rollout_decision_pair():
 
 
 def test_three_rollout_loo_is_not_standard_deviation_normalized():
-    from cloak.train.utility_credit import provisional_credit
+    from cloak.reward.utility_credit import provisional_credit
 
     artifact = {
         "artifact_version": "utility-assertions-v2",
@@ -224,7 +224,7 @@ def test_three_rollout_loo_is_not_standard_deviation_normalized():
 
 
 def test_provisional_credit_requires_two_rollouts():
-    from cloak.train.utility_credit import provisional_credit
+    from cloak.reward.utility_credit import provisional_credit
 
     with pytest.raises(ValueError, match="at least two rollouts"):
         provisional_credit([_vectors()[0]], _artifact(), "d1")
@@ -244,7 +244,7 @@ def test_provisional_credit_requires_two_rollouts():
     ],
 )
 def test_invalid_v2_routing_metadata_fails_closed(mutation, message):
-    from cloak.train.utility_credit import provisional_credit
+    from cloak.reward.utility_credit import provisional_credit
 
     artifact = _artifact()
     mutation(artifact)

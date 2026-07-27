@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from cloak.detect import DetectionResult, Span
+from cloak.detection.detect import DetectionResult, Span
 
 
 ROOT = Path(__file__).resolve().parents[3]

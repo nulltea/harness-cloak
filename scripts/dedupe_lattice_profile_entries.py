@@ -20,8 +20,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cloak.lattice_producer.entity_merge import DEFAULT_OBO_PATHS, apply_entity_merge
-from cloak.lattice_profiles import DEFAULT_PROFILE_PATH, validate_profile_artifact
+from cloak.lattice.producer.entity_merge import DEFAULT_OBO_PATHS, apply_entity_merge
+from cloak.lattice.profiles import DEFAULT_PROFILE_PATH, validate_profile_artifact
 
 
 def _atomic_write(path: Path, artifact: dict) -> None:
@@ -69,7 +69,7 @@ def main(argv=None):
 
     embed_fn = None
     if not args.no_embed_blocking:
-        from cloak.profile_match import DEFAULT_MODEL_ID, _st_model
+        from cloak.lattice.profile_match import DEFAULT_MODEL_ID, _st_model
 
         model = _st_model(DEFAULT_MODEL_ID)
         embed_fn = lambda texts: model.encode(texts, normalize_embeddings=True)
@@ -96,7 +96,7 @@ def main(argv=None):
         return
     _atomic_write(profiles_path, artifact)
     if not args.skip_embindex:
-        from cloak.profile_match import build_embindex
+        from cloak.lattice.profile_match import build_embindex
 
         out = build_embindex(profiles_path)
         print(f"embindex rebuilt: {out}", flush=True)

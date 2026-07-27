@@ -4,7 +4,7 @@ import argparse
 
 import numpy as np
 
-from cloak.profile_match import DEFAULT_MODEL_ID, build_embindex
+from cloak.lattice.profile_match import DEFAULT_MODEL_ID, build_embindex
 
 
 def main() -> None:

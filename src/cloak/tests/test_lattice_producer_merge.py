@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from cloak.lattice_producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
+from cloak.lattice.producer.merge import ensure_proposed_artifact, persist_proposed_artifact, validate_proposed_artifact
 
 
 def _base_profile(path: Path) -> None:

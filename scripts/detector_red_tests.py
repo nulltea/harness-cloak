@@ -135,7 +135,7 @@ def run_detector(texts: list[str], model: str, threshold: float) -> list[list[di
     import torch
     from gliner import GLiNER
 
-    from cloak.detect import _install_gliner_bounds_guard
+    from cloak.detection.detect import _install_gliner_bounds_guard
 
     _install_gliner_bounds_guard()
     gliner = GLiNER.from_pretrained(model)

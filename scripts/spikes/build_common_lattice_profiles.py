@@ -17,7 +17,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
-from cloak.lattice_profiles import validate_profile_artifact
+from cloak.lattice.profiles import validate_profile_artifact
 
 TOKEN_RE = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)?")
 

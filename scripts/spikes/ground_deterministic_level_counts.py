@@ -47,7 +47,7 @@ from lattice_sources.geonames import CONTINENTS  # noqa: E402
 from lattice_sources.demographics import REGION_LEVELS  # noqa: E402
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
-from cloak.lattice_profiles import validate_profile_artifact  # noqa: E402
+from cloak.lattice.profiles import validate_profile_artifact  # noqa: E402
 
 ART = Path("data/lattice_profiles/lattice_profiles.json")
 GEO = Path("data/geonames")

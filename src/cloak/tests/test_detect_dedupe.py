@@ -1,5 +1,5 @@
 """_dedupe: same-type widest, cross-type score-first with a pattern-hit floor."""
-from cloak.detect import Span, _dedupe, _dedupe_with_diagnostics
+from cloak.detection.detect import Span, _dedupe, _dedupe_with_diagnostics
 
 
 def _s(start, end, typ, score, source="gliner"):

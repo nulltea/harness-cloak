@@ -2,7 +2,7 @@
 
 import pytest
 
-from cloak.detect import Detector, PROFILES, is_noise_span, strip_dose_suffix, _stop_words
+from cloak.detection.detect import Detector, PROFILES, is_noise_span, strip_dose_suffix, _stop_words
 
 
 @pytest.mark.parametrize(

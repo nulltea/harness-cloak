@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from cloak.lattice_producer.repair_queue import build_repair_queue
+from cloak.lattice.producer.repair_queue import build_repair_queue
 
 
 def _load_audit(path: Path) -> dict[str, Any]:

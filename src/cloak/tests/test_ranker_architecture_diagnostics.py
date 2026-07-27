@@ -8,7 +8,7 @@ SEEDS = (11, 23, 37)
 
 
 def _contract():
-    from cloak.train.ranker_architecture_diagnostics import MatchedArmContract
+    from cloak.ranker.architecture_diagnostics import MatchedArmContract
 
     return MatchedArmContract(
         profile_split_hash="sha256:profiles",
@@ -23,7 +23,7 @@ def _contract():
 
 
 def _metrics(family, arm):
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         LOAD_BEARING_METRICS,
         SELECTED_ARMS,
     )
@@ -44,7 +44,7 @@ def _metrics(family, arm):
 
 
 def _interventions(family, arm):
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         INTERVENTIONS_BY_FAMILY,
         SELECTED_ARMS,
     )
@@ -58,7 +58,7 @@ def _interventions(family, arm):
 
 
 def _arm(family, arm, *, contract=None):
-    from cloak.train.ranker_architecture_diagnostics import ArmMeasurement
+    from cloak.ranker.architecture_diagnostics import ArmMeasurement
 
     return ArmMeasurement(
         family=family,
@@ -85,7 +85,7 @@ def _arm(family, arm, *, contract=None):
 
 
 def _arms():
-    from cloak.train.ranker_architecture_diagnostics import APPROVED_ARMS
+    from cloak.ranker.architecture_diagnostics import APPROVED_ARMS
 
     return tuple(
         _arm(family, arm)
@@ -105,7 +105,7 @@ def _thresholds():
 
 
 def test_report_has_exact_required_sections_all_arms_and_content_hash():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         APPROVED_ARMS,
         REPORT_SECTIONS,
         build_architecture_spike_report,
@@ -144,7 +144,7 @@ def test_report_has_exact_required_sections_all_arms_and_content_hash():
     ],
 )
 def test_report_refuses_unmatched_arm_contracts(field, replacement, message):
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -187,7 +187,7 @@ def test_report_refuses_unmatched_arm_contracts(field, replacement, message):
 def test_report_refuses_nonshared_projection_or_diagnostic_head(
     field, replacement, message,
 ):
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -218,7 +218,7 @@ def test_arm_measurement_refuses_a_misreported_shared_head_budget():
 
 
 def test_matched_contract_loader_does_not_coerce_missing_hashes_to_strings():
-    from cloak.train.ranker_architecture_diagnostics import MatchedArmContract
+    from cloak.ranker.architecture_diagnostics import MatchedArmContract
 
     payload = _contract().to_dict()
     payload["profile_split_hash"] = None
@@ -228,7 +228,7 @@ def test_matched_contract_loader_does_not_coerce_missing_hashes_to_strings():
 
 
 def test_required_intervention_measurement_cannot_be_omitted():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -253,7 +253,7 @@ def test_required_intervention_measurement_cannot_be_omitted():
 
 
 def test_relative_promotion_uses_paired_three_seed_cis_and_all_hard_rules():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -276,7 +276,7 @@ def test_relative_promotion_uses_paired_three_seed_cis_and_all_hard_rules():
 
 
 def test_local_regression_shortcut_failure_and_cost_overrun_each_reject():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -329,7 +329,7 @@ def test_local_regression_shortcut_failure_and_cost_overrun_each_reject():
 
 
 def test_history_chooses_none_when_memory_does_not_beat_it_and_never_promotes_gru():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         LOAD_BEARING_METRICS,
         build_architecture_spike_report,
     )
@@ -365,7 +365,7 @@ def test_history_chooses_none_when_memory_does_not_beat_it_and_never_promotes_gr
 
 
 def test_unregistered_absolute_thresholds_never_become_an_invented_pass():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -385,7 +385,7 @@ def test_unregistered_absolute_thresholds_never_become_an_invented_pass():
 
 
 def test_aci_contamination_is_a_hard_promotion_boundary():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -409,7 +409,7 @@ def test_aci_contamination_is_a_hard_promotion_boundary():
 
 
 def test_encoder_promotion_requires_an_explicit_non_aci_manifest_even_when_not_aci():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         build_architecture_spike_report,
     )
 
@@ -426,7 +426,7 @@ def test_encoder_promotion_requires_an_explicit_non_aci_manifest_even_when_not_a
 
 
 def test_runner_enumerates_every_approved_arm_under_one_contract():
-    from cloak.train.ranker_architecture_diagnostics import (
+    from cloak.ranker.architecture_diagnostics import (
         APPROVED_ARMS,
         run_architecture_spike,
     )
@@ -455,7 +455,7 @@ def test_runner_enumerates_every_approved_arm_under_one_contract():
 
 
 def test_runner_rejects_an_evaluator_that_switches_contracts():
-    from cloak.train.ranker_architecture_diagnostics import run_architecture_spike
+    from cloak.ranker.architecture_diagnostics import run_architecture_spike
 
     def evaluator(family, arm, contract):
         if family == "relation_representation" and arm == "candidate-only":

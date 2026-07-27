@@ -5,7 +5,7 @@ from types import MappingProxyType, SimpleNamespace
 import pytest
 import torch
 
-from cloak.train.ranker_environment import (
+from cloak.ranker.environment import (
     RankerAction,
     RankerDecision,
     RankerDocument,
@@ -195,7 +195,7 @@ class SemanticGradientPolicy(torch.nn.Module):
 
 
 def _profile_targets():
-    from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
+    from cloak.ranker.profile_count import ProfileActionTarget, ProfileCountTargets
 
     rows = {}
     decision_actions = {}
@@ -224,7 +224,7 @@ def _profile_targets():
 
 
 def test_public_trajectory_dataclasses_are_exact_frozen_and_opaque():
-    from cloak.train.interactive_ranker import SampledStep, SampledTrajectory
+    from cloak.ranker.interactive import SampledStep, SampledTrajectory
 
     assert [field.name for field in fields(SampledStep)] == [
         "decision_id", "legal_action_ids", "selected_action_id",
@@ -246,7 +246,7 @@ def test_public_trajectory_dataclasses_are_exact_frozen_and_opaque():
 
 
 def test_legal_action_ids_masks_only_level_collisions():
-    from cloak.train.interactive_ranker import legal_action_ids
+    from cloak.ranker.environment import legal_action_ids
 
     decision = _decision("alpha", ("o-alpha-1", "o-alpha-2"))
     assert legal_action_ids(decision, {}, ()) == tuple(
@@ -264,7 +264,7 @@ def test_legal_action_ids_masks_only_level_collisions():
 
 
 def test_sampling_masks_later_collision_and_repeated_decision_counts_once():
-    from cloak.train.interactive_ranker import sample_trajectory
+    from cloak.ranker.interactive import sample_trajectory
 
     policy = StubPolicy()
     profile = object()
@@ -285,7 +285,7 @@ def test_sampling_masks_later_collision_and_repeated_decision_counts_once():
 
 
 def test_assembly_applies_one_choice_to_repeated_occurrences_and_auto_fixed():
-    from cloak.train.interactive_ranker import assemble_action_vector
+    from cloak.ranker.environment import assemble_action_vector
 
     rendered, replacements = assemble_action_vector(
         _document(),
@@ -302,7 +302,7 @@ def test_assembly_applies_one_choice_to_repeated_occurrences_and_auto_fixed():
 
 
 def test_assembly_rejects_omissions_unknown_actions_and_collisions():
-    from cloak.train.interactive_ranker import assemble_action_vector
+    from cloak.ranker.environment import assemble_action_vector
 
     with pytest.raises(ValueError, match="action-vector omissions"):
         assemble_action_vector(_document(), {"alpha": "alpha-level"})
@@ -318,7 +318,7 @@ def test_assembly_rejects_omissions_unknown_actions_and_collisions():
 
 
 def test_sampling_reserves_fixed_exact_rewrites():
-    from cloak.train.interactive_ranker import sample_trajectory
+    from cloak.ranker.interactive import sample_trajectory
 
     document = _document()
     fixed_level = replace(
@@ -335,7 +335,7 @@ def test_sampling_reserves_fixed_exact_rewrites():
 
 
 def test_replay_returns_gradient_tensors_and_complete_ordered_distributions():
-    from cloak.train.interactive_ranker import replay_trajectory, sample_trajectory
+    from cloak.ranker.interactive import replay_trajectory, sample_trajectory
 
     document = _document()
     policy = StubPolicy()
@@ -364,12 +364,12 @@ def test_replay_returns_gradient_tensors_and_complete_ordered_distributions():
 
 
 def test_semantic_replay_captures_both_distributions_from_one_forward_per_step():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         ReplayedStep,
         behavior_clone_trajectory,
         replay_trajectory,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     assert [field.name for field in fields(ReplayedStep)] == [
         "decision_id",
@@ -401,11 +401,11 @@ def test_semantic_replay_captures_both_distributions_from_one_forward_per_step()
 
 
 def test_semantic_replay_fails_closed_when_policy_only_returns_scalar_log_probs():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         behavior_clone_trajectory,
         replay_trajectory,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     class IncompleteSemanticPolicy(StubPolicy):
         policy_architecture = "semantic-v1"
@@ -419,7 +419,7 @@ def test_semantic_replay_fails_closed_when_policy_only_returns_scalar_log_probs(
 
 
 def _two_action_semantic_step(policy, profile):
-    from cloak.train.interactive_ranker import ReplayedStep
+    from cloak.ranker.interactive import ReplayedStep
 
     decision = _document().policy_decisions[0]
     legal = ("alpha-keep", "alpha-placeholder")
@@ -439,8 +439,8 @@ def _two_action_semantic_step(policy, profile):
 
 
 def test_semantic_expected_profile_count_loss_uses_detached_count_distribution():
-    from cloak.train.interactive_ranker import expected_profile_count_loss
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.interactive import expected_profile_count_loss
+    from cloak.ranker.environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     profile = LambdaProfile("high", 2.0)
@@ -459,12 +459,12 @@ def test_semantic_expected_profile_count_loss_uses_detached_count_distribution()
 
 
 def test_semantic_hybrid_objective_uses_profile_targets_not_legacy_count_reward():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         ReplayedTrajectory,
         compose_hybrid_document_objective,
         expected_profile_count_loss,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     profile = LambdaProfile("high", 2.0)
@@ -495,11 +495,11 @@ def test_semantic_hybrid_objective_uses_profile_targets_not_legacy_count_reward(
 
 
 def test_semantic_utility_and_exact_count_alpha_gradients_oppose_with_isolation():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         _gradient_norm,
         expected_profile_count_loss,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     profile = LambdaProfile("high", 2.0)
@@ -530,7 +530,7 @@ def test_semantic_utility_and_exact_count_alpha_gradients_oppose_with_isolation(
 
 
 def test_replay_raises_when_sampled_menu_or_claimed_state_differs():
-    from cloak.train.interactive_ranker import replay_trajectory, sample_trajectory
+    from cloak.ranker.interactive import replay_trajectory, sample_trajectory
 
     document = _document()
     trajectory = sample_trajectory(
@@ -559,7 +559,7 @@ def test_replay_raises_when_sampled_menu_or_claimed_state_differs():
 
 @pytest.mark.parametrize("operation", ["sample", "assemble", "replay"])
 def test_operations_reject_unordered_policy_decisions(operation):
-    import cloak.train.interactive_ranker as interactive
+    import cloak.ranker.interactive as interactive
 
     document = _document(unordered=True)
     with pytest.raises(ValueError, match="unordered policy decisions"):
@@ -582,7 +582,7 @@ def test_operations_reject_unordered_policy_decisions(operation):
 
 
 def _replayed(log_probabilities):
-    from cloak.train.interactive_ranker import ReplayedStep, ReplayedTrajectory
+    from cloak.ranker.interactive import ReplayedStep, ReplayedTrajectory
 
     trajectories = []
     for rollout_index, values in enumerate(log_probabilities):
@@ -607,8 +607,8 @@ def _replayed(log_probabilities):
 
 
 def test_provisional_utility_loss_has_one_term_per_pair_and_divides_only_by_rollouts():
-    from cloak.train.interactive_ranker import provisional_utility_loss
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.ranker.interactive import provisional_utility_loss
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     logs = tuple(
         torch.tensor(value, requires_grad=True)
@@ -634,8 +634,8 @@ def test_provisional_utility_loss_has_one_term_per_pair_and_divides_only_by_roll
 
 
 def test_tied_pair_contributes_a_zero_term_without_detaching_its_log_probability():
-    from cloak.train.interactive_ranker import provisional_utility_loss
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.ranker.interactive import provisional_utility_loss
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     logs = tuple(
         torch.tensor(value, requires_grad=True)
@@ -658,8 +658,8 @@ def test_tied_pair_contributes_a_zero_term_without_detaching_its_log_probability
 
 
 def test_provisional_utility_loss_rejects_missing_or_extra_credit_pairs():
-    from cloak.train.interactive_ranker import provisional_utility_loss
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.ranker.interactive import provisional_utility_loss
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     logs = tuple(torch.tensor(-0.1, requires_grad=True) for _ in range(4))
     credit = DocumentUtilityCredit(
@@ -672,8 +672,8 @@ def test_provisional_utility_loss_rejects_missing_or_extra_credit_pairs():
 
 
 def test_hybrid_utility_loss_substitutes_pair_terms_in_place_and_divides_once():
-    from cloak.train.interactive_ranker import hybrid_utility_loss
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.ranker.interactive import hybrid_utility_loss
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     logs = tuple(
         torch.tensor(value, requires_grad=True)
@@ -705,8 +705,8 @@ def test_hybrid_utility_loss_substitutes_pair_terms_in_place_and_divides_once():
 
 
 def test_hybrid_utility_loss_rejects_unknown_pair_or_nonscalar_loss():
-    from cloak.train.interactive_ranker import hybrid_utility_loss
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.ranker.interactive import hybrid_utility_loss
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     logs = tuple(torch.tensor(-0.1, requires_grad=True) for _ in range(4))
     replayed = _replayed((logs[:2], logs[2:]))
@@ -726,7 +726,7 @@ def test_hybrid_utility_loss_rejects_unknown_pair_or_nonscalar_loss():
 
 
 def _count_reward(*, alpha_level=0.2, beta_level=0.9):
-    from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
+    from cloak.ranker.profile_count import ProfileActionTarget, ProfileCountTargets
 
     rows = {}
     decision_actions = {}
@@ -771,7 +771,7 @@ def _count_reward(*, alpha_level=0.2, beta_level=0.9):
 
 
 def _utility_artifact():
-    from cloak.train.utility_cache import stable_hash
+    from cloak.reward.utility_cache import stable_hash
 
     artifact = {
         "artifact_version": "utility-assertions-v2",
@@ -807,7 +807,7 @@ def _utility_artifact():
 
 
 def _utility_result(action_vector, utility):
-    from cloak.train.utility_cache import make_result
+    from cloak.reward.utility_cache import make_result
 
     return make_result(
         doc_id="fixture/doc",
@@ -842,7 +842,7 @@ class SequencePolicy(StubPolicy):
 
 
 def test_bc_teacher_uses_authored_legal_levels_then_placeholder_and_replays_exactly():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         behavior_clone_trajectory,
         replay_trajectory,
     )
@@ -872,7 +872,7 @@ def test_bc_teacher_uses_authored_legal_levels_then_placeholder_and_replays_exac
 
 
 def test_bc_teacher_uses_authored_index_not_action_tuple_position():
-    from cloak.train.interactive_ranker import behavior_clone_trajectory
+    from cloak.ranker.interactive import behavior_clone_trajectory
 
     document = _document()
     alpha = document.policy_decisions[0]
@@ -890,7 +890,7 @@ def test_bc_teacher_uses_authored_index_not_action_tuple_position():
 
 
 def test_behavior_clone_trains_cross_entropy_and_records_stable_id_distributions():
-    from cloak.train.interactive_ranker import behavior_clone
+    from cloak.ranker.interactive import behavior_clone
 
     policy = StubPolicy()
     optimizer = torch.optim.SGD(policy.parameters(), lr=0.2)
@@ -913,8 +913,8 @@ def test_behavior_clone_trains_cross_entropy_and_records_stable_id_distributions
 
 
 def test_semantic_behavior_clone_updates_only_utility_and_history_at_lambda_zero():
-    from cloak.train.interactive_ranker import behavior_clone
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.interactive import behavior_clone
+    from cloak.ranker.environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     optimizer = torch.optim.SGD(policy.parameters(), lr=0.2)
@@ -938,8 +938,8 @@ def test_semantic_behavior_clone_updates_only_utility_and_history_at_lambda_zero
 
 
 def test_semantic_warm_start_clones_each_verified_winner_once_at_lambda_zero():
-    from cloak.train.interactive_ranker import initialize_hybrid_warm_start
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.interactive import initialize_hybrid_warm_start
+    from cloak.ranker.environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     bc_state = {
@@ -985,7 +985,7 @@ def test_semantic_warm_start_clones_each_verified_winner_once_at_lambda_zero():
 
 
 def test_trajectory_point_recomputes_fixed_denominator_utility_and_count_score():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         behavior_clone_trajectory,
         trajectory_point,
     )
@@ -1025,8 +1025,8 @@ def _exit_scorer(initial_utilities, refreshed_utilities=None, *, fail_refresh=Fa
 
 
 def test_exit_selects_strict_pure_utility_winner_and_reverifies_serially(tmp_path):
-    from cloak.train.interactive_ranker import collect_exit_winners
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.interactive import collect_exit_winners
+    from cloak.reward.utility_cache import UtilityCache
 
     reference = (("alpha", "alpha-level"), ("beta", "beta-placeholder"))
     winner = (("alpha", "alpha-keep"), ("beta", "beta-level"))
@@ -1062,8 +1062,8 @@ def test_exit_selects_strict_pure_utility_winner_and_reverifies_serially(tmp_pat
 
 
 def test_exit_lower_utility_higher_count_candidate_never_wins(tmp_path):
-    from cloak.train.interactive_ranker import collect_exit_winners
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.interactive import collect_exit_winners
+    from cloak.reward.utility_cache import UtilityCache
 
     reference = (("alpha", "alpha-level"), ("beta", "beta-placeholder"))
     higher_count = (("alpha", "alpha-placeholder"), ("beta", "beta-level"))
@@ -1098,8 +1098,8 @@ def test_exit_lower_utility_higher_count_candidate_never_wins(tmp_path):
 def test_exit_tie_never_replaces_bc_and_failed_refresh_drops_candidate(
     tmp_path, candidate_utility, fail_refresh,
 ):
-    from cloak.train.interactive_ranker import collect_exit_winners
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.interactive import collect_exit_winners
+    from cloak.reward.utility_cache import UtilityCache
 
     reference = (("alpha", "alpha-level"), ("beta", "beta-placeholder"))
     candidate = (("alpha", "alpha-keep"), ("beta", "beta-level"))
@@ -1130,8 +1130,8 @@ def test_exit_tie_never_replaces_bc_and_failed_refresh_drops_candidate(
 def test_exit_refresh_contract_errors_fail_closed_instead_of_becoming_dropped_candidates(
     tmp_path,
 ):
-    from cloak.train.interactive_ranker import collect_exit_winners
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.interactive import collect_exit_winners
+    from cloak.reward.utility_cache import UtilityCache
 
     reference = (("alpha", "alpha-level"), ("beta", "beta-placeholder"))
     candidate = (("alpha", "alpha-keep"), ("beta", "beta-level"))
@@ -1166,8 +1166,8 @@ def test_exit_refresh_contract_errors_fail_closed_instead_of_becoming_dropped_ca
 
 
 def test_exit_deduplicates_identical_candidates_before_scoring(tmp_path):
-    from cloak.train.interactive_ranker import collect_exit_winners
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.interactive import collect_exit_winners
+    from cloak.reward.utility_cache import UtilityCache
 
     reference = (("alpha", "alpha-level"), ("beta", "beta-placeholder"))
     candidate = (("alpha", "alpha-keep"), ("beta", "beta-level"))
@@ -1194,9 +1194,9 @@ def test_exit_deduplicates_identical_candidates_before_scoring(tmp_path):
 def test_exit_cache_only_reports_exact_unique_initial_work_and_dispatches_nothing(
     tmp_path, monkeypatch,
 ):
-    import cloak.train.roundtrip as roundtrip
-    from cloak.train.interactive_ranker import CacheOnlyMissError, collect_exit_winners
-    from cloak.train.utility_cache import UtilityCache, stable_hash
+    import cloak.reward.roundtrip as roundtrip
+    from cloak.ranker.interactive import CacheOnlyMissError, collect_exit_winners
+    from cloak.reward.utility_cache import UtilityCache, stable_hash
 
     artifact = _utility_artifact()
     artifact["documents"]["fixture/doc"]["assertion_ids"].append("a-context")
@@ -1245,9 +1245,9 @@ def test_exit_cache_only_reports_exact_unique_initial_work_and_dispatches_nothin
 
 
 def test_exit_cache_only_preflights_refresh_pairs_after_cached_selection(monkeypatch):
-    import cloak.train.roundtrip as roundtrip
-    from cloak.train.interactive_ranker import CacheOnlyMissError, collect_exit_winners
-    from cloak.train.utility_cache import UtilityCache
+    import cloak.reward.roundtrip as roundtrip
+    from cloak.ranker.interactive import CacheOnlyMissError, collect_exit_winners
+    from cloak.reward.utility_cache import UtilityCache
 
     monkeypatch.setattr(roundtrip, "_validate_request_readers", lambda request: None)
     reference = (("alpha", "alpha-level"), ("beta", "beta-placeholder"))
@@ -1284,11 +1284,11 @@ def test_exit_cache_only_preflights_refresh_pairs_after_cached_selection(monkeyp
 
 
 def test_exit_artifact_contains_only_ids_scores_and_pins(tmp_path):
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         collect_exit_winners,
         write_exit_winners,
     )
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     reference = (("alpha", "alpha-level"), ("beta", "beta-placeholder"))
     candidate = (("alpha", "alpha-keep"), ("beta", "beta-level"))
@@ -1382,7 +1382,7 @@ def test_interactive_cli_cache_only_miss_is_machine_readable_and_nonzero(
     monkeypatch, capsys,
 ):
     import train_interactive_ranker
-    from cloak.train.interactive_ranker import CacheOnlyMissError
+    from cloak.ranker.interactive import CacheOnlyMissError
 
     def blocked(args):
         raise CacheOnlyMissError(
@@ -1440,7 +1440,7 @@ def test_semantic_cli_cache_only_stop_covers_every_training_stage(
     monkeypatch, capsys, command, runner_name, extra,
 ):
     import train_interactive_ranker
-    from cloak.train.interactive_ranker import CacheOnlyMissError
+    from cloak.ranker.interactive import CacheOnlyMissError
 
     calls = []
 
@@ -1564,7 +1564,7 @@ def test_train_cli_requires_every_frozen_artifact_output_and_runtime_control():
 
 def test_semantic_cli_factory_uses_only_frozen_local_artifact_contracts(monkeypatch):
     import train_interactive_ranker
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     contract = SimpleNamespace(pair_dim=20)
     store = SimpleNamespace(manifest={"encoder": {"hidden_size": 4}})
@@ -1612,7 +1612,7 @@ def test_semantic_cli_factory_uses_only_frozen_local_artifact_contracts(monkeypa
 
 def test_train_cli_dispatches_train_and_preserves_cache_only_stop(monkeypatch, capsys):
     import train_interactive_ranker
-    from cloak.train.interactive_ranker import CacheOnlyMissError
+    from cloak.ranker.interactive import CacheOnlyMissError
 
     def blocked(args):
         assert args.command == "train"
@@ -1652,12 +1652,12 @@ def test_train_cli_dispatches_train_and_preserves_cache_only_stop(monkeypatch, c
 
 
 def _objective_fixture():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         ReplayedStep,
         ReplayedTrajectory,
     )
-    from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.ranker.profile_count import ProfileActionTarget, ProfileCountTargets
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     probability = torch.tensor([0.75, 0.25], dtype=torch.float64)
     log_probs = probability.log().requires_grad_()
@@ -1720,7 +1720,7 @@ def _objective_fixture():
 
 
 def test_hybrid_document_objective_matches_two_rollout_two_decision_equation():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         compose_hybrid_document_objective,
         hybrid_utility_loss,
     )
@@ -1759,11 +1759,11 @@ def test_hybrid_document_objective_matches_two_rollout_two_decision_equation():
 
 
 def test_count_gradient_survives_tied_utility_and_is_not_divided_twice():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         compose_hybrid_document_objective,
         hybrid_utility_loss,
     )
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     replayed, profile_targets, _ = _objective_fixture()
     tied = DocumentUtilityCredit(
@@ -1796,8 +1796,8 @@ def test_count_gradient_survives_tied_utility_and_is_not_divided_twice():
 
 
 def test_absolute_weighted_mass_does_not_cancel_opposite_rollout_terms():
-    from cloak.train.interactive_ranker import _utility_family_terms_and_mass
-    from cloak.train.utility_credit import DocumentUtilityCredit
+    from cloak.ranker.interactive import _utility_family_terms_and_mass
+    from cloak.reward.utility_credit import DocumentUtilityCredit
 
     replayed, _, _ = _objective_fixture()
     credit = DocumentUtilityCredit(
@@ -1819,11 +1819,11 @@ def test_absolute_weighted_mass_does_not_cancel_opposite_rollout_terms():
 
 
 def test_seeded_latin_cycle_balances_every_document_and_records_exposure():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         build_latin_cycle_schedule,
         profile_exposure_report,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     documents = tuple(
         replace(_document(), doc_id=f"fixture/{index}", corpus=("a" if index < 2 else "b"))
@@ -1862,9 +1862,9 @@ def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_familie
 ):
     import copy
 
-    from cloak.train.interactive_ranker import train_hybrid_document_group
-    from cloak.train.ranker_environment import LambdaProfile
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.interactive import train_hybrid_document_group
+    from cloak.ranker.environment import LambdaProfile
+    from cloak.reward.utility_cache import UtilityCache
 
     policy = StubPolicy()
     reference = copy.deepcopy(policy)
@@ -1952,9 +1952,9 @@ def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_familie
 
 
 def test_semantic_hybrid_step_routes_profile_loss_and_emits_owned_gradients(tmp_path):
-    from cloak.train.interactive_ranker import train_hybrid_document_group
-    from cloak.train.ranker_environment import LambdaProfile
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.interactive import train_hybrid_document_group
+    from cloak.ranker.environment import LambdaProfile
+    from cloak.reward.utility_cache import UtilityCache
 
     policy = SemanticGradientPolicy()
     optimizer = torch.optim.SGD(policy.parameters(), lr=0.05)
@@ -2011,7 +2011,7 @@ def test_semantic_hybrid_step_routes_profile_loss_and_emits_owned_gradients(tmp_
 
 
 def test_epoch_report_keeps_scheduler_budget_separate_from_reward_magnitude(tmp_path):
-    from cloak.train.interactive_ranker import DocumentTrainingResult, build_epoch_report
+    from cloak.ranker.interactive import DocumentTrainingResult, build_epoch_report
 
     group = DocumentTrainingResult(
         doc_id="fixture/doc",
@@ -2070,7 +2070,7 @@ def test_epoch_report_keeps_scheduler_budget_separate_from_reward_magnitude(tmp_
 
 
 def test_epoch_report_extends_semantic_gradient_alpha_privacy_diagnostics():
-    from cloak.train.interactive_ranker import DocumentTrainingResult, build_epoch_report
+    from cloak.ranker.interactive import DocumentTrainingResult, build_epoch_report
 
     families = (
         "linked", "residual", "fallback", "counterfactual",
@@ -2137,10 +2137,10 @@ def test_epoch_report_extends_semantic_gradient_alpha_privacy_diagnostics():
 def test_failed_counterfactual_execution_does_not_advance_pair_history(tmp_path):
     import copy
 
-    from cloak.train.counterfactuals import CounterfactualRequest
-    from cloak.train.interactive_ranker import train_hybrid_document_group
-    from cloak.train.ranker_environment import LambdaProfile
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.counterfactuals import CounterfactualRequest
+    from cloak.ranker.interactive import train_hybrid_document_group
+    from cloak.ranker.environment import LambdaProfile
+    from cloak.reward.utility_cache import UtilityCache
 
     policy = StubPolicy()
     history = {}
@@ -2203,12 +2203,12 @@ def test_hybrid_checkpoint_round_trip_restores_optimizer_rng_schedule_and_pins(
 ):
     import random
 
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         build_latin_cycle_schedule,
         load_hybrid_checkpoint,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     policy = StubPolicy()
     optimizer = torch.optim.Adam(policy.parameters(), lr=0.01)
@@ -2266,12 +2266,12 @@ def test_hybrid_checkpoint_round_trip_restores_optimizer_rng_schedule_and_pins(
 
 
 def test_hybrid_checkpoint_refuses_any_pin_mismatch_before_loading_state(tmp_path):
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         build_latin_cycle_schedule,
         load_hybrid_checkpoint,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     policy = StubPolicy()
     optimizer = torch.optim.SGD(policy.parameters(), lr=0.1)
@@ -2328,13 +2328,13 @@ def _semantic_checkpoint_pins():
 
 
 def test_semantic_checkpoint_publishes_frozen_contract_and_round_trips(tmp_path):
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         build_latin_cycle_schedule,
         load_hybrid_checkpoint,
         policy_architecture_pin,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     policy = SemanticGradientPolicy()
     optimizer = torch.optim.Adam(policy.parameters(), lr=0.01)
@@ -2389,13 +2389,13 @@ def test_semantic_checkpoint_publishes_frozen_contract_and_round_trips(tmp_path)
 
 
 def test_semantic_and_legacy_checkpoints_reject_each_other_before_tensor_load(tmp_path):
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         build_latin_cycle_schedule,
         load_hybrid_checkpoint,
         policy_architecture_pin,
         save_hybrid_checkpoint,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     semantic = SemanticGradientPolicy()
     semantic_optimizer = torch.optim.SGD(semantic.parameters(), lr=0.1)
@@ -2473,7 +2473,7 @@ def test_semantic_and_legacy_checkpoints_reject_each_other_before_tensor_load(tm
 
 
 def test_kl_enables_only_when_frozen_collapse_threshold_fires():
-    from cloak.train.interactive_ranker import collapse_rule_fires
+    from cloak.ranker.interactive import collapse_rule_fires
 
     manifest = {"feasibility_gates": {"min_adjacent_winner_change": 0.2}}
     assert collapse_rule_fires(
@@ -2487,12 +2487,12 @@ def test_kl_enables_only_when_frozen_collapse_threshold_fires():
 
 
 def test_hybrid_training_loop_uses_latin_profiles_and_enables_kl_after_block():
-    from cloak.train.interactive_ranker import (
+    from cloak.ranker.interactive import (
         DocumentTrainingResult,
         build_latin_cycle_schedule,
         train_hybrid_policy,
     )
-    from cloak.train.ranker_environment import LambdaProfile
+    from cloak.ranker.environment import LambdaProfile
 
     documents = tuple(
         replace(_document(), doc_id=f"fixture/{index}") for index in range(3)

@@ -23,8 +23,8 @@ from pathlib import Path
 
 import numpy as np
 
-from cloak import profile_match as pm
-from cloak.lattice import nli_gate
+from cloak.lattice import profile_match as pm
+from cloak.lattice.core import nli_gate
 
 PROFILES = Path("data/lattice_profiles/proposed/drug-health-procedure.proposed.json")
 INDEX = Path(os.environ.get("SPIKE_INDEX", "/tmp/claude-1000/spike_profile_match.embindex.npz"))

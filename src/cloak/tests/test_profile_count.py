@@ -10,8 +10,8 @@ from dataclasses import FrozenInstanceError, fields
 import pytest
 import torch
 
-from cloak.train.count_reward import CountGateError
-from cloak.train.profile_count import (
+from cloak.ranker.count_reward import CountGateError
+from cloak.ranker.profile_count import (
     ProfileActionTarget,
     ProfileCountTargets,
     build_profile_count_targets,

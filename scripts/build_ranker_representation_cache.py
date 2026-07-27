@@ -6,8 +6,8 @@ import json
 from collections.abc import Mapping
 from pathlib import Path
 
-from cloak.train.ranker_environment import load_ranker_environment
-from cloak.train.ranker_representation import (
+from cloak.ranker.environment import load_ranker_environment
+from cloak.ranker.representation import (
     build_representation_store,
     load_pinned_encoder,
 )

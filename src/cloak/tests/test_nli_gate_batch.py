@@ -1,5 +1,5 @@
 """nli_gate_batch: one pipeline call for many (entity, context, candidates) jobs."""
-import cloak.lattice as cl
+import cloak.lattice.core as cl
 
 
 class FakeNLI:

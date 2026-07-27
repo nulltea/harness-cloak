@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from cloak.train.profile_count import ProfileActionTarget, ProfileCountTargets
-from cloak.train.ranker_environment import RankerAction, RankerDecision, RankerDocument
+from cloak.ranker.profile_count import ProfileActionTarget, ProfileCountTargets
+from cloak.ranker.environment import RankerAction, RankerDecision, RankerDocument
 
 
 def _documents():
@@ -91,7 +91,7 @@ def _count_reward():
 
 
 def _point(name, utility, count_score, mode):
-    from cloak.train.lambda_menu import CalibrationPoint
+    from cloak.ranker.lambda_menu import CalibrationPoint
 
     return CalibrationPoint(
         doc_id="doc",
@@ -130,7 +130,7 @@ def _pool():
 
 
 def _utility_artifact():
-    from cloak.train.utility_cache import stable_hash
+    from cloak.reward.utility_cache import stable_hash
 
     artifact = {
         "artifact_version": "utility-assertions-v2",
@@ -220,7 +220,7 @@ def _menu_artifact():
 
 
 def test_default_threshold_rules_predeclare_every_required_field():
-    from cloak.train.ranker_diagnostics import (
+    from cloak.ranker.diagnostics import (
         default_threshold_rules,
         required_empirical_threshold_fields,
         validate_threshold_rules,
@@ -240,7 +240,7 @@ def test_default_threshold_rules_predeclare_every_required_field():
 
 
 def test_diagnostic_spike_emits_every_measurement_family_and_hash():
-    from cloak.train.ranker_diagnostics import build_diagnostic_spike
+    from cloak.ranker.diagnostics import build_diagnostic_spike
 
     spike = build_diagnostic_spike(
         _pool(),
@@ -328,7 +328,7 @@ def test_diagnostic_spike_emits_every_measurement_family_and_hash():
 
 
 def test_threshold_manifest_freezes_hard_invariants_and_numeric_empirical_values():
-    from cloak.train.ranker_diagnostics import (
+    from cloak.ranker.diagnostics import (
         default_threshold_rules,
         freeze_threshold_manifest,
     )
@@ -391,7 +391,7 @@ def test_threshold_manifest_freezes_hard_invariants_and_numeric_empirical_values
 
 
 def test_report_only_cannot_be_used_for_a_run_relevant_threshold():
-    from cloak.train.ranker_diagnostics import default_threshold_rules, validate_threshold_rules
+    from cloak.ranker.diagnostics import default_threshold_rules, validate_threshold_rules
 
     rules = default_threshold_rules()
     rules["fields"]["feasibility_gates.min_adjacent_winner_change"][
@@ -403,7 +403,7 @@ def test_report_only_cannot_be_used_for_a_run_relevant_threshold():
 
 
 def test_threshold_manifest_stops_when_reader_jitter_is_unmeasured():
-    from cloak.train.ranker_diagnostics import (
+    from cloak.ranker.diagnostics import (
         default_threshold_rules,
         freeze_threshold_manifest,
     )
@@ -448,8 +448,8 @@ def test_threshold_manifest_stops_when_reader_jitter_is_unmeasured():
 
 
 def test_reader_jitter_uses_paired_cached_refresh_vectors_only():
-    from cloak.train.ranker_diagnostics import reader_jitter_from_cache
-    from cloak.train.utility_cache import make_result
+    from cloak.ranker.diagnostics import reader_jitter_from_cache
+    from cloak.reward.utility_cache import make_result
 
     artifact = _utility_artifact()
     base = make_result(
@@ -491,9 +491,9 @@ def test_reader_jitter_uses_paired_cached_refresh_vectors_only():
 
 
 def test_cache_only_missing_report_names_exact_vectors_and_work_counts(tmp_path: Path):
-    from cloak.train.lambda_menu import CalibrationTrajectory
-    from cloak.train.ranker_diagnostics import cache_only_missing_report
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.ranker.lambda_menu import CalibrationTrajectory
+    from cloak.ranker.diagnostics import cache_only_missing_report
+    from cloak.reward.utility_cache import UtilityCache
 
     candidate = CalibrationTrajectory(
         doc_id="doc",
@@ -523,7 +523,7 @@ def test_preflight_cli_cleanly_stops_and_writes_exact_cache_misses(
 ):
     from run_ranker_preflight import main
 
-    from cloak.train.ranker_diagnostics import default_threshold_rules
+    from cloak.ranker.diagnostics import default_threshold_rules
 
     root = Path(__file__).resolve().parents[3]
     rules = tmp_path / "threshold-rules.json"
@@ -556,7 +556,7 @@ def test_preflight_cli_cleanly_stops_and_writes_exact_cache_misses(
 
 
 def _training_artifact_fixtures():
-    from cloak.train.utility_cache import stable_hash
+    from cloak.reward.utility_cache import stable_hash
 
     environment = {
         "artifact_version": "ranker-v2-environment-v2",
@@ -734,7 +734,7 @@ def _privacy_seed_report():
 
 
 def test_privacy_diagnostic_manifest_requires_held_out_metrics_and_all_baselines():
-    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+    from cloak.ranker.diagnostics import build_privacy_diagnostic_manifest
 
     manifest = build_privacy_diagnostic_manifest(
         [_privacy_seed_report()],
@@ -796,7 +796,7 @@ def test_privacy_diagnostic_manifest_requires_held_out_metrics_and_all_baselines
 
 
 def test_privacy_gate_ignores_bad_nll_but_requires_candidate_controller_fitness():
-    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+    from cloak.ranker.diagnostics import build_privacy_diagnostic_manifest
 
     report = _privacy_seed_report()
     report["splits"]["test"]["semantic"]["overall"]["nll"] = 1e9
@@ -828,7 +828,7 @@ def test_privacy_gate_ignores_bad_nll_but_requires_candidate_controller_fitness(
 def test_privacy_gate_requires_paired_bootstrap_improvement_across_three_seeds():
     from copy import deepcopy
 
-    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+    from cloak.ranker.diagnostics import build_privacy_diagnostic_manifest
 
     reports = []
     for seed in (11, 22, 33):
@@ -864,7 +864,7 @@ def test_privacy_gate_requires_paired_bootstrap_improvement_across_three_seeds()
 def test_point_improvement_without_bootstrap_support_does_not_pass():
     from copy import deepcopy
 
-    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+    from cloak.ranker.diagnostics import build_privacy_diagnostic_manifest
 
     reports = []
     for seed in (11, 22, 33):

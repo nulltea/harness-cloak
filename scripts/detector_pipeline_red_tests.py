@@ -19,7 +19,7 @@ import argparse
 import json
 from pathlib import Path
 
-from cloak.detect import Detector, coref_chains
+from cloak.detection.detect import Detector, coref_chains
 
 
 def _spans_on(spans, needle, *, types=None, presidio_only=False):
@@ -36,7 +36,7 @@ def _raw_gliner_word_coverage(det, text, words):
     rescues spaCy-detectable names and would mask chunk splits). Returns the words NOT fully
     covered by any raw span. The defect signature of a chunk split is a lost word, not span
     shape: this model splits even an unchunked sentence-initial name into adjacent word spans."""
-    from cloak.detect import _chunks
+    from cloak.detection.detect import _chunks
 
     spans = []
     try:

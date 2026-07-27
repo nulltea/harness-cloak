@@ -16,12 +16,12 @@ import json
 import sys
 from pathlib import Path
 
-from cloak.train.profile_count import ProfileCountTargets, _canonical_hash
-from cloak.train.ranker_environment import load_ranker_environment
-from cloak.train.ranker_privacy import DirectCountPrivacyProvider
-from cloak.train.roundtrip import _cache_identity
-from cloak.train.utility_cache import UtilityCache, UtilityRequest
-from cloak.train.interactive_ranker import assemble_action_vector
+from cloak.ranker.profile_count import ProfileCountTargets, _canonical_hash
+from cloak.ranker.environment import load_ranker_environment
+from cloak.ranker.privacy import DirectCountPrivacyProvider
+from cloak.reward.roundtrip import _cache_identity
+from cloak.reward.utility_cache import UtilityCache, UtilityRequest
+from cloak.ranker.environment import assemble_action_vector
 from train_interactive_ranker import _demote_out_of_scope_decisions
 
 ENVIRONMENT = Path("results/ranker_v2/environment/ranker-env.json")

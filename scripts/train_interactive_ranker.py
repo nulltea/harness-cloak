@@ -16,8 +16,8 @@ from typing import Any
 
 import torch
 
-from cloak.train.profile_count import ProfileCountTargets
-from cloak.train.interactive_ranker import (
+from cloak.ranker.profile_count import ProfileCountTargets
+from cloak.ranker.interactive import (
     _semantic_policy_contract,
     CacheOnlyMissError,
     behavior_clone,
@@ -31,16 +31,16 @@ from cloak.train.interactive_ranker import (
     train_hybrid_policy,
     write_exit_winners,
 )
-from cloak.train.ranker_environment import LambdaProfile
-from cloak.train.ranker_privacy import (
+from cloak.ranker.environment import LambdaProfile
+from cloak.ranker.privacy import (
     CHECKPOINT_VERSION,
     DirectCountPrivacyProvider,
     PrivacyCheckpointContract,
 )
-from cloak.train.ranker_environment import load_ranker_environment
-from cloak.train.ranker_representation import RankerRepresentationStore
-from cloak.train.semantic_ranker import SemanticRankerPolicy
-from cloak.train.utility_cache import UtilityCache, stable_hash
+from cloak.ranker.environment import load_ranker_environment
+from cloak.ranker.representation import RankerRepresentationStore
+from cloak.ranker.semantic import SemanticRankerPolicy
+from cloak.reward.utility_cache import UtilityCache, stable_hash
 
 
 LAMBDA_ZERO = LambdaProfile("lambda-zero", 0.0)

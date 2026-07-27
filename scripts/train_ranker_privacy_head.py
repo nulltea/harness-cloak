@@ -10,9 +10,9 @@ import torch
 from pathlib import Path
 from typing import Any
 
-from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
-from cloak.train.ranker_environment import load_ranker_environment
-from cloak.train.ranker_privacy import (
+from cloak.ranker.diagnostics import build_privacy_diagnostic_manifest
+from cloak.ranker.environment import load_ranker_environment
+from cloak.ranker.privacy import (
     METRIC_REPORT_VERSION,
     PrivacyCheckpointContract,
     build_grouped_profile_split,
@@ -20,7 +20,7 @@ from cloak.train.ranker_privacy import (
     save_privacy_checkpoint,
     train_privacy_seed,
 )
-from cloak.train.ranker_representation import RankerRepresentationStore
+from cloak.ranker.representation import RankerRepresentationStore
 
 
 DEFAULT_OUT_DIR = Path("results/ranker_v2/architecture/privacy")

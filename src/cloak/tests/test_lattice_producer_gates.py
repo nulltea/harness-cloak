@@ -1,7 +1,7 @@
 import json
 
-from cloak.lattice_producer.counts import compile_level_counts
-from cloak.lattice_producer.gates import gate_candidates
+from cloak.lattice.producer.counts import compile_level_counts
+from cloak.lattice.producer.gates import gate_candidates
 
 
 def test_compile_drops_frozenset_member_set_so_record_is_json_serializable(tmp_path):

@@ -1,6 +1,6 @@
 import json
 
-from cloak.train.qa_audit import (
+from cloak.qa.audit import (
     build_legacy_environment_audit,
     build_qa_audit,
     write_audit_sidecars,

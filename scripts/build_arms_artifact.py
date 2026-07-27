@@ -16,16 +16,16 @@ import time
 from copy import deepcopy
 from pathlib import Path
 
-import cloak.span_gate as span_gate
-from cloak.anonymity import aset_count
+import cloak.detection.span_gate as span_gate
+from cloak.lattice.anonymity import aset_count
 from cloak.corpora import load_task_docs
-from cloak.detect import Detector, FINE_LABELS, GLINER_LABELS, QA_V2_CLINICAL_LABELS
-from cloak.lattice_profiles import DEFAULT_PROFILE_PATH, resolve_missing_drug_aliases
-from cloak.probe import fill_proximity, walk_risk
+from cloak.detection.detect import Detector, FINE_LABELS, GLINER_LABELS, QA_V2_CLINICAL_LABELS
+from cloak.lattice.profiles import DEFAULT_PROFILE_PATH, resolve_missing_drug_aliases
+from cloak.detection.probe import fill_proximity, walk_risk
 from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE
-from cloak.substitute import freeze_policy_free_candidates, prepare_spans_for_substitution
-from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
-from cloak.train.qa_freeze import (
+from cloak.detection.span_prep import freeze_policy_free_candidates, prepare_spans_for_substitution
+from cloak.qa.audit import build_environment_audit, write_audit_sidecars
+from cloak.qa.freeze import (
     freeze_v2_environment_from_legacy_arms,
     legacy_arms_ranker_environment,
     migrate_frozen_environment_count_provenance,
@@ -33,7 +33,7 @@ from cloak.train.qa_freeze import (
 
 def build_arms(text: str, spans: list, tau: float) -> dict[str, tuple[str, list[dict]]]:
     """Legacy-arms action tables (moved from the retired surrogate_validation spike)."""
-    from cloak.substitute import substitute
+    from cloak.detection.span_prep import substitute
 
     arms = {
         "no_privacy": (text, []),
@@ -562,7 +562,7 @@ def main():
                     "v2_frozen_input": entry["v2_frozen_input"],
                 }
     else:
-        from cloak.train.qa_audit import build_legacy_environment_audit
+        from cloak.qa.audit import build_legacy_environment_audit
         environment_audit = build_legacy_environment_audit(art)
     art["_meta"]["environment_audit"] = {
         "version": environment_audit["version"],

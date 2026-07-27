@@ -2,12 +2,12 @@
 
 Root cause: the deberta-v3-large PII fine-tune at threshold < ~0.1 emits low-confidence MISC spans
 whose token indices exceed the real sequence (observed start=225 into a 203-entry map). Upstream
-gliner indexes the map unguarded -> IndexError. See cloak.detect._guarded_map_entities_to_original.
+gliner indexes the map unguarded -> IndexError. See cloak.detection.detect._guarded_map_entities_to_original.
 Model-free: exercises the guard directly with fake spans (no 1.7 GB checkpoint load).
 """
 from types import SimpleNamespace
 
-from cloak.detect import _guarded_map_entities_to_original
+from cloak.detection.detect import _guarded_map_entities_to_original
 
 
 def _span(start, end, score=0.05, label="MISC"):

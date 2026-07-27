@@ -6,8 +6,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
 def test_miner_gate_wiring_drop_retype_keep(monkeypatch, tmp_path):
     import build_mined_lattice_profiles as m
-    from cloak.span_gate import GateDecision
-    from cloak.profile_match import span_key
+    from cloak.detection.span_gate import GateDecision
+    from cloak.lattice.profile_match import span_key
 
     decisions = {
         span_key("junky fragment", "injury"): GateDecision("drop", "nli"),
@@ -26,8 +26,8 @@ def test_miner_gate_wiring_drop_retype_keep(monkeypatch, tmp_path):
 
 def test_miner_gate_retype_reapplies_type_handling(monkeypatch):
     import build_mined_lattice_profiles as m
-    from cloak.span_gate import GateDecision
-    from cloak.profile_match import span_key
+    from cloak.detection.span_gate import GateDecision
+    from cloak.lattice.profile_match import span_key
 
     decisions = {
         # retyped into "drug": surface must now be dose-stripped
@@ -47,9 +47,9 @@ def test_miner_gate_retype_reapplies_type_handling(monkeypatch):
 
 
 def test_runtime_gate_drop_retype_keep(monkeypatch):
-    from cloak import detect
-    from cloak.span_gate import GateDecision
-    from cloak.profile_match import span_key
+    from cloak.detection import detect
+    from cloak.detection.span_gate import GateDecision
+    from cloak.lattice.profile_match import span_key
 
     decisions = {
         span_key("junky fragment", "injury"): GateDecision("drop", "nli"),
@@ -57,7 +57,7 @@ def test_runtime_gate_drop_retype_keep(monkeypatch):
                                                         new_type="medical-procedure"),
         span_key("blorbitis", "injury"): GateDecision("keep", "open"),
     }
-    import cloak.span_gate as sg
+    import cloak.detection.span_gate as sg
     monkeypatch.setattr(sg, "gate_spans", lambda items, point, **kw: decisions)
     spans = [
         detect.Span(0, 3, "junky fragment", "injury", 0.9, "gliner"),

@@ -15,7 +15,7 @@ import argparse
 import json
 from pathlib import Path
 
-from cloak.lattice_profiles import (
+from cloak.lattice.profiles import (
     DEFAULT_NDC_PATH,
     DEFAULT_PROFILE_PATH,
     lookup_entry,

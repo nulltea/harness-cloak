@@ -4,12 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from cloak.detect import Span
-from cloak.extract import _type_sane, invert
-from cloak.lattice import lattice_for
-from cloak.anonymity import aset_count
-from cloak.probe import MIN_POOL, walk_risk
-from cloak.substitute import substitute
+from cloak.detection.detect import Span
+from cloak.reward.extract import _type_sane, invert
+from cloak.lattice.core import lattice_for
+from cloak.lattice.anonymity import aset_count
+from cloak.detection.probe import MIN_POOL, walk_risk
+from cloak.detection.span_prep import substitute
 from cloak.runtime_types import (
     PLACEHOLDER_RE,
     PLACEHOLDER_ONLY_TYPES,
@@ -51,7 +51,7 @@ def test_placeholder_only_fine_lattice_has_no_semantic_text_by_default():
 
 
 def test_teacher_cache_is_runtime_type_keyed_and_filtered(monkeypatch, tmp_path):
-    import cloak.lattice as lat
+    import cloak.lattice.core as lat
 
     cache = tmp_path / "lattice_cache.json"
     cache.write_text(json.dumps({
@@ -78,7 +78,7 @@ def test_fine_anonymity_fail_closed_counts():
 
 
 def test_fine_dem_aset_count_no_longer_uses_hand_count_fallback(monkeypatch):
-    import cloak.anonymity as anon
+    import cloak.lattice.anonymity as anon
 
     monkeypatch.setattr(anon, "lookup_count", lambda *args, **kwargs: None)
     monkeypatch.setattr(anon, "_wn_leaf_count", lambda *args, **kwargs: None)
@@ -88,7 +88,7 @@ def test_fine_dem_aset_count_no_longer_uses_hand_count_fallback(monkeypatch):
 
 
 def test_substitute_preserves_fine_type_and_emits_typed_placeholder(monkeypatch):
-    monkeypatch.setattr("cloak.substitute.walk_risk", lambda *args, **kwargs: 1.0)
+    monkeypatch.setattr("cloak.detection.span_prep.walk_risk", lambda *args, **kwargs: 1.0)
     text = "The patient has diabetes and is married."
     spans = [
         Span(text.index("diabetes"), text.index("diabetes") + len("diabetes"),
@@ -106,7 +106,7 @@ def test_substitute_preserves_fine_type_and_emits_typed_placeholder(monkeypatch)
 
 
 def test_legacy_dem_still_substitutes(monkeypatch):
-    monkeypatch.setattr("cloak.substitute.walk_risk", lambda *args, **kwargs: 1.0)
+    monkeypatch.setattr("cloak.detection.span_prep.walk_risk", lambda *args, **kwargs: 1.0)
     text = "The patient is German."
     span = Span(text.index("German"), text.index("German") + len("German"),
                 "German", "DEM", 0.99, "stub")
@@ -116,8 +116,8 @@ def test_legacy_dem_still_substitutes(monkeypatch):
 
 
 def test_lowercase_person_role_does_not_fallback_to_dem(monkeypatch):
-    monkeypatch.setattr("cloak.substitute._is_role_phrase", lambda text: True)
-    monkeypatch.setattr("cloak.substitute.walk_risk", lambda *args, **kwargs: 1.0)
+    monkeypatch.setattr("cloak.detection.span_prep._is_role_phrase", lambda text: True)
+    monkeypatch.setattr("cloak.detection.span_prep.walk_risk", lambda *args, **kwargs: 1.0)
     text = "The nurse called."
     span = Span(text.index("nurse"), text.index("nurse") + len("nurse"),
                 "nurse", "PERSON", 0.99, "stub")
@@ -142,8 +142,8 @@ def test_fine_probe_pool_build_and_walk_risk(monkeypatch, tmp_path):
     assert "health-condition" in pools
     assert "DEM" not in pools
 
-    monkeypatch.setattr("cloak.probe._pools", pools)
-    monkeypatch.setattr("cloak.probe._logp_continuations", lambda prefix, conts: [1.0] + [0.0] * (len(conts) - 1))
+    monkeypatch.setattr("cloak.detection.probe._pools", pools)
+    monkeypatch.setattr("cloak.detection.probe._logp_continuations", lambda prefix, conts: [1.0] + [0.0] * (len(conts) - 1))
     risk = walk_risk("Patient has a chronic condition.", "cond0", "a chronic condition",
                      "health-condition")
     assert 0.0 <= risk < 1.0

@@ -18,7 +18,7 @@ from pathlib import Path
 from build_arms_artifact import ARTIFACT, CORPORA
 
 from cloak.corpora import load_task_docs
-from cloak.train.qa_freeze import (
+from cloak.qa.freeze import (
     freeze_v2_environment_from_legacy_arms,
     legacy_arms_ranker_environment,
 )

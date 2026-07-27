@@ -12,7 +12,7 @@ import pytest
 import torch
 from torch import nn
 
-from cloak.train.ranker_privacy import (
+from cloak.ranker.privacy import (
     CHECKPOINT_VERSION,
     REQUIRED_BASELINES,
     DirectCountPrivacyProvider,
@@ -33,12 +33,12 @@ from cloak.train.ranker_privacy import (
     save_privacy_checkpoint,
     validate_privacy_signal_for_policy,
 )
-from cloak.train.ranker_environment import (
+from cloak.ranker.environment import (
     RankerAction,
     RankerDecision,
     RankerDocument,
 )
-from cloak.train.ranker_representation import (
+from cloak.ranker.representation import (
     DocumentTokenBank,
     RelationFeatures,
     build_representation_store,
@@ -1042,7 +1042,7 @@ def test_metric_subset_survives_diverged_log_error():
     """One diverged |log error| (> 709) must not overflow the multiplicative metric."""
     import torch
 
-    from cloak.train.ranker_privacy import PrivacyExample, PrivacyPrediction, _metric_subset
+    from cloak.ranker.privacy import PrivacyExample, PrivacyPrediction, _metric_subset
 
     def example(target):
         return PrivacyExample(
@@ -1065,7 +1065,7 @@ def test_normalization_survives_all_zero_predictions():
     """Saturated all-zero predicted means must yield zero scores, not a crash."""
     import torch
 
-    from cloak.train.ranker_privacy import (
+    from cloak.ranker.privacy import (
         PrivacyPrediction,
         _normalize_level_means,
         profile_normalize_predictions,

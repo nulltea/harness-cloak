@@ -3,20 +3,20 @@ from pathlib import Path
 
 import pytest
 
-from cloak.lattice_producer.coverage import (
+from cloak.lattice.producer.coverage import (
     CategoryOutcome,
     build_category_coverage,
     registry_entry_for_label,
     registry_outcome_for_runtime_type,
 )
-from cloak.lattice_producer.propose import (
+from cloak.lattice.producer.propose import (
     QWEN36_THINKING_BUDGET_TOKENS,
     assemble_context_packet,
     ensure_local_base_url,
     extract_candidate_levels,
     propose_with_llama_swap,
 )
-from cloak.lattice_producer.queue import _queue_from_profile_categories, build_or_load_queue
+from cloak.lattice.producer.queue import _queue_from_profile_categories, build_or_load_queue
 
 
 def _write_profiles(path: Path, profiles: dict) -> None:
@@ -407,7 +407,7 @@ def test_proposal_call_omits_thinking_budget_by_default(monkeypatch, tmp_path: P
             seen["client"] = kwargs
             self.chat = type("Chat", (), {"completions": FakeCompletions()})()
 
-    monkeypatch.setattr("cloak.lattice_producer.propose.OpenAI", FakeClient)
+    monkeypatch.setattr("cloak.lattice.producer.propose.OpenAI", FakeClient)
     monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path / "cache"))
 
     propose_with_llama_swap(
@@ -453,7 +453,7 @@ def test_proposal_call_accepts_custom_thinking_budget(monkeypatch, tmp_path: Pat
         def __init__(self, **kwargs):
             self.chat = type("Chat", (), {"completions": FakeCompletions()})()
 
-    monkeypatch.setattr("cloak.lattice_producer.propose.OpenAI", FakeClient)
+    monkeypatch.setattr("cloak.lattice.producer.propose.OpenAI", FakeClient)
     monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path / "cache"))
 
     propose_with_llama_swap(
@@ -501,7 +501,7 @@ def test_proposal_invalid_json_after_escalation_returns_parse_error(monkeypatch,
         def __init__(self, **kwargs):
             self.chat = type("Chat", (), {"completions": FakeCompletions()})()
 
-    monkeypatch.setattr("cloak.lattice_producer.propose.OpenAI", FakeClient)
+    monkeypatch.setattr("cloak.lattice.producer.propose.OpenAI", FakeClient)
     monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path / "cache"))
 
     payload = propose_with_llama_swap(

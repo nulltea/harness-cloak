@@ -1,6 +1,6 @@
 from types import SimpleNamespace
 
-from cloak.detect import (
+from cloak.detection.detect import (
     Detector,
     PROFILES,
     QA_V2_CLINICAL_LABELS,

@@ -1,7 +1,7 @@
 """Build the walk_risk distractor pools from the arms artifact.
 
 Pools are the same-type anonymity sets the contrastive re-identification probe softmaxes over
-(cloak/probe.py). Corpus-empirical: every detected surface of a type across the task corpora is
+(cloak/detection/probe.py). Corpus-empirical: every detected surface of a type across the task corpora is
 a plausible distractor for that type. Rebuild after corpus changes; consumers reload lazily.
 
 Run: PYTHONPATH=src:scripts .venv/bin/python scripts/build_probe_distractors.py
@@ -10,7 +10,7 @@ import json
 from pathlib import Path
 
 from build_arms_artifact import load_artifact
-from cloak.probe import MIN_POOL
+from cloak.detection.probe import MIN_POOL
 from cloak.runtime_types import RUNTIME_TYPES
 
 OUT = Path("data/probe_distractors.json")

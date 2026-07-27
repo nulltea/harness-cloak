@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from cloak.detect import DetectionResult, NormalizationEvent, Span
+from cloak.detection.detect import DetectionResult, NormalizationEvent, Span
 
 
 ROOT = Path(__file__).resolve().parents[3]

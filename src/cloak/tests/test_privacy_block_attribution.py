@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import torch
 
-from cloak.train.ranker_privacy import (
+from cloak.ranker.privacy import (
     PrivacyExample,
     build_privacy_attribution_model,
     select_privacy_attribution_features,

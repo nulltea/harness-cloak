@@ -9,22 +9,22 @@ from types import MappingProxyType
 import pytest
 import torch
 
-import cloak.train.semantic_ranker as semantic_ranker_module
-from cloak.train.ranker_environment import LambdaProfile
-from cloak.train.ranker_environment import (
+import cloak.ranker.semantic as semantic_ranker_module
+from cloak.ranker.environment import LambdaProfile
+from cloak.ranker.environment import (
     RankerAction,
     RankerDecision,
     RankerDocument,
 )
-from cloak.train.ranker_privacy import (
+from cloak.ranker.privacy import (
     DirectCountPrivacyProvider,
     PrivacyCheckpointContract,
     PrivacyPrediction,
     SemanticPrivacyHead,
     save_privacy_checkpoint,
 )
-from cloak.train.ranker_representation import DocumentTokenBank, RelationFeatures
-from cloak.train.semantic_ranker import (
+from cloak.ranker.representation import DocumentTokenBank, RelationFeatures
+from cloak.ranker.semantic import (
     CONTEXT_MODES,
     CURRENT_OCCURRENCE_ROLE,
     ORDINARY_ROLE,
@@ -896,7 +896,7 @@ def test_lambda_changes_only_detached_additive_controller_term():
 
 
 def test_direct_count_policy_composes_exact_artifact_scores():
-    from cloak.train.interactive_ranker import _semantic_policy_contract
+    from cloak.ranker.interactive import _semantic_policy_contract
 
     policy, document, decision, profiles, scores = _direct_count_policy()
     policy.encoder_revision = "stub-revision"
@@ -982,7 +982,7 @@ def test_policy_count_gradient_view_updates_only_global_controller():
 
 
 def test_policy_advance_appends_one_selected_record_and_protocol_replays():
-    from cloak.train.interactive_ranker import replay_trajectory, sample_trajectory
+    from cloak.ranker.interactive import replay_trajectory, sample_trajectory
 
     policy, _, document, decision, profiles = _semantic_policy()
     initial = policy.begin_document(document, profiles[1])

@@ -5,7 +5,7 @@ fill). Ground truth = remote frontier attacker (gpt-5.5, held out from the mecha
 models) guessing the original from the deployed sentence (fill in slot, mechanism disclosed);
 hit@k by fuzzy match. Probes scored on the same items:
 
-  P2 appositive-MLM   — cloak.probe.guess_back_risk (v1 frontrunner, working tree)
+  P2 appositive-MLM   — cloak.detection.probe.guess_back_risk (v1 frontrunner, working tree)
   P3 multi-mask PLL   — k masks in the slot next to the visible fill; mean P of original tokens
   P4 contrastive      — softmax over {original} u same-type corpus distractors of causal-LM
                         logP(candidate | sentence with fill + disclosure suffix)
@@ -30,7 +30,7 @@ import torch
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 from build_arms_artifact import load_artifact  # noqa: E402
 
-from cloak.probe import _pipe, guess_back_risk  # noqa: E402
+from cloak.detection.probe import _pipe, guess_back_risk  # noqa: E402
 from cloak.llm import LLMClient  # noqa: E402
 from cloak.concurrent import pmap  # noqa: E402
 

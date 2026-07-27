@@ -1,7 +1,7 @@
 """DetectorProfile: stop-word and recognizer selection per corpus."""
 import pytest
 
-from cloak.detect import PROFILES, _stop_words
+from cloak.detection.detect import PROFILES, _stop_words
 
 
 def test_reddit_profile_is_status_quo():

@@ -1,5 +1,5 @@
 """coref_chains: containment/first-token aliasing; no surname-only merges."""
-from cloak.detect import Span, coref_chains
+from cloak.detection.detect import Span, coref_chains
 
 
 def _spans(text, *surfaces):

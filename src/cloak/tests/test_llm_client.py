@@ -283,3 +283,22 @@ def test_request_scope_still_dedupes_identical_prompts(monkeypatch, tmp_path):
 def test_request_scope_rejects_unknown_value():
     with pytest.raises(ValueError, match="single_flight_scope"):
         LLMClient("m", base_url="http://fake", single_flight_scope="bogus")
+
+
+def test_cache_path_uses_cloak_env_name(monkeypatch, tmp_path):
+    """The disk-cache env var is CLOAK_LLM_CACHE (the inferdpt-era name is retired)."""
+    from cloak.llm import _cache_path
+
+    monkeypatch.delenv("CLOAK_LLM_CACHE", raising=False)
+    monkeypatch.setenv("CLOAK_LLM_CACHE", str(tmp_path))
+
+    path = _cache_path(
+        "model",
+        [{"role": "user", "content": "hello"}],
+        {"temperature": 0.0},
+        "http://example.test/v1",
+    )
+
+    assert path is not None
+    assert path.startswith(str(tmp_path))
+    assert path.endswith(".json")

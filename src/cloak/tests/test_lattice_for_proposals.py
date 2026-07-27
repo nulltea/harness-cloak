@@ -1,6 +1,6 @@
 """lattice_for proposal semantics + WordNet demotion for fine/domain types."""
-import cloak.lattice as cl
-from cloak.profile_match import MatchResult
+import cloak.lattice.core as cl
+from cloak.lattice.profile_match import MatchResult
 
 
 def _no_wordnet(monkeypatch):
@@ -21,7 +21,7 @@ def test_proposal_levels_used_without_regate(monkeypatch):
 def test_proposal_none_means_abstained_skips_profile(monkeypatch):
     wn = _no_wordnet(monkeypatch)
     called = []
-    import cloak.profile_match as pm
+    import cloak.lattice.profile_match as pm
     monkeypatch.setattr(pm, "match_profile_entry", lambda *a, **k: called.append(a))
     got = cl.lattice_for("unknowniac", "health-condition", "ctx unknowniac.", proposal=None)
     assert got == ["<HEALTH_CONDITION_1>"]  # curated/teacher missed -> placeholder terminal
@@ -29,7 +29,7 @@ def test_proposal_none_means_abstained_skips_profile(monkeypatch):
 
 
 def test_no_prepass_calls_matcher(monkeypatch):
-    import cloak.profile_match as pm
+    import cloak.lattice.profile_match as pm
     m = MatchResult(["media worker"], "semantic", False, 0.8, "journalist", nli=0.7)
     monkeypatch.setattr(pm, "match_profile_entry", lambda *a, **k: m)
     got = cl.lattice_for("journalists", "profession", "They are journalists.")
@@ -37,7 +37,7 @@ def test_no_prepass_calls_matcher(monkeypatch):
 
 
 def test_fine_curated_fallback_survives(monkeypatch):
-    import cloak.profile_match as pm
+    import cloak.lattice.profile_match as pm
     monkeypatch.setattr(pm, "match_profile_entry", lambda *a, **k: None)
     _no_wordnet(monkeypatch)
     got = cl.lattice_for("cardiologist", "profession", "")
@@ -45,7 +45,7 @@ def test_fine_curated_fallback_survives(monkeypatch):
 
 
 def test_wordnet_still_feeds_coarse_types(monkeypatch):
-    import cloak.profile_match as pm
+    import cloak.lattice.profile_match as pm
     monkeypatch.setattr(pm, "match_profile_entry", lambda *a, **k: None)
     monkeypatch.setattr(cl, "wordnet_chain", lambda *a, **k: ["an institution"])
     got = cl.lattice_for("Some Org", "ORG", "")
@@ -53,7 +53,7 @@ def test_wordnet_still_feeds_coarse_types(monkeypatch):
 
 
 def test_domain_type_no_wordnet(monkeypatch):
-    import cloak.profile_match as pm
+    import cloak.lattice.profile_match as pm
     monkeypatch.setattr(pm, "match_profile_entry", lambda *a, **k: None)
     wn = _no_wordnet(monkeypatch)
     got = cl.lattice_for("colonoscopy", "medical-procedure", "")

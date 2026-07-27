@@ -4,22 +4,22 @@ from collections import Counter
 
 import pytest
 
-import cloak.train.qa_builder as qa_builder
-import cloak.train.qa_freeze as qa_freeze
-import cloak.train.qa_review as qa_review
-import cloak.train.qa_scoring as qa_scoring
-import cloak.train.qa_teacher as qa_teacher
+import cloak.qa.builder as qa_builder
+import cloak.qa.freeze as qa_freeze
+import cloak.qa.review as qa_review
+import cloak.qa.scoring as qa_scoring
+import cloak.qa.teacher as qa_teacher
 from cloak.corpora import load_task_docs
-from cloak.train.qa_builder import (
+from cloak.qa.builder import (
     AciTaskAdapter, artifact_views, assign_static_weights, build_joint_representative_anchor,
     build_utility_artifact, compile_relational_assertions, package_utility_artifact,
     validate_context_assertions,
 )
-from cloak.train.qa_freeze import freeze_ranker_environment
-from cloak.train.qa_scoring import (
+from cloak.qa.freeze import freeze_ranker_environment
+from cloak.qa.scoring import (
     BatchedContextReader, finalize_utility_scoring, prepare_utility_scoring, score_utility,
 )
-from cloak.train.qa_teacher import relation_teacher_prompt
+from cloak.qa.teacher import relation_teacher_prompt
 
 
 TEST_READER_PIN = {
@@ -4296,7 +4296,7 @@ def test_relation_repair_batches_targets_into_multiple_calls(monkeypatch):
 
 
 def test_review_flag_answer_only_readable_when_generalized():
-    from cloak.train.qa_review import compute_review_flags
+    from cloak.qa.review import compute_review_flags
     art = {"rejections": {"records": [
         # oRp: source unreadable, generalized readable -> new lattice signal
         {"doc_id": "aci/D2N004", "detail_reason": "three_point_gate_failed",

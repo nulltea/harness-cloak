@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-from cloak import span_gate
-from cloak.profile_match import span_key
+from cloak.detection import span_gate
+from cloak.lattice.profile_match import span_key
 
 
 @pytest.fixture()

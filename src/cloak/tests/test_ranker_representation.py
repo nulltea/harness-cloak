@@ -13,12 +13,12 @@ import pytest
 import torch
 from torch import nn
 
-from cloak.train.ranker_environment import (
+from cloak.ranker.environment import (
     RankerAction,
     RankerDecision,
     RankerDocument,
 )
-from cloak.train.ranker_representation import (
+from cloak.ranker.representation import (
     CANDIDATE_ONLY_VERSION,
     CHUNK_LENGTH,
     ENCODER_ID,
@@ -579,7 +579,7 @@ def test_content_keys_are_stable_when_a_tiny_slice_expands(tmp_path: Path):
 
 
 def test_default_factory_is_pinned_frozen_and_cache_only(monkeypatch):
-    module = importlib.import_module("cloak.train.ranker_representation")
+    module = importlib.import_module("cloak.ranker.representation")
     calls = []
 
     class TokenizerFactory:
@@ -615,7 +615,7 @@ def test_default_factory_is_pinned_frozen_and_cache_only(monkeypatch):
 
 
 def test_cache_only_factory_stops_before_model_load_when_snapshot_is_absent(monkeypatch):
-    module = importlib.import_module("cloak.train.ranker_representation")
+    module = importlib.import_module("cloak.ranker.representation")
 
     class MissingTokenizerFactory:
         @staticmethod

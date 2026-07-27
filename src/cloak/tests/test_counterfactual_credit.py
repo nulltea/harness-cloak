@@ -4,19 +4,19 @@ from types import MappingProxyType
 import pytest
 import torch
 
-from cloak.train.interactive_ranker import (
+from cloak.ranker.interactive import (
     ReplayedStep,
     ReplayedTrajectory,
     SampledStep,
     SampledTrajectory,
-    assemble_action_vector,
 )
-from cloak.train.ranker_environment import (
+from cloak.ranker.environment import (
     RankerAction,
     RankerDecision,
     RankerDocument,
+    assemble_action_vector,
 )
-from cloak.train.utility_cache import UtilityCache, make_result, stable_hash
+from cloak.reward.utility_cache import UtilityCache, make_result, stable_hash
 
 
 def _action(decision_id, name, mode, fill=None, index=None):
@@ -181,7 +181,7 @@ def _utility_artifact(document=None):
 
 
 def test_counterfactual_request_contract_is_exact_and_frozen():
-    from cloak.train.counterfactuals import CounterfactualRequest
+    from cloak.ranker.counterfactuals import CounterfactualRequest
 
     assert [field.name for field in fields(CounterfactualRequest)] == [
         "doc_id", "rollout_index", "decision_id", "selected_action_id",
@@ -193,7 +193,7 @@ def test_counterfactual_request_contract_is_exact_and_frozen():
 
 
 def test_eligible_alternatives_are_adjacent_levels_plus_endpoints():
-    from cloak.train.counterfactuals import eligible_alternatives
+    from cloak.ranker.counterfactuals import eligible_alternatives
 
     assert eligible_alternatives(_document(), _trajectory(), "d1") == (
         "d1-fine", "d1-coarse", "d1-keep", "d1-placeholder",
@@ -201,7 +201,7 @@ def test_eligible_alternatives_are_adjacent_levels_plus_endpoints():
 
 
 def test_eligibility_skips_illegal_duplicate_text_and_equal_actions():
-    from cloak.train.counterfactuals import eligible_alternatives
+    from cloak.ranker.counterfactuals import eligible_alternatives
 
     document = _document()
     d1 = document.policy_decisions[0]
@@ -223,7 +223,7 @@ def test_eligibility_skips_illegal_duplicate_text_and_equal_actions():
 
 
 def test_eligibility_rejects_alternative_colliding_with_later_selected_fill():
-    from cloak.train.counterfactuals import eligible_alternatives
+    from cloak.ranker.counterfactuals import eligible_alternatives
 
     document = _document(collision=True)
     assert eligible_alternatives(document, _trajectory(document), "d1") == (
@@ -232,7 +232,7 @@ def test_eligibility_rejects_alternative_colliding_with_later_selected_fill():
 
 
 def test_scheduler_enforces_budget_split_priority_balance_and_endpoint_reserve():
-    from cloak.train.counterfactuals import schedule_counterfactuals
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
 
     document = _document()
     trajectories = (_trajectory(document), _trajectory(document))
@@ -277,7 +277,7 @@ def test_scheduler_enforces_budget_split_priority_balance_and_endpoint_reserve()
 
 
 def test_scheduler_balances_keep_and_placeholder_inside_endpoint_reserve():
-    from cloak.train.counterfactuals import schedule_counterfactuals
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
 
     document = _document()
     trajectories = tuple(_trajectory(document) for _ in range(4))
@@ -306,7 +306,7 @@ def test_scheduler_balances_keep_and_placeholder_inside_endpoint_reserve():
 
 
 def test_selected_endpoint_pair_is_eligible_only_inside_endpoint_reserve():
-    from cloak.train.counterfactuals import schedule_counterfactuals
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
 
     document = _document()
     base = _trajectory(document)
@@ -355,7 +355,7 @@ def test_selected_endpoint_pair_is_eligible_only_inside_endpoint_reserve():
 
 @pytest.mark.parametrize("budget", [0, 3, 6, 5.0])
 def test_scheduler_rejects_nonpositive_or_nondivisible_budget(budget):
-    from cloak.train.counterfactuals import schedule_counterfactuals
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
 
     document = _document()
     with pytest.raises(ValueError, match="positive and divisible by five"):
@@ -376,7 +376,7 @@ def test_scheduler_rejects_nonpositive_or_nondivisible_budget(budget):
 
 
 def test_scheduler_rejects_fractional_endpoint_budget():
-    from cloak.train.counterfactuals import schedule_counterfactuals
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
 
     document = _document()
     with pytest.raises(ValueError, match="endpoint_budget must be an integer"):
@@ -397,7 +397,7 @@ def test_scheduler_rejects_fractional_endpoint_budget():
 
 
 def test_scheduler_is_seeded_and_reports_measured_pair_age():
-    from cloak.train.counterfactuals import pair_history_key, schedule_counterfactuals
+    from cloak.ranker.counterfactuals import pair_history_key, schedule_counterfactuals
 
     document = _document()
     trajectories = (_trajectory(document), _trajectory(document))
@@ -438,7 +438,7 @@ def test_scheduler_is_seeded_and_reports_measured_pair_age():
 
 
 def test_scheduler_balances_direction_before_history_preference():
-    from cloak.train.counterfactuals import pair_history_key, schedule_counterfactuals
+    from cloak.ranker.counterfactuals import pair_history_key, schedule_counterfactuals
 
     document = _document()
     trajectories = (_trajectory(document), _trajectory(document))
@@ -482,7 +482,7 @@ def test_scheduler_balances_direction_before_history_preference():
 
 
 def test_scheduler_fixes_endpoint_stratum_before_unseen_pair_priority():
-    from cloak.train.counterfactuals import pair_history_key, schedule_counterfactuals
+    from cloak.ranker.counterfactuals import pair_history_key, schedule_counterfactuals
 
     document = _document()
     trajectories = (_trajectory(document), _trajectory(document))
@@ -539,7 +539,7 @@ def test_scheduler_fixes_endpoint_stratum_before_unseen_pair_priority():
 
 
 def test_scheduler_priority_tiers_are_lexicographic_by_route_class():
-    from cloak.train.counterfactuals import schedule_counterfactuals
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
 
     document = _document()
     trajectories = (_trajectory(document), _trajectory(document))
@@ -588,7 +588,7 @@ def test_scheduler_priority_tiers_are_lexicographic_by_route_class():
 
 
 def test_scheduler_entropy_precedes_unseen_and_pair_age():
-    from cloak.train.counterfactuals import pair_history_key, schedule_counterfactuals
+    from cloak.ranker.counterfactuals import pair_history_key, schedule_counterfactuals
 
     document = _document()
     trajectories = (_trajectory(document), _trajectory(document))
@@ -639,7 +639,7 @@ def test_scheduler_entropy_precedes_unseen_and_pair_age():
 
 
 def test_scheduler_uses_oldest_measured_pair_after_earlier_ties():
-    from cloak.train.counterfactuals import pair_history_key, schedule_counterfactuals
+    from cloak.ranker.counterfactuals import pair_history_key, schedule_counterfactuals
 
     document = _document()
     trajectories = (_trajectory(document), _trajectory(document))
@@ -693,7 +693,7 @@ def test_scheduler_uses_oldest_measured_pair_after_earlier_ties():
 def test_executor_changes_one_decision_everywhere_rescores_complete_vectors_and_uses_replay_graph(
     tmp_path,
 ):
-    from cloak.train.counterfactuals import (
+    from cloak.ranker.counterfactuals import (
         CounterfactualRequest,
         execute_counterfactuals,
     )
@@ -777,7 +777,7 @@ def test_executor_changes_one_decision_everywhere_rescores_complete_vectors_and_
 
 
 def test_executor_rejects_result_bound_to_another_document(tmp_path):
-    from cloak.train.counterfactuals import (
+    from cloak.ranker.counterfactuals import (
         CounterfactualRequest,
         execute_counterfactuals,
     )
@@ -825,7 +825,7 @@ def test_executor_rejects_result_bound_to_another_document(tmp_path):
 
 
 def test_executor_rejects_equal_selected_and_alternative_without_scoring(tmp_path):
-    from cloak.train.counterfactuals import (
+    from cloak.ranker.counterfactuals import (
         CounterfactualRequest,
         execute_counterfactuals,
     )
@@ -858,7 +858,7 @@ def test_executor_rejects_equal_selected_and_alternative_without_scoring(tmp_pat
 
 
 def test_executor_rejects_direction_label_that_disagrees_with_action_semantics(tmp_path):
-    from cloak.train.counterfactuals import (
+    from cloak.ranker.counterfactuals import (
         CounterfactualRequest,
         execute_counterfactuals,
     )
@@ -889,7 +889,7 @@ def test_executor_rejects_direction_label_that_disagrees_with_action_semantics(t
 
 
 def test_executor_rejects_replay_that_is_not_the_full_original_menu(tmp_path):
-    from cloak.train.counterfactuals import (
+    from cloak.ranker.counterfactuals import (
         CounterfactualRequest,
         execute_counterfactuals,
     )
@@ -930,7 +930,7 @@ def test_executor_rejects_replay_that_is_not_the_full_original_menu(tmp_path):
 
 
 def test_request_priority_tier_never_changes_pair_loss(tmp_path):
-    from cloak.train.counterfactuals import (
+    from cloak.ranker.counterfactuals import (
         CounterfactualRequest,
         execute_counterfactuals,
     )

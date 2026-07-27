@@ -9,29 +9,29 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from cloak.train.profile_count import ProfileCountTargets
-from cloak.train.lambda_menu import (
+from cloak.ranker.profile_count import ProfileCountTargets
+from cloak.ranker.lambda_menu import (
     CalibrationTrajectory,
     build_anchor_trajectories,
     calibration_point_from_result,
     freeze_calibration_pool,
     select_lambda_menu,
 )
-from cloak.train.ranker_diagnostics import (
+from cloak.ranker.diagnostics import (
     build_diagnostic_spike,
     cache_only_missing_report,
     freeze_threshold_manifest,
     reader_jitter_from_cache,
     validate_threshold_rules,
 )
-from cloak.train.ranker_environment import RankerDocument, load_ranker_environment
-from cloak.train.ranker_privacy import DirectCountPrivacyProvider
-from cloak.train.roundtrip import (
+from cloak.ranker.environment import RankerDocument, load_ranker_environment
+from cloak.ranker.privacy import DirectCountPrivacyProvider
+from cloak.reward.roundtrip import (
     UTILITY_EXECUTION_CONTRACT_VERSION,
     _cache_identity,
     score_roundtrip_batch,
 )
-from cloak.train.utility_cache import UtilityCache, UtilityRequest, UtilityResult, stable_hash
+from cloak.reward.utility_cache import UtilityCache, UtilityRequest, UtilityResult, stable_hash
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -227,7 +227,7 @@ def _cached_result(
         utility_artifact=utility_artifact,
         environment_hash=environment_hash,
     )
-    from cloak.train.interactive_ranker import assemble_action_vector
+    from cloak.ranker.environment import assemble_action_vector
 
     doc_p, _ = assemble_action_vector(document, trajectory.action_vector)
     identity = _cache_identity(request, doc_p, reader_refresh=False)

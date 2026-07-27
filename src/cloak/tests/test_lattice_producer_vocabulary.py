@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from cloak.lattice_producer.vocabulary import CanonicalVocabulary
+from cloak.lattice.producer.vocabulary import CanonicalVocabulary
 
 
 def _write_proposed(path: Path, runtime_type: str, entries: dict) -> None:

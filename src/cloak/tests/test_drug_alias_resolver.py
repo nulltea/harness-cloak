@@ -2,9 +2,7 @@
 existing generic entry (via openFDA NDC), never inventing entries/levels or resolving ambiguity."""
 import json
 
-from cloak import lattice_profiles as lp
-
-
+from cloak.lattice import profiles as lp
 _FAKE_NDC = {
     "advil": frozenset({"ibuprofen"}),
     "ibuprofen": frozenset({"ibuprofen"}),

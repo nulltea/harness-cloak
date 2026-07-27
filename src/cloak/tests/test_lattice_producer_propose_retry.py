@@ -1,8 +1,8 @@
 import httpx
 import pytest
 from openai import APITimeoutError, RateLimitError
-from cloak.lattice_producer import propose as propose_module
-from cloak.lattice_producer.propose import _create_with_retry, _response_content
+from cloak.lattice.producer import propose as propose_module
+from cloak.lattice.producer.propose import _create_with_retry, _response_content
 
 
 def _rate_limit_error():

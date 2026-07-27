@@ -3,8 +3,8 @@ import json
 import numpy as np
 import pytest
 
-from cloak import profile_match as pm
-from cloak.profile_match import PROFILE_BACKED_TYPES, match_spans_batch, span_key
+from cloak.lattice import profile_match as pm
+from cloak.lattice.profile_match import PROFILE_BACKED_TYPES, match_spans_batch, span_key
 
 
 @pytest.fixture(autouse=True)
@@ -113,7 +113,7 @@ def test_exact_hit_carries_canonical_entry(tmp_path):
     }
     p = tmp_path / "profiles.json"
     p.write_text(json.dumps(artifact))
-    from cloak.profile_match import match_spans_batch, span_key
+    from cloak.lattice.profile_match import match_spans_batch, span_key
     got = match_spans_batch([("blorb inflammation", "health-condition", "ctx sentence")],
                             profiles_path=p)
     m = got[span_key("blorb inflammation", "health-condition")]
@@ -394,7 +394,7 @@ def test_degradation_warns_once(tmp_path, caplog):
     profiles, _ = _build(tmp_path, "batch_warn")
     missing = tmp_path / "gone.npz"
     import logging
-    with caplog.at_level(logging.WARNING, logger="cloak.profile_match"):
+    with caplog.at_level(logging.WARNING, logger="cloak.lattice.profile_match"):
         for _ in range(3):
             match_spans_batch([("x", "health-condition", "ctx x.")],
                               profiles_path=profiles, index_path=missing,
@@ -443,7 +443,7 @@ def test_nli_failure_degrades_fail_closed(tmp_path, caplog):
     def boom(jobs):
         raise RuntimeError("nli model unavailable")
 
-    with caplog.at_level(logging.WARNING, logger="cloak.profile_match"):
+    with caplog.at_level(logging.WARNING, logger="cloak.lattice.profile_match"):
         for _ in range(2):
             got = match_spans_batch(
                 [("diabetes", "health-condition", "He has diabetes."),      # exact
@@ -709,8 +709,7 @@ def test_semantic_matching_abstains_on_missing_statistics_or_malformed_entry_sco
 
 
 def test_explicit_profile_match_abstention_bypasses_lattice_fallback(monkeypatch):
-    from cloak import lattice
-
+    from cloak.lattice import core as lattice
     monkeypatch.setattr(
         lattice, "_fine_curated_chain",
         lambda *args: pytest.fail("explicit semantic abstention must not reach curated fallback"),

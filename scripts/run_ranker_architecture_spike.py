@@ -8,7 +8,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from cloak.train.ranker_architecture_diagnostics import (
+from cloak.ranker.architecture_diagnostics import (
     ArmMeasurement,
     MatchedArmContract,
     run_architecture_spike,

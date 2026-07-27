@@ -2,7 +2,7 @@ import json
 import zipfile
 from pathlib import Path
 
-from cloak.lattice_producer.reference_sources import (
+from cloak.lattice.producer.reference_sources import (
     load_doid_index,
     load_icd10pcs_index,
     load_openfda_pharm_class_index,
@@ -150,7 +150,7 @@ name: organ disease
 def test_doid_index_parses_exact_synonyms_and_obsolete(tmp_path):
     obo = tmp_path / "mini.obo"
     obo.write_text(OBO_FIXTURE)
-    from cloak.lattice_producer.reference_sources import load_doid_index
+    from cloak.lattice.producer.reference_sources import load_doid_index
     nodes = load_doid_index(str(obo))
     assert nodes["DOID:0000001"].exact_synonyms == ["blorb inflammation"]
     assert nodes["DOID:0000001"].obsolete is False

@@ -8,7 +8,7 @@ import re
 from datetime import date
 from pathlib import Path
 
-from cloak.lattice_profiles import SCHEMA_VERSION, validate_profile_artifact
+from cloak.lattice.profiles import SCHEMA_VERSION, validate_profile_artifact
 
 DRUG_SOURCE_ID_LIMIT = 5
 
@@ -154,7 +154,7 @@ def merge_profile_artifacts(common_artifact: dict, mined_artifact: dict, *,
     ``entity_dedup=True``: no alias fold. Incoming entries UNION into the base -- each incoming
     canonical becomes its own entry, and only an EXACT canonical norm-equality with an existing
     entry merges via ``_merge_row``. This produces an un-deduped union; the CALLER is expected to
-    run ``cloak.lattice_producer.entity_merge.apply_entity_merge`` on the result for ontology-gated
+    run ``cloak.lattice.producer.entity_merge.apply_entity_merge`` on the result for ontology-gated
     dedup. This function stays dependency-light and never imports entity_merge itself.
     """
     artifact = {

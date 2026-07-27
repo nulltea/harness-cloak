@@ -15,7 +15,7 @@ def _point(
     modes: tuple[str, ...] = ("level",),
     runtime_types: tuple[str, ...] = ("TYPE",),
 ):
-    from cloak.train.lambda_menu import CalibrationPoint
+    from cloak.ranker.lambda_menu import CalibrationPoint
 
     return CalibrationPoint(
         doc_id=doc_id,
@@ -45,7 +45,7 @@ def _point(
 
 
 def test_exact_action_vectors_deduplicate_and_merge_sources():
-    from cloak.train.lambda_menu import deduplicate_action_vectors
+    from cloak.ranker.lambda_menu import deduplicate_action_vectors
 
     original = _point("doc", "same", 0.8, 0.2)
     duplicate = replace(original, sources=("counterfactual",))
@@ -57,7 +57,7 @@ def test_exact_action_vectors_deduplicate_and_merge_sources():
 
 
 def test_conflicting_duplicate_action_vector_is_rejected():
-    from cloak.train.lambda_menu import deduplicate_action_vectors
+    from cloak.ranker.lambda_menu import deduplicate_action_vectors
 
     original = _point("doc", "same", 0.8, 0.2)
     conflict = replace(original, utility=0.7)
@@ -67,7 +67,7 @@ def test_conflicting_duplicate_action_vector_is_rejected():
 
 
 def test_exact_up_ties_retain_multiplicity_and_canonical_vector():
-    from cloak.train.lambda_menu import merge_exact_point_ties
+    from cloak.ranker.lambda_menu import merge_exact_point_ties
 
     right = _point("doc", "z", 0.8, 0.2)
     left = _point("doc", "a", 0.8, 0.2)
@@ -80,7 +80,7 @@ def test_exact_up_ties_retain_multiplicity_and_canonical_vector():
 
 
 def test_weak_dominance_removes_points_with_one_strict_coordinate():
-    from cloak.train.lambda_menu import merge_exact_point_ties, remove_weakly_dominated
+    from cloak.ranker.lambda_menu import merge_exact_point_ties, remove_weakly_dominated
 
     points = merge_exact_point_ties((
         _point("doc", "winner", 0.9, 0.6),
@@ -97,7 +97,7 @@ def test_weak_dominance_removes_points_with_one_strict_coordinate():
 
 
 def test_upper_convex_envelope_removes_point_below_chord():
-    from cloak.train.lambda_menu import (
+    from cloak.ranker.lambda_menu import (
         merge_exact_point_ties,
         remove_weakly_dominated,
         upper_convex_envelope,
@@ -117,7 +117,7 @@ def test_upper_convex_envelope_removes_point_below_chord():
 
 
 def test_positive_switch_points_have_per_document_total_weight_one():
-    from cloak.train.lambda_menu import document_frontier
+    from cloak.ranker.lambda_menu import document_frontier
 
     frontier = document_frontier((
         _point("doc", "left", 1.0, 0.0),
@@ -131,7 +131,7 @@ def test_positive_switch_points_have_per_document_total_weight_one():
 
 
 def test_document_with_fewer_than_three_distinct_points_stays_replay_only():
-    from cloak.train.lambda_menu import document_frontier
+    from cloak.ranker.lambda_menu import document_frontier
 
     frontier = document_frontier((
         _point("doc", "left", 1.0, 0.0),
@@ -144,7 +144,7 @@ def test_document_with_fewer_than_three_distinct_points_stays_replay_only():
 
 
 def test_weighted_log_quantiles_and_nearest_observed_snapping_are_deterministic():
-    from cloak.train.lambda_menu import SwitchPoint, snap_to_observed, weighted_log_quantiles
+    from cloak.ranker.lambda_menu import SwitchPoint, snap_to_observed, weighted_log_quantiles
 
     switches = (
         SwitchPoint("a", 0.1, 0.5, (), ()),
@@ -157,7 +157,7 @@ def test_weighted_log_quantiles_and_nearest_observed_snapping_are_deterministic(
 
 
 def test_equivalent_replay_signatures_merge_lambda_values():
-    from cloak.train.lambda_menu import merge_equivalent_lambdas
+    from cloak.ranker.lambda_menu import merge_equivalent_lambdas
 
     pool = (
         _point("doc-a", "utility", 1.0, 0.0),
@@ -194,7 +194,7 @@ def _menu_pool():
 
 
 def test_menu_acceptance_starts_at_zero_and_preserves_scalarization_invariants():
-    from cloak.train.lambda_menu import select_lambda_menu
+    from cloak.ranker.lambda_menu import select_lambda_menu
 
     artifact = select_lambda_menu(
         _menu_pool(),
@@ -215,7 +215,7 @@ def test_menu_acceptance_starts_at_zero_and_preserves_scalarization_invariants()
 
 
 def test_menu_replacement_is_bounded_to_two_deterministic_passes():
-    from cloak.train.lambda_menu import select_lambda_menu
+    from cloak.ranker.lambda_menu import select_lambda_menu
 
     artifact = select_lambda_menu(
         _menu_pool(),
@@ -232,7 +232,7 @@ def test_menu_replacement_is_bounded_to_two_deterministic_passes():
 
 
 def test_menu_stops_instead_of_padding_fewer_than_three_signatures():
-    from cloak.train.lambda_menu import select_lambda_menu
+    from cloak.ranker.lambda_menu import select_lambda_menu
 
     pool = (
         _point("doc", "utility", 1.0, 0.0),
@@ -256,7 +256,7 @@ def test_menu_stops_instead_of_padding_fewer_than_three_signatures():
 def test_anchor_trajectories_cover_every_required_source_after_vector_deduplication():
     from test_ranker_diagnostics import _count_reward, _documents
 
-    from cloak.train.lambda_menu import build_anchor_trajectories
+    from cloak.ranker.lambda_menu import build_anchor_trajectories
 
     anchors = build_anchor_trajectories(_documents()["doc"], _count_reward())
 
@@ -277,12 +277,12 @@ def test_calibration_pool_stores_complete_pins_components_and_count_provenance()
         _utility_artifact,
     )
 
-    from cloak.train.lambda_menu import (
+    from cloak.ranker.lambda_menu import (
         build_anchor_trajectories,
         calibration_point_from_result,
         freeze_calibration_pool,
     )
-    from cloak.train.utility_cache import make_result
+    from cloak.reward.utility_cache import make_result
 
     document = _documents()["doc"]
     candidate = next(

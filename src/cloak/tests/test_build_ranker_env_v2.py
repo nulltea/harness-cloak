@@ -8,7 +8,7 @@ from copy import deepcopy
 from collections.abc import Iterator
 from pathlib import Path
 
-from cloak.train.qa_freeze import (
+from cloak.qa.freeze import (
     compare_frozen_environment_semantics, freeze_v2_environment_from_legacy_arms,
     migrate_frozen_environment_count_provenance,
 )

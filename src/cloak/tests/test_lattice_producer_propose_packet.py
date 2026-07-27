@@ -1,4 +1,4 @@
-from cloak.lattice_producer.propose import assemble_context_packet
+from cloak.lattice.producer.propose import assemble_context_packet
 
 
 def test_packet_defines_count_as_anonymity_set_and_requires_two_levels(tmp_path):

@@ -1,7 +1,7 @@
 """_encoder_max_words: derive the per-model word cap from gliner config."""
 from types import SimpleNamespace
 
-from cloak.detect import _encoder_max_words
+from cloak.detection.detect import _encoder_max_words
 
 
 def test_reads_max_len_with_margin():

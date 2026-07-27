@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-07-27
 tags: [probes, leakage, mutual-information, utility, rantext, spec]
 companion: docs/research/mi-probes.md
 ---
@@ -15,9 +15,9 @@ circular. Utility cosine probes use **SimCSE** (`princeton-nlp/sup-simcse-robert
 STS-calibrated, paper-faithful, usable dynamic range); a **cross-encoder reranker**
 (`qwen3-reranker-0.6b` via `/v1/rerank`) gives a second, more discriminative utility score;
 **PII probes use rapidfuzz fuzzy containment** (not cosine — cosine floors ~0.7 on bare
-entities). The qwen3-embedding scorer remains available (`_common.embed`) for the token-level
-geometry work. Module: `src/inferdpt/probes/` (`leakage.py`, `mi.py`, `utility.py`; shared
-helpers in `_common.py`). LLM responses are disk-cached when `$CLOAK_LLM_CACHE` is set, so
+entities). The qwen3-embedding scorer died with the RANTEXT core (`inferdpt.embeddings`), so
+`pii_match_scores` now takes its `embed` callable from the caller. Module: `src/cloak/probes/`
+(`leakage.py`, `mi.py`, `utility.py`; shared helpers in `_common.py`). LLM responses are disk-cached when `$CLOAK_LLM_CACHE` is set, so
 re-runs over identical prompts are instant.
 
 Information-theoretically, a probe is meant to **upper-bound** leakage (what any adversary
@@ -25,9 +25,11 @@ could extract), whereas an attack (see `docs/specs/attacks.md`) gives a **lower*
 
 > **Not probes (mechanism diagnostics).** `candidate set |C_r|/V`, `replacement similarity
 > cos(o,r)`, `anisotropy`, `relative spread`, and `sampling entropy` live in
-> `src/inferdpt/diagnostics.py`. They describe the mechanism/geometry, not leakage of a
-> released artifact. `cos(o,r)` in particular is dual (higher = more utility, less privacy),
-> so it is a diagnostic on the tradeoff axis, not a one-directional probe.
+> the retired `src/inferdpt/diagnostics.py` (RANTEXT core, deleted; recover with
+> `git show 2af8562^:src/inferdpt/diagnostics.py`). They describe the mechanism/geometry,
+> not leakage of a released artifact. `cos(o,r)` in particular is dual (higher = more
+> utility, less privacy), so it is a diagnostic on the tradeoff axis, not a
+> one-directional probe.
 
 ## 1. Leakage probes — `probes/leakage.py` (lower = more private)
 

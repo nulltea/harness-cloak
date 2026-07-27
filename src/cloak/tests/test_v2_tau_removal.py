@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import copy
 
-from cloak.detect import Span
-from cloak.substitute import substitute
-from cloak.train.qa_audit import build_environment_audit
-from cloak.train.qa_builder import build_joint_representative_anchor
-from cloak.train.qa_freeze import (
+from cloak.detection.detect import Span
+from cloak.detection.span_prep import substitute
+from cloak.qa.audit import build_environment_audit
+from cloak.qa.builder import build_joint_representative_anchor
+from cloak.qa.freeze import (
     freeze_v2_environment_from_legacy_arms, render_frozen_action_vector,
 )
 
@@ -150,14 +150,14 @@ def test_v2_freeze_render_and_audit_are_invariant_to_legacy_tau_policy():
 
 def test_legacy_substitute_still_honors_tau(monkeypatch):
     span = Span(0, 7, "Aspirin", "drug", 0.9, "test")
-    monkeypatch.setattr("cloak.substitute.match_spans_batch", lambda items, **_kwargs: {})
-    monkeypatch.setattr("cloak.substitute.lookup_entry", lambda *args: object())
+    monkeypatch.setattr("cloak.detection.span_prep.match_spans_batch", lambda items, **_kwargs: {})
+    monkeypatch.setattr("cloak.detection.span_prep.lookup_entry", lambda *args: object())
     monkeypatch.setattr(
-        "cloak.substitute.lattice_for",
+        "cloak.detection.span_prep.lattice_for",
         lambda *args, **kwargs: ["an analgesic", "a medication", "<DRUG_1>"],
     )
     monkeypatch.setattr(
-        "cloak.substitute.walk_risk",
+        "cloak.detection.span_prep.walk_risk",
         lambda _sentence, _surface, fill, _type: {
             "an analgesic": 0.2,
             "a medication": 0.05,

@@ -12,8 +12,8 @@ from bench.baselines import (
 )
 from bench.registry import load_items
 from bench.schema import BenchmarkConfig, BenchmarkItem, BenchmarkTrace, StageOutput, jsonl_write
-from cloak.extract import invert
-from cloak.substitute import substitute
+from cloak.reward.extract import invert
+from cloak.detection.span_prep import substitute
 from cloak.tasks import TASK_TEMPLATE
 
 
@@ -115,7 +115,7 @@ def _detect(item: BenchmarkItem, config: BenchmarkConfig) -> list[dict]:
             }
             for idx, span in enumerate(item.gold_sensitive_spans)
         ]
-    from cloak.detect import Detector
+    from cloak.detection.detect import Detector
 
     return [
         {
@@ -145,7 +145,7 @@ def _substitute(item: BenchmarkItem, detected: list[dict], config: BenchmarkConf
 
 
 def _span_objects(detected: list[dict]):
-    from cloak.detect import Span
+    from cloak.detection.detect import Span
 
     return [
         Span(

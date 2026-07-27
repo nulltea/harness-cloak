@@ -14,12 +14,12 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parent))
 # ponytail: privacy_probe_shootout's top-level import references guess_back_risk, renamed to
 # walk_risk in the working tree; alias it so the module (and its pure auc/rank helpers) loads.
-import cloak.probe as _probe  # noqa: E402
+import cloak.detection.probe as _probe  # noqa: E402
 if not hasattr(_probe, "guess_back_risk"):
     _probe.guess_back_risk = _probe.walk_risk
 from privacy_probe_shootout import auc, per_span_rank_agreement  # noqa: E402
 
-from cloak.anonymity import aset_count  # noqa: E402
+from cloak.lattice.anonymity import aset_count  # noqa: E402
 
 report = json.loads(Path("results/privacy_probe_shootout.json").read_text())
 items = report["items"]

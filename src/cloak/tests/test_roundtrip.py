@@ -1,5 +1,5 @@
 """Round-trip reward wiring — offline (remote client construction only)."""
-import cloak.train.roundtrip as rt
+import cloak.reward.roundtrip as rt
 
 
 def test_remote_gen_client_uses_single_flight(monkeypatch):

@@ -8,9 +8,9 @@ from types import MappingProxyType
 
 import pytest
 
-import cloak.train.roundtrip as roundtrip
-from cloak.train.qa_scoring import DEFAULT_CONTEXT_READER_PIN
-from cloak.train.ranker_environment import RankerAction, RankerDecision, RankerDocument
+import cloak.reward.roundtrip as roundtrip
+from cloak.qa.scoring import DEFAULT_CONTEXT_READER_PIN
+from cloak.ranker.environment import RankerAction, RankerDecision, RankerDocument
 
 
 def _document() -> RankerDocument:
@@ -58,7 +58,7 @@ def _artifact(
     *, reader_revision="reader-r1", context_weight=0.5,
     environment_hash="sha256:environment-a",
 ):
-    from cloak.train.utility_cache import stable_hash
+    from cloak.reward.utility_cache import stable_hash
 
     reader_pin = {**DEFAULT_CONTEXT_READER_PIN, "revision": reader_revision}
     artifact = {
@@ -98,7 +98,7 @@ def _request(
     artifact=None, *, environment_hash="sha256:environment-a",
     action_id="action-level",
 ):
-    from cloak.train.utility_cache import UtilityRequest
+    from cloak.reward.utility_cache import UtilityRequest
 
     return UtilityRequest(
         document=_document(),
@@ -143,7 +143,7 @@ def _wire(monkeypatch, artifact, *, remote=None, reader_fail=False, reader_calls
 
 
 def test_public_result_contract_is_exact_and_frozen():
-    from cloak.train.utility_cache import UtilityResult
+    from cloak.reward.utility_cache import UtilityResult
 
     assert [field.name for field in fields(UtilityResult)] == [
         "doc_id", "action_vector", "doc_p", "out_p", "out_final",
@@ -160,7 +160,7 @@ def test_public_result_contract_is_exact_and_frozen():
 
 
 def test_batch_deduplicates_then_hits_append_only_cache(monkeypatch, tmp_path):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     artifact = _artifact()
     remote = _wire(monkeypatch, artifact)
@@ -213,7 +213,7 @@ def test_batch_deduplicates_then_hits_append_only_cache(monkeypatch, tmp_path):
 
 @pytest.mark.parametrize("changed", ["reader", "weight", "environment", "refresh"])
 def test_identity_changes_are_cache_misses(monkeypatch, tmp_path, changed):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     base_artifact = _artifact()
     remote = _wire(monkeypatch, base_artifact)
@@ -245,7 +245,7 @@ def test_identity_changes_are_cache_misses(monkeypatch, tmp_path, changed):
 
 
 def test_tampered_artifact_or_environment_binding_is_rejected(monkeypatch, tmp_path):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     artifact = _artifact()
     _wire(monkeypatch, artifact)
@@ -267,7 +267,7 @@ def test_tampered_artifact_or_environment_binding_is_rejected(monkeypatch, tmp_p
 def test_cache_rejects_incomplete_invalid_or_denominator_drifting_vectors(
     monkeypatch, tmp_path,
 ):
-    from cloak.train.utility_cache import UtilityCache, make_result
+    from cloak.reward.utility_cache import UtilityCache, make_result
 
     artifact = _artifact()
     _wire(monkeypatch, artifact)
@@ -298,7 +298,7 @@ def test_cache_rejects_incomplete_invalid_or_denominator_drifting_vectors(
 
 
 def test_multi_decision_action_order_survives_canonical_json_reload(monkeypatch, tmp_path):
-    from cloak.train.utility_cache import UtilityCache, make_result
+    from cloak.reward.utility_cache import UtilityCache, make_result
 
     artifact = _artifact()
     _wire(monkeypatch, artifact)
@@ -327,7 +327,7 @@ def test_multi_decision_action_order_survives_canonical_json_reload(monkeypatch,
 
 
 def test_incomplete_or_self_inconsistent_pins_are_rejected(monkeypatch, tmp_path):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     artifact = _artifact()
     _wire(monkeypatch, artifact)
@@ -349,7 +349,7 @@ def test_incomplete_or_self_inconsistent_pins_are_rejected(monkeypatch, tmp_path
 def test_stale_cache_writers_reload_under_lock_and_reject_conflicts(
     monkeypatch, tmp_path,
 ):
-    from cloak.train.utility_cache import UtilityCache, make_result
+    from cloak.reward.utility_cache import UtilityCache, make_result
 
     artifact = _artifact()
     _wire(monkeypatch, artifact)
@@ -378,7 +378,7 @@ def test_stale_cache_writers_reload_under_lock_and_reject_conflicts(
 def test_multiple_misses_keep_stage_barriers_and_failure_is_batch_atomic(
     monkeypatch, tmp_path,
 ):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     artifact = _artifact()
     events = []
@@ -433,7 +433,7 @@ def test_multiple_misses_keep_stage_barriers_and_failure_is_batch_atomic(
 
 @pytest.mark.parametrize("stage", ["deterministic_scoring", "cache_append"])
 def test_nontransport_failure_stages_record_latency(monkeypatch, tmp_path, stage):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     artifact = _artifact()
     _wire(monkeypatch, artifact)
@@ -460,7 +460,7 @@ def test_nontransport_failure_stages_record_latency(monkeypatch, tmp_path, stage
 
 @pytest.mark.parametrize("stage", ["generation", "extraction", "reader"])
 def test_failed_stage_appends_nothing(monkeypatch, tmp_path, stage):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     artifact = _artifact()
     cache_path = tmp_path / "utility.jsonl"
@@ -482,7 +482,7 @@ def test_failed_stage_appends_nothing(monkeypatch, tmp_path, stage):
 
 
 def test_cache_rejects_truncated_or_malformed_jsonl(tmp_path):
-    from cloak.train.utility_cache import UtilityCache
+    from cloak.reward.utility_cache import UtilityCache
 
     truncated = tmp_path / "truncated.jsonl"
     truncated.write_text('{"version":1}')
@@ -496,7 +496,7 @@ def test_cache_rejects_truncated_or_malformed_jsonl(tmp_path):
 
 
 def test_cache_rejects_conflicting_duplicate_identity(monkeypatch, tmp_path):
-    from cloak.train.utility_cache import UtilityCache, result_hash, stable_hash
+    from cloak.reward.utility_cache import UtilityCache, result_hash, stable_hash
 
     path = tmp_path / "conflict.jsonl"
     artifact = _artifact()

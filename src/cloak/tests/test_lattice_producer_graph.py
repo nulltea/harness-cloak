@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from cloak.lattice_producer.graph import (
+from cloak.lattice.producer.graph import (
     QWEN36_ESCALATION_MODEL,
     augment_with_model_node,
     build_graph,
@@ -18,7 +18,7 @@ from cloak.lattice_producer.graph import (
     run_producer,
     should_continue,
 )
-from cloak.lattice_producer.state import make_initial_state, thread_id_for_run
+from cloak.lattice.producer.state import make_initial_state, thread_id_for_run
 
 
 def _profiles(path: Path) -> None:
@@ -76,7 +76,7 @@ def test_dynamic_vocabulary_makes_item_two_see_item_ones_accepted_label(monkeypa
     genuinely works, item 2 must be caught -- and it can *only* be caught by seeing item 1's own
     run history, since neither label exists in any static anchor.
     """
-    import cloak.lattice_producer.propose as propose_module
+    import cloak.lattice.producer.propose as propose_module
 
     profiles = tmp_path / "profiles.json"
     _profiles(profiles)
@@ -174,7 +174,7 @@ def test_should_continue_triggers_periodic_normalization():
 
 
 def test_periodic_normalize_resumes_loop_but_exhausted_validates():
-    from cloak.lattice_producer.graph import _route_after_normalize
+    from cloak.lattice.producer.graph import _route_after_normalize
 
     # periodic trigger: item cleared by record_item_result, queue not exhausted -> resume
     resume = {"processed": 50, "max_items": None, "current_item": None, "queue_exhausted": False}
@@ -200,17 +200,17 @@ def test_normalize_coherence_node_applies_entity_merge(tmp_path, monkeypatch):
         calls["profiles"] = artifact["profiles"]
         return {"types": {"health-condition": {"merged": [], "review": [], "gate_scored": 0}},
                 "duplicate_surface_claims": {}}
-    monkeypatch.setattr("cloak.lattice_producer.graph.apply_entity_merge", fake_merge)
+    monkeypatch.setattr("cloak.lattice.producer.graph.apply_entity_merge", fake_merge)
     state = {"proposed_out": str(proposed), "profiles_path": str(tmp_path / "canon.json"),
              "run_id": "test-run", "run_dir": str(tmp_path)}
-    from cloak.lattice_producer.graph import normalize_coherence_node
+    from cloak.lattice.producer.graph import normalize_coherence_node
     normalize_coherence_node(state)
     assert "health-condition" in calls["profiles"]
     assert (tmp_path / "entity_merge_report.json").exists()
 
 
 def test_deterministic_lookup_prefers_reference_source_over_profile_cache(monkeypatch, tmp_path: Path) -> None:
-    import cloak.lattice_producer.graph as graph_module
+    import cloak.lattice.producer.graph as graph_module
 
     reference_hit = [
         {
@@ -298,7 +298,7 @@ def test_sufficient_deterministic_chain_routes_directly_to_count_compilation(tmp
 
 
 def test_hybrid_anchor_augmentation_keeps_certifying_nearest_rung(monkeypatch, tmp_path: Path) -> None:
-    import cloak.lattice_producer.graph as graph_module
+    import cloak.lattice.producer.graph as graph_module
 
     profiles = tmp_path / "profiles.json"
     _profiles(profiles)
@@ -391,7 +391,7 @@ def test_deterministic_lookup_reference_type_miss_goes_to_model_not_cache(monkey
     # a runtime type WITH a reference source (drug/openFDA) that MISSES must not fall back to the
     # lattice_profiles.json cache (unreliable) -- it must return empty candidates so the graph routes
     # to the model.
-    import cloak.lattice_producer.graph as graph_module
+    import cloak.lattice.producer.graph as graph_module
 
     monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: None)  # openFDA miss
 
@@ -414,7 +414,7 @@ def test_deterministic_lookup_reference_type_miss_goes_to_model_not_cache(monkey
 
 
 def test_deterministic_lookup_falls_back_to_profile_cache_when_no_reference_hit(monkeypatch, tmp_path: Path) -> None:
-    import cloak.lattice_producer.graph as graph_module
+    import cloak.lattice.producer.graph as graph_module
 
     monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: None)
 
@@ -568,7 +568,7 @@ def test_retry_proposal_node_uses_state_model_for_escalation(monkeypatch, tmp_pa
         seen.update(kwargs)
         return {"candidates": [{"level": "software privacy professional"}]}
 
-    monkeypatch.setattr("cloak.lattice_producer.graph.propose_with_llama_swap", fake_propose)
+    monkeypatch.setattr("cloak.lattice.producer.graph.propose_with_llama_swap", fake_propose)
     state = make_initial_state(
         run_id="retry-smoke",
         run_dir=tmp_path / "run",
@@ -602,7 +602,7 @@ def test_first_pass_proposal_node_uses_state_model(monkeypatch, tmp_path: Path) 
         seen.update(kwargs)
         return {"candidates": [{"level": "software privacy professional"}]}
 
-    monkeypatch.setattr("cloak.lattice_producer.graph.propose_with_llama_swap", fake_propose)
+    monkeypatch.setattr("cloak.lattice.producer.graph.propose_with_llama_swap", fake_propose)
     state = make_initial_state(
         run_id="retry-smoke",
         run_dir=tmp_path / "run",
@@ -630,7 +630,7 @@ def test_proposal_node_defaults_to_qwen36_when_no_model_configured(monkeypatch, 
         seen.update(kwargs)
         return {"candidates": [{"level": "software privacy professional"}]}
 
-    monkeypatch.setattr("cloak.lattice_producer.graph.propose_with_llama_swap", fake_propose)
+    monkeypatch.setattr("cloak.lattice.producer.graph.propose_with_llama_swap", fake_propose)
     state = make_initial_state(
         run_id="default-model",
         run_dir=tmp_path / "run",
@@ -843,8 +843,8 @@ def test_review_report_includes_aliases_evidence_and_warning_reasons(tmp_path: P
 def test_propose_node_consumes_prefetched_payload_without_inline_call(monkeypatch, tmp_path: Path) -> None:
     from concurrent.futures import Future
 
-    import cloak.lattice_producer.graph as graph_module
-    from cloak.lattice_producer.graph import _PREFETCHER
+    import cloak.lattice.producer.graph as graph_module
+    from cloak.lattice.producer.graph import _PREFETCHER
 
     profiles = tmp_path / "profiles.json"
     _profiles(profiles)
@@ -884,8 +884,8 @@ def test_propose_node_consumes_prefetched_payload_without_inline_call(monkeypatc
 
 
 def test_will_call_model_mirrors_routing(monkeypatch) -> None:
-    import cloak.lattice_producer.graph as graph_module
-    from cloak.lattice_producer.graph import _will_call_model
+    import cloak.lattice.producer.graph as graph_module
+    from cloak.lattice.producer.graph import _will_call_model
 
     monkeypatch.setattr(graph_module, "reference_candidates_for", lambda item: [])
     monkeypatch.setattr(graph_module, "has_reference_source", lambda rt: rt == "drug")

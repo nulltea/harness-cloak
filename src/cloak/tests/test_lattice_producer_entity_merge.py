@@ -1,6 +1,6 @@
 import json
 
-from cloak.lattice_producer.entity_merge import (
+from cloak.lattice.producer.entity_merge import (
     apply_entity_merge,
     block_pairs,
     doid_surface_index,

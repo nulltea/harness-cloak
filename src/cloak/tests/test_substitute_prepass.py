@@ -1,12 +1,12 @@
 """substitute() batched matcher pre-pass + R match provenance."""
-import cloak.substitute as sub
-from cloak.detect import Span
-from cloak.profile_match import MatchResult, span_key
-from cloak.substitute import prepare_spans_for_substitution
+import cloak.detection.span_prep as sub
+from cloak.detection.detect import Span
+from cloak.lattice.profile_match import MatchResult, span_key
+from cloak.detection.span_prep import prepare_spans_for_substitution
 
 
 def _spans(text, *triples):
-    # adapted to real cloak.detect.Span: score + source are required fields
+    # adapted to real cloak.detection.detect.Span: score + source are required fields
     out = []
     for surface, typ in triples:
         i = text.index(surface)
