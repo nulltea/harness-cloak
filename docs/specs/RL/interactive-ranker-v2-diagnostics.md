@@ -282,6 +282,44 @@ failure action: reject profile, reject checkpoint, or report unsupported
 definition. Margins express the smallest operationally meaningful regression, not the observed
 effect and not a per-model calibration knob.
 
+### Semantic privacy-head promotion
+
+The v2 privacy diagnostic compares semantic and candidate-only predictions with paired held-out
+profile deltas on one frozen split. Average each metric within decision, then profile, then seed.
+Use 2,000 profile bootstrap resamples with frozen seed `1729` and a two-sided 95% interval.
+Promotion requires at least three preregistered initialization seeds. The lower interval bound must
+be strictly positive for improvement on either profile-relative calibration or within-menu
+ordering, while the other metric's lower improvement bound remains above its non-inferiority
+margin. Selected-action regret must also remain non-inferior.
+
+Preregistered candidate-only margins are:
+
+- profile-relative calibration error: `0.01`;
+- within-menu ordering accuracy: `0.01`;
+- selected-action regret: `0.01`.
+
+The one-percentage-point primary margins match the resolution at which the paired profile
+bootstrap is interpreted; smaller point differences are not promotion evidence. The regret margin
+is separately fixed at `0.01` because it caps the average exact profile-score opportunity lost by
+the selected action, an operational consequence rather than a calibration residual.
+
+Authored position is an oracle-ceiling reference, not the ordering competitor. Its separate
+non-inferiority margins are `0.05` for profile-relative calibration and `0.01` for selected-action
+regret. The wider calibration allowance reflects the privileged monotone ordering encoded by the
+oracle, while the tighter regret allowance preserves the same one-percentage-point operational
+loss cap used against candidate-only. Mode/type-only and train-profile mean remain sanity floors.
+
+Predicted log-count differences within `1e-6` are ties for ordering and Spearman. A predicted tie
+receives `0.5` pairwise-accuracy credit and its rate is reported separately. A one-seed diagnostic
+emits `NEEDS_MULTI_SEED_EVIDENCE`, never controller `PASS`. If the lexical/semantic counterexample
+artifact is also absent, the combined verdict is
+`NEEDS_MULTI_SEED_AND_COUNTEREXAMPLE_SET`.
+
+The v2 checkpoint freezes the metric-report hash, diagnostic-manifest hash, counterexample-set
+hash, run protocol, seed count, and promotion verdict. Policy and hybrid admission require
+`promotion`, at least three seeds, and `PROMOTE`. The explicit development override is recorded at
+the CLI boundary and cannot admit a checkpoint trained with a count-basis input.
+
 ### Architecture-fitness spike
 
 The semantic architecture spike emits these measurement families under one matched profile split,

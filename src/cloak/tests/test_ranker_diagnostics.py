@@ -650,12 +650,23 @@ def test_train_artifact_validation_accepts_only_hash_bound_passing_gates():
         _validate_train_artifacts(*broken, bc_checkpoint_hash="bc-file")
 
 
-def _privacy_metrics(nll, pairwise, calibration):
+def _privacy_metrics(nll, pairwise, calibration, regret=0.05):
+    profiles = {
+        f"profile-{index}": {
+            "within_menu_pairwise_accuracy": pairwise,
+            "profile_relative_calibration_error": calibration,
+            "selected_action_regret": regret,
+        }
+        for index in range(6)
+    }
     return {
         "overall": {
             "nll": nll,
             "within_menu_pairwise_accuracy": pairwise,
             "profile_relative_calibration_error": calibration,
+            "selected_action_regret": regret,
+            "median_absolute_log_error": 0.7,
+            "interval_95_coverage": 0.9,
         },
         "by_runtime_type": {
             "drug": {}, "health-condition": {},
@@ -664,26 +675,27 @@ def _privacy_metrics(nll, pairwise, calibration):
             "certifying": {}, "model-proposed": {},
         },
         "by_source_family": {"fixture": {}},
+        "by_profile": profiles,
     }
 
 
 def _privacy_seed_report():
     baselines = {
-        "authored_position_mode_type": _privacy_metrics(2.0, 0.6, 0.3),
-        "mode_type_only": _privacy_metrics(2.1, 0.55, 0.35),
-        "candidate_only": _privacy_metrics(1.8, 0.65, 0.25),
-        "train_profile_mean": _privacy_metrics(2.3, 0.5, 0.4),
+        "authored_position_mode_type": _privacy_metrics(0.1, 1.0, 0.08, 0.0),
+        "mode_type_only": _privacy_metrics(2.1, 0.55, 0.35, 0.2),
+        "candidate_only": _privacy_metrics(1.8, 0.65, 0.25, 0.08),
+        "train_profile_mean": _privacy_metrics(2.3, 0.5, 0.4, 0.25),
     }
     return {
         "seed": 11,
         "profile_held_out": True,
         "splits": {
             "dev": {
-                "semantic": _privacy_metrics(1.0, 0.8, 0.1),
+                "semantic": _privacy_metrics(17.6, 0.8, 0.1, 0.005),
                 "baselines": baselines,
             },
             "test": {
-                "semantic": _privacy_metrics(1.1, 0.75, 0.12),
+                "semantic": _privacy_metrics(17.6, 0.75, 0.12, 0.005),
                 "baselines": baselines,
             },
         },
@@ -699,9 +711,29 @@ def test_privacy_diagnostic_manifest_requires_held_out_metrics_and_all_baselines
         metric_report_hash="sha256:metrics",
     )
 
-    assert manifest["artifact_version"] == "ranker-v2-semantic-privacy-diagnostic-v1"
+    assert manifest["artifact_version"] == "ranker-v2-semantic-privacy-diagnostic-v2"
     assert manifest["profile_held_out"] is True
-    assert manifest["relative_promotion"]["verdict"] == "PASS"
+    assert manifest["policy_fitness_gate"]["controller_metrics_verdict"] == (
+        "NEEDS_MULTI_SEED_EVIDENCE"
+    )
+    assert manifest["policy_fitness_gate"]["lexical_counterexamples"] == {
+        "status": "N/A",
+        "reason": "counterexample_set_absent",
+        "artifact_hash": None,
+    }
+    assert manifest["relative_promotion"]["verdict"] == (
+        "NEEDS_MULTI_SEED_AND_COUNTEREXAMPLE_SET"
+    )
+    assert manifest["distributional_audit_gate"]["verdict"] == "REPORT_ONLY"
+    assert set(manifest["report_only_metrics"]) == {
+        "nll", "interval_95_coverage", "sigma_fixed",
+        "median_absolute_log_error",
+    }
+    authored = manifest["relative_promotion"]["seed_verdicts"][0][
+        "comparisons"
+    ]["authored_position_mode_type"]
+    assert authored["role"] == "oracle_ceiling"
+    assert "within_menu_pairwise_accuracy" not in authored["blocking_metrics"]
     assert manifest["aci_document_generalization_claimed"] is False
     assert set(manifest["required_baselines"]) == {
         "authored_position_mode_type",
@@ -729,4 +761,111 @@ def test_privacy_diagnostic_manifest_requires_held_out_metrics_and_all_baselines
         split_manifest_hash="sha256:split",
         metric_report_hash="sha256:metrics",
     )
+    assert manifest["policy_fitness_gate"]["controller_metrics_verdict"] == "FAIL"
+
+
+def test_privacy_gate_ignores_bad_nll_but_requires_candidate_controller_fitness():
+    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+
+    report = _privacy_seed_report()
+    report["splits"]["test"]["semantic"]["overall"]["nll"] = 1e9
+    manifest = build_privacy_diagnostic_manifest(
+        [report],
+        split_manifest_hash="sha256:split",
+        metric_report_hash="sha256:metrics",
+    )
+    assert manifest["policy_fitness_gate"]["controller_metrics_verdict"] == (
+        "NEEDS_MULTI_SEED_EVIDENCE"
+    )
+
+    report["splits"]["test"]["semantic"]["overall"][
+        "profile_relative_calibration_error"
+    ] = 0.3
+    report["splits"]["test"]["semantic"]["overall"][
+        "within_menu_pairwise_accuracy"
+    ] = 0.6
+    failed = build_privacy_diagnostic_manifest(
+        [report],
+        split_manifest_hash="sha256:split",
+        metric_report_hash="sha256:metrics",
+    )
+    assert failed["policy_fitness_gate"]["controller_metrics_verdict"] == (
+        "NEEDS_MULTI_SEED_EVIDENCE"
+    )
+
+
+def test_privacy_gate_requires_paired_bootstrap_improvement_across_three_seeds():
+    from copy import deepcopy
+
+    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+
+    reports = []
+    for seed in (11, 22, 33):
+        report = deepcopy(_privacy_seed_report())
+        report["seed"] = seed
+        reports.append(report)
+
+    manifest = build_privacy_diagnostic_manifest(
+        reports,
+        split_manifest_hash="sha256:split",
+        metric_report_hash="sha256:metrics",
+        counterexample_report={
+            "artifact_hash": "sha256:counterexamples",
+            "verdict": "PASS",
+        },
+    )
+
+    assert manifest["policy_fitness_gate"]["controller_metrics_verdict"] == "PASS"
+    assert manifest["relative_promotion"]["verdict"] == "PROMOTE"
+    paired = manifest["policy_fitness_gate"]["candidate_only_paired_bootstrap"]
+    assert paired["profile_count"] == 6
+    assert paired["profile_relative_calibration_improvement"]["ci_95"][0] > 0
+    assert paired["within_menu_ordering_improvement"]["ci_95"][0] > 0
+    assert manifest["preregistered_margins"] == {
+        "candidate_calibration": 0.01,
+        "candidate_ordering": 0.01,
+        "candidate_regret": 0.01,
+        "authored_calibration": 0.05,
+        "authored_regret": 0.01,
+    }
+
+
+def test_point_improvement_without_bootstrap_support_does_not_pass():
+    from copy import deepcopy
+
+    from cloak.train.ranker_diagnostics import build_privacy_diagnostic_manifest
+
+    reports = []
+    for seed in (11, 22, 33):
+        report = deepcopy(_privacy_seed_report())
+        report["seed"] = seed
+        semantic_profiles = report["splits"]["test"]["semantic"]["by_profile"]
+        candidate_profiles = report["splits"]["test"]["baselines"][
+            "candidate_only"
+        ]["by_profile"]
+        for index, profile_id in enumerate(semantic_profiles):
+            candidate = candidate_profiles[profile_id]
+            semantic_profiles[profile_id][
+                "profile_relative_calibration_error"
+            ] = candidate["profile_relative_calibration_error"] + (
+                -0.02 if index < 3 else 0.02
+            )
+            semantic_profiles[profile_id][
+                "within_menu_pairwise_accuracy"
+            ] = candidate["within_menu_pairwise_accuracy"] + (
+                0.02 if index < 3 else -0.02
+            )
+        reports.append(report)
+
+    manifest = build_privacy_diagnostic_manifest(
+        reports,
+        split_manifest_hash="sha256:split",
+        metric_report_hash="sha256:metrics",
+        counterexample_report={
+            "artifact_hash": "sha256:counterexamples",
+            "verdict": "PASS",
+        },
+    )
+
+    assert manifest["policy_fitness_gate"]["controller_metrics_verdict"] == "FAIL"
     assert manifest["relative_promotion"]["verdict"] == "FAIL"

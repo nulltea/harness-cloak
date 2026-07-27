@@ -15,18 +15,23 @@ from torch import nn
 from cloak.train.ranker_privacy import (
     CHECKPOINT_VERSION,
     REQUIRED_BASELINES,
+    DirectCountPrivacyProvider,
     PrivacyCheckpointContract,
     PrivacyExample,
     PrivacyPrediction,
+    PrivacyTrainingStructure,
     SemanticPrivacyHead,
     TrainProfileMeanBaseline,
     build_grouped_profile_split,
     build_neural_privacy_models,
+    build_privacy_training_structure,
+    deduplicate_privacy_examples,
     evaluate_privacy_predictions,
     load_privacy_checkpoint,
     privacy_training_loss,
     profile_normalize_predictions,
     save_privacy_checkpoint,
+    validate_privacy_signal_for_policy,
 )
 from cloak.train.ranker_environment import (
     RankerAction,
@@ -40,29 +45,158 @@ from cloak.train.ranker_representation import (
 )
 
 
-def test_semantic_privacy_head_predicts_valid_log_count_distribution():
+def test_semantic_privacy_head_predicts_unconstrained_mean_and_fixed_sigma():
     torch.manual_seed(7)
-    model = SemanticPrivacyHead(pair_dim=6, projection_dim=4, hidden_dim=5)
+    model = SemanticPrivacyHead(pair_dim=10, projection_dim=1, hidden_dim=0)
+    features = torch.arange(40, dtype=torch.float32).reshape(4, 10) / 10
+    model.fit_statistics(features, torch.tensor([0.0, 1.0, 2.0, 3.0]))
+    model.set_sigma_fixed(0.7)
+    with torch.no_grad():
+        model.privacy_projection.weight.zero_()
+        model.privacy_projection.bias.fill_(-2.0)
 
-    prediction = model(torch.arange(24, dtype=torch.float32).reshape(4, 6) / 10)
+    prediction = model(features)
 
     assert prediction.mu_log_count.shape == (4,)
     assert prediction.sigma_log_count.shape == (4,)
-    assert torch.all(prediction.mu_log_count >= 0)
-    assert torch.all(prediction.sigma_log_count >= 1e-4)
+    assert torch.all(prediction.mu_log_count < 0)
+    assert torch.equal(prediction.sigma_log_count, torch.full((4,), 0.7))
+    assert prediction.standardized_mean is not None
     assert torch.isfinite(prediction.mu_log_count).all()
     assert torch.isfinite(prediction.sigma_log_count).all()
+
+
+def _direct_count_artifact() -> dict:
+    return {
+        "artifact_hash": "sha256:targets",
+        "environment_hash": "sha256:environment",
+        "action_targets": {
+            "level": {
+                "action_id": "level",
+                "decision_id": "decision",
+                "mode": "level",
+                "profile_score": 0.375,
+                "log_count": 1.25,
+                "grounding_status": "certifying",
+                "profile_id": "LOC:source",
+            },
+            "keep": {
+                "action_id": "keep",
+                "decision_id": "decision",
+                "mode": "keep",
+                "profile_score": 0.125,
+                "log_count": None,
+                "grounding_status": None,
+                "profile_id": "LOC:source",
+            },
+            "placeholder": {
+                "action_id": "placeholder",
+                "decision_id": "decision",
+                "mode": "placeholder",
+                "profile_score": 0.875,
+                "log_count": None,
+                "grounding_status": None,
+                "profile_id": "LOC:source",
+            },
+        },
+    }
+
+
+def test_direct_count_provider_returns_exact_artifact_scores():
+    provider = DirectCountPrivacyProvider(_direct_count_artifact())
+
+    scores = provider(
+        ("decision", "decision", "decision"),
+        ("keep", "level", "placeholder"),
+        dtype=torch.float64,
+    )
+
+    assert torch.equal(scores, torch.tensor([0.125, 0.375, 0.875],
+                                            dtype=torch.float64))
+    assert provider.privacy_signal == {
+        "kind": "direct-count",
+        "targets_artifact_hash": "sha256:targets",
+        "environment_hash": "sha256:environment",
+    }
+
+
+def test_direct_count_provider_fails_closed_on_unknown_pair():
+    provider = DirectCountPrivacyProvider(_direct_count_artifact())
+
+    with pytest.raises(ValueError, match="unknown direct-count target"):
+        provider(("decision",), ("unknown",))
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda artifact: artifact.pop("artifact_hash"), "artifact_hash"),
+        (
+            lambda artifact: artifact["action_targets"]["level"].pop("profile_score"),
+            "profile_score",
+        ),
+        (
+            lambda artifact: artifact["action_targets"]["level"].pop("log_count"),
+            "log_count",
+        ),
+        (
+            lambda artifact: artifact["action_targets"]["level"].pop("profile_id"),
+            "profile_id",
+        ),
+        (
+            lambda artifact: artifact["action_targets"]["level"].pop(
+                "grounding_status"
+            ),
+            "grounding_status",
+        ),
+    ],
+)
+def test_direct_count_provider_rejects_malformed_artifact_rows(mutation, message):
+    artifact = _direct_count_artifact()
+    mutation(artifact)
+
+    with pytest.raises(ValueError, match=message):
+        DirectCountPrivacyProvider(artifact)
+
+
+def test_policy_admission_accepts_direct_count_and_rejects_unpromoted_learned():
+    validate_privacy_signal_for_policy(
+        {
+            "kind": "direct-count",
+            "targets_artifact_hash": "sha256:targets",
+            "environment_hash": "sha256:environment",
+        }
+    )
+    iteration = replace(
+        _checkpoint_contract(),
+        seeds=(11,),
+        seed_count=1,
+        training_seed=11,
+        run_protocol="iteration",
+        promotion_verdict="NEEDS_MULTI_SEED_EVIDENCE",
+        counterexample_set_hash=None,
+    )
+    with pytest.raises(ValueError, match="promotion"):
+        validate_privacy_signal_for_policy(
+            {
+                "kind": "learned-head",
+                "targets_artifact_hash": "sha256:targets",
+                "environment_hash": "sha256:environment",
+            },
+            learned_contract=iteration,
+        )
 
 
 def test_optional_count_basis_is_a_privacy_only_unknown_aware_input():
     torch.manual_seed(9)
     model = SemanticPrivacyHead(
-        pair_dim=6,
-        projection_dim=4,
-        hidden_dim=5,
+        pair_dim=10,
+        projection_dim=1,
+        hidden_dim=0,
         count_basis_size=3,
     )
-    pair_features = torch.randn(2, 6)
+    pair_features = torch.randn(2, 10)
+    model.fit_statistics(pair_features, torch.tensor([0.0, 1.0]))
 
     absent = model(pair_features)
     explicit_unknown = model(pair_features, count_basis=torch.zeros(2, dtype=torch.long))
@@ -70,7 +204,7 @@ def test_optional_count_basis_is_a_privacy_only_unknown_aware_input():
 
     assert torch.equal(absent.mu_log_count, explicit_unknown.mu_log_count)
     assert not torch.equal(absent.mu_log_count, known.mu_log_count)
-    assert model.privacy_projection.in_features == 9
+    assert model.privacy_projection.in_features == 11
 
 
 def test_profile_normalization_uses_complete_level_menu_and_exact_endpoints():
@@ -99,6 +233,19 @@ def test_profile_normalization_assigns_single_level_one():
     assert torch.equal(scores, torch.tensor([0.0, 1.0, 1.0]))
 
 
+def test_profile_normalization_clamps_negative_unstandardized_means_only_here():
+    prediction = PrivacyPrediction(
+        mu_log_count=torch.tensor([9.0, -2.0, 4.0, 8.0]),
+        sigma_log_count=torch.ones(4),
+    )
+
+    scores = profile_normalize_predictions(
+        prediction, ("keep", "level", "level", "placeholder")
+    )
+
+    assert torch.equal(scores, torch.tensor([0.0, 0.0, 1.0, 1.0]))
+
+
 @pytest.mark.parametrize(
     "modes",
     [
@@ -118,10 +265,21 @@ def test_profile_normalization_rejects_incomplete_or_invalid_menus(modes):
         profile_normalize_predictions(prediction, modes)
 
 
-def test_privacy_loss_is_finite_and_returns_exact_named_scalar_terms():
+def _training_structure() -> PrivacyTrainingStructure:
+    return build_privacy_training_structure(
+        decision_ids=("d1", "d1", "d1", "d2", "d2"),
+        profile_ids=("p1", "p1", "p1", "p2", "p2"),
+        log_count_targets=torch.tensor(
+            [0.0, math.log(10), math.log(10), math.log(2), math.log(8)]
+        ),
+    )
+
+
+def test_privacy_loss_is_profile_macro_and_returns_fixed_sigma_terms():
     prediction = PrivacyPrediction(
         mu_log_count=torch.tensor([0.2, 1.8, 2.4, 0.8, 2.2]),
-        sigma_log_count=torch.tensor([0.5, 0.7, 0.8, 0.6, 0.9]),
+        sigma_log_count=torch.full((5,), 0.7),
+        standardized_mean=torch.tensor([0.2, 1.8, 2.4, 0.8, 2.2]),
     )
     targets = torch.tensor([0.0, math.log(10), math.log(10), math.log(2), math.log(8)])
     profile_scores = torch.tensor([0.0, 1.0, 1.0, 1 / 3, 1.0])
@@ -129,61 +287,78 @@ def test_privacy_loss_is_finite_and_returns_exact_named_scalar_terms():
     losses = privacy_training_loss(
         prediction,
         targets,
-        (slice(0, 3), slice(3, 5)),
+        (targets - targets.mean()) / targets.std(unbiased=False),
+        _training_structure(),
         profile_scores,
-        rho=0.4,
-        gamma=0.7,
+        rho=0.05,
+        gamma=1.0,
     )
 
-    assert set(losses) == {"nll", "pairwise_rank", "profile_huber", "total"}
+    assert set(losses) == {
+        "standardized_mean_huber",
+        "bounded_difference_rank",
+        "profile_huber",
+        "total",
+    }
     assert all(value.shape == () and torch.isfinite(value) for value in losses.values())
     assert torch.allclose(
         losses["total"],
-        losses["nll"] + 0.4 * losses["pairwise_rank"] + 0.7 * losses["profile_huber"],
+        losses["standardized_mean_huber"]
+        + 0.05 * losses["bounded_difference_rank"]
+        + losses["profile_huber"],
     )
 
 
 def test_pairwise_loss_excludes_tied_targets():
-    prediction = PrivacyPrediction(
-        mu_log_count=torch.tensor([0.1, 9.0]),
-        sigma_log_count=torch.ones(2),
+    structure = build_privacy_training_structure(
+        decision_ids=("d", "d"),
+        profile_ids=("p", "p"),
+        log_count_targets=torch.tensor([2.0, 2.0]),
     )
+    prediction = PrivacyPrediction(torch.tensor([0.1, 9.0]), torch.ones(2),
+                                   torch.tensor([0.1, 9.0]))
 
     losses = privacy_training_loss(
         prediction,
         torch.tensor([2.0, 2.0]),
-        (slice(0, 2),),
+        torch.tensor([0.0, 0.0]),
+        structure,
         torch.tensor([1.0, 1.0]),
         rho=1.0,
         gamma=0.0,
     )
 
-    assert losses["pairwise_rank"].item() == 0.0
+    assert losses["bounded_difference_rank"].item() == 0.0
 
 
 def test_privacy_loss_reaches_only_privacy_projection_and_head():
     torch.manual_seed(11)
-    model = SemanticPrivacyHead(pair_dim=6, projection_dim=4, hidden_dim=5)
+    model = SemanticPrivacyHead(pair_dim=10, projection_dim=1, hidden_dim=0)
     utility_projection = nn.Linear(6, 4)
-    prediction = model(torch.randn(4, 6))
+    features = torch.randn(4, 10)
+    targets = torch.tensor([0.0, 1.0, 0.5, 2.0])
+    model.fit_statistics(features, targets)
+    prediction = model(features)
+    structure = build_privacy_training_structure(
+        decision_ids=("d1", "d1", "d2", "d2"),
+        profile_ids=("p1", "p1", "p2", "p2"),
+        log_count_targets=targets,
+    )
 
     losses = privacy_training_loss(
         prediction,
-        torch.tensor([0.0, 1.0, 0.5, 2.0]),
-        (slice(0, 2), slice(2, 4)),
+        targets,
+        (targets - model.target_mean) / model.target_std,
+        structure,
         torch.tensor([0.0, 1.0, 0.25, 1.0]),
-        rho=0.5,
-        gamma=0.5,
+        rho=0.05,
+        gamma=1.0,
     )
     losses["total"].backward()
 
     assert all(
         parameter.grad is not None and torch.any(parameter.grad != 0)
-        for parameter in model.privacy_projection.parameters()
-    )
-    assert all(
-        parameter.grad is not None and torch.any(parameter.grad != 0)
-        for parameter in model.privacy_head.parameters()
+        for parameter in model.parameters() if parameter.requires_grad
     )
     assert all(parameter.grad is None for parameter in utility_projection.parameters())
 
@@ -263,11 +438,11 @@ def _privacy_examples() -> tuple[PrivacyExample, ...]:
 
 def test_neural_baselines_have_required_names_and_matching_head_budget():
     models = build_neural_privacy_models(
-        pair_dim=4,
+        pair_dim=10,
         candidate_dim=2,
         runtime_types=("drug", "health-condition"),
-        projection_dim=3,
-        hidden_dim=5,
+        projection_dim=1,
+        hidden_dim=0,
     )
 
     assert set(models) == {"semantic", *REQUIRED_BASELINES[:-1]}
@@ -277,8 +452,101 @@ def test_neural_baselines_have_required_names_and_matching_head_budget():
         "candidate_only",
         "train_profile_mean",
     )
-    assert all(model.projection_dim == 3 for model in models.values())
-    assert all(model.hidden_dim == 5 for model in models.values())
+    parameter_counts = {
+        name: sum(parameter.numel() for parameter in model.parameters())
+        for name, model in models.items()
+    }
+    assert len(set(parameter_counts.values())) == 1
+    assert parameter_counts["semantic"] == 9
+    assert models["semantic"].native_trainable_parameters == 9
+    assert models["candidate_only"].native_trainable_parameters == 3
+    assert models["authored_position_mode_type"].native_trainable_parameters == 7
+    assert models["mode_type_only"].native_trainable_parameters == 6
+    for name in (
+        "candidate_only", "authored_position_mode_type", "mode_type_only",
+    ):
+        projection = models[name].fixed_projection
+        assert projection.requires_grad is False
+        assert projection.shape[1] == 8
+
+
+def test_exact_complete_menu_duplicates_are_removed_as_a_unit():
+    menu = _privacy_examples()[:2]
+    duplicate = tuple(
+        replace(
+            row,
+            decision_id="repeated-decision",
+            action_id=f"repeated-{index}",
+        )
+        for index, row in enumerate(menu)
+    )
+
+    result = deduplicate_privacy_examples((*menu, *duplicate))
+
+    assert result == menu
+
+
+def test_partial_menu_overlap_preserves_both_complete_decisions():
+    first, second = _privacy_examples()[:2]
+    overlapping = (
+        replace(first, decision_id="other", action_id="other-shared"),
+        replace(
+            second,
+            decision_id="other",
+            action_id="other-unique",
+            candidate_identity="different-candidate",
+        ),
+    )
+
+    result = deduplicate_privacy_examples((first, second, *overlapping))
+
+    assert len(result) == 4
+    assert {row.decision_id for row in result} == {
+        first.decision_id, "other",
+    }
+
+
+def test_same_menu_wording_with_different_normalization_is_not_deduplicated():
+    menu = _privacy_examples()[:2]
+    changed = (
+        replace(menu[0], decision_id="other", action_id="other-0"),
+        replace(
+            menu[1],
+            decision_id="other",
+            action_id="other-1",
+            profile_score_target=0.75,
+        ),
+    )
+
+    result = deduplicate_privacy_examples((*menu, *changed))
+
+    assert len(result) == 4
+
+
+def test_training_loss_averages_decisions_before_profiles():
+    targets = torch.zeros(6)
+    structure = build_privacy_training_structure(
+        decision_ids=("d1", "d1", "d2", "d2", "d2", "d2"),
+        profile_ids=("p",) * 6,
+        log_count_targets=targets,
+    )
+    prediction = PrivacyPrediction(
+        mu_log_count=torch.zeros(6),
+        sigma_log_count=torch.ones(6),
+        standardized_mean=torch.tensor([0.0, 0.0, 2.0, 2.0, 2.0, 2.0]),
+    )
+
+    losses = privacy_training_loss(
+        prediction,
+        targets,
+        targets,
+        structure,
+        torch.ones(6),
+        rho=0.0,
+        gamma=0.0,
+    )
+
+    assert losses["standardized_mean_huber"] == pytest.approx(0.75)
 
 
 def test_train_profile_mean_is_stable_by_type_without_profile_memorization():
@@ -310,6 +578,7 @@ def test_held_out_metrics_report_every_metric_and_required_stratum():
         "median_multiplicative_error",
         "interval_95_coverage",
         "within_menu_pairwise_accuracy",
+        "within_menu_predicted_tie_rate",
         "spearman",
         "profile_relative_calibration_error",
         "selected_action_regret",
@@ -327,6 +596,57 @@ def test_held_out_metrics_report_every_metric_and_required_stratum():
     assert report["overall"]["selected_action_regret"] == 0.0
 
 
+def test_controller_metrics_are_macro_averaged_by_profile():
+    base = _privacy_examples()[0]
+    rows = (
+        replace(base, profile_id="p1", decision_id="d1", action_id="a1",
+                log_count_target=0.0, profile_score_target=0.0),
+        replace(base, profile_id="p1", decision_id="d1", action_id="a2",
+                log_count_target=1.0, profile_score_target=1.0),
+        *tuple(
+            replace(base, profile_id="p2", decision_id="d2", action_id=f"b{i}",
+                    log_count_target=float(i == 3),
+                    profile_score_target=float(i == 3))
+            for i in range(4)
+        ),
+    )
+    prediction = PrivacyPrediction(
+        mu_log_count=torch.tensor([0.0, 1.0, 1.0, 1.0, 1.0, 1.0]),
+        sigma_log_count=torch.ones(6),
+    )
+
+    metrics = evaluate_privacy_predictions(rows, prediction)["overall"]
+
+    assert metrics["profile_relative_calibration_error"] == pytest.approx(0.375)
+
+
+def test_constant_within_menu_predictions_are_ties_with_no_spearman_signal():
+    examples = _privacy_examples()
+    prediction = PrivacyPrediction(
+        mu_log_count=torch.ones(len(examples)),
+        sigma_log_count=torch.ones(len(examples)),
+    )
+
+    metrics = evaluate_privacy_predictions(examples, prediction)["overall"]
+
+    assert metrics["within_menu_pairwise_accuracy"] == 0.5
+    assert metrics["within_menu_predicted_tie_rate"] == 1.0
+    assert metrics["spearman"] is None
+
+
+def test_log_count_noise_within_tolerance_remains_a_prediction_tie():
+    examples = _privacy_examples()[:2]
+    prediction = PrivacyPrediction(
+        mu_log_count=torch.tensor([1.0, 1.0 + 5e-7]),
+        sigma_log_count=torch.ones(2),
+    )
+
+    metrics = evaluate_privacy_predictions(examples, prediction)["overall"]
+
+    assert metrics["within_menu_pairwise_accuracy"] == 0.5
+    assert metrics["within_menu_predicted_tie_rate"] == 1.0
+
+
 def _checkpoint_contract() -> PrivacyCheckpointContract:
     return PrivacyCheckpointContract(
         environment_hash="sha256:environment",
@@ -334,29 +654,51 @@ def _checkpoint_contract() -> PrivacyCheckpointContract:
         representation_manifest_hash="sha256:representations",
         encoder_revision="encoder-revision",
         split_manifest_hash="sha256:split",
-        pair_dim=4,
-        projection_dim=3,
-        hidden_dim=5,
+        pair_dim=10,
+        projection_dim=1,
+        hidden_dim=0,
         count_basis_size=0,
         count_basis_categories=(),
-        rho=0.5,
-        gamma=0.25,
+        rho=0.0,
+        gamma=1.0,
         seeds=(11, 22, 33),
         training_seed=11,
         metric_report_hash="sha256:metrics",
+        diagnostic_manifest_hash="sha256:diagnostics",
+        counterexample_set_hash="sha256:counterexamples",
+        run_protocol="promotion",
+        seed_count=3,
+        promotion_verdict="PROMOTE",
+        target_mean=1.0,
+        target_std=0.5,
+        sigma_fixed=0.7,
+        feature_schema="type-source-candidate-hadamard-v1",
+        optimizer="AdamW",
+        learning_rate=3e-4,
+        weight_decay=0.01,
+        gradient_clip=1.0,
     )
+
+
+def _checkpoint_model() -> SemanticPrivacyHead:
+    model = SemanticPrivacyHead(pair_dim=10, projection_dim=1, hidden_dim=0)
+    with torch.no_grad():
+        model.target_mean.fill_(1.0)
+        model.target_std.fill_(0.5)
+    model.set_sigma_fixed(0.7)
+    return model
 
 
 def test_checkpoint_round_trip_and_mismatch_fails_before_model_mutation(tmp_path: Path):
     torch.manual_seed(13)
-    source = SemanticPrivacyHead(pair_dim=4, projection_dim=3, hidden_dim=5)
+    source = _checkpoint_model()
     checkpoint_path = tmp_path / "privacy.pt"
     save_privacy_checkpoint(checkpoint_path, source, _checkpoint_contract())
     saved_state = {
         name: value.detach().clone() for name, value in source.state_dict().items()
     }
 
-    target = SemanticPrivacyHead(pair_dim=4, projection_dim=3, hidden_dim=5)
+    target = SemanticPrivacyHead(pair_dim=10, projection_dim=1, hidden_dim=0)
     with torch.no_grad():
         for parameter in target.parameters():
             parameter.fill_(42.0)
@@ -380,8 +722,66 @@ def test_checkpoint_round_trip_and_mismatch_fails_before_model_mutation(tmp_path
     )
 
 
+def test_policy_admission_rejects_iteration_and_count_basis_fail_closed():
+    iteration = replace(
+        _checkpoint_contract(),
+        seeds=(11,),
+        seed_count=1,
+        training_seed=11,
+        run_protocol="iteration",
+        promotion_verdict="NEEDS_MULTI_SEED_EVIDENCE",
+        counterexample_set_hash=None,
+    )
+
+    with pytest.raises(ValueError, match="promotion"):
+        iteration.validate_for_policy()
+    iteration.validate_for_policy(allow_development_override=True)
+
+    count_basis = replace(
+        _checkpoint_contract(),
+        count_basis_size=2,
+        count_basis_categories=("<unknown>", "certifying|fixture"),
+    )
+    with pytest.raises(ValueError, match="count basis"):
+        count_basis.validate_for_policy(allow_development_override=True)
+
+    with pytest.raises(ValueError, match="promotion verdict"):
+        replace(_checkpoint_contract(), promotion_verdict="PASS")
+
+
+@pytest.mark.parametrize(
+    ("buffer_name", "value", "message"),
+    [
+        ("target_mean", float("nan"), "target_mean"),
+        ("target_std", 0.0, "target_std"),
+        ("sigma_fixed", 0.1, "sigma_fixed"),
+    ],
+)
+def test_checkpoint_rejects_invalid_fitted_buffers_before_mutation(
+    tmp_path: Path, buffer_name: str, value: float, message: str
+):
+    source = _checkpoint_model()
+    checkpoint_path = tmp_path / "privacy.pt"
+    save_privacy_checkpoint(checkpoint_path, source, _checkpoint_contract())
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
+    payload["model_state_dict"][buffer_name] = torch.tensor(value)
+    torch.save(payload, checkpoint_path)
+    target = SemanticPrivacyHead(pair_dim=10, projection_dim=1, hidden_dim=0)
+    before = {
+        name: tensor.clone() for name, tensor in target.state_dict().items()
+    }
+
+    with pytest.raises(ValueError, match=message):
+        load_privacy_checkpoint(checkpoint_path, target, _checkpoint_contract())
+
+    assert all(
+        torch.equal(target.state_dict()[name], tensor)
+        for name, tensor in before.items()
+    )
+
+
 def test_checkpoint_rejects_invalid_state_shapes_before_mutation(tmp_path: Path):
-    source = SemanticPrivacyHead(pair_dim=4, projection_dim=3, hidden_dim=5)
+    source = _checkpoint_model()
     checkpoint_path = tmp_path / "privacy.pt"
     save_privacy_checkpoint(checkpoint_path, source, _checkpoint_contract())
     checkpoint = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
@@ -389,7 +789,7 @@ def test_checkpoint_rejects_invalid_state_shapes_before_mutation(tmp_path: Path)
     checkpoint["model_state_dict"][first_name] = torch.zeros(1)
     torch.save(checkpoint, checkpoint_path)
 
-    target = SemanticPrivacyHead(pair_dim=4, projection_dim=3, hidden_dim=5)
+    target = SemanticPrivacyHead(pair_dim=10, projection_dim=1, hidden_dim=0)
     with torch.no_grad():
         for parameter in target.parameters():
             parameter.fill_(42.0)
@@ -404,13 +804,13 @@ def test_checkpoint_rejects_invalid_state_shapes_before_mutation(tmp_path: Path)
 
 
 def test_checkpoint_refuses_internally_inconsistent_contracts(tmp_path: Path):
-    model = SemanticPrivacyHead(pair_dim=4, projection_dim=3, hidden_dim=5)
+    model = SemanticPrivacyHead(pair_dim=10, projection_dim=1, hidden_dim=0)
 
     with pytest.raises(ValueError, match="model contract mismatch"):
         save_privacy_checkpoint(
             tmp_path / "wrong-model.pt",
             model,
-            replace(_checkpoint_contract(), pair_dim=5),
+            replace(_checkpoint_contract(), pair_dim=15),
         )
 
     with pytest.raises(ValueError, match="count basis"):
@@ -550,7 +950,7 @@ def _synthetic_documents_and_targets():
     return documents, artifact
 
 
-def test_cli_runs_three_seed_stub_smoke_and_writes_bound_artifacts(
+def test_cli_runs_single_seed_iteration_smoke_and_writes_bound_artifacts(
     tmp_path: Path, monkeypatch, capsys
 ):
     documents, targets = _synthetic_documents_and_targets()
@@ -567,7 +967,7 @@ def test_cli_runs_three_seed_stub_smoke_and_writes_bound_artifacts(
         "frozen_environment": {"environment_hash": "sha256:environment"},
     }))
     out_dir = tmp_path / "privacy"
-    cli = importlib.import_module("train_ranker_privacy_head")
+    cli = importlib.import_module("scripts.train_ranker_privacy_head")
     monkeypatch.setattr(cli, "load_ranker_environment", lambda _path: documents)
     monkeypatch.setattr(sys, "argv", [
         "train_ranker_privacy_head.py",
@@ -575,17 +975,15 @@ def test_cli_runs_three_seed_stub_smoke_and_writes_bound_artifacts(
         "--profile-targets", str(target_path),
         "--representation-manifest", str(representation_manifest),
         "--out-dir", str(out_dir),
-        "--seeds", "11", "22", "33",
+        "--seeds", "11",
         "--split-seed", "5",
-        "--projection-dim", "3",
-        "--hidden-dim", "4",
         "--max-steps", "1",
         "--use-count-basis",
     ])
 
     cli.main()
 
-    assert "seeds=11,22,33" in capsys.readouterr().out
+    assert "seeds=11" in capsys.readouterr().out
     split_manifest = json.loads((out_dir / "split-manifest.json").read_text())
     metrics = json.loads((out_dir / "metrics.json").read_text())
     diagnostics = json.loads((out_dir / "diagnostic-manifest.json").read_text())
@@ -593,9 +991,13 @@ def test_cli_runs_three_seed_stub_smoke_and_writes_bound_artifacts(
         representation_manifest.read_text()
     )["manifest_hash"]
     assert split_manifest["artifact_version"] == "ranker-v2-profile-split-v1"
-    assert [row["seed"] for row in metrics["seed_reports"]] == [11, 22, 33]
+    assert metrics["artifact_version"] == "ranker-v2-semantic-privacy-metrics-v2"
+    assert diagnostics["artifact_version"] == (
+        "ranker-v2-semantic-privacy-diagnostic-v2"
+    )
+    assert [row["seed"] for row in metrics["seed_reports"]] == [11]
     assert set(diagnostics["required_baselines"]) == set(REQUIRED_BASELINES)
-    for seed in (11, 22, 33):
+    for seed in (11,):
         checkpoint = torch.load(
             out_dir / f"seed-{seed}" / "checkpoint.pt",
             map_location="cpu",
@@ -607,13 +1009,23 @@ def test_cli_runs_three_seed_stub_smoke_and_writes_bound_artifacts(
         assert contract["profile_target_artifact_hash"] == targets["artifact_hash"]
         assert contract["representation_manifest_hash"] == representation_identity
         assert contract["split_manifest_hash"] == split_manifest["artifact_hash"]
-        assert contract["seeds"] == [11, 22, 33] or contract["seeds"] == (11, 22, 33)
+        assert contract["seeds"] == [11] or contract["seeds"] == (11,)
         assert contract["metric_report_hash"] == metrics["artifact_hash"]
+        assert contract["diagnostic_manifest_hash"] == diagnostics["artifact_hash"]
+        assert contract["counterexample_set_hash"] is None
+        assert contract["run_protocol"] == "iteration"
+        assert contract["seed_count"] == 1
+        assert contract["promotion_verdict"] == (
+            "NEEDS_MULTI_SEED_AND_COUNTEREXAMPLE_SET"
+        )
         assert contract["count_basis_categories"][0] == "<unknown>"
+        assert contract["sigma_fixed"] == pytest.approx(
+            metrics["seed_reports"][0]["sigma_fixed"]["semantic"]
+        )
 
 
 def test_cli_environment_hash_reader_rejects_mismatch(tmp_path: Path):
-    cli = importlib.import_module("train_ranker_privacy_head")
+    cli = importlib.import_module("scripts.train_ranker_privacy_head")
     path = tmp_path / "environment.json"
     path.write_text(json.dumps({
         "frozen_environment": {"environment_hash": "sha256:environment"},

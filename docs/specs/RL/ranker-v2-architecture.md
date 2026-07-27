@@ -2,7 +2,7 @@
 type: reference
 status: partial
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-07-23
 tags: [rl, ranker, model-architecture, policy, context, privacy-utility,
        bioclinical-modernbert, candidate-pair-encoding]
 companion: [docs/specs/RL/ranker-v2-architecture-decision-log.md,
@@ -507,20 +507,35 @@ privacy shortcuts. The legacy GRU and its count-bearing `decision_action_inputs`
 
 ### Semantic privacy head
 
-The privacy branch receives the privacy projection of the source-to-candidate relation and, when
-available, a frozen categorical count-basis/source-family token. It does not receive document
+The privacy branch receives the privacy projection of the source-to-candidate relation. A frozen
+categorical count-basis/source-family token remains a training-only ablation; any checkpoint with
+that input is rejected by policy loading because deployed inference does not carry its category
+indices. The policy privacy branch does not receive document
 context, task assertions, selected-action memory, lambda, authored position, menu size, raw count,
 numeric universe size, or stable action identity as an embedding.
 
-For every lattice level, the head predicts a distribution over log count:
+For every lattice level, the fixed-sigma prototype predicts a standardized log-count mean:
 
 ```text
-mu_raw(a), sigma_raw(a) = privacy_head(r_P(source, candidate, type, count_basis))
-mu_logK(a) = softplus(mu_raw(a))
-sigma_logK(a) = sigma_min + softplus(sigma_raw(a))
-
-log(K(a)) ~ Normal(mu_logK(a), sigma_logK(a)^2)
+y(a) = (ell(a) - train_mean) / train_std
+y_hat(a) = mean_head(block_normalize(r_P(source, candidate, type, count_basis)))
+mu_logK(a) = train_mean + train_std * y_hat(a)
 ```
+
+`y_hat` is unconstrained. Negative `mu_logK` values retain regression gradients and are clamped to
+zero only when computing the controller's profile-relative normalization. The relation head
+normalizes the type, source, candidate, and Hadamard-product blocks with train-only statistics and
+drops the linearly redundant candidate-minus-source block. The primary head is a single linear
+map. An opt-in `32`-unit GELU mean head is the only capacity escalation in the prototype.
+
+After checkpoint selection, estimate one constant audit scale from dev residuals:
+
+```text
+sigma_fixed = clamp(RMSE_dev(ell - mu_logK), 0.3, 3.0)
+```
+
+The checkpoint and reports record `sigma_fixed`; every prediction from that checkpoint uses the
+same value. Learned heteroscedastic sigma is an ablation only, not part of the prototype.
 
 The target is the matched profile's own raw count:
 
@@ -534,8 +549,9 @@ replaces it with a global fill-string lookup that aggregates equal wording acros
 The controller score is derived jointly across the current profile's lattice-level menu:
 
 ```text
-denom_hat_j = max_b_in_profile_levels mu_logK(b)
-p_hat_profile,j(a) = clip(mu_logK(a) / denom_hat_j, 0, 1)
+mu_controller(a) = max(mu_logK(a), 0)
+denom_hat_j = max_b_in_profile_levels mu_controller(b)
+p_hat_profile,j(a) = clip(mu_controller(a) / denom_hat_j, 0, 1)
 
 p_hat_profile,j(KEEP) = 0
 p_hat_profile,j(placeholder) = 1
@@ -547,25 +563,30 @@ one-level profile assigns its sole level score one, including when its count is 
 `singleton_profile_normalization`; singleton results are reported separately because they contain
 no within-profile ranking signal.
 
-The privacy loss combines distributional count calibration, within-profile ordering, and direct
-calibration of the score consumed by the controller:
+The primary privacy loss combines standardized mean regression with direct calibration of the
+score consumed by the controller:
 
 ```text
-L_privacy = L_logcount_nll(ell, mu_logK, sigma_logK)
-            + rho * L_pairwise_rank(mu_logK, ell)
-            + gamma * L_huber(p_hat_profile, p_profile)
+L_privacy = SmoothL1(y_hat, y, beta=1.0)
+            + 1.0 * L_huber(p_hat_profile, p_profile)
 ```
 
-Pairwise terms exclude tied targets. The likelihood preserves approximate magnitude and supplies
-an uncertainty estimate; ranking prevents good average count fit from hiding incorrect menu
-ordering; profile-relative calibration verifies the actual policy input.
+The default rank weight is `rho=0`. The registered rank ablation uses `rho=0.05` and bounded Huber
+regression of predicted pair differences against true log-count differences; it never uses an
+unbounded sign-only logistic objective. Tied targets are excluded. Losses are macro-averaged over
+complete profiles, batches contain approximately 32 complete profiles, and losses average levels
+or pairs within a decision, decisions within a profile, then profiles within a batch. Duplicate
+decisions are removed only when their complete ordered menus have identical source/candidate
+identities, targets, normalizations, and provenance; row-level deduplication is forbidden. All
+pair, segment, singleton, profile-weight, and menu-size index structures are precomputed outside
+the update loop.
 
 Training and reporting stratify targets by grounding status and source family. Experimental
 model-proposed counts may supervise the prototype only when explicit and admitted by the count
 artifact; they never become formal privacy labels. The head is judged separately on grounded and
 model-proposed subsets.
 
-For audit, report the geometric median estimate and log-space interval:
+For audit only, report the geometric median estimate and fixed-sigma log-space interval:
 
 ```text
 K_hat(a) = round(exp(mu_logK(a)))
@@ -576,9 +597,9 @@ interval_95_upper(a) = exp(mu_logK(a) + 1.96 * sigma_logK(a))
 `K_hat` is always labelled model-predicted. Integer rendering does not turn it into a sourced,
 grounded, or certifying count.
 
-The controller uses only `mu_logK` through `p_hat_profile`. Predicted uncertainty is an audit,
-calibration, and abstention diagnostic; the first prototype does not reward uncertainty or subtract
-it from privacy pressure.
+The controller uses only `mu_logK` through `p_hat_profile`. Fixed-sigma uncertainty is report-only
+and the first prototype does not reward uncertainty or subtract it from privacy pressure. Claims
+that `K_hat` or its interval is meaningful require a separate distributional-audit gate.
 
 ### Explicit additive lambda controller
 
@@ -632,12 +653,38 @@ Train the privacy projection and head before policy optimization. Split by compl
 random action, so validation measures transfer to unseen source/candidate lattices. KEEP and
 placeholder endpoints are excluded from learned-head metrics because their scores are fixed.
 
-The head must beat all of:
+Train with AdamW at learning rate `3e-4`, weight decay `0.01`, gradient clipping `1.0`, and at most
+500 updates. Evaluate every 10 updates with patience 10 and minimum improvement `1e-3`. Select each
+seed lexicographically by profile-macro calibration error, within-menu ordering, then absolute
+log-count error. Do not select on NLL.
 
-- authored-position-only prediction;
-- action-mode and runtime-type prediction;
-- stable profile/action memorization;
-- candidate-only encoding without the source surface.
+The candidate-only arm is the competitive baseline. Every neural diagnostic arm passes through a
+fixed non-trainable projection to the semantic head width and then uses the same trainable head.
+Reports include both the shared-head trainable count and each arm's native linear-head count; they
+never repeat features or pad trainable parameters. The semantic arm must show paired
+profile-bootstrap improvement on at least one of profile-relative calibration or within-menu
+ordering and be non-inferior within the preregistered margin on the other. Other references are:
+
+- authored-position plus mode/type as an oracle ceiling with a non-inferiority margin, never an
+  ordering target that must be strictly beaten;
+- action-mode and runtime-type prediction as a sanity floor;
+- train-profile mean prediction as a sanity floor.
+
+The blocking policy-fitness metrics are profile-relative calibration, within-menu ordering,
+selected-action regret, and lexical/semantic counterexamples. Counterexamples report `N/A` until
+their set exists. NLL, interval coverage, `sigma_fixed`, and absolute log-count error are
+report-only; count and interval claims require the separate distributional-audit gate.
+
+Ordering and Spearman assign predicted log-count differences within `1e-6` to the same tie group.
+Pairwise accuracy gives a predicted tie `0.5` credit and reports its rate separately. Promotion
+requires at least three preregistered seeds on one frozen profile split. A one-seed artifact is an
+iteration checkpoint with `NEEDS_MULTI_SEED_EVIDENCE`; it cannot produce controller `PASS`.
+
+The `ranker-v2-semantic-privacy-v2` checkpoint binds the v2 metric and diagnostic hashes, run
+protocol, seed count, counterexample-set hash, and promotion verdict. Policy and hybrid loaders
+require `run_protocol=promotion`, at least three seeds, a counterexample hash, and verdict
+`PROMOTE`. An explicit development-only CLI override may admit another verdict, but it never admits
+a count-basis checkpoint.
 
 ### Utility-only initialization
 
@@ -775,13 +822,15 @@ calibration, or lexical-counterexample gates.
 
 ## Prototype decision rule
 
-Proceed to hybrid RL only if the semantic privacy head demonstrates profile-held-out signal beyond
-position, type, candidate-only, and identity baselines. Prefer the semantic prototype when its
-log-count distribution, within-profile ordering, and profile-relative scores generalize to unseen
-profiles and the combined policy passes shortcut and lambda-zero gates. Fall back to strict
+Proceed to hybrid RL only if the semantic privacy head demonstrates profile-held-out controller
+signal beyond the candidate-only competitive baseline and the sanity floors. Prefer the semantic
+prototype when its within-profile ordering, profile-relative scores, selected-action regret, and
+lexical counterexamples generalize to unseen profiles and the combined policy passes shortcut and
+lambda-zero gates. Fall back to strict
 type-normalized direct-count factorization when exact count reliability is required or semantic
 privacy prediction does not generalize.
 
-**Crux.** Ranker v2 first predicts a log-count distribution from how the candidate abstracts the
-source, converts that prediction into profile-relative privacy progress, and applies lambda through
-a transparent controller; strict type-normalized grounded counts remain the auditable fallback.
+**Crux.** Ranker v2 first predicts a standardized log-count mean from how the candidate abstracts
+the source, converts that prediction into profile-relative privacy progress, and applies lambda
+through a transparent controller; strict type-normalized grounded counts remain the auditable
+fallback.

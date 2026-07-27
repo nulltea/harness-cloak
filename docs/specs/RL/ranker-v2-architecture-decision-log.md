@@ -2,7 +2,7 @@
 type: reference
 status: partial
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-07-23
 tags: [rl, ranker, model-architecture, decision-log, shortcut-learning,
        semantic-utility, count-shaping, lambda-conditioning, context-injection,
        attention, state-aliasing, encoder-selection, candidate-pair-encoding,
@@ -725,3 +725,60 @@ planning is empirically load-bearing.
 **Crux.** Store selected semantic actions explicitly and let each candidate retrieve what matters.
 If that does not beat no history on real multi-decision utility, use no history rather than a more
 opaque sequence model.
+
+## Privacy pretraining uses a fixed-sigma standardized mean
+
+**Decision.** Replace the primary heteroscedastic log-count head with a deterministic mean head on
+train-standardized log counts. Normalize the type, source, candidate, and Hadamard relation blocks
+with train-only statistics, remove the redundant candidate-minus-source block, and begin with one
+linear output. Estimate a single post-hoc dev-residual scale clamped to `[0.3, 3.0]`; learned sigma
+is an ablation only.
+
+Train complete profiles with equal profile weight using standardized SmoothL1 plus profile-relative
+Huber at weight `1.0`. Aggregate decisions before profiles so training and evaluation weight menus
+identically. Ranking is off by default. Its registered ablation uses weight `0.05` and bounded
+regression of pair differences, not sign-only logistic separation. Neural diagnostic arms use a
+fixed non-trainable projection to one shared trainable head and report their native parameter
+counts; repeated-feature parameter matching is rejected.
+
+**Evidence.** The previous head reached converged within-menu ordering while reporting held-out NLL
+`17.6`, consistent with variance overconfidence rather than absent mean signal. Its promotion gate
+was impossible because semantic ordering had to strictly exceed an authored-position oracle at
+`1.0`. The advertised matched comparison also used approximately `1.05M` semantic parameters
+against approximately `263K` candidate-only parameters.
+
+**Gate consequence.** Profile-relative calibration and within-menu ordering are the primary
+controller metrics; selected-action regret and lexical/semantic counterexamples are also blocking.
+Candidate-only is the competitive baseline. Authored position is an oracle-ceiling reference with
+a non-inferiority margin, while mode/type-only and train-profile mean remain sanity floors. NLL,
+coverage, and fixed sigma are report-only for policy fitness. Treating predicted counts or
+intervals as audit claims requires a separate distributional-audit gate.
+
+Promotion uses paired per-profile deltas aggregated across at least three preregistered seeds. A
+95% bootstrap interval must support improvement on one primary metric while the other remains
+inside its preregistered non-inferiority margin. Calibration and selected-regret margins are
+distinct because the former measures a continuous controller-score error while the latter is a
+direct action-selection consequence. Predicted log-count differences within `1e-6` are ties.
+
+The incompatible artifact schema is versioned
+`ranker-v2-semantic-privacy-v2`/`ranker-v2-semantic-privacy-metrics-v2`/
+`ranker-v2-semantic-privacy-diagnostic-v2`. Its checkpoint binds the run protocol, seed count,
+metric and diagnostic hashes, counterexample-set hash, and promotion verdict. Policy admission is
+fail-closed on all non-promotion and count-basis checkpoints; an explicit development override
+relaxes only the promotion-evidence requirement.
+
+**Rejected: retain blocking NLL.** Sigma is not consumed by the controller, so variance calibration
+cannot veto a controller whose held-out profile-relative means are fit for purpose. It remains
+visible and can block distributional claims separately.
+
+**Rejected: unbounded logistic rank loss.** A sign-only objective keeps increasing unequal
+separation after the correct ordering is achieved and can distort calibrated log-count
+differences. Bounded difference regression has a finite target.
+
+**Rejected: learned heteroscedastic sigma at this data volume.** The available profile count is too
+small to distinguish transferable aleatoric structure from train-profile confidence. Post-hoc
+residual scale is the narrower prototype; grouped or conformal uncertainty remains future audit
+work.
+
+**Crux.** Fit the controller input directly with a small profile-balanced mean head, and quarantine
+uncertainty claims behind their own audit gate.

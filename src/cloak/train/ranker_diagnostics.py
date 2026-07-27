@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import math
+import random
 from collections import Counter, defaultdict
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
@@ -26,7 +27,16 @@ DIAGNOSTIC_VERSION = "ranker-v2-diagnostics-v1"
 SPIKE_VERSION = "ranker-v2-diagnostic-spike-v1"
 THRESHOLD_RULES_VERSION = "ranker-v2-threshold-rules-v1"
 THRESHOLD_MANIFEST_VERSION = "ranker-v2-threshold-manifest-v1"
-PRIVACY_DIAGNOSTIC_VERSION = "ranker-v2-semantic-privacy-diagnostic-v1"
+PRIVACY_DIAGNOSTIC_VERSION = "ranker-v2-semantic-privacy-diagnostic-v2"
+PRIVACY_BOOTSTRAP_SEED = 1729
+PRIVACY_BOOTSTRAP_SAMPLES = 2000
+PRIVACY_MARGINS = {
+    "candidate_calibration": 0.01,
+    "candidate_ordering": 0.01,
+    "candidate_regret": 0.01,
+    "authored_calibration": 0.05,
+    "authored_regret": 0.01,
+}
 
 _EMPIRICAL_FIELDS = (
     "feasibility_gates.min_distinct_points_per_document",
@@ -907,8 +917,9 @@ def build_privacy_diagnostic_manifest(
     *,
     split_manifest_hash: str,
     metric_report_hash: str,
+    counterexample_report: Mapping | None = None,
 ) -> dict[str, Any]:
-    """Freeze profile-held-out relative promotion against every required baseline."""
+    """Build profile-paired controller gates and a separate distributional audit."""
     if not seed_reports:
         raise ValueError("privacy diagnostics require seed reports")
     if not split_manifest_hash or not metric_report_hash:
@@ -917,6 +928,17 @@ def build_privacy_diagnostic_manifest(
     seed_verdicts = []
     frozen_reports = []
     expected_baselines = set(REQUIRED_BASELINES)
+
+    def finite(metric: str, values: Mapping) -> float | None:
+        value = values.get(metric)
+        if (
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(float(value))
+        ):
+            return None
+        return float(value)
+
     for report in seed_reports:
         if report.get("profile_held_out") is not True:
             raise ValueError("privacy diagnostics require profile-held-out reports")
@@ -935,7 +957,10 @@ def build_privacy_diagnostic_manifest(
             for name, metrics in {"semantic": semantic, **baselines}.items():
                 if not isinstance(metrics, Mapping):
                     raise ValueError(f"privacy metrics are invalid for {name}")
-                for stratum in ("overall", "by_runtime_type", "by_grounding_status"):
+                for stratum in (
+                    "overall", "by_runtime_type", "by_grounding_status",
+                    "by_profile",
+                ):
                     if not isinstance(metrics.get(stratum), Mapping) or not metrics[stratum]:
                         raise ValueError(
                             f"privacy metrics omit {stratum} for {split_name}:{name}"
@@ -945,48 +970,302 @@ def build_privacy_diagnostic_manifest(
         semantic_overall = test_report["semantic"]["overall"]
         comparisons = {}
 
-        def better(metric: str, baseline: Mapping, *, higher: bool) -> bool:
-            semantic_value = semantic_overall.get(metric)
-            baseline_value = baseline.get(metric)
-            if (
-                isinstance(semantic_value, bool)
-                or isinstance(baseline_value, bool)
-                or not isinstance(semantic_value, int | float)
-                or not isinstance(baseline_value, int | float)
-                or not math.isfinite(float(semantic_value))
-                or not math.isfinite(float(baseline_value))
-            ):
-                return False
-            return (
-                semantic_value > baseline_value
-                if higher else semantic_value < baseline_value
-            )
+        candidate = test_report["baselines"]["candidate_only"]["overall"]
+        semantic_calibration = finite(
+            "profile_relative_calibration_error", semantic_overall
+        )
+        semantic_ordering = finite(
+            "within_menu_pairwise_accuracy", semantic_overall
+        )
+        semantic_regret = finite("selected_action_regret", semantic_overall)
+        candidate_calibration = finite(
+            "profile_relative_calibration_error", candidate
+        )
+        candidate_ordering = finite("within_menu_pairwise_accuracy", candidate)
+        candidate_regret = finite("selected_action_regret", candidate)
+        candidate_metrics = {
+            "profile_relative_calibration_error": (
+                semantic_calibration is not None
+                and candidate_calibration is not None
+                and semantic_calibration
+                <= candidate_calibration + PRIVACY_MARGINS["candidate_calibration"]
+            ),
+            "within_menu_pairwise_accuracy": (
+                semantic_ordering is not None
+                and candidate_ordering is not None
+                and semantic_ordering
+                >= candidate_ordering - PRIVACY_MARGINS["candidate_ordering"]
+            ),
+            "selected_action_regret": (
+                semantic_regret is not None
+                and candidate_regret is not None
+                and semantic_regret
+                <= candidate_regret + PRIVACY_MARGINS["candidate_regret"]
+            ),
+        }
+        improves_candidate = (
+            semantic_calibration is not None
+            and candidate_calibration is not None
+            and semantic_calibration < candidate_calibration
+        ) or (
+            semantic_ordering is not None
+            and candidate_ordering is not None
+            and semantic_ordering > candidate_ordering
+        )
+        comparisons["candidate_only"] = {
+            "role": "competitive_baseline",
+            "blocking_metrics": candidate_metrics,
+            "improves_at_least_one_primary": improves_candidate,
+            "verdict": "REPORT_ONLY_POINT_ESTIMATE",
+        }
 
-        for baseline_name, baseline_report in test_report["baselines"].items():
-            baseline_overall = baseline_report["overall"]
-            passes = {
-                "nll": better("nll", baseline_overall, higher=False),
-                "within_menu_pairwise_accuracy": better(
-                    "within_menu_pairwise_accuracy", baseline_overall, higher=True
+        authored = test_report["baselines"][
+            "authored_position_mode_type"
+        ]["overall"]
+        authored_calibration = finite(
+            "profile_relative_calibration_error", authored
+        )
+        authored_regret = finite("selected_action_regret", authored)
+        authored_metrics = {
+            "profile_relative_calibration_error": (
+                semantic_calibration is not None
+                and authored_calibration is not None
+                and semantic_calibration
+                <= authored_calibration
+                + PRIVACY_MARGINS["authored_calibration"]
+            ),
+            "selected_action_regret": (
+                semantic_regret is not None
+                and authored_regret is not None
+                and semantic_regret
+                <= authored_regret + PRIVACY_MARGINS["authored_regret"]
+            ),
+        }
+        comparisons["authored_position_mode_type"] = {
+            "role": "oracle_ceiling",
+            "noninferiority_margins": {
+                "profile_relative_calibration_error": PRIVACY_MARGINS[
+                    "authored_calibration"
+                ],
+                "selected_action_regret": PRIVACY_MARGINS["authored_regret"],
+            },
+            "blocking_metrics": authored_metrics,
+            "ordering": "reference_only",
+            "verdict": "PASS" if all(authored_metrics.values()) else "FAIL",
+        }
+
+        for baseline_name in ("mode_type_only", "train_profile_mean"):
+            baseline = test_report["baselines"][baseline_name]["overall"]
+            baseline_calibration = finite(
+                "profile_relative_calibration_error", baseline
+            )
+            baseline_regret = finite("selected_action_regret", baseline)
+            sanity_metrics = {
+                "profile_relative_calibration_error": (
+                    semantic_calibration is not None
+                    and baseline_calibration is not None
+                    and semantic_calibration < baseline_calibration
                 ),
-                "profile_relative_calibration_error": better(
-                    "profile_relative_calibration_error", baseline_overall, higher=False
+                "selected_action_regret": (
+                    semantic_regret is not None
+                    and baseline_regret is not None
+                    and semantic_regret < baseline_regret
                 ),
             }
             comparisons[baseline_name] = {
-                "metrics": passes,
-                "verdict": "PASS" if all(passes.values()) else "FAIL",
+                "role": "sanity_floor",
+                "blocking_metrics": sanity_metrics,
+                "verdict": "PASS" if all(sanity_metrics.values()) else "FAIL",
             }
         seed_verdicts.append({
             "seed": report.get("seed"),
             "comparisons": comparisons,
-            "verdict": (
-                "PASS"
-                if all(row["verdict"] == "PASS" for row in comparisons.values())
-                else "FAIL"
-            ),
+            "verdict": "REPORT_ONLY_POINT_ESTIMATE",
         })
         frozen_reports.append(deepcopy(dict(report)))
+
+    def profile_improvements(
+        baseline_name: str, metric: str, *, higher_is_better: bool
+    ) -> dict[str, float] | None:
+        per_profile: dict[str, list[float]] = defaultdict(list)
+        expected_profiles: set[str] | None = None
+        for report in seed_reports:
+            test = report["splits"]["test"]
+            semantic = test["semantic"]["by_profile"]
+            baseline = test["baselines"][baseline_name]["by_profile"]
+            if set(semantic) != set(baseline):
+                return None
+            if expected_profiles is None:
+                expected_profiles = set(semantic)
+            elif set(semantic) != expected_profiles:
+                return None
+            for profile_id in semantic:
+                semantic_value = finite(metric, semantic[profile_id])
+                baseline_value = finite(metric, baseline[profile_id])
+                if semantic_value is None or baseline_value is None:
+                    return None
+                improvement = (
+                    semantic_value - baseline_value
+                    if higher_is_better
+                    else baseline_value - semantic_value
+                )
+                per_profile[profile_id].append(improvement)
+        return {
+            profile_id: sum(values) / len(values)
+            for profile_id, values in sorted(per_profile.items())
+        }
+
+    def paired_bootstrap(values: Mapping[str, float]) -> dict[str, Any]:
+        ordered = tuple(values[key] for key in sorted(values))
+        if not ordered:
+            raise ValueError("privacy bootstrap requires profile deltas")
+        generator = random.Random(PRIVACY_BOOTSTRAP_SEED)
+        estimates = []
+        for _ in range(PRIVACY_BOOTSTRAP_SAMPLES):
+            estimates.append(sum(
+                ordered[generator.randrange(len(ordered))]
+                for _ in range(len(ordered))
+            ) / len(ordered))
+        estimates.sort()
+        lower = estimates[int(0.025 * (len(estimates) - 1))]
+        upper = estimates[int(0.975 * (len(estimates) - 1))]
+        return {
+            "mean": sum(ordered) / len(ordered),
+            "ci_95": [lower, upper],
+        }
+
+    paired_values = {
+        "profile_relative_calibration_improvement": profile_improvements(
+            "candidate_only",
+            "profile_relative_calibration_error",
+            higher_is_better=False,
+        ),
+        "within_menu_ordering_improvement": profile_improvements(
+            "candidate_only",
+            "within_menu_pairwise_accuracy",
+            higher_is_better=True,
+        ),
+        "selected_action_regret_improvement": profile_improvements(
+            "candidate_only",
+            "selected_action_regret",
+            higher_is_better=False,
+        ),
+        "authored_calibration_improvement": profile_improvements(
+            "authored_position_mode_type",
+            "profile_relative_calibration_error",
+            higher_is_better=False,
+        ),
+        "authored_regret_improvement": profile_improvements(
+            "authored_position_mode_type",
+            "selected_action_regret",
+            higher_is_better=False,
+        ),
+    }
+    overall_metrics_valid = all(
+        finite(metric, report["splits"]["test"]["semantic"]["overall"]) is not None
+        for report in seed_reports
+        for metric in (
+            "profile_relative_calibration_error",
+            "within_menu_pairwise_accuracy",
+            "selected_action_regret",
+        )
+    )
+    paired_valid = all(value is not None for value in paired_values.values())
+    paired = (
+        {
+            name: paired_bootstrap(value)
+            for name, value in paired_values.items()
+            if value is not None
+        }
+        if paired_valid else {}
+    )
+    profile_count = (
+        len(next(iter(paired_values.values())))
+        if paired_valid else 0
+    )
+    if paired_valid:
+        calibration = paired["profile_relative_calibration_improvement"]
+        ordering = paired["within_menu_ordering_improvement"]
+        regret = paired["selected_action_regret_improvement"]
+        authored_calibration = paired["authored_calibration_improvement"]
+        authored_regret = paired["authored_regret_improvement"]
+        primary_pass = (
+            calibration["ci_95"][0] > 0
+            and ordering["ci_95"][0]
+            >= -PRIVACY_MARGINS["candidate_ordering"]
+        ) or (
+            ordering["ci_95"][0] > 0
+            and calibration["ci_95"][0]
+            >= -PRIVACY_MARGINS["candidate_calibration"]
+        )
+        regret_pass = (
+            regret["ci_95"][0] >= -PRIVACY_MARGINS["candidate_regret"]
+        )
+        authored_pass = (
+            authored_calibration["ci_95"][0]
+            >= -PRIVACY_MARGINS["authored_calibration"]
+            and authored_regret["ci_95"][0]
+            >= -PRIVACY_MARGINS["authored_regret"]
+        )
+    else:
+        primary_pass = regret_pass = authored_pass = False
+
+    sanity_pass = all(
+        comparison["verdict"] == "PASS"
+        for seed_row in seed_verdicts
+        for name, comparison in seed_row["comparisons"].items()
+        if name in {"mode_type_only", "train_profile_mean"}
+    )
+    controller_pass = (
+        overall_metrics_valid
+        and paired_valid
+        and primary_pass
+        and regret_pass
+        and authored_pass
+        and sanity_pass
+    )
+    if not overall_metrics_valid or not paired_valid:
+        controller_verdict = "FAIL"
+    elif len(seed_reports) < 3:
+        controller_verdict = "NEEDS_MULTI_SEED_EVIDENCE"
+    elif not controller_pass:
+        controller_verdict = "FAIL"
+    else:
+        controller_verdict = "PASS"
+
+    if counterexample_report is None:
+        counterexample = {
+            "status": "N/A",
+            "reason": "counterexample_set_absent",
+            "artifact_hash": None,
+        }
+    else:
+        counterexample_hash = counterexample_report.get("artifact_hash")
+        counterexample_verdict = counterexample_report.get("verdict")
+        if (
+            not isinstance(counterexample_hash, str)
+            or not counterexample_hash
+            or counterexample_verdict not in {"PASS", "FAIL"}
+        ):
+            raise ValueError("privacy counterexample report is invalid")
+        counterexample = {
+            "status": counterexample_verdict,
+            "artifact_hash": counterexample_hash,
+        }
+
+    counterexample_pass = counterexample["status"] == "PASS"
+    if controller_verdict == "FAIL" or counterexample["status"] == "FAIL":
+        promotion_verdict = "FAIL"
+    elif controller_verdict == "NEEDS_MULTI_SEED_EVIDENCE":
+        promotion_verdict = (
+            "NEEDS_MULTI_SEED_EVIDENCE"
+            if counterexample_pass
+            else "NEEDS_MULTI_SEED_AND_COUNTEREXAMPLE_SET"
+        )
+    elif not counterexample_pass:
+        promotion_verdict = "NEEDS_COUNTEREXAMPLE_SET"
+    else:
+        promotion_verdict = "PROMOTE"
 
     manifest = {
         "artifact_version": PRIVACY_DIAGNOSTIC_VERSION,
@@ -995,14 +1274,39 @@ def build_privacy_diagnostic_manifest(
         "split_manifest_hash": split_manifest_hash,
         "metric_report_hash": metric_report_hash,
         "required_baselines": list(REQUIRED_BASELINES),
+        "seed_count": len(seed_reports),
+        "preregistered_margins": dict(PRIVACY_MARGINS),
+        "blocking_metrics": [
+            "profile_relative_calibration_error",
+            "within_menu_pairwise_accuracy",
+            "selected_action_regret",
+            "lexical_semantic_counterexamples",
+        ],
+        "report_only_metrics": [
+            "nll",
+            "interval_95_coverage",
+            "sigma_fixed",
+            "median_absolute_log_error",
+        ],
         "seed_reports": frozen_reports,
+        "policy_fitness_gate": {
+            "controller_metrics_verdict": controller_verdict,
+            "candidate_only_paired_bootstrap": {
+                "bootstrap_seed": PRIVACY_BOOTSTRAP_SEED,
+                "bootstrap_samples": PRIVACY_BOOTSTRAP_SAMPLES,
+                "profile_count": profile_count,
+                **paired,
+            },
+            "lexical_counterexamples": counterexample,
+        },
+        "distributional_audit_gate": {
+            "metrics": ["nll", "interval_95_coverage", "sigma_fixed"],
+            "verdict": "REPORT_ONLY",
+            "count_and_interval_claims_allowed": False,
+        },
         "relative_promotion": {
             "seed_verdicts": seed_verdicts,
-            "verdict": (
-                "PASS"
-                if all(row["verdict"] == "PASS" for row in seed_verdicts)
-                else "FAIL"
-            ),
+            "verdict": promotion_verdict,
         },
     }
     manifest["artifact_hash"] = stable_hash(manifest)
