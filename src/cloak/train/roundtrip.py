@@ -6,7 +6,7 @@ pinned model, temperature 0, single-flight generation, and content-addressed dis
 (CLOAK_LLM_CACHE) — the determinism is load-bearing (cache = reward memoization = ExIt
 pool; spec §Determinism under concurrency).
 
-THE reward pin (changing any re-gates): RT_MODEL = "gemma 4 (E4B)" served at
+THE reward pin (changing any re-gates): RT_MODEL = "medgemma-4b-it" served at
 RT_BASE_URL = "http://localhost:8060/v1", temperature 0, max_tokens 1024, non-thinking.
 The extractor is part of the reward pin: legacy rewards are pinned to the `invert` cascade,
 frozen-extractor rewards are keyed by `extractor_version`, and cached rewards are valid only
@@ -44,7 +44,10 @@ from cloak.train.utility_cache import (
     utility_binding,
 )
 
-RT_MODEL = "gemma 4 (E4B)"   # THE pin (spec components table); changing it re-gates.
+# User re-pin 2026-07-23: medgemma-4b-it replaces gemma 4 (E4B) as the remote model —
+# one clinical-tuned model serves both rewrite and reader phases; utility cache was
+# empty at switch time, so no cached results were invalidated.
+RT_MODEL = "medgemma-4b-it"   # THE pin (spec components table); changing it re-gates.
 RT_BASE_URL = "http://localhost:8060/v1"   # THE endpoint pin; part of the reward pin.
 # User decision 2026-07-05 (results/thinking_mode_probe.json): gemma honors
 # enable_thinking:false (clean non-thinking output, all probe facts restated in ~150 tok);
@@ -70,7 +73,10 @@ def _remote():
         _client = LLMClient(RT_MODEL, base_url=RT_BASE_URL, temperature=0.0,
                             max_tokens=MAX_TOKENS,
                             extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-                            single_flight=True)
+                            # Request scope: distinct rewrites use the served -np slots
+                            # concurrently; identical requests still dedupe. The pin
+                            # below stays single_flight=True (semantics unchanged).
+                            single_flight=True, single_flight_scope="request")
     return _client
 
 
