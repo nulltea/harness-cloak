@@ -2646,3 +2646,60 @@ def test_scope_demotion_rejects_menu_without_unique_keep():
             (broken,), SimpleNamespace(has_targets=lambda d, a: False),
             scope_types=frozenset({"TYPE"}),
         )
+
+
+def test_zero_signal_documents_are_dropped_from_training():
+    import train_interactive_ranker
+
+    documents = (_document(), replace(_document(), doc_id="fixture/nolink"))
+    artifact = {"assertions": {
+        "a1": {"doc_id": "fixture/doc", "status": "accepted",
+               "answer_target": {"kind": "linked_decision", "decision_id": "alpha"}},
+        "a2": {"doc_id": "fixture/nolink", "status": "accepted",
+               "answer_target": {"kind": "literal", "expected_values": ["x"]}},
+        "a3": {"doc_id": "fixture/nolink", "status": "rejected",
+               "answer_target": {"kind": "linked_decision", "decision_id": "beta"}},
+    }}
+    retained, dropped = train_interactive_ranker._drop_zero_signal_documents(
+        documents, artifact
+    )
+    assert [d.doc_id for d in retained] == ["fixture/doc"]
+    assert dropped == ("fixture/nolink",)
+
+    with pytest.raises(ValueError, match="zero policy-linked"):
+        train_interactive_ranker._drop_zero_signal_documents(
+            (documents[1],), artifact
+        )
+
+
+def test_assembly_alias_group_fills_restore_instead_of_retaining():
+    from cloak.ranker.environment import assemble_action_vector
+    from cloak.reward.extract import invert
+
+    gamma = _decision("gamma", ("o-g1", "o-g2"))
+    document = RankerDocument(
+        doc_id="fixture/alias",
+        corpus="fixture",
+        text="Foo met Bar.",
+        occurrences=(
+            MappingProxyType({
+                "occurrence_id": "o-g1", "decision_id": "gamma",
+                "start": 0, "end": 3, "surface": "Foo", "controlled": True,
+            }),
+            MappingProxyType({
+                "occurrence_id": "o-g2", "decision_id": "gamma",
+                "start": 8, "end": 11, "surface": "Bar", "controlled": True,
+            }),
+        ),
+        policy_decisions=(gamma,),
+        fixed_decisions=(),
+    )
+    doc_p, replacements = assemble_action_vector(document, {"gamma": "gamma-level"})
+    assert all("restore_policy" not in row for row in replacements)
+
+    # Every echo restores to the group's first (canonical) alias surface;
+    # case-adjusted duplicates may log gen_absent but no fill text survives.
+    out_final, stats = invert(doc_p, replacements)
+    assert stats["gen_retained"] == 0
+    assert "fill" not in out_final.lower()
+    assert "Foo" in out_final

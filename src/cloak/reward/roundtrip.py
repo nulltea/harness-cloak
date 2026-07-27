@@ -51,7 +51,10 @@ MAX_TOKENS = 1024   # raised from 512 (2026-07-05, pre-gate calibration): full A
                     # killing ceiling-anchor validation on facts from later note sections.
                     # gemma finishes real notes in ~400-700 tok; 1024 is headroom, not a target.
 
-UTILITY_EXECUTION_CONTRACT_VERSION = "ranker-v2-utility-execution-v1"
+# v2 (2026-07-27): alias-group fills restore in document order instead of the
+# retain-generalization block — out_final changes under identical render keys,
+# so the contract version carries the invalidation (pre-RL audit R2 follow-up).
+UTILITY_EXECUTION_CONTRACT_VERSION = "ranker-v2-utility-execution-v2"
 TASK_PROMPT_PIN_VERSION = "roundtrip-task-prompt-v1"
 
 _client = None

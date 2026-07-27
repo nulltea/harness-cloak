@@ -594,20 +594,12 @@ def assemble_action_vector(
             "type": runtime_types[str(decision_id)],
         })
 
-    # One shared fill covering distinct surfaces within a decision has no unambiguous
-    # inverse; extraction must retain the generalization (legacy rule, train_ranker.py).
-    shared_fills: dict[tuple[str, str], list[dict]] = {}
-    for row in replacements:
-        if row["action"] != "generalize":
-            continue
-        shared_fills.setdefault(
-            (row["decision_id"], row["replacement"].casefold()), []
-        ).append(row)
-    for rows in shared_fills.values():
-        if len({row["surface"].casefold() for row in rows}) > 1:
-            for row in rows:
-                row["restore_policy"] = "retain_generalization"
-
+    # Distinct surfaces sharing one fill inside a decision are ALIASES of one
+    # canonical entity (cross-decision fill collisions raise above), so restoring
+    # an echoed fill to any of its surfaces is entity-correct: extraction
+    # restores every echo to the group's first surface. The legacy retain-generalization
+    # rule treated this as unrecoverable ambiguity and blocked ~6% of restorations
+    # (pre-RL audit R2 follow-up, 2026-07-27).
     ordered = sorted(replacements, key=lambda row: (row["start"], row["end"]))
     for left, right in zip(ordered, ordered[1:]):
         if right["start"] < left["end"]:

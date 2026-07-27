@@ -355,6 +355,28 @@ def _demote_out_of_scope_decisions(
     return tuple(updated), demoted
 
 
+def _drop_zero_signal_documents(documents, utility_artifact):
+    """Drop documents whose utility is constant for every action vector.
+
+    A document with zero policy-linked assertions (no linked_decision /
+    linked_decision_set answer targets) has identically-zero utility advantage:
+    rollouts there are pure noise (pre-RL audit R1,
+    docs/issues/2026-07-27-pre-rl-reward-audit.md).
+    """
+    linked: set[str] = set()
+    for assertion in utility_artifact.get("assertions", {}).values():
+        if assertion.get("status", "accepted") != "accepted":
+            continue
+        target = assertion.get("answer_target") or {}
+        if str(target.get("kind", "")).startswith("linked"):
+            linked.add(str(assertion.get("doc_id")))
+    retained = tuple(d for d in documents if d.doc_id in linked)
+    dropped = tuple(d.doc_id for d in documents if d.doc_id not in linked)
+    if not retained:
+        raise ValueError("every selected document has zero policy-linked assertions")
+    return retained, dropped
+
+
 def _load_inputs(
     args,
 ) -> tuple[dict, tuple, dict, ProfileCountTargets, dict, UtilityCache, str]:
@@ -392,6 +414,14 @@ def _load_inputs(
     utility_artifact = _read_json(args.utility_artifact)
     if utility_artifact.get("environment_hash") != environment_hash:
         raise ValueError("utility artifact environment hash mismatch")
+    documents, dropped = _drop_zero_signal_documents(documents, utility_artifact)
+    if dropped:
+        print(
+            f"ranker signal: dropped {len(dropped)} documents with zero "
+            f"policy-linked assertions (constant utility; "
+            "docs/issues/2026-07-27-pre-rl-reward-audit.md R1): "
+            + ", ".join(sorted(dropped))
+        )
     cache = UtilityCache(args.utility_cache)
     return (
         environment_artifact,
