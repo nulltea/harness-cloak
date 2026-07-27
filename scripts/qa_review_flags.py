@@ -17,7 +17,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cloak.train.qa_builder import compute_review_flags
+from cloak.train.qa_review import compute_review_flags
 
 
 def _flags_for(artifact: dict) -> dict[str, list[dict]]:

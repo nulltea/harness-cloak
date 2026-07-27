@@ -2,14 +2,15 @@ import json
 
 import pytest
 import cloak.train.qa_builder as qa_builder
+import cloak.train.qa_review as qa_review
+import cloak.train.qa_scoring as qa_scoring
+import cloak.train.qa_teacher as qa_teacher
 
 from cloak.train.qa_builder import (
-    OpenRouterRelationTeacher,
-    compile_relational_assertions,
-    relation_context_candidates,
-    relation_evidence_windows,
-    relation_teacher_response_format,
-    relation_teacher_prompt,
+    compile_relational_assertions, relation_context_candidates, relation_evidence_windows,
+)
+from cloak.train.qa_teacher import (
+    OpenRouterRelationTeacher, relation_teacher_prompt, relation_teacher_response_format,
 )
 
 
@@ -109,7 +110,7 @@ def test_cross_clause_span_anchor_stitches_argument_clauses_and_reader_turns():
     assert "denies fever" not in quote
     assert quote == "Muscle strain was assessed.\nMeloxicam was prescribed for pain."
     assert span == (0, len(source))
-    clauses = qa_builder._source_clause_spans(source)
+    clauses = qa_teacher.source_clause_spans(source)
     assert clause_ranges == [clauses[0], clauses[2]]
     assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 2]
     assert qa_builder._relation_quote_has_lexical_cue_support(
@@ -156,8 +157,8 @@ def test_cross_clause_span_anchor_keeps_pairs_beyond_soft_global_distance():
     assert span == (0, len(source))
     assert "Unrelated clause 0" not in quote
     assert clause_ranges == [
-        qa_builder._source_clause_spans(source)[0],
-        qa_builder._source_clause_spans(source)[-1],
+        qa_teacher.source_clause_spans(source)[0],
+        qa_teacher.source_clause_spans(source)[-1],
     ]
 
 
@@ -193,8 +194,8 @@ def test_cross_clause_context_anchor_stitches_linked_and_literal_clauses():
     assert quote == "Distal phalanx fracture was assessed.\nFollow-up x-ray was ordered."
     assert span == (0, len(source))
     assert clause_ranges == [
-        qa_builder._source_clause_spans(source)[0],
-        qa_builder._source_clause_spans(source)[2],
+        qa_teacher.source_clause_spans(source)[0],
+        qa_teacher.source_clause_spans(source)[2],
     ]
     assert arguments[1]["literal"] == "Follow-up x-ray"
     assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 2]
@@ -210,8 +211,8 @@ def test_cross_clause_context_anchor_keeps_literal_beyond_soft_global_distance()
     assert span == (0, len(source))
     assert "Unrelated clause 0" not in quote
     assert clause_ranges == [
-        qa_builder._source_clause_spans(source)[0],
-        qa_builder._source_clause_spans(source)[-1],
+        qa_teacher.source_clause_spans(source)[0],
+        qa_teacher.source_clause_spans(source)[-1],
     ]
 
 
@@ -249,8 +250,8 @@ def test_plan_section_anchor_narrows_reader_turns_to_argument_clauses():
     assert span == (0, len(source))
     assert "patient denies fever" in quote  # full envelope remains source evidence
     assert clause_ranges == [
-        qa_builder._source_clause_spans(source)[0],
-        qa_builder._source_clause_spans(source)[3],
+        qa_teacher.source_clause_spans(source)[0],
+        qa_teacher.source_clause_spans(source)[3],
     ]
     assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 3]
 
@@ -291,8 +292,8 @@ def test_problem_block_anchor_narrows_reader_turns_to_argument_turns():
     ])
     assert "[patient] okay" in quote  # full envelope remains source evidence
     assert clause_ranges == [
-        qa_builder._source_clause_spans(source)[0],
-        qa_builder._source_clause_spans(source)[2],
+        qa_teacher.source_clause_spans(source)[0],
+        qa_teacher.source_clause_spans(source)[2],
     ]
     assert qa_builder._source_turns_for_ranges(source, clause_ranges) == [0, 2]
 
@@ -368,8 +369,8 @@ def test_cross_clause_context_anchor_picks_nearest_qualifying_literal_occurrence
     assert error is None and kind == "stitched_clauses"
     assert arguments[1]["start"] == first_xray
     assert clause_ranges == [
-        qa_builder._source_clause_spans(source)[0],
-        qa_builder._source_clause_spans(source)[2],
+        qa_teacher.source_clause_spans(source)[0],
+        qa_teacher.source_clause_spans(source)[2],
     ]
 
 
@@ -454,8 +455,8 @@ def test_bounded_stitched_relation_reaches_reader_gate_without_lexical_cue():
 
     assert rejected == [], rejected
     assert accepted[0]["evidence"]["source_clause_ranges"] == [
-        list(qa_builder._source_clause_spans(source)[0]),
-        list(qa_builder._source_clause_spans(source)[2]),
+        list(qa_teacher.source_clause_spans(source)[0]),
+        list(qa_teacher.source_clause_spans(source)[2]),
     ]
 
 
@@ -498,7 +499,7 @@ def test_span_span_relation_flips_orientation_answer_is_subject():
 
 
 def test_source_literal_spans_plural_fold():
-    S = qa_builder._source_literal_spans
+    S = qa_teacher.source_literal_spans
     doc = "reviewed the x-rays and ordered morning aldosterone levels today"
     assert [doc[a:b] for a, b in S(doc, "x-ray")] == ["x-rays"]                 # singular -> plural source
     assert [doc[a:b] for a, b in S(doc, "aldosterone level")] == ["aldosterone levels"]
@@ -607,7 +608,7 @@ def test_teacher_response_schema_binds_roles_and_candidate_ledger_to_inventory()
     schema = response_format["json_schema"]["schema"]
     arguments = schema["properties"]["context_relations"]["items"]["properties"]["arguments"]
     ledger = schema["properties"]["candidate_accounting"]
-    expected_labels = [row["span_label"] for row in qa_builder.relation_teacher_span_inventory(environment)]
+    expected_labels = [row["span_label"] for row in qa_teacher.relation_teacher_span_inventory(environment)]
 
     linked, context = arguments["anyOf"][0]["prefixItems"]
     assert linked["properties"]["role"]["const"] == "subject"
@@ -628,11 +629,11 @@ def test_teacher_pin_reflects_sectioned_v8_contract_and_uncapped_token_budgets()
     # explicit relations. The contract carries no completion or reasoning
     # cap; only the reasoning-trace exclusion remains, and the sectioned
     # prompt/schema (v8/r20) must repin caches.
-    assert "max_tokens" not in qa_builder.RELATION_TEACHER_GENERATION_CONFIG
-    assert qa_builder.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
-    assert qa_builder.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v21"
-    assert qa_builder.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 9
-    assert qa_builder.RELATION_TEACHER_REVISION == "qa-relation-teacher-r32"
+    assert "max_tokens" not in qa_teacher.RELATION_TEACHER_GENERATION_CONFIG
+    assert qa_teacher.RELATION_TEACHER_GENERATION_CONFIG["reasoning"] == {"exclude": True}
+    assert qa_teacher.RELATION_TEACHER_PROMPT_VERSION == "qa-relation-teacher-v21"
+    assert qa_teacher.RELATION_TEACHER_RESPONSE_SCHEMA["version"] == 9
+    assert qa_teacher.RELATION_TEACHER_REVISION == "qa-relation-teacher-r32"
 
 
 def test_prompt_worked_examples_are_source_independent_and_level_based():
@@ -819,7 +820,7 @@ def test_teacher_evidence_window_binds_arguments_to_one_exact_source_span():
     assert rejected == []
     assert accepted[0]["evidence"]["source_span"] == {
         "start": 0, "end": len(source),
-        "quote_hash": qa_builder._stable_hash(source),
+        "quote_hash": qa_scoring.stable_hash(source),
     }
 
 
@@ -890,8 +891,8 @@ def test_openrouter_teacher_retries_empty_then_reports_it_explicitly(monkeypatch
     with pytest.raises(ValueError, match="teacher_no_choices"):
         OpenRouterRelationTeacher().propose("prompt")
     # empty is retried (refresh=True) before giving up, like a throttle
-    assert len(calls) == qa_builder._TEACHER_EMPTY_RETRIES + 1
-    assert calls == [False] + [True] * qa_builder._TEACHER_EMPTY_RETRIES
+    assert len(calls) == qa_teacher._TEACHER_EMPTY_RETRIES + 1
+    assert calls == [False] + [True] * qa_teacher._TEACHER_EMPTY_RETRIES
 
 
 def test_openrouter_teacher_recovers_when_a_retry_returns_content(monkeypatch):
@@ -1266,7 +1267,7 @@ def test_multi_sentence_turn_anchors_search_cues_in_the_argument_clauses():
          source.index("anti-inflammatory medications") + len("anti-inflammatory medications")),
         (transplant_start, transplant_start + len("kidney transplant")),
     ])
-    excerpt = qa_builder._reader_excerpt(source, evidence)
+    excerpt = qa_scoring.reader_excerpt(source, evidence)
     assert "you are doing well" not in excerpt
     assert "let us move on" not in excerpt
 
@@ -1283,7 +1284,7 @@ def test_turn_excerpt_narrows_a_long_speaker_turn_to_pinned_clauses():
         source,
         [(arthritis, arthritis + len("arthritis")), (meloxicam, meloxicam + len("meloxicam"))],
     )
-    excerpt = qa_builder._turn_excerpt(source, [0], window=0, core_clauses=clauses)
+    excerpt = qa_scoring._turn_excerpt(source, [0], window=0, core_clauses=clauses)
 
     assert "arthritis is active" in excerpt
     assert "meloxicam was prescribed" in excerpt
@@ -1459,8 +1460,8 @@ def test_multiturn_span_pair_grounds_within_one_problem_block():
     assert accepted[0]["occurrence_ids"] == ["arthritis", "panel"]
     assert accepted[0]["evidence"]["reader_turns"] == [2, 4]
     assert accepted[0]["evidence"]["source_clause_ranges"] == [
-        list(qa_builder._source_clause_spans(source)[2]),
-        list(qa_builder._source_clause_spans(source)[4]),
+        list(qa_teacher.source_clause_spans(source)[2]),
+        list(qa_teacher.source_clause_spans(source)[4]),
     ]
 
 
@@ -1940,21 +1941,21 @@ def test_linked_answer_score_rewards_keep_and_supported_generalization_only():
     chain = _transplant_chain()
     req = "solid organ transplant"
     # KEEP (source + alias) and the exact supported level all get full credit.
-    assert qa_builder._linked_answer_score("kidney transplant", chain, req) == 1.0
-    assert qa_builder._linked_answer_score("renal transplant", chain, req) == 1.0
-    assert qa_builder._linked_answer_score("a solid organ transplant", chain, req) == 1.0
+    assert qa_scoring._linked_answer_score("kidney transplant", chain, req) == 1.0
+    assert qa_scoring._linked_answer_score("renal transplant", chain, req) == 1.0
+    assert qa_scoring._linked_answer_score("a solid organ transplant", chain, req) == 1.0
     # coarser-than-required and placeholder/NONE get nothing.
-    assert qa_builder._linked_answer_score("medical condition", chain, req) == 0.0
-    assert qa_builder._linked_answer_score("NONE", chain, req) == 0.0
-    assert qa_builder._linked_answer_score("", chain, req) == 0.0
+    assert qa_scoring._linked_answer_score("medical condition", chain, req) == 0.0
+    assert qa_scoring._linked_answer_score("NONE", chain, req) == 0.0
+    assert qa_scoring._linked_answer_score("", chain, req) == 0.0
 
 
 def test_linked_answer_resolution_is_decision_scoped():
     # A phrase that is not in this decision's chain does not resolve, even if it
     # would be valid for some other decision.
     chain = _transplant_chain()
-    assert qa_builder._resolve_semantic_node(chain, "hypothyroidism") is None
-    assert qa_builder._resolve_semantic_node(chain, "kidney transplant")["node"] == "keep"
+    assert qa_scoring._resolve_semantic_node(chain, "hypothyroidism") is None
+    assert qa_scoring._resolve_semantic_node(chain, "kidney transplant")["node"] == "keep"
 
 
 def test_linked_teacher_answers_do_not_override_canonical_gold():
@@ -2115,7 +2116,7 @@ def test_ledger_supports_duplicate_mention_and_wire_schema_requires_reasons():
     validated = qa_builder._validated_candidate_accounting(accounting, environment, source)
     assert [row["state"] for row in validated] == ["emitted", "duplicate_mention"]
 
-    ledger_item = qa_builder.RELATION_TEACHER_RESPONSE_FORMAT[
+    ledger_item = qa_teacher.RELATION_TEACHER_RESPONSE_FORMAT[
         "json_schema"]["schema"]["properties"]["candidate_accounting"]["items"]
     assert "duplicate_mention" in ledger_item["properties"]["state"]["enum"]
     assert ledger_item["properties"]["reason"]["minLength"] == 1
@@ -2130,7 +2131,7 @@ def test_ledger_supports_duplicate_mention_and_wire_schema_requires_reasons():
 def test_candidate_accounting_must_cover_exactly_the_prompted_inventory():
     source = "Hypothyroidism is treated with Synthroid. Order thyroid labs."
     environment = _environment(source)
-    candidate_ids = [row["span_label"] for row in qa_builder.relation_teacher_span_inventory(environment)]
+    candidate_ids = [row["span_label"] for row in qa_teacher.relation_teacher_span_inventory(environment)]
     accounting = [
         {"candidate_label": candidate_id, "state": "exhausted_no_relation", "reason": "No explicit relation."}
         for candidate_id in candidate_ids
@@ -2227,11 +2228,11 @@ def test_v4_compiler_uses_a_bounded_plan_section_anchor_for_treatment():
     accepted, rejected = compile_relational_assertions("d2", source, environment, [proposal])
 
     assert rejected == []
-    assert accepted[0]["evidence"]["source_span"]["quote_hash"] == qa_builder._stable_hash(source)
+    assert accepted[0]["evidence"]["source_span"]["quote_hash"] == qa_scoring.stable_hash(source)
     assert accepted[0]["evidence"]["reader_turns"] == [0, 3]
     assert accepted[0]["evidence"]["source_clause_ranges"] == [
-        list(qa_builder._source_clause_spans(source)[0]),
-        list(qa_builder._source_clause_spans(source)[3]),
+        list(qa_teacher.source_clause_spans(source)[0]),
+        list(qa_teacher.source_clause_spans(source)[3]),
     ]
 
 
@@ -2267,8 +2268,8 @@ def test_lattice_level_suspect_probe_flags_coarser_readable(monkeypatch):
     def reader(questions, context, clauses=None):
         return ["opioid analgesic" if "musculoskeletal system disease" in context else ""]
 
-    monkeypatch.setattr(qb, "_turn_excerpt", lambda ctx, turns, window=0: ctx)
-    monkeypatch.setattr(qb, "_context_answer_score", lambda row, ans, chain: 1.0 if ans else 0.0)
+    monkeypatch.setattr(qa_scoring, "_turn_excerpt", lambda ctx, turns, window=0: ctx)
+    monkeypatch.setattr(qb, "context_answer_score", lambda row, ans, chain: 1.0 if ans else 0.0)
 
     result = qb._diagnose_coarser_readable(
         candidate, decisions, [],
@@ -2300,8 +2301,8 @@ def test_lattice_level_suspect_probe_silent_when_no_level_reads(monkeypatch):
         "decision_requirements": {"d1": "joint inflammation disease"},
         "evidence": {"reader_turns": [0]},
     }
-    monkeypatch.setattr(qb, "_turn_excerpt", lambda ctx, turns, window=0: ctx)
-    monkeypatch.setattr(qb, "_context_answer_score", lambda row, ans, chain: 0.0)
+    monkeypatch.setattr(qa_scoring, "_turn_excerpt", lambda ctx, turns, window=0: ctx)
+    monkeypatch.setattr(qb, "context_answer_score", lambda row, ans, chain: 0.0)
     result = qb._diagnose_coarser_readable(
         candidate, decisions, [], doc_id="aci/TEST",
         render_action_vector=lambda d, v: "x", reader=lambda q, c, cl=None: [""],
@@ -2349,8 +2350,8 @@ def test_relation_support_opportunities_augment_adds_gazetteer_unreachable_liter
     augmented = qa_builder.relation_support_opportunities(
         source, env, extra_context_candidates=[drug_literal])
 
-    base_keys = {qa_builder._stable_hash(row["fact_key"]) for row in baseline}
-    aug_keys = {qa_builder._stable_hash(row["fact_key"]) for row in augmented}
+    base_keys = {qa_scoring.stable_hash(row["fact_key"]) for row in baseline}
+    aug_keys = {qa_scoring.stable_hash(row["fact_key"]) for row in augmented}
     assert base_keys <= aug_keys  # no-drop invariant
     assert any(row["relation"] == "prescribed_with" and row["scope"] == "span_literal"
                for row in augmented)
@@ -2372,7 +2373,7 @@ def test_lattice_level_suspect_suppressed_for_ambiguity_and_kept_sibling():
         }
 
     def suspects(art):
-        flags = qa_builder.compute_review_flags(art)
+        flags = qa_review.compute_review_flags(art)
         return sum(1 for lst in flags.values() for f in lst if f.get("code") == "lattice_level_suspect")
 
     # unambiguous AND tsh never kept in-doc (only cbc kept) -> genuine suspect, fires
@@ -2897,7 +2898,7 @@ def test_context_answer_score_set_recall_one_to_one():
         "d-2": [{"node": "beta blocker", "answer_aliases": ["beta blocker"],
                  "entailed_properties": ["beta blocker", "medication"]}],
     }
-    score = qa_builder._context_answer_score
+    score = qa_scoring.context_answer_score
     # full recall; the extra uncontrolled literal prediction is ignored (recall, not precision)
     assert score(row, '["loop diuretic", "beta blocker", "bmp"]', chains) == 1.0
     # one member missing -> partial recall (< threshold 1.0 -> gate-fails on that render)
@@ -3093,21 +3094,21 @@ def test_source_literal_spans_equates_case_and_whitespace_only():
     # FM2: the teacher re-cases/re-spaces a literal; the resolver maps to the exact source
     # span so grounding stays exact, but never matches a different token sequence.
     document = "please order an mri today, and recheck   hemoglobin a1c next month."
-    assert [document[s:e] for s, e in qa_builder._source_literal_spans(document, "MRI")] == ["mri"]
+    assert [document[s:e] for s, e in qa_teacher.source_literal_spans(document, "MRI")] == ["mri"]
     assert [document[s:e] for s, e in
-            qa_builder._source_literal_spans(document, "hemoglobin A1c")] == ["hemoglobin a1c"]
+            qa_teacher.source_literal_spans(document, "hemoglobin A1c")] == ["hemoglobin a1c"]
     # collapsed whitespace variant still resolves to the real (multi-space) source span
     assert [document[s:e] for s, e in
-            qa_builder._source_literal_spans(document, "hemoglobin   a1c")] == ["hemoglobin a1c"]
+            qa_teacher.source_literal_spans(document, "hemoglobin   a1c")] == ["hemoglobin a1c"]
     # a genuinely absent / different token never matches
-    assert qa_builder._source_literal_spans(document, "ultrasound") == []
-    assert qa_builder._source_literal_spans(document, "mri scan") == []
+    assert qa_teacher.source_literal_spans(document, "ultrasound") == []
+    assert qa_teacher.source_literal_spans(document, "mri scan") == []
     # non-word-edge literals must still resolve (regression that \b would have broken)
     punct = "the (MRI) and C++ were noted; a1c-panel drawn."
-    assert [punct[s:e] for s, e in qa_builder._source_literal_spans(punct, "(MRI)")] == ["(MRI)"]
-    assert [punct[s:e] for s, e in qa_builder._source_literal_spans(punct, "C++")] == ["C++"]
+    assert [punct[s:e] for s, e in qa_teacher.source_literal_spans(punct, "(MRI)")] == ["(MRI)"]
+    assert [punct[s:e] for s, e in qa_teacher.source_literal_spans(punct, "C++")] == ["C++"]
     # a hyphen-prefixed fragment must NOT match a longer hyphenated token
-    assert qa_builder._source_literal_spans(punct, "a1c-") == []
+    assert qa_teacher.source_literal_spans(punct, "a1c-") == []
 
 
 def test_source_literal_spans_equates_unicode_dash_variants():
@@ -3115,14 +3116,14 @@ def test_source_literal_spans_equates_unicode_dash_variants():
     # all dash variants are equated so the literal still grounds.
     document = "we did an x-ray and a follow-up ct scan."
     assert [document[s:e] for s, e in
-            qa_builder._source_literal_spans(document, "x‑ray")] == ["x-ray"]      # U+2011
+            qa_teacher.source_literal_spans(document, "x‑ray")] == ["x-ray"]      # U+2011
     assert [document[s:e] for s, e in
-            qa_builder._source_literal_spans(document, "follow–up")] == ["follow-up"]  # U+2013
+            qa_teacher.source_literal_spans(document, "follow–up")] == ["follow-up"]  # U+2013
     # symmetric: ASCII literal still grounds an ASCII source dash
     assert [document[s:e] for s, e in
-            qa_builder._source_literal_spans(document, "x-ray")] == ["x-ray"]
+            qa_teacher.source_literal_spans(document, "x-ray")] == ["x-ray"]
     # a dash must NOT be equated with whitespace or nothing (no over-match)
-    assert qa_builder._source_literal_spans("state of art care", "state-of-art") == []
+    assert qa_teacher.source_literal_spans("state of art care", "state-of-art") == []
 
 
 def test_evidence_quote_grounding_equates_unicode_dashes():
@@ -3135,7 +3136,7 @@ def test_evidence_quote_grounding_equates_unicode_dashes():
     assert doc[span[0]:span[1]] == "show me the right knee x-ray"  # exact source substring
     assert span[1] - span[0] == len(quote)                        # length preserved
     # no-regression: case stays exact, and a genuinely-absent quote still fails
-    assert qa_builder._exact_substring_starts(doc, "SHOW me") == []
+    assert qa_teacher.exact_substring_starts(doc, "SHOW me") == []
     assert qa_builder._resolve_relation_evidence_span(doc, "mri scan", None) == (None, "invalid_evidence")
 
 
@@ -3195,16 +3196,16 @@ def test_answer_competing_surfaces_flags_multi_procedure_scope():
 def test_turn_excerpt_stitches_discontiguous_turns_and_elides_the_gap():
     ctx = "\n".join(f"t{i}" for i in range(10))
     # adjacent turns merge into one contiguous region (no elision) -- co-located relation unchanged
-    assert qa_builder._turn_excerpt(ctx, [2, 3], window=0) == "t2\nt3"
+    assert qa_scoring._turn_excerpt(ctx, [2, 3], window=0) == "t2\nt3"
     # far-apart turns are stitched surgically: only the two regions, gap elided (not t3..t6)
-    out = qa_builder._turn_excerpt(ctx, [2, 7], window=0)
-    assert out == f"t2\n{qa_builder._TURN_EXCERPT_ELISION}\nt7"
+    out = qa_scoring._turn_excerpt(ctx, [2, 7], window=0)
+    assert out == f"t2\n{qa_scoring._TURN_EXCERPT_ELISION}\nt7"
     assert "t4" not in out and "t5" not in out  # the noisy middle is never handed to the reader
     # windows that bridge the gap re-merge into one region (no elision)
-    assert qa_builder._turn_excerpt(ctx, [2, 4], window=1) == "t1\nt2\nt3\nt4\nt5"
+    assert qa_scoring._turn_excerpt(ctx, [2, 4], window=1) == "t1\nt2\nt3\nt4\nt5"
     # empty / out-of-range falls back to the full context (diverged-render safety)
-    assert qa_builder._turn_excerpt(ctx, [], window=0) == ctx
-    assert qa_builder._turn_excerpt(ctx, [99], window=0) == ctx
+    assert qa_scoring._turn_excerpt(ctx, [], window=0) == ctx
+    assert qa_scoring._turn_excerpt(ctx, [99], window=0) == ctx
 
 
 def test_gleaning_targets_classifies_by_taxonomy():
@@ -3386,12 +3387,12 @@ def test_relation_repair_prompt_restricts_to_targets_and_lists_hints():
             {"decision_id": "d-zol", "actions": [{"mode": "level", "legal": True, "entails": ["sedative"]}]},
         ],
     }
-    inv = {str(r["decision_id"]): r["span_label"] for r in qa_builder.relation_teacher_span_inventory(environment)}
+    inv = {str(r["decision_id"]): r["span_label"] for r in qa_teacher.relation_teacher_span_inventory(environment)}
     target = {"kind": "ambiguous", "relation": "procedure_for", "hint": "make it uniquely answerable",
               "arguments": [
                   {"role": "subject", "kind": "linked", "occurrence_id": "reflux"},
                   {"role": "object", "kind": "linked", "occurrence_id": "diet"}]}
-    prompt = qa_builder.relation_repair_prompt("d", source, environment, [target])
+    prompt = qa_teacher.relation_repair_prompt("d", source, environment, [target])
 
     assert "REPAIR TARGETS" in prompt and "procedure_for" in prompt
     assert "make it uniquely answerable" in prompt and "AMBIGUOUS" in prompt
@@ -3438,19 +3439,19 @@ def test_relation_repair_prompt_writes_each_fix_hint_once():
                     {"role": "subject", "kind": "linked", "occurrence_id": subject_id},
                     {"role": "object", "kind": "linked", "occurrence_id": object_id}]}
     fixable = {"kind": "fixable", "relation": "prescribed_with", "reason": "answer_leakage",
-               "hint": qa_builder._GLEANING_FIX_HINTS["answer_leakage"],
+               "hint": qa_builder.GLEANING_FIX_HINTS["answer_leakage"],
                "arguments": [
                    {"role": "subject", "kind": "linked", "occurrence_id": "ins"},
                    {"role": "object", "kind": "linked", "occurrence_id": "zol"}]}
 
-    prompt = qa_builder.relation_repair_prompt(
+    prompt = qa_teacher.relation_repair_prompt(
         "d", source, environment,
         [missed("reflux", "diet", "procedure_for"), missed("ins", "zol", "prescribed_with"),
          fixable])
 
     # the shared MISSED hint appears exactly ONCE (in the FIX GUIDE), not per target
     assert prompt.count(hint) == 1
-    assert prompt.count(qa_builder._GLEANING_FIX_HINTS["answer_leakage"]) == 1
+    assert prompt.count(qa_builder.GLEANING_FIX_HINTS["answer_leakage"]) == 1
     assert "FIX GUIDE" in prompt
     # target lines reference the guide by tag instead of inlining the hint
     assert "MISSED" in prompt and "fix: answer_leakage" in prompt
@@ -3719,7 +3720,7 @@ def test_claim_directionality_places_drug_test_first():
 
 
 def test_linked_answer_score_contiguity_and_verbosity_cap():
-    from cloak.train.qa_builder import _linked_answer_score, _resolve_semantic_node
+    from cloak.train.qa_scoring import _linked_answer_score, _resolve_semantic_node
     chain = [
         {"answer_aliases": ["kidney stones"], "entailed_properties": ["urolithiasis", "kidney disease"]},
         {"answer_aliases": ["urolithiasis"], "entailed_properties": ["urolithiasis"]},
@@ -3751,14 +3752,15 @@ def test_linked_answer_score_contiguity_and_verbosity_cap():
 
 def test_all_occurrence_judge_premise_elides_middle_not_contiguous():
     """All-occurrence premise = the occurrence-clauses joined (2\\n13\\n14), NOT the span 2..14."""
-    from cloak.train.qa_builder import _all_occurrence_judge_premise, _source_clause_spans
+    from cloak.train.qa_builder import _all_occurrence_judge_premise
+    from cloak.train.qa_teacher import source_clause_spans
     doc = (
         "[doctor] the patient has gout in the past history .\n"
         "[patient] okay yes .\n"
         "[doctor] talking about the gout again now .\n"
         "[doctor] and we started allopurinol today ."
     )
-    clauses = _source_clause_spans(doc)
+    clauses = source_clause_spans(doc)
     assert len(clauses) == 4  # one clause per speaker turn
     gout1 = doc.index("gout")
     gout2 = doc.index("gout", gout1 + 1)
@@ -3890,14 +3892,14 @@ def test_relation_repair_prompt_shares_clause_pool_across_targets():
     t2 = {"kind": "missed", "relation": "prescribed_with", "hint": "emit if supported",
           "arguments": [{"role": "subject", "kind": "linked", "occurrence_id": "g"},
                         {"role": "object", "kind": "linked", "occurrence_id": "c"}]}
-    prompt = qa_builder.relation_repair_prompt("d", source, environment, [t1, t2])
+    prompt = qa_teacher.relation_repair_prompt("d", source, environment, [t1, t2])
     clause_text = "you have gout so we started allopurinol and colchicine"
     # both targets share the clause -> one region -> the clause is inlined exactly ONCE, not per target
     assert prompt.count(clause_text) == 1
     assert prompt.count("SOURCE:") == 1          # a single region groups both targets
     assert "[1]" in prompt and "[2]" in prompt   # both targets listed under it
     # header carries label + surface for matching
-    inv = {str(r["decision_id"]): r["span_label"] for r in qa_builder.relation_teacher_span_inventory(environment)}
+    inv = {str(r["decision_id"]): r["span_label"] for r in qa_teacher.relation_teacher_span_inventory(environment)}
     assert f"{inv['d-g']} (gout)" in prompt
 
 
@@ -3926,9 +3928,9 @@ def _span_label_enum(fmt):
 
 def test_repair_response_schema_scoped_to_shown_labels():
     source, env = _mini_repair_env()
-    inv = {str(r["decision_id"]): r["span_label"] for r in qa_builder.relation_teacher_span_inventory(env)}
-    full = qa_builder.relation_teacher_response_format(env, source)
-    scoped = qa_builder.relation_teacher_response_format(env, source, allowed_labels={inv["d-r"]})
+    inv = {str(r["decision_id"]): r["span_label"] for r in qa_teacher.relation_teacher_span_inventory(env)}
+    full = qa_teacher.relation_teacher_response_format(env, source)
+    scoped = qa_teacher.relation_teacher_response_format(env, source, allowed_labels={inv["d-r"]})
     # full schema: both labels emittable + accounting ledger covers both
     assert set(_span_label_enum(full)) == {inv["d-r"], inv["d-o"]}
     assert full["json_schema"]["schema"]["properties"]["candidate_accounting"]["minItems"] == 2
@@ -3944,8 +3946,8 @@ def test_relation_repair_prompt_exposes_shown_labels():
               "arguments": [{"role": "subject", "kind": "linked", "occurrence_id": "r"},
                             {"role": "object", "kind": "linked", "occurrence_id": "o"}]}
     out: set = set()
-    prompt = qa_builder.relation_repair_prompt("d", source, env, [target], shown_labels_out=out)
-    inv_labels = {r["span_label"] for r in qa_builder.relation_teacher_span_inventory(env)}
+    prompt = qa_teacher.relation_repair_prompt("d", source, env, [target], shown_labels_out=out)
+    inv_labels = {r["span_label"] for r in qa_teacher.relation_teacher_span_inventory(env)}
     assert out and out <= inv_labels          # populated, subset of inventory
     # every exposed label appears in the rendered DETECTED SPANS
     for lab in out:

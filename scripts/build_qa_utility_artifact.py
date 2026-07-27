@@ -10,17 +10,17 @@ from pathlib import Path
 
 from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
+    AciTaskAdapter, artifact_views, build_utility_artifact, llm_prefilter_context_candidates,
+)
+from cloak.train.qa_freeze import (
+    freeze_v2_environment_from_legacy_arms,
+    render_frozen_action_vector,
+)
+from cloak.train.qa_scoring import QA_BASE_URL, read_context_batch, read_context_set_batch
+from cloak.train.qa_teacher import (
     RELATION_TEACHER_MODEL,
     RELATION_TEACHER_PROVIDER,
-    AciTaskAdapter,
     OpenRouterRelationTeacher,
-    artifact_views,
-    build_utility_artifact,
-    freeze_v2_environment_from_legacy_arms,
-    llm_prefilter_context_candidates,
-    read_context_batch,
-    read_context_set_batch,
-    render_frozen_action_vector,
 )
 from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
 from cloak.train.relation_support_gate import (
@@ -28,7 +28,7 @@ from cloak.train.relation_support_gate import (
     build_informative_context_judge,
     build_medgemma_judge,
 )
-from cloak.train.qa_builder import QA_BASE_URL
+
 
 RELATION_SUPPORT_JUDGE_MODEL = "medgemma-4b-it"
 
@@ -408,7 +408,7 @@ def write_finer_level_failures(
     relation QA with >=1 UNREADABLE finer answer level. Each row names the answer decision's
     profile, the finer levels that failed/passed the reader, the relation (type, subject,
     object, supported level), the question, and the doc_orig excerpt the reader actually saw."""
-    from cloak.train.qa_builder import _reader_excerpt
+    from cloak.train.qa_scoring import reader_excerpt
 
     threshold = float(artifact.get("reader_threshold") or 1.0)
 
@@ -522,7 +522,7 @@ def write_finer_level_failures(
             },
             "question": question,
             "doc_id": doc_id,
-            "doc_context": _reader_excerpt(source_documents.get(doc_id, ""), evidence),
+            "doc_context": reader_excerpt(source_documents.get(doc_id, ""), evidence),
         }, sort_keys=True))
     path = output.with_name(f"{output.stem}.finer-level-failures.jsonl")
     path.write_text("\n".join(rows_out) + ("\n" if rows_out else ""))

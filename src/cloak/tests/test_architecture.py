@@ -36,6 +36,19 @@ def test_cloak_never_imports_inferdpt():
     assert not violations, f"cloak modules import retired inferdpt: {violations}"
 
 
+def test_qa_scoring_is_the_bottom_of_the_qa_stack():
+    """The runtime slice the training loop executes must stay build-time-free.
+
+    `qa_scoring` owns the reader pin and `UTILITY_SCORER_VERSION`, both of which sit
+    inside every utility-cache identity; importing the compiler, the teacher transport,
+    or the freezer would let a build-time edit move a cache key.
+    """
+    forbidden = {"cloak.train.qa_builder", "cloak.train.qa_teacher", "cloak.train.qa_freeze",
+                 "cloak.train.qa_review"}
+    leaked = forbidden & _module_imports(CLOAK_ROOT / "train" / "qa_scoring.py")
+    assert not leaked, f"qa_scoring must not import {sorted(leaked)}"
+
+
 def test_cloak_never_imports_scripts():
     violations = [
         str(path.relative_to(CLOAK_ROOT.parent))

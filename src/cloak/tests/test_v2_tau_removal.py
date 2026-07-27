@@ -5,10 +5,9 @@ import copy
 from cloak.detect import Span
 from cloak.substitute import substitute
 from cloak.train.qa_audit import build_environment_audit
-from cloak.train.qa_builder import (
-    build_joint_representative_anchor,
-    freeze_v2_environment_from_legacy_arms,
-    render_frozen_action_vector,
+from cloak.train.qa_builder import build_joint_representative_anchor
+from cloak.train.qa_freeze import (
+    freeze_v2_environment_from_legacy_arms, render_frozen_action_vector,
 )
 
 

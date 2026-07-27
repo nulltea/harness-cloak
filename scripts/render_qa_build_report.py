@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Mapping
 
 from cloak.corpora import load_task_docs
-from cloak.train.qa_builder import relation_teacher_span_inventory
+from cloak.train.qa_teacher import relation_teacher_span_inventory
 
 
 def _text_section(title: str, text: str) -> str:

@@ -20,7 +20,7 @@ from typing import Any, Callable
 from cloak.extract import invert, invert_implementation_pin
 from cloak.tasks import SCHEMA_TEMPLATE, TASK_TEMPLATE
 from cloak.train.interactive_ranker import assemble_action_vector
-from cloak.train.qa_builder import (
+from cloak.train.qa_scoring import (
     UTILITY_SCORER_VERSION,
     finalize_utility_scoring,
     prepare_utility_scoring,

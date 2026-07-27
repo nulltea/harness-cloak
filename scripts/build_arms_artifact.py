@@ -25,7 +25,7 @@ from cloak.probe import fill_proximity, walk_risk
 from cloak.runtime_types import DIRECT_TYPES, PLACEHOLDER_RE
 from cloak.substitute import freeze_policy_free_candidates, prepare_spans_for_substitution
 from cloak.train.qa_audit import build_environment_audit, write_audit_sidecars
-from cloak.train.qa_builder import (
+from cloak.train.qa_freeze import (
     freeze_v2_environment_from_legacy_arms,
     legacy_arms_ranker_environment,
     migrate_frozen_environment_count_provenance,

@@ -5,23 +5,21 @@ from collections import Counter
 import pytest
 
 import cloak.train.qa_builder as qa_builder
+import cloak.train.qa_freeze as qa_freeze
+import cloak.train.qa_review as qa_review
+import cloak.train.qa_scoring as qa_scoring
+import cloak.train.qa_teacher as qa_teacher
 from cloak.corpora import load_task_docs
 from cloak.train.qa_builder import (
-    AciTaskAdapter,
-    BatchedContextReader,
-    artifact_views,
-    assign_static_weights,
-    build_utility_artifact,
-    build_joint_representative_anchor,
-    compile_relational_assertions,
-    freeze_ranker_environment,
-    finalize_utility_scoring,
-    package_utility_artifact,
-    prepare_utility_scoring,
-    relation_teacher_prompt,
-    score_utility,
+    AciTaskAdapter, artifact_views, assign_static_weights, build_joint_representative_anchor,
+    build_utility_artifact, compile_relational_assertions, package_utility_artifact,
     validate_context_assertions,
 )
+from cloak.train.qa_freeze import freeze_ranker_environment
+from cloak.train.qa_scoring import (
+    BatchedContextReader, finalize_utility_scoring, prepare_utility_scoring, score_utility,
+)
+from cloak.train.qa_teacher import relation_teacher_prompt
 
 
 TEST_READER_PIN = {
@@ -1044,8 +1042,8 @@ def test_batched_context_reader_issues_one_request_per_question():
 def test_default_reader_pin_constant_drives_default_reader_entry_points():
     reader = BatchedContextReader(client=object())
 
-    assert reader.pin == qa_builder.DEFAULT_CONTEXT_READER_PIN
-    assert qa_builder.read_context_batch.pin == qa_builder.DEFAULT_CONTEXT_READER_PIN
+    assert reader.pin == qa_scoring.DEFAULT_CONTEXT_READER_PIN
+    assert qa_scoring.read_context_batch.pin == qa_scoring.DEFAULT_CONTEXT_READER_PIN
 
 
 @pytest.mark.parametrize("wire,expected", [
@@ -1624,9 +1622,9 @@ def test_freeze_merges_canonical_aliases_only_when_nonkeep_menus_match(monkeypat
         "duodenogastric reflux": "biliary reflux disease",
     }
     monkeypatch.setattr(
-        qa_builder,
+        qa_freeze,
         "_entity_key",
-        lambda surface, runtime_type: entity_keys.get(qa_builder.canon(surface), qa_builder.canon(surface)),
+        lambda surface, runtime_type: entity_keys.get(qa_scoring.canon(surface), qa_scoring.canon(surface)),
     )
 
     def span(surface, start, level_fill):
@@ -1978,13 +1976,13 @@ def test_openrouter_relation_teacher_uses_pinned_model(monkeypatch):
     monkeypatch.setenv("CLOAK_LLM_CACHE", "/tmp/qa-builder-test-cache")
     monkeypatch.setattr("cloak.llm.LLMClient", FakeClient)
 
-    teacher = qa_builder.OpenRouterRelationTeacher()
+    teacher = qa_teacher.OpenRouterRelationTeacher()
     relations = teacher.propose("document prompt")
 
     assert captured["model"] == "openai/gpt-oss-120b"
     assert captured["base_url"] == "https://openrouter.ai/api/v1"
     assert captured["api_key"] == "secret"
-    assert captured["response_format"] == qa_builder.RELATION_TEACHER_RESPONSE_FORMAT
+    assert captured["response_format"] == qa_teacher.RELATION_TEACHER_RESPONSE_FORMAT
     assert captured["response_format"]["type"] == "json_schema"
     assert captured["response_format"]["json_schema"]["strict"] is True
     assert captured["response_format"]["json_schema"]["schema"]["required"] == [
@@ -2004,7 +2002,7 @@ def test_openrouter_relation_teacher_uses_pinned_model(monkeypatch):
         "base_url": "https://openrouter.ai/api/v1",
         "prompt_version": "qa-relation-teacher-v21",
         "response_schema": {"type": "relation-qa-batch", "version": 9},
-        "response_format": qa_builder.RELATION_TEACHER_RESPONSE_FORMAT,
+        "response_format": qa_teacher.RELATION_TEACHER_RESPONSE_FORMAT,
         "generation_config": {
             "reasoning": {"exclude": True},
         },
@@ -2018,7 +2016,7 @@ def test_openrouter_relation_teacher_requires_content_addressed_cache(monkeypatc
     monkeypatch.delenv("CLOAK_LLM_CACHE", raising=False)
 
     with pytest.raises(ValueError, match="CLOAK_LLM_CACHE"):
-        qa_builder.OpenRouterRelationTeacher()
+        qa_teacher.OpenRouterRelationTeacher()
 
 
 def test_aci_adapter_rejects_legacy_coarse_decision_types():
@@ -2769,7 +2767,7 @@ def test_relational_compiler_derives_gold_and_links_from_frozen_inventory():
     assert relation["occurrence_ids"] == ["o-condition", "o-drug"]
     assert relation["accepted_values"] == ["a thyroid medication"]
     assert relation["scoring_contract"] == {"kind": "semantic_qa", "match": "fact_score"}
-    assert relation["evidence"]["proposal_hash"] == qa_builder._stable_hash(proposals[0])
+    assert relation["evidence"]["proposal_hash"] == qa_scoring.stable_hash(proposals[0])
 
 
 def test_relational_compiler_requires_ambiguous_quote_start_and_binds_occurrences():
@@ -2836,7 +2834,7 @@ def test_relational_compiler_requires_ambiguous_quote_start_and_binds_occurrence
     assert accepted[0]["evidence"]["source_span"] == {
         "start": second_start,
         "end": second_start + len(quote),
-        "quote_hash": qa_builder._stable_hash(quote),
+        "quote_hash": qa_scoring.stable_hash(quote),
     }
     assert wrong_occurrence == []
     assert wrong_rejections[0]["detail_reason"] == "invalid_evidence_occurrence"
@@ -3251,7 +3249,7 @@ def test_real_aci_d2n002_compiles_labeled_blocks_and_dialogue_cues(semantic_prop
 
 
 def test_aci_unknown_uppercase_heading_ends_hpi_capture():
-    parsed = qa_builder._parse_aci_note("""HISTORY OF PRESENT ILLNESS
+    parsed = qa_scoring.parse_aci_note("""HISTORY OF PRESENT ILLNESS
 Captured HPI content.
 UNSUPPORTED HEADING
 This must not remain in the HPI section.
@@ -3264,7 +3262,7 @@ Arthritis.
 
 
 def test_aci_combined_parser_rejects_prose_preamble_as_condition_entry():
-    parsed = qa_builder._parse_aci_note("""ASSESSMENT AND PLAN
+    parsed = qa_scoring.parse_aci_note("""ASSESSMENT AND PLAN
 The patient reports worsening pain.
 • Medical Treatment: This is preamble, not a condition plan.
 Arthritis.
@@ -3275,7 +3273,7 @@ Arthritis.
 
 
 def test_aci_combined_parser_starts_new_entry_after_unrecognized_first_bullet():
-    parsed = qa_builder._parse_aci_note("""ASSESSMENT AND PLAN
+    parsed = qa_scoring.parse_aci_note("""ASSESSMENT AND PLAN
 Arthritis.
 • Medical Treatment: Initiate Ultram.
 Hypothyroidism.
@@ -3300,7 +3298,7 @@ Arthritis.
 • Additional Testing: Third test.
 • Medical Treatment: Initiate Ultram.
 """
-    parsed = qa_builder._parse_aci_note(note)
+    parsed = qa_scoring.parse_aci_note(note)
 
     assert parsed["plan_rows"] == [{
         "condition": "Arthritis",
@@ -3850,7 +3848,7 @@ def test_builder_preserves_a_safe_teacher_response_failure_code():
 
     class EmptyTeacher:
         def propose(self, prompt):
-            raise qa_builder.RelationTeacherResponseError(
+            raise qa_teacher.RelationTeacherResponseError(
                 "teacher_empty_response", raw_length=0
             )
 
@@ -4041,7 +4039,7 @@ def test_frozen_occurrences_from_arms_carries_detector_provenance():
         "threshold": 0.35,
     }
 
-    occurrences = qa_builder.frozen_occurrences_from_arms(
+    occurrences = qa_freeze.frozen_occurrences_from_arms(
         arms, detector_provenance=detector_pin
     )
 
@@ -4082,7 +4080,7 @@ def test_compute_review_flags_classifies_missing_generalization_and_rejections()
         "relation_candidate_accounting": {"d1": [{"state": "ledger_inconsistent"}]},
     }
 
-    flags = qa_builder.compute_review_flags(artifact)
+    flags = qa_review.compute_review_flags(artifact)
     codes = {f["code"] for f in flags["d1"]}
     assert {"missing_generalization", "literal_will_be_substituted",
             "representative_unreadable", "floor_lowered_repair",
@@ -4100,7 +4098,7 @@ def test_compute_review_flags_classifies_missing_generalization_and_rejections()
 
 
 def test_compute_review_flags_relation_count_soft_cap():
-    cap = qa_builder.RELATION_TEACHER_MAX_RELATIONS
+    cap = qa_teacher.RELATION_TEACHER_MAX_RELATIONS
     artifact = {
         "relation_generation": {
             "dense": [{"status": "kept"} for _ in range(cap + 1)],   # over soft cap
@@ -4108,7 +4106,7 @@ def test_compute_review_flags_relation_count_soft_cap():
                       + [{"status": "rejected"} for _ in range(5)],  # rejects don't count
         },
     }
-    flags = qa_builder.compute_review_flags(artifact)
+    flags = qa_review.compute_review_flags(artifact)
     dense = [f for f in flags["dense"] if f["code"] == "relation_count_over_soft_cap"]
     assert len(dense) == 1
     assert dense[0]["severity"] == "info"  # logged, NOT a reject
@@ -4147,7 +4145,7 @@ def test_compute_review_flags_teacher_repairable_unresolved():
                               "d2": {"secondary_status": "abstained"}},
     }
 
-    flags = qa_builder.compute_review_flags(artifact)
+    flags = qa_review.compute_review_flags(artifact)
     d1 = [f for f in flags["d1"] if f["code"] == "teacher_repairable_unresolved"]
     assert len(d1) == 1  # only the unrecovered tests_for; kept-sibling and gate rejections excluded
     assert d1[0]["detail"]["disposition"] == "unresolved_after_repair"
@@ -4298,7 +4296,7 @@ def test_relation_repair_batches_targets_into_multiple_calls(monkeypatch):
 
 
 def test_review_flag_answer_only_readable_when_generalized():
-    from cloak.train.qa_builder import compute_review_flags
+    from cloak.train.qa_review import compute_review_flags
     art = {"rejections": {"records": [
         # oRp: source unreadable, generalized readable -> new lattice signal
         {"doc_id": "aci/D2N004", "detail_reason": "three_point_gate_failed",

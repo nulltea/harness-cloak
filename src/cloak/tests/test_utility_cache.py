@@ -9,7 +9,7 @@ from types import MappingProxyType
 import pytest
 
 import cloak.train.roundtrip as roundtrip
-from cloak.train.qa_builder import DEFAULT_CONTEXT_READER_PIN
+from cloak.train.qa_scoring import DEFAULT_CONTEXT_READER_PIN
 from cloak.train.ranker_environment import RankerAction, RankerDecision, RankerDocument
 
 

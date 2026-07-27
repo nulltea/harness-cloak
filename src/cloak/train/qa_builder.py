@@ -1,11 +1,8 @@
-"""QA-builder v2 artifact weighting, support anchors, validation, and scoring."""
+"""QA-builder v2 relation compilation, support anchors, weighting, and packaging."""
 from __future__ import annotations
 
 import bisect
-import hashlib
 import inspect
-import json
-import os
 import re
 from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping, Sequence
@@ -13,208 +10,47 @@ from copy import deepcopy
 from math import ceil, isfinite
 from numbers import Real
 
-from cloak.runtime_types import placeholder_token, placeholder_type_token
 from cloak.train.qa_audit import build_qa_audit
+from cloak.train.qa_scoring import (
+    ACI_REQUIRED_SECTIONS,
+    CLAUSE_DELIMITER_PATTERN,
+    canon,
+    context_answer_score,
+    gate_debug,
+    line_clause_spans,
+    meaningful_tokens,
+    occurrence_protected_terms,
+    parse_aci_note,
+    parse_llm_json_array,
+    permuted_reader_question,
+    reader_excerpt,
+    stable_hash,
+    validated_build_reader_pin,
+)
+from cloak.train.qa_teacher import (
+    ACI_SPEAKER_TURN_PATTERN,
+    OpenRouterRelationTeacher,
+    RELATION_ARGUMENT_CLASSES,
+    RELATION_REPAIR_MAX_TARGETS_PER_CALL,
+    RELATION_TEACHER_MAX_RELATIONS,
+    RUNTIME_TYPE_CLASSES,
+    RelationTeacherProposals,
+    RelationTeacherResponseError,
+    argument_is_grounded,
+    argument_relation_classes,
+    exact_substring_starts,
+    normalize_teacher_text,
+    relation_arguments_are_legal,
+    relation_repair_prompt,
+    relation_teacher_prompt,
+    relation_teacher_response_format,
+    relation_teacher_span_inventory,
+    source_clause_spans,
+    source_literal_spans,
+    substitute_linked_surfaces,
+    teacher_relation_arguments,
+)
 
-UTILITY_SCORER_VERSION = "qa-utility-runtime-v1"
-
-QA_MODEL = "medgemma-4b-it"  # THE context reader -- the SINGLE definition. Every reader path
-                            # (DEFAULT_CONTEXT_READER_PIN, BatchedContextReader) imports this;
-                            # do not hardcode a reader model elsewhere or add a per-call reader
-                            # override. Served generative whole-doc reader on llama-swap :8060,
-                            # temp0/greedy, non-thinking, batched via pmap (workers match -np 6).
-                            # Reader sweep (2026-07-19): medgemma > gemma 4 E4B on QA yield
-                            # (kept 47 vs 44, three_point_gate_failed 29 vs 31) at the same
-                            # local 4B cost; a 120B gpt-oss reader rejected MORE, so
-                            # gate-failure is not reader-capability-bound (see memory).
-QA_BASE_URL = "http://localhost:8060/v1"
-
-
-def canon(t: str) -> str:
-    """Canonicalize for restatement matching: spoken-vs-written variants seen in the
-    corpora ("doctor kumar"/"Dr. Kumar", "40 milligrams"/"40 mg"). ponytail: spelled-out
-    numbers/dates ("July thirty first") stay unmatched; add a number normalizer if probe
-    supply still short."""
-    t = re.sub(r"\bdr\.?(?=\s)", "doctor", t.lower())
-    return re.sub(r"\bmilligrams?\b", "mg", t)
-
-
-def fact_score(pred: str, gold: str) -> float:
-    """Fact-recall scorer v2 (re-pin 2026-07-06): canon-normalize -> NUMBER GATE (every gold
-    numeric token must appear in the answer, else 0 — kills unit false-positives like
-    "10 mg" vs "40 milligrams") -> containment (gold tokens subset of answer -> 1.0, so a
-    verbose-but-correct "AT&T Corporation" for "AT&T" is a hit) -> acronym (CHF == the initials
-    of "Congestive Heart Failure") -> token-F1 fallback. Residual under-scores: non-initial
-    abbreviations (HTN) and pure synonyms (renal == kidney)."""
-    p = re.findall(r"\w+", canon(pred)); g = re.findall(r"\w+", canon(gold))
-    if not g:
-        return float(not p)
-    if not p:
-        return 0.0
-    gnum = [t for t in g if t.isdigit()]
-    pnum = {t for t in p if t.isdigit()}
-    if gnum and not all(n in pnum for n in gnum):
-        return 0.0
-    ps, gs = set(p), set(g)
-    if gs <= ps:
-        return 1.0
-    def _acro(short, long_):
-        return len(short) == 1 and len(short[0]) >= 2 and short[0] == "".join(w[0] for w in long_)
-    if _acro(p, g) or _acro(g, p):
-        return 1.0
-    common = sum(min(p.count(t), g.count(t)) for t in gs)
-    if not common:
-        return 0.0
-    prec, rec = common / len(p), common / len(g)
-    return 2 * prec * rec / (prec + rec)
-
-RELATION_TEACHER_MODEL = "openai/gpt-oss-120b"
-RELATION_TEACHER_BASE_URL = "https://openrouter.ai/api/v1"
-# Pin a reliable OpenRouter provider: the free Nemotron route was intermittently
-# empty/rate-limited/errored; deepinfra/turbo serves gpt-oss-120b with stable,
-# valid structured output. allow_fallbacks stays off so routing never drifts.
-RELATION_TEACHER_PROVIDER = "deepinfra/turbo"
-RELATION_TEACHER_PROMPT_VERSION = "qa-relation-teacher-v21"
-RELATION_TEACHER_RESPONSE_SCHEMA = {"type": "relation-qa-batch", "version": 9}
-RELATION_TEACHER_REVISION = "qa-relation-teacher-r32"
-RELATION_TEACHER_MAX_RELATIONS = 12
-# The gleaning+repair pass batches its targets: one teacher call per <=N targets, so a note with
-# many opportunities (D2N002 hit 54) is not crammed into a single unfocusable prompt.
-RELATION_REPAIR_MAX_TARGETS_PER_CALL = 20
-# Retry an empty (HTTP-200, no choices/content) teacher reply before failing -- transient.
-_TEACHER_EMPTY_RETRIES = 3
-# Nemotron's OpenRouter route has mandatory reasoning.  Token caps repeatedly
-# broke the teacher: completion caps returned empty replies, and the r16
-# smoke's 1,024-token reasoning cap truncated the source scan mid-document,
-# leaving three further explicit relations unproposed.  The v5 contract sets
-# no completion or reasoning cap; only the trace exclusion remains.
-RELATION_TEACHER_GENERATION_CONFIG = {
-    "reasoning": {"exclude": True},
-}
-_RELATION_RECORD_ITEM = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["relation", "arguments", "question", "accepted_answers",
-                 "scoring_contract"],
-    "properties": {
-        "relation": {"enum": [
-            "prescribed_with", "procedure_for", "tests_for",
-            "contraindicated_because_of", "causes_or_explains",
-        ]},
-        "arguments": {
-            "type": "array",
-            "minItems": 2,
-            "maxItems": 2,
-            "items": {
-                "type": "object",
-                "additionalProperties": False,
-                "required": ["role", "kind", "span_label",
-                             "support_property", "literal"],
-                "properties": {
-                    "role": {"enum": ["subject", "object"]},
-                    "kind": {"enum": ["linked", "context"]},
-                    "span_label": {"type": ["string", "null"]},
-                    "support_property": {"type": ["string", "null"]},
-                    "literal": {"type": ["string", "null"]},
-                },
-            },
-        },
-        "question": {"type": "string"},
-        "answer_role": {"enum": ["subject", "object"]},
-        "accepted_answers": {
-            "type": "array", "minItems": 1,
-            "items": {"type": "string"},
-        },
-        "scoring_contract": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["kind", "match"],
-            "properties": {
-                "kind": {"const": "semantic_qa"},
-                "match": {"const": "fact_score"},
-            },
-        },
-    },
-}
-# Sectioned response (A/B spike 2026-07-14): a single mixed relation list let
-# the span-pair sub-task crowd out span<->literal proposals (0-3 literal per
-# draw); requiring the two lists separately yielded 4-6 literal proposals in
-# 3/3 draws. span_relations pairs two S-labels; context_relations pairs
-# exactly one S-label with one uncontrolled literal.
-RELATION_TEACHER_RESPONSE_FORMAT = {
-    "type": "json_schema",
-    "json_schema": {
-        "name": "relation_qa_batch",
-        "strict": True,
-        "schema": {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["span_relations", "context_relations", "candidate_accounting"],
-            "properties": {
-                "span_relations": {
-                    "type": "array",
-                    "maxItems": RELATION_TEACHER_MAX_RELATIONS,
-                    "items": deepcopy(_RELATION_RECORD_ITEM),
-                },
-                "context_relations": {
-                    "type": "array",
-                    "maxItems": RELATION_TEACHER_MAX_RELATIONS,
-                    "items": deepcopy(_RELATION_RECORD_ITEM),
-                },
-                "candidate_accounting": {
-                    "type": "array",
-                    "items": {
-                        "type": "object",
-                        "additionalProperties": False,
-                        "required": ["candidate_label", "state", "reason"],
-                        "properties": {
-                            "candidate_label": {"type": "string"},
-                            # duplicate_mention: a repeated mention of a value whose
-                            # fact was already emitted at another label; without it
-                            # the v5 smoke fabricated one relation per duplicate.
-                            "state": {
-                                "enum": ["emitted", "duplicate_mention",
-                                         "exhausted_no_relation", "unsupported"]
-                            },
-                            # minLength: the same smoke returned "" reasons for
-                            # emitted rows, invalidating the entire ledger.
-                            "reason": {"type": "string", "minLength": 1, "maxLength": 160},
-                        },
-                    },
-                },
-            },
-        },
-    },
-}
-CONTEXT_READER_PROMPT_VERSION = "qa-context-reader-v4"
-# version 3: contiguity + verbosity-cap scoring — _resolve_semantic_node requires an alias to
-# appear as a CONTIGUOUS stemmed subsequence of the reply (was: token-SET subset, which credited
-# scattered tokens), with at most _ANSWER_EXTRA_TOKEN_CAP meaningful tokens of reply verbosity
-# (which credited whole-sentence echoes). The schema version covers the full
-# answer-interpretation contract, not just the wire format.
-CONTEXT_READER_RESPONSE_SCHEMA = {"type": "single-span", "version": 3}
-# Set from the 2026-07-21 scorer A/B and FROZEN before any re-gate; never retuned per result
-# (empirical-honesty rule). Measured extra-token distribution: legitimate replies (hedge
-# prefixes, dose/qualifier tails, compound spans) at 1-6 extra; two verbose two-drug compound
-# sentences at 9 (deliberately left out — recovering them needs cap>=9, the near-echo regime);
-# whole-sentence echoes at 26. The 6->26 gap places the cap.
-_ANSWER_EXTRA_TOKEN_CAP = 6
-CONTEXT_READER_REVISION = "qa-reader-r5"
-# The reader is given only the transcript turns covering an assertion's
-# arguments/evidence, plus this many neighbor turns each side, instead of the
-# whole document. Removes distractor spans (e.g. an unrelated drug elsewhere in
-# the note) that a small reader would otherwise return.
-CONTEXT_READER_TURN_WINDOW = 0
-DEFAULT_CONTEXT_READER_PIN = {
-    "model": QA_MODEL,
-    "endpoint": QA_BASE_URL,
-    "prompt_version": CONTEXT_READER_PROMPT_VERSION,
-    "response_schema": CONTEXT_READER_RESPONSE_SCHEMA,
-    "revision": CONTEXT_READER_REVISION,
-}
-READER_PIN_FIELDS = frozenset({
-    "model", "endpoint", "prompt_version", "response_schema", "revision",
-})
 RELATION_ONTOLOGY = (
     "prescribed_with",
     "procedure_for",
@@ -223,38 +59,7 @@ RELATION_ONTOLOGY = (
     "causes_or_explains",
 )
 
-_RUNTIME_TYPE_CLASSES = {
-    "health-condition": "condition",
-    "condition": "condition",
-    "diagnosis": "condition",
-    "disease": "condition",
-    "symptom": "symptom",
-    "drug": "treatment",
-    "medication": "treatment",
-    "treatment": "treatment",
-    "procedure": "procedure",
-    "medical-procedure": "procedure",
-    "lab": "monitoring",
-    "test": "monitoring",
-    "monitoring": "monitoring",
-    "provider": "provider",
-    "specialty": "provider",
-    "status": "status",
-    "category": "category",
-}
-_RELATION_ARGUMENT_CLASSES = {
-    # Relation names are directional: condition/diagnosis first.  Medication is
-    # intentionally separate from a procedure performed to treat a condition.
-    "prescribed_with": (("condition",), ("treatment",)),
-    # Therapeutic procedure or referral for a condition (incl. a past treatment).
-    # Object is procedure-class only: the detector emits no provider/specialty type,
-    # so a referral grounds via its procedure target (e.g. physical therapy).
-    "procedure_for": (("condition",), ("procedure",)),
-    # Diagnostic/monitoring test that discovers or monitors a condition.
-    "tests_for": (("condition",), ("monitoring", "procedure")),
-    "contraindicated_because_of": (("treatment", "procedure"), ("condition",)),
-    "causes_or_explains": (("condition",), ("condition", "symptom")),
-}
+
 # Human-facing answer-type words for the reader hint. Keyed by argument class.
 _CLASS_ANSWER_HINT = {
     "condition": "medical condition",
@@ -272,7 +77,7 @@ def _relation_answer_type_hint(relation: str, answer_role: str) -> str | None:
     """The reader answer-type word for a relation's answered argument, derived
     from the directional argument-class contract (deterministic, no inference).
     A union of classes joins with ' or '; unknown relations -> no hint."""
-    classes = _RELATION_ARGUMENT_CLASSES.get(relation)
+    classes = RELATION_ARGUMENT_CLASSES.get(relation)
     if not classes:
         return None
     role_classes = classes[0] if answer_role == "subject" else classes[1]
@@ -284,9 +89,11 @@ def _relation_answer_type_hint(relation: str, answer_role: str) -> str | None:
     # de-duplicate while preserving order
     seen = list(dict.fromkeys(hints))
     return " or ".join(seen)
+
+
 ACI_RELATION_CONTRACT = {
     "prescribed_with": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["prescribed_with"],
+        "argument_classes": RELATION_ARGUMENT_CLASSES["prescribed_with"],
         "definition": "a drug prescribed or used for a condition or diagnosis",
         "cues": ("prescribe", "prescribed", "initiate", "continue", "uses", "taking", "takes", "treated with"),
         "connector_patterns": (
@@ -295,7 +102,7 @@ ACI_RELATION_CONTRACT = {
         ),
     },
     "procedure_for": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["procedure_for"],
+        "argument_classes": RELATION_ARGUMENT_CLASSES["procedure_for"],
         "definition": "a therapeutic procedure or referral for a condition, including a past "
                       "treatment the patient already had (e.g. a prior transplant/surgery)",
         "cues": ("treated with", "treat", "treated", "referred to", "refer",
@@ -312,7 +119,7 @@ ACI_RELATION_CONTRACT = {
         ),
     },
     "tests_for": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["tests_for"],
+        "argument_classes": RELATION_ARGUMENT_CLASSES["tests_for"],
         "definition": "a diagnostic or monitoring test/study that discovers or monitors a "
                       "condition (a test ordered to follow it, or one whose result showed it)",
         "cues": ("order", "ordered", "check", "monitor", "monitored by", "follow",
@@ -333,7 +140,7 @@ ACI_RELATION_CONTRACT = {
         ),
     },
     "contraindicated_because_of": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["contraindicated_because_of"],
+        "argument_classes": RELATION_ARGUMENT_CLASSES["contraindicated_because_of"],
         # ACI dialogue states contraindication as "you ca n't take X because
         # of Y" (transcript-tokenized negation), not with the clinical word.
         "cues": ("contraindicated", "ca n't take", "can't take", "cannot take"),
@@ -343,7 +150,7 @@ ACI_RELATION_CONTRACT = {
         ),
     },
     "causes_or_explains": {
-        "argument_classes": _RELATION_ARGUMENT_CLASSES["causes_or_explains"],
+        "argument_classes": RELATION_ARGUMENT_CLASSES["causes_or_explains"],
         # Clinical attribution is stated as "exacerbation of"/"due to"/
         # "secondary to" far more often than with the verb "causes".
         "cues": ("causes", "explains", "due to", "secondary to", "caused by",
@@ -351,6 +158,8 @@ ACI_RELATION_CONTRACT = {
         "connector_patterns": (r"\s+(?:causes|explains)\s+",),
     },
 }
+
+
 # Relations whose lexical cue is NECESSARY BUT NOT SUFFICIENT: their argument classes span every
 # condition x condition permutation, and the block-level cue match (allow_plan_section) fires for any
 # such pair sharing a causal word, so cue-ok is unreliable. When an escalator (MedGemma judge) is
@@ -358,25 +167,11 @@ ACI_RELATION_CONTRACT = {
 # so the escalator acts as a precision FILTER here, not only additive recovery. With no escalator,
 # they fall back to cue-only (the no-regression invariant is unchanged in that mode).
 _JUDGE_GATED_RELATIONS = frozenset({"causes_or_explains"})
-# Closed procedure-form lexicon: detector-typed conditions whose surface names
-# a performed procedure ("kidney transplant" in past medical history) may also
-# fill procedure slots; ordinary condition surfaces may not.
-_PROCEDURE_FORM_PATTERN = re.compile(
-    r"\b(?:transplant\w*|surgery|surgeries|\w+ectomy|\w+plasty|bypass|graft\w*"
-    r"|replacement|repair)\b",
-    re.IGNORECASE,
-)
-
-
-def _argument_relation_classes(runtime_type: str, surface: str) -> set[str]:
-    base = _RUNTIME_TYPE_CLASSES.get(canon(str(runtime_type)))
-    classes = {base} if base else set()
-    if base == "condition" and _PROCEDURE_FORM_PATTERN.search(str(surface)):
-        classes.add("procedure")
-    return classes
 
 
 _NEGATION_PATTERN = re.compile(r"\b(?:no|not|without|denies|denied)\b")
+
+
 # A conditional/hypothetical statement is not an asserted fact. The broadened
 # problem-block/plan-section anchors would otherwise ground the conditional PT
 # referral ("if symptoms continue ... possibly refer to physical therapy"),
@@ -433,57 +228,20 @@ def _relation_window_is_hedged(
     lo = min(start for start, _ in bounds)
     hi = max(end for _, end in bounds)
     return _HEDGE_PATTERN.search(document[lo:hi]) is not None
-_CLAUSE_DELIMITER_PATTERN = re.compile(r"[\n.!?;]")
+
+
 _PLAN_SECTION_HEADING_PATTERN = re.compile(
     r"(?m)^(?P<title>[A-Za-z][A-Za-z0-9 /-]{0,96})\.\s*$"
 )
+
+
 _RELATION_WINDOW_CUE_PATTERN = re.compile(
     r"\b(?:prescrib\w*|continue|taking|takes|treated|refer\w*|order\w*|"
     r"monitor\w*|contraindicat\w*|causes?|explains?|status|category)\b",
     re.IGNORECASE,
 )
-_ACI_SPEAKER_TURN_PATTERN = re.compile(r"\[(?:doctor|patient)\]", re.IGNORECASE)
-ACI_REQUIRED_SECTIONS = (
-    "HISTORY OF PRESENT ILLNESS",
-    "ASSESSMENT",
-    "PLAN",
-)
-ACI_COMBINED_ASSESSMENT_PLAN = "ASSESSMENT AND PLAN"
-ACI_TASK_HEADINGS = frozenset({
-    "CHIEF COMPLAINT",
-    "HPI",
-    "HISTORY OF PRESENT ILLNESS",
-    "REVIEW OF SYSTEMS",
-    "PHYSICAL EXAMINATION",
-    "RESULTS",
-    "ASSESSMENT",
-    "PLAN",
-    ACI_COMBINED_ASSESSMENT_PLAN,
-})
-_ACI_CAPTURED_HEADING_SECTIONS = {
-    "HPI": ("HISTORY OF PRESENT ILLNESS",),
-    "HISTORY OF PRESENT ILLNESS": ("HISTORY OF PRESENT ILLNESS",),
-    "ASSESSMENT": ("ASSESSMENT",),
-    "PLAN": ("PLAN",),
-    ACI_COMBINED_ASSESSMENT_PLAN: ("ASSESSMENT", "PLAN"),
-}
-_ACI_HEADING_PATTERN = re.compile(
-    r"^\s*(?P<heading>[A-Z][A-Z /&-]*[A-Z])\s*(?::\s*(?P<content>.*))?$"
-)
-_ACI_ROW_DELIMITER = re.compile(r"\s+(?:—|–|-)\s+")
-_ACI_CONDITION_ENTRY_PATTERN = re.compile(r"^(?P<condition>[^:]+?)\.\s*$")
-_ACI_LABELED_FIELD_PATTERN = re.compile(
-    r"^(?:[•*\-]\s*)?(?P<label>Medical Reasoning|Additional Testing|Medical Treatment)"
-    r"\s*:\s*(?P<value>.+?)\s*$",
-    re.IGNORECASE,
-)
-_ACI_LABELED_PLAN_FIELDS = {
-    "additional testing": "test",
-    "medical treatment": "treatment",
-}
-_ACI_CONDITION_PREAMBLE_WORDS = frozenset({
-    "a", "an", "the", "patient", "this", "he", "she", "they", "we", "i",
-})
+
+
 _CONTEXT_CANDIDATE_PATTERNS = (
     ("test", re.compile(
         r"\b(?:order|ordered|check|checking|monitor|monitoring|monitored\s+by|repeat|recheck)\s+"
@@ -500,169 +258,6 @@ _CONTEXT_CANDIDATE_PATTERNS = (
         r"\bcategory\s+(?:is|:)?\s*(?P<literal>[A-Za-z][A-Za-z -]{0,48})"
         r"(?=[.;\n]|$)", re.IGNORECASE)),
 )
-
-
-class RelationTeacherProposals(list):
-    """List-compatible teacher proposals plus mandatory v2 coverage accounting."""
-
-    def __init__(self, relations: Sequence[Mapping], candidate_accounting: Sequence[Mapping]):
-        super().__init__(dict(row) for row in relations if isinstance(row, Mapping))
-        self.candidate_accounting = [
-            dict(row) for row in candidate_accounting if isinstance(row, Mapping)
-        ]
-
-
-class RelationTeacherResponseError(ValueError):
-    """A non-sensitive, artifact-safe failure while decoding a teacher reply."""
-
-    def __init__(
-        self,
-        code: str,
-        *,
-        raw_length: int,
-        completion_state: str | None = None,
-        parser_message: str | None = None,
-    ):
-        self.code = code
-        self.raw_length = raw_length
-        self.completion_state = completion_state
-        self.parser_message = parser_message
-        message = f"{code} (raw_length={raw_length})"
-        if parser_message:
-            message = f"{message}: {parser_message}"
-        super().__init__(message)
-
-
-class OpenRouterRelationTeacher:
-    """Optional cached JSON relation proposer with an explicit OpenRouter route."""
-
-    @property
-    def pin(self) -> dict:
-        pin = {
-            "provider": "openrouter",
-            "model": self._model,
-            "routed_provider": self._routed_provider,
-            "base_url": self._base_url,
-            "prompt_version": self._prompt_version,
-            "response_schema": deepcopy(RELATION_TEACHER_RESPONSE_SCHEMA),
-            "response_format": deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
-            "generation_config": deepcopy(self._generation_config),
-            "revision": self._revision,
-        }
-        if self._allow_fallbacks or self._routed_provider is None:
-            pin["allow_fallbacks"] = self._allow_fallbacks
-        return pin
-
-    def __init__(
-        self,
-        *,
-        model: str = RELATION_TEACHER_MODEL,
-        routed_provider: str | None = RELATION_TEACHER_PROVIDER,
-        allow_fallbacks: bool = False,
-        base_url: str = RELATION_TEACHER_BASE_URL,
-        generation_config: Mapping | None = None,
-        prompt_version: str = RELATION_TEACHER_PROMPT_VERSION,
-        revision: str = RELATION_TEACHER_REVISION,
-        include_reasoning: bool = False,
-    ):
-        from cloak.llm import LLMClient
-
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if not api_key:
-            raise ValueError("OPENROUTER_API_KEY is required for relation escalation")
-        if not os.getenv("CLOAK_LLM_CACHE"):
-            raise ValueError("CLOAK_LLM_CACHE is required for relation escalation")
-        self._model = str(model)
-        self._routed_provider = routed_provider
-        self._allow_fallbacks = bool(allow_fallbacks)
-        self._base_url = str(base_url)
-        self._generation_config = deepcopy(
-            RELATION_TEACHER_GENERATION_CONFIG if generation_config is None else generation_config
-        )
-        # Diagnostic only: have OpenRouter return the reasoning trace (for prompt A/B tweaking). The
-        # `exclude` flag changes only whether the trace is echoed, not the generated content -- but it
-        # is part of extra_body/the cache key, so enable it ONLY on a teacher whose prompt already
-        # differs (e.g. the gleaning pass), never the primary, to avoid busting the primary cache.
-        if include_reasoning:
-            self._generation_config = {**self._generation_config, "reasoning": {"exclude": False}}
-        self._prompt_version = str(prompt_version)
-        self._revision = str(revision)
-        provider_config = {"allow_fallbacks": self._allow_fallbacks}
-        if self._routed_provider:
-            provider_config["order"] = [self._routed_provider]
-        self._client = LLMClient(
-            self._model,
-            base_url=self._base_url,
-            api_key=api_key,
-            temperature=0.0,
-            response_format=deepcopy(RELATION_TEACHER_RESPONSE_FORMAT),
-            extra_body={
-                "reasoning": deepcopy(self._generation_config["reasoning"]),
-                "provider": provider_config,
-            },
-            single_flight=True,
-        )
-
-    def propose(
-        self, prompt: str, *, response_format: Mapping | None = None,
-    ) -> RelationTeacherProposals:
-        fmt = {"response_format": dict(response_format)} if response_format else {}
-        # An OpenRouter HTTP-200 with no choices/content is a TRANSIENT provider condition
-        # (observed intermittently on both gpt-oss and the free routes). Retry it like a
-        # throttle before giving up -- refresh=True forces a fresh call so a non-cached empty
-        # is never reused. The SDK already retries 429/5xx underneath; this covers empty-200.
-        raw = ""
-        for attempt in range(_TEACHER_EMPTY_RETRIES + 1):
-            raw = self._client.generate(prompt, **({"refresh": True} if attempt else {}), **fmt)
-            if raw and raw.strip():
-                break
-        if not raw or not raw.strip():
-            # `LLMClient` deliberately does not cache an OpenRouter HTTP-200 reply
-            # with no choices/content.  Do not turn that provider condition into a
-            # misleading JSONDecodeError, and never persist potentially sensitive raw
-            # model text in the artifact.
-            state = getattr(self._client, "last_completion_state", {})
-            outcome = state.get("outcome") if isinstance(state, Mapping) else None
-            code = {
-                "no_choices": "teacher_no_choices",
-                "empty_content": "teacher_empty_content",
-            }.get(outcome, "teacher_empty_response")
-            raise RelationTeacherResponseError(
-                code,
-                raw_length=len(raw or ""),
-                completion_state=outcome,
-            )
-        try:
-            payload = json.loads(raw)
-        except json.JSONDecodeError as error:
-            raise RelationTeacherResponseError(
-                "teacher_invalid_json",
-                raw_length=len(raw),
-                parser_message=str(error),
-            ) from error
-        relations = None
-        if isinstance(payload, dict):
-            if isinstance(payload.get("span_relations"), list) and isinstance(
-                payload.get("context_relations"), list
-            ):
-                # Sectioned v8 reply; span pairs first so the shared cap
-                # cannot be consumed by literals alone.
-                relations = list(payload["span_relations"]) + list(payload["context_relations"])
-            elif isinstance(payload.get("relations"), list):
-                relations = payload["relations"]
-        if not isinstance(relations, list):
-            raise RelationTeacherResponseError(
-                "teacher_invalid_schema", raw_length=len(raw),
-                parser_message="relation teacher reply must contain span_relations"
-                               " and context_relations lists",
-            )
-        accounting = payload.get("candidate_accounting") if isinstance(payload, dict) else None
-        if not isinstance(accounting, list):
-            raise RelationTeacherResponseError(
-                "teacher_invalid_schema", raw_length=len(raw),
-                parser_message="relation teacher reply must contain candidate_accounting",
-            )
-        return RelationTeacherProposals(relations, accounting)
 
 
 # Relation-constrained reader clause (qa-context-reader-v4). One prompt line restates the QA as
@@ -704,6 +299,8 @@ _RELATION_READER_CLAUSES = {
     ("causes_or_explains", "subject"):
         "is the underlying condition that causes or explains {loc}",
 }
+
+
 # >= 2 locators (compound span-locator reverse, multi-literal reverse): the answer is always the
 # subject, so only subject rows exist. Plural verb + "all" pins uniqueness exactly as the
 # compound question text does.
@@ -838,123 +435,6 @@ def _relation_reader_clause(
     if template is None:
         return None
     return template.format(loc=_join_locator_phrases(phrases))
-
-
-class BatchedContextReader:
-    """Pinned reader for context assertions — one model request per question."""
-
-    @property
-    def pin(self) -> dict:
-        return deepcopy(DEFAULT_CONTEXT_READER_PIN)
-
-    def __init__(self, client=None):
-        if client is None:
-            from cloak.llm import LLMClient
-
-            if not os.getenv("CLOAK_LLM_CACHE"):
-                raise ValueError("CLOAK_LLM_CACHE is required for context scoring")
-            client = LLMClient(
-                QA_MODEL,
-                base_url=QA_BASE_URL,
-                api_key="x",
-                temperature=0.0,
-                max_tokens=128,
-                extra_body={"chat_template_kwargs": {"enable_thinking": False}},
-            )
-        self._client = client
-
-    def _read_one(
-        self, question: str, context: str, clause: str | None = None, *, refresh: bool = False,
-    ) -> str:
-        # qa-context-reader-v4: the optional relation-constraint line restates the QA as the
-        # relation the answer must satisfy (see _relation_reader_clause). Without a clause the
-        # template is the same minus that line (legacy rows, non-relation probes).
-        lines = [
-            "Read the DOCUMENT and answer the QUESTION. Copy the answer span exactly from the "
-            "DOCUMENT — do not rephrase, summarize, or add words.",
-            "If the DOCUMENT does not answer it, reply with exactly NONE.",
-        ]
-        if clause:
-            lines.append(f"Your ANSWER must satisfy the relation: ANSWER {clause}.")
-        prompt = "\n".join(lines) + f"\n\nDOCUMENT:\n{context}\n\nQUESTION: {question}"
-        raw = (
-            self._client.generate(prompt, refresh=True)
-            if refresh else self._client.generate(prompt)
-        ).strip()
-        if raw.startswith("```") and raw.endswith("```"):
-            raw = raw.strip("`").strip()
-        raw = raw.strip().strip('"').strip("'").strip()
-        return "" if raw.upper() == "NONE" else raw
-
-    def _read_set_one(
-        self, question: str, context: str, clause: str | None = None, *, refresh: bool = False,
-    ) -> str:
-        # Set-valued read (validated wrapper: scripts/spikes/set_valued_gate_probe.py): the raw
-        # JSON-array reply is returned verbatim; _context_answer_score parses and scores recall.
-        lines = [
-            "Read the DOCUMENT and answer the QUESTION. Copy each answer verbatim as a short "
-            "phrase from the DOCUMENT; include nothing not in the DOCUMENT. Respond with ONLY a "
-            'JSON array of strings, e.g. ["x","y"]. If there are none, respond [].',
-        ]
-        if clause:
-            lines.append(f"Every answer must satisfy the relation: ANSWER {clause}.")
-        prompt = "\n".join(lines) + f"\n\nDOCUMENT:\n{context}\n\nQUESTION: {question}"
-        return (
-            self._client.generate(prompt, refresh=True)
-            if refresh else self._client.generate(prompt)
-        ).strip()
-
-    def read_set(
-        self, questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
-        *, refresh: bool = False,
-    ) -> list[str]:
-        clauses = clauses if clauses is not None else [None] * len(questions)
-        return [
-            self._read_set_one(question, context, clause, refresh=refresh)
-            for question, clause in zip(questions, clauses, strict=True)
-        ]
-
-    def __call__(
-        self, questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
-        *, refresh: bool = False,
-    ) -> list[str]:
-        clauses = clauses if clauses is not None else [None] * len(questions)
-        return [
-            self._read_one(question, context, clause, refresh=refresh)
-            for question, clause in zip(questions, clauses, strict=True)
-        ]
-
-
-_batched_context_reader = None
-
-
-def read_context_batch(
-    questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
-    *, refresh: bool = False,
-) -> list[str]:
-    global _batched_context_reader
-    if _batched_context_reader is None:
-        _batched_context_reader = BatchedContextReader()
-    return _batched_context_reader(questions, context, clauses, refresh=refresh)
-
-
-read_context_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
-
-
-def read_context_set_batch(
-    questions: list[str], context: str, clauses: Sequence[str | None] | None = None,
-    *, refresh: bool = False,
-) -> list[str]:
-    """Set-valued reads (same pinned reader model/endpoint, JSON-array response contract)."""
-    global _batched_context_reader
-    if _batched_context_reader is None:
-        _batched_context_reader = BatchedContextReader()
-    return _batched_context_reader.read_set(
-        questions, context, clauses, refresh=refresh,
-    )
-
-
-read_context_set_batch.pin = deepcopy(DEFAULT_CONTEXT_READER_PIN)
 
 
 class AciTaskAdapter:
@@ -1110,7 +590,7 @@ class AciTaskAdapter:
         occurrences_by_decision: dict[str, list[Mapping]] = defaultdict(list)
         protected_terms = []
         for occurrence in environment_document.get("occurrences", []):
-            protected_terms.extend(_occurrence_protected_terms(occurrence))
+            protected_terms.extend(occurrence_protected_terms(occurrence))
             decision_id = occurrence.get("decision_id")
             if decision_id is None or not occurrence.get("controlled", True):
                 continue
@@ -1171,7 +651,7 @@ class AciTaskAdapter:
                         "runtime_type": runtime_type,
                         "occurrence_ids": occurrence_ids,
                         "legal_action_hashes": [
-                            _stable_hash({
+                            stable_hash({
                                 "action_id": action.get("action_id"),
                                 "mode": action.get("mode"),
                                 "entails": list(action.get("entails") or []),
@@ -1190,7 +670,7 @@ class AciTaskAdapter:
                         "decision_id": decision_id,
                         "runtime_type": runtime_type,
                         "occurrence_ids": occurrence_ids,
-                        "property_hash": _stable_hash(property_level),
+                        "property_hash": stable_hash(property_level),
                         "definition_version": "aci-semantic-property-v1",
                     }
                     records.append(_rejection_record(
@@ -1202,9 +682,9 @@ class AciTaskAdapter:
                             "decision_id": decision_id,
                             "runtime_type": runtime_type,
                             "occurrence_ids": occurrence_ids,
-                            "property_hash": _stable_hash(property_level),
+                            "property_hash": stable_hash(property_level),
                             "supporting_action_hashes": [
-                                _stable_hash(action_id)
+                                stable_hash(action_id)
                                 for action_id in supporting_actions[property_level]
                             ],
                         },
@@ -1227,7 +707,7 @@ class AciTaskAdapter:
                     "decision_id": decision_id,
                     "runtime_type": runtime_type,
                     "occurrence_ids": occurrence_ids,
-                    "property_hash": _stable_hash(property_level),
+                    "property_hash": stable_hash(property_level),
                     "definition_version": "aci-semantic-property-v1",
                 }
                 if (
@@ -1243,9 +723,9 @@ class AciTaskAdapter:
                             "decision_id": decision_id,
                             "runtime_type": runtime_type,
                             "occurrence_ids": occurrence_ids,
-                            "property_hash": _stable_hash(property_level),
+                            "property_hash": stable_hash(property_level),
                             "supporting_action_hashes": [
-                                _stable_hash(action_id)
+                                stable_hash(action_id)
                                 for action_id in supporting_actions[property_level]
                             ],
                         },
@@ -1261,9 +741,9 @@ class AciTaskAdapter:
                             "decision_id": decision_id,
                             "runtime_type": runtime_type,
                             "occurrence_ids": occurrence_ids,
-                            "property_hash": _stable_hash(property_level),
+                            "property_hash": stable_hash(property_level),
                             "supporting_action_hashes": [
-                                _stable_hash(action_id)
+                                stable_hash(action_id)
                                 for action_id in supporting_actions[property_level]
                             ],
                         },
@@ -1283,12 +763,12 @@ class AciTaskAdapter:
                             "decision_id": decision_id,
                             "runtime_type": runtime_type,
                             "occurrence_ids": occurrence_ids,
-                            "property_hash": _stable_hash(property_level),
+                            "property_hash": stable_hash(property_level),
                             "supporting_action_hashes": [
-                                _stable_hash(action_id)
+                                stable_hash(action_id)
                                 for action_id in supporting_actions[property_level]
                             ],
-                            "locator_hash": _stable_hash(locator),
+                            "locator_hash": stable_hash(locator),
                         },
                     ))
                     continue
@@ -1299,7 +779,7 @@ class AciTaskAdapter:
                     "occurrence_ids": occurrence_ids,
                     "group_id": (
                         f"semantic-property:{decision_id}:"
-                        f"{_stable_hash(property_level)}"
+                        f"{stable_hash(property_level)}"
                     ),
                     "question": question,
                     "accepted_values": [property_level],
@@ -1309,7 +789,7 @@ class AciTaskAdapter:
                         "template": "aci-context-category-v1",
                         "runtime_type": runtime_type,
                         "role_cue": role_cue,
-                        "locator_hash": _stable_hash(locator),
+                        "locator_hash": stable_hash(locator),
                         "supporting_action_ids": supporting_actions[property_level],
                     },
                 })
@@ -1324,8 +804,8 @@ class AciTaskAdapter:
     ) -> list[dict]:
         """Compile reference-backed ACI delivered assertions without clinical inference."""
         candidates = []
-        parsed_reference = _parse_aci_note(reference)
-        parsed_source = _parse_aci_note(document)
+        parsed_reference = parse_aci_note(reference)
+        parsed_source = parse_aci_note(document)
         occurrences_by_decision: dict[str, list[Mapping]] = defaultdict(list)
         occurrences_by_surface: dict[str, list[Mapping]] = defaultdict(list)
         occurrences_by_id = {}
@@ -1360,7 +840,7 @@ class AciTaskAdapter:
                     "evidence": {
                         "authority": "human_reference",
                         "provenance": "delivered_reference",
-                        "reference_hash": _stable_hash(reference),
+                        "reference_hash": stable_hash(reference),
                         "reference_span": (
                             [reference_match.start(), reference_match.end()]
                             if reference_match is not None else None
@@ -1372,7 +852,7 @@ class AciTaskAdapter:
                 {
                     "start": span[0],
                     "end": span[1],
-                    "surface_hash": _stable_hash(str(occurrence.get("surface", ""))),
+                    "surface_hash": stable_hash(str(occurrence.get("surface", ""))),
                 }
                 for occurrence in occurrences
                 if (span := _exact_occurrence_span(document, occurrence)) is not None
@@ -1386,7 +866,7 @@ class AciTaskAdapter:
                         "coverage_kind": "controlled_source_fact",
                         "decision_id": decision_id,
                         "occurrence_ids": occurrence_ids,
-                        "source_hash": _stable_hash(document),
+                        "source_hash": stable_hash(document),
                         "definition_version": "aci-delivered-authority-v1",
                     },
                     evidence={
@@ -1405,7 +885,7 @@ class AciTaskAdapter:
                 evidence = {
                     "authority": "human_reference",
                     "provenance": "delivered_reference",
-                    "reference_hash": _stable_hash(reference),
+                    "reference_hash": stable_hash(reference),
                     "reference_span": parsed_reference["demographic_evidence"][name],
                 }
             elif name in parsed_source["demographic"]:
@@ -1414,8 +894,8 @@ class AciTaskAdapter:
                     "authority": "source_document_task_schema_fallback",
                     "provenance": "exact_doc_orig",
                     "source_span": parsed_source["demographic_evidence"][name],
-                    "source_hash": _stable_hash(document),
-                    "value_hash": _stable_hash(value),
+                    "source_hash": stable_hash(document),
+                    "value_hash": stable_hash(value),
                     "task_schema_required": True,
                     "reference_missing": True,
                 }
@@ -1580,11 +1060,6 @@ class AciTaskAdapter:
         )
 
 
-def _stable_hash(value) -> str:
-    payload = json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
-
-
 def relation_context_candidates(document: str) -> list[dict]:
     """Extract finite typed source context without creating detector/ranker decisions."""
     candidates, seen = [], set()
@@ -1597,7 +1072,7 @@ def relation_context_candidates(document: str) -> list[dict]:
                 continue
             seen.add(identity)
             candidates.append({
-                "context_candidate_id": "context:" + _stable_hash({
+                "context_candidate_id": "context:" + stable_hash({
                     "runtime_type": runtime_type, "start": start, "end": end,
                     "literal": literal,
                 }),
@@ -1611,87 +1086,6 @@ def relation_context_candidates(document: str) -> list[dict]:
     return sorted(candidates, key=lambda row: (
         int(row["start"]), str(row["context_candidate_id"])
     ))
-
-
-def relation_teacher_span_inventory(environment_document: Mapping) -> list[dict]:
-    """Return prompt-safe, source-ordered controlled spans and private mappings.
-
-    This is intentionally a representability prefilter, not a relation-pair
-    prefilter.  The teacher receives only the resulting short labels.
-    """
-    decisions = {
-        str(row["decision_id"]): row
-        for row in environment_document.get("decisions", [])
-        if row.get("decision_id") is not None
-    }
-    rows = []
-    for occurrence in environment_document.get("occurrences", []):
-        start, end = occurrence.get("start"), occurrence.get("end")
-        if not isinstance(start, int) or not isinstance(end, int) or start >= end:
-            continue
-        relation_class = _RUNTIME_TYPE_CLASSES.get(canon(str(occurrence.get("runtime_type", ""))))
-        if relation_class is None:
-            continue
-        if not any(relation_class in classes for contract in _RELATION_ARGUMENT_CLASSES.values()
-                   for classes in contract):
-            continue
-        if not occurrence.get("controlled", True):
-            continue
-        decision = decisions.get(str(occurrence.get("decision_id")), {})
-        properties = list(dict.fromkeys(
-            canon(str(value))
-            for action in decision.get("actions", [])
-            if action.get("legal", True) and action.get("mode") not in {"keep", "placeholder"}
-            for value in action.get("entails") or []
-            if canon(str(value))
-        ))
-        if not properties:
-            continue
-        rows.append({
-            "occurrence_id": str(occurrence["occurrence_id"]),
-            "decision_id": str(occurrence.get("decision_id")),
-            "surface": str(occurrence.get("surface", "")),
-            "start": start,
-            "end": end,
-            "runtime_type": str(occurrence.get("runtime_type", "")),
-            "relation_class": relation_class,
-            "properties": properties,
-        })
-    rows.sort(key=lambda row: (row["start"], row["end"], row["occurrence_id"]))
-    # One S-label per DECISION, not per occurrence: a term mentioned N times (e.g. "knee"
-    # ×8) must not flood the inventory N times -- it distracts the teacher's draw and makes
-    # it unstable to detector recall. Keep the earliest occurrence as the representative;
-    # compile-time grounding remap resolves to the best sibling occurrence of the decision.
-    deduped, seen = [], set()
-    for row in rows:
-        key = row["decision_id"] or f"occ:{row['occurrence_id']}"
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(row)
-    for index, row in enumerate(deduped, start=1):
-        row["span_label"] = f"S{index}"
-    return deduped
-
-
-def _source_clause_spans(document: str) -> list[tuple[int, int]]:
-    """Return source clauses without treating speaker turns as relation bridges."""
-    markers = list(_ACI_SPEAKER_TURN_PATTERN.finditer(document))
-    if len(markers) >= 2:
-        return [
-            (marker.start(), markers[index + 1].start() if index + 1 < len(markers) else len(document))
-            for index, marker in enumerate(markers)
-            if document[marker.start():markers[index + 1].start() if index + 1 < len(markers) else len(document)].strip()
-        ]
-    spans, left = [], 0
-    for delimiter in _CLAUSE_DELIMITER_PATTERN.finditer(document):
-        right = delimiter.end()
-        if document[left:right].strip():
-            spans.append((left, right))
-        left = right
-    if document[left:].strip():
-        spans.append((left, len(document)))
-    return spans
 
 
 def _clinical_plan_sections(document: str) -> list[tuple[int, int]]:
@@ -1735,12 +1129,14 @@ _PROBLEM_BLOCK_BOUNDARY = re.compile(
     re.IGNORECASE,
 )
 
+
 # A clinical problem discussion routinely states the condition in the exam/HPI and its
 # treatment/test in that problem's plan, with assessment, rationale, acknowledgment, and
 # order clauses in between (measured: muscle-strain->meloxicam spans 7 clauses across the
 # exam->plan transition). Twelve is the pre-registered soft diagnostic boundary: distant
 # pairs remain reader-gated, while a PROBLEM SWITCH (below) still hard-stops the bridge.
 _CROSS_CLAUSE_ANCHOR_MAX_DISTANCE = 12
+
 
 # A PROBLEM SWITCH (moving to a different problem) blocks a cross-clause bridge; the
 # exam->plan transition of the SAME problem ("assessment and plan", "for your first
@@ -1766,7 +1162,7 @@ def _soft_cross_clause_cap_diagnostic(
 ) -> dict | None:
     """Record, but never reject, a relation whose source arguments exceed the
     cross-clause locality operating point. The reader gate remains authoritative."""
-    clauses = _source_clause_spans(document)
+    clauses = source_clause_spans(document)
     if not clauses or not spans:
         return None
     indices = [
@@ -1805,26 +1201,13 @@ def _shared_problem_block(
     return candidates[0] if len(candidates) == 1 else None
 
 
-def _prompt_relation_class(relation_class: str) -> str:
-    return {"treatment": "drug", "monitoring": "test"}.get(relation_class, relation_class)
-
-
-def _prompt_display_classes(row: Mapping) -> str:
-    """Teacher-facing class label; procedure-form conditions show both roles."""
-    classes = _argument_relation_classes(str(row["runtime_type"]), str(row["surface"]))
-    ordered = [cls for cls in ("condition", "symptom", "treatment", "procedure",
-                               "monitoring", "provider", "status", "category")
-               if cls in classes] or [str(row["relation_class"])]
-    return "/".join(_prompt_relation_class(cls) for cls in ordered)
-
-
 def relation_evidence_windows(document: str, environment_document: Mapping) -> list[dict]:
     """Finite one/two-clause source spans that can ground a typed relation.
 
     These windows do not assert a relation.  They only prevent a teacher from
     pairing a source quote with a duplicate occurrence elsewhere in the document.
     """
-    speaker_markers = list(_ACI_SPEAKER_TURN_PATTERN.finditer(document))
+    speaker_markers = list(ACI_SPEAKER_TURN_PATTERN.finditer(document))
     if len(speaker_markers) >= 2:
         clause_spans = [
             (marker.start(), speaker_markers[index + 1].start()
@@ -1834,7 +1217,7 @@ def relation_evidence_windows(document: str, environment_document: Mapping) -> l
         window_widths = (1,)
     else:
         clause_spans, start = [], 0
-        for delimiter in _CLAUSE_DELIMITER_PATTERN.finditer(document):
+        for delimiter in CLAUSE_DELIMITER_PATTERN.finditer(document):
             end = delimiter.end()
             if document[start:end].strip():
                 clause_spans.append((start, end))
@@ -1889,21 +1272,21 @@ def relation_evidence_windows(document: str, environment_document: Mapping) -> l
                 and left <= row["start"] < row["end"] <= right
             ]
             if not any(
-                _RUNTIME_TYPE_CLASSES.get(canon(first["runtime_type"])) in subject_types
-                and _RUNTIME_TYPE_CLASSES.get(canon(second["runtime_type"])) in object_types
+                RUNTIME_TYPE_CLASSES.get(canon(first["runtime_type"])) in subject_types
+                and RUNTIME_TYPE_CLASSES.get(canon(second["runtime_type"])) in object_types
                 for first in contained for second in contained if first is not second
-                for subject_types, object_types in _RELATION_ARGUMENT_CLASSES.values()
+                for subject_types, object_types in RELATION_ARGUMENT_CLASSES.values()
             ):
                 continue
             eligible_pairs = []
-            for relation, (subject_types, object_types) in _RELATION_ARGUMENT_CLASSES.items():
+            for relation, (subject_types, object_types) in RELATION_ARGUMENT_CLASSES.items():
                 for subject in contained:
                     for obj in contained:
                         if subject is obj or not subject["linkable"] or not obj["linkable"]:
                             continue
                         if (
-                            _RUNTIME_TYPE_CLASSES.get(canon(subject["runtime_type"])) in subject_types
-                            and _RUNTIME_TYPE_CLASSES.get(canon(obj["runtime_type"])) in object_types
+                            RUNTIME_TYPE_CLASSES.get(canon(subject["runtime_type"])) in subject_types
+                            and RUNTIME_TYPE_CLASSES.get(canon(obj["runtime_type"])) in object_types
                             and _window_pair_has_relation_shape(
                                 relation, subject, obj, clause_spans, document
                             )
@@ -1914,7 +1297,7 @@ def relation_evidence_windows(document: str, environment_document: Mapping) -> l
                                 "object_candidate_id": obj["candidate_id"],
                             })
             windows.append({
-                "evidence_window_id": "window:" + _stable_hash({"start": left, "end": right}),
+                "evidence_window_id": "window:" + stable_hash({"start": left, "end": right}),
                 "start": left,
                 "end": right,
                 "quote": quote,
@@ -1965,101 +1348,6 @@ def _window_pair_has_relation_shape(
     return re.search(cue_patterns, object_text, re.IGNORECASE) is not None
 
 
-CLINICAL_RELATIONS = (
-    "prescribed_with", "procedure_for", "tests_for",
-    "contraindicated_because_of", "causes_or_explains",
-)
-
-
-def relation_teacher_response_format(
-    environment_document: Mapping, document: str, *,
-    allowed_labels: "Sequence[str] | None" = None,
-) -> dict:
-    """Bind strict wire fields to displayed labels, never internal IDs or answers.
-
-    `allowed_labels` scopes the schema to a SUBSET of the inventory (the repair pass shows only the
-    target regions' labels): the span_label enum and the candidate_accounting ledger then cover exactly
-    those labels, so the teacher can neither emit a relation over a label it was not shown nor be forced
-    to account for one. Default (None) = full inventory (the primary teacher, which sees the whole note)."""
-    response_format = deepcopy(RELATION_TEACHER_RESPONSE_FORMAT)
-    schema = response_format["json_schema"]["schema"]
-    inventory = relation_teacher_span_inventory(environment_document)
-    if allowed_labels is not None:
-        allowed = set(allowed_labels)
-        inventory = [row for row in inventory if row["span_label"] in allowed]
-    relations = list(CLINICAL_RELATIONS)
-    labels = [row["span_label"] for row in inventory]
-    support_properties = sorted({property_level for row in inventory for property_level in row["properties"]})
-    for section in ("span_relations", "context_relations"):
-        schema["properties"][section]["items"]["properties"]["relation"]["enum"] = relations
-    def argument_branch(role: str, kind: str) -> dict:
-        fields = (
-            {
-                "span_label": {"enum": labels},
-                "support_property": {"enum": support_properties},
-                "literal": {"const": None},
-            }
-            if kind == "linked" else
-            {
-                "span_label": {"const": None},
-                "support_property": {"const": None},
-                "literal": {"type": "string", "minLength": 1},
-            }
-        )
-        return {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["role", "kind", "span_label", "support_property", "literal"],
-            "properties": {"role": {"const": role}, "kind": {"const": kind}, **fields},
-        }
-
-    def pair_shapes(kind_pairs: tuple[tuple[str, str], ...]) -> dict:
-        return {
-            "anyOf": [
-                {
-                    "type": "array",
-                    "minItems": 2,
-                    "maxItems": 2,
-                    "prefixItems": [
-                        argument_branch("subject", subject_kind),
-                        argument_branch("object", object_kind),
-                    ],
-                    "items": False,
-                }
-                for subject_kind, object_kind in kind_pairs
-            ]
-        }
-
-    # Zero-linked pairs stay unrepresentable (the compiler always rejects
-    # them), and each section binds its own argument structure: span pairs
-    # are label-only, context pairs carry exactly one uncontrolled literal.
-    schema["properties"]["span_relations"]["items"]["properties"]["arguments"] = (
-        pair_shapes((("linked", "linked"),))
-    )
-    schema["properties"]["context_relations"]["items"]["properties"]["arguments"] = (
-        pair_shapes((("linked", "context"), ("context", "linked")))
-    )
-    ledger = schema["properties"]["candidate_accounting"]
-    ledger["minItems"] = len(labels)
-    ledger["maxItems"] = len(labels)
-    ledger_item_properties = ledger["items"]["properties"]
-    ledger["prefixItems"] = [
-        {
-            "type": "object",
-            "additionalProperties": False,
-            "required": ["candidate_label", "state", "reason"],
-            "properties": {
-                "candidate_label": {"const": label},
-                "state": deepcopy(ledger_item_properties["state"]),
-                "reason": deepcopy(ledger_item_properties["reason"]),
-            },
-        }
-        for label in labels
-    ]
-    ledger["items"] = False
-    return response_format
-
-
 def _sanitized_ledger_reason(reason: str, protected_terms: Sequence[str]) -> str:
     """Redact protected surfaces/aliases the teacher repeated despite the prompt."""
     sanitized = reason
@@ -2091,37 +1379,11 @@ def _validated_candidate_accounting(
         term
         for occurrence in environment_document.get("occurrences", [])
         if occurrence.get("controlled", True)
-        for term in _occurrence_protected_terms(occurrence)
+        for term in occurrence_protected_terms(occurrence)
     ]
     for row in records:
         row["reason"] = _sanitized_ledger_reason(str(row["reason"]), protected_terms)
     return [by_id[label] for label in sorted(expected, key=lambda value: int(value[1:]))]
-
-
-def _validated_reader_pin(value, *, label: str = "reader_pin") -> dict:
-    if not isinstance(value, Mapping) or not value:
-        raise ValueError(f"{label} must be a structured non-empty mapping")
-    missing = sorted(READER_PIN_FIELDS - set(value))
-    if missing:
-        raise ValueError(f"{label} is missing required fields: {missing}")
-    empty = sorted(
-        field for field in READER_PIN_FIELDS
-        if value.get(field) is None or value.get(field) == "" or value.get(field) == {}
-    )
-    if empty:
-        raise ValueError(f"{label} has empty required fields: {empty}")
-    return deepcopy(dict(value))
-
-
-def _validated_build_reader_pin(reader, pins: Mapping) -> dict:
-    provided = _validated_reader_pin(pins.get("reader_pin"))
-    injected = getattr(reader, "pin", None)
-    if not isinstance(injected, Mapping) or not injected:
-        raise ValueError("injected reader requires an explicit structured pin")
-    actual = _validated_reader_pin(injected, label="injected reader pin")
-    if provided != actual:
-        raise ValueError("reader_pin must match the injected reader pin")
-    return provided
 
 
 def _rejection_record(
@@ -2135,7 +1397,7 @@ def _rejection_record(
     doc_id = str(attempt_value.get("doc_id", ""))
     if not doc_id:
         raise ValueError("rejection attempt requires doc_id")
-    attempt_hash = _stable_hash(attempt_value)
+    attempt_hash = stable_hash(attempt_value)
     identity = {
         "reason": reason,
         "detail_reason": detail_reason,
@@ -2145,7 +1407,7 @@ def _rejection_record(
         "status": "rejected",
         "reason": reason,
         "detail_reason": detail_reason,
-        "rejection_id": _stable_hash(identity),
+        "rejection_id": stable_hash(identity),
         "attempt_hash": attempt_hash,
         "doc_id": doc_id,
         "evidence": dict(evidence),
@@ -2179,69 +1441,12 @@ def _semantic_property_label(value: str) -> str:
     return " ".join(tokens)
 
 
-_LEAKAGE_STOPWORDS = frozenset({
-    "a", "an", "and", "are", "as", "at", "be", "being", "by", "did", "does",
-    "for", "from", "how", "in", "is", "it", "of", "on", "or", "that", "the",
-    "this", "to", "was", "were", "what", "when", "where", "which", "who", "with",
-})
-
-
-def _meaningful_tokens(value: str) -> set[str]:
-    return {
-        token for token in re.findall(r"[a-z0-9]+", canon(value))
-        if len(token) > 2 and token not in _LEAKAGE_STOPWORDS
-    }
-
-
-def _singularize(token: str) -> str:
-    """Cheap English plural fold so answer/alias token matching survives inflection
-    ("kidney stones" alias vs "kidney stone" answer). Applied to BOTH sides, so it need
-    not be linguistically perfect — only consistent."""
-    if len(token) > 4 and token.endswith("ies"):
-        return token[:-3] + "y"
-    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
-        return token[:-1]
-    return token
-
-
-def _stemmed_tokens(value: str) -> set[str]:
-    return {_singularize(token) for token in _meaningful_tokens(value)}
-
-
-def _stemmed_token_sequence(value: str) -> tuple[str, ...]:
-    """Ordered variant of _stemmed_tokens (same canon/stopword/inflection folding, order kept):
-    the exact-span scorer compares SEQUENCES, so a reply must be the alias, not merely contain
-    its words somewhere."""
-    return tuple(
-        _singularize(token) for token in re.findall(r"[a-z0-9]+", canon(value))
-        if len(token) > 2 and token not in _LEAKAGE_STOPWORDS
-    )
-
-
-def _normalized_aliases(value) -> list[str]:
-    if value is None:
-        return []
-    values = [value] if isinstance(value, str) else list(value)
-    aliases = []
-    for alias in values:
-        exact_alias = str(alias)
-        if exact_alias.strip() and exact_alias not in aliases:
-            aliases.append(exact_alias)
-    return aliases
-
-
-def _occurrence_protected_terms(occurrence: Mapping) -> list[str]:
-    terms = [str(occurrence.get("surface", "")).strip()]
-    terms.extend(alias.strip() for alias in _normalized_aliases(occurrence.get("aliases")))
-    return [term for term in terms if term]
-
-
 def _placeholder_meaning_tokens(runtime_type: str) -> set[str]:
     contract = AciTaskAdapter.semantic_type_contract.get(_semantic_label(runtime_type), {})
     return {
         token
         for label in contract.get("placeholder_labels", ())
-        for token in _meaningful_tokens(str(label))
+        for token in meaningful_tokens(str(label))
     }
 
 
@@ -2257,8 +1462,8 @@ def _answer_leak_tokens(
     exempt = set(extra_exempt_tokens)
     for type_value in types:
         exempt |= _placeholder_meaning_tokens(type_value)
-    answer_tokens = _meaningful_tokens(answer) - exempt
-    return answer_tokens & _meaningful_tokens(question)
+    answer_tokens = meaningful_tokens(answer) - exempt
+    return answer_tokens & meaningful_tokens(question)
 
 
 def _question_leaks_answer(
@@ -2272,7 +1477,7 @@ def _question_leaks_answer(
         question, answer, runtime_type, extra_exempt_tokens=extra_exempt_tokens))
 
 
-def _ordered_decision_levels(decision: Mapping) -> list[str]:
+def ordered_decision_levels(decision: Mapping) -> list[str]:
     """Legal non-placeholder generalization levels of a decision, most-specific
     to coarsest (same flattening/order as the teacher span inventory)."""
     return list(dict.fromkeys(
@@ -2321,12 +1526,12 @@ def _repair_leaked_relation(
         answer_values = list(accepted_values)
     answer_tokens: set[str] = set()
     for value in answer_values:
-        answer_tokens |= _meaningful_tokens(value)
+        answer_tokens |= meaningful_tokens(value)
     if not answer_tokens:
         return None
 
     def leaks(text: str) -> bool:  # strict: no generic-word exemption
-        return bool(answer_tokens & _meaningful_tokens(text))
+        return bool(answer_tokens & meaningful_tokens(text))
 
     def strip_outside(text: str, protect: tuple[int, int] | None) -> str:
         # remove every answer-token occurrence not inside the protected [start, end) span
@@ -2334,7 +1539,7 @@ def _repair_leaked_relation(
         for match in re.finditer(r"\w+", text):
             token = match.group(0)
             keep = True
-            if _meaningful_tokens(token) & answer_tokens:
+            if meaningful_tokens(token) & answer_tokens:
                 if not (protect and match.start() < protect[1] and protect[0] < match.end()):
                     keep = False
             if keep:
@@ -2354,9 +1559,9 @@ def _repair_leaked_relation(
         if argument.get("kind") != "linked":
             return []
         occurrence = occurrences.get(argument.get("occurrence_id")) or {}
-        return _ordered_decision_levels(decisions.get(str(occurrence.get("decision_id"))) or {})
+        return ordered_decision_levels(decisions.get(str(occurrence.get("decision_id"))) or {})
 
-    current = _normalize_teacher_text(str(other_arg.get("support_property") or ""))
+    current = normalize_teacher_text(str(other_arg.get("support_property") or ""))
     candidate_locators = [current] + [
         level for level in levels(other_arg) if canon(level) != canon(current)
     ]
@@ -2371,7 +1576,7 @@ def _repair_leaked_relation(
         well_formed = (
             repaired
             and repaired.endswith("?")
-            and len(_meaningful_tokens(repaired)) >= 3
+            and len(meaningful_tokens(repaired)) >= 3
             and (not locator or locator.lower() in repaired.lower())
         )
         if repaired != question and well_formed and not leaks(repaired):
@@ -2403,11 +1608,11 @@ def _question_leaks_protected_term(
     a level equal to the surface from `allowed` so a raw brand ("Synthroid") whose only authorization
     would be a surface-echoing level stays discriminative and is rejected."""
     allowed = allowed_tokens_by_term or {}
-    question_tokens = _meaningful_tokens(question)
+    question_tokens = meaningful_tokens(question)
     for term in protected_terms:
         if not term:
             continue
-        term_tokens = _meaningful_tokens(term)
+        term_tokens = meaningful_tokens(term)
         discriminative = term_tokens - allowed.get(term, frozenset())
         single_authorized = len(term_tokens) == 1 and not discriminative
         if _contains(question, term) and not single_authorized:
@@ -2495,11 +1700,11 @@ def _task_role_context_locator(
     matched_cue = None
     surviving_sentences: list[str] = []
     protected_tokens = {
-        token for term in protected_terms for token in _meaningful_tokens(term)
+        token for term in protected_terms for token in meaningful_tokens(term)
     }
     for position, surface in sorted(set(targets)):
         sentence = _sentence_at(document, position)
-        sentence_tokens = _meaningful_tokens(sentence)
+        sentence_tokens = meaningful_tokens(sentence)
         if not sentence_tokens - protected_tokens:
             continue
         if sentence not in surviving_sentences:
@@ -2565,180 +1770,6 @@ def _exact_occurrence_span(document: str, occurrence: Mapping) -> list[int] | No
     ):
         return None
     return [start, end]
-
-
-def _parse_aci_note(text: str) -> dict:
-    """Parse compact ACI rows and real combined assessment/plan bullet blocks."""
-    sections: dict[str, list[str]] = {}
-    section_spans: dict[str, list[list[int]]] = {}
-    current_sections: tuple[str, ...] = ()
-    combined_assessment_plan = False
-    offset = 0
-    for raw_line in text.splitlines(keepends=True):
-        raw = raw_line.rstrip("\r\n")
-        line = raw.strip()
-        heading = _ACI_HEADING_PATTERN.match(line)
-        heading_name = heading.group("heading").strip() if heading else ""
-        if heading is not None:
-            current_sections = ()
-            if heading_name not in ACI_TASK_HEADINGS:
-                offset += len(raw_line)
-                continue
-            captured_sections = _ACI_CAPTURED_HEADING_SECTIONS.get(heading_name)
-            if captured_sections is None:
-                offset += len(raw_line)
-                continue
-            current_sections = captured_sections
-            for section in current_sections:
-                sections[section] = []
-                section_spans[section] = []
-            content = heading.group("content")
-            if content and content.strip():
-                value = content.strip()
-                start = offset + raw.find(value)
-                for section in current_sections:
-                    sections[section].append(value)
-                    section_spans[section].append([start, start + len(value)])
-            combined_assessment_plan = heading_name == ACI_COMBINED_ASSESSMENT_PLAN
-        elif line and current_sections:
-            start = offset + len(raw) - len(raw.lstrip())
-            for section in current_sections:
-                sections[section].append(line)
-                section_spans[section].append([start, start + len(line)])
-        offset += len(raw_line)
-
-    demographic_match = re.search(
-        r"\b(\d{1,3}-year-old)\s+(male|female)\b", text, re.IGNORECASE
-    )
-    demographic = (
-        {"age": demographic_match.group(1), "sex": demographic_match.group(2)}
-        if demographic_match else {}
-    )
-    demographic_evidence = (
-        {
-            "age": [demographic_match.start(1), demographic_match.end(1)],
-            "sex": [demographic_match.start(2), demographic_match.end(2)],
-        }
-        if demographic_match else {}
-    )
-    assessment_lines = sections.get("ASSESSMENT", [])
-    plan_lines = sections.get("PLAN", [])
-    if combined_assessment_plan:
-        labeled_rows = _parse_aci_combined_rows(
-            assessment_lines, section_spans.get("ASSESSMENT", [])
-        )
-        assessment_rows = [{"condition": row["condition"]} for row in labeled_rows]
-        plan_rows = labeled_rows
-        assessment_shape = _aci_labeled_section_shape(assessment_rows)
-        plan_shape = _aci_labeled_section_shape(plan_rows)
-    else:
-        assessment_rows = _parse_aci_rows(
-            assessment_lines, ("condition", "category", "status")
-        )
-        plan_rows = _parse_aci_rows(
-            plan_lines, ("condition", "treatment", "test")
-        )
-        assessment_shape = _aci_section_shape(assessment_lines, assessment_rows)
-        plan_shape = _aci_section_shape(plan_lines, plan_rows)
-    return {
-        "sections": sections,
-        "demographic": demographic,
-        "demographic_evidence": demographic_evidence,
-        "assessment_rows": assessment_rows,
-        "assessment_shape": assessment_shape,
-        "plan_rows": plan_rows,
-        "plan_shape": plan_shape,
-    }
-
-
-def _parse_aci_rows(lines: Sequence[str], fields: Sequence[str]) -> list[dict]:
-    rows = []
-    for line in lines:
-        values = [value.strip() for value in _ACI_ROW_DELIMITER.split(line) if value.strip()]
-        if len(values) == len(fields):
-            rows.append(dict(zip(fields, values)))
-    return rows
-
-
-def _parse_aci_combined_rows(
-    lines: Sequence[str], spans: Sequence[Sequence[int]],
-) -> list[dict]:
-    rows = []
-    condition_entries = [
-        (index, match)
-        for index, line in enumerate(lines)
-        if (match := _aci_condition_entry_match(line)) is not None
-    ]
-    for entry_index, (line_index, condition_match) in enumerate(condition_entries):
-        next_line_index = (
-            condition_entries[entry_index + 1][0]
-            if entry_index + 1 < len(condition_entries) else len(lines)
-        )
-        condition = condition_match.group("condition")
-        span = spans[line_index]
-        condition_start = span[0] + condition_match.start("condition")
-        row = {
-            "condition": condition,
-            "treatment": None,
-            "test": None,
-            "evidence": {
-                "condition": [condition_start, condition_start + len(condition)],
-            },
-        }
-        ambiguous_fields = set()
-        recognized_label = False
-        for field_index in range(line_index + 1, next_line_index):
-            field_match = _ACI_LABELED_FIELD_PATTERN.match(lines[field_index])
-            if field_match is None:
-                continue
-            recognized_label = True
-            field = _ACI_LABELED_PLAN_FIELDS.get(canon(field_match.group("label")))
-            if field is None or field in ambiguous_fields:
-                continue
-            if row[field] is not None:
-                row[field] = None
-                row["evidence"].pop(field, None)
-                ambiguous_fields.add(field)
-                continue
-            value = field_match.group("value")
-            field_span = spans[field_index]
-            value_start = field_span[0] + field_match.start("value")
-            row[field] = value
-            row["evidence"][field] = [value_start, value_start + len(value)]
-        if recognized_label:
-            rows.append(row)
-    return rows
-
-
-def _aci_condition_entry_match(line: str):
-    match = _ACI_CONDITION_ENTRY_PATTERN.match(line)
-    if match is None:
-        return None
-    condition = match.group("condition").strip()
-    tokens = re.findall(r"[A-Za-z0-9]+", condition)
-    if (
-        not condition
-        or "," in condition
-        or len(condition) > 80
-        or not 1 <= len(tokens) <= 8
-        or canon(tokens[0]) in _ACI_CONDITION_PREAMBLE_WORDS
-    ):
-        return None
-    return match
-
-
-def _aci_section_shape(lines: Sequence[str], rows: Sequence[Mapping]) -> dict:
-    if len(lines) == 1 and canon(lines[0]) == "none":
-        return {"kind": "none", "count": 0}
-    if lines and len(rows) == len(lines):
-        return {"kind": "rows", "count": len(rows)}
-    return {"kind": "invalid", "count": len(rows)}
-
-
-def _aci_labeled_section_shape(rows: Sequence[Mapping]) -> dict:
-    if rows:
-        return {"kind": "labeled_rows", "count": len(rows)}
-    return {"kind": "invalid", "count": 0}
 
 
 def _exact_labeled_field_occurrence_ids(
@@ -2811,7 +1842,7 @@ def _relation_argument_types_are_legal(
     if len(occurrence_ids) != len(allowed):
         return False
     actual = [
-        _RUNTIME_TYPE_CLASSES.get(canon(str(occurrences[occurrence_id].get("runtime_type", ""))))
+        RUNTIME_TYPE_CLASSES.get(canon(str(occurrences[occurrence_id].get("runtime_type", ""))))
         for occurrence_id in occurrence_ids
     ]
     return all(type_class in permitted
@@ -2938,7 +1969,7 @@ def _deterministic_source_relations(
                         "relation": relation,
                         "occurrence_ids": occurrence_ids,
                         "source_span": [clause_span[0], clause_span[1]],
-                        "quote_hash": _stable_hash(clause),
+                        "quote_hash": stable_hash(clause),
                     })
     return relations
 
@@ -2968,78 +1999,12 @@ def _aci_reference_authorizes_relation(
     return False
 
 
-# ASCII hyphen plus the unicode hyphen/dash/minus variants LLM teachers emit (e.g. gpt-oss
-# writes "x‑ray" U+2011 for source ASCII "x-ray"). Equated in literal AND evidence-quote
-# grounding. Dash folding is 1-char->1-char, so it preserves string length and offsets.
-_LITERAL_DASH_CHARS = "-‐‑‒–—−"
-_DASH_FOLD = str.maketrans({ch: "-" for ch in _LITERAL_DASH_CHARS})
-
-
-def _exact_substring_starts(document: str, quote: str) -> list[int]:
-    """Start offsets where `quote` occurs in `document`, equating unicode dash variants with ASCII
-    '-' (teachers emit U+2011 etc. for source '-'). Folding is length-preserving, so the returned
-    starts and `len(quote)` still index the ORIGINAL document -- callers relying on
-    `start + len(quote)` (evidence spans) stay correct. Otherwise byte-exact (case + whitespace)."""
-    document = document.translate(_DASH_FOLD)
-    quote = quote.translate(_DASH_FOLD)
-    starts = []
-    cursor = 0
-    while quote:
-        start = document.find(quote, cursor)
-        if start < 0:
-            break
-        starts.append(start)
-        cursor = start + 1
-    return starts
-
-
-def _source_literal_spans(document: str, literal: str) -> list[tuple[int, int]]:
-    """Source `(start, end)` spans matching `literal` under case-fold + whitespace-collapse +
-    dash-variant equivalence at token boundaries. Offsets index the ORIGINAL document, so the
-    matched text is exactly ``document[start:end]`` -- a context literal resolved through this and
-    then written back as its source substring still satisfies the exact-source grounding contract
-    (`_argument_is_grounded`). Only orthographic casing, inter-token whitespace, and unicode dash
-    variants are equated; a different token sequence, synonym, abbreviation, or reordering never
-    matches.
-
-    ponytail: `re.IGNORECASE` (not full Unicode case-fold) and ASCII `\\w` boundaries suit the
-    ASCII clinical corpus; move to str.casefold + an explicit offset map only if non-ASCII
-    literals appear."""
-    tokens = str(literal).split()
-    if not tokens:
-        return []
-
-    def _escape_token(token: str) -> str:
-        # per-char escape so any dash variant in the literal matches any dash variant in the
-        # source; every other char keeps exact (case-insensitive) escaping.
-        return "".join(
-            "[" + _LITERAL_DASH_CHARS + "]" if ch in _LITERAL_DASH_CHARS else re.escape(ch)
-            for ch in token
-        )
-    escaped = [_escape_token(token) for token in tokens]
-    # Plural fold on the FINAL token only, matched-extent-inclusive and symmetric: strip one trailing
-    # "s" to a stem, then allow an optional "s". So a singular literal ("x-ray", "aldosterone level")
-    # matches a plural source ("x-rays", "levels") and vice versa, and the matched span still indexes
-    # the real source substring (grounding stays exact). ponytail: single trailing "s" only -- covers
-    # the observed x-ray/level/lab cases; "es"/"ies" plurals are rare here and left out.
-    last = tokens[-1]
-    stem = last[:-1] if len(last) > 1 and last[-1].lower() == "s" else last
-    escaped[-1] = _escape_token(stem) + "s?"
-    core = r"\s+".join(escaped)
-    # (?<!\w)/(?!\w) are token-boundary guards that, unlike \b, still match when the literal's
-    # first/last char is non-word ("(MRI)", "C++") -- \b there fails to find an exact source
-    # occurrence, a grounding regression from the prior exact-substring lookup.
-    pattern = r"(?<!\w)" + core + r"(?!\w)"
-    return [(match.start(), match.end())
-            for match in re.finditer(pattern, document, re.IGNORECASE)]
-
-
 def _resolve_relation_evidence_span(
     document: str,
     quote: str,
     proposed_start,
 ) -> tuple[tuple[int, int] | None, str | None]:
-    starts = _exact_substring_starts(document, quote)
+    starts = exact_substring_starts(document, quote)
     if not quote or not starts:
         return None, "invalid_evidence"
     if proposed_start is None:
@@ -3100,12 +2065,12 @@ def _relation_evidence_connects_selected_occurrences(
             return False
         if quote[local_start:local_end] != surface:
             return False
-        if _CLAUSE_DELIMITER_PATTERN.search(quote, local_start, local_end):
+        if CLAUSE_DELIMITER_PATTERN.search(quote, local_start, local_end):
             return False
         previous_delimiters = list(
-            _CLAUSE_DELIMITER_PATTERN.finditer(quote, 0, local_start)
+            CLAUSE_DELIMITER_PATTERN.finditer(quote, 0, local_start)
         )
-        next_delimiter = _CLAUSE_DELIMITER_PATTERN.search(quote, local_end)
+        next_delimiter = CLAUSE_DELIMITER_PATTERN.search(quote, local_end)
         clause_spans.append((
             previous_delimiters[-1].end() if previous_delimiters else 0,
             next_delimiter.start() if next_delimiter else len(quote),
@@ -3124,444 +2089,6 @@ def _relation_evidence_connects_selected_occurrences(
     )
 
 
-CLINICAL_RELATION_INVENTORY = """prescribed_with: condition or diagnosis -> drug; explicit prescription/use only, never a procedure.
-procedure_for: condition or diagnosis -> medical procedure; a therapeutic procedure or referral for the condition, including a past treatment the patient already had ("had the <procedure> for <condition>", a prior transplant/surgery in the history). Never a drug.
-tests_for: condition or diagnosis -> diagnostic or monitoring test/study; a test that discovers or monitors the condition — ordered to follow it, or whose result showed it. A test ordered or resulted while the doctor is assessing/planning one problem is linked to that problem's condition, even if the order sentence does not repeat the condition name; reject only a test from a different problem block or unrelated small talk. Use this (not procedure_for) for any lab, panel, imaging, or exam.
-contraindicated_because_of: drug or procedure -> condition or diagnosis; require explicit contraindication.
-causes_or_explains: condition or diagnosis -> condition or symptom; require explicit causation/explanation."""
-
-CLINICAL_WORKED_EXAMPLES = """Drug (prescribed_with, never a procedure): source "for the [S1: migraine | condition | levels: neurological disorder] ... prescribe [S2: sumatriptan | drug | levels: triptan]" => prescribed_with(S1, S2).
-Safe question: "Which medication was prescribed for the neurological disorder?" Accepted answer: "triptan". Refer to linked spans by their levels, never the source words; ask for the answered argument with a generic answer-type word (never "category"/"type"/"class"/"kind"). WRONG (leaks the answer): "Which triptan was prescribed …" — never put the answer's level in the question; ask "Which medication …" instead.
-Treatment procedure (procedure_for): "cataract treated with phacoemulsification" => procedure_for (a procedure, not a drug). Past treatment also counts: source "had the [S3: appendectomy | procedure | levels: abdominal surgery] years ago for [S4: appendicitis | condition | levels: abdominal inflammation]" => procedure_for(S4, S3). Safe question: "What procedure was performed for the abdominal inflammation?" Accepted answer: "abdominal surgery".
-Test (tests_for), monitoring OR discovery: source "to follow the [S5: diabetes | condition | levels: metabolic disorder], order hemoglobin A1c" => tests_for(S5, context literal "hemoglobin A1c"). QA orientation is literal -> linked span (ask for the condition, not the test). Safe question: "For what medical condition was hemoglobin A1c ordered?" Accepted answer: "metabolic disorder". A discovered finding counts too: "the ct shows a [S6: kidney stone | condition | levels: urinary tract stone]" => tests_for(S6, context literal "ct"). Use tests_for for any lab/panel/imaging/exam; a test merely mentioned elsewhere is not linked.
-Contraindication: source "you ca n't use beta-blockers because of your [S7: asthma | condition | levels: reactive airway disease]" => contraindicated_because_of(context literal "beta-blockers", S7). Use the condition S-label at the sentence that states the contraindication, not an earlier history-list mention of the same condition. The drug argument may be a drug-class phrase quoted as a context literal (e.g. "anti-inflammatory medications", "certain medications"), not only a specific drug name — emit the contraindication whenever the source says a drug or drug class cannot be used because of the condition.
-Safe question: "What medical condition makes beta-blockers unsuitable?" Set answer_role to object. Accepted answer: "reactive airway disease" (the condition's level, never the drug and never the source words).
-Conditional plan (procedure_for / tests_for; allowed with a CONDITIONAL question): source "if symptoms persist , possibly refer to [S8: cardiac rehabilitation | procedure | levels: rehabilitation program]" while planning the [S9: heart failure | condition | levels: cardiac disorder] => procedure_for(S9, S8). Phrase it conditionally: "What procedure MAY the patient be referred to for the cardiac disorder?" Accepted answer: "rehabilitation program". A definite question ("What procedure was performed?") for a conditional plan is rejected."""
-
-
-def _relation_evidence_cards(
-    document: str, environment_document: Mapping, shown: Sequence[Mapping],
-) -> list[dict]:
-    """Per-clause evidence cards: each source clause holding >=1 shown S-label, with the labels
-    tagged in it. A value mentioned in several clauses carries its ONE S-label in every clause its
-    occurrences fall in. Shared by the primary teacher prompt and the gleaning repair prompt."""
-    label_by_decision = {str(row["decision_id"]): row["span_label"] for row in shown}
-    occ_spans = sorted(
-        (int(occ["start"]), int(occ["end"]), label_by_decision[str(occ.get("decision_id"))])
-        for occ in environment_document.get("occurrences", [])
-        if isinstance(occ.get("start"), int) and isinstance(occ.get("end"), int)
-        and str(occ.get("decision_id")) in label_by_decision
-    )
-    cards = []
-    for index, (start, end) in enumerate(_source_clause_spans(document), start=1):
-        labels = list(dict.fromkeys(
-            label for (s, e, label) in occ_spans if start <= s < e <= end))
-        if labels:
-            cards.append({"index": index, "start": start, "end": end, "labels": labels,
-                          "text": document[start:end].strip()})
-    return cards
-
-
-def relation_teacher_prompt(
-    doc_id: str,
-    document: str,
-    environment_document: Mapping,
-) -> str:
-    """Build the compact human-facing relation-teacher prompt for the clinical
-    relations over the controlled condition/drug/procedure spans."""
-    del doc_id
-    inventory = relation_teacher_span_inventory(environment_document)
-    shown = inventory
-    relation_inventory = CLINICAL_RELATION_INVENTORY
-    worked_examples = CLINICAL_WORKED_EXAMPLES
-    def _span_line(row: Mapping) -> str:
-        return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
-                f"| levels: {'; '.join(row['properties'])}]")
-    spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
-    # Evidence cards annotate each source clause with the S-labels appearing in it. The
-    # inventory carries ONE label per decision, but a value may be mentioned in several
-    # clauses; tag that label in EVERY clause any of its occurrences fall in, so a relation
-    # stated at a non-earliest mention (e.g. arthritis named in the plan sentence, not just
-    # the history list) still co-locates with its partner in the card.
-    cards = [
-        f"E{card['index']}: {card['text']}\nLabels: {', '.join(card['labels'])}"
-        for card in _relation_evidence_cards(document, environment_document, shown)
-    ]
-    return f"""TASK
-Find as many explicit, source-grounded, non-duplicate relations as the cap ({RELATION_TEACHER_MAX_RELATIONS}) permits. Prefer diversity only when supported. Abstain rather than inventing a fact.
-
-HOW TO INSPECT THE SOURCE
-Read the full source. Evidence cards are navigation aids only, not pair gates. Use S-labels for linked controlled arguments. A value mentioned several times has ONE S-label; the evidence cards show every clause it appears in, so use that single label for the relation and the compiler grounds it at the mention inside the sentence that states the relation. For an uncontrolled argument, quote its exact source text as a context literal.
-A relation may connect spans from different turns of the SAME problem discussion, the block where the doctor assesses and plans one problem, including short patient acknowledgments between the doctor's sentences (for example a condition named when the problem is introduced and a test ordered for it a sentence later). Never link spans from a different problem discussion or from unrelated small talk. A conditional or planned statement ("possibly referral to physical therapy", "if symptoms continue we will order X") IS a valid relation, but you MUST phrase its question conditionally (may / might / would / if …) so you never assert it as already done — a conditional plan paired with a definite question is rejected.
-"Explicit" means the source states the relationship through this problem discussion; the subject and object need NOT appear in the same sentence. A drug or test named while the doctor is assessing/planning one problem is linked to that problem's condition even if its own sentence does not repeat the condition name.
-
-PRIVACY-SAFE QA
-Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest (a level so generic it fits almost any concept measures nothing).
-CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC answer-type word only for the argument being asked ("Which medication …", "Which procedure …", "What test …", "What condition …") — never "category", "type", "class", or "kind", since the original render may hold a named entity rather than an explicit category — then put the specific level in the accepted answer. Writing the answer's level into the question ("Which triptan was prescribed …" when the answer is "triptan") leaks it, and the relation is rejected. For two linked spans, ask for the object span as usual. For exactly one linked span plus one uncontrolled context literal, the QA orientation is ALWAYS literal -> linked span: use the literal verbatim as the locator in the question, make the linked span's listed level the accepted answer, and set answer_role to that linked argument's subject/object role. This changes QA orientation only, never the directional relation fact. Never use PERSON as the locator.
-
-RELATION INVENTORY
-{relation_inventory}
-
-WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy these entities — read this document's own source and spans)
-{worked_examples}
-
-DETECTED SPANS
-{spans}
-
-EVIDENCE CARDS
-{chr(10).join(cards) or '(No span-local cards; inspect the source directly.)'}
-
-RESPONSE
-Return two relation lists. Each relation record contains: relation; a subject argument then an object argument; a question; answer_role (subject or object); accepted answers; the fixed scoring contract.
-span_relations: relations whose subject and object are both displayed spans. Each argument is kind linked, with span_label set to its S-label and support_property set to exactly one of that label's listed levels, copied verbatim. Subject and object MUST be two DIFFERENT S-labels — never the same label twice.
-context_relations: relations pairing exactly one linked S-label argument with one uncontrolled argument of kind context, whose literal is exact source text that is not any displayed span. Put the two arguments in the relation's DIRECTIONAL order (subject then object), which is NOT always the linked one first: for tests_for the linked condition is the subject and the test literal is the object, but for contraindicated_because_of the drug/drug-class literal is the SUBJECT and the linked condition is the OBJECT. Match the direction in the relation inventory, not the order the spans appear in text. Then set answer_role to the linked argument's role: the literal is the question locator and the linked span's support_property is the accepted answer.
-Never quote a displayed span as a context literal. Emit each distinct fact EXACTLY ONCE, in the single list its argument kinds require — never emit both a span-pair and a context version of the same fact, and never emit the same fact under a different S-label of the same value. A fact whose second argument is an uncontrolled literal (a test name, a drug class) belongs ONLY in context_relations; do not force it into span_relations by reusing the linked label as both arguments.
-Example span_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S1 with one listed S1 level as support_property; object linked S2 with one listed S2 level; question "Which medication was prescribed for the neurological disorder?"; accepted answer "triptan".
-Example context_relations record (illustrative, unrelated entities): relation prescribed_with; subject linked S3 with one listed S3 level as support_property; object context literal "azithromycin" quoted from the relation sentence; answer_role subject; question "For what medical condition was azithromycin prescribed?"; accepted answer the listed S3 condition level.
-Return exactly one candidate_accounting row per S-label covering both lists, with a short reason for every row. emitted means a relation record in either list uses the label; duplicate_mention means another S-label of the same value already carries the fact (name that label in the reason); exhausted_no_relation means no explicit supported relation; unsupported means insufficient source role/connection. Reasons must reference labels and levels only and never repeat displayed span text. Return only the structured response.
-FINAL CHECK before you return: reconcile the accounting against the two relation lists so they agree exactly. Every S-label you mark emitted MUST appear in an actual relation record in span_relations or context_relations, and every S-label used by a relation record MUST be marked emitted. Never mark a label emitted without including its relation record, and include every supported relation you identified — a fact named in the accounting but absent from the lists, or a relation you found but omitted, is an error to fix before returning.
-
-SOURCE DOCUMENT
-{document}"""
-
-
-def relation_repair_prompt(
-    doc_id: str,
-    document: str,
-    environment_document: Mapping,
-    targets: Sequence[Mapping],
-    *,
-    shown_labels_out: "set[str] | None" = None,
-) -> str:
-    """Second-pass gleaning+repair prompt: same privacy/response contract as the primary, but the
-    DETECTED SPANS and EVIDENCE CARDS are restricted to the clauses relevant to `targets`; a FIX
-    GUIDE states each distinct per-reason hint once, and the REPAIR TARGETS lines reference it by
-    tag. Kept relations and 100%-legitimate rejections are not shown. The primary prompt is
-    untouched (cache-safe)."""
-    del doc_id
-    inventory = relation_teacher_span_inventory(environment_document)
-    label_by_decision = {str(row["decision_id"]): row["span_label"] for row in inventory}
-    occ_by_id = {
-        str(row["occurrence_id"]): row
-        for row in environment_document.get("occurrences", [])
-        if row.get("occurrence_id") is not None
-    }
-
-    def _arg_label(argument: Mapping) -> str | None:
-        if argument.get("kind") == "linked":
-            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
-            return label_by_decision.get(str(occurrence.get("decision_id")))
-        return None
-
-    def _arg_span(argument: Mapping) -> tuple[int, int] | None:
-        if argument.get("kind") == "linked":
-            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
-            if isinstance(occurrence.get("start"), int):
-                return int(occurrence["start"]), int(occurrence["end"])
-        elif isinstance(argument.get("start"), int):
-            return int(argument["start"]), int(argument["end"])
-        return None
-
-    occurrence_spans_by_decision: dict[str, list[tuple[int, int]]] = {}
-    for occurrence in occ_by_id.values():
-        start, end = occurrence.get("start"), occurrence.get("end")
-        if isinstance(start, int) and isinstance(end, int):
-            occurrence_spans_by_decision.setdefault(
-                str(occurrence.get("decision_id")), []).append((int(start), int(end)))
-
-    clauses = _source_clause_spans(document)
-
-    def _target_clause_indices(target: Mapping) -> list[int]:
-        # ALL occurrence clauses of each argument (every mention of a linked arg's DECISION, every
-        # occurrence of a context literal) -- NOT a single representative occurrence, and NOT the
-        # evidence-span envelope. The relation's supporting evidence often sits at a DIFFERENT mention
-        # than the grounded one (HPI "taking ibuprofen for the pain" vs a plan-section question), so
-        # the region must carry every mention; the irrelevant middle is elided (mirrors the judge premise).
-        ranges: list[tuple[int, int]] = []
-        for argument in target.get("arguments") or []:
-            if argument.get("kind") == "linked":
-                occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
-                spans = occurrence_spans_by_decision.get(str(occurrence.get("decision_id")))
-                if spans:
-                    ranges.extend(spans)
-                else:
-                    span = _arg_span(argument)
-                    if span:
-                        ranges.append(span)
-            else:
-                if argument.get("literal"):
-                    ranges.extend(_source_literal_spans(document, str(argument["literal"])))
-                span = _arg_span(argument)
-                if span:
-                    ranges.append(span)
-        return [
-            index for index, (lo, hi) in enumerate(clauses)
-            if document[lo:hi].strip()
-            and any(not (hi <= r0 or r1 <= lo) for r0, r1 in ranges)
-        ]
-
-    target_clause_indices = [_target_clause_indices(target) for target in targets]
-    rendered_clause_spans = [
-        clauses[index] for index in sorted({i for indices in target_clause_indices for i in indices})
-    ]
-
-    def _label_in_rendered_region(row: Mapping) -> bool:
-        # DETECTED SPANS lists a label ONLY if one of its occurrences falls in a RENDERED clause, so
-        # the teacher never sees a label whose source text was elided from the region (#4). This
-        # replaces the prior card-based filter, where a kept card leaked its co-occurring labels even
-        # when their clauses were not shown.
-        for start, end in occurrence_spans_by_decision.get(str(row["decision_id"]), []):
-            if any(not (hi <= start or end <= lo) for lo, hi in rendered_clause_spans):
-                return True
-        return False
-
-    shown = [row for row in inventory if _label_in_rendered_region(row)]
-    # Expose the shown labels so the repair RESPONSE SCHEMA can be scoped to them (the teacher must
-    # not be allowed to emit, or be required to account for, a label absent from its rendered region).
-    if shown_labels_out is not None:
-        shown_labels_out.update(row["span_label"] for row in shown)
-
-    def _span_line(row: Mapping) -> str:
-        return (f"[{row['span_label']}: {row['surface']} | {_prompt_display_classes(row)} "
-                f"| levels: {'; '.join(row['properties'])}]")
-
-    spans = "\n".join(_span_line(row) for row in shown) or "(No eligible controlled spans.)"
-
-    def _arg_desc(argument: Mapping | None) -> str:
-        if argument is None:
-            return "?"
-        if argument.get("kind") == "linked":
-            label = _arg_label(argument)
-            occurrence = occ_by_id.get(str(argument.get("occurrence_id"))) or {}
-            surface = str(occurrence.get("surface") or argument.get("surface") or "").strip()
-            # label + surface (e.g. "S12 (blood sugar)") so the teacher can match the label to its
-            # mention in the cited clauses; the surface is already shown in DETECTED SPANS/SOURCE CLAUSES.
-            if label and surface:
-                return f"{label} ({surface})"
-            return label or "?"
-        return f'context literal "{argument.get("literal", "")}"'
-
-    # GROUP BY SOURCE REGION: cluster targets that share any source clause (a problem discussion),
-    # then show each region's source text ONCE followed by its targets. A clause shared by K targets
-    # in a region is inlined once, not K times; and there is no doc-wide clause index to cross-map --
-    # the S-label surfaces (e.g. "S13 (vitamin d deficiency)") locate each argument within the region.
-    # `clauses` / `_target_clause_indices` / `target_clause_indices` are computed above (also feed the
-    # rendered-region-aligned DETECTED SPANS).
-    parent = list(range(len(targets)))
-
-    def _find(x: int) -> int:
-        while parent[x] != x:
-            parent[x] = parent[parent[x]]
-            x = parent[x]
-        return x
-
-    clause_owner: dict[int, int] = {}
-    for ti, indices in enumerate(target_clause_indices):
-        for ci in indices:
-            if ci in clause_owner:
-                parent[_find(ti)] = _find(clause_owner[ci])
-            else:
-                clause_owner[ci] = ti
-    clusters: dict[int, list[int]] = {}
-    for ti in range(len(targets)):
-        clusters.setdefault(_find(ti), []).append(ti)
-
-    def _cluster_first_clause(members: list[int]) -> int:
-        return min((ci for ti in members for ci in target_clause_indices[ti]), default=10**9)
-
-    # FIX GUIDE: each distinct fix hint is written ONCE, keyed by the target's rejection reason
-    # (fixable) or kind (missed/ambiguous); a target line carries only its key. Batched targets
-    # share a handful of hints, so repeating the multi-sentence hint per target was pure prompt
-    # weight with no information.
-    def _fix_key(target: Mapping) -> str:
-        return str(target.get("reason") or str(target.get("kind", "")).upper())
-
-    fix_guide_entries: dict[str, str] = {}
-    for target in targets:
-        fix_guide_entries.setdefault(_fix_key(target), str(target.get("hint", "")))
-    fix_guide = "\n".join(
-        f"- {key}: {hint}" for key, hint in fix_guide_entries.items()) or "(No targets.)"
-
-    def _target_line(number: int, target: Mapping) -> str:
-        arguments = target.get("arguments") or []
-        subject = next((a for a in arguments if a.get("role") == "subject"), None)
-        obj = next((a for a in arguments if a.get("role") == "object"), None)
-        tag = str(target.get("kind", "")).upper()
-        key = _fix_key(target)
-        fix = f" · fix: {key}" if key != tag else ""
-        return (
-            f"  [{number}] {tag}{fix} · {target.get('relation', '?')} · "
-            f"{_arg_desc(subject)} → {_arg_desc(obj)}")
-
-    blocks: list[str] = []
-    number = 0
-    for members in sorted(clusters.values(), key=_cluster_first_clause):
-        region_clauses = sorted({ci for ti in members for ci in target_clause_indices[ti]})
-        source = " […] ".join(
-            document[clauses[ci][0]:clauses[ci][1]].strip() for ci in region_clauses
-        ) or "(no clause located; inspect the source directly)"
-        lines = []
-        for ti in sorted(members, key=lambda t: (target_clause_indices[t] or [10**9], t)):
-            number += 1
-            lines.append(_target_line(number, targets[ti]))
-        blocks.append(f'SOURCE: "{source}"\n' + "\n".join(lines))
-    repair_targets = "\n\n".join(blocks) or "(No targets.)"
-
-    relation_inventory = CLINICAL_RELATION_INVENTORY
-    worked_examples = CLINICAL_WORKED_EXAMPLES
-    return f"""TASK
-REPAIR + GLEAN pass over one clinical note. A first pass already ran. Below are ONLY the relations to fix or recover — kept relations and legitimately-rejected ones are omitted. Address EACH numbered target: fix the noted problem (rewrite/re-anchor/disambiguate) or emit the missed relation if the source supports it; abstain on any target you cannot support from the source. Do NOT re-emit relations that are not listed. Same output schema and privacy rules as the first pass.
-
-HOW TO INSPECT THE SOURCE
-REPAIR TARGETS are grouped by source region: each SOURCE line is the source text for the targets listed under it — judge those targets only from that region. Arguments are named by S-label with their surface in parentheses (e.g. "S13 (vitamin d deficiency)") so you can locate each one in the SOURCE text; DETECTED SPANS lists the level choices for those labels. Use S-labels for linked controlled arguments (one label per value); quote an uncontrolled argument's exact source text as a context literal. A relation may connect spans across turns of the SAME problem discussion (short patient acknowledgments between the doctor's sentences are fine), never across different problems or small talk. A conditional/planned statement IS a valid relation but its question MUST be phrased conditionally (may / might / would / if …).
-
-PRIVACY-SAFE QA
-Author the question, accepted answers, and scoring contract. Do not repeat a displayed controlled source span or alias in a question or accepted answer; use its listed generalization level. For a linked argument, accepted answers come from its listed levels, never its source text. When a label lists several levels, use the most specific one that still conveys the relation, not the broadest.
-CRITICAL — the QUESTION must never contain the accepted answer's words or level. Ask with a GENERIC answer-type word only for the argument being asked ("Which medication …", "Which procedure …", "What test …", "What condition …") — never "category", "type", "class", or "kind" — then put the specific level in the accepted answer. For two linked spans, ask for the object span. For exactly one linked span plus one uncontrolled context literal, use the literal verbatim as the question locator, make the linked span's listed level the accepted answer, and set answer_role to the linked argument's subject/object role. This changes QA orientation only, never the directional relation fact. Never use PERSON as the locator.
-
-RELATION INVENTORY
-{relation_inventory}
-
-WORKED EXAMPLES (illustrative patterns using unrelated conditions; do not copy these entities)
-{worked_examples}
-
-DETECTED SPANS (level choices for the labels named in the targets)
-{spans}
-
-FIX GUIDE (one entry per tag; apply it to EVERY target labeled with that tag)
-{fix_guide}
-
-REPAIR TARGETS (grouped by source region; address only these — each is tagged ambiguous / fixable / missed, and names its FIX GUIDE entry)
-{repair_targets}
-
-RESPONSE
-Return two relation lists with the same records as the first pass: relation; a subject then an object argument; a question; answer_role; accepted answers; the fixed scoring contract.
-span_relations: subject and object both displayed spans, each kind linked with span_label + one listed level as support_property; the two labels MUST differ.
-context_relations: exactly one linked S-label argument and one uncontrolled context argument whose literal is exact source text (not any displayed span), in the relation's DIRECTIONAL order per the inventory. Set answer_role to the linked argument's role: the literal is the question locator and the linked support_property is the accepted answer.
-Emit each distinct fact EXACTLY ONCE. Return exactly one candidate_accounting row per shown S-label with a short reason (emitted / duplicate_mention / exhausted_no_relation / unsupported) referencing labels and levels only. Return only the structured response."""
-
-
-def _teacher_relation_arguments(
-    proposal: Mapping,
-    occurrences: Mapping[str, Mapping],
-    context_candidates: Mapping[str, Mapping],
-    span_labels: Mapping[str, str] | None = None,
-) -> tuple[list[dict] | None, str | None]:
-    """Normalize v4 labels/literals while retaining cached v1-v3 compatibility."""
-    raw = proposal.get("arguments")
-    if raw is None:
-        occurrence_ids = [str(value) for value in proposal.get("argument_occurrence_ids", [])]
-        support = {str(key): canon(str(value)) for key, value in
-                   dict(proposal.get("support_properties") or {}).items()}
-        raw = [{"role": role, "kind": "linked", "occurrence_id": occurrence_id,
-                "support_property": support.get(occurrence_id, "")}
-               for role, occurrence_id in zip(("subject", "object"), occurrence_ids)]
-    if not isinstance(raw, list) or len(raw) != 2:
-        return None, "invalid_arguments"
-    arguments = []
-    for index, value in enumerate(raw):
-        if not isinstance(value, Mapping):
-            return None, "invalid_arguments"
-        argument = dict(value)
-        if argument.get("role") != ("subject", "object")[index]:
-            return None, "invalid_argument_roles"
-        kind = str(argument.get("kind", ""))
-        if kind == "linked":
-            occurrence_id = str((span_labels or {}).get(
-                str(argument.get("span_label", "")), argument.get("occurrence_id", "")
-            ))
-            if occurrence_id not in occurrences:
-                return None, "invalid_arguments"
-            argument = {
-                "role": argument["role"], "kind": kind,
-                "occurrence_id": occurrence_id,
-                "surface": str(occurrences[occurrence_id].get("surface", "")),
-                "runtime_type": str(occurrences[occurrence_id].get("runtime_type", "")),
-                "support_property": canon(str(argument.get("support_property", ""))),
-            }
-        elif kind == "context":
-            literal = str(argument.get("literal", "")).strip()
-            if literal:
-                argument = {
-                    "role": argument["role"], "kind": kind, "literal": literal,
-                    "runtime_type": "", "start": None, "end": None,
-                }
-            else:
-                candidate_id = str(argument.get("context_candidate_id", ""))
-                candidate = context_candidates.get(candidate_id)
-                if candidate is None:
-                    return None, "unknown_context_candidate"
-                argument = {
-                    "role": argument["role"], "kind": kind,
-                    "context_candidate_id": candidate_id,
-                    "literal": str(candidate["literal"]),
-                    "runtime_type": str(candidate["runtime_type"]),
-                    "start": int(candidate["start"]), "end": int(candidate["end"]),
-                }
-        else:
-            return None, "invalid_argument_kind"
-        arguments.append(argument)
-    return arguments, None
-
-
-def _normalize_teacher_text(value: str) -> str:
-    """Teacher answers/questions are inconsistently snake-cased
-    ("solid_organ_transplant"); the lexical fact scorer tokenizes an underscore
-    run as one token instead of its words, so map underscores to spaces and
-    collapse whitespace before storing and scoring."""
-    return re.sub(r"\s+", " ", str(value).replace("_", " ")).strip()
-
-
-def _substitute_linked_surfaces(
-    text: str, arguments: Sequence[Mapping], occurrences: Mapping[str, Mapping],
-) -> str:
-    """Replace a linked argument's protected surface/alias with the teacher's
-    own selected support_property. Three consecutive live smokes wrote the
-    surface into questions/answers despite prompt guidance; this mechanical
-    substitution uses only teacher-chosen content and the leakage gates rerun
-    on the result."""
-    substituted = text
-    for argument in arguments:
-        if argument.get("kind") != "linked":
-            continue
-        level = str(argument.get("support_property", ""))
-        if not level:
-            continue
-        for term in _occurrence_protected_terms(occurrences[argument["occurrence_id"]]):
-            substituted = re.sub(
-                rf"(?<!\w){re.escape(term)}(?!\w)", level, substituted,
-                flags=re.IGNORECASE,
-            )
-    return substituted
-
-
-def _relation_arguments_are_legal(
-    relation: str, arguments: Sequence[Mapping], relation_contract: Mapping[str, Mapping],
-) -> bool:
-    allowed = relation_contract[relation]["argument_classes"]
-    return len(arguments) == len(allowed) and all(
-        _argument_relation_classes(
-            str(argument.get("runtime_type", "")),
-            str(argument.get("surface", argument.get("literal", ""))),
-        ) & set(permitted)
-        for argument, permitted in zip(arguments, allowed)
-    )
-
-
-def _argument_is_grounded(
-    argument: Mapping, document: str, evidence_span: tuple[int, int],
-    occurrences: Mapping[str, Mapping],
-) -> bool:
-    start, end = evidence_span
-    if argument["kind"] == "linked":
-        occurrence = occurrences[argument["occurrence_id"]]
-        left, right, surface = occurrence.get("start"), occurrence.get("end"), argument["surface"]
-    else:
-        left, right, surface = argument["start"], argument["end"], argument["literal"]
-    return (isinstance(left, int) and isinstance(right, int) and 0 <= left < right <= len(document)
-            and document[left:right] == surface and start <= left < right <= end)
-
-
 def _derived_relation_anchor(
     document: str,
     arguments: list[dict],
@@ -3573,7 +2100,7 @@ def _derived_relation_anchor(
     str, tuple[int, int] | None, list[tuple[int, int]] | None, str | None, str | None,
 ]:
     """Resolve a v4 literal after deriving a source-local anchor from linked spans."""
-    clauses = _source_clause_spans(document)
+    clauses = source_clause_spans(document)
 
     def clause_index(start: int, end: int) -> int | None:
         return next((index for index, (left, right) in enumerate(clauses)
@@ -3604,7 +2131,7 @@ def _derived_relation_anchor(
         # Each span indexes the original document, so grounding stays exact once the literal
         # is written back as its source substring below.
         if context.get("start") is None:
-            matches = _source_literal_spans(document, literal)
+            matches = source_literal_spans(document, literal)
         else:
             try:
                 resolved_start = int(context["start"])
@@ -3772,9 +2299,9 @@ def _derived_relation_anchor(
         left, right = clauses[min(all_indices)][0], clauses[max(all_indices)][1]
         # A speaker-turn "clause" (dialogue, >=2 turn markers) can hold several period
         # sub-clauses; the cue must be searched across the whole turn, not per sub-clause.
-        # _source_clause_spans (here) and the support-check's period regex otherwise
+        # source_clause_spans (here) and the support-check's period regex otherwise
         # disagree on clause boundaries, failing valid same-turn relations (Case 3).
-        kind = "speaker_turn" if len(_ACI_SPEAKER_TURN_PATTERN.findall(document)) >= 2 else "clause"
+        kind = "speaker_turn" if len(ACI_SPEAKER_TURN_PATTERN.findall(document)) >= 2 else "clause"
         return document[left:right], (left, right), None, None, kind
     argument_spans = [
         (int(occurrences[argument["occurrence_id"]]["start"]),
@@ -3848,7 +2375,7 @@ def _derived_relation_anchor(
 
 
 # Natural-language hypotheses for the NLI support fallback. Filled from the arguments'
-# roles (subject/object per _RELATION_ARGUMENT_CLASSES). Used ONLY as a union fallback to
+# roles (subject/object per RELATION_ARGUMENT_CLASSES). Used ONLY as a union fallback to
 # the fixed cue/connector lexicon, so a valid relation phrased with an out-of-list
 # connector ("we have you on X for Y") is not rejected as invalid_evidence.
 RELATION_SUPPORT_HYPOTHESIS = {
@@ -3928,6 +2455,7 @@ def _relation_quote_has_semantic_support(
 # opportunities ~10x), so the miner keeps it. Cue code retained but dormant pending removal:
 # see docs/issues/qa-builder-dept.md.
 RELATION_CUE_GATES_DISABLED = True
+
 
 # Deterministic semantic_property category probes are DISABLED (2026-07-18): across D2N001-007
 # they yielded 1 kept assertion against 114 no_task_role_cue rejections, and the QA focus is
@@ -4108,7 +2636,7 @@ def _remap_to_groundable_siblings(
             document, args, occurrences, context_by_id, relation, relation_contract)
         if err is not None:
             return False
-        if not all(_argument_is_grounded(a, document, span, occurrences) for a in args):
+        if not all(argument_is_grounded(a, document, span, occurrences) for a in args):
             return False
         # A literal->linked probe is judged by the later three-point reader
         # gate, not a lexical/NLI relation parser. Exact literal grounding and
@@ -4147,7 +2675,7 @@ def _remap_to_groundable_siblings(
 _RELATION_ESCALATION_SCOPES = ("span_span", "span_literal")
 
 
-def _relation_scope(arguments: Sequence[Mapping]) -> str:
+def relation_scope(arguments: Sequence[Mapping]) -> str:
     linked_count = sum(argument.get("kind") == "linked" for argument in arguments)
     if linked_count == 2:
         return "span_span"
@@ -4341,7 +2869,7 @@ def _remap_to_lexically_groundable_siblings(
         return (
             error is None
             and span is not None
-            and all(_argument_is_grounded(argument, document, span, occurrences)
+            and all(argument_is_grounded(argument, document, span, occurrences)
                     for argument in trial)
             and _relation_quote_has_lexical_cue_support(
                 relation, quote, trial, relation_contract,
@@ -4376,7 +2904,7 @@ def _remap_to_lexically_groundable_siblings(
 def _opportunity_record(relation, key, anchor_kind, arguments, span, *, recovered):
     return {
         "relation": relation,
-        "scope": _relation_scope(arguments),
+        "scope": relation_scope(arguments),
         "fact_key": key,
         "anchor_kind": anchor_kind,
         "recovered_by_escalation": recovered,
@@ -4396,9 +2924,13 @@ def _opportunity_record(relation, key, anchor_kind, arguments, span, *, recovere
 # is a qualifier, not a flat list). See docs/issues/qa-builder-dept.md.
 _ESCALATION_COORDINATION = re.compile(
     r"^[\s,;:/&()\-\.]*(?:\b(?:and|or)\b[\s,;:/&()\-\.]*)*$", re.I)
+
+
 _ESCALATION_NEGATION = re.compile(
     r"\b(denies|denied|no evidence of|negative for|ruled out|no history of|no known|"
     r"non-?contributory|without any)\b", re.I)
+
+
 # causes_or_explains-ONLY co-occurrence connector: two clinical findings joined by coordination
 # ("edema and some erythema") or attributive comorbidity ("heart failure with diastolic
 # dysfunction") state adjacency, never causation. The between-args gap (intervening entities
@@ -4409,6 +2941,8 @@ _ESCALATION_NEGATION = re.compile(
 _COOCCURRENCE_CONNECTOR = re.compile(
     r"^[\s,;:/&()\-\.]*(?:\b(?:and|or|with|without|w|associated|along|some|a|an|the)\b"
     r"[\s,;:/&()\-\.]*)+$", re.I)
+
+
 # causes_or_explains proximity cap: a causal assertion in a clinical note is LOCAL -- the two
 # findings sit in the same or an adjacent clause ("X is due to Y"; "X. that's causing the Y").
 # `_derived_relation_anchor` tags that <=1-clause-apart case "clause" (or "speaker_turn" in a
@@ -4463,7 +2997,7 @@ def _escalation_prefilter_reason(
             # A cross-type "and" (condition AND drug) is not a list -- it can join a condition to its
             # treatment (e.g. "hypothyroidism and synthroid"), a real relation -- so never skip it.
             classes = [
-                _argument_relation_classes(
+                argument_relation_classes(
                     str(argument.get("runtime_type", "")),
                     str(argument.get("surface") or argument.get("literal") or ""))
                 for argument in arguments
@@ -4504,7 +3038,7 @@ def _all_occurrence_judge_premise(
             occ = occurrences.get(str(argument.get("occurrence_id"))) or {}
             spans = by_decision.get(str(occ.get("decision_id")), [])
         elif argument.get("literal"):
-            spans = _source_literal_spans(document, str(argument["literal"]))
+            spans = source_literal_spans(document, str(argument["literal"]))
             if not spans and isinstance(argument.get("start"), int):
                 spans = [(int(argument["start"]), int(argument["end"]))]
         else:
@@ -4550,6 +3084,8 @@ _RELATION_PREFILTER_SETCALL: dict[str, tuple[str, str, str, str]] = {
         "or clauses, negated or normal findings, or the patient's own words about their life, diet, "
         "or behavior."),
 }
+
+
 _RELATION_PREFILTER_FRAME = (
     "Clinical note:\n\"\"\"\n{ctx}\n\"\"\"\n\n"
     "List EVERY distinct {kind} that the note says {phrase} the patient's {anchor}.\n"
@@ -4557,20 +3093,6 @@ _RELATION_PREFILTER_FRAME = (
     "Copy each answer verbatim as a short phrase from the note; include nothing not in the note.\n"
     "Respond with ONLY a JSON array of strings, e.g. [\"x\",\"y\"]. If there are none, respond []."
 )
-
-
-def _parse_llm_json_array(raw: str) -> list[str]:
-    """Extract a JSON string array from a (possibly ```json-fenced) reply; [] on any malformity."""
-    match = re.search(r"\[.*\]", raw or "", re.DOTALL)
-    if match is None:
-        return []
-    try:
-        parsed = json.loads(match.group(0))
-    except (json.JSONDecodeError, ValueError):
-        return []
-    if not isinstance(parsed, list):
-        return []
-    return [str(value).strip() for value in parsed if str(value).strip()]
 
 
 def llm_prefilter_context_candidates(
@@ -4598,7 +3120,7 @@ def llm_prefilter_context_candidates(
             prompt = _RELATION_PREFILTER_FRAME.format(
                 ctx=document, kind=kind, phrase=phrase, anchor=anchor,
                 constraint=(constraint + "\n") if constraint else "")
-            for item in _parse_llm_json_array(propose(prompt)):
+            for item in parse_llm_json_array(propose(prompt)):
                 match = re.search(re.escape(item), document, re.IGNORECASE)
                 if match is None:
                     continue
@@ -4606,7 +3128,7 @@ def llm_prefilter_context_candidates(
                 literal = document[start:end]
                 key = (runtime_type, start, end, literal)
                 candidates.setdefault(key, {
-                    "context_candidate_id": "context:" + _stable_hash({
+                    "context_candidate_id": "context:" + stable_hash({
                         "runtime_type": runtime_type, "start": start, "end": end, "literal": literal,
                     }),
                     "kind": "context_literal",
@@ -4686,7 +3208,7 @@ def relation_support_opportunities(
                 ]
                 if not any(argument["kind"] == "linked" for argument in arguments):
                     continue
-                if not _relation_arguments_are_legal(relation, arguments, relation_contract):
+                if not relation_arguments_are_legal(relation, arguments, relation_contract):
                     continue
                 if (
                     subject_template["kind"] == object_template["kind"] == "linked"
@@ -4702,7 +3224,7 @@ def relation_support_opportunities(
                 )
                 if error is not None or span is None:
                     continue
-                if not all(_argument_is_grounded(argument, document, span, occurrences)
+                if not all(argument_is_grounded(argument, document, span, occurrences)
                            for argument in arguments):
                     continue
                 # Proximity cap for causes_or_explains: only a local (<=1-clause-apart) anchor can
@@ -4743,7 +3265,7 @@ def relation_support_opportunities(
     # docs/issues/qa-builder-dept.md.
     if escalator is not None and pending:
         items = [(key, payload) for key, payload in pending.items() if key not in opportunities]
-        clauses = _source_clause_spans(document)
+        clauses = source_clause_spans(document)
         calls = [
             # Judge premise = ALL occurrence-clauses of both arguments (recall-oriented), falling
             # back to the anchor quote if no clause resolves. This changes only what the judge reads;
@@ -4769,7 +3291,7 @@ def relation_support_opportunities(
 # infra/malformed and is EXCLUDED. `three_point_gate_failed` is NOT here: it is fixable only when the
 # relation is ambiguous (answer_competing), which the ambiguous-target rule already catches; its
 # lattice_level_suspect / representative_unreadable variants are data/reader-owned (excluded).
-_GLEANING_FIX_HINTS: dict[str, str] = {
+GLEANING_FIX_HINTS: dict[str, str] = {
     "invalid_evidence":
         "Subject and object are stated in the same problem discussion but not the same clause; anchor "
         "the relation at the mention where they co-locate (the entity may be named again nearby).",
@@ -4801,26 +3323,39 @@ _GLEANING_FIX_HINTS: dict[str, str] = {
         "with its S-label) -- the previous attempt used a raw term that is not one of them. Never use "
         "the source word or your own phrasing; if no listed level accurately fits, abstain.",
 }
-_GLEANING_FIXABLE_REASONS = frozenset(_GLEANING_FIX_HINTS)
+
+
+GLEANING_FIXABLE_REASONS = frozenset(GLEANING_FIX_HINTS)
+
+
 _GLEANING_AMBIGUOUS_HINT = (
     "More than one candidate answer of this type appears in the subject's problem discussion, so a "
     "free-form reader cannot uniquely answer. Re-author the question so exactly one answer is correct "
     "(add a distinguishing detail from the source), or abstain if it cannot be made unique."
 )
+
+
 _GLEANING_MISSED_HINT = (
     "This subject/object pair is source-supported (see its evidence card) but no relation was emitted "
     "for it. Emit the relation if the source states it, else leave it."
 )
+
+
 # A literal->linked relation whose literal could not be confirmed for the paired condition: the
 # literal is likely attached to the wrong problem. Its real evidence clauses are shown so the teacher
-# can re-pair it. (Reason not in _GLEANING_FIX_HINTS: it is detected structurally below, not by reason.)
+# can re-pair it. (Reason not in GLEANING_FIX_HINTS: it is detected structurally below, not by reason.)
 _MISPAIRED_LITERAL_REASONS = frozenset({"unknown_context_literal", "three_point_gate_failed"})
+
+
 _GLEANING_MISPAIRED_HINT = (
     "This test/procedure literal was paired with a condition the source does not state it is for. Find "
     "where the literal appears in the source and re-pair it with THAT problem's condition (see its "
     "evidence cards), or abstain if no condition is actually stated for it."
 )
+
+
 _GLEANING_TARGET_PRIORITY = {"ambiguous": 3, "fixable": 2, "missed": 1}
+
 
 # A linked argument's `surface` is a controlled entity's raw source text; rejection records are
 # shareable diagnostics, so it is stripped before an argument identity is stamped onto one
@@ -4939,7 +3474,7 @@ def _gleaning_targets(
         # invalid_evidence with no grounded args) must still be a target -- never a
         # false-negative -- so key it by its own rejection identity when the fact key is None.
         return ("reject", str(row.get("rejection_id") or row.get("attempt_hash")
-                             or row.get("proposal_hash") or _stable_hash(dict(row))))
+                             or row.get("proposal_hash") or stable_hash(dict(row))))
 
     def _is_self_pair(arguments: Sequence[Mapping]) -> bool:
         # A degenerate target whose two linked arguments resolve to the SAME decision (e.g. a
@@ -4987,9 +3522,9 @@ def _gleaning_targets(
                 (row.get("evidence") or {}).get("leak_source") or "") == "context_literal":
             continue  # the leak sits inside an unrecolorable context literal: no author -- the
             # repair teacher included -- can phrase around it, so it is dead weight, not fixable
-        if reason in _GLEANING_FIXABLE_REASONS:
+        if reason in GLEANING_FIXABLE_REASONS:
             _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
-                 reason=reason, hint=_GLEANING_FIX_HINTS[reason], arguments=_args(row))
+                 reason=reason, hint=GLEANING_FIX_HINTS[reason], arguments=_args(row))
 
     # hedge modality: the hedge guard is a non-blocking diagnostic (not a reject) -- but a
     # hedge-flagged relation the READER then could not confirm is routed back to repair to
@@ -5000,7 +3535,7 @@ def _gleaning_targets(
         modality = (row.get("evidence") or {}).get("modality_diagnostics") or []
         if reason == "three_point_gate_failed" and "hedged_source_definite_question" in modality:
             _add(_fact_key(row) or _fallback_key(row), "fixable", relation=row.get("relation"),
-                 reason="hedged_relation", hint=_GLEANING_FIX_HINTS["hedged_relation"],
+                 reason="hedged_relation", hint=GLEANING_FIX_HINTS["hedged_relation"],
                  arguments=_args(row))
 
     # mispaired context literal: a literal->linked relation the grounding/reader could not confirm for
@@ -5145,17 +3680,17 @@ def _promote_context_literals_on_detected_entities(
     for argument in arguments:
         if argument.get("kind") != "context" or not argument.get("literal"):
             continue
-        literal_tokens = _meaningful_tokens(str(argument["literal"]))
+        literal_tokens = meaningful_tokens(str(argument["literal"]))
         if not literal_tokens:
             continue
         promoted = None
         for occurrence_id, occurrence in occurrences.items():
             if not occurrence.get("controlled", True):
                 continue
-            surface_tokens = _meaningful_tokens(str(occurrence.get("surface", "")))
+            surface_tokens = meaningful_tokens(str(occurrence.get("surface", "")))
             if not surface_tokens or not surface_tokens <= literal_tokens:
                 continue
-            levels = _ordered_decision_levels(decisions.get(str(occurrence.get("decision_id")), {}))
+            levels = ordered_decision_levels(decisions.get(str(occurrence.get("decision_id")), {}))
             if levels:
                 promoted = (occurrence_id, occurrence, levels[0])
                 break
@@ -5443,7 +3978,7 @@ def _literal_reverse_row(
         "family": "context", "scope": "linked", "subtype": "contextual_relation",
         "relation": relation,
         "occurrence_ids": [occurrence_id],
-        "group_id": "literal_reverse:" + relation + ":" + _stable_hash(
+        "group_id": "literal_reverse:" + relation + ":" + stable_hash(
             [decision_id, sorted(group["literals"])]),
         "question": question,
         "accepted_values": [answer_level],
@@ -5457,7 +3992,7 @@ def _literal_reverse_row(
             "arguments": arguments,
             "argument_spans": {occurrence_id: [condition_span[0], condition_span[1]]},
             "reader_turns": _source_turns_for_ranges(document, ranges),
-            "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
+            "source_span": {"start": lo, "end": hi, "quote_hash": stable_hash(document[lo:hi])},
             "teacher_id": "deterministic", "run_id": "literal_reverse",
         },
     }
@@ -5479,7 +4014,7 @@ def _literal_reverse_assertions(
     for (relation, decision_id), group in _literal_reverse_groups(
             opportunities, occurrences).items():
         decision = decisions_by_id.get(decision_id)
-        levels = _ordered_decision_levels(decision) if decision else []
+        levels = ordered_decision_levels(decision) if decision else []
         if not levels:
             continue  # no legal generalization -> nothing to answer with
         rows.append(_literal_reverse_row(
@@ -5501,6 +4036,7 @@ _FORWARD_RELATION_TEMPLATES = {
     "causes_or_explains": "Which symptom, finding, or condition does the {locator} cause or explain?",
 }
 
+
 # The stage's reverse templates: the ambiguity-repair set plus the two relations it never needed.
 # _REVERSE_FRAME_TEMPLATES itself is untouched -- its membership gates the post-gleaning
 # reverse-framing pass, which must stay byte-identical when the stage is off.
@@ -5510,6 +4046,7 @@ _DETERMINISTIC_REVERSE_TEMPLATES = {
                                   "the {locator}?",
     "causes_or_explains": "Which underlying medical condition causes or explains the {locator}?",
 }
+
 
 # Bare type-word levels are useless answers (and usually echo the question's answer-type word):
 # the coarsest->finest answer-level search skips them instead of spending reader calls.
@@ -5533,7 +4070,7 @@ def _deterministic_answer_levels(decision: Mapping) -> list[str]:
     three-point-gate pass is the coarsest supported level (same semantics as the teacher's
     supported-level prior). Degenerate type-word levels are skipped; a decision whose every
     level is degenerate still gets one trial at its finest level."""
-    levels = _ordered_decision_levels(decision)  # most-specific -> coarsest
+    levels = ordered_decision_levels(decision)  # most-specific -> coarsest
     trials = [level for level in reversed(levels)
               if canon(level) not in _DETERMINISTIC_LEVEL_SKIP]
     return trials or levels[:1]
@@ -5556,7 +4093,7 @@ def _deterministic_relation_plans(
         if not occurrence.get("controlled", True):
             return False
         decision = decisions.get(str(occurrence["decision_id"]))
-        return bool(decision and _ordered_decision_levels(decision))
+        return bool(decision and ordered_decision_levels(decision))
 
     groups: dict[tuple, dict[str, dict]] = {}
     for opportunity in opportunities:
@@ -5620,7 +4157,7 @@ def _foreign_protected_terms(
         if occurrence.get("controlled", True)
         and occurrence.get("decision_id") is not None
         and str(occurrence["decision_id"]) != str(own_decision_id)
-        for term in _occurrence_protected_terms(occurrence)
+        for term in occurrence_protected_terms(occurrence)
     ]
 
 
@@ -5654,7 +4191,7 @@ def _deterministic_stage_proposal(
                  else _DETERMINISTIC_REVERSE_TEMPLATES)
     locator_decision_id = str(
         (occurrences.get(str(locator_argument.get("occurrence_id"))) or {}).get("decision_id"))
-    locator_levels = _ordered_decision_levels(decisions.get(locator_decision_id) or {})
+    locator_levels = ordered_decision_levels(decisions.get(locator_decision_id) or {})
     if not locator_levels:
         return None
     locator_argument["support_property"] = _first_noncolliding_level(
@@ -5710,7 +4247,7 @@ def _set_forward_row(
     if subject_occurrence is None or subject_occurrence.get("decision_id") is None:
         return None
     subject_decision_id = str(subject_occurrence["decision_id"])
-    subject_levels = _ordered_decision_levels(decisions.get(subject_decision_id) or {})
+    subject_levels = ordered_decision_levels(decisions.get(subject_decision_id) or {})
     if not subject_levels:
         return None
     subject_level = _first_noncolliding_level(
@@ -5723,7 +4260,7 @@ def _set_forward_row(
         if occurrence is None or occurrence.get("decision_id") is None:
             return None
         decision_id = str(occurrence["decision_id"])
-        levels = _ordered_decision_levels(decisions.get(decision_id) or {})
+        levels = ordered_decision_levels(decisions.get(decision_id) or {})
         if not levels:
             return None
         member_level = str(levels[0])
@@ -5749,7 +4286,7 @@ def _set_forward_row(
         "family": "context", "scope": "linked", "subtype": "contextual_relation",
         "relation": relation,
         "occurrence_ids": occurrence_ids,
-        "group_id": "set_forward:" + relation + ":" + _stable_hash(
+        "group_id": "set_forward:" + relation + ":" + stable_hash(
             [subject_decision_id, sorted(requirements)]),
         "question": question,
         "accepted_values": [member["required_property"] for member in members],
@@ -5771,7 +4308,7 @@ def _set_forward_row(
                 for occurrence_id, span in zip(occurrence_ids, ranges)
             },
             "reader_turns": _source_turns_for_ranges(document, ranges),
-            "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
+            "source_span": {"start": lo, "end": hi, "quote_hash": stable_hash(document[lo:hi])},
             "teacher_id": "deterministic", "run_id": "deterministic_stage",
         },
     }
@@ -5819,7 +4356,7 @@ def _compound_span_reverse_row(
         if occurrence is None or occurrence.get("decision_id") is None:
             return None
         decision = decisions.get(str(occurrence["decision_id"]))
-        levels = _ordered_decision_levels(decision or {})
+        levels = ordered_decision_levels(decision or {})
         if not levels:
             return None
         locator_level = _first_noncolliding_level(
@@ -5848,7 +4385,7 @@ def _compound_span_reverse_row(
         "family": "context", "scope": "linked", "subtype": "contextual_relation",
         "relation": relation,
         "occurrence_ids": occurrence_ids,
-        "group_id": "compound_span_reverse:" + relation + ":" + _stable_hash(
+        "group_id": "compound_span_reverse:" + relation + ":" + stable_hash(
             [subject_decision_id, sorted(requirements)]),
         "question": question,
         "accepted_values": [str(answer_level)],
@@ -5871,7 +4408,7 @@ def _compound_span_reverse_row(
                 for occurrence_id, span in zip(occurrence_ids, ranges)
             },
             "reader_turns": _source_turns_for_ranges(document, ranges),
-            "source_span": {"start": lo, "end": hi, "quote_hash": _stable_hash(document[lo:hi])},
+            "source_span": {"start": lo, "end": hi, "quote_hash": stable_hash(document[lo:hi])},
             "teacher_id": "deterministic", "run_id": "deterministic_stage",
         },
     }
@@ -5906,7 +4443,7 @@ def compile_relational_assertions(
         tokens for occurrence in occurrences.values()
         if occurrence.get("controlled", True)
         and occurrence.get("decision_id") is not None
-        and (tokens := _meaningful_tokens(str(occurrence.get("surface", ""))))
+        and (tokens := meaningful_tokens(str(occurrence.get("surface", ""))))
     ]
     decisions = {
         str(row["decision_id"]): row
@@ -5956,7 +4493,7 @@ def compile_relational_assertions(
                         if reverse_framing_only else list(proposals))
     for index, proposal_value in enumerate(active_proposals):
         proposal = dict(proposal_value)
-        proposal_hash = _stable_hash(proposal)
+        proposal_hash = stable_hash(proposal)
 
         def reject(reason: str, detail: Mapping | None = None) -> None:
             quote, quote_span, _ = proposal_evidence(proposal)
@@ -5966,11 +4503,11 @@ def compile_relational_assertions(
                 "argument_occurrence_ids": [
                     (
                         str(value) if str(value) in occurrences
-                        else _stable_hash(str(value))
+                        else stable_hash(str(value))
                     )
                     for value in proposal.get("argument_occurrence_ids", [])
                 ],
-                "evidence_quote_hash": _stable_hash(quote),
+                "evidence_quote_hash": stable_hash(quote),
                 "evidence_span": list(quote_span) if quote_span is not None else None,
             }
             if competing_answers:  # ambiguity monitor, recorded even for pre-gate rejects
@@ -6023,7 +4560,7 @@ def compile_relational_assertions(
         if proposal.get("arguments") is None and relation in {"treated_with", "procedure_for"}:
             legacy_ids = [str(value) for value in proposal.get("argument_occurrence_ids", [])]
             if len(legacy_ids) == 2 and legacy_ids[1] in occurrences and (
-                _RUNTIME_TYPE_CLASSES.get(canon(str(occurrences[legacy_ids[1]].get("runtime_type", ""))))
+                RUNTIME_TYPE_CLASSES.get(canon(str(occurrences[legacy_ids[1]].get("runtime_type", ""))))
                 == "treatment"
             ):
                 relation = "prescribed_with"
@@ -6031,7 +4568,7 @@ def compile_relational_assertions(
             reject("invalid_relation")
             continue
         grounded_relation = relation
-        arguments, argument_error = _teacher_relation_arguments(
+        arguments, argument_error = teacher_relation_arguments(
             proposal, occurrences, context_by_id, span_labels
         )
         if argument_error is not None:
@@ -6067,7 +4604,7 @@ def compile_relational_assertions(
         if evidence_error is not None:
             reject(evidence_error)
             continue
-        if not _relation_arguments_are_legal(relation, arguments, relation_contract):
+        if not relation_arguments_are_legal(relation, arguments, relation_contract):
             reject("invalid_argument_types")
             continue
         # A context literal that coincides with a detected entity will be
@@ -6079,14 +4616,14 @@ def compile_relational_assertions(
             argument.get("kind") == "context"
             and argument.get("literal")
             and any(
-                occurrence_tokens <= _meaningful_tokens(str(argument["literal"]))
+                occurrence_tokens <= meaningful_tokens(str(argument["literal"]))
                 for occurrence_tokens in substitutable_token_sets
             )
             for argument in arguments
         ):
             reject("literal_will_be_substituted")
             continue
-        if not all(_argument_is_grounded(argument, document, evidence_span, occurrences)
+        if not all(argument_is_grounded(argument, document, evidence_span, occurrences)
                    for argument in arguments):
             reject("invalid_evidence_occurrence")
             continue
@@ -6154,13 +4691,13 @@ def compile_relational_assertions(
                for occurrence_id in occurrence_ids):
             reject("invalid_property")
             continue
-        question = _normalize_teacher_text(str(proposal.get("question", "")))
+        question = normalize_teacher_text(str(proposal.get("question", "")))
         if not question.endswith("?"):
             reject("invalid_question")
             continue
-        accepted_values = [_normalize_teacher_text(str(value))
+        accepted_values = [normalize_teacher_text(str(value))
                            for value in proposal.get("accepted_answers", [])
-                           if _normalize_teacher_text(str(value))]
+                           if normalize_teacher_text(str(value))]
         # v1 migration: preserve old cached proposals, but new requests must author answers.
         if not accepted_values:
             answer_occurrence_id = str(proposal.get("answer_occurrence_id", ""))
@@ -6177,9 +4714,9 @@ def compile_relational_assertions(
             continue
         sanitized_qa = False
         if uses_v4_arguments:
-            sanitized_question = _substitute_linked_surfaces(question, arguments, occurrences)
+            sanitized_question = substitute_linked_surfaces(question, arguments, occurrences)
             sanitized_values = [
-                _substitute_linked_surfaces(answer, arguments, occurrences)
+                substitute_linked_surfaces(answer, arguments, occurrences)
                 for answer in accepted_values
             ]
             sanitized_qa = (sanitized_question, sanitized_values) != (question, accepted_values)
@@ -6215,7 +4752,7 @@ def compile_relational_assertions(
         # placeholder contract (for example, "medication" in a question whose
         # canonical linked answer is "thyroid medication"). Every remaining
         # overlap is discriminative and still triggers the strict repair.
-        leak_exempt = _meaningful_tokens(answer_type_hint or "")
+        leak_exempt = meaningful_tokens(answer_type_hint or "")
         # Reverse-orientation question (answer=subject): the locator (the object named in the
         # question, e.g. "thyroid panel") is the GIVEN premise, not the answer -- its tokens must
         # not count as answer-leakage, else the repair strips them ("thyroid panel" -> "panel").
@@ -6223,7 +4760,7 @@ def compile_relational_assertions(
             locator_argument = arguments[1]
             locator_text = str(locator_argument.get("support_property")
                                or locator_argument.get("literal") or "")
-            leak_exempt = leak_exempt | _meaningful_tokens(locator_text)
+            leak_exempt = leak_exempt | meaningful_tokens(locator_text)
         leaking_tokens: set[str] = set()
         for answer in accepted_values:
             leaking_tokens |= _answer_leak_tokens(
@@ -6262,7 +4799,7 @@ def compile_relational_assertions(
             type_words = _placeholder_meaning_tokens(str(occurrence.get("runtime_type", "")))
             type_words = type_words | {f"{word}s" for word in type_words}
             levels = list(legal_properties.get(occurrence_id_value, ()))
-            for term in _occurrence_protected_terms(occurrence):
+            for term in occurrence_protected_terms(occurrence):
                 # A level identical to the raw surface is not a real generalization (a broken
                 # lattice could entail the surface itself); drop it so a raw brand's ONLY
                 # authorization can't be a surface-echoing level. A genuine coarser level that
@@ -6271,7 +4808,7 @@ def compile_relational_assertions(
                     token
                     for property_level in levels
                     if canon(property_level) != canon(term)
-                    for token in _meaningful_tokens(property_level)
+                    for token in meaningful_tokens(property_level)
                 ) | type_words
                 protected_terms.append(term)
                 allowed_level_tokens[term] = allowed_level_tokens.get(term, frozenset()) | term_level_tokens
@@ -6285,7 +4822,7 @@ def compile_relational_assertions(
             token
             for occurrence_id in occurrence_ids
             for property_level in legal_properties.get(occurrence_id, ())
-            for token in _meaningful_tokens(property_level)
+            for token in meaningful_tokens(property_level)
         )
         question_allowed_tokens = {
             term: tokens | argument_level_tokens
@@ -6300,7 +4837,7 @@ def compile_relational_assertions(
                 token
                 for argument in arguments
                 if argument.get("kind") == "context"
-                for token in _meaningful_tokens(str(argument.get("literal") or ""))
+                for token in meaningful_tokens(str(argument.get("literal") or ""))
             )
             literal_only_leak = bool(literal_tokens) and not _question_leaks_protected_term(
                 question, protected_terms,
@@ -6369,7 +4906,7 @@ def compile_relational_assertions(
         source_span = {
             "start": evidence_span[0],
             "end": evidence_span[1],
-            "quote_hash": _stable_hash(document[evidence_span[0]:evidence_span[1]]),
+            "quote_hash": stable_hash(document[evidence_span[0]:evidence_span[1]]),
         }
         evidence = {
             "authority": "source_document",
@@ -6404,7 +4941,7 @@ def compile_relational_assertions(
             "subtype": "contextual_relation",
             "relation": relation,
             "occurrence_ids": occurrence_ids,
-            "group_id": "relation:" + relation + ":" + _stable_hash([
+            "group_id": "relation:" + relation + ":" + stable_hash([
                 {key: argument[key] for key in ("kind", "occurrence_id", "literal") if key in argument}
                 for argument in arguments
             ]),
@@ -6590,7 +5127,7 @@ def package_utility_artifact(
                     "policy_dependency_decision_ids", "credit_routing",
                 }
             }
-            assertion_id = str(row.get("assertion_id") or _stable_hash(identity_payload))
+            assertion_id = str(row.get("assertion_id") or stable_hash(identity_payload))
             if assertion_id in assertions or assertion_id in compiled_ids:
                 raise ValueError(f"duplicate assertion id: {assertion_id}")
             row["assertion_id"] = assertion_id
@@ -6606,7 +5143,7 @@ def package_utility_artifact(
         missing_families = weight_state["missing_family_budgets"]
         documents[doc_id] = {
             "environment_document_hash": environment_document.get(
-                "environment_document_hash", _stable_hash(environment_document)
+                "environment_document_hash", stable_hash(environment_document)
             ),
             "measurement_state": (
                 "unsupported" if not weighted else "partial" if missing_families else "measured"
@@ -6643,7 +5180,7 @@ def package_utility_artifact(
         "assertions": assertions,
         "rejections": {"summary_by_reason": {}},
     }
-    artifact["artifact_hash"] = _stable_hash(artifact)
+    artifact["artifact_hash"] = stable_hash(artifact)
     return artifact
 
 
@@ -6785,1044 +5322,6 @@ def artifact_views(artifact: Mapping) -> tuple[dict, dict]:
     return assertions_view, qa_pairs_view
 
 
-def _frozen_semantic_chain(decision: Mapping, source_aliases: Sequence[str]) -> list[dict]:
-    """Freeze explicit entailment closure for one decision's lattice.
-
-    Ordered specific -> coarse: KEEP entails every level; a level entails itself
-    and every coarser level; placeholder entails nothing. This is a declaration
-    by the accepted lattice profile, not proven natural-language entailment; the
-    linked-answer scorer reads it instead of re-deriving from mutable profiles,
-    counts, or lexical similarity (docs/handoffs/2026-07-14-qa-reader-lattice-scoring.md).
-    """
-    # Specific -> coarse order is the decision's AUTHORED level ladder (the profile's `levels`
-    # list order, preserved into `actions` at freeze time). The profile loader validates that
-    # ladder is monotone in the profile's OWN level_counts (lattice_profiles.py), so authored
-    # order == profile-count order and is the semantic hierarchy.
-    #
-    # We deliberately do NOT re-sort by `coarseness_rank`: that is a GLOBAL per-fill anonymity-set
-    # size (aset_count -> lookup_count, keyed on the level string across ALL profiles, aggregated
-    # by max), not a per-profile generality rank. It is miscalibrated across profiles -- e.g.
-    # global "heart disease"=400 > "thoracic disease"=390 -- so sorting by it inverts organ vs
-    # region levels (heart ranked coarser than thoracic), which drops the organ->region entailment
-    # edge and inverts the RL reward gradient (a policy generalizing CHF to the more-specific
-    # "heart disease" would score 0 while the coarser "thoracic disease" scores 1). aset /
-    # coarseness_rank is UNCHANGED for its real jobs (ranker policy feature, BC target selection,
-    # hiding / representative-anchor selection); only the entailment ORDER uses the profile ladder.
-    levels = [action for action in decision.get("actions", []) if action.get("mode") == "level"]
-    ordered_properties = [
-        canon(str(action["entails"][0]))
-        for action in levels
-        if action.get("entails")
-    ]
-    canonical_key = str(decision.get("canonical_key", ""))
-    keep_aliases = list(dict.fromkeys(
-        [canonical_key, *[str(alias) for alias in source_aliases]]
-    ))
-    chain = [{
-        "node": "keep",
-        "answer_aliases": [alias for alias in keep_aliases if alias],
-        "entailed_properties": list(ordered_properties),
-    }]
-    for index, prop in enumerate(ordered_properties):
-        chain.append({
-            "node": prop,
-            "answer_aliases": [prop],
-            "entailed_properties": ordered_properties[index:],
-        })
-    chain.append({"node": "placeholder", "answer_aliases": [], "entailed_properties": []})
-    return chain
-
-
-def _entity_key(surface: str, runtime_type: str) -> str:
-    """Canonical identity for a detected surface, shared by decision keys and occurrence
-    matching so plural/alias variants ("migraines"->"migraine", brand->generic) resolve to
-    one decision. Reuses the lattice profile resolver (single source of the plural fold);
-    falls back to canon() for surfaces with no profile row."""
-    from cloak.lattice_profiles import lookup_entry
-    entry = lookup_entry(surface, runtime_type)
-    return canon(entry[0]) if entry else canon(surface)
-
-
-def _append_text_anchored_occurrences(
-    document_text: str, doc_id: str,
-    decisions_by_key: Mapping[tuple[str, str], dict], occurrences: list[dict],
-) -> None:
-    """Register exact-text occurrences of already-decided entities that the detector
-    dropped locally -- e.g. a repeat mention scored below the per-type admission gate
-    ('kidney stones' at 0.44 vs the 0.5 health-condition gate) even though the same
-    surface was admitted >=gate elsewhere in the document. Grounding can then anchor a
-    relation argument to the dropped mention.
-
-    Threshold-free: only surfaces that already back a *controlled decision in this
-    document* are propagated, so no new entity type or value is introduced -- the value
-    is confirmed sensitive; we only recover its other verbatim positions. Positions
-    already covered by an occurrence are skipped, so detected spans are never duplicated.
-    One compiled regex + one finditer pass over the document -> O(len(document)); the
-    per-match overlap test is O(#occurrences), tiny for a single note.
-    """
-    from cloak.lattice_profiles import singularize
-    if not document_text:
-        return
-    base_to_decision: dict[str, dict] = {}
-    decisions_by_id = {d["decision_id"]: d for d in decisions_by_key.values()}
-    for occ in occurrences:
-        decision_id = occ.get("decision_id")
-        if not occ.get("controlled") or decision_id is None:
-            continue
-        base = singularize(str(occ.get("surface", "")))
-        if len(base) >= 3:  # ponytail: skip 1-2 char bases ("ms","mi") -- match everything
-            base_to_decision.setdefault(base, decisions_by_id[decision_id])
-    if not base_to_decision:
-        return
-    # longest base first so "kidney stone" wins over "stone"; trailing s? folds plurals,
-    # hyphen/word guards keep "ct" out of "contract" and "stone" out of "stoned".
-    bases = sorted(base_to_decision, key=len, reverse=True)
-    pattern = re.compile(
-        r"(?<![\w-])(" + "|".join(re.escape(b) for b in bases) + r")s?(?![\w-])",
-        re.IGNORECASE,
-    )
-    covered = [
-        (int(o["start"]), int(o["end"])) for o in occurrences
-        if isinstance(o.get("start"), int) and isinstance(o.get("end"), int)
-    ]
-    for match in pattern.finditer(document_text):
-        start, end = match.start(), match.end()
-        if any(start < ce and cs < end for cs, ce in covered):
-            continue
-        decision = base_to_decision.get(singularize(match.group(1)))
-        if decision is None:
-            continue
-        surface = document_text[start:end]
-        occurrence_id = _stable_hash({
-            "doc_id": doc_id, "runtime_type": decision["runtime_type"],
-            "surface": surface, "start": start, "end": end,
-        })
-        occurrences.append({
-            "occurrence_id": occurrence_id,
-            "start": start, "end": end, "surface": surface, "aliases": [],
-            "runtime_type": decision["runtime_type"], "polarity": "unknown",
-            "detector_provenance": {
-                "source": "text_anchored", "anchored_to": decision["decision_id"]},
-            "overlap_disposition": "accepted",
-            "decision_id": decision["decision_id"], "controlled": True,
-        })
-        decision["occurrence_ids"].append(occurrence_id)
-        covered.append((start, end))
-
-
-def freeze_ranker_environment(
-    ranker_environment: Mapping,
-    *,
-    occurrences_by_document: Mapping[str, Sequence[Mapping]] | None = None,
-    source_documents: Mapping[str, str] | None = None,
-) -> dict:
-    """Migrate embedded ranker spans to stable occurrence/decision identities, without detection.
-
-    When ``source_documents`` is provided, exact-text repeats of an already-decided entity
-    that the detector dropped locally are recovered as occurrences (see
-    ``_append_text_anchored_occurrences``). Both callers pass the same source text so the
-    ``environment_hash`` stays identical between build and train.
-    """
-    documents: dict[str, dict] = {}
-    for corpus, per_document in ranker_environment.get("corpora", {}).items():
-        for doc_id, document in per_document.items():
-            decisions_by_key: dict[tuple[str, str], dict] = {}
-            for span in document.get("spans", []):
-                runtime_type = str(span.get("type", ""))
-                surface = str(span.get("surface", ""))
-                decision_key = (runtime_type, canon(surface))
-                decision_id = _stable_hash({
-                    "doc_id": doc_id,
-                    "runtime_type": runtime_type,
-                    "canonical_surface": decision_key[1],
-                })
-                actions = []
-                action_ids = set()
-                for action in span.get("actions", []):
-                    declared_mode = str(action.get("mode", "level"))
-                    if declared_mode not in {"level", "keep", "placeholder"}:
-                        raise ValueError(
-                            f"invalid action mode for decision {decision_id}: {declared_mode}"
-                        )
-                    fill = action.get("fill")
-                    if declared_mode == "placeholder" and action.get("keep"):
-                        raise ValueError(
-                            f"placeholder action cannot be KEEP for decision {decision_id}"
-                        )
-                    source_fill = bool(fill) and canon(str(fill)) == decision_key[1]
-                    is_keep = bool(action.get("keep")) or declared_mode == "keep" or (
-                        declared_mode == "level" and source_fill
-                    )
-                    if action.get("source_identity") and not is_keep:
-                        raise ValueError(
-                            f"source_identity is reserved for KEEP actions on {decision_id}"
-                        )
-                    if is_keep and not source_fill:
-                        raise ValueError(
-                            f"KEEP action must preserve the source identity for {decision_id}"
-                        )
-                    mode = (
-                        "keep" if is_keep else
-                        "placeholder" if declared_mode == "placeholder" else
-                        "level"
-                    )
-                    action_semantics = {
-                        **dict(action),
-                        "mode": mode,
-                        "fill": decision_key[1] if is_keep else fill,
-                        "legal": bool(action.get("legal", True)),
-                    }
-                    action_semantics.pop("action_id", None)
-                    if mode == "keep":
-                        action_semantics.update({
-                            "keep": True,
-                            "source_identity": True,
-                            "entails": [decision_key[1]],
-                        })
-                        action_semantics.pop("coarseness_rank", None)
-                    elif mode == "placeholder":
-                        action_semantics["entails"] = []
-                        action_semantics.pop("coarseness_rank", None)
-                    else:
-                        rank = action.get("coarseness_rank", action.get("aset"))
-                        if action_semantics["legal"] and (
-                            isinstance(rank, bool)
-                            or not isinstance(rank, Real)
-                            or not isfinite(float(rank))
-                        ):
-                            raise ValueError(
-                                "legal level action requires numeric coarseness_rank "
-                                f"or aset for decision {decision_id}"
-                            )
-                        if isinstance(rank, Real) and not isinstance(rank, bool):
-                            action_semantics["coarseness_rank"] = rank
-                        action_semantics["entails"] = (
-                            [canon(str(fill))] if fill else []
-                        )
-                    action_id = _stable_hash({
-                        "decision_id": decision_id,
-                        "action": action_semantics,
-                    })
-                    if action_id in action_ids:
-                        raise ValueError(f"duplicate action semantics for decision {decision_id}")
-                    action_ids.add(action_id)
-                    actions.append({
-                        **action_semantics,
-                        "action_id": action_id,
-                    })
-                forced_placeholder = any(
-                    action.get("mode") == "placeholder" and action.get("forced_placeholder")
-                    for action in actions
-                )
-                if not forced_placeholder and not any(action["mode"] == "keep" for action in actions):
-                    keep_semantics = {
-                        "fill": decision_key[1],
-                        "mode": "keep",
-                        "keep": True,
-                        "source_identity": True,
-                        "legal": True,
-                        "entails": [decision_key[1]],
-                    }
-                    keep_action = {
-                        **keep_semantics,
-                        "action_id": _stable_hash({
-                            "decision_id": decision_id,
-                            "action": keep_semantics,
-                        }),
-                    }
-                    placeholder_index = next(
-                        (index for index, action in enumerate(actions)
-                         if action["mode"] == "placeholder"),
-                        len(actions),
-                    )
-                    actions.insert(placeholder_index, keep_action)
-                action_menu_hash = _stable_hash(actions)
-                previous = decisions_by_key.get(decision_key)
-                if previous and previous["action_menu_hash"] != action_menu_hash:
-                    raise ValueError(
-                        f"inconsistent action menus for repeated decision {decision_id}"
-                    )
-                if previous is None:
-                    decisions_by_key[decision_key] = {
-                        "decision_id": decision_id,
-                        "runtime_type": runtime_type,
-                        "canonical_key": decision_key[1],
-                        "occurrence_ids": [],
-                        "controlled": True,
-                        "ranker_selectable": not forced_placeholder,
-                        "actions": actions,
-                        "action_menu_hash": action_menu_hash,
-                    }
-            # KEEP action semantics intentionally remain keyed by each source surface
-            # above. Once those menus are complete, aliases that resolve to the same
-            # lattice entry can share the first decision -- but only when their
-            # non-KEEP choices are indistinguishable. Redirecting the surface keys
-            # preserves the KEEP construction invariant while making every occurrence
-            # receive the shared decision_id below.
-            def non_keep_menu(decision: Mapping) -> tuple:
-                entries = []
-                for action in decision["actions"]:
-                    if action["mode"] == "keep":
-                        continue
-                    if action["mode"] == "level":
-                        entries.append((
-                            "level", action.get("fill"),
-                            float(action["coarseness_rank"]),
-                        ))
-                    else:
-                        entries.append(("placeholder", action.get("fill")))
-                return tuple(sorted(entries))
-
-            keys_by_entity: dict[tuple[str, str], list[tuple[str, str]]] = {}
-            for decision_key in decisions_by_key:
-                runtime_type, source_key = decision_key
-                keys_by_entity.setdefault(
-                    (runtime_type, _entity_key(source_key, runtime_type)), []
-                ).append(decision_key)
-            for decision_keys in keys_by_entity.values():
-                primary = decisions_by_key[decision_keys[0]]
-                primary_menu = non_keep_menu(primary)
-                if all(
-                    non_keep_menu(decisions_by_key[decision_key]) == primary_menu
-                    for decision_key in decision_keys[1:]
-                ):
-                    for decision_key in decision_keys[1:]:
-                        decisions_by_key[decision_key] = primary
-            occurrence_source = (
-                occurrences_by_document[doc_id]
-                if occurrences_by_document is not None and doc_id in occurrences_by_document
-                else document.get("spans", [])
-            )
-            # Secondary index by profile-canonical identity so a plural/alias occurrence
-            # ("migraines", a brand name) still links to its decision even though the
-            # decision key stays the source surface (which KEEP semantics rely on).
-            decisions_by_entity: dict[tuple[str, str], dict] = {}
-            for (rtype, ckey), decision in decisions_by_key.items():
-                decisions_by_entity.setdefault((rtype, _entity_key(ckey, rtype)), decision)
-            occurrences = []
-            for row in occurrence_source:
-                runtime_type = str(row.get("type", row.get("runtime_type", "")))
-                surface = str(row.get("surface", ""))
-                decision = (
-                    decisions_by_key.get((runtime_type, canon(surface)))
-                    or decisions_by_entity.get((runtime_type, _entity_key(surface, runtime_type)))
-                )
-                occurrence_id = _stable_hash({
-                    "doc_id": doc_id,
-                    "runtime_type": runtime_type,
-                    "surface": surface,
-                    "start": row.get("start"),
-                    "end": row.get("end"),
-                })
-                occurrences.append({
-                    "occurrence_id": occurrence_id,
-                    "start": row.get("start"),
-                    "end": row.get("end"),
-                    "surface": surface,
-                    "aliases": _normalized_aliases(row.get("aliases")),
-                    "runtime_type": runtime_type,
-                    "polarity": row.get("polarity", "unknown"),
-                    "detector_provenance": row.get("detector_provenance", {
-                        "source": "frozen_arms_migration",
-                        "score": row.get("score"),
-                    }),
-                    "overlap_disposition": row.get("overlap_disposition", "accepted"),
-                    "decision_id": decision["decision_id"] if decision is not None else None,
-                    "controlled": decision is not None,
-                    **({"match": dict(row["match"])}
-                       if isinstance(row.get("match"), Mapping) else {}),
-                    **({"profile_match": dict(row["profile_match"])}
-                       if isinstance(row.get("profile_match"), Mapping) else {}),
-                })
-                if decision is not None:
-                    decision["occurrence_ids"].append(occurrence_id)
-            if source_documents is not None and doc_id in source_documents:
-                _append_text_anchored_occurrences(
-                    source_documents[doc_id], doc_id, decisions_by_key, occurrences)
-            occurrences_by_id = {
-                str(row["occurrence_id"]): row for row in occurrences
-            }
-            decisions_by_id = {
-                decision["decision_id"]: decision
-                for decision in decisions_by_key.values()
-            }
-            for decision in decisions_by_id.values():
-                protected_aliases = []
-                for occurrence_id in decision["occurrence_ids"]:
-                    for alias in occurrences_by_id[occurrence_id]["aliases"]:
-                        if alias not in protected_aliases:
-                            protected_aliases.append(alias)
-                decision["protected_aliases"] = protected_aliases
-                decision["semantic_chain"] = _frozen_semantic_chain(decision, protected_aliases)
-            frozen_document = {
-                "corpus": corpus,
-                "occurrences": occurrences,
-                "decisions": list(decisions_by_id.values()),
-            }
-            frozen_document["environment_document_hash"] = _stable_hash(frozen_document)
-            documents[doc_id] = frozen_document
-    frozen = {"artifact_version": "occurrence-decisions-v1", "documents": documents}
-    frozen["environment_hash"] = _stable_hash(frozen)
-    return frozen
-
-
-_V2_ACTION_FIELDS = frozenset({
-    "fill", "mode", "keep", "source_identity", "aset", "coarseness_rank",
-    "level_grounding", "legal", "entails", "forced_placeholder",
-})
-_V2_OCCURRENCE_FIELDS = frozenset({
-    "surface", "type", "runtime_type", "start", "end", "score", "aliases",
-    "polarity", "detector_provenance", "overlap_disposition", "match",
-    "profile_match", "forced_placeholder",
-})
-_V2_DETECTOR_ROW_FIELDS = frozenset({
-    "text", "surface", "type", "runtime_type", "proposed_runtime_type", "start",
-    "end", "score", "source", "raw_label", "recognizer", "status", "reason",
-    "min_health_condition_score", "detector_provenance", "overlap_disposition",
-})
-
-
-def _policy_free_action(action: Mapping, runtime_type: str) -> dict:
-    clean = {key: action[key] for key in _V2_ACTION_FIELDS if key in action}
-    if str(clean.get("mode", "level")) == "placeholder":
-        clean["fill"] = None
-        clean["placeholder_type"] = runtime_type
-    return clean
-
-
-def _policy_free_ranker_environment(ranker_environment: Mapping) -> dict:
-    """Whitelist V2 decision facts from a legacy ranker environment.
-
-    This is deliberately a compatibility adapter, not a policy migration: tau,
-    floors, behavior-clone labels, cached risk, and proximity never cross it.
-    """
-    corpora = {}
-    for corpus, documents in (ranker_environment.get("corpora") or {}).items():
-        corpora[corpus] = {}
-        for doc_id, document in documents.items():
-            spans = []
-            for span in document.get("spans", []):
-                runtime_type = str(span.get("type", span.get("runtime_type", "")))
-                spans.append({
-                    key: span[key]
-                    for key in ("surface", "type", "start", "end", "sent")
-                    if key in span
-                } | {
-                    "type": runtime_type,
-                    "actions": [
-                        _policy_free_action(action, runtime_type)
-                        for action in span.get("actions", [])
-                    ],
-                })
-            corpora[corpus][doc_id] = {"spans": spans}
-    return {"corpora": corpora}
-
-
-def legacy_arms_ranker_environment(arms: Mapping) -> dict:
-    """Expose historical action tables through the policy-free V2 whitelist."""
-    corpora = {}
-    for corpus, documents in arms.items():
-        if corpus == "_meta" or not isinstance(documents, Mapping):
-            continue
-        corpora[corpus] = {}
-        for doc_id, document in documents.items():
-            table = document.get("v2_action_table", document.get("action_table", {}))
-            rows = list(table.values()) if isinstance(table, Mapping) else []
-            corpora[corpus][doc_id] = {"spans": rows}
-    return _policy_free_ranker_environment({"corpora": corpora})
-
-
-def _legacy_arms_occurrences(
-    arms: Mapping,
-    *,
-    detector_provenance: Mapping | None = None,
-) -> dict[str, list[dict]]:
-    """Read only policy-independent rows from a historical arms artifact."""
-    result = {}
-    for corpus, documents in arms.items():
-        if corpus == "_meta" or not isinstance(documents, Mapping):
-            continue
-        for doc_id, document in documents.items():
-            rows = document.get("v2_occurrences")
-            if not isinstance(rows, list):
-                walk = document.get("tau_walk")
-                rows = walk[1] if isinstance(walk, (list, tuple)) and len(walk) > 1 else []
-            clean_rows = []
-            for row in rows if isinstance(rows, list) else []:
-                clean = {key: row[key] for key in _V2_OCCURRENCE_FIELDS if key in row}
-                if detector_provenance is not None or row.get("detector_provenance"):
-                    clean["detector_provenance"] = {
-                        **dict(detector_provenance or {}),
-                        **dict(row.get("detector_provenance") or {}),
-                        "score": row.get("score"),
-                    }
-                clean_rows.append(clean)
-            result[str(doc_id)] = clean_rows
-    return result
-
-
-def _policy_free_detector_diagnostics(value: object) -> dict:
-    if not isinstance(value, Mapping):
-        return {}
-    clean = {}
-    for section in ("accepted", "rejected", "post_detection_rejections"):
-        rows = value.get(section)
-        if isinstance(rows, list):
-            clean[section] = [
-                {key: row[key] for key in _V2_DETECTOR_ROW_FIELDS if key in row}
-                for row in rows if isinstance(row, Mapping)
-            ]
-    return clean
-
-
-def freeze_v2_environment_from_legacy_arms(
-    ranker_environment: Mapping,
-    arms: Mapping,
-    *,
-    detector_provenance: Mapping | None = None,
-    source_documents: Mapping[str, str] | None = None,
-) -> dict:
-    """Compatibility boundary from historical arms/env files to the V2 contract.
-
-    The returned representation contains canonical occurrence/decision/action IDs,
-    legal lattice actions, typed placeholders, and render offsets. It cannot depend
-    on legacy policy outcomes because the adapter uses an explicit field whitelist.
-    """
-    frozen = freeze_ranker_environment(
-        _policy_free_ranker_environment(ranker_environment),
-        occurrences_by_document=_legacy_arms_occurrences(
-            arms, detector_provenance=detector_provenance,
-        ),
-        source_documents=source_documents,
-    )
-    for corpus, documents in arms.items():
-        if corpus == "_meta" or not isinstance(documents, Mapping):
-            continue
-        for doc_id, legacy_document in documents.items():
-            document = frozen["documents"].get(str(doc_id))
-            if document is None or not isinstance(legacy_document, Mapping):
-                continue
-            diagnostics = _policy_free_detector_diagnostics(
-                legacy_document.get("detector_diagnostics")
-            )
-            if diagnostics:
-                document["detector_diagnostics"] = diagnostics
-                document["environment_document_hash"] = _stable_hash(document)
-    frozen["environment_hash"] = _stable_hash({
-        key: value for key, value in frozen.items() if key != "environment_hash"
-    })
-    return frozen
-
-
-_COUNT_GROUNDING_STATUSES = frozenset({
-    "certifying", "model-proposed", "proposal-universe",
-})
-
-
-def _admissible_level_count(row: Mapping, level: str) -> tuple[float | None, dict | None]:
-    """Return one row-local admitted count, or an explicit provisional null pair.
-
-    This deliberately does not call ``lookup_count``: that index merges equal level strings
-    across profiles and therefore cannot establish the meaning of this decision's action.
-    """
-    raw_count = (row.get("level_counts") or {}).get(level)
-    grounding = (row.get("level_grounding") or {}).get(level)
-    if (
-        isinstance(raw_count, bool)
-        or not isinstance(raw_count, Real)
-        or not isfinite(float(raw_count))
-        or float(raw_count) < 1.0
-        or not isinstance(grounding, Mapping)
-    ):
-        return None, None
-    status = grounding.get("status")
-    if status not in _COUNT_GROUNDING_STATUSES or not grounding.get("source_family"):
-        return None, None
-    if status == "certifying" and not grounding.get("member_set_ref"):
-        return None, None
-    if status == "model-proposed" and not (
-        grounding.get("selector") and grounding.get("count_evidence")
-    ):
-        return None, None
-    if status == "proposal-universe" and not (
-        grounding.get("member_set_ref") or grounding.get("generated_universe_ref")
-    ):
-        return None, None
-    return float(raw_count), deepcopy(dict(grounding))
-
-
-def _matched_profile_entry(
-    decision: Mapping,
-    occurrences_by_id: Mapping[str, Mapping],
-    profile_artifact: Mapping,
-) -> tuple[str | None, Mapping | None]:
-    """Resolve only the profile identity frozen by the detector-era match.
-
-    Missing, conflicting, or now-absent entries are provisional. Re-running a semantic matcher
-    here would change the frozen detection contract and is intentionally forbidden.
-    """
-    entries = {
-        str(profile_match["entry"])
-        for occurrence_id in decision.get("occurrence_ids", [])
-        if isinstance((occurrence := occurrences_by_id.get(str(occurrence_id))), Mapping)
-        and isinstance((profile_match := occurrence.get("profile_match")), Mapping)
-        and profile_match.get("entry")
-    }
-    if len(entries) != 1:
-        return None, None
-    entry = next(iter(entries))
-    runtime_type = str(decision.get("runtime_type", ""))
-    row = (profile_artifact.get("profiles") or {}).get(runtime_type, {}).get(entry)
-    if not isinstance(row, Mapping):
-        return None, None
-    return f"{runtime_type}:{entry}", row
-
-
-def migrate_frozen_environment_count_provenance(
-    frozen_environment: Mapping,
-    profile_artifact: Mapping,
-) -> dict:
-    """Enrich frozen action menus with profile-row counts without re-running detection.
-
-    Occurrences and all non-menu decision fields are copied verbatim. Existing action IDs remain
-    stable because their mode/fill/legal semantics and legacy ``aset`` fields are unchanged;
-    count provenance is reward metadata covered by the menu/document/environment hashes.
-    """
-    migrated_documents: dict[str, dict] = {}
-    for doc_id, source_document in frozen_environment.get("documents", {}).items():
-        document = deepcopy(dict(source_document))
-        occurrences_by_id = {
-            str(row["occurrence_id"]): row for row in source_document.get("occurrences", [])
-        }
-        migrated_decisions = []
-        for source_decision in source_document.get("decisions", []):
-            decision = deepcopy(dict(source_decision))
-            if decision.get("ranker_selectable", True):
-                profile_id, profile_row = _matched_profile_entry(
-                    source_decision, occurrences_by_id, profile_artifact,
-                )
-                decision["profile_id"] = profile_id
-                authored_levels = list(profile_row.get("levels", [])) if profile_row else []
-                frozen_levels = [
-                    str(action.get("fill", ""))
-                    for action in source_decision.get("actions", [])
-                    if action.get("mode") == "level"
-                ]
-                merged_authored_levels = [
-                    level for level in authored_levels if level in frozen_levels
-                ]
-                for frozen_index, level in enumerate(frozen_levels):
-                    if level in merged_authored_levels:
-                        continue
-                    next_present = next((
-                        candidate for candidate in frozen_levels[frozen_index + 1:]
-                        if candidate in merged_authored_levels
-                    ), None)
-                    if next_present is None:
-                        merged_authored_levels.append(level)
-                    else:
-                        merged_authored_levels.insert(
-                            merged_authored_levels.index(next_present), level,
-                        )
-                migrated_actions = []
-                for source_action in source_decision.get("actions", []):
-                    action = deepcopy(dict(source_action))
-                    mode = action.get("mode")
-                    if mode == "level":
-                        level = str(action.get("fill", ""))
-                        # When the frozen rung no longer exists in the current row, retain its
-                        # frozen authored position but make its evidence explicitly provisional.
-                        action["authored_level_index"] = merged_authored_levels.index(level)
-                        count, grounding = (
-                            _admissible_level_count(profile_row, level)
-                            if profile_row is not None and level in authored_levels
-                            else (None, None)
-                        )
-                        action["count"] = count
-                        action["count_grounding"] = grounding
-                    else:
-                        for field in ("authored_level_index", "count", "count_grounding"):
-                            action.pop(field, None)
-                    migrated_actions.append(action)
-                decision["actions"] = migrated_actions
-                decision["action_menu_hash"] = _stable_hash(migrated_actions)
-            migrated_decisions.append(decision)
-        document["decisions"] = migrated_decisions
-        document.pop("environment_document_hash", None)
-        document["environment_document_hash"] = _stable_hash(document)
-        migrated_documents[str(doc_id)] = document
-    migrated = {
-        "artifact_version": "occurrence-decisions-v2",
-        "documents": migrated_documents,
-    }
-    migrated["environment_hash"] = _stable_hash(migrated)
-    return migrated
-
-
-def compare_frozen_environment_semantics(reference: Mapping, candidate: Mapping) -> dict:
-    """Compare frozen identity and action semantics, excluding count-only metadata."""
-    differences: list[str] = []
-    reference_documents = reference.get("documents", {})
-    candidate_documents = candidate.get("documents", {})
-    if list(reference_documents) != list(candidate_documents):
-        differences.append(
-            "document_ids: "
-            f"reference={list(reference_documents)!r} candidate={list(candidate_documents)!r}"
-        )
-    for doc_id in reference_documents:
-        if doc_id not in candidate_documents:
-            continue
-        left_document = reference_documents[doc_id]
-        right_document = candidate_documents[doc_id]
-        left_occurrences = [row.get("occurrence_id") for row in left_document.get("occurrences", [])]
-        right_occurrences = [row.get("occurrence_id") for row in right_document.get("occurrences", [])]
-        if left_occurrences != right_occurrences:
-            differences.append(
-                f"{doc_id}:occurrence_ids: reference={left_occurrences!r} "
-                f"candidate={right_occurrences!r}"
-            )
-        left_decisions = left_document.get("decisions", [])
-        right_decisions = right_document.get("decisions", [])
-        left_ids = [row.get("decision_id") for row in left_decisions]
-        right_ids = [row.get("decision_id") for row in right_decisions]
-        if left_ids != right_ids:
-            differences.append(
-                f"{doc_id}:decision_ids: reference={left_ids!r} candidate={right_ids!r}"
-            )
-        right_by_id = {row.get("decision_id"): row for row in right_decisions}
-        for left in left_decisions:
-            decision_id = left.get("decision_id")
-            right = right_by_id.get(decision_id)
-            if right is None:
-                continue
-            for field in ("action_id", "fill", "mode"):
-                left_values = [action.get(field) for action in left.get("actions", [])]
-                right_values = [action.get(field) for action in right.get("actions", [])]
-                if left_values != right_values:
-                    differences.append(
-                        f"{doc_id}:{decision_id}:{field}s: reference={left_values!r} "
-                        f"candidate={right_values!r}"
-                    )
-            left_order = [
-                action.get("fill") for action in left.get("actions", [])
-                if action.get("mode") == "level"
-            ]
-            right_order = [
-                action.get("fill") for action in right.get("actions", [])
-                if action.get("mode") == "level"
-            ]
-            if left_order != right_order:
-                differences.append(
-                    f"{doc_id}:{decision_id}:authored_order: reference={left_order!r} "
-                    f"candidate={right_order!r}"
-                )
-    return {
-        "verdict": "semantic change" if differences else "count-only compatible",
-        "differences": differences,
-        "reference_document_count": len(reference_documents),
-        "candidate_document_count": len(candidate_documents),
-    }
-
-
-def render_frozen_action_vector(
-    source: str,
-    frozen_document: Mapping,
-    action_vector: Mapping[str, str],
-) -> tuple[str, list[dict]]:
-    """Render one V2 action vector using only frozen offsets and action semantics."""
-    decisions = {
-        str(decision["decision_id"]): decision
-        for decision in frozen_document.get("decisions", [])
-    }
-    chosen = {}
-    placeholder_by_decision = {}
-    counters: dict[str, int] = {}
-    used_fills = {}
-    for decision in frozen_document.get("decisions", []):
-        decision_id = str(decision["decision_id"])
-        selected_id = str(action_vector[decision_id])
-        selected = next(
-            (action for action in decision["actions"]
-             if str(action["action_id"]) == selected_id),
-            None,
-        )
-        if selected is None or not selected.get("legal", True):
-            raise ValueError(f"illegal or unknown action for decision {decision_id}")
-        if selected["mode"] == "placeholder":
-            runtime_type = str(selected.get("placeholder_type") or decision["runtime_type"])
-            token_type = placeholder_type_token(runtime_type)
-            counters[token_type] = counters.get(token_type, 0) + 1
-            placeholder_by_decision[decision_id] = placeholder_token(
-                runtime_type, counters[token_type]
-            )
-        elif selected["mode"] == "level":
-            fill_key = canon(str(selected.get("fill", "")))
-            owner = used_fills.setdefault(fill_key, decision_id)
-            if owner != decision_id:
-                raise ValueError(f"non-injective V2 action vector fill {selected.get('fill')!r}")
-        chosen[decision_id] = selected
-
-    replacements = []
-    for occurrence in frozen_document.get("occurrences", []):
-        decision_id = occurrence.get("decision_id")
-        if decision_id is None:
-            continue
-        decision_id = str(decision_id)
-        if decision_id not in decisions or decision_id not in chosen:
-            raise ValueError(f"unresolved controlled occurrence decision {decision_id}")
-        selected = chosen[decision_id]
-        original = source[int(occurrence["start"]):int(occurrence["end"])]
-        if selected["mode"] == "keep":
-            replacement = original
-        elif selected["mode"] == "placeholder":
-            replacement = placeholder_by_decision[decision_id]
-        else:
-            replacement = str(selected["fill"])
-            if original[:1].isupper() and replacement:
-                replacement = replacement[:1].upper() + replacement[1:]
-        replacements.append({
-            "occurrence_id": occurrence["occurrence_id"],
-            "decision_id": decision_id,
-            "start": int(occurrence["start"]),
-            "end": int(occurrence["end"]),
-            "surface": original,
-            "replacement": replacement,
-            "action_id": selected["action_id"],
-            "mode": selected["mode"],
-        })
-    ordered = sorted(replacements, key=lambda row: (row["start"], row["end"]))
-    for left, right in zip(ordered, ordered[1:]):
-        if right["start"] < left["end"]:
-            raise ValueError("overlapping frozen V2 occurrences cannot be rendered")
-    rendered = source
-    for row in reversed(ordered):
-        rendered = rendered[:row["start"]] + row["replacement"] + rendered[row["end"]:]
-    return rendered, ordered
-
-
-def frozen_occurrences_from_arms(
-    arms: Mapping,
-    *,
-    detector_provenance: Mapping | None = None,
-) -> dict[str, list[dict]]:
-    """Legacy compatibility reader; V2 callers use the frozen environment directly."""
-    return _legacy_arms_occurrences(arms, detector_provenance=detector_provenance)
-
-
-# Detected runtime types that are supposed to carry a generalization lattice
-# (identity types like PERSON/LOC are placeholder-by-rule and excluded).
-_REVIEW_LADDER_TYPES = frozenset({"drug", "health-condition", "medical-procedure"})
-
-
-def _review_flag(code: str, stage: str, fix_class: str, severity: str, detail: dict) -> dict:
-    return {"code": code, "stage": stage, "fix_class": fix_class,
-            "severity": severity, "detail": detail}
-
-
-def compute_review_flags(artifact: Mapping) -> dict[str, list[dict]]:
-    """Per-document diagnostics classifying *why* a document may be worth
-    re-processing after a fix. Pure function over the built artifact; each flag
-    carries a `fix_class` (data_lattice / teacher_redraw / reader /
-    ontology_review) so a change can re-select exactly the affected documents.
-    Diagnostic only — never enters the artifact hash or any measurement."""
-    flags: dict[str, list[dict]] = defaultdict(list)
-
-    # A) a detected, lattice-eligible span with no legal generalization level
-    #    (e.g. an unaliased drug brand -> placeholder-only, the synthroid case).
-    for doc_id, document in (artifact.get("documents") or {}).items():
-        decisions = {str(d.get("decision_id")): d for d in document.get("decisions") or []}
-        seen: set[tuple[str, str]] = set()
-        for occurrence in document.get("occurrences") or []:
-            runtime_type = canon(str(occurrence.get("runtime_type", "")))
-            if runtime_type not in _REVIEW_LADDER_TYPES:
-                continue
-            key = (runtime_type, canon(str(occurrence.get("surface", ""))))
-            if key in seen:
-                continue
-            seen.add(key)
-            decision = decisions.get(str(occurrence.get("decision_id")))
-            if not (_ordered_decision_levels(decision) if decision else []):
-                flags[doc_id].append(_review_flag(
-                    "missing_generalization", "freeze", "data_lattice", "warn",
-                    {"runtime_type": occurrence.get("runtime_type"),
-                     "surface": occurrence.get("surface"),
-                     "resolved_decision": bool(decision)}))
-
-    # C) soft relation-count cap: the hard K-cap reject was removed, so a relation-dense note
-    #    keeps all its valid relations. Log (info, no fix_class action) when a document's kept
-    #    relation count exceeds the soft cap, so unusually dense notes are still visible.
-    for doc_id, records in (artifact.get("relation_generation") or {}).items():
-        kept = sum(1 for record in records if record.get("status") == "kept")
-        if kept > RELATION_TEACHER_MAX_RELATIONS:
-            flags[str(doc_id)].append(_review_flag(
-                "relation_count_over_soft_cap", "compile", "ontology_review", "info",
-                {"kept_relations": kept, "soft_cap": RELATION_TEACHER_MAX_RELATIONS}))
-
-    # False-positive guard for the lattice_level_suspect probe: a lattice node used by a KEPT relation
-    # in the same doc is provably readable, so a gate failure elsewhere is context-specific, not bad
-    # data. Map each doc's kept-assertion decisions back to their canonical surfaces.
-    _surface_by_decision = {
-        str(doc_id): {
-            str(d.get("decision_id")): canon(str(d.get("canonical_key") or ""))
-            for d in (document.get("decisions") or [])
-        }
-        for doc_id, document in (artifact.get("documents") or {}).items()
-    }
-    kept_lattice_surfaces: dict[str, set[str]] = defaultdict(set)
-    for assertion in (artifact.get("assertions") or {}).values():
-        _dec_surface = _surface_by_decision.get(str(assertion.get("doc_id")), {})
-        for decision_id in (assertion.get("decision_requirements") or {}):
-            surface = _dec_surface.get(str(decision_id))
-            if surface:
-                kept_lattice_surfaces[str(assertion.get("doc_id"))].add(surface)
-
-    # D) classify signals the build already emits
-    for record in (artifact.get("rejections") or {}).get("records") or []:
-        doc_id = str(record.get("doc_id"))
-        reason = record.get("detail_reason") or record.get("reason")
-        evidence = record.get("evidence") or {}
-        if reason == "literal_will_be_substituted":
-            flags[doc_id].append(_review_flag(
-                "literal_will_be_substituted", "compile", "data_lattice", "warn", {}))
-        elif reason == "answer_leakage":
-            flags[doc_id].append(_review_flag(
-                "unrepaired_answer_leakage", "compile", "ontology_review", "warn",
-                {"leaking_tokens": evidence.get("leaking_tokens"),
-                 "answer_levels": evidence.get("answer_levels")}))
-        elif reason == "placeholder_answerable":
-            flags[doc_id].append(_review_flag(
-                "placeholder_answerable", "gate", "ontology_review", "info", {}))
-        elif reason == "three_point_gate_failed":
-            scores = (evidence.get("validation") or {}).get("scores") or {}
-            probe = evidence.get("lattice_probe")
-            if isinstance(probe, Mapping) and probe.get("readable_coarser_level"):
-                # a COARSER legal level in the same chain reads -> the chosen fine level, not the
-                # relation, could be bad lattice data. But this probe is FALSE-POSITIVE-PRONE: the
-                # failure is usually ANSWER AMBIGUITY (subject has >=2 same-type answers -> no unique
-                # QA, not a bad level), or the flagged node is used by a KEPT relation in-doc (provably
-                # readable). Suppress both; only a node that fails AND is unambiguous AND is never kept
-                # in-doc is a genuine data suspect worth a human fixing lattice_profiles.json.
-                if evidence.get("answer_competing") or (
-                        canon(str(probe.get("surface", "")))
-                        in kept_lattice_surfaces.get(doc_id, set())):
-                    pass
-                else:
-                    flags[doc_id].append(_review_flag(
-                        "lattice_level_suspect", "gate", "data_lattice", "warn",
-                        {"surface": probe.get("surface"),
-                         "runtime_type": probe.get("runtime_type"),
-                         "unreadable_level": probe.get("unreadable_level"),
-                         "readable_coarser_level": probe.get("readable_coarser_level"),
-                         "chain": probe.get("chain"),
-                         "scores": scores}))
-            elif (scores.get("original", 0.0) >= 1.0
-                    and scores.get("representative", 0.0) < 1.0
-                    and scores.get("placeholder", 1.0) < 1.0):
-                # source answerable, generalized form not -> the chosen generalization level is
-                # not reader-recoverable. Treated as a lattice-profile signal (level too coarse /
-                # mislabeled for the surface). NOTE: a minority of these are genuine reader limits
-                # rather than data; the `scores` detail lets a human triage.
-                flags[doc_id].append(_review_flag(
-                    "representative_unreadable", "gate", "data_lattice", "warn",
-                    {"scores": scores}))
-            elif (scores.get("original", 1.0) < 1.0
-                    and scores.get("representative", 0.0) >= 1.0):
-                # answer recoverable ONLY when the level is literally rendered (generalized
-                # render passes, source render does not) -> the accepted level is not
-                # reader-recoverable from the source surface. Strong lattice-profile signal:
-                # missing/insufficient answer_aliases or a level too abstract for the surface.
-                flags[doc_id].append(_review_flag(
-                    "answer_only_readable_when_generalized", "gate", "data_lattice", "warn",
-                    {"scores": scores, "subtype": evidence.get("subtype"),
-                     "occurrence_ids": evidence.get("occurrence_ids")}))
-
-    # D) a repair that had to lower the answer floor is worth a human look
-    for row in (artifact.get("assertions") or {}).values():
-        repair = (row.get("evidence") or {}).get("leakage_repair")
-        if isinstance(repair, Mapping) and repair.get("floor_lowered"):
-            flags[str(row.get("doc_id"))].append(_review_flag(
-                "floor_lowered_repair", "compile", "ontology_review", "info",
-                {"from_level": repair.get("from_level"), "to_level": repair.get("to_level")}))
-        # Hedge/modality observation (non-blocking): the source is conditional/planned but the
-        # question is definite -- surfaced for review, the relation was NOT blocked from the reader.
-        modality = (row.get("evidence") or {}).get("modality_diagnostics")
-        if modality:
-            flags[str(row.get("doc_id"))].append(_review_flag(
-                "hedged_source_definite_question", "compile", "ontology_review", "info",
-                {"diagnostics": list(modality)}))
-
-    # ambiguity MONITOR: a relation whose answered type has >1 co-valid answer in scope. The
-    # free-form reader can name a different (also-valid) one -> non-deterministic utility signal.
-    # Diagnostic only (info); reported for kept relations and gate-rejected ones alike.
-    for row in (artifact.get("assertions") or {}).values():
-        competing = (row.get("evidence") or {}).get("answer_competing")
-        if competing:
-            flags[str(row.get("doc_id"))].append(_review_flag(
-                "relation_answer_ambiguous", "compile", "ambiguity", "info",
-                {"relation": row.get("relation"), "competing_answers": competing}))
-    for record in (artifact.get("rejections") or {}).get("records") or []:
-        competing = (record.get("evidence") or {}).get("answer_competing")
-        if competing:
-            flags[str(record.get("doc_id"))].append(_review_flag(
-                "relation_answer_ambiguous", "gate", "ambiguity", "info",
-                {"detail_reason": record.get("detail_reason"), "competing_answers": competing}))
-
-    # teacher self-report inconsistency -> the draw is unreliable, re-run it
-    for doc_id, rows in (artifact.get("relation_candidate_accounting") or {}).items():
-        if any(isinstance(r, Mapping) and r.get("state") == "ledger_inconsistent" for r in rows):
-            flags[doc_id].append(_review_flag(
-                "ledger_inconsistent", "compile", "teacher_redraw", "warn", {}))
-
-    # teacher-repairable but unresolved: a relation whose only outcomes are FIXABLE-reason
-    # rejections (no kept sibling for the same fact) that the repair pass did not rescue -- either
-    # the secondary teacher abstained, or it re-proposed and the fix still rejects. These are the
-    # relations a better teacher draw could recover; deterministic rewriting is deliberately NOT
-    # attempted (surface recolor already ran in _substitute_linked_surfaces; the residue is
-    # un-substitutable source text). fix_class teacher_redraw -> re-selectable for a repair re-run.
-    def _fact_key(row: Mapping) -> tuple:
-        parts = []
-        for argument in row.get("arguments") or []:
-            parts.append((
-                argument.get("role"),
-                argument.get("span_label") or argument.get("literal")
-                or argument.get("support_property"),
-            ))
-        return (row.get("relation"), tuple(parts))
-
-    gleaning = artifact.get("relation_gleaning") or {}
-    for doc_id, rows in (artifact.get("relation_generation") or {}).items():
-        kept_keys = {_fact_key(r) for r in rows if r.get("status") == "kept"}
-        by_key: dict[tuple, list[Mapping]] = defaultdict(list)
-        for r in rows:
-            if r.get("status") == "rejected" and r.get("reason") in _GLEANING_FIXABLE_REASONS:
-                by_key[_fact_key(r)].append(r)
-        abstained = str((gleaning.get(doc_id) or {}).get("secondary_status")) == "abstained"
-        for key, rejected in by_key.items():
-            if key in kept_keys:
-                continue  # recovered elsewhere -> not an unresolved loss
-            run_ids = {r.get("run_id") for r in rejected}
-            if "gleaning" in run_ids:
-                disposition = "unresolved_after_repair"  # C2 re-proposed, still rejects
-            elif abstained:
-                disposition = "repair_abstained"          # C2 declined to re-author it
-            else:
-                disposition = "repair_not_returned"        # C2 ran but did not target it
-            latest = rejected[-1]
-            try:
-                scope = _relation_scope(latest.get("arguments") or [])
-            except ValueError:
-                scope = None
-            flags[doc_id].append(_review_flag(
-                "teacher_repairable_unresolved", "gate", "teacher_redraw", "warn",
-                {"relation": latest.get("relation"),
-                 "reason": latest.get("reason"),
-                 "hint": _GLEANING_FIX_HINTS.get(str(latest.get("reason"))),
-                 "disposition": disposition,
-                 "scope": scope}))
-
-    return {doc_id: doc_flags for doc_id, doc_flags in flags.items()}
-
-
 def build_utility_artifact(
     frozen_environment: Mapping,
     task_adapter,
@@ -7859,7 +5358,7 @@ def build_utility_artifact(
     )
     if finer_level_mode not in {None, "hard", "soft"}:
         raise ValueError(f"finer_level_check must be 'hard' or 'soft', got {finer_level_check!r}")
-    reader_pin = _validated_build_reader_pin(reader, pins)
+    reader_pin = validated_build_reader_pin(reader, pins)
     validate_environment = getattr(task_adapter, "validate_environment", None)
     if validate_environment is not None:
         validate_environment(frozen_environment)
@@ -7903,7 +5402,7 @@ def build_utility_artifact(
         record["detail_reason"] = detail_reason
         record["doc_id"] = doc_id
         if not record.get("attempt_hash"):
-            record["attempt_hash"] = _stable_hash({
+            record["attempt_hash"] = stable_hash({
                 "doc_id": doc_id,
                 "reason": stable_reason,
                 "detail_reason": detail_reason,
@@ -7912,7 +5411,7 @@ def build_utility_artifact(
                 "definition_version": "qa-builder-attempt-v1",
             })
         if not record.get("rejection_id"):
-            record["rejection_id"] = _stable_hash({
+            record["rejection_id"] = stable_hash({
                 "doc_id": doc_id,
                 "reason": stable_reason,
                 "detail_reason": detail_reason,
@@ -7932,7 +5431,7 @@ def build_utility_artifact(
         error: Exception | None = None,
         extra_evidence: Mapping | None = None,
     ) -> None:
-        candidate_hash = _stable_hash(candidate)
+        candidate_hash = stable_hash(candidate)
         attempt = {
             "doc_id": doc_id,
             "candidate_hash": candidate_hash,
@@ -8080,7 +5579,7 @@ def build_utility_artifact(
                 protected_terms = list(dict.fromkeys(
                     term
                     for occurrence in linked_occurrences
-                    for term in _occurrence_protected_terms(occurrence)
+                    for term in occurrence_protected_terms(occurrence)
                 ))
                 # Co-referent leak guard (Case 1): a DIFFERENT controlled decision whose
                 # surface contains a protected term as a whole word ("acid reflux" holds
@@ -8119,7 +5618,7 @@ def build_utility_artifact(
                         anchor=anchor,
                         extra_evidence={
                             "protected_term_hashes": [
-                                _stable_hash(term) for term in surviving_terms
+                                stable_hash(term) for term in surviving_terms
                             ],
                         },
                     )
@@ -8278,7 +5777,7 @@ def build_utility_artifact(
                 ), doc_id=doc_id)
             else:
                 prompt = relation_teacher_prompt(doc_id, source, environment_document)
-                prompt_hash = _stable_hash(prompt)
+                prompt_hash = stable_hash(prompt)
                 if escalation_enabled:
                     opportunity_counts = {
                         scope: sum(row["scope"] == scope for row in opportunities)
@@ -8291,7 +5790,7 @@ def build_utility_artifact(
                         "policy_version": escalation_policy["version"],
                         "opportunity_counts": opportunity_counts,
                         "opportunity_fact_key_hashes": [
-                            _stable_hash(row["fact_key"]) for row in opportunities
+                            stable_hash(row["fact_key"]) for row in opportunities
                         ],
                         "targets": escalation_targets,
                         "primary_kept_counts": {},
@@ -8348,7 +5847,7 @@ def build_utility_artifact(
                             "teacher_id": "gpt_oss",
                             "run_id": "primary",
                             "prompt_hash": prompt_hash,
-                            "teacher_pin_hash": _stable_hash(getattr(relation_teacher, "pin", {})),
+                            "teacher_pin_hash": stable_hash(getattr(relation_teacher, "pin", {})),
                             "proposal_count": len(proposals),
                             "candidate_accounting": deepcopy(
                                 candidate_accounting_by_document.get(doc_id, [])
@@ -8361,12 +5860,12 @@ def build_utility_artifact(
                             detail_reason="teacher_abstained",
                             attempt={
                                 "doc_id": doc_id,
-                                "prompt_hash": _stable_hash(prompt),
+                                "prompt_hash": stable_hash(prompt),
                                 "definition_version": "contextual-relation-v1",
                             },
                             evidence={
                                 "source": "relation_teacher",
-                                "prompt_hash": _stable_hash(prompt),
+                                "prompt_hash": stable_hash(prompt),
                                 "proposal_count": 0,
                                 "required_contextual_relation_count": (
                                     min_contextual_relations
@@ -8403,11 +5902,11 @@ def build_utility_artifact(
                                 ),
                             }
                         attempts_by_proposal_hash = {
-                            _stable_hash(proposal): attempt
+                            stable_hash(proposal): attempt
                             for proposal, attempt in zip(proposals, relation_attempts)
                         }
                         attempts_by_candidate_hash = {
-                            _stable_hash(candidate): attempts_by_proposal_hash.get(
+                            stable_hash(candidate): attempts_by_proposal_hash.get(
                                 candidate.get("evidence", {}).get("proposal_hash")
                             )
                             for candidate in relation_candidates
@@ -8466,7 +5965,7 @@ def build_utility_artifact(
                                 ),
                                 attempt={
                                     "doc_id": doc_id,
-                                    "prompt_hash": _stable_hash(prompt),
+                                    "prompt_hash": stable_hash(prompt),
                                     "accepted_contextual_relation_count": (
                                         contextual_relation_count
                                     ),
@@ -8477,7 +5976,7 @@ def build_utility_artifact(
                                 },
                                 evidence={
                                     "source": "relation_teacher",
-                                    "prompt_hash": _stable_hash(prompt),
+                                    "prompt_hash": stable_hash(prompt),
                                     "proposal_count": len(proposals),
                                     "accepted_contextual_relation_count": (
                                         contextual_relation_count
@@ -8498,7 +5997,7 @@ def build_utility_artifact(
                             "teacher_id": "gpt_oss",
                             "run_id": "primary",
                             "prompt_hash": prompt_hash,
-                            "teacher_pin_hash": _stable_hash(getattr(relation_teacher, "pin", {})),
+                            "teacher_pin_hash": stable_hash(getattr(relation_teacher, "pin", {})),
                             "proposal_count": primary_proposal_count,
                             "candidate_accounting": [],
                             "status": "failed",
@@ -8509,7 +6008,7 @@ def build_utility_artifact(
                         detail_reason=error_code,
                         attempt={
                             "doc_id": doc_id,
-                            "prompt_hash": _stable_hash(prompt),
+                            "prompt_hash": stable_hash(prompt),
                             "error_type": type(error).__name__,
                             "error_code": error_code,
                             "raw_length": (
@@ -8526,7 +6025,7 @@ def build_utility_artifact(
                         },
                         evidence={
                             "source": "relation_teacher",
-                            "prompt_hash": _stable_hash(prompt),
+                            "prompt_hash": stable_hash(prompt),
                             "error_type": type(error).__name__,
                             "error_code": error_code,
                             "raw_length": (
@@ -8730,7 +6229,7 @@ def build_utility_artifact(
                     )
                     primary_counts = {
                         scope: sum(
-                            _relation_scope(
+                            relation_scope(
                                 list(dict(row.get("evidence") or {}).get("arguments") or [])
                             ) == scope
                             for row in primary_accepted_relations
@@ -8760,7 +6259,7 @@ def build_utility_artifact(
                                 "relation": t.get("relation"),
                                 "reason": t.get("reason"),
                                 "hint": t.get("hint"),
-                                "fact_key_hash": _stable_hash(t["fact_key"]),
+                                "fact_key_hash": stable_hash(t["fact_key"]),
                             }
                             for t in gleaning_targets
                         ],
@@ -8792,7 +6291,7 @@ def build_utility_artifact(
                                     doc_id, source, environment_document, batch,
                                     shown_labels_out=batch_shown_labels,
                                 )
-                                batch_hash = _stable_hash(repair_prompt)
+                                batch_hash = stable_hash(repair_prompt)
                                 repair_prompt_hashes.append(batch_hash)
                                 if isinstance(secondary_relation_teacher, OpenRouterRelationTeacher):
                                     # Scope the response schema to the batch's SHOWN labels: the teacher
@@ -8840,7 +6339,7 @@ def build_utility_artifact(
                                     "teacher_id": "gpt_oss",
                                     "run_id": "gleaning",
                                     "prompt_hash": batch_hash,
-                                    "teacher_pin_hash": _stable_hash(
+                                    "teacher_pin_hash": stable_hash(
                                         getattr(secondary_relation_teacher, "pin", {})
                                     ),
                                     "proposal_count": len(batch_proposals),
@@ -8853,7 +6352,7 @@ def build_utility_artifact(
                             secondary_proposal_count = len(secondary_proposals)
                             # Phase-level hash over the batch prompts groups this phase's
                             # candidates/rejections; the per-call hashes live in the run records.
-                            repair_prompt_hash = _stable_hash(repair_prompt_hashes)
+                            repair_prompt_hash = stable_hash(repair_prompt_hashes)
                             escalation["gleaning"]["repair_prompt_hash"] = repair_prompt_hash
                             escalation["gleaning"]["repair_prompt_hashes"] = repair_prompt_hashes
                             escalation["gleaning"]["batch_count"] = len(target_batches)
@@ -8882,11 +6381,11 @@ def build_utility_artifact(
                                         "run_id": "gleaning",
                                     }
                                 attempts_by_proposal_hash = {
-                                    _stable_hash(proposal): attempt
+                                    stable_hash(proposal): attempt
                                     for proposal, attempt in zip(secondary_proposals, secondary_attempts)
                                 }
                                 attempts_by_candidate_hash = {
-                                    _stable_hash(candidate): attempts_by_proposal_hash.get(
+                                    stable_hash(candidate): attempts_by_proposal_hash.get(
                                         candidate.get("evidence", {}).get("proposal_hash")
                                     )
                                     for candidate in secondary_candidates
@@ -8943,7 +6442,7 @@ def build_utility_artifact(
                             # a batch may have failed mid-phase; anchor the failed run to whatever
                             # batch prompts were built (phase hash) or None if none were.
                             repair_prompt_hash = repair_prompt_hash or (
-                                _stable_hash(repair_prompt_hashes) if repair_prompt_hashes else None
+                                stable_hash(repair_prompt_hashes) if repair_prompt_hashes else None
                             )
                             escalation["gleaning"]["repair_prompt_hash"] = repair_prompt_hash
                             escalation["gleaning"]["repair_prompt_hashes"] = repair_prompt_hashes
@@ -8952,7 +6451,7 @@ def build_utility_artifact(
                                 "teacher_id": "gpt_oss",
                                 "run_id": "gleaning",
                                 "prompt_hash": repair_prompt_hash,
-                                "teacher_pin_hash": _stable_hash(
+                                "teacher_pin_hash": stable_hash(
                                     getattr(secondary_relation_teacher, "pin", {})
                                 ),
                                 "proposal_count": secondary_proposal_count,
@@ -9012,7 +6511,7 @@ def build_utility_artifact(
                         )
                         escalation["secondary_kept_counts"] = {
                             scope: sum(
-                                _relation_scope(
+                                relation_scope(
                                     list(dict(row.get("evidence") or {}).get("arguments") or [])
                                 ) == scope
                                 for row in secondary_accepted
@@ -9022,7 +6521,7 @@ def build_utility_artifact(
                         escalation["merge_disposition"] = disposition
                         escalation["merged_kept_counts"] = {
                             scope: sum(
-                                _relation_scope(
+                                relation_scope(
                                     list(dict(row.get("evidence") or {}).get("arguments") or [])
                                 ) == scope
                                 for row in merged_relations
@@ -9097,7 +6596,7 @@ def build_utility_artifact(
                 obj = next((a for a in args if a.get("role") == "object"), None)
                 if subj is None or obj is None:
                     return None
-                if not _relation_arguments_are_legal(o["relation"], [subj, obj], ACI_RELATION_CONTRACT):
+                if not relation_arguments_are_legal(o["relation"], [subj, obj], ACI_RELATION_CONTRACT):
                     return None
                 return {"relation": o["relation"],
                         "arguments": [_stamp_span_label(subj), _stamp_span_label(obj)]}
@@ -9217,7 +6716,7 @@ def build_utility_artifact(
                     "relation": row.get("relation"),
                     "reason": row.get("reason"),
                     "hint": row.get("hint"),
-                    "fact_key_hash": _stable_hash(row["fact_key"]),
+                    "fact_key_hash": stable_hash(row["fact_key"]),
                     "evidence_span": row.get("evidence_span"),
                 }
                 for row in coverage_targets
@@ -9276,11 +6775,14 @@ def build_utility_artifact(
     # Diagnostic classification of the finished artifact. Deterministic from its
     # contents, so it is included in the hashed payload (keeps the downstream
     # gate's hash recompute consistent) without adding entropy.
+    # Deferred: qa_review reads this module's gleaning/scope vocabulary, so the
+    # import cannot sit at module scope.
+    from cloak.train.qa_review import compute_review_flags
     artifact["review_flags"] = compute_review_flags(artifact)
     artifact["qa_audit"] = build_qa_audit(
         artifact, environment_audit=environment_audit,
     )
-    artifact["artifact_hash"] = _stable_hash({
+    artifact["artifact_hash"] = stable_hash({
         key: value for key, value in artifact.items() if key != "artifact_hash"
     })
     return artifact
@@ -9429,7 +6931,7 @@ def build_joint_representative_anchor(
         raise ValueError(f"unknown linked decisions: {missing}")
     return {
         "action_vector": action_vector,
-        "action_vector_hash": _stable_hash(action_vector),
+        "action_vector_hash": stable_hash(action_vector),
     }
 
 
@@ -9464,7 +6966,7 @@ def _diagnose_coarser_readable(
         decision = decisions_by_id.get(str(decision_id))
         if decision is None:
             continue
-        levels = _ordered_decision_levels(decision)  # finest -> coarsest
+        levels = ordered_decision_levels(decision)  # finest -> coarsest
         if level not in levels:
             continue
         for coarser in levels[levels.index(level) + 1:]:
@@ -9501,11 +7003,11 @@ def _diagnose_coarser_readable(
                 if occurrences is not None else candidate.get("reader_clause")
             )
             answer = reader(
-                [_permuted_reader_question(probe, 0)],
-                _reader_excerpt(probe_context, candidate.get("evidence") or {}),
+                [permuted_reader_question(probe, 0)],
+                reader_excerpt(probe_context, candidate.get("evidence") or {}),
                 [probe_clause],
             )[0]
-            if _context_answer_score(probe, answer, chain_by_decision) >= reader_threshold:
+            if context_answer_score(probe, answer, chain_by_decision) >= reader_threshold:
                 return {
                     "surface": str(decision.get("canonical_key") or ""),
                     "runtime_type": str(decision.get("runtime_type") or ""),
@@ -9547,7 +7049,7 @@ def _finer_level_readability(
     decision = decisions_by_id.get(decision_id)
     if decision is None or not supported:
         return None
-    levels = _ordered_decision_levels(decision)  # finest -> coarsest
+    levels = ordered_decision_levels(decision)  # finest -> coarsest
     if supported not in levels:
         return None
     finer_levels = levels[:levels.index(supported)]
@@ -9587,72 +7089,17 @@ def _finer_level_readability(
         # the frozen clause stays valid: only the ANSWER level varies here and the clause names
         # locators only, exactly as at RL time
         answer = reader(
-            [_permuted_reader_question(candidate, 0)],
-            _reader_excerpt(probe_context, candidate.get("evidence") or {}),
+            [permuted_reader_question(candidate, 0)],
+            reader_excerpt(probe_context, candidate.get("evidence") or {}),
             [candidate.get("reader_clause")],
         )[0]
         # scored against the ORIGINAL row (frozen required_property): the finer node must
         # resolve via its aliases and entail the supported level, as it must at RL time
         scores[str(finer)] = {
-            "score": _context_answer_score(candidate, answer, chain_by_decision),
+            "score": context_answer_score(candidate, answer, chain_by_decision),
             "render": "ok",
         }
     return scores
-
-
-def _answer_score(answer: str, accepted_values: Sequence[str]) -> float:
-    if not accepted_values:
-        return 0.0
-    return max(fact_score(answer, value) for value in accepted_values)
-
-
-def _resolve_semantic_node(chain: Sequence[Mapping], answer: str) -> dict | None:
-    """Resolve a free-form reader answer to exactly one node in one decision's
-    frozen semantic chain, by its answer_aliases. Decision-scoped and lexical;
-    ambiguous or unresolved -> None. A protected source value resolves to KEEP
-    locally without ever entering the artifact's public answer golds.
-
-    Contiguity + verbosity cap (reader schema v3): an alias must appear as a
-    CONTIGUOUS stemmed subsequence of the reply, and the reply may carry at most
-    _ANSWER_EXTRA_TOKEN_CAP meaningful tokens beyond the alias. Keeps legitimate
-    reader verbosity resolvable — hedge prefixes, dose/qualifier tails, compound
-    spans (measured: 32/37 strict-equality flips were such false negatives) —
-    while rejecting the containment rule's unearned passes: whole-sentence
-    echoes (over the cap) and tokens scattered across phrases (non-contiguous)."""
-    answer_sequence = _stemmed_token_sequence(answer)
-    if not answer_sequence:
-        return None
-
-    def resolves(alias: str) -> bool:
-        alias_sequence = _stemmed_token_sequence(alias)
-        span = len(alias_sequence)
-        if not span or len(answer_sequence) - span > _ANSWER_EXTRA_TOKEN_CAP:
-            return False
-        return any(
-            answer_sequence[start:start + span] == alias_sequence
-            for start in range(len(answer_sequence) - span + 1)
-        )
-
-    matches = [
-        node for node in chain
-        if any(resolves(str(alias)) for alias in node.get("answer_aliases") or [])
-    ]
-    # Exact equality can still match several nodes when aliases repeat across
-    # the chain; matches[0] is the finest (chain is linear specific->coarse).
-    # ponytail: assumes a linear chain (no sibling levels); revisit for a DAG.
-    return dict(matches[0]) if matches else None
-
-
-def _linked_answer_score(answer: str, chain: Sequence[Mapping], required_property: str) -> float:
-    """Binary credit iff the resolved node entails the required property. KEEP
-    and any supported generalization pass; coarser meanings and placeholder
-    fail. No token-F1 partial credit for a semantic band."""
-    node = _resolve_semantic_node(chain, answer)
-    if node is None:
-        return 0.0
-    return 1.0 if canon(str(required_property)) in {
-        canon(str(prop)) for prop in node.get("entailed_properties") or []
-    } else 0.0
 
 
 def _source_turns_for_ranges(
@@ -9674,22 +7121,6 @@ def _source_turns_for_ranges(
         for index in range(line_of(start), line_of(max(start, end - 1)) + 1):
             turns.add(index)
     return sorted(turns)
-
-
-_TURN_EXCERPT_ELISION = "[...]"
-
-
-def _line_clause_spans(line: str) -> list[tuple[int, int]]:
-    """Return delimiter-terminated clause spans relative to one rendered turn."""
-    spans, left = [], 0
-    for delimiter in _CLAUSE_DELIMITER_PATTERN.finditer(line):
-        right = delimiter.end()
-        if line[left:right].strip():
-            spans.append((left, right))
-        left = right
-    if line[left:].strip():
-        spans.append((left, len(line)))
-    return spans
 
 
 def _source_reader_clause_refs(
@@ -9718,7 +7149,7 @@ def _source_reader_clause_refs(
                 break
             if start >= line_end:
                 continue
-            spans = _line_clause_spans(lines[turn])
+            spans = line_clause_spans(lines[turn])
             for clause, (left, right) in enumerate(spans):
                 absolute_left, absolute_right = line_start + left, line_start + right
                 if absolute_left < end and start < absolute_right:
@@ -9727,178 +7158,6 @@ def _source_reader_clause_refs(
         {"turn": turn, "clause": clause, "turn_clause_count": count}
         for turn, clause, count in sorted(refs)
     ]
-
-
-def _turn_excerpt(
-    context: str,
-    core_turns: Sequence[int],
-    *,
-    window: int,
-    core_clauses: Sequence[Mapping[str, object]] = (),
-) -> str:
-    """Surgically stitch `context` to the given turn indices (each plus `window`
-    neighbor turns), eliding non-adjacent gaps rather than spanning first-to-last.
-
-    Adjacent/overlapping turn windows merge into one region (so a co-located
-    relation reads exactly as before); a relation whose turns sit far apart reads
-    only its relevant regions joined by an elision marker -- the middle text is
-    not handed to the reader. Optional turn-local clause pins narrow a long
-    speaker turn further; a changed delimiter shape falls back to that full turn.
-    Empty `core_turns`, or indices past the end of `context`, fall back to the
-    full `context` so a diverged render is never mis-sliced."""
-    if not core_turns:
-        return context
-    lines = context.splitlines()
-    if max(core_turns) >= len(lines):
-        return context
-    pinned_clauses: dict[int, set[int]] = defaultdict(set)
-    pinned_counts: dict[int, int] = {}
-    for ref in core_clauses:
-        try:
-            turn = int(ref["turn"])
-            clause = int(ref["clause"])
-            count = int(ref["turn_clause_count"])
-        except (KeyError, TypeError, ValueError):
-            continue
-        if not (0 <= turn < len(lines) and 0 <= clause < count):
-            continue
-        if turn in pinned_counts and pinned_counts[turn] != count:
-            pinned_clauses.pop(turn, None)
-            pinned_counts.pop(turn, None)
-            continue
-        pinned_counts[turn] = count
-        pinned_clauses[turn].add(clause)
-
-    def excerpt_line(turn: int) -> str:
-        clauses = pinned_clauses.get(turn)
-        if not clauses:
-            return lines[turn]
-        spans = _line_clause_spans(lines[turn])
-        if len(spans) != pinned_counts.get(turn) or max(clauses) >= len(spans):
-            return lines[turn]
-        parts: list[str] = []
-        previous = None
-        for clause in sorted(clauses):
-            if previous is not None and clause > previous + 1:
-                parts.append(_TURN_EXCERPT_ELISION)
-            left, right = spans[clause]
-            parts.append(lines[turn][left:right].strip())
-            previous = clause
-        return "\n".join(part for part in parts if part)
-
-    windows = sorted(
-        (max(0, turn - window), min(len(lines) - 1, turn + window))
-        for turn in set(core_turns)
-    )
-    merged: list[list[int]] = []
-    for low, high in windows:
-        if merged and low <= merged[-1][1] + 1:  # touching/overlapping -> one region, no gap
-            merged[-1][1] = max(merged[-1][1], high)
-        else:
-            merged.append([low, high])
-    parts: list[str] = []
-    for index, (low, high) in enumerate(merged):
-        if index:
-            parts.append(_TURN_EXCERPT_ELISION)  # a real gap was skipped between regions
-        parts.extend(excerpt_line(turn) for turn in range(low, high + 1))
-    return "\n".join(parts)
-
-
-def _gate_debug(exc, orig_ans, rep_ans, ph_ans, scores) -> None:
-    """Dev-only dump of what the reader saw + answered per render, for gate debugging. OFF unless
-    $CLOAK_GATE_DEBUG_DIR is set; filtered to reverse-orientation questions to keep output tiny."""
-    out_dir = os.getenv("CLOAK_GATE_DEBUG_DIR")
-    if not out_dir or not exc:
-        return
-    question, ox, rx, px = exc
-    if not question.startswith("For what medical condition was the"):
-        return
-    os.makedirs(out_dir, exist_ok=True)
-    key = _stable_hash(question + ox).split(":")[-1][:16]
-    with open(os.path.join(out_dir, key + ".json"), "w") as f:
-        json.dump({"question": question, "scores": scores,
-                   "original": {"excerpt": ox, "answer": list(orig_ans)},
-                   "representative": {"excerpt": rx, "answer": list(rep_ans)},
-                   "placeholder": {"excerpt": px, "answer": list(ph_ans)}},
-                  f, ensure_ascii=False, indent=1)
-
-
-def _reader_excerpt(context: str, evidence: Mapping) -> str:
-    """Render an assertion's pinned reader evidence, preserving old artifacts."""
-    turns = evidence.get("reader_turns") or []
-    clauses = evidence.get("reader_clauses") or []
-    if clauses:
-        return _turn_excerpt(
-            context,
-            turns,
-            window=CONTEXT_READER_TURN_WINDOW,
-            core_clauses=clauses,
-        )
-    return _turn_excerpt(context, turns, window=CONTEXT_READER_TURN_WINDOW)
-
-
-def _context_answer_score(
-    row: Mapping, answer: str, chain_by_decision: Mapping[str, Sequence[Mapping]],
-) -> float:
-    """Route a context answer to the linked (lattice-entailment) or literal
-    (lexical) scorer per the assertion's answer_target; fall back to legacy
-    accepted_values lexical scoring when no target is present."""
-    target = row.get("answer_target") or {}
-    if target.get("kind") == "linked_decision":
-        chain = chain_by_decision.get(str(target.get("decision_id")))
-        if not chain:
-            return 0.0
-        return _linked_answer_score(answer, chain, str(target.get("required_property", "")))
-    if target.get("kind") == "linked_decision_set":
-        # Set-valued QA (validated: scripts/spikes/set_valued_gate_probe.py): the reader answers
-        # with a JSON array; the score is one-to-one per-member recall (each prediction matches at
-        # most one member via the linked scorer). At the production threshold 1.0 the three-point
-        # gate then requires EVERY member readable on orig and rep, and at least one member hidden
-        # on placeholder. Extra predictions (e.g. uncontrolled literals) are ignored: literals are
-        # pre-excluded from privacy scoring by construction.
-        predictions = _parse_llm_json_array(answer)
-        members = list(target.get("members") or [])
-        if not members:
-            return 0.0
-        used = [False] * len(predictions)
-        hits = 0
-        for member in members:
-            chain = chain_by_decision.get(str(member.get("decision_id")))
-            if not chain:
-                continue
-            for index, prediction in enumerate(predictions):
-                if used[index]:
-                    continue
-                if _linked_answer_score(
-                        prediction, chain, str(member.get("required_property", ""))) >= 1.0:
-                    used[index] = True
-                    hits += 1
-                    break
-        return hits / len(members)
-    if target.get("kind") == "literal":
-        return _answer_score(answer, list(target.get("expected_values") or []))
-    return _answer_score(answer, list(row.get("accepted_values") or []))
-
-
-def _permuted_reader_question(assertion: Mapping, permutation_index: int) -> str:
-    question = str(assertion["question"])
-    # NOTE: the relation answer_type prefix ("Extract the shortest <type> span ...") is
-    # deliberately NOT applied -- it reintroduced a hardcoded type cue that could re-leak the
-    # answer's type word after the stored question was repaired. The reader's base prompt already
-    # asks for the shortest exact answer span.
-    options = [str(option) for option in assertion.get("options") or []]
-    if not options:
-        return question
-    ordered = sorted(
-        options,
-        key=lambda option: _stable_hash({
-            "assertion_id": str(assertion.get("assertion_id", "")),
-            "option": option,
-        }),
-    )
-    shift = permutation_index % len(ordered)
-    permutation = ordered[shift:] + ordered[:shift]
-    return f"{question}\nOptions: {' | '.join(permutation)}"
 
 
 def validate_context_assertions(
@@ -9935,14 +7194,14 @@ def validate_context_assertions(
             original_answers, representative_answers, placeholder_answers = [], [], []
             debug_excerpts: dict[int, tuple] = {}
             for row in rows:
-                question = _permuted_reader_question(row, permutation_index)
+                question = permuted_reader_question(row, permutation_index)
                 # Frozen relation-constraint clause (v4 reader): the same string on all three
                 # renders and at runtime, so every read certifies the same instrument.
                 clauses = [row.get("reader_clause")]
                 reader_evidence = row.get("evidence") or {}
-                ox = _reader_excerpt(original_context, reader_evidence)
-                rx = _reader_excerpt(representative_context, reader_evidence)
-                px = _reader_excerpt(placeholder_context, reader_evidence)
+                ox = reader_excerpt(original_context, reader_evidence)
+                rx = reader_excerpt(representative_context, reader_evidence)
+                px = reader_excerpt(placeholder_context, reader_evidence)
                 debug_excerpts[id(row)] = (question, ox, rx, px)
                 row_reader = (
                     set_reader
@@ -9961,12 +7220,12 @@ def validate_context_assertions(
                 rows, original_answers, representative_answers, placeholder_answers
             ):
                 scores = {
-                    "original": _context_answer_score(row, original, chain_by_decision),
-                    "representative": _context_answer_score(row, representative, chain_by_decision),
-                    "placeholder": _context_answer_score(row, placeholder, chain_by_decision),
+                    "original": context_answer_score(row, original, chain_by_decision),
+                    "representative": context_answer_score(row, representative, chain_by_decision),
+                    "placeholder": context_answer_score(row, placeholder, chain_by_decision),
                 }
-                _gate_debug(debug_excerpts.get(id(row)), original, representative, placeholder, scores)
-                assertion_id = str(row.get("assertion_id") or _stable_hash(dict(row)))
+                gate_debug(debug_excerpts.get(id(row)), original, representative, placeholder, scores)
+                assertion_id = str(row.get("assertion_id") or stable_hash(dict(row)))
                 trials_by_assertion[assertion_id].append({
                     "repetition": repetition,
                     "permutation_index": permutation_index,
@@ -9980,7 +7239,7 @@ def validate_context_assertions(
 
     accepted, evidence = [], {}
     for row in rows:
-        assertion_id = str(row.get("assertion_id") or _stable_hash(dict(row)))
+        assertion_id = str(row.get("assertion_id") or stable_hash(dict(row)))
         trials = trials_by_assertion[assertion_id]
         passing_fraction = sum(trial["passed"] for trial in trials) / len(trials)
         if passing_fraction >= stability_threshold:
@@ -10003,205 +7262,3 @@ def validate_context_assertions(
         if verdict == "accepted":
             accepted.append(dict(row))
     return accepted, evidence
-
-
-def _score_delivered_contract(contract: Mapping, out_final: str, parsed_output: Mapping) -> float:
-    kind = contract.get("kind")
-    if kind == "contains":
-        return fact_score(out_final, str(contract.get("value", "")))
-    if kind == "required_sections":
-        sections = [str(section) for section in contract.get("sections") or []]
-        if (
-            not sections
-            or not set(ACI_REQUIRED_SECTIONS).issubset(sections)
-            or not all(parsed_output["sections"].get(section) for section in sections)
-        ):
-            return 0.0
-        parseability = contract.get("parseability") or {
-            "assessment": {"kind": "rows", "count": 1},
-            "plan": {"kind": "rows", "count": 1},
-        }
-        if not isinstance(parseability, Mapping):
-            return 0.0
-        for section in ("assessment", "plan"):
-            expected = parseability.get(section)
-            observed = parsed_output[f"{section}_shape"]
-            if (
-                not isinstance(expected, Mapping)
-                or expected.get("kind") not in {"rows", "labeled_rows", "none"}
-                or isinstance(expected.get("count"), bool)
-                or not isinstance(expected.get("count"), int)
-                or expected["count"] < 0
-                or expected["kind"] == "none" and expected["count"] != 0
-                or expected["kind"] != observed["kind"]
-                or expected["count"] != observed["count"]
-            ):
-                return 0.0
-        return 1.0
-    if kind == "field_value":
-        section = str(contract.get("section", ""))
-        field = str(contract.get("field", ""))
-        expected = canon(str(contract.get("value", "")))
-        if section == "DEMOGRAPHIC":
-            observed = parsed_output["demographic"].get(field)
-            return float(observed is not None and canon(observed) == expected)
-        if section == "ASSESSMENT":
-            row_key = canon(str(contract.get("row", "")))
-            matches = [
-                row for row in parsed_output["assessment_rows"]
-                if canon(row["condition"]) == row_key
-            ]
-            return float(
-                len(matches) == 1
-                and field in {"category", "status"}
-                and isinstance(matches[0].get(field), str)
-                and canon(matches[0][field]) == expected
-            )
-        return 0.0
-    if kind == "exact_relation":
-        expected = {
-            field: canon(str(contract.get(field, "")))
-            for field in ("condition", "treatment", "test")
-        }
-        if not all(expected.values()) or contract.get("section") != "PLAN":
-            return 0.0
-        return float(any(
-            all(
-                isinstance(row.get(field), str) and canon(row[field]) == value
-                for field, value in expected.items()
-            )
-            for row in parsed_output["plan_rows"]
-        ))
-    raise ValueError(f"unsupported delivered scoring contract: {contract}")
-
-
-def prepare_utility_scoring(
-    artifact: Mapping, doc_id: str, *, doc_p: str, out_final: str,
-) -> dict:
-    """Prepare deterministic scores and exact per-assertion reader work."""
-    assertions = [
-        row for row in artifact.get("assertions", {}).values()
-        if row.get("doc_id") == doc_id and row.get("status", "accepted") == "accepted"
-    ]
-    assertions.sort(key=lambda row: str(row["assertion_id"]))
-    context_rows = [row for row in assertions if row.get("family") == "context"]
-    context_work = []
-    for row in context_rows:
-        context_work.append({
-            "assertion_id": str(row["assertion_id"]),
-            "question": _permuted_reader_question(row, 0),
-            "context": _reader_excerpt(doc_p, row.get("evidence") or {}),
-            "reader_clause": row.get("reader_clause"),
-            "set_valued": (
-                (row.get("answer_target") or {}).get("kind")
-                == "linked_decision_set"
-            ),
-        })
-    chain_by_decision = {
-        str(decision["decision_id"]): decision.get("semantic_chain", [])
-        for decision in artifact["documents"][doc_id].get("decisions", [])
-    }
-    scores: dict[str, float] = {}
-    parsed_output = _parse_aci_note(out_final)
-    for row in assertions:
-        if row.get("family") != "delivered":
-            continue
-        contract = row.get("scoring_contract") or {}
-        scores[str(row["assertion_id"])] = _score_delivered_contract(
-            contract, out_final, parsed_output
-        )
-    return {
-        "assertions": assertions,
-        "context_rows": context_rows,
-        "context_work": context_work,
-        "chain_by_decision": chain_by_decision,
-        "deterministic_scores": scores,
-        "utility_weight_denominator": float(
-            artifact["documents"][doc_id]["utility_weight_denominator"]
-        ),
-    }
-
-
-def finalize_utility_scoring(
-    prepared: Mapping, context_answers: Sequence[str],
-) -> dict:
-    """Reconstruct and validate one complete frozen component vector."""
-    context_rows = prepared["context_rows"]
-    if len(context_answers) != len(context_rows):
-        raise ValueError("reader returned the wrong number of answers")
-    scores = dict(prepared["deterministic_scores"])
-    for row, answer in zip(context_rows, context_answers, strict=True):
-        scores[str(row["assertion_id"])] = _context_answer_score(
-            row, answer, prepared["chain_by_decision"],
-        )
-    assertions = prepared["assertions"]
-    expected_ids = {str(row["assertion_id"]) for row in assertions}
-    if set(scores) != expected_ids:
-        raise ValueError("utility scoring did not produce exact assertion coverage")
-    if any(
-        not isinstance(score, Real) or not isfinite(float(score))
-        or not 0.0 <= float(score) <= 1.0
-        for score in scores.values()
-    ):
-        raise ValueError("utility scoring produced an invalid component score")
-
-    numerator = sum(float(row["weight"]) * scores[str(row["assertion_id"])]
-                    for row in assertions)
-    denominator = float(prepared["utility_weight_denominator"])
-    utility = numerator / denominator if denominator else 0.0
-    return {"component_scores": scores, "utility": utility}
-
-
-def _call_runtime_reader(
-    reader: Callable, question: str, context: str, clause: str | None, refresh: bool,
-) -> Sequence[str]:
-    if not refresh:
-        return reader([question], context, [clause])
-    parameters = inspect.signature(reader).parameters.values()
-    supports_refresh = any(
-        parameter.name == "refresh" or parameter.kind == parameter.VAR_KEYWORD
-        for parameter in parameters
-    )
-    if not supports_refresh:
-        raise ValueError("reader_refresh requires a reader that accepts refresh")
-    return reader([question], context, [clause], refresh=True)
-
-
-def validate_utility_reader_pin(reader: Callable, artifact: Mapping) -> None:
-    """Require the runtime reader to match the utility artifact's frozen pin."""
-    _validated_build_reader_pin(reader, artifact)
-
-
-def score_utility(
-    artifact: Mapping,
-    doc_id: str,
-    *,
-    doc_p: str,
-    out_final: str,
-    reader: Callable[[list[str], str, list[str | None]], Sequence[str]],
-    set_reader: Callable[[list[str], str, list[str | None]], Sequence[str]] | None = None,
-    reader_refresh: bool = False,
-) -> dict:
-    """Score one document with one reader request per context assertion."""
-    _validated_build_reader_pin(reader, artifact)
-    prepared = prepare_utility_scoring(
-        artifact, doc_id, doc_p=doc_p, out_final=out_final,
-    )
-    if any(item["set_valued"] for item in prepared["context_work"]):
-        if set_reader is None:
-            set_reader = reader
-        _validated_build_reader_pin(set_reader, artifact)
-    context_answers = []
-    for item in prepared["context_work"]:
-        row_reader = set_reader if item["set_valued"] else reader
-        answers = _call_runtime_reader(
-            row_reader,
-            item["question"],
-            item["context"],
-            item["reader_clause"],
-            reader_refresh,
-        )
-        if len(answers) != 1:
-            raise ValueError("reader returned the wrong number of answers")
-        context_answers.append(answers[0])
-    return finalize_utility_scoring(prepared, context_answers)

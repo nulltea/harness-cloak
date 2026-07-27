@@ -6,11 +6,8 @@ from pathlib import Path
 
 import build_qa_utility_artifact as qa_cli
 import pytest
-from cloak.train.qa_builder import (
-    freeze_ranker_environment,
-    frozen_occurrences_from_arms,
-    validate_context_assertions,
-)
+from cloak.train.qa_builder import validate_context_assertions
+from cloak.train.qa_freeze import freeze_ranker_environment, frozen_occurrences_from_arms
 
 
 TEST_READER_PIN = {
