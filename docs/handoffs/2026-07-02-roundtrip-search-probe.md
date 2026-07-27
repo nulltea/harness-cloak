@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-27
 tags: [d2, way-2, round-trip-reward, training-free-search, go-no-go, handoff]
 companion: [../plans/2026-07-02-roundtrip-grpo-training.md, ../plans/2026-07-02-codesign-next-stage.md, ../plans/2026-07-02-d1-prototype-implementation.md]
 ---
@@ -68,7 +68,7 @@ D1 headline utility; no literature pass, per grilling decision).
 
 - Substitutor cascade: `src/cloak/` (`substitute.py` = τ-walk + R emission, `probe.py` = MTI,
   `extract.py` = rung A, `tasks.py`, `detect.py`, `lattice.py`); scripts `scripts/d1_*.py`.
-- Proxy + cache: `src/inferdpt/llm.py` (`LLMClient`, content-addressed cache, `pmap`). Roles/model
+- Proxy + cache: `src/cloak/llm.py` (`LLMClient`, content-addressed cache, `pmap`). Roles/model
   ids: D1 plan "Role assignment" section. Corpora: `corpora/synthpai/`; tuples
   `data/latticecloak_tuples/`.
 - Rules that bind: CLAUDE.md empirical honesty (no calibration knobs; compare only at matched

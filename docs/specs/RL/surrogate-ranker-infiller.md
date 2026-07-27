@@ -1,8 +1,8 @@
 ---
 type: reference
-status: current
+status: stale
 created: 2026-07-03
-updated: 2026-07-05
+updated: 2026-07-27
 tags: [rl, surrogate-reward, ranker, infiller, environment, probes, reward, anonymity-set,
        count-floors, keep-original, floor-randomized, grammar-constrained, gold-conditional,
        utility-only, fact-recall, injectivity, spec]
@@ -11,6 +11,8 @@ companion: [docs/research/inference-risk-enforcement.md,
             docs/plans/2026-07-02-surrogate-grpo-training.md, docs/specs/benchmarks.md,
             docs/specs/attacks.md, docs/issues/remote-llm-echo-absorption.md]
 supersedes: the 2026-07-03 revision of this file (walk_risk tau-mask design)
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); the ranker-v1 trainer, policy module and
+  probe-era reward were deleted — the live RL design is docs/specs/RL/interactive-ranker-v2.md
 ---
 
 # RL specification — surrogate-reward training of the substitutor (ranker + infiller)

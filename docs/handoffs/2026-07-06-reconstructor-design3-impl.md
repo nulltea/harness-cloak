@@ -1,12 +1,14 @@
 ---
 type: handoff
-status: current
+status: stale
 created: 2026-07-06
-updated: 2026-07-06
+updated: 2026-07-27
 tags: [extractor, reconstructor, design3, invert, survived-recovery, subagent-driven]
 companion: [../plans/2026-07-06-reconstructor-design3-plan.md,
             ../plans/2026-07-05-survived-recovery-extractor.md,
             ../../research-wiki/experiments/extractor-pointer-by-type.md]
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); reconstructor/frozen-extractor track
+  preserved on branch archive/reconstructor-track
 ---
 
 # Handoff: implement the Design 3 reconstructor plan (subagent-driven)

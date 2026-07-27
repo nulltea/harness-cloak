@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-27
 tags: [rl, round-trip-reward, ranker, infiller, grpo, rloo, expert-iteration,
        credit-assignment, data-scaling, anti-goodhart, strategy]
 companion: [docs/specs/RL/surrogate-ranker-infiller.md,
@@ -11,6 +11,10 @@ companion: [docs/specs/RL/surrogate-ranker-infiller.md,
 ---
 
 # Round-trip RL strategy — optimal training of ranker + infiller for real-world tasks
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/train_ranker.py` (superseded by `scripts/train_interactive_ranker.py`).
 
 Design exercise (user-mandated 2026-07-05): given everything measured so far — two stage-1
 NULLs, the reward-landscape account, the surrogate-reward pivot — devise the best-practice RL

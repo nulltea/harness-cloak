@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-22
+updated: 2026-07-27
 tags: [rl, ranker, interactive-policy, reward-design, credit-assignment, counterfactual,
        anonymity-counts, lambda-conditioning, semantic-privacy, pareto, spec]
 supersedes: docs/specs/RL/count-privacy-reward.md
@@ -730,10 +730,10 @@ the trainer:
 - **Lambda-menu selector:** consumes a frozen trajectory pool and emits values, switch points,
   replay report, and hashes. It is offline and cannot inspect final attacker results.
 
-Expected code destinations are focused model modules under `src/cloak/train/` for frozen encoding,
+Expected code destinations are focused model modules under `src/cloak/ranker/` for frozen encoding,
 semantic privacy, document context, selected-action memory, and the additive controller;
-`src/cloak/train/interactive_ranker.py` for trajectory/loss assembly;
-`src/cloak/train/roundtrip.py` for assertion-vector output; and
+`src/cloak/ranker/interactive.py` for trajectory/loss assembly;
+`src/cloak/reward/roundtrip.py` for assertion-vector output; and
 `scripts/train_interactive_ranker.py` for orchestration only. Exact paths are fixed by the
 implementation plan, but these responsibility boundaries are normative.
 

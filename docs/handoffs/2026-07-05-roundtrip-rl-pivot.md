@@ -2,12 +2,16 @@
 type: handoff
 status: current
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-27
 tags: [round-trip-rl, reward, floors, ranker, pivot, known-issues]
 companion: ../specs/RL/surrogate-ranker-infiller.md
 ---
 
 # Handoff: pivot to round-trip RL (task-execution reward)
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](../plans/2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `train/reward.py` (its four surviving names folded into `src/cloak/qa/scoring.py`).
 
 > **The round-trip support scan is the GATE for RL training** (user-mandated,
 > 2026-07-05): in the round-trip environment the old constructed-arms gate is replaced by
@@ -37,7 +41,8 @@ honesty boundaries); training records
 
 ## Repo state
 
-- Branch `u-gold-reward` (current): u_gold scorer (`src/cloak/train/reward.py` — KEEP as
+- Branch `u-gold-reward` (current): u_gold scorer (`train/reward.py`, retired 2026-07-27; the
+  module's four surviving names now live in `src/cloak/qa/scoring.py` — KEEP as
   diagnostic; reviewer-verified batching/anti-leak), landscape sanity spike + verified
   FAIL, spec third revision, records renamed to the v-schema. Plan
   `docs/plans/2026-07-05-u-gold-reward.md` Tasks 3–5 are CANCELLED by the pivot.

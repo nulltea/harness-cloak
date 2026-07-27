@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-27
 tags: [qa-builder-v2, context-qa, reader, scorer, lattice-entailment, rl-ranker-v2, handoff]
 companion: [docs/specs/qa-builder-v2.md,
             docs/specs/RL/interactive-ranker-v2.md,
@@ -64,7 +64,7 @@ ranker-v2's count reward chooses among utility-equivalent actions inside it.
 ## Current defect
 
 The teacher currently supplies `accepted_answers`; compilation normalizes and stores them as
-`accepted_values` in `src/cloak/train/qa_builder.py`. Both builder validation and runtime utility
+`accepted_values` in `src/cloak/qa/builder.py`. Both builder validation and runtime utility
 then call:
 
 ```python

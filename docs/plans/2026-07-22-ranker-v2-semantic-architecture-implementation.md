@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-07-27
 tags: [rl, ranker, semantic-privacy, candidate-attention, selected-action-memory,
        additive-controller, implementation]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
@@ -17,6 +17,10 @@ supersedes: docs/plans/2026-07-22-interactive-ranker-v2-remaining-implementation
 ---
 
 # Ranker v2 Semantic Architecture Implementation Plan
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `train/ranker.py` (the `legacy-film-gru` policy; the semantic-v1 architecture in `src/cloak/ranker/semantic.py` is the only live one).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use
 > `superpowers:subagent-driven-development` to implement this plan task-by-task. Steps use checkbox
@@ -91,8 +95,8 @@ The implementation session must begin by confirming these facts in the checkout:
 
 | Current surface | State | Treatment in this plan |
 |---|---|---|
-| `ConditionalRankerPolicy` in `src/cloak/train/ranker.py` | count, authored position, menu size, profile embeddings, FiLM, GRU | retain unchanged as `legacy-film-gru` diagnostic baseline |
-| `CountReward` and `expected_count_loss` in `src/cloak/train/count_reward.py` | type-normalized direct-count fallback | retain for fallback; do not feed it into the semantic actor |
+| `ConditionalRankerPolicy` in `train/ranker.py` (retired 2026-07-27) | count, authored position, menu size, profile embeddings, FiLM, GRU | retain unchanged as `legacy-film-gru` diagnostic baseline |
+| `CountReward` and `expected_count_loss` in `src/cloak/ranker/count_reward.py` | type-normalized direct-count fallback | retain for fallback; do not feed it into the semantic actor |
 | `interactive_ranker.py` trajectory, structured credit, counterfactual, cache, and training loop | implemented WIP | adapt through protocol-compatible semantic outputs |
 | `scripts/train_interactive_ranker.py` | instantiates only current policy and count artifact | add explicit architecture selection and semantic artifacts |
 | ACI ranker environment and QA artifact | real 67-document artifacts | reuse without rerunning ACI detection |
@@ -121,14 +125,14 @@ CLI entry point.
 
 ### Create
 
-- `src/cloak/train/profile_count.py` — strict own-profile target artifact and exact-target runtime.
-- `src/cloak/train/ranker_representation.py` — pinned frozen encoder, pair serialization, document
+- `src/cloak/ranker/profile_count.py` — strict own-profile target artifact and exact-target runtime.
+- `src/cloak/ranker/representation.py` — pinned frozen encoder, pair serialization, document
   token bank, and content-addressed cache.
-- `src/cloak/train/ranker_privacy.py` — privacy projection/head, grouped dataset split, losses,
+- `src/cloak/ranker/privacy.py` — privacy projection/head, grouped dataset split, losses,
   metrics, and checkpoint loading.
-- `src/cloak/train/semantic_ranker.py` — context readout, selected-action memory, utility tower,
+- `src/cloak/ranker/semantic.py` — context readout, selected-action memory, utility tower,
   additive controller, and policy facade.
-- `src/cloak/train/ranker_architecture_diagnostics.py` — shortcut, context, history, and order
+- `src/cloak/ranker/architecture_diagnostics.py` — shortcut, context, history, and order
   diagnostics with immutable reports.
 - `scripts/build_profile_count_targets.py` — publish the selected architecture's count-target state.
 - `scripts/build_ranker_representation_cache.py` — build frozen document/relation caches.
@@ -144,18 +148,18 @@ CLI entry point.
 
 ### Modify
 
-- `src/cloak/train/interactive_ranker.py` — replay semantic outputs and enforce gradient ownership.
+- `src/cloak/ranker/interactive.py` — replay semantic outputs and enforce gradient ownership.
 - `scripts/train_interactive_ranker.py` — load semantic artifacts and emit semantic checkpoints.
 - `src/cloak/tests/test_interactive_ranker.py` — semantic objective, warm-start, and checkpoint tests.
 - `src/cloak/tests/test_conditional_ranker.py` — keep the old policy tests explicitly labelled as
   legacy baseline tests; do not weaken them.
-- `src/cloak/train/ranker_diagnostics.py` and `src/cloak/tests/test_ranker_diagnostics.py` — include
+- `src/cloak/ranker/diagnostics.py` and `src/cloak/tests/test_ranker_diagnostics.py` — include
   semantic-head, alpha, shortcut, and order metrics in run reports.
 
 ## Task 1: Publish Strict Own-Profile Count Targets
 
 **Files:**
-- Create: `src/cloak/train/profile_count.py`
+- Create: `src/cloak/ranker/profile_count.py`
 - Create: `scripts/build_profile_count_targets.py`
 - Create: `src/cloak/tests/test_profile_count.py`
 
@@ -216,7 +220,7 @@ def build_profile_count_targets(environment: Mapping, *, strict: bool) -> dict: 
   PYTHONPATH=src:scripts .venv/bin/python -m pytest -q src/cloak/tests/test_profile_count.py
   ```
 
-  Expected: collection fails because `cloak.train.profile_count` does not exist.
+  Expected: collection fails because `cloak.ranker.profile_count` does not exist.
 
 - [ ] **Step 3: Implement the immutable artifact**
 
@@ -276,7 +280,7 @@ calibration pool, and diagnostics.
 ## Task 2: Build the Frozen Shared Representation Store
 
 **Files:**
-- Create: `src/cloak/train/ranker_representation.py`
+- Create: `src/cloak/ranker/representation.py`
 - Create: `scripts/build_ranker_representation_cache.py`
 - Create: `src/cloak/tests/test_ranker_representation.py`
 
@@ -398,10 +402,10 @@ input. Occurrence offsets are allowed only in the document token bank and later 
 ## Task 3: Pretrain the Semantic Log-Count Head
 
 **Files:**
-- Create: `src/cloak/train/ranker_privacy.py`
+- Create: `src/cloak/ranker/privacy.py`
 - Create: `scripts/train_ranker_privacy_head.py`
 - Create: `src/cloak/tests/test_ranker_privacy.py`
-- Modify: `src/cloak/train/ranker_diagnostics.py`
+- Modify: `src/cloak/ranker/diagnostics.py`
 - Modify: `src/cloak/tests/test_ranker_diagnostics.py`
 
 **Interfaces:**
@@ -501,7 +505,7 @@ diagnostic manifest records the relative promotion verdict; ACI/doc generalizati
 ## Task 4: Implement Candidate-Conditioned Full-Document Context
 
 **Files:**
-- Create: `src/cloak/train/semantic_ranker.py`
+- Create: `src/cloak/ranker/semantic.py`
 - Create: `src/cloak/tests/test_semantic_ranker.py`
 
 **Interfaces introduced in this task:**
@@ -590,7 +594,7 @@ and no candidate-independent full-document summary in the selected arm.
 ## Task 5: Implement Selected-Action Cross-Attention Memory
 
 **Files:**
-- Modify: `src/cloak/train/semantic_ranker.py`
+- Modify: `src/cloak/ranker/semantic.py`
 - Modify: `src/cloak/tests/test_semantic_ranker.py`
 
 **Interfaces introduced in this task:**
@@ -671,7 +675,7 @@ does not claim that causal prefix membership is order-independent.
 ## Task 6: Compose the Semantic Policy and Additive Controller
 
 **Files:**
-- Modify: `src/cloak/train/semantic_ranker.py`
+- Modify: `src/cloak/ranker/semantic.py`
 - Modify: `src/cloak/tests/test_semantic_ranker.py`
 - Modify: `scripts/train_interactive_ranker.py`
 
@@ -780,7 +784,7 @@ legacy GRU. The old policy remains executable only under its explicit baseline n
 ## Task 7: Integrate Replay, Hybrid Gradients, Warm Start, and Checkpoints
 
 **Files:**
-- Modify: `src/cloak/train/interactive_ranker.py`
+- Modify: `src/cloak/ranker/interactive.py`
 - Modify: `src/cloak/tests/test_interactive_ranker.py`
 - Modify: `scripts/train_interactive_ranker.py`
 
@@ -893,7 +897,7 @@ not only parameter-name filters.
 ## Task 8: Implement and Run the Architecture Fitness Spike
 
 **Files:**
-- Create: `src/cloak/train/ranker_architecture_diagnostics.py`
+- Create: `src/cloak/ranker/architecture_diagnostics.py`
 - Create: `scripts/run_ranker_architecture_spike.py`
 - Create: `src/cloak/tests/test_ranker_architecture_diagnostics.py`
 - Modify: `docs/specs/RL/interactive-ranker-v2-diagnostics.md`

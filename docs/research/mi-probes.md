@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-06-29
-updated: 2026-06-29
+updated: 2026-07-27
 tags: [mutual-information, leakage, rantext, v-information, context-leakage, probes]
 companion: docs/perturbation-sota.md
 ---
@@ -11,7 +11,7 @@ companion: docs/perturbation-sota.md
 
 Why MI (not `cos(Doc,Doc_p)`) is the right leakage measure, the per-token vs
 context-aware distinction, estimation options, and what is implemented in
-`src/inferdpt/probes/mi.py`.
+`src/cloak/probes/mi.py`.
 
 ## Definitions
 

@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-27
 tags: [rl, round-trip-reward, determinism, concurrency, exit, rloo, ranker, handoff]
 companion: [docs/issues/2026-07-08-rl-env-and-lattice-count-issue-register.md,
             docs/specs/RL/roundtrip-ranker-infiller.md,
@@ -11,6 +11,10 @@ companion: [docs/issues/2026-07-08-rl-env-and-lattice-count-issue-register.md,
 ---
 
 # Handoff — round-trip reward is non-deterministic under parallel round trips
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](../plans/2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/train_ranker.py` (superseded by `scripts/train_interactive_ranker.py`), `scripts/build_probes.py` (superseded by `scripts/build_arms_artifact.py` + `scripts/build_qa_utility_artifact.py`), `scripts/annotate_lattice_counts.py` (aset annotation is now inline in the arms build) and `train/ladder_probes.py` (probe tier retired, no successor).
 
 ## Focus for the next session
 
@@ -49,7 +53,7 @@ per-span counterfactual credit is no longer exact.
 ## Key architectural fact the next agent needs
 
 There is **no separate "reader parallelism"** in the code. `roundtrip_batch(jobs, workers=N)`
-(`src/cloak/train/roundtrip.py:43-63`) parallelizes **whole round trips** — each worker runs
+(`src/cloak/reward/roundtrip.py:43-63`) parallelizes **whole round trips** — each worker runs
 `gemma.generate → invert → reader`. So `workers>1` parallelizes generation too, which is why the
 non-determinism lands in `out_p`. The reader is serial *within* a job (prefix-KV reuse,
 `reward.py:_read_batch`) and parallel *across* jobs only as a side effect of job-level batching.
@@ -80,7 +84,7 @@ verdicts were computed under the noisy loop.
 
 - **Reward/task redesign (approved, in progress):** ladder + decision probes so generalization
   beats placeholder on task-necessity. Spec `docs/specs/RL/training-task-env.md`; generator
-  `src/cloak/train/ladder_probes.py` (validated on clinical: Qwen3.6 84% rung survival, pinned).
+  `train/ladder_probes.py` (retired 2026-07-27; validated on clinical: Qwen3.6 84% rung survival, pinned).
   Not yet wired into `scripts/build_probes.py`. This enlarges the reward signal, which also
   raises the noise-tolerance margin.
 - **Issue register** `docs/issues/2026-07-08-rl-env-and-lattice-count-issue-register.md` — the

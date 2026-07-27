@@ -78,7 +78,7 @@ referee-independent and re-scorable via `scripts/spikes/probe_shootout_rescore.p
 
 | probe | mechanism | AUC hit@1 | AUC hit@5 | per-span level-ordering | verdict |
 |---|---|---|---|---|---|
-| MTI mask-away (`cloak/probe.py` legacy) | mask the fill, predict original from context alone | — | — | — | **candidate-INVARIANT** (identical score for every level of a span; degenerate τ-walk, zero RL gradient) — disqualified before the shootout |
+| MTI mask-away (`cloak/detection/probe.py` legacy) | mask the fill, predict original from context alone | — | — | — | **candidate-INVARIANT** (identical score for every level of a span; degenerate τ-walk, zero RL gradient) — disqualified before the shootout |
 | P2 appositive MLM | roberta-base; slot masked, fill kept visible as appositive; max top-50 prob over distinctive tokens | 0.477 | 0.571 | 0.50 | **failed** — chance-level vs the attacker; single-token limit + unnatural syntax |
 | P3 multi-mask PLL | roberta-base; k masks in the slot next to the visible fill; mean P of original tokens | 0.691 | 0.683 | 0.786 | viable |
 | P4 contrastive re-id | pythia-410m (fp16, local); softmax over {original} ∪ ≤15 same-type corpus distractors of length-normalized logP(candidate \| sentence + disclosure suffix) | 0.713 | 0.637 | **0.857** | best level-ordering; anonymity-set semantics; ~50 ms/item, precomputable per (span, level) |

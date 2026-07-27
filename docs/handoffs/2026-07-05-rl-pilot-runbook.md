@@ -1,12 +1,14 @@
 ---
 type: handoff
-status: current
+status: stale
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-27
 tags: [rl-pilot, runbook, round-trip-reward, probes, gates, extractor, handoff]
 companion: [../specs/RL/roundtrip-ranker-infiller.md,
             ../plans/2026-07-05-roundtrip-ranker-pilot.md,
             ../plans/2026-07-05-roundtrip-rl-strategy.md]
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); the ranker-v1 trainer, policy module and
+  probe-era reward were deleted — the live RL design is docs/specs/RL/interactive-ranker-v2.md
 ---
 
 # Handoff: run the RL ranker pilot; next — extractor/invert() improvements

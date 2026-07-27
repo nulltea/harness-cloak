@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [detector, gliner, noise-gate, mining, injury, health-condition, data-quality, issue-register]
 companion: [../handoffs/2026-07-09-detector-noise-investigation.md]
 ---
@@ -11,7 +11,7 @@ companion: [../handoffs/2026-07-09-detector-noise-investigation.md]
 
 The clinical span miner (`scripts/build_mined_lattice_profiles.py`, GLiNER-large
 `knowledgator/gliner-pii-large-v1.0`) emits a substantial fraction of non-entity and wrong-type
-surfaces. The negative filter that is supposed to remove them (`is_noise_span`, `src/cloak/detect.py`)
+surfaces. The negative filter that is supposed to remove them (`is_noise_span`, `src/cloak/detection/detect.py`)
 is a **rule-based deny-list that fails open**, so it only removes the noise categories someone has
 explicitly enumerated. It cannot recognize noise it hasn't been told about. This document records the
 observed junk, the gate's mechanism and why it structurally can't close the gap, and the fix options.
@@ -105,7 +105,7 @@ the deny-list paradigm and only extend its reach.
 
 ## Artifacts / pointers
 
-- Gate: `src/cloak/detect.py` — `is_noise_span`, `_NOISE_*` sets/patterns, `_NOISE_FILTER_TYPES`.
+- Gate: `src/cloak/detection/detect.py` — `is_noise_span`, `_NOISE_*` sets/patterns, `_NOISE_FILTER_TYPES`.
 - Miner: `scripts/build_mined_lattice_profiles.py` — `DETECTOR_LABELS`, `LABEL_TO_RUNTIME_TYPE`,
   `_unique_spans` (best-label dedup), `is_noise_span` call site.
 - Raw spans measured: `results/mined_lattice_profile_spans_large.jsonl`.

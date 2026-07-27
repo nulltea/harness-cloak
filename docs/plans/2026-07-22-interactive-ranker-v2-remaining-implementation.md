@@ -2,7 +2,7 @@
 type: plan
 status: partial
 created: 2026-07-22
-updated: 2026-07-22
+updated: 2026-07-27
 tags: [rl, ranker, qa-builder, count-reward, structured-credit, implementation]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-diagnostics.md,
@@ -14,6 +14,10 @@ superseded_by: docs/plans/2026-07-22-ranker-v2-semantic-architecture-implementat
 ---
 
 # Interactive Ranker v2 Remaining Implementation Plan
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `train/ranker.py` (the v1 policy module; the live feature row and policy now live in `src/cloak/ranker/environment.py` and `src/cloak/ranker/semantic.py`) and `scripts/train_ranker.py` (superseded by `scripts/train_interactive_ranker.py`).
 
 > **Superseded for model architecture and post-WIP validation.** Tasks 1--12 produced the current
 > direct-count/FiLM/GRU WIP through commit `28631e8`. That policy is now a diagnostic baseline, not
@@ -150,10 +154,10 @@ Do not begin a later boundary while a hard gate in an earlier boundary fails.
 - `docs/specs/qa-builder-v2.md` — policy decision, residual routing, and reader execution contract.
 - `docs/specs/RL/interactive-ranker-v2-decision-log.md` — record the alignment decisions without
   reopening already approved forks.
-- `src/cloak/train/qa_builder.py` — corrected utility artifact routing and batched runtime scoring.
-- `src/cloak/train/ranker.py` — v2 action features and conditional policy head.
-- `src/cloak/train/roundtrip.py` — complete utility-result execution and cache-facing interface.
-- `src/cloak/train/utility_credit.py` — fixed-denominator linked/residual/fallback credit.
+- `src/cloak/qa/builder.py` — corrected utility artifact routing and batched runtime scoring.
+- `train/ranker.py` (retired 2026-07-27) — v2 action features and conditional policy head.
+- `src/cloak/reward/roundtrip.py` — complete utility-result execution and cache-facing interface.
+- `src/cloak/reward/utility_credit.py` — fixed-denominator linked/residual/fallback credit.
 - `scripts/build_ranker_env.py` — emit the corrected count-complete frozen environment.
 - `scripts/build_qa_utility_artifact.py` — emit policy-scoped utility artifacts directly.
 - `scripts/train_ranker.py` — retain the predecessor CLI; expose only shared helpers needed by the
@@ -161,15 +165,15 @@ Do not begin a later boundary while a hard gate in an earlier boundary fails.
 
 ### New focused modules and scripts
 
-- `src/cloak/train/ranker_environment.py` — immutable v2 environment loader and validation.
-- `src/cloak/train/count_reward.py` — complete-count gate, type references, action scores, and exact
+- `src/cloak/ranker/environment.py` — immutable v2 environment loader and validation.
+- `src/cloak/ranker/count_reward.py` — complete-count gate, type references, action scores, and exact
   expected count loss.
-- `src/cloak/train/interactive_ranker.py` — trajectory sampling/replay and hybrid-loss assembly.
-- `src/cloak/train/utility_cache.py` — append-only complete round-trip utility cache.
-- `src/cloak/train/counterfactuals.py` — intervention construction, eligibility, pair loss, cache,
+- `src/cloak/ranker/interactive.py` — trajectory sampling/replay and hybrid-loss assembly.
+- `src/cloak/reward/utility_cache.py` — append-only complete round-trip utility cache.
+- `src/cloak/ranker/counterfactuals.py` — intervention construction, eligibility, pair loss, cache,
   and coverage/uncertainty scheduler.
-- `src/cloak/train/lambda_menu.py` — offline calibration-pool frontier and supported-menu selector.
-- `src/cloak/train/ranker_diagnostics.py` — spike measurements, threshold manifest, and run reports.
+- `src/cloak/ranker/lambda_menu.py` — offline calibration-pool frontier and supported-menu selector.
+- `src/cloak/ranker/diagnostics.py` — spike measurements, threshold manifest, and run reports.
 - `scripts/build_count_reward_state.py` — versioned count reward state and hard-gate report.
 - `scripts/migrate_qa_utility_artifact.py` — deterministic v1-to-v2 policy-routing migration.
 - `scripts/run_ranker_preflight.py` — frozen calibration, diagnostic spike, threshold, and menu
@@ -307,11 +311,11 @@ Do not begin a later boundary while a hard gate in an earlier boundary fails.
 **Files:**
 - Modify: `data/lattice_profiles/lattice_profiles.json`
 - Rebuild: `data/lattice_profiles/lattice_profiles.embindex.npz`
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Modify: `scripts/build_arms_artifact.py`
 - Modify: `scripts/build_ranker_env.py`
-- Modify when defects originate upstream: `src/cloak/lattice_producer/coherence.py`
-- Modify when defects originate upstream: `src/cloak/lattice_producer/merge.py`
+- Modify when defects originate upstream: `src/cloak/lattice/producer/coherence.py`
+- Modify when defects originate upstream: `src/cloak/lattice/producer/merge.py`
 - Test: `src/cloak/tests/test_build_arms_artifact_cli.py`
 - Test: `src/cloak/tests/test_build_ranker_env_v2.py`
 
@@ -437,7 +441,7 @@ toward smoke training.
 
   ```bash
   PYTHONPATH=src:scripts .venv/bin/python - <<'PY'
-  from cloak.lattice_profiles import load_profiles, validate_profile_artifact
+  from cloak.lattice.profiles import load_profiles, validate_profile_artifact
   path = "results/ranker_v2/count_repair/profiles-repaired.json"
   errors = validate_profile_artifact(load_profiles(path))
   if errors:
@@ -533,10 +537,10 @@ toward smoke training.
   ```bash
   git add data/lattice_profiles/lattice_profiles.json \
           data/lattice_profiles/lattice_profiles.embindex.npz \
-          src/cloak/train/qa_builder.py scripts/build_arms_artifact.py \
+          src/cloak/qa/builder.py scripts/build_arms_artifact.py \
           scripts/build_ranker_env.py \
-          src/cloak/lattice_producer/coherence.py \
-          src/cloak/lattice_producer/merge.py \
+          src/cloak/lattice/producer/coherence.py \
+          src/cloak/lattice/producer/merge.py \
           src/cloak/tests/test_build_arms_artifact_cli.py \
           src/cloak/tests/test_build_ranker_env_v2.py
   git commit -m "fix: preserve grounded counts in ranker environment"
@@ -548,7 +552,7 @@ toward smoke training.
 ## Task 3: Build the Versioned Count Reward State
 
 **Files:**
-- Create: `src/cloak/train/count_reward.py`
+- Create: `src/cloak/ranker/count_reward.py`
 - Create: `scripts/build_count_reward_state.py`
 - Create: `src/cloak/tests/test_count_reward.py`
 
@@ -596,7 +600,7 @@ toward smoke training.
     src/cloak/tests/test_count_reward.py
   ```
 
-  Expected: import failure for `cloak.train.count_reward`.
+  Expected: import failure for `cloak.ranker.count_reward`.
 
 - [ ] **Step 3: Implement the hard gate and type references**
 
@@ -671,7 +675,7 @@ toward smoke training.
   PYTHONPATH=src:scripts .venv/bin/python -m pytest -q \
     src/cloak/tests/test_count_reward.py \
     src/cloak/tests/test_build_ranker_env_v2.py
-  git add src/cloak/train/count_reward.py scripts/build_count_reward_state.py \
+  git add src/cloak/ranker/count_reward.py scripts/build_count_reward_state.py \
           src/cloak/tests/test_count_reward.py
   git commit -m "feat: add gated count reward state"
   ```
@@ -679,7 +683,7 @@ toward smoke training.
 ## Task 4: Publish a Policy-Scoped QA Utility Artifact
 
 **Files:**
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Modify: `scripts/build_qa_utility_artifact.py`
 - Create: `scripts/migrate_qa_utility_artifact.py`
 - Modify: `src/cloak/tests/test_qa_builder_v2.py`
@@ -779,7 +783,7 @@ toward smoke training.
 - [ ] **Step 8: Commit the artifact correction**
 
   ```bash
-  git add src/cloak/train/qa_builder.py scripts/build_qa_utility_artifact.py \
+  git add src/cloak/qa/builder.py scripts/build_qa_utility_artifact.py \
           scripts/migrate_qa_utility_artifact.py \
           src/cloak/tests/test_qa_builder_v2.py \
           src/cloak/tests/test_build_qa_utility_artifact_cli.py
@@ -789,8 +793,8 @@ toward smoke training.
 ## Task 5: Add the Immutable V2 Environment and Trajectory Model
 
 **Files:**
-- Create: `src/cloak/train/ranker_environment.py`
-- Create: `src/cloak/train/interactive_ranker.py`
+- Create: `src/cloak/ranker/environment.py`
+- Create: `src/cloak/ranker/interactive.py`
 - Create: `src/cloak/tests/test_ranker_environment.py`
 - Create: `src/cloak/tests/test_interactive_ranker.py`
 
@@ -905,8 +909,8 @@ gradient-bearing trajectory replay.
   PYTHONPATH=src:scripts .venv/bin/python -m pytest -q \
     src/cloak/tests/test_ranker_environment.py \
     src/cloak/tests/test_interactive_ranker.py
-  git add src/cloak/train/ranker_environment.py \
-          src/cloak/train/interactive_ranker.py \
+  git add src/cloak/ranker/environment.py \
+          src/cloak/ranker/interactive.py \
           src/cloak/tests/test_ranker_environment.py \
           src/cloak/tests/test_interactive_ranker.py
   git commit -m "feat: add ranker v2 episode model"
@@ -915,7 +919,7 @@ gradient-bearing trajectory replay.
 ## Task 6: Implement the Conditional Sequential Policy
 
 **Files:**
-- Modify: `src/cloak/train/ranker.py`
+- Modify: `train/ranker.py` (retired 2026-07-27)
 - Create: `src/cloak/tests/test_conditional_ranker.py`
 
 **Consumes:** `RankerDocument`, dynamic legal menus, count scores, and a supported lambda-menu
@@ -979,16 +983,16 @@ initialization and previous-decision state.
   PYTHONPATH=src:scripts .venv/bin/python -m pytest -q \
     src/cloak/tests/test_conditional_ranker.py \
     src/cloak/tests/test_train_roundtrip_mode.py
-  git add src/cloak/train/ranker.py src/cloak/tests/test_conditional_ranker.py
+  git add train/ranker.py src/cloak/tests/test_conditional_ranker.py   # both retired 2026-07-27
   git commit -m "feat: add lambda-conditioned sequential ranker"
   ```
 
 ## Task 7: Implement Complete Utility Scoring and Cache
 
 **Files:**
-- Modify: `src/cloak/train/qa_builder.py`
-- Modify: `src/cloak/train/roundtrip.py`
-- Create: `src/cloak/train/utility_cache.py`
+- Modify: `src/cloak/qa/builder.py`
+- Modify: `src/cloak/reward/roundtrip.py`
+- Create: `src/cloak/reward/utility_cache.py`
 - Create: `src/cloak/tests/test_utility_cache.py`
 - Modify: `src/cloak/tests/test_roundtrip.py`
 - Modify: `src/cloak/tests/test_qa_builder_v2.py`
@@ -1024,6 +1028,9 @@ rollouts.
   Inspect with:
 
   ```bash
+  # Historical citation: that branch predates the 2026-07-27 regroup, so these are its own
+  # pre-refactor paths, not paths in the current tree (see the path-mapping table in
+  # docs/plans/2026-07-27-codebase-cleanup-refactor.md).
   git show codex/qa-builder-v2-clean:src/cloak/train/roundtrip.py
   git show codex/qa-builder-v2-clean:scripts/train_ranker.py
   ```
@@ -1074,8 +1081,8 @@ rollouts.
     src/cloak/tests/test_utility_cache.py \
     src/cloak/tests/test_roundtrip.py \
     src/cloak/tests/test_qa_builder_v2.py
-  git add src/cloak/train/qa_builder.py src/cloak/train/roundtrip.py \
-          src/cloak/train/utility_cache.py \
+  git add src/cloak/qa/builder.py src/cloak/reward/roundtrip.py \
+          src/cloak/reward/utility_cache.py \
           src/cloak/tests/test_utility_cache.py \
           src/cloak/tests/test_roundtrip.py \
           src/cloak/tests/test_qa_builder_v2.py
@@ -1085,7 +1092,7 @@ rollouts.
 ## Task 8: Wire Fixed-Denominator Structured Utility Credit
 
 **Files:**
-- Modify: `src/cloak/train/utility_credit.py`
+- Modify: `src/cloak/reward/utility_credit.py`
 - Modify: `src/cloak/tests/test_utility_credit.py`
 - Modify: `src/cloak/tests/test_interactive_ranker.py`
 
@@ -1142,7 +1149,7 @@ utility loss with one term per rollout-decision pair.
   PYTHONPATH=src:scripts .venv/bin/python -m pytest -q \
     src/cloak/tests/test_utility_credit.py \
     src/cloak/tests/test_interactive_ranker.py
-  git add src/cloak/train/utility_credit.py \
+  git add src/cloak/reward/utility_credit.py \
           src/cloak/tests/test_utility_credit.py \
           src/cloak/tests/test_interactive_ranker.py
   git commit -m "feat: route fixed-denominator utility credit"
@@ -1151,7 +1158,7 @@ utility loss with one term per rollout-decision pair.
 ## Task 9: Adapt Behavior Cloning and Utility-Only ExIt
 
 **Files:**
-- Modify: `src/cloak/train/interactive_ranker.py`
+- Modify: `src/cloak/ranker/interactive.py`
 - Modify: `scripts/train_interactive_ranker.py`
 - Modify: `src/cloak/tests/test_interactive_ranker.py`
 
@@ -1203,7 +1210,7 @@ utility loss with one term per rollout-decision pair.
   PYTHONPATH=src:scripts .venv/bin/python -m pytest -q \
     src/cloak/tests/test_interactive_ranker.py \
     src/cloak/tests/test_train_roundtrip_mode.py
-  git add src/cloak/train/interactive_ranker.py \
+  git add src/cloak/ranker/interactive.py \
           scripts/train_interactive_ranker.py \
           src/cloak/tests/test_interactive_ranker.py
   git commit -m "feat: add ranker v2 BC and utility-only ExIt"
@@ -1212,8 +1219,8 @@ utility loss with one term per rollout-decision pair.
 ## Task 10: Implement One-Decision Counterfactuals and the Scheduler
 
 **Files:**
-- Create: `src/cloak/train/counterfactuals.py`
-- Modify: `src/cloak/train/interactive_ranker.py`
+- Create: `src/cloak/ranker/counterfactuals.py`
+- Modify: `src/cloak/ranker/interactive.py`
 - Modify: `src/cloak/tests/test_counterfactual_credit.py`
 - Modify: `src/cloak/tests/test_interactive_ranker.py`
 
@@ -1306,8 +1313,8 @@ and auditable scheduler reports.
     src/cloak/tests/test_counterfactual_credit.py \
     src/cloak/tests/test_interactive_ranker.py \
     src/cloak/tests/test_utility_cache.py
-  git add src/cloak/train/counterfactuals.py \
-          src/cloak/train/interactive_ranker.py \
+  git add src/cloak/ranker/counterfactuals.py \
+          src/cloak/ranker/interactive.py \
           src/cloak/tests/test_counterfactual_credit.py \
           src/cloak/tests/test_interactive_ranker.py
   git commit -m "feat: add ranker counterfactual scheduler"
@@ -1316,8 +1323,8 @@ and auditable scheduler reports.
 ## Task 11: Freeze the Calibration Pool, Diagnostics, and Lambda Menu
 
 **Files:**
-- Create: `src/cloak/train/lambda_menu.py`
-- Create: `src/cloak/train/ranker_diagnostics.py`
+- Create: `src/cloak/ranker/lambda_menu.py`
+- Create: `src/cloak/ranker/diagnostics.py`
 - Create: `scripts/run_ranker_preflight.py`
 - Create: `src/cloak/tests/test_lambda_menu.py`
 - Create: `src/cloak/tests/test_ranker_diagnostics.py`
@@ -1415,7 +1422,7 @@ accepted three-to-five-profile lambda menu, and pre-run training record.
   PYTHONPATH=src:scripts .venv/bin/python -m pytest -q \
     src/cloak/tests/test_lambda_menu.py \
     src/cloak/tests/test_ranker_diagnostics.py
-  git add src/cloak/train/lambda_menu.py src/cloak/train/ranker_diagnostics.py \
+  git add src/cloak/ranker/lambda_menu.py src/cloak/ranker/diagnostics.py \
           scripts/run_ranker_preflight.py \
           src/cloak/tests/test_lambda_menu.py \
           src/cloak/tests/test_ranker_diagnostics.py \
@@ -1426,7 +1433,7 @@ accepted three-to-five-profile lambda menu, and pre-run training record.
 ## Task 12: Implement the Lambda-Conditioned Hybrid Trainer
 
 **Files:**
-- Modify: `src/cloak/train/interactive_ranker.py`
+- Modify: `src/cloak/ranker/interactive.py`
 - Modify: `scripts/train_interactive_ranker.py`
 - Modify: `src/cloak/tests/test_interactive_ranker.py`
 - Modify: `src/cloak/tests/test_conditional_ranker.py`
@@ -1507,7 +1514,7 @@ restartable training state.
     src/cloak/tests/test_ranker_diagnostics.py \
     src/cloak/tests/test_counterfactual_credit.py \
     src/cloak/tests/test_count_reward.py
-  git add src/cloak/train/interactive_ranker.py \
+  git add src/cloak/ranker/interactive.py \
           scripts/train_interactive_ranker.py \
           src/cloak/tests/test_interactive_ranker.py \
           src/cloak/tests/test_conditional_ranker.py \
@@ -1805,7 +1812,7 @@ attacker outcomes, and an empirically honest verdict.
   Run the focused full suite from Task 13, the benchmark suite from Task 14, then:
 
   ```bash
-  .venv/bin/python -m compileall -q src/cloak/train src/bench scripts/train_interactive_ranker.py \
+  .venv/bin/python -m compileall -q src/cloak src/bench scripts/train_interactive_ranker.py \
     scripts/run_ranker_preflight.py scripts/run_roundtrip_benchmark.py
   git diff --check
   ```

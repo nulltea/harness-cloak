@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-13
-updated: 2026-07-13
+updated: 2026-07-27
 tags: [qa, rl, implementation, utility-components, ranker-v2]
 companion: [docs/specs/qa-builder-v2.md,
             docs/specs/RL/qa-builder-v2-decision-log.md,
@@ -11,11 +11,15 @@ companion: [docs/specs/qa-builder-v2.md,
 
 # QA Builder v2 Implementation Plan
 
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/train_ranker.py` (superseded by `scripts/train_interactive_ranker.py`).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the frozen QA-builder v2 artifact, batched two-channel scoring, and ranker-v2 structured utility-credit seam without external model calls.
 
-**Architecture:** `cloak.train.qa_builder` owns frozen identities, deterministic assertion compilation, optional relation proposals, validation, weighting, and runtime component scoring. `roundtrip.py` returns the stable component vector. `train_ranker.py` consumes that vector through linked/global/fallback routing; it does not collapse v2 artifacts into legacy scalar trajectory credit.
+**Architecture:** `cloak.qa.builder` owns frozen identities, deterministic assertion compilation, optional relation proposals, validation, weighting, and runtime component scoring. `roundtrip.py` returns the stable component vector. `train_ranker.py` consumes that vector through linked/global/fallback routing; it does not collapse v2 artifacts into legacy scalar trajectory credit.
 
 **Tech Stack:** Python 3, PyTorch, pytest, existing `cloak` ranker/reward/round-trip modules.
 
@@ -37,9 +41,9 @@ companion: [docs/specs/qa-builder-v2.md,
 ### Task 1: Adopt and Harden the Existing QA Draft
 
 **Files:**
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Create: `scripts/build_qa_utility_artifact.py`
-- Modify: `src/cloak/train/roundtrip.py`
+- Modify: `src/cloak/reward/roundtrip.py`
 - Modify: `scripts/train_ranker.py`
 - Test: `src/cloak/tests/test_qa_builder_v2.py`
 - Test: `src/cloak/tests/test_build_qa_utility_artifact_cli.py`
@@ -80,7 +84,7 @@ Commit task files with message `feat(qa): add frozen two-channel utility artifac
 
 **Files:**
 - Modify: `scripts/train_ranker.py`
-- Modify or create: `src/cloak/train/utility_credit.py`
+- Modify or create: `src/cloak/reward/utility_credit.py`
 - Test: `src/cloak/tests/test_train_roundtrip_mode.py`
 - Test or create: `src/cloak/tests/test_utility_credit.py`
 
@@ -151,7 +155,7 @@ Commit task files with message `test(qa): gate and smoke utility artifacts`.
 ### Task 4: Compile Authoritative Delivered Assertions
 
 **Files:**
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Test: `src/cloak/tests/test_qa_builder_v2.py`
 
 **Interfaces:**
@@ -183,7 +187,7 @@ Commit task files with message `feat(qa): compile deterministic ACI utility asse
 ### Task 5: Compile and Validate Context Probes
 
 **Files:**
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Test: `src/cloak/tests/test_qa_builder_v2.py`
 
 **Interfaces:**
@@ -220,7 +224,7 @@ Commit task files with message `feat(qa): compile context-preservation probes`.
 
 **Files:**
 - Modify: `scripts/build_qa_utility_artifact.py`
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Modify: `src/cloak/tests/test_build_qa_utility_artifact_cli.py`
 - Modify: `src/cloak/tests/test_qa_builder_v2.py`
 
@@ -256,7 +260,7 @@ Commit task files with message `feat(qa): export complete QA artifacts`.
 ### Task 7: Support Real ACI Note Structure
 
 **Files:**
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Modify: `src/cloak/tests/test_qa_builder_v2.py`
 
 **Interfaces:**

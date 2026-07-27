@@ -1,8 +1,8 @@
 ---
 type: reference
-status: current
+status: stale
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-27
 # 2026-07-09 second pass: doc-based claims re-verified against CURRENT code + a fresh
 # fine-arms probe (scripts/spikes/reconstructor_issue_probes.py,
 # scripts/spikes/reconstructor_residue_fresh_probe.py). See "Measured findings".
@@ -12,6 +12,8 @@ companion: [docs/specs/extractor-frozen-rl-reward.md, docs/plans/2026-07-06-reco
 # substitutor-independent RL reward component; the controlling design moved to
 # docs/specs/extractor-frozen-rl-reward.md. This doc remains the failure-mode record for the
 # generative editor and the locate/verify/splice mechanics it shares with the successor.
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); reconstructor/frozen-extractor track
+  preserved on branch archive/reconstructor-track
 ---
 
 # Reconstructor re-evaluation: replace generative residue editing with extractive locate-then-splice

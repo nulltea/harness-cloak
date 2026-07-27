@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-27
 tags: [qa, relation-qa, scoring, entailment, fact-score, three-point-gate, reward-design, empirical-honesty]
 companion: [../specs/qa-builder-v2.md, detector-misclassifications.md,
             2026-07-11-ladder-decision-qa-question-design.md]
@@ -12,7 +12,7 @@ companion: [../specs/qa-builder-v2.md, detector-misclassifications.md,
 
 The QA-builder-v2 context assertions are scored by `_answer_score` =
 `max(fact_score(reader_answer, v) for v in accepted_values)`. `fact_score`
-(`src/cloak/train/reward.py`) is **lexical**: number-gate → token containment
+(`src/cloak/qa/scoring.py`) is **lexical**: number-gate → token containment
 (gold tokens ⊆ answer → 1.0) → acronym → token-F1 fallback. It has no model of
 the generalization lattice. The accepted answer for a relation is a single
 teacher-authored generalization level. The combination means the scorer does
@@ -96,7 +96,7 @@ but compounds it.
 - `/tmp/qa-v2-d2n002-gated.json` — `contraindicated_because_of(certain
   medications -> S7 kidney transplant)`, `support_property`/answer =
   `medical condition`; S7 levels = `[solid organ transplant, medical condition]`.
-- `_answer_score` / `fact_score` (`src/cloak/train/reward.py:265`).
+- `_answer_score` / `fact_score` (`src/cloak/qa/scoring.py`).
 - Reader gate outcomes across r18–r24: relations reach `three_point_gate_failed`.
 
 ## Status

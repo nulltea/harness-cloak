@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-27
 tags: [privacy, tau, walk-risk, inference-architecture, lattice, k-anonymity, ranker,
        per-type-tau]
 companion: ../specs/RL/surrogate-ranker-infiller.md
@@ -12,7 +12,7 @@ companion: ../specs/RL/surrogate-ranker-infiller.md
 
 **Question.** The deployed pipeline already carries a detector, a ranker, a planned infiller,
 and a planned extractor. The tau mask adds a fifth inference-time model — `walk_risk`
-(a Pythia-410m contrastive probe, `src/cloak/probe.py`) plus its distractor-pool artifact —
+(a Pythia-410m contrastive probe, `src/cloak/detection/probe.py`) plus its distractor-pool artifact —
 to score every (span, lattice-level) pair before the ranker may choose. Can risk enforcement
 stay a hard, per-type guarantee while the risk *model* leaves the inference path?
 
@@ -253,8 +253,8 @@ flavor win outright** — inv_aset level-ordering **0.786** vs walk_risk **0.714
 labels (adoption rule was "structural if within 0.05"; it beat, not tied), so no LM-calibrated
 floors were needed. `K_FLOORS` calibrated to a measured-moderate strictness
 (LOC/ORG/DATETIME/DEM/QUANTITY = 100, MISC/OTHER = 1, user-waivable). The migration is done:
-`cloak.anonymity.aset_count` + integer floor comparison is the mask on the inference and
-training paths, walk_risk is offline-only (`src/cloak/probe.py`), and the RL spec was rewritten
+`cloak.lattice.anonymity.aset_count` + integer floor comparison is the mask on the inference and
+training paths, walk_risk is offline-only (`src/cloak/detection/probe.py`), and the RL spec was rewritten
 around it — [structural-lattice-risk plan](2026-07-04-structural-lattice-risk.md),
 `docs/specs/RL/surrogate-ranker-infiller.md`.
 

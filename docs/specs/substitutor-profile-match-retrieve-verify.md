@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-27
 tags: [substitution, lattice, profile-matching, embeddings, nli, privacy]
 companion: [docs/specs/lattice-substitutor.md, docs/specs/substitutor-profile-match-learned-canonicalizer.md]
 ---
@@ -13,7 +13,7 @@ companion: [docs/specs/lattice-substitutor.md, docs/specs/substitutor-profile-ma
 
 The lattice substitutor currently matches a detected span to a lattice profile entry by **exact
 string equality** on `(runtime_type, _norm(surface))` against the entry's canonical surface and
-producer-enumerated aliases (`src/cloak/lattice_profiles.py::lookup_levels`). Any surface variance
+producer-enumerated aliases (`src/cloak/lattice/profiles.py::lookup_levels`). Any surface variance
 the producer did not enumerate — plural, articles, typos, punctuation, morphology
 (`diabetic`→`diabetes`), modifiers (`severe asthma`→`asthma`), synonyms
 (`heart attack`→`myocardial infarction`) — misses the profile and silently degrades to the
@@ -127,7 +127,7 @@ def match_profile_entry(span_text, runtime_type, context) -> MatchResult | None:
     return None                                               # all candidates refused
 ```
 
-Integration point — as implemented, `cloak.substitute.substitute()` runs one **document-level
+Integration point — as implemented, `cloak.detection.span_prep.substitute()` runs one **document-level
 pre-pass** (`match_spans_batch`) over every profile-backed span, then feeds each certified verdict
 into `cloak.lattice.lattice_for()` as a `proposal`. `lattice_for` reads the pre-pass result via a
 three-state `proposal` argument instead of matching per-span:
@@ -201,7 +201,7 @@ Retrieval and certification are batched per document, not per span:
 
 Every semantic hit records its provenance for offline analysis and eval-set harvesting:
 
-As implemented in `cloak.substitute.substitute()`, a matched span carries a `match` block on its
+As implemented in `cloak.detection.span_prep.substitute()`, a matched span carries a `match` block on its
 `R` entry:
 
 ```json

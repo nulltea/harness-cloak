@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-22
+updated: 2026-07-27
 tags: [qa, reward-design, utility-components, context-preservation, credit-routing,
        interactive-ranker, spec, deterministic-relations, gleaning]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
@@ -15,7 +15,7 @@ companion: [docs/specs/RL/interactive-ranker-v2.md,
 # QA builder v2 — context-preservation utility for interactive ranker v2
 
 **Status: implemented and validated (67-doc ACI corpus, 2026-07-21). This document describes the
-pipeline as built — `src/cloak/train/qa_builder.py` plus the builder scripts — not an aspirational
+pipeline as built — `src/cloak/qa/builder.py` plus the builder scripts — not an aspirational
 design. The historical normative design and its migration narrative live in the decision log.**
 
 QA builder v2 produces a frozen set of utility assertions that reward truthful generalization when
@@ -60,7 +60,7 @@ lattice_profiles.json                      (curated generalization lattices; own
 ### Embedding index (`build_profile_embindex.py`)
 
 Builds the embedding-index sidecar over `lattice_profiles.json` used by profile matching
-(`cloak.profile_match`, default encoder `BAAI/bge-small-en-v1.5`). Must be rebuilt whenever the
+(`cloak.lattice.profile_match`, default encoder `BAAI/bge-small-en-v1.5`). Must be rebuilt whenever the
 lattice profiles change; a stale index silently degrades lattice resolution in the arms build.
 
 ### Arms (`build_arms_artifact.py`)

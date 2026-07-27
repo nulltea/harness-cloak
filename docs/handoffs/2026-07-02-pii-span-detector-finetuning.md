@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-02
-updated: 2026-07-02
+updated: 2026-07-27
 tags: [detector, gliner, tab, supervised-finetuning, quasi-gap, rd2, handoff]
 companion: [../plans/2026-07-02-surrogate-grpo-training.md, ../plans/2026-07-02-d1-prototype-implementation.md]
 ---
@@ -17,7 +17,7 @@ ceiling (RD2), and the weak categories are known and measured.
 
 ## What the detector is right now
 
-A model + rules union (`src/cloak/detect.py`): **GLiNER small-v2.1** — a 166M zero-shot
+A model + rules union (`src/cloak/detection/detect.py`): **GLiNER small-v2.1** — a 166M zero-shot
 span-extraction model taking TAB's 8 categories as free-text labels — union **Presidio**
 pattern/checksum recognizers (pure rules, plus added numeric-reference/money recognizers), noise
 filters (emoji/pronouns/URL-ellipses/generic temporals), and alias-chain coref (fastcoref is

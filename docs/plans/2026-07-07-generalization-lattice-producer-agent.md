@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-07-27
 tags:
   - substitution
   - lattice
@@ -168,15 +168,15 @@ or a `needs_profile` report item when no runtime policy exists.
 
 Create:
 
-- `src/cloak/lattice_producer/__init__.py`
-- `src/cloak/lattice_producer/state.py`
-- `src/cloak/lattice_producer/graph.py`
-- `src/cloak/lattice_producer/queue.py`
-- `src/cloak/lattice_producer/propose.py`
-- `src/cloak/lattice_producer/gates.py`
-- `src/cloak/lattice_producer/merge.py`
-- `src/cloak/lattice_producer/coverage.py`
-- `src/cloak/lattice_producer/counts.py`
+- `src/cloak/lattice/producer/__init__.py`
+- `src/cloak/lattice/producer/state.py`
+- `src/cloak/lattice/producer/graph.py`
+- `src/cloak/lattice/producer/queue.py`
+- `src/cloak/lattice/producer/propose.py`
+- `src/cloak/lattice/producer/gates.py`
+- `src/cloak/lattice/producer/merge.py`
+- `src/cloak/lattice/producer/coverage.py`
+- `src/cloak/lattice/producer/counts.py`
 - `scripts/run_lattice_producer.py`
 - `src/cloak/tests/test_lattice_producer_queue.py`
 - `src/cloak/tests/test_lattice_producer_gates.py`
@@ -343,7 +343,7 @@ in the same directory, `fsync` where practical, then rename over the previous pr
 
 ## LangGraph State
 
-Define a compact typed state in `src/cloak/lattice_producer/state.py`.
+Define a compact typed state in `src/cloak/lattice/producer/state.py`.
 
 Required fields:
 
@@ -694,14 +694,14 @@ benefits from concurrency.
 
 - [x] Confirm dependency policy for adding `langgraph`.
 - [x] Add LangGraph dependency only after approval.
-- [x] Add `src/cloak/lattice_producer/state.py` with `ProducerState` and typed helper records.
+- [x] Add `src/cloak/lattice/producer/state.py` with `ProducerState` and typed helper records.
 - [x] Add context-packet tests: no transcript/log/full-artifact leakage; deterministic slicing; context hash
       changes when relevant artifact slices change; cap enforcement with `--max-context-rows`.
 - [x] Add category coverage registry tests for Knowledgator personal/contact/financial/healthcare/ID labels
       plus v7 fine leaves.
-- [x] Implement `src/cloak/lattice_producer/coverage.py`.
+- [x] Implement `src/cloak/lattice/producer/coverage.py`.
 - [x] Add queue builder tests for runtime type normalization, `DEM` rejection, and forced-placeholder skips.
-- [x] Implement `src/cloak/lattice_producer/queue.py`.
+- [x] Implement `src/cloak/lattice/producer/queue.py`.
 - [x] Add generated-universe tests: uncovered runtime-lattice category creates proposed entries/aliases;
       placeholder-only category does not generate concrete PII examples.
 - [x] Add proposed-artifact schema tests for `artifact_role`, `level_counts`, `level_groundings`, and
@@ -710,19 +710,19 @@ benefits from concurrency.
       count, generated-universe proposed count, fail-closed `1.0`, and monotone count ordering.
 - [x] Add gate tests for self-leaks, type-name phrases, distinctive-number leaks, below-floor diagnostics,
       and placeholder terminals.
-- [x] Implement `src/cloak/lattice_producer/gates.py`.
+- [x] Implement `src/cloak/lattice/producer/gates.py`.
 - [ ] Add incremental persistence tests: accepted item writes the proposed artifact before the next queue
       item, crash after write resumes without duplicate levels, and canonical cache is untouched.
 - [x] Add merge/persist tests for schema-valid proposed artifacts, source provenance, no `DEM`, no
       placeholders in levels, per-level counts, and deterministic-level ordering.
-- [x] Implement `src/cloak/lattice_producer/merge.py`.
-- [x] Implement `src/cloak/lattice_producer/counts.py`.
+- [x] Implement `src/cloak/lattice/producer/merge.py`.
+- [x] Implement `src/cloak/lattice/producer/counts.py`.
 - [ ] Add mocked proposal tests for strict JSON parsing, cache keys, local-base-url enforcement, and
       generated-universe expansion behavior, using only bounded context packets.
-- [x] Implement `src/cloak/lattice_producer/propose.py`.
+- [x] Implement `src/cloak/lattice/producer/propose.py`.
 - [ ] Add graph tests with a persistent temporary SQLite checkpointer: run, interrupt, resume, and crash
       recovery.
-- [x] Implement `src/cloak/lattice_producer/graph.py` with `StateGraph`, named nodes, conditional edges,
+- [x] Implement `src/cloak/lattice/producer/graph.py` with `StateGraph`, named nodes, conditional edges,
       deterministic count compilation, incremental proposed-artifact persistence, and review interrupt.
 - [x] Add `scripts/run_lattice_producer.py`.
 - [x] Run unit tests.

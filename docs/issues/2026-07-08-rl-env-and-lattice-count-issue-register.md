@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-27
 tags: [rl, ranker, lattice, anonymity-counts, reward-design, feature-debt, issue-register]
 companion: [../specs/RL/roundtrip-ranker-infiller.md,
             ../specs/offline-k-anonimity-risk-walk.md,
@@ -11,6 +11,10 @@ companion: [../specs/RL/roundtrip-ranker-infiller.md,
 ---
 
 # Issue register — RL ranker environment, reward design, and lattice count pipeline
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](../plans/2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `train/ranker.py` (the v1 feature row; the live one is assembled in `src/cloak/ranker/environment.py`).
 
 Full-repo review 2026-07-08 (docs + working-tree code + data artifacts), prompted by the RL
 null-result post-mortem. Issues ordered by fix priority. Each entry: what is wrong, evidence,
@@ -41,8 +45,8 @@ candidate directions in the placeholder-gaming issue §"What a real fix requires
 
 ### 2. Per-level counts never reach the legality mask
 
-The runtime read path is `aset_count` (`src/cloak/anonymity.py:240`) → `lookup_count`
-(`src/cloak/lattice_profiles.py:96-99`), which reads the single **row-level** `count` — the
+The runtime read path is `aset_count` (`src/cloak/lattice/anonymity.py:240`) → `lookup_count`
+(`src/cloak/lattice/profiles.py:96-99`), which reads the single **row-level** `count` — the
 per-level `level_counts` the producer writes into proposed artifacts (`merge.py:151-163`) and
 that the coherence-cleaning spike orders and smooths are **not on the runtime read path at
 all**. The uncommitted `_build_indexes` change (`lattice_profiles.py:81`) makes it worse: it
@@ -120,7 +124,8 @@ redesign changes what counts as a probe — redesign first, then scale.
 
 ### 5. Policy feature debt (walk_risk, corpus one-hot, N_FEAT drift)
 
-`action_features` (`src/cloak/train/ranker.py:23-39`) still carries walk_risk at index 1 and
+`action_features` (`train/ranker.py:23-39`, retired 2026-07-27; the v2 feature row is assembled in
+`src/cloak/ranker/environment.py`) still carries walk_risk at index 1 and
 the 5-wide corpus one-hot, both decided-removed in the RL spec (§Note — walk_risk, §Note —
 corpus one-hot). Actual **N_FEAT = 30** (7 scalars + 18-wide type one-hot + 5 corpus): the
 fine-DEM expansion widened `TYPES` to 18 and the spec's arithmetic (19) was never reconciled;

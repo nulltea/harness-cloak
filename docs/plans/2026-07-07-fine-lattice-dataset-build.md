@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-07-27
 tags: [substitution, lattice, fine-types, datasets, ontology, privacy, plan]
 companion: [../specs/lattice-substitutor.md, ../research/datasets.md, 2026-07-07-lattice-substitutor-fine-types.md]
 ---
@@ -45,12 +45,12 @@ approved.
 
 ## File Structure
 
-- Create `src/cloak/lattice_profiles.py`
+- Create `src/cloak/lattice/profiles.py`
   - Owns artifact schema, profile loading, alias lookup, candidate lookup, and validation helpers.
-- Modify `src/cloak/lattice.py`
+- Modify `src/cloak/lattice/core.py`
   - Uses `lattice_profiles.lookup_levels(surface, runtime_type)` before strict WordNet / offline teacher
     cache for fine hierarchical leaves.
-- Modify `src/cloak/anonymity.py`
+- Modify `src/cloak/lattice/anonymity.py`
   - Uses approved profile counts for fine hierarchical replacements before strict WordNet fallback.
 - Create `scripts/build_lattice_profiles.py`
   - Durable artifact builder; consumes cached raw source files and writes approved local profiles.
@@ -123,7 +123,7 @@ placeholder terminal.
 ## Task 1 - Profile Schema and Runtime Loader
 
 **Files:**
-- Create: `src/cloak/lattice_profiles.py`
+- Create: `src/cloak/lattice/profiles.py`
 - Test: `src/cloak/tests/test_lattice_profiles.py`
 
 **Interfaces:**
@@ -144,7 +144,7 @@ Add `src/cloak/tests/test_lattice_profiles.py`:
 ```python
 import json
 
-from cloak.lattice_profiles import (
+from cloak.lattice.profiles import (
     load_profiles,
     lookup_count,
     lookup_levels,
@@ -228,9 +228,9 @@ Run:
 PYTHONPATH=src .venv/bin/python -m pytest src/cloak/tests/test_lattice_profiles.py -q
 ```
 
-Expected: collection fails with `ModuleNotFoundError: No module named 'cloak.lattice_profiles'`.
+Expected: collection fails with `ModuleNotFoundError: No module named 'cloak.lattice.profiles'`.
 
-- [ ] **Step 3: Implement `src/cloak/lattice_profiles.py`**
+- [ ] **Step 3: Implement `src/cloak/lattice/profiles.py`**
 
 Use this implementation shape:
 
@@ -255,7 +255,7 @@ def _norm(text: str) -> str:
 
 
 def _is_type_name_phrase(fill: str) -> bool:
-    from cloak.lattice import is_type_name_phrase
+    from cloak.lattice.core import is_type_name_phrase
     return is_type_name_phrase(fill)
 
 
@@ -676,7 +676,7 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from cloak.lattice_profiles import validate_profile_artifact
+from cloak.lattice.profiles import validate_profile_artifact
 from lattice_sources.categorical import alias_rows
 from lattice_sources.common import ProfileRow, norm
 from lattice_sources.obo import rows_from_obo
@@ -804,8 +804,8 @@ Expected: all builder/parser tests pass.
 ## Task 4 - Runtime Integration
 
 **Files:**
-- Modify: `src/cloak/lattice.py`
-- Modify: `src/cloak/anonymity.py`
+- Modify: `src/cloak/lattice/core.py`
+- Modify: `src/cloak/lattice/anonymity.py`
 - Test: `src/cloak/tests/test_lattice_profiles.py`
 
 **Interfaces:**
@@ -822,8 +822,8 @@ Append to `src/cloak/tests/test_lattice_profiles.py`:
 
 ```python
 def test_lattice_for_uses_profile_levels(monkeypatch, tmp_path):
-    import cloak.lattice as lat
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.core as lat
+    import cloak.lattice.profiles as lp
 
     path = tmp_path / "profiles.json"
     path.write_text(json.dumps(_artifact()))
@@ -836,8 +836,8 @@ def test_lattice_for_uses_profile_levels(monkeypatch, tmp_path):
 
 
 def test_aset_count_uses_profile_count(monkeypatch, tmp_path):
-    import cloak.anonymity as anon
-    import cloak.lattice_profiles as lp
+    import cloak.lattice.anonymity as anon
+    import cloak.lattice.profiles as lp
 
     path = tmp_path / "profiles.json"
     path.write_text(json.dumps(_artifact()))
@@ -861,10 +861,10 @@ Expected: assertions fail because runtime does not consult profiles yet.
 
 - [ ] **Step 3: Update `lattice_for()`**
 
-In `src/cloak/lattice.py`, import `lookup_levels`:
+In `src/cloak/lattice/core.py`, import `lookup_levels`:
 
 ```python
-from cloak.lattice_profiles import lookup_levels
+from cloak.lattice.profiles import lookup_levels
 ```
 
 Inside the hierarchical fine-leaf branch, before `_fine_curated_chain()`:
@@ -881,10 +881,10 @@ Keep the existing typed placeholder append path unchanged.
 
 - [ ] **Step 4: Update `aset_count()`**
 
-In `src/cloak/anonymity.py`, import `lookup_count`:
+In `src/cloak/lattice/anonymity.py`, import `lookup_count`:
 
 ```python
-from cloak.lattice_profiles import lookup_count
+from cloak.lattice.profiles import lookup_count
 ```
 
 In the `span_type in FINE_DEM_TYPES` branch, before `_APPROVED_FINE_COUNTS`:

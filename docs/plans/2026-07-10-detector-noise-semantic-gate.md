@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [detector, noise-gate, span-filtering, entity-linking, calibration, weak-supervision]
 companion: [docs/specs/detector-noise-semantic-gate.md]
 ---
@@ -17,12 +17,12 @@ companion: [docs/specs/detector-noise-semantic-gate.md]
 (link-keep → link-retype → anchor-margin drop → deny-list), run by the miner and the runtime
 detector at frozen per-consumer operating points.
 
-**Architecture:** One decision core `cloak.span_gate` consuming existing machinery: exact
+**Architecture:** One decision core `cloak.detection.span_gate` consuming existing machinery: exact
 entry resolution (`lookup_entry`, all profile types) for keep/retype, the profile embindex as
 positive anchors, a new negative-anchor artifact seeded from the `_NOISE_*` deny-lists + a
 curated junk exemplar file, and a calibration artifact holding frozen FLOOR/MARGIN per
 operating point. Consumers: `scripts/build_mined_lattice_profiles.py` (miner point) and
-`cloak.detect` `negative_filter` (production point — also the RL pipeline's path). Absent
+`cloak.detection.detect` `negative_filter` (production point — also the RL pipeline's path). Absent
 artifacts degrade to layers 1/2/4 (current behavior + linking), never crash.
 
 **Tech Stack:** Python 3.12, pytest, numpy, sentence-transformers (bge-small — the embindex
@@ -30,9 +30,9 @@ model), skweak (spike only).
 
 ## Global Constraints
 
-- **Reuse-first:** layer 1/2 use `cloak.lattice_profiles.lookup_entry` — never a new matcher.
+- **Reuse-first:** layer 1/2 use `cloak.lattice.profiles.lookup_entry` — never a new matcher.
   Positive anchors are the existing `lattice_profiles.embindex.npz` — never re-embedded into a
-  second positive index. Embedding model access via `cloak.profile_match._st_model`.
+  second positive index. Embedding model access via `cloak.lattice.profile_match._st_model`.
 - **Fail-open terminal default:** the gate only drops what layer 3/4 positively justifies; a
   missing/stale anchor or calibration artifact disables layer 3 with a one-time
   `log.warning`, keeping layers 1/2/4.
@@ -58,7 +58,7 @@ model), skweak (spike only).
 ### Task G1: span_gate core + negative-anchor artifact + eval-set builder
 
 **Files:**
-- Create: `src/cloak/span_gate.py`
+- Create: `src/cloak/detection/span_gate.py`
 - Create: `data/span_gate/junk_exemplars.txt` (curated from
   `docs/issues/2026-07-10-detector-junk-and-noise-gate-limits.md` §2 "arbitrary nouns / true
   junk" list — one lowercase surface per line; file content only, never echoed to stdout)
@@ -66,8 +66,8 @@ model), skweak (spike only).
 
 **Interfaces:**
 - Consumes: `lookup_entry(surface, runtime_type, path)` (all `PROFILE_BACKED_TYPES`);
-  `cloak.profile_match.load_embindex/_index_path_for/_st_model/_l2norm`;
-  `cloak.detect.is_noise_span` and the `_NOISE_LAB_TESTS`, `_NOISE_IMAGING_DIAGNOSTICS`,
+  `cloak.lattice.profile_match.load_embindex/_index_path_for/_st_model/_l2norm`;
+  `cloak.detection.detect.is_noise_span` and the `_NOISE_LAB_TESTS`, `_NOISE_IMAGING_DIAGNOSTICS`,
   `_NOISE_ANATOMY`, `_NOISE_DEVICE_SUPPLIES` frozensets (anchor seeds).
 - Produces (used by Task G2 and consumers):
 
@@ -114,7 +114,7 @@ import numpy as np
 import pytest
 
 from cloak import span_gate
-from cloak.profile_match import span_key
+from cloak.lattice.profile_match import span_key
 
 
 @pytest.fixture()
@@ -175,7 +175,7 @@ def test_gate_margin_drops_junk_keeps_ambiguous(profile, tmp_path):
     calib.write_text(json.dumps({"schema_version": 1, "model_id": "fake",
         "points": {"production": {"floor": 0.6, "margin": 0.2}}}))
     # embindex for the profile with the fake embedder
-    from cloak.profile_match import build_embindex
+    from cloak.lattice.profile_match import build_embindex
     build_embindex(profile, embed_fn=fake_embed, model_id="fake")
     got = span_gate.gate_spans(
         [("brickish thing", "health-condition"), ("ambiguous middle", "health-condition")],
@@ -205,9 +205,9 @@ def test_denylist_layer_still_fires(profile, tmp_path, monkeypatch):
 ```
 
 - [ ] **Step 2: run to fail** — `PYTHONPATH=src .venv/bin/python -m pytest src/cloak/tests/test_span_gate.py -v`
-  → `ModuleNotFoundError: No module named 'cloak.span_gate'`.
+  → `ModuleNotFoundError: No module named 'cloak.detection.span_gate'`.
 
-- [ ] **Step 3: implement `src/cloak/span_gate.py`** (complete implementation; docstring cites
+- [ ] **Step 3: implement `src/cloak/detection/span_gate.py`** (complete implementation; docstring cites
   the spec path):
 
 ```python
@@ -229,9 +229,9 @@ from typing import Callable
 import numpy as np
 
 from cloak import lattice_profiles as lp
-from cloak.detect import (_NOISE_ANATOMY, _NOISE_DEVICE_SUPPLIES,
+from cloak.detection.detect import (_NOISE_ANATOMY, _NOISE_DEVICE_SUPPLIES,
                           _NOISE_IMAGING_DIAGNOSTICS, _NOISE_LAB_TESTS, is_noise_span)
-from cloak.profile_match import (DEFAULT_MODEL_ID, PROFILE_BACKED_TYPES, _index_path_for,
+from cloak.lattice.profile_match import (DEFAULT_MODEL_ID, PROFILE_BACKED_TYPES, _index_path_for,
                                  _l2norm, _st_model, load_embindex, span_key)
 
 log = logging.getLogger(__name__)
@@ -399,7 +399,7 @@ def gate_spans(items, operating_point: str, *, profiles_path=None, negatives_pat
   from the issue doc §2 into `data/span_gate/junk_exemplars.txt`, one per line, lowercase.
 - [ ] **Step 5: run to green** — same pytest command; all 5 tests pass.
 - [ ] **Step 6: commit** —
-  `git add src/cloak/span_gate.py src/cloak/tests/test_span_gate.py data/span_gate/junk_exemplars.txt`
+  `git add src/cloak/detection/span_gate.py src/cloak/tests/test_span_gate.py data/span_gate/junk_exemplars.txt`
   `git commit -m "feat(span-gate): layered semantic gate core + negative-anchor index"`
 
 ---
@@ -409,7 +409,7 @@ def gate_spans(items, operating_point: str, *, profiles_path=None, negatives_pat
 **Files:**
 - Create: `scripts/calibrate_span_gate.py`
 - Modify: `scripts/build_mined_lattice_profiles.py` (the `is_noise_span` call site, ~line 133)
-- Modify: `src/cloak/detect.py` (`negative_filter` block, ~lines 400–402)
+- Modify: `src/cloak/detection/detect.py` (`negative_filter` block, ~lines 400–402)
 - Test: `src/cloak/tests/test_span_gate_wiring.py`
 
 **Interfaces:**
@@ -483,8 +483,8 @@ def test_margin_scores_and_choose_points_bars():
 
 def test_miner_gate_wiring_drop_retype_keep(monkeypatch, tmp_path):
     import build_mined_lattice_profiles as m
-    from cloak.span_gate import GateDecision
-    from cloak.profile_match import span_key
+    from cloak.detection.span_gate import GateDecision
+    from cloak.lattice.profile_match import span_key
 
     decisions = {
         span_key("junky fragment", "injury"): GateDecision("drop", "margin"),
@@ -523,7 +523,7 @@ the smallest testable seam that achieves it, e.g. factoring the loop body into a
 
 GPU + local only; no paid calls.
 
-- [ ] **Step 1:** `PYTHONPATH=src .venv/bin/python -c "from cloak.span_gate import build_negative_index; print(build_negative_index())"`
+- [ ] **Step 1:** `PYTHONPATH=src .venv/bin/python -c "from cloak.detection.span_gate import build_negative_index; print(build_negative_index())"`
 - [ ] **Step 2:** `PYTHONPATH=src .venv/bin/python -u scripts/calibrate_span_gate.py 2>&1 | tee results/span_gate_calibration.log` — report which operating points met their bars
   (counts/rates only on stdout).
 - [ ] **Step 3:** measure on the measured re-mine: rerun

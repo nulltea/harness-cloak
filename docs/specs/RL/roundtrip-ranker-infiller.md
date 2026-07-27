@@ -1,8 +1,8 @@
 ---
 type: reference
-status: current
+status: stale
 created: 2026-07-05
-updated: 2026-07-12
+updated: 2026-07-27
 tags: [rl, round-trip-reward, ranker, infiller, expert-iteration, rloo, probes,
        fact-recall, count-floors, gates, anti-goodhart, spec]
 companion: [docs/plans/2026-07-05-roundtrip-rl-strategy.md,
@@ -12,6 +12,8 @@ companion: [docs/plans/2026-07-05-roundtrip-rl-strategy.md,
 supersedes: docs/specs/RL/surrogate-ranker-infiller.md §5–§6 (surrogate reward + constructed-arms
   gate) — that spec's §1–§4 (environment, floors, invariants, risk measure) remain normative and
   are incorporated here by reference.
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); the ranker-v1 trainer, policy module and
+  probe-era reward were deleted — the live RL design is docs/specs/RL/interactive-ranker-v2.md
 ---
 
 # RL specification — round-trip training of the substitutor (ranker + infiller)

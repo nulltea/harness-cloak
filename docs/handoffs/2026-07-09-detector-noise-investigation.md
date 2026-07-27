@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-27
 tags: [detector, gliner, false-positives, type-confusion, mining, pre-rl-blocker, learned-pii-detection]
 companion: docs/research/learned-PII-detection.md
 ---
@@ -60,7 +60,7 @@ by a crude heuristic; the true rate needs a proper audit, see below).
   `health-condition`) over clinical task documents. **This stock model is the source of the FPs.** Its
   weakness is documented: `docs/specs/detector-model.md` — "stock knowledgator MISC = 0.32 … Supervision
   is mandatory." Using it for mining was a known-weak choice.
-- **Production detector: `src/cloak/detect.py`** — GLiNER (zero-shot, TAB categories) ∪ Presidio,
+- **Production detector: `src/cloak/detection/detect.py`** — GLiNER (zero-shot, TAB categories) ∪ Presidio,
   default `data/models/pii_gliner_multidomain/checkpoint-2479` (fine-tuned = FT-detector v4,
   *initialized from* `knowledgator/gliner-pii-base-v1.0`). This is a DIFFERENT model and its behavior
   on the failing surfaces is unknown — likely better (the fine-tune exists precisely to fix stock
@@ -260,7 +260,7 @@ GLiNER checkpoint is used:
 
 - Miner (STOCK `knowledgator/gliner-pii-base-v1.0`, source of the FPs): `scripts/build_mined_lattice_profiles.py`
   (default `--model` at ~line 350; `detector_model` tag at ~line 143)
-- Production detector (fine-tuned `checkpoint-2479`, a different model): `src/cloak/detect.py`
+- Production detector (fine-tuned `checkpoint-2479`, a different model): `src/cloak/detection/detect.py`
 - Design/rationale: `docs/research/learned-PII-detection.md`, `docs/specs/detector-model.md`
 - FT history: `research-wiki/training/*FT-detector*` (v4: `2026-07-05-FT-detector-v4-base-genfirst-mix.md`);
   detector bake-off that chose the knowledgator base: `docs/archive/plans/2026-07-03-pii-span-detector-model.md`

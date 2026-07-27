@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-27
 tags: [issue, lattice, nli-gate, wordnet, geonames, truthfulness, substitution]
 companion: [../specs/RL/surrogate-ranker-infiller.md, ../plans/2026-07-03-surrogate-rl-gaps-fixes.md]
 ---
@@ -15,7 +15,7 @@ ACI-Bench dialogues) → "a mythical monster"; "washington" (the state, hiking c
 in District of Columbia"; "vermont" → "a city in Australia" (GeoNames most-populous-match picked
 an Australian town).
 
-**Root cause:** `lattice_for` (`src/cloak/lattice.py`) routes DATETIME/QUANTITY through rule
+**Root cause:** `lattice_for` (`src/cloak/lattice/core.py`) routes DATETIME/QUANTITY through rule
 buckets, LOC through GeoNames/WordNet, and other types through WordNet **directly** — only
 teacher-generated lattices pass through `nli_gate` (context-entailment check). The truthfulness
 gate exists; rule-sourced candidates never see it, so wrong word-senses and wrong geo-matches

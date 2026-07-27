@@ -132,6 +132,8 @@ Naming: packages by pipeline stage; no doc-internal identifiers; `qa/scoring.py`
   table appended to this doc and doc references updated.
 - **Phase 5 — invariants doc**: distill §Invariants into `docs/plans/` reference doc
   (type: reference) + wire the architecture test into the default pytest run.
+  **Done:** [`2026-07-27-codebase-invariants.md`](2026-07-27-codebase-invariants.md);
+  `src/cloak/tests/test_architecture.py` needs no wiring — it is collected by `pytest src/`.
 
 Execution: SDD (codex implements per phase task, Fable reviews/commits path-scoped);
 phases 1–2 are also safe as direct implementation. Estimated result: **~17,000 lines
@@ -141,6 +143,115 @@ remaining file reachable from a named live workflow.
 ## Open decisions
 
 1. Reconstructor track: archive-branch (recommended) vs keep-in-main vs delete.
+   **Resolved:** archived to branch `archive/reconstructor-track`, deleted from main.
 2. `legacy-film-gru` policy architecture: delete (recommended; scope decision already
-   excludes it) vs keep behind the flag.
+   excludes it) vs keep behind the flag. **Resolved:** deleted.
 3. Grouping depth for `scripts/`: subdirectories (recommended) vs flat with prefixes.
+   **Resolved: `scripts/` stays FLAT** — deliberate deviation from the target structure above.
+   34 live scripts with self-descriptive prefixes (`build_*`, `run_*`, `train_*`) navigate fine;
+   subdirectories would have rewritten every `PYTHONPATH=src:scripts` invocation in the docs,
+   the training records, and the runbooks for no navigability gain. The `scripts/ranker/ lattice/
+   qa/ detector/` line in §Target structure is therefore **not** implemented; `scripts/spikes/`
+   (which predates the plan) stays.
+
+## Path mapping (Phase 4a, executed)
+
+Executed 2026-07-27; every move used `git mv`, so history follows. Old paths below no longer
+exist — there are **no compatibility shims**. Report: `.superpowers/sdd/refactor-phase4a-report.md`.
+
+### Stays at the `cloak` root (shared core)
+
+`llm.py` · `concurrent.py` · `runtime_types.py` · `corpora.py` · `tasks.py`
+
+### `cloak/detection/`
+
+| old | new | module path |
+|---|---|---|
+| `src/cloak/detect.py` | `src/cloak/detection/detect.py` | `cloak.detect` → `cloak.detection.detect` |
+| `src/cloak/span_gate.py` | `src/cloak/detection/span_gate.py` | `cloak.span_gate` → `cloak.detection.span_gate` |
+| `src/cloak/probe.py` | `src/cloak/detection/probe.py` | `cloak.probe` → `cloak.detection.probe` |
+| `src/cloak/substitute.py` | `src/cloak/detection/span_prep.py` | `cloak.substitute` → `cloak.detection.span_prep` |
+
+### `cloak/lattice/`
+
+| old | new | module path |
+|---|---|---|
+| `src/cloak/lattice.py` | `src/cloak/lattice/core.py` | `cloak.lattice` → `cloak.lattice.core` |
+| `src/cloak/lattice_profiles.py` | `src/cloak/lattice/profiles.py` | `cloak.lattice_profiles` → `cloak.lattice.profiles` |
+| `src/cloak/profile_match.py` | `src/cloak/lattice/profile_match.py` | `cloak.profile_match` → `cloak.lattice.profile_match` |
+| `src/cloak/anonymity.py` | `src/cloak/lattice/anonymity.py` | `cloak.anonymity` → `cloak.lattice.anonymity` |
+| `src/cloak/lattice_producer/*` (15 files) | `src/cloak/lattice/producer/*` | `cloak.lattice_producer.X` → `cloak.lattice.producer.X` |
+
+Producer submodules moved wholesale: `coherence` `counts` `coverage` `entity_merge` `gates`
+`graph` `io` `merge` `propose` `queue` `reference_sources` `repair_queue` `state` `vocabulary`.
+
+### `cloak/qa/` (all out of the retired training subpackage)
+
+| old | new | module path |
+|---|---|---|
+| `train/qa_builder.py` | `qa/builder.py` | → `cloak.qa.builder` |
+| `train/qa_scoring.py` | `qa/scoring.py` | → `cloak.qa.scoring` |
+| `train/qa_teacher.py` | `qa/teacher.py` | → `cloak.qa.teacher` |
+| `train/qa_freeze.py` | `qa/freeze.py` | → `cloak.qa.freeze` |
+| `train/qa_review.py` | `qa/review.py` | → `cloak.qa.review` |
+| `train/qa_audit.py` | `qa/audit.py` | → `cloak.qa.audit` |
+| `train/relation_support_gate.py` | `qa/relation_support_gate.py` | → `cloak.qa.relation_support_gate` |
+
+### `cloak/reward/`
+
+| old | new | module path |
+|---|---|---|
+| `train/roundtrip.py` | `reward/roundtrip.py` | → `cloak.reward.roundtrip` |
+| `src/cloak/extract.py` | `reward/extract.py` | → `cloak.reward.extract` |
+| `train/utility_cache.py` | `reward/utility_cache.py` | → `cloak.reward.utility_cache` |
+| `train/utility_credit.py` | `reward/utility_credit.py` | → `cloak.reward.utility_credit` |
+
+### `cloak/ranker/`
+
+| old | new | module path |
+|---|---|---|
+| `train/ranker_environment.py` | `ranker/environment.py` | → `cloak.ranker.environment` |
+| `train/ranker_representation.py` | `ranker/representation.py` | → `cloak.ranker.representation` |
+| `train/semantic_ranker.py` | `ranker/semantic.py` | → `cloak.ranker.semantic` |
+| `train/ranker_privacy.py` | `ranker/privacy.py` | → `cloak.ranker.privacy` |
+| `train/interactive_ranker.py` | `ranker/interactive.py` | → `cloak.ranker.interactive` |
+| `train/profile_count.py` | `ranker/profile_count.py` | → `cloak.ranker.profile_count` |
+| `train/lambda_menu.py` | `ranker/lambda_menu.py` | → `cloak.ranker.lambda_menu` |
+| `train/ranker_diagnostics.py` | `ranker/diagnostics.py` | → `cloak.ranker.diagnostics` |
+| `train/counterfactuals.py` | `ranker/counterfactuals.py` | → `cloak.ranker.counterfactuals` |
+| `train/count_reward.py` (live env-validation core) | `ranker/count_reward.py` | → `cloak.ranker.count_reward` |
+| `train/ranker_architecture_diagnostics.py` | `ranker/architecture_diagnostics.py` | → `cloak.ranker.architecture_diagnostics` |
+
+`assemble_action_vector` (+ `legal_action_ids` and their helpers) moved out of the trainer
+module into `ranker/environment.py` — the renderer now lives with the data it renders.
+
+### `src/inferdpt` deleted
+
+| old | new |
+|---|---|
+| `src/inferdpt/probes/` | `src/cloak/probes/` |
+| `src/inferdpt/attacks/` | `src/cloak/attacks/` |
+| `src/inferdpt/llm.py`, `pipeline.py` | already superseded by `src/cloak/llm.py`, `src/cloak/concurrent.py` |
+| `src/inferdpt/__init__.py`, `src/inferdpt/tests/`, RANTEXT core | deleted (recover with `git show`) |
+
+### Deleted, not moved
+
+The retired training subpackage's `ranker.py` (minus `LambdaProfile`), `reward.py` (its four
+live names folded into `qa/scoring.py`), `probes.py`, `ladder_probes.py`, `schema_task.py`, the
+legacy half of `count_reward.py`; `cloak/{score,synthpai,frozen_extractor,reconstruct}.py`;
+`extract.invert_detector_pointer`; `scripts/{train_ranker,reward_gate,build_probes,`
+`annotate_lattice_counts,dp_sweep,build_phi_subvocab,build_cnndm_corpus}.py`; the
+`latticecloak_*` sweep scripts (except `latticecloak_detection_gate.py`); 61 spikes.
+Reconstructor/frozen-extractor track preserved on branch `archive/reconstructor-track`.
+
+### Pin re-baseline (one-time, identity-only)
+
+`invert_implementation_pin()` hashes the source and **module names** of the extractor and
+`cloak.runtime_types` into every utility-cache identity, so the extractor's move (plus the
+`invert_detector_pointer` deletion) changed the pin exactly once. Module keys are now *derived*
+from `__name__` instead of hardcoded, so future moves are self-maintaining. The pre-move cache
+was archived to `results/ranker_v2/cache/utility-results.pre-phase4-repin.jsonl` (26 rows) and
+repopulated from the 3-doc BC smoke off the LLM disk cache (zero live calls). **Identity moved,
+behavior did not:** per-doc `utility` and `count_score` were byte-identical before and after, as
+were the BC epoch losses. Cost of the archive: the hash gate now re-derives 3 cache identities
+instead of 21 — the archived rows carry the old pin and are not re-derivable by design.

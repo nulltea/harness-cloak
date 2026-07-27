@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-27
 tags: [detector, gliner, requirements, spec, quasi, generality, operating-point]
 companion: [docs/research/learned-PII-detection.md, research-wiki/training/2026-07-05-FT-detector-v4-base-genfirst-mix.md]
 ---
@@ -101,7 +101,7 @@ targeted fine-tune — **without** retraining the core or losing the open-label 
 ### PR1 — Bounded, valid output at every threshold (robustness)
 No crashes, no spans outside the text, at any operating point. (The deberta-v3-large backbone emits
 phantom padding-region spans at low threshold — a GLiNER decoder defect; the detector must guard against it,
-as `src/cloak/detect.py` now does. Verified: `src/cloak/tests/test_detect_padding_guard.py`.)
+as `src/cloak/detection/detect.py` now does. Verified: `src/cloak/tests/test_detect_padding_guard.py`.)
 
 ### PR2 — Model- & domain-specific operating point, principled selection
 The operating point is **per corpus** (TAB ≈ 0.02, non-TAB ≈ 0.3 — the fine-tuned model is sharp on its
@@ -198,7 +198,7 @@ result JSONs are committed. Selection is documented (which checkpoint, which thr
 - Not a remote/API model — must run locally (PR4).
 - **Not coreference / entity-linking.** The detector emits *spans*, not resolved entity clusters. The
   pipeline's consistent-replacement need (the same person masked identically everywhere) is a **separate,
-  downstream stage** (`coref_chains` in `src/cloak/detect.py`) that consumes detector spans — a named
+  downstream stage** (`coref_chains` in `src/cloak/detection/detect.py`) that consumes detector spans — a named
   dependency, out of scope for the detector model itself.
 
 ## Evaluation protocol

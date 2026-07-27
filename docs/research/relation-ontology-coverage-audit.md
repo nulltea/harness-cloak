@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-15
-updated: 2026-07-15
+updated: 2026-07-27
 tags: [qa-builder-v2, relations, detector, aci, ontology, coverage]
 companion: docs/specs/qa-builder-v2.md
 ---
@@ -167,5 +167,5 @@ is a marginal utility signal versus candidate 1. Recurs in ~8/15. If pursued, fo
 - Script: `scripts/spikes/relation_coverage_audit.py`
 - Data: `scratch/relation_coverage_audit/{spans,summary}.json`, `docs.txt`
 - Companion spec (anti-goals + relation inventory): `docs/specs/qa-builder-v2.md`
-- Detector: `src/cloak/detect.py` (`QA_V2_CLINICAL_LABELS`); model
+- Detector: `src/cloak/detection/detect.py` (`QA_V2_CLINICAL_LABELS`); model
   `knowledgator/gliner-pii-large-v1.0` — <https://huggingface.co/knowledgator/gliner-pii-large-v1.0>

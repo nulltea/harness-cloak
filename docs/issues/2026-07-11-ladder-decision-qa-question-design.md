@@ -1,12 +1,14 @@
 ---
 type: research
-status: current
+status: stale
 created: 2026-07-11
-updated: 2026-07-12
+updated: 2026-07-27
 tags: [rl, qa-build, ladder-probes, decision-probes, teacher-prompt, question-design, issue]
 companion: [docs/specs/RL/training-task-env.md,
             docs/issues/2026-07-06-placeholder-gaming-reward-qa-necessity.md,
             docs/issues/2026-07-10-near-duplicate-condition-lattice-entries.md]
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); the ladder/decision probe tier and its
+  build script were deleted — the live QA build is docs/specs/qa-builder-v2.md
 ---
 
 # Issue register — ladder/decision QA-build: teacher-question-design failures

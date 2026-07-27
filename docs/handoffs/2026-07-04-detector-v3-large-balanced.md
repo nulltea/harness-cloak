@@ -2,12 +2,16 @@
 type: handoff
 status: current
 created: 2026-07-04
-updated: 2026-07-04
+updated: 2026-07-27
 tags: [handoff, detector, gliner, fine-tune, v3, quasi, generality-retention]
 companion: [research-wiki/training/2026-07-04-FT-detector-v2-quasi.md, docs/research/learned-PII-detection.md, docs/research/datasets.md]
 ---
 
 # Handoff — PII/QUASI span detector v3: more + balanced data, large backbone
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](../plans/2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/train_ranker.py` (superseded by `scripts/train_interactive_ranker.py`) and `train/{reward,ranker}.py`.
 
 **Next focus (from the requester):** train **v3** = more data + **more balanced** data, on the **large
 backbone `knowledgator/gliner-pii-large-v1.0`** (init). Goal: push the one thing prior rounds left open —
@@ -66,13 +70,13 @@ data without forgetting.
 - (`.log`/`.err`/`.stdout` intentionally uncommitted; `data/` gitignored.)
 
 ## Do NOT touch (concurrent workstream)
-The RL ranker files are someone else's active work: `src/cloak/train/{reward,ranker}.py`,
+The RL ranker files are someone else's active work: `train/{reward,ranker}.py` (retired 2026-07-27),
 `scripts/train_ranker.py`, `research-wiki/training/2026-07-04-RL-ranker-v1-stage1-bandit.md`,
 `results/ranker_train_*.json`, `docs/specs/RL/surrogate-ranker-infiller.md`, `review-stage/AUTO_REVIEW.md`.
 
 ## Model artifacts (local, gitignored — not portable)
 - v2 deployment model: `data/models/pii_gliner_multidomain/checkpoint-2479` @ thr 0.02 (dev-selected).
-- v1: `data/models/pii_gliner/checkpoint-2756` @ 0.02. **Neither is wired into `src/cloak/detect.py`**
+- v1: `data/models/pii_gliner/checkpoint-2756` @ 0.02. **Neither is wired into `src/cloak/detection/detect.py`**
   (still defaults to zero-shot `gliner_small` @0.3). Wiring v2/v3 as the TAB-corpus detector is a pending
   task (path + per-corpus threshold).
 

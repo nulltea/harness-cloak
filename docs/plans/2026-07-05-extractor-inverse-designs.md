@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-27
 tags: [extractor, invert, reconstructor, semantic-window, edit-tagger, seq2seq, detector-aligned, post-processing]
 companion: [../handoffs/2026-07-05-rl-pilot-runbook.md, ../research/learned-substitution.md, ../research/learned-PII-detection.md, 2026-07-05-detector-pointer-extractor.md]
 ---
@@ -11,7 +11,7 @@ companion: [../handoffs/2026-07-05-rl-pilot-runbook.md, ../research/learned-subs
 
 ## Context
 
-The rule extractor (`src/cloak/extract.py`: placeholder swap-back + exact/fuzzy-90
+The rule extractor (`src/cloak/reward/extract.py`: placeholder swap-back + exact/fuzzy-90
 generalization narrowing) inverts **36%** of level fills today (exact 20% + fuzzy90 16%,
 `results/extractor_miss_audit.json`, 75 fills). The 60–90 fuzzy band is 44% but mostly
 spurious (cos 0.02–0.15 generic fills); the **truly recoverable paraphrase band is ~5–8%**;
@@ -154,7 +154,7 @@ only on docs where the cascade reported misses.
 
 ## Design 4 — detector-aligned extractor (standalone arm, typed assignment)
 
-Uses the pipeline's own span detector (`src/cloak/detect.py`, 8-type TAB schema — the same
+Uses the pipeline's own span detector (`src/cloak/detection/detect.py`, 8-type TAB schema — the same
 types R entries carry from substitution time) to aid extraction. Zero new training for the
 core mechanism.
 

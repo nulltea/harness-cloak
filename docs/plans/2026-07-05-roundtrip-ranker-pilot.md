@@ -1,18 +1,21 @@
+---
+type: plan
+status: stale
+created: 2026-07-05
+updated: 2026-07-27
+tags: [rl, round-trip-reward, ranker, pilot, expert-iteration, rloo, probes, support-scan]
+companion: [docs/specs/RL/roundtrip-ranker-infiller.md,
+            docs/plans/2026-07-05-roundtrip-rl-strategy.md]
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); the ranker-v1 trainer, policy module and
+  probe-era reward were deleted — the live RL design is docs/specs/RL/interactive-ranker-v2.md
+---
+
 # Round-Trip Ranker Pilot Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
 > checkbox (`- [ ]`) syntax for tracking.
 
----
-type: plan
-status: current
-created: 2026-07-05
-updated: 2026-07-05
-tags: [rl, round-trip-reward, ranker, pilot, expert-iteration, rloo, probes, support-scan]
-companion: [docs/specs/RL/roundtrip-ranker-infiller.md,
-            docs/plans/2026-07-05-roundtrip-rl-strategy.md]
----
 
 **Goal:** Implement everything the Stage-1 (ranker) round-trip RL pilot needs — round-trip
 reward, validated probes, support-scan gate, ExIt + RLOO trainer modes, encoder policy,

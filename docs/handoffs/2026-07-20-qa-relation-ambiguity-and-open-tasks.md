@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-20
-updated: 2026-07-20
+updated: 2026-07-27
 tags: [qa-builder-v2, relations, ambiguity, reverse-framing, lattice-profiles, detector]
 companion: docs/issues/qa-builder-dept.md
 ---
@@ -25,7 +25,7 @@ Report generator for any build: `python scripts/qa_build_report.py results/<dir>
 
 All scoped, none yet implemented. Each is recall-safe / diagnostic; validate on a cached re-run.
 
-- **Plural fold in `_source_literal_spans`** (`src/cloak/train/qa_builder.py` ~2663). The `(?!\w)`
+- **Plural fold in `_source_literal_spans`** (`src/cloak/qa/builder.py` ~2663). The `(?!\w)`
   boundary blocks a singular context-literal (`x-ray`) from matching a plural source (`x-rays`), and
   `level`↔`levels`. Add an optional trailing plural on the final token, matched-extent-inclusive.
   Recovers ~3 net-new `tests_for` relations (`unknown_context_literal` Cause 2: D2N040/044/045 x-ray,
@@ -90,7 +90,7 @@ in the orchestration (before `coverage_targets`, ~7224). Extrapolates to ~+20–
 docs, free (cached teacher). 238 tests pass.
 
 **Uncommitted working-tree changes (this session):**
-- `src/cloak/train/qa_builder.py`: reverse-framing (Sources 1+2), `reverse_framing_only` compile mode,
+- `src/cloak/qa/builder.py`: reverse-framing (Sources 1+2), `reverse_framing_only` compile mode,
   doc-global pass, leakage-locator exemption for reverse questions (`answer_role==subject`), env-gated
   `_gate_debug` (`CLOAK_GATE_DEBUG_DIR`), `import inspect`.
 - `src/cloak/llm.py`: env-gated reasoning-trace sidecar (`CLOAK_LLM_REASONING_DIR`); `OpenRouterRelationTeacher.include_reasoning` param (`CLOAK_TEACHER_REASONING=include`, scoped to the
@@ -171,7 +171,7 @@ whether MedGemma-4b reliably enumerates all members as JSON is unverified — ne
 Investigating why reverse-framing couldn't recover some ambiguity relations exposed a real upstream
 bug. Conditions with lattice profiles are being left **uncontrolled** (`controlled=False`, no
 decision) because the **detected surface variant does not match the profile key/alias** — the lattice
-lookup (`lookup_entry`, `src/cloak/lattice_profiles.py`) is **exact** (canonical key + aliases +
+lookup (`lookup_entry`, `src/cloak/lattice/profiles.py`) is **exact** (canonical key + aliases +
 plural-fold), not semantic. Confirmed:
 
 | detected surface | `lookup_entry(health-condition)` |

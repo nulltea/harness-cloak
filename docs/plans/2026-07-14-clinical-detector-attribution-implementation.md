@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-14
-updated: 2026-07-14
+updated: 2026-07-27
 tags: [detector, clinical, aci, provenance, implementation, qa-v2]
 companion: 2026-07-14-clinical-detector-attribution-and-contract.md
 ---
@@ -35,7 +35,7 @@ companion: 2026-07-14-clinical-detector-attribution-and-contract.md
 ### Task 1: Attributable detector pipeline and native clinical contracts
 
 **Files:**
-- Modify: `src/cloak/detect.py`
+- Modify: `src/cloak/detection/detect.py`
 - Modify: `src/cloak/tests/test_detect_dedupe.py`
 - Modify: `src/cloak/tests/test_detect_profiles.py`
 - Create: `src/cloak/tests/test_detect_diagnostics.py`
@@ -51,7 +51,7 @@ Create `src/cloak/tests/test_detect_diagnostics.py` with real pipeline helpers b
 ```python
 from types import SimpleNamespace
 
-from cloak.detect import (
+from cloak.detection.detect import (
     Detector,
     QA_V2_CLINICAL_LABELS,
     _clinical_presidio_view,
@@ -105,7 +105,7 @@ Expected: collection fails because the new interfaces are not defined.
 
 - [ ] **Step 3: Implement the normalization and positive-code primitives**
 
-In `src/cloak/detect.py`, add the pinned label map already specified by the approved design and these focused primitives:
+In `src/cloak/detection/detect.py`, add the pinned label map already specified by the approved design and these focused primitives:
 
 ```python
 from collections.abc import Mapping, Sequence
@@ -174,7 +174,7 @@ Run the Step 2 command. Expected: all tests in `test_detect_diagnostics.py` pass
 Extend `test_detect_diagnostics.py` and `test_detect_dedupe.py`:
 
 ```python
-from cloak.detect import Span, _dedupe_with_diagnostics
+from cloak.detection.detect import Span, _dedupe_with_diagnostics
 
 
 def test_dedupe_diagnostics_record_same_type_and_cross_type_losers():
@@ -372,7 +372,7 @@ Expected: all selected tests pass with no new warnings.
 - [ ] **Step 13: Commit Task 1**
 
 ```bash
-git add src/cloak/detect.py \
+git add src/cloak/detection/detect.py \
   src/cloak/tests/test_detect_diagnostics.py \
   src/cloak/tests/test_detect_dedupe.py \
   src/cloak/tests/test_detect_profiles.py
@@ -382,9 +382,9 @@ git commit -m "feat(detector): preserve attributable clinical decisions"
 ### Task 2: Name preservation, demographic rejection, and artifact provenance
 
 **Files:**
-- Modify: `src/cloak/substitute.py`
+- Modify: `src/cloak/detection/span_prep.py`
 - Modify: `scripts/build_arms_artifact.py`
-- Modify: `src/cloak/train/qa_builder.py`
+- Modify: `src/cloak/qa/builder.py`
 - Modify: `src/cloak/tests/test_substitute_prepass.py`
 - Modify: `src/cloak/tests/test_build_arms_artifact_cli.py`
 - Modify: `src/cloak/tests/test_qa_builder_v2.py`
@@ -398,8 +398,8 @@ git commit -m "feat(detector): preserve attributable clinical decisions"
 Add to `test_substitute_prepass.py`:
 
 ```python
-from cloak.detect import Span
-from cloak.substitute import prepare_spans_for_substitution
+from cloak.detection.detect import Span
+from cloak.detection.span_prep import prepare_spans_for_substitution
 
 
 def test_explicit_native_name_label_bypasses_wordnet_role_retyping():
@@ -434,7 +434,7 @@ Expected: import or assertion failure because the preparation interface is absen
 
 - [ ] **Step 3: Extract preparation and preserve explicit name-label winners**
 
-Implement in `src/cloak/substitute.py`:
+Implement in `src/cloak/detection/span_prep.py`:
 
 ```python
 _EXPLICIT_NAME_LABELS = frozenset({"name", "first name", "last name"})
@@ -609,9 +609,9 @@ Expected: all selected tests pass.
 - [ ] **Step 10: Commit Task 2**
 
 ```bash
-git add src/cloak/substitute.py \
+git add src/cloak/detection/span_prep.py \
   scripts/build_arms_artifact.py \
-  src/cloak/train/qa_builder.py \
+  src/cloak/qa/builder.py \
   src/cloak/tests/test_substitute_prepass.py \
   src/cloak/tests/test_build_arms_artifact_cli.py \
   src/cloak/tests/test_qa_builder_v2.py

@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-21
-updated: 2026-07-21
+updated: 2026-07-27
 tags: [qa, reader, prompt, context-reader, reader-pin, relation-qa, finer-level, re-gate]
 companion: docs/specs/qa-builder-v2.md
 ---
@@ -130,7 +130,7 @@ these cases.
   inverting organ vs region). Fixes a reward-gradient inversion; validated: 5/5 cardiovascular/GI
   finer-level worklist entries fixed, **77 decisions'** chains corrected, kept set unchanged, 922
   tests pass. It re-freezes at ARMS build, so full propagation needs an arms+env rebuild (0 paid —
-  teacher prompts are chain-independent, stay cached). File: `src/cloak/train/qa_builder.py`
+  teacher prompts are chain-independent, stay cached). File: `src/cloak/qa/builder.py`
   `_frozen_semantic_chain` + regression test `test_semantic_chain_follows_authored_ladder_not_global_aset`
   in `test_qa_builder_v2.py`. A corrected-chain env exists at
   `results/qa_v2_stage_ab/ranker-env-chainfix2.json`.

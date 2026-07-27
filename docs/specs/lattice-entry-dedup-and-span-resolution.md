@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [lattice, lattice-profiles, deduplication, aliases, entity-resolution, qa-build, profile-matching]
 companion: [docs/issues/2026-07-10-near-duplicate-condition-lattice-entries.md,
             docs/specs/generalization-lattice-cache.md,
@@ -10,6 +10,10 @@ companion: [docs/issues/2026-07-10-near-duplicate-condition-lattice-entries.md,
 ---
 
 # Lattice entry dedup + span-to-entry resolution
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](../plans/2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/build_probes.py` (superseded by `scripts/build_arms_artifact.py` + `scripts/build_qa_utility_artifact.py`).
 
 ## Purpose
 
@@ -35,7 +39,7 @@ levels. Two complementary fixes:
 - **Entry identity** — the canonical key a surface resolves to; two surfaces with the same entry
   identity denote the same entity.
 - **Retrieve-then-verify matcher** — the implemented profile matcher
-  (`src/cloak/profile_match.py`): exact `_norm` lookup fast path, then embedding retrieval
+  (`src/cloak/lattice/profile_match.py`): exact `_norm` lookup fast path, then embedding retrieval
   proposing an entry, certified by the NLI gate in the span's sentence
   ([spec](substitutor-profile-match-retrieve-verify.md)).
 - **Ontology oracle** — a curated external source asserting entity identity via preferred names +
@@ -50,9 +54,9 @@ levels. Two complementary fixes:
 ## Part 1 — canonical identity in the shared resolver
 
 Root cause shared by every consumer: the loader's surface index
-(`src/cloak/lattice_profiles.py::_build_indexes`) maps surface → levels and **discards the
+(`src/cloak/lattice/profiles.py::_build_indexes`) maps surface → levels and **discards the
 canonical key**, so even the matcher's exact hits return `entry=None`
-(`src/cloak/profile_match.py`, exact-hit `MatchResult`). No current path exposes entry identity
+(`src/cloak/lattice/profile_match.py`, exact-hit `MatchResult`). No current path exposes entry identity
 for an exact match.
 
 Changes:
@@ -92,7 +96,7 @@ across duplicates of the same fact.
 
 ## Part 3 — profile-side entity merge
 
-New module `src/cloak/lattice_producer/entity_merge.py` — the entry-level analog of
+New module `src/cloak/lattice/producer/entity_merge.py` — the entry-level analog of
 `coherence.py` (which merges synonym *level strings*). Two invocation paths:
 
 - **Producer path:** applied to accepted rows before persistence in the producer merge flow, so

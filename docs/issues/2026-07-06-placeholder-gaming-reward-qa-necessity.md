@@ -2,13 +2,17 @@
 type: research
 status: current
 created: 2026-07-06
-updated: 2026-07-06
+updated: 2026-07-27
 tags: [rl, round-trip-reward, placeholder-gaming, floor-rejection, qa-construction,
        goodhart, reward-design, issue]
 companion: [../specs/RL/roundtrip-ranker-infiller.md, ../dev/logs/2026-07-06-qa-build-corpus-expansion.md]
 ---
 
 # Issue: placeholder-gaming — recall-only reward + surface-recall QA pairs don't reward informative generalization
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](../plans/2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/build_probes.py` (superseded by `scripts/build_arms_artifact.py` + `scripts/build_qa_utility_artifact.py`).
 
 ## Summary
 

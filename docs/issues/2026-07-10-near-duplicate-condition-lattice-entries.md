@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [lattice, lattice-profiles, health-condition, data-quality, qa-build, reward, deduplication,
        aliases, issue]
 companion: [docs/specs/generalization-lattice-cache.md,
@@ -10,6 +10,10 @@ companion: [docs/specs/generalization-lattice-cache.md,
 ---
 
 # Issue: near-duplicate condition entries / aliases inflate QA-build spans and reward credit
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](../plans/2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/build_probes.py` (superseded by `scripts/build_arms_artifact.py` + `scripts/build_qa_utility_artifact.py`).
 
 ## Summary
 

@@ -2,7 +2,7 @@
 type: research
 status: current
 created: 2026-07-03
-updated: 2026-07-03
+updated: 2026-07-27
 tags: [pii-detection, span-detection, detector, fine-tuning, tab, deberta, gliner, privacy-filter, benchmark-honesty, architecture]
 companion: docs/plans/2026-07-03-pii-span-detector-model.md
 ---
@@ -118,7 +118,7 @@ Everything below is measured against this list.
 
 ## 2. The measured gap: QUASI recall, and a refuted architecture suspect
 
-Current detector (`src/cloak/detect.py`): zero-shot GLiNER-small-v2.1 ∪ Presidio patterns. Gate on
+Current detector (`src/cloak/detection/detect.py`): zero-shot GLiNER-small-v2.1 ∪ Presidio patterns. Gate on
 TAB ECHR test (`results/latticecloak_detection_gate.json`, threshold 0.3):
 
 | Metric | any-recall | typed-recall |

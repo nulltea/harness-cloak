@@ -1,3 +1,13 @@
+---
+type: plan
+status: stale
+created: 2026-07-09
+updated: 2026-07-27
+tags: [extraction, reconstructor, archived-track]
+archive_reason: subject retired to branch archive/reconstructor-track in the
+  2026-07-27 cleanup (docs/plans/2026-07-27-codebase-cleanup-refactor.md)
+---
+
 # Frozen zero-shot extractor — implementation plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development.

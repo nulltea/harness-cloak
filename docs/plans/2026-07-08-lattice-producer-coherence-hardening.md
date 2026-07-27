@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-08
-updated: 2026-07-08
+updated: 2026-07-27
 tags:
   - lattice-producer
   - coherence
@@ -43,10 +43,10 @@ motivated by a specific, reproduced failure from that review -- no speculative h
 ## Evidence: what actually broke, with file:line
 
 1. **Count gate never really fails closed.** `compile_level_counts`
-   (`src/cloak/lattice_producer/counts.py:68-89`) takes the model's self-reported
+   (`src/cloak/lattice/producer/counts.py:68-89`) takes the model's self-reported
    `proposed_count` verbatim as `level_count` whenever the model also fills in non-empty
    `count_evidence`/`selector` text -- it only fails closed if those fields are *missing*, never
-   if they're unverifiable. `gate_candidates`'s Count gate (`src/cloak/lattice_producer/gates.py:97-120`)
+   if they're unverifiable. `gate_candidates`'s Count gate (`src/cloak/lattice/producer/gates.py:97-120`)
    then checks that self-reported number against `K_FLOORS`. Net effect: the model proposes a
    count, invents plausible-sounding evidence for it, and the gate compares the invented count to
    the floor -- grading its own homework. Result on the real run: **100% of 2,597 accepted levels**
@@ -161,7 +161,7 @@ motivated by a specific, reproduced failure from that review -- no speculative h
 `coverage.py`'s `CategoryOutcome` registry (Evidence #2).
 
 **Files:**
-- Modify `src/cloak/lattice_producer/queue.py`: delete the module-level `LATTICE_RUNTIME_TYPES`
+- Modify `src/cloak/lattice/producer/queue.py`: delete the module-level `LATTICE_RUNTIME_TYPES`
   set (`queue.py:19-35`). `normalize_item` (`queue.py:38-63`) must derive eligibility purely from
   `registry_entry_for_label(...).outcome`, for every code path -- including
   `_queue_from_profile_categories` (`queue.py:114-135`), which currently sets
@@ -188,7 +188,7 @@ only the drug one because it's already proven; the point of this fix area is tha
 need it more.
 
 **Files:**
-- Create `src/cloak/lattice_producer/reference_sources.py`: a registry of
+- Create `src/cloak/lattice/producer/reference_sources.py`: a registry of
   `runtime_type -> loader`, with three loaders:
 
   1. `openfda_pharm_class_index(raw_zip_path) -> dict[str, tuple[str, float]]` for `drug` (base
@@ -226,7 +226,7 @@ need it more.
      prefix = number of distinct full 7-character codes sharing it, computed once from the
      parsed table.
 
-- Modify `src/cloak/lattice_producer/counts.py`: in `compile_level_counts`, before the
+- Modify `src/cloak/lattice/producer/counts.py`: in `compile_level_counts`, before the
   `elif candidate.get("source_family") == "model-proposed"` branch (`counts.py:68`), add a new
   branch that calls the reference-source loader for `runtime_type` (if one is registered) and,
   on a hit, emits `status: "certifying"`, `source_family: "<source-name>-reference"`,
@@ -283,7 +283,7 @@ runtime type automatically from Fix Area 2's loader output, not from a separate 
   CAS Registry, ChEMBL, FDA Orange Book, ICD-10-CM, SNOMED CT, DSM-5, Orphanet, NINDS) into a
   versioned data file. Same content, promoted from a spike script constant to a maintained
   source-of-truth artifact. No equivalent file for `medical-procedure` -- see scope note above.
-- Create `src/cloak/lattice_producer/vocabulary.py`: a `CanonicalVocabulary` that, per runtime
+- Create `src/cloak/lattice/producer/vocabulary.py`: a `CanonicalVocabulary` that, per runtime
   type, holds `{normalized_label: count}`, seeded from (drug, health-condition) the anchor file
   above, (medical-procedure) the 914 real header descriptions already parsed by Fix Area 2's
   `load_icd10pcs_index` loader, plus -- for every runtime type, via an optional `proposed_out`
@@ -336,7 +336,7 @@ runtime type automatically from Fix Area 2's loader output, not from a separate 
 (Evidence #3, #6).
 
 **Files:**
-- Modify `src/cloak/lattice_producer/gates.py`: add a **Domain-relevance gate**. Cheapest
+- Modify `src/cloak/lattice/producer/gates.py`: add a **Domain-relevance gate**. Cheapest
   viable version: reject to diagnostics if none of the candidate's proposed levels or the
   entry's own detector label family share a token with a small per-runtime-type keyword allowlist
   derived from the `CanonicalVocabulary` seed (Fix Area 3) -- e.g. a `drug` entry whose *entire*
@@ -390,7 +390,7 @@ as a closing guarantee -- future runs will still mix certifying, reference-ancho
 model-proposed levels, and those need one final reconciliation before persistence.
 
 **Files:**
-- Create `src/cloak/lattice_producer/coherence.py`, porting (not reimplementing) the algorithm
+- Create `src/cloak/lattice/producer/coherence.py`, porting (not reimplementing) the algorithm
   proven in `scripts/spikes/clean_drug_health_lattice_coherence.py`:
   `average_depth_rank`, `weighted_pava`, `rank_order` (with the anchor/empirical-rank hybrid
   ordering fix), and the reorder-chain-by-shared-rank step. Keep the same three bugs already
@@ -415,12 +415,12 @@ model-proposed levels, and those need one final reconciliation before persistenc
 
 **Problem:** `validate_proposed_artifact` doesn't check the invariants that
 `data/lattice_profiles/lattice_profiles.json`'s schema now requires (added this session in
-`src/cloak/lattice_profiles.py`'s `validate_profile_artifact`), and doesn't check the
+`src/cloak/lattice/profiles.py`'s `validate_profile_artifact`), and doesn't check the
 casing-consistency invariant that broke the merge once already.
 
 **Files:**
-- Modify `src/cloak/lattice_producer/graph.py`'s `validate_proposed_artifact` node: call
-  `cloak.lattice_profiles.validate_profile_artifact` (already checks `level_counts` keys are a
+- Modify `src/cloak/lattice/producer/graph.py`'s `validate_proposed_artifact` node: call
+  `cloak.lattice.profiles.validate_profile_artifact` (already checks `level_counts` keys are a
   subset of `levels` and values `>= 1`, added this session) in addition to the producer-specific
   invariants already listed in the producer plan.
   Add one more producer-specific check: every level in a row's `levels` list must appear in
@@ -556,7 +556,7 @@ producer plan's existing rule.
   `results/lattice-producer/drug-health-procedure/{accepted,diagnostics,rejected}.jsonl`,
   `scripts/spikes/clean_drug_health_lattice_coherence.py`,
   `scripts/spikes/add_openfda_epc_levels.py`, and the schema/merge changes in
-  `src/cloak/lattice_profiles.py` and `scripts/merge_lattice_profiles.py`.
+  `src/cloak/lattice/profiles.py` and `scripts/merge_lattice_profiles.py`.
 - Raw reference sources confirmed present and parseable this session:
   `data/lattice_sources/raw/drug/openfda_ndc.json.zip` (openFDA NDC Directory, `pharm_class`
   field), `data/lattice_sources/raw/health/doid.obo` (Human Disease Ontology, CC0, 14,735 terms),

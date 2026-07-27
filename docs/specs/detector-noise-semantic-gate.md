@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [detector, noise-gate, span-filtering, entity-linking, weak-supervision, calibration,
        lattice-profiles, mining]
 companion: [docs/issues/2026-07-10-detector-junk-and-noise-gate-limits.md,
@@ -14,7 +14,7 @@ companion: [docs/issues/2026-07-10-detector-junk-and-noise-gate-limits.md,
 
 ## Purpose
 
-The current negative filter (`is_noise_span`, `src/cloak/detect.py`) is a fail-open deny-list:
+The current negative filter (`is_noise_span`, `src/cloak/detection/detect.py`) is a fail-open deny-list:
 it removes only enumerated noise families and generalizes to nothing
 ([issue](../issues/2026-07-10-detector-junk-and-noise-gate-limits.md)). The detector's
 over-generation therefore reaches the producer (wasted work), the substitutor (non-sensitive
@@ -38,13 +38,13 @@ reimplemented:
 - **Link-or-drop / NIL rejection** (the BLINK/ReFinED pattern,
   [arXiv 1911.03814](https://arxiv.org/abs/1911.03814),
   [arXiv 2207.04108](https://arxiv.org/abs/2207.04108)) — implemented by reusing the repo's own
-  retrieve-then-verify matcher (`cloak.profile_match.match_spans_batch`) and `lookup_entry`
+  retrieve-then-verify matcher (`cloak.lattice.profile_match.match_spans_batch`) and `lookup_entry`
   against lattice profiles; no new linker.
 - **Weak-supervision aggregation** — [skweak](https://arxiv.org/abs/2104.09683) (pip library,
   span-specialized Snorkel successor): labeling functions + HMM label model produce one
   keep/drop posterior per span. Adopted for the **miner** path if the adoption spike passes
   (below); the margin rule is the fallback, not a parallel implementation.
-- **Embeddings** — the existing embindex model/infra (`cloak.profile_match`, bge-small); no new
+- **Embeddings** — the existing embindex model/infra (`cloak.lattice.profile_match`, bge-small); no new
   embedding stack.
 - **Calibration** — split-conformal-style threshold selection is ~20 lines on top of the
   existing calibration-artifact pattern (`scripts/calibrate_entity_merge_gate.py` skeleton); no
@@ -66,7 +66,7 @@ reimplemented:
 
 ## Gate architecture
 
-One shared decision core, `cloak.span_gate` (new module), consumed at three call sites. Layers
+One shared decision core, `cloak.detection.span_gate` (new module), consumed at three call sites. Layers
 in order; **fail-open remains the terminal default** — the gate only drops what it can
 positively justify:
 
@@ -163,12 +163,12 @@ usual paid-call approval.
 | Piece | Provided by |
 |---|---|
 | `lookup_entry` canonical identity | dedup Task 1 (committed) |
-| Matcher link verdict + NLI certification | `cloak.profile_match` (exists) |
+| Matcher link verdict + NLI certification | `cloak.lattice.profile_match` (exists) |
 | Positive anchors | embindex artifact (exists; rebuilt by dedup reprocess) |
 | Calibration-artifact pattern | dedup Task B calibration script |
 | Review-file convention | dedup Task A entity-merge report |
 
-Net-new work in this spec: negative-anchor index, `cloak.span_gate` layers 2–3, the two
+Net-new work in this spec: negative-anchor index, `cloak.detection.span_gate` layers 2–3, the two
 consumer wirings, the labeled eval set + calibration script, the skweak adoption spike, the
 optional triage hook. Files touched (`detect.py`, `build_mined_lattice_profiles.py`, new
 modules) are disjoint from the dedup tasks' remaining files, so the two tracks can be

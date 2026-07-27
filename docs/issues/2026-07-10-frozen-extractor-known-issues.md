@@ -1,10 +1,12 @@
 ---
 type: reference
-status: current
+status: stale
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [extractor, frozen-extractor, verification, correspondence, calibration, do-no-harm, issue-register]
 companion: [docs/specs/extractor-frozen-rl-reward.md, docs/plans/2026-07-09-frozen-extractor-implementation.md]
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); reconstructor/frozen-extractor track
+  preserved on branch archive/reconstructor-track
 ---
 
 # Issue register — frozen zero-shot extractor (post-implementation)

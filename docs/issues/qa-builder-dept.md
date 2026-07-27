@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-18
-updated: 2026-07-22
+updated: 2026-07-27
 tags: [qa-v2, debt, cue-gate, relation-teacher, hedge-guard, repair-prompt, artifact-migration]
 ---
 
@@ -37,7 +37,7 @@ so a focused validation fix should accompany whichever resolution is chosen.
 ## Compiler relation cue gates: disabled, not yet removed (2026-07-18)
 
 **State.** Relation cue gating (fixed lexical-cue lexicon + NLI rescue) is disabled **in the
-compiler** via `RELATION_CUE_GATES_DISABLED = True` in `src/cloak/train/qa_builder.py`. For a
+compiler** via `RELATION_CUE_GATES_DISABLED = True` in `src/cloak/qa/builder.py`. For a
 teacher-proposed relation the three-point reader gate is the sole semantic acceptance check.
 Structural safeguards are unchanged and still mandatory: anchor derivation and locality caps,
 exact literal/argument grounding, no problem-switch crossing, hedge guard, leak checks.
@@ -89,7 +89,7 @@ consulted **only on a cue-miss** and may only return accept, so the accepted-opp
 always a **superset** of the cue-only set — a no-regression invariant, proven by
 `test_relation_support_escalation_is_additive_superset` and confirmed on real docs (`escalator=None`
 reproduces the exact cue-on counts D2N001–007; dialogue docs D2N005/D2N007 recover from 0). The
-escalator is `RelationSupportCascade` (`src/cloak/train/relation_support_gate.py`): recall-first,
+escalator is `RelationSupportCascade` (`src/cloak/qa/relation_support_gate.py`): recall-first,
 accept-biased, MedGemma-4b judge on the anchor's surgical stitch, with an optional accept-only
 MedNLI cost tier. Wired via `build_qa_utility_artifact.py --relation-support-escalation`
 (default ON; `--no-relation-support-escalation` = miner byte-identical to the cue gate). Empirical
@@ -137,7 +137,7 @@ escalator — a cue match is honored unchanged and never consults the judge):
 2. **MedGemma informativeness judge:** one call per candidate locator sentence (≤3/decision) on
    the *redacted* sentence (`[target item]` mask, so the judge sees what the reader question
    quotes) — "does the remaining context establish the masked item's clinical role?".
-   `build_informative_context_judge` in `src/cloak/train/relation_support_gate.py`; accept-biased
+   `build_informative_context_judge` in `src/cloak/qa/relation_support_gate.py`; accept-biased
    on infra/parse error (the three-point reader gate is the real acceptance check). `role_cue`
    recorded as `semantic_judge`; a judged rejection gets `detail_reason:
    uninformative_context_judged` (regex-only misses keep `no_task_role_cue`).

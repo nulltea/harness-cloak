@@ -1,3 +1,13 @@
+---
+type: plan
+status: stale
+created: 2026-07-06
+updated: 2026-07-27
+tags: [extraction, reconstructor, archived-track]
+archive_reason: subject retired to branch archive/reconstructor-track in the
+  2026-07-27 cleanup (docs/plans/2026-07-27-codebase-cleanup-refactor.md)
+---
+
 # Design 3 Reconstructor Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.

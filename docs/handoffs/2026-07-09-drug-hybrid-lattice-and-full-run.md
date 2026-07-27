@@ -2,7 +2,7 @@
 type: handoff
 status: current
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-27
 tags: [lattice-producer, drug, hybrid-anchor, openfda, full-run, queue, k-floor]
 companion: docs/superpowers/plans/2026-07-09-lattice-producer-overhaul.md
 supersedes:
@@ -37,9 +37,9 @@ producer-eligible. This also fixes a general bug affecting single-rung procedure
 
 - `drug` is a real domain type but openFDA (`data/lattice_sources/raw/drug/openfda_ndc.json.zip`,
   the only drug source — no ATC/hierarchy) returns a **single flat EPC tier**, count median ~7,
-  **below the k-floor of 100** (`K_FLOORS`, `src/cloak/anonymity.py:40`). So a drug entry needs the
+  **below the k-floor of 100** (`K_FLOORS`, `src/cloak/lattice/anonymity.py:40`). So a drug entry needs the
   model for broader tiers to become anonymizable — deterministic alone is insufficient.
-- `drug` is currently gated `NEEDS_PROFILE` (`src/cloak/lattice_producer/coverage.py:81`), so the
+- `drug` is currently gated `NEEDS_PROFILE` (`src/cloak/lattice/producer/coverage.py:81`), so the
   producer skips it entirely (`route_selected` returns early on `eligible: False`).
 - If drug were made eligible as-is, a single anchor trips the `too_few_levels` gate →
   `route_after_gate` → `requeue_rejected_item` (`graph.py:351`) which **sets
@@ -63,7 +63,7 @@ Reference candidates from `reference_sources.reference_candidates_for` carry `me
 `member_set_ref`. `compile_level_counts` (`counts.py`) turns a candidate with `member_set` into a
 `certifying` level, count = `len(member_set)`, and pops the frozenset. Keep that intact.
 
-**Task 1 — registry: make `drug` producer-eligible** (`src/cloak/lattice_producer/coverage.py:81`).
+**Task 1 — registry: make `drug` producer-eligible** (`src/cloak/lattice/producer/coverage.py:81`).
 Change:
 ```python
 *[_entry(label, CategoryOutcome.NEEDS_PROFILE, None) for label in ("medical process", "drug", "blood type")],
@@ -104,7 +104,7 @@ Test: anchor `[{level:"benzodiazepine", source_family:"openfda-pharm-class", mem
 → `["benzodiazepine","cns depressant","medication"]`, anchor dict unchanged (still has `member_set`).
 
 **Task 3 — sufficiency check + augment node + routing** (`graph.py`).
-Add `from cloak.anonymity import K_FLOORS` at the top. Then:
+Add `from cloak.lattice.anonymity import K_FLOORS` at the top. Then:
 ```python
 def _deterministic_chain_sufficient(state: ProducerState) -> bool:
     """A deterministic chain is enough on its own iff it has >=2 rungs AND its broadest rung already
@@ -233,7 +233,7 @@ Validate the queue before launching:
 
 ```bash
 PYTHONPATH=src .venv/bin/python - <<'PY'
-from cloak.lattice_producer.queue import build_or_load_queue
+from cloak.lattice.producer.queue import build_or_load_queue
 import collections, tempfile
 items = build_or_load_queue(tempfile.mkdtemp(), "data/lattice_profiles/lattice_profiles.json",
                             explicit_queue="data/lattice_runs/full-run/queue.jsonl")
@@ -282,7 +282,7 @@ through the producer — after it lands, add drug to the queue and re-run.
 - Pinned model: `nvidia/nemotron-3-super-120b-a12b:free` (strongest free JSON+reasoning model that
   was actually available; Qwen3-Next-80B and Gemma-4-31B free endpoints 429'd). `openrouter/free`
   auto-router routes non-deterministically (to a weak 9B) — don't use it.
-- OpenRouter wiring lives in `src/cloak/lattice_producer/propose.py` (base-url allowlist includes
+- OpenRouter wiring lives in `src/cloak/lattice/producer/propose.py` (base-url allowlist includes
   `openrouter.ai`, `OPENROUTER_API_KEY`, reasoning `extra_body`, model threaded from state).
 - GPU/local path unchanged: `--model ""` defaults to `Qwen3.6-35B-A3B` on local llama-swap
   (`http://localhost:8060/v1`).

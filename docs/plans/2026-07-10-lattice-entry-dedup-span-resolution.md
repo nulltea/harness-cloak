@@ -2,12 +2,16 @@
 type: plan
 status: current
 created: 2026-07-10
-updated: 2026-07-10
+updated: 2026-07-27
 tags: [lattice, lattice-profiles, deduplication, aliases, entity-resolution, qa-build, profile-matching]
 companion: [docs/specs/lattice-entry-dedup-and-span-resolution.md]
 ---
 
 # Lattice Entry Dedup + Span Resolution Implementation Plan
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `scripts/build_probes.py` (superseded by `scripts/build_arms_artifact.py` + `scripts/build_qa_utility_artifact.py`) and `train/ladder_probes.py` (probe tier retired, no successor).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development
 > (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use
@@ -33,7 +37,7 @@ embindex model), HF cross-encoder (calibration + gate), the vendored
 ## Global Constraints
 
 - **No duplicated machinery:** the QA build resolves spans via
-  `cloak.profile_match.match_spans_batch` — never a parallel matcher (user hard requirement).
+  `cloak.lattice.profile_match.match_spans_batch` — never a parallel matcher (user hard requirement).
 - **Never merge rows on identical levels alone** — sibling entities legitimately share ladders.
 - **Empirical honesty:** the cross-encoder gate threshold is calibrated once on the
   ontology-derived eval set and frozen; if no threshold reaches precision ≥ 0.999 at recall
@@ -44,7 +48,7 @@ embindex model), HF cross-encoder (calibration + gate), the vendored
   must not require GPU or network — heavy models are injectable (`embed_fn`, `gate_fn`,
   `nli_batch_fn` parameters, monkeypatch).
 - **Artifact writes:** `json.dumps(artifact, indent=2, sort_keys=True)` (existing script
-  convention), atomic (write temp + rename, or `cloak.lattice_producer.io.atomic_write_json`
+  convention), atomic (write temp + rename, or `cloak.lattice.producer.io.atomic_write_json`
   — note that helper uses indent=2 without sort_keys, so scripts write directly).
 - **Commits:** path-scoped `git add <files>` only — this is a shared checkout with unrelated
   modified files. Never `git add -A`/`git commit -a`. Check `git diff --cached --name-only`
@@ -58,10 +62,10 @@ embindex model), HF cross-encoder (calibration + gate), the vendored
 ### Task 1: Canonical identity in loader + matcher exact hits
 
 **Files:**
-- Modify: `src/cloak/lattice_profiles.py:81-126` (`_build_indexes`, new `lookup_entry`,
+- Modify: `src/cloak/lattice/profiles.py:81-126` (`_build_indexes`, new `lookup_entry`,
   `lookup_levels` becomes wrapper)
-- Modify: `src/cloak/profile_match.py:42-49,179-186` (exact-hit `MatchResult.entry`)
-- Modify: `src/cloak/substitute.py:114` (exact `match` block carries `entry`)
+- Modify: `src/cloak/lattice/profile_match.py:42-49,179-186` (exact-hit `MatchResult.entry`)
+- Modify: `src/cloak/detection/span_prep.py:114` (exact `match` block carries `entry`)
 - Test: `src/cloak/tests/test_lattice_profiles.py`, `src/cloak/tests/test_profile_match.py`
 
 **Interfaces:**
@@ -88,7 +92,7 @@ def test_lookup_entry_returns_canonical_for_canonical_and_alias(tmp_path):
     }
     p = tmp_path / "profiles.json"
     p.write_text(json.dumps(artifact))
-    from cloak.lattice_profiles import lookup_entry, lookup_levels
+    from cloak.lattice.profiles import lookup_entry, lookup_levels
     assert lookup_entry("Blorbitis", "health-condition", p) == \
         ("blorbitis", ["organ disease", "disease"])
     assert lookup_entry("blorb  inflammation", "health-condition", p) == \
@@ -114,7 +118,7 @@ def test_exact_hit_carries_canonical_entry(tmp_path):
     }
     p = tmp_path / "profiles.json"
     p.write_text(json.dumps(artifact))
-    from cloak.profile_match import match_spans_batch, span_key
+    from cloak.lattice.profile_match import match_spans_batch, span_key
     got = match_spans_batch([("blorb inflammation", "health-condition", "ctx sentence")],
                             profiles_path=p)
     m = got[span_key("blorb inflammation", "health-condition")]
@@ -129,7 +133,7 @@ Expected: FAIL (`ImportError: cannot import name 'lookup_entry'`; `m.entry is No
 
 - [ ] **Step 3: Implement**
 
-In `src/cloak/lattice_profiles.py`, `_build_indexes` — store the canonical next to levels:
+In `src/cloak/lattice/profiles.py`, `_build_indexes` — store the canonical next to levels:
 
 ```python
         for canonical, row in entries.items():
@@ -159,7 +163,7 @@ def lookup_levels(surface: str, runtime_type: str, path: str | Path | None = Non
     return got[1] if got else []
 ```
 
-In `src/cloak/profile_match.py` — exact path (currently `lp.lookup_levels(...)` around
+In `src/cloak/lattice/profile_match.py` — exact path (currently `lp.lookup_levels(...)` around
 line 180) becomes:
 
 ```python
@@ -175,7 +179,7 @@ line 180) becomes:
 
 Update the `MatchResult.entry` field comment: `# matched canonical (exact and semantic hits)`.
 
-In `src/cloak/substitute.py:114`, the exact `match` diagnostic gains the entry:
+In `src/cloak/detection/span_prep.py:114`, the exact `match` diagnostic gains the entry:
 
 ```python
                 entry["match"] = ({"kind": "exact", "entry": m.entry} if m.kind == "exact" else
@@ -194,7 +198,7 @@ row and use its actual canonical key). Then all PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cloak/lattice_profiles.py src/cloak/profile_match.py src/cloak/substitute.py \
+git add src/cloak/lattice/profiles.py src/cloak/lattice/profile_match.py src/cloak/detection/span_prep.py \
         src/cloak/tests/test_lattice_profiles.py src/cloak/tests/test_profile_match.py \
         src/cloak/tests/test_substitute_prepass.py
 git commit -m "feat(lattice): lookup_entry canonical identity; exact hits carry entry"
@@ -205,7 +209,7 @@ git commit -m "feat(lattice): lookup_entry canonical identity; exact hits carry 
 ### Task 2: DOID parser gains exact synonyms + obsolete flag
 
 **Files:**
-- Modify: `src/cloak/lattice_producer/reference_sources.py:143-176` (`DoidNode`,
+- Modify: `src/cloak/lattice/producer/reference_sources.py:143-176` (`DoidNode`,
   `load_doid_index`)
 - Test: `src/cloak/tests/test_lattice_producer_reference_sources.py`
 
@@ -242,7 +246,7 @@ name: organ disease
 def test_doid_index_parses_exact_synonyms_and_obsolete(tmp_path):
     obo = tmp_path / "mini.obo"
     obo.write_text(OBO_FIXTURE)
-    from cloak.lattice_producer.reference_sources import load_doid_index
+    from cloak.lattice.producer.reference_sources import load_doid_index
     nodes = load_doid_index(str(obo))
     assert nodes["DOID:0000001"].exact_synonyms == ["blorb inflammation"]
     assert nodes["DOID:0000001"].obsolete is False
@@ -293,7 +297,7 @@ Expected: PASS (existing DOID tests untouched — additive fields only).
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cloak/lattice_producer/reference_sources.py \
+git add src/cloak/lattice/producer/reference_sources.py \
         src/cloak/tests/test_lattice_producer_reference_sources.py
 git commit -m "feat(lattice-producer): DOID parser carries exact synonyms + obsolete flag"
 ```
@@ -303,7 +307,7 @@ git commit -m "feat(lattice-producer): DOID parser carries exact synonyms + obso
 ### Task 3: entity_merge module
 
 **Files:**
-- Create: `src/cloak/lattice_producer/entity_merge.py`
+- Create: `src/cloak/lattice/producer/entity_merge.py`
 - Test: `src/cloak/tests/test_lattice_producer_entity_merge.py`
 
 **Interfaces:**
@@ -330,7 +334,7 @@ Create `src/cloak/tests/test_lattice_producer_entity_merge.py`:
 ```python
 import json
 
-from cloak.lattice_producer.entity_merge import (
+from cloak.lattice.producer.entity_merge import (
     apply_entity_merge,
     block_pairs,
     doid_surface_index,
@@ -480,9 +484,9 @@ def test_apply_entity_merge_reports_duplicate_surface_claims(tmp_path):
 - [ ] **Step 2: Run tests to verify they fail**
 
 Run: `.venv/bin/python -m pytest src/cloak/tests/test_lattice_producer_entity_merge.py -v`
-Expected: FAIL (`ModuleNotFoundError: No module named 'cloak.lattice_producer.entity_merge'`).
+Expected: FAIL (`ModuleNotFoundError: No module named 'cloak.lattice.producer.entity_merge'`).
 
-- [ ] **Step 3: Implement `src/cloak/lattice_producer/entity_merge.py`**
+- [ ] **Step 3: Implement `src/cloak/lattice/producer/entity_merge.py`**
 
 ```python
 """Entry-level entity merge: fold true synonym canonical rows into one row + alias union.
@@ -499,7 +503,7 @@ import re
 from collections import defaultdict
 from typing import Any, Callable
 
-from cloak.lattice_producer.reference_sources import DEFAULT_DOID_OBO, load_doid_index
+from cloak.lattice.producer.reference_sources import DEFAULT_DOID_OBO, load_doid_index
 
 BLOCK_TOP_K = 5
 BLOCK_SIM_FLOOR = 0.80
@@ -709,7 +713,7 @@ Expected: PASS. Fix any mismatch by adjusting the implementation (tests define t
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cloak/lattice_producer/entity_merge.py \
+git add src/cloak/lattice/producer/entity_merge.py \
         src/cloak/tests/test_lattice_producer_entity_merge.py
 git commit -m "feat(lattice-producer): entity merge for synonym canonical rows"
 ```
@@ -719,7 +723,7 @@ git commit -m "feat(lattice-producer): entity merge for synonym canonical rows"
 ### Task 4: Producer graph wiring
 
 **Files:**
-- Modify: `src/cloak/lattice_producer/graph.py:581-596` (`normalize_coherence_node`)
+- Modify: `src/cloak/lattice/producer/graph.py:581-596` (`normalize_coherence_node`)
 - Test: `src/cloak/tests/test_lattice_producer_graph.py`
 
 **Interfaces:**
@@ -747,10 +751,10 @@ def test_normalize_coherence_node_applies_entity_merge(tmp_path, monkeypatch):
         calls["profiles"] = artifact["profiles"]
         return {"types": {"health-condition": {"merged": [], "review": [], "gate_scored": 0}},
                 "duplicate_surface_claims": {}}
-    monkeypatch.setattr("cloak.lattice_producer.graph.apply_entity_merge", fake_merge)
+    monkeypatch.setattr("cloak.lattice.producer.graph.apply_entity_merge", fake_merge)
     state = {"proposed_out": str(proposed), "profiles_path": str(tmp_path / "canon.json"),
              "run_id": "test-run", "run_dir": str(tmp_path)}
-    from cloak.lattice_producer.graph import normalize_coherence_node
+    from cloak.lattice.producer.graph import normalize_coherence_node
     normalize_coherence_node(state)
     assert "health-condition" in calls["profiles"]
     assert (tmp_path / "entity_merge_report.json").exists()
@@ -766,7 +770,7 @@ Expected: FAIL (`AttributeError: ... no attribute 'apply_entity_merge'` on the g
 
 - [ ] **Step 3: Implement**
 
-In `graph.py`: add `from cloak.lattice_producer.entity_merge import apply_entity_merge` next
+In `graph.py`: add `from cloak.lattice.producer.entity_merge import apply_entity_merge` next
 to the `normalize_coherence` import, and extend `normalize_coherence_node` after the
 coherence report write:
 
@@ -790,7 +794,7 @@ Expected: PASS.
 - [ ] **Step 5: Commit**
 
 ```bash
-git add src/cloak/lattice_producer/graph.py src/cloak/tests/test_lattice_producer_graph.py
+git add src/cloak/lattice/producer/graph.py src/cloak/tests/test_lattice_producer_graph.py
 git commit -m "feat(lattice-producer): entity merge runs in producer before validation"
 ```
 
@@ -805,7 +809,7 @@ git commit -m "feat(lattice-producer): entity merge runs in producer before vali
 
 **Interfaces:**
 - Consumes: Task 2 (`DoidNode.exact_synonyms`, parents), Task 3 (`apply_entity_merge`),
-  `cloak.profile_match.build_embindex` / `_st_model`.
+  `cloak.lattice.profile_match.build_embindex` / `_st_model`.
 - Produces:
   - `calibrate_entity_merge_gate.py` writes an eval artifact JSON:
     `{"model_id", "template", "sample", "seed", "sweep": [{"threshold", "precision",
@@ -829,7 +833,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
 from calibrate_entity_merge_gate import build_eval_pairs, choose_threshold
-from cloak.lattice_producer.reference_sources import DoidNode
+from cloak.lattice.producer.reference_sources import DoidNode
 
 
 def _nodes():
@@ -913,7 +917,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cloak.lattice_producer.reference_sources import DEFAULT_DOID_OBO, load_doid_index
+from cloak.lattice.producer.reference_sources import DEFAULT_DOID_OBO, load_doid_index
 
 PRECISION_BAR = 0.999
 RECALL_FLOOR = 0.10
@@ -1051,8 +1055,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from cloak.lattice_producer.entity_merge import DEFAULT_OBO_PATHS, apply_entity_merge
-from cloak.lattice_profiles import DEFAULT_PROFILE_PATH, validate_profile_artifact
+from cloak.lattice.producer.entity_merge import DEFAULT_OBO_PATHS, apply_entity_merge
+from cloak.lattice.profiles import DEFAULT_PROFILE_PATH, validate_profile_artifact
 
 
 def _atomic_write(path: Path, artifact: dict) -> None:
@@ -1100,7 +1104,7 @@ def main(argv=None):
 
     embed_fn = None
     if not args.no_embed_blocking:
-        from cloak.profile_match import DEFAULT_MODEL_ID, _st_model
+        from cloak.lattice.profile_match import DEFAULT_MODEL_ID, _st_model
 
         model = _st_model(DEFAULT_MODEL_ID)
         embed_fn = lambda texts: model.encode(texts, normalize_embeddings=True)
@@ -1127,7 +1131,7 @@ def main(argv=None):
         return
     _atomic_write(profiles_path, artifact)
     if not args.skip_embindex:
-        from cloak.profile_match import build_embindex
+        from cloak.lattice.profile_match import build_embindex
 
         out = build_embindex(profiles_path)
         print(f"embindex rebuilt: {out}", flush=True)
@@ -1179,7 +1183,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3] / "scripts"))
 
 def test_detect_docs_dedups_lattice_spans_by_entry(monkeypatch):
     import build_probes
-    from cloak.profile_match import MatchResult
+    from cloak.lattice.profile_match import MatchResult
 
     class FakeGliner:
         def predict_entities(self, piece, labels, threshold):
@@ -1206,7 +1210,7 @@ def test_detect_docs_dedups_lattice_spans_by_entry(monkeypatch):
                     "glimmerosis": "glimmerosis"}
         out = {}
         for surface, rtype, ctx in items:
-            from cloak.profile_match import span_key
+            from cloak.lattice.profile_match import span_key
             e = entry_of.get(surface.lower())
             out[span_key(surface, rtype)] = (
                 MatchResult(["organ disease"], "exact", True, 1.0, e) if e else None)
@@ -1245,14 +1249,14 @@ at module level next to the other cloak imports):
 def _detect_docs(docs, model, threshold, max_words=320):
     """Fresh zero-shot detection -> {doc_id: [{surface, type, role, sent[, entry]}]}.
     `lattice` spans resolve through the shared retrieve-then-verify matcher
-    (cloak.profile_match.match_spans_batch — same machinery as the substitutor) and are
+    (cloak.lattice.profile_match.match_spans_batch — same machinery as the substitutor) and are
     deduped per (runtime_type, matched canonical entry), so co-referent surfaces collapse to
     one span per document; matcher abstain drops the span (as a no-profile span is dropped
     today). `placeholder`/`quasi` spans are deduped per (surface, type). GPU (GLiNER)."""
     import torch
     from gliner import GLiNER
 
-    from cloak.train.ladder_probes import sentence_of
+    from ladder_probes import sentence_of   # train/ladder_probes.py, retired 2026-07-27
 
     g = GLiNER.from_pretrained(model)
     if torch.cuda.is_available():

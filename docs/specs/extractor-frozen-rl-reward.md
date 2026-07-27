@@ -1,10 +1,12 @@
 ---
 type: reference
-status: current
+status: stale
 created: 2026-07-09
-updated: 2026-07-09
+updated: 2026-07-27
 tags: [extractor, reconstructor, rl-reward, zero-shot, frozen, alignment, do-no-harm, benchmark]
 companion: [docs/specs/reconstructor-extractive-locate-splice.md, docs/specs/RL/surrogate-ranker-infiller.md, docs/specs/RL/roundtrip-ranker-infiller.md, docs/plans/2026-07-05-survived-recovery-extractor.md]
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); reconstructor/frozen-extractor track
+  preserved on branch archive/reconstructor-track
 ---
 
 # Frozen zero-shot extractor — the RL reward anchor

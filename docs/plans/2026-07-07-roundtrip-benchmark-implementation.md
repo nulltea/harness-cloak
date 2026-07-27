@@ -2,12 +2,16 @@
 type: plan
 status: current
 created: 2026-07-07
-updated: 2026-07-07
+updated: 2026-07-27
 tags: [benchmark, roundtrip, privacy, utility, detector, substitutor, extractor, plan]
 companion: [../specs/roundtrip-pipeline-benchmark.md, ../specs/detector-model.md, ../specs/lattice-substitutor.md, ../specs/probes.md, ../specs/attacks.md, ../specs/RL/roundtrip-ranker-infiller.md]
 ---
 
 # Roundtrip Pipeline Benchmark Implementation Plan
+
+> **Post-refactor note (2026-07-27):** module paths in this doc were updated to the
+> regrouped `src/cloak` layout — see the path mapping in [the cleanup plan](2026-07-27-codebase-cleanup-refactor.md).
+> Still named here but **deleted, not moved** in that cleanup: `cloak/score.py` / `cloak.score` (deleted; its scoring helper was inlined into `src/bench/`).
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use `superpowers:subagent-driven-development`
 > (recommended) or `superpowers:executing-plans` to implement this plan task-by-task. Steps use checkbox
@@ -20,7 +24,7 @@ utility on `out_final` against realized privacy on `doc_p` and leak-through from
 **Architecture:** Add a `bench` package that owns benchmark records, stage traces, metrics,
 attacker-facing exports, and reports. Reuse existing corpus loaders, task templates, detector,
 substitutor, extractor, and reward scorers where their contracts are already stable; keep publication
-benchmark orchestration separate from `cloak.train.*` so reward training does not accidentally become the
+benchmark orchestration separate from the training packages (`cloak.qa`, `cloak.reward`, `cloak.ranker`) so reward training does not accidentally become the
 source of benchmark claims. The harness writes content-addressed JSONL artifacts and summary reports, with
 remote calls behind an explicit cache requirement.
 
@@ -459,7 +463,7 @@ git commit -m "feat: add benchmark corpus registry"
 
 **Interfaces:**
 - Consumes:
-  - Detector span dictionaries or `cloak.detect.Span` objects.
+  - Detector span dictionaries or `cloak.detection.detect.Span` objects.
   - `cloak.runtime_types.placeholder_token`
   - `cloak.lattice.lattice_for`
 - Produces:
@@ -590,9 +594,9 @@ git commit -m "feat: add benchmark baseline policies"
 
 **Interfaces:**
 - Consumes:
-  - `cloak.detect.Detector`
-  - `cloak.substitute.substitute`
-  - `cloak.extract.invert`
+  - `cloak.detection.detect.Detector`
+  - `cloak.detection.span_prep.substitute`
+  - `cloak.reward.extract.invert`
   - `cloak.tasks.TASK_TEMPLATE`
   - `bench.registry.load_items`
   - `bench.baselines`
@@ -776,7 +780,7 @@ git commit -m "feat: add roundtrip benchmark runner"
 - Consumes:
   - `BenchmarkTrace`
   - `cloak.score.score_batch`
-  - `cloak.train.reward.token_f1`, `canon`
+  - `cloak.qa.scoring.canon` (`token_f1` retired 2026-07-27)
 - Produces:
   - `detector_residuals(trace: BenchmarkTrace) -> dict[str, object]`
   - `echo_labels(trace: BenchmarkTrace) -> list[dict]`
@@ -896,7 +900,7 @@ Add:
 
 ```python
 def contains_fact(text: str, fact: str) -> bool:
-    from cloak.train.reward import canon
+    from cloak.qa.scoring import canon
     return canon(fact) in canon(text)
 ```
 

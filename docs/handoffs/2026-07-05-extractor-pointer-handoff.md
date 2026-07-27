@@ -1,10 +1,12 @@
 ---
 type: handoff
-status: current
+status: stale
 created: 2026-07-05
-updated: 2026-07-05
+updated: 2026-07-27
 tags: [extractor, detector-pointer, semantic-window, audit, handoff]
 companion: [../plans/2026-07-05-extractor-inverse-designs.md, ../plans/2026-07-05-detector-pointer-extractor.md]
+archive_reason: subject retired in 2026-07-27 cleanup (see docs/plans/2026-07-27-codebase-cleanup-refactor.md); the detector-pointer extractor arm
+  (invert_detector_pointer) and its tests were deleted with the extractor pin re-baseline
 ---
 
 # Handoff: extractor pointer implementation and audit results

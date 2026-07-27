@@ -25,7 +25,7 @@ could extract), whereas an attack (see `docs/specs/attacks.md`) gives a **lower*
 
 > **Not probes (mechanism diagnostics).** `candidate set |C_r|/V`, `replacement similarity
 > cos(o,r)`, `anisotropy`, `relative spread`, and `sampling entropy` live in
-> the retired `src/inferdpt/diagnostics.py` (RANTEXT core, deleted; recover with
+> the retired RANTEXT-core diagnostics module (deleted; recover with
 > `git show 2af8562^:src/inferdpt/diagnostics.py`). They describe the mechanism/geometry,
 > not leakage of a released artifact. `cos(o,r)` in particular is dual (higher = more
 > utility, less privacy), so it is a diagnostic on the tradeoff axis, not a
