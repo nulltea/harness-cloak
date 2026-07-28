@@ -457,3 +457,48 @@ full-corpus runs: α initialization / parametrization / count-loss scale.
 Artifacts: results/ranker_v2/architecture/objective-normalization-*.json;
 spike scripts/spikes/objective_normalization_spike.py.
 
+## OPEN FORK — controller strength: switch-calibrated, gap-scaled alpha (2026-07-28)
+
+**Problem (measured, normalization spike).** At alpha=1 the controller shift
+alpha·g(lambda)·p_hat cannot move BC-sharpened utility logits: mean selected count
+score is ~0.135–0.15 at every profile including lambda-3; alpha drifts ~1e-3 per
+8 epochs. Lambda is behaviorally disconnected at trainable timescales.
+
+**Preregistered design candidates (Codex Sol consultation, session 019f8fa3).**
+Arms: (1) current — raw controller, alpha=1; (2) init-only — raw controller,
+alpha initialized to the weighted median of raw switch thresholds
+t_j = min over more-private actions of (u(a*)−u(a))/(p(a)−p(a*)) over BC menus,
+each document contributing total weight 1; (3) gap-scaled — controller multiplied
+by the detached per-menu utility-logit range s_j (scale-aware: the tower cannot
+defeat the controller by sharpening logits), alpha initialized to the weighted
+median of s_j-normalized thresholds. g(lambda-3)=1 (lambda-3 is max), so no
+g-correction is needed in either init.
+
+**Spike.** 4 composition-diverse docs (D=4/12/18/22) × 12 epochs (3 Latin cycles)
+× 8 rollouts; screening seed 17, then current + best responsive arm on 2
+confirmation seeds. Metrics per lambda and document: selected count score P;
+paired within-document Delta P_d(lambda) = P_d(lambda) − P_d(lambda-0) per cycle;
+mode rates; document utility; utility regret vs the cached (U,P) upper frontier;
+utility-logit range and controller-to-gap ratio; alpha trajectory; entropy;
+lambda-zero divergence; duplicate-rollout/degenerate-advantage rates.
+
+**Preregistered passing rule (all across confirmation seeds).** (1) lambda-zero
+exactly identical; (2) mean selected P non-decreasing across profiles; (3) at
+least two adjacent profile gaps ≥ 0.05; (4) P(lambda-3) − P(lambda-0) ≥ 0.20;
+(5) ≥75% of document-seed pairs show nonnegative paired lambda-3 movement;
+(6) lambda-3 placeholder rate < 95%; (7) median utility regret vs the cached
+frontier ≤ 0.044 (the measured reader-noise floor); (8) no non-finite values,
+uncontrolled alpha growth, or cycle-to-cycle mode oscillation. If init-only and
+gap-scaled both pass, prefer gap-scaled unless raw responsiveness is stable
+across BC-logit-range strata.
+
+**Artifact consequences (preregistered).** Lambda reward values stay frozen for
+the spike; behavioral menu claims require revalidation; a new threshold-manifest
+version precedes production RL; the KL reference must be regenerated under any
+adopted controller (an alpha=1 reference would pull a calibrated controller back
+to the weak regime); BC checkpoints remain valid with alpha deterministically
+reset after import. Terminology: the readout is the SELECTED COUNT SCORE — a
+shaping proxy; realized privacy remains attacker success and no privacy claim
+follows from this spike.
+
+**Status.** OPEN — screening pending.
