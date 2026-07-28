@@ -768,7 +768,10 @@ def freeze_threshold_manifest(
     applied = {}
     for field in _EMPIRICAL_FIELDS:
         section, name = field.split(".", 1)
-        value = _resolve_candidate(rules["fields"][field]["candidate_rule"], spike)
+        try:
+            value = _resolve_candidate(rules["fields"][field]["candidate_rule"], spike)
+        except ValueError as error:
+            raise ValueError(f"threshold field {field!r}: {error}") from error
         sections[section][name] = value
         applied[field] = {
             "value": value,

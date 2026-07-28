@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,17 @@ from cloak.ranker.diagnostics import (
     reader_jitter_from_cache,
     validate_threshold_rules,
 )
-from cloak.ranker.environment import RankerDocument, load_ranker_environment
+from cloak.ranker.environment import (
+    RankerDocument,
+    assemble_action_vector,
+    load_ranker_environment,
+)
+from cloak.ranker.interactive import (
+    CacheOnlyMissError,
+    _require_cached,
+    behavior_clone_trajectory,
+)
+from cloak.ranker.environment import LambdaProfile
 from cloak.ranker.privacy import DirectCountPrivacyProvider
 from cloak.reward.roundtrip import (
     UTILITY_EXECUTION_CONTRACT_VERSION,
@@ -248,6 +259,158 @@ def _candidate_menu(points) -> dict[str, Any]:
     )
 
 
+
+# Single-decision counterfactual probes: measure per-decision utility sensitivity
+# off the behavior-clone reference so min_nonzero_counterfactual_rate is a
+# measurement, not an invented threshold (pre-registration gap closed 2026-07-28).
+COUNTERFACTUAL_PROBE_BUDGET = 150
+COUNTERFACTUAL_PROBE_SEED = 20260728
+
+
+def _counterfactual_probe_plan(
+    documents: Mapping[str, RankerDocument],
+) -> list[tuple[str, str, dict[str, str]]]:
+    """Seeded round-robin of (doc_id, decision_id, alternative vector) probes."""
+    rng = random.Random(COUNTERFACTUAL_PROBE_SEED)
+    per_document: list[list[tuple[str, str, dict[str, str]]]] = []
+    references: dict[str, dict[str, str]] = {}
+    for doc_id in sorted(documents):
+        document = documents[doc_id]
+        reference = dict(behavior_clone_trajectory(
+            document, LambdaProfile("lambda-zero", 0.0)
+        ).action_vector)
+        references[doc_id] = reference
+        pairs = []
+        for decision in document.policy_decisions:
+            for action in decision.actions:
+                if action.action_id == reference[decision.decision_id]:
+                    continue
+                alternative = dict(reference)
+                alternative[decision.decision_id] = action.action_id
+                try:
+                    # Injectivity: a swap whose fill is already claimed by another
+                    # decision in the reference vector is illegal at render time.
+                    assemble_action_vector(document, alternative)
+                except ValueError:
+                    continue
+                pairs.append((doc_id, decision.decision_id, alternative))
+        rng.shuffle(pairs)
+        if pairs:
+            per_document.append(pairs)
+    plan: list[tuple[str, str, dict[str, str]]] = []
+    index = 0
+    while len(plan) < COUNTERFACTUAL_PROBE_BUDGET and per_document:
+        bucket = per_document[index % len(per_document)]
+        plan.append(bucket.pop())
+        if not bucket:
+            per_document.remove(bucket)
+        else:
+            index += 1
+    return plan, references
+
+
+def _measure_counterfactual_probes(
+    documents: Mapping[str, RankerDocument],
+    *,
+    utility_artifact: Mapping,
+    environment_hash: str,
+    cache: UtilityCache,
+    remote_workers: int,
+    reader_workers: int,
+    cache_only: bool = False,
+) -> list[dict[str, Any]]:
+    plan, references = _counterfactual_probe_plan(documents)
+    probed_docs = sorted({doc_id for doc_id, _, _ in plan})
+    requests = [
+        UtilityRequest(
+            document=documents[doc_id],
+            action_vector=references[doc_id],
+            utility_artifact=utility_artifact,
+            environment_hash=environment_hash,
+        )
+        for doc_id in probed_docs
+    ] + [
+        UtilityRequest(
+            document=documents[doc_id],
+            action_vector=alternative,
+            utility_artifact=utility_artifact,
+            environment_hash=environment_hash,
+        )
+        for doc_id, _, alternative in plan
+    ]
+    if cache_only:
+        # Raises CacheOnlyMissError with exact work counts before any live call.
+        _require_cached(
+            requests, cache=cache, reader_refresh=False,
+            phase="counterfactual-probes",
+        )
+    results = score_roundtrip_batch(
+        requests,
+        cache=cache,
+        remote_workers=remote_workers,
+        reader_workers=reader_workers,
+        reader_refresh=False,
+    )
+    reference_utility = {
+        doc_id: results[i].utility for i, doc_id in enumerate(probed_docs)
+    }
+    records = []
+    for (doc_id, decision_id, _alternative), result in zip(
+        plan, results[len(probed_docs):], strict=True,
+    ):
+        records.append({
+            "doc_id": doc_id,
+            "decision_id": decision_id,
+            "delta_u": float(result.utility) - float(reference_utility[doc_id]),
+        })
+    return records
+
+
+
+# Reader-jitter measurement: re-read a seeded sample of cached pool vectors with
+# fresh reader calls so reader_jitter_from_cache has paired refresh/base rows
+# (second pre-registration gap closed 2026-07-28). Generation stays cached.
+JITTER_SAMPLE_PER_SPLIT = 8
+
+
+def _measure_reader_jitter_pairs(
+    documents: Mapping[str, RankerDocument],
+    split_by_doc: Mapping[str, str],
+    *,
+    utility_artifact: Mapping,
+    environment_hash: str,
+    cache: UtilityCache,
+    remote_workers: int,
+    reader_workers: int,
+    cache_only: bool = False,
+) -> None:
+    by_split: dict[str, list[str]] = {}
+    for doc_id in sorted(documents):
+        by_split.setdefault(split_by_doc[doc_id], []).append(doc_id)
+    requests = []
+    for split, doc_ids in sorted(by_split.items()):
+        for doc_id in doc_ids[:JITTER_SAMPLE_PER_SPLIT]:
+            reference = dict(behavior_clone_trajectory(
+                documents[doc_id], LambdaProfile("lambda-zero", 0.0)
+            ).action_vector)
+            requests.append(UtilityRequest(
+                document=documents[doc_id],
+                action_vector=reference,
+                utility_artifact=utility_artifact,
+                environment_hash=environment_hash,
+            ))
+    if cache_only:
+        _require_cached(
+            requests, cache=cache, reader_refresh=True, phase="reader-jitter",
+        )
+    score_roundtrip_batch(
+        requests,
+        cache=cache,
+        remote_workers=remote_workers,
+        reader_workers=reader_workers,
+        reader_refresh=True,
+    )
+
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     environment = _read_json(args.environment)
@@ -357,10 +520,60 @@ def main(argv: Sequence[str] | None = None) -> int:
         points, split_by_doc=split_by_doc, reward_pins=reward_pins,
     )
     candidate_menu = _candidate_menu(points)
+    try:
+        _measure_reader_jitter_pairs(
+            documents,
+            split_by_doc,
+            utility_artifact=utility_artifact,
+            environment_hash=environment_hash,
+            cache=cache,
+            remote_workers=args.remote_workers,
+            reader_workers=args.reader_workers,
+            cache_only=args.cache_only,
+        )
+    except CacheOnlyMissError as miss:
+        print(
+            "PREFLIGHT CACHE_ONLY_STOP phase=reader-jitter "
+            f"remote_tasks={miss.remote_tasks} "
+            f"context_reader_work_items={miss.context_reader_work_items} dispatched=false",
+            flush=True,
+        )
+        return 2
     reader_jitter = reader_jitter_from_cache(
         cache,
         utility_artifact=utility_artifact,
         split_by_doc=split_by_doc,
+    )
+    try:
+        counterfactual_records = _measure_counterfactual_probes(
+            documents,
+            utility_artifact=utility_artifact,
+            environment_hash=environment_hash,
+            cache=cache,
+            remote_workers=args.remote_workers,
+            reader_workers=args.reader_workers,
+            cache_only=args.cache_only,
+        )
+    except CacheOnlyMissError as miss:
+        print(
+            "PREFLIGHT CACHE_ONLY_STOP phase=counterfactual-probes "
+            f"remote_tasks={miss.remote_tasks} "
+            f"context_reader_work_items={miss.context_reader_work_items} dispatched=false",
+            flush=True,
+        )
+        return 2
+    nonzero = sum(row["delta_u"] != 0.0 for row in counterfactual_records)
+    _write_json(out_dir / "counterfactual-probes.json", {
+        "seed": COUNTERFACTUAL_PROBE_SEED,
+        "budget": COUNTERFACTUAL_PROBE_BUDGET,
+        "records": counterfactual_records,
+        "nonzero_rate": nonzero / len(counterfactual_records)
+        if counterfactual_records else None,
+    })
+    print(
+        f"counterfactual probes: {len(counterfactual_records)} pairs, "
+        f"nonzero rate {nonzero / max(len(counterfactual_records), 1):.3f}",
+        flush=True,
     )
     spike = build_diagnostic_spike(
         points,
@@ -371,7 +584,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         menu_artifact=candidate_menu,
         split_by_doc=split_by_doc,
         reader_jitter=reader_jitter,
-        counterfactual_records=(),
+        counterfactual_records=counterfactual_records,
     )
     manifest = freeze_threshold_manifest(
         rules,
