@@ -1169,7 +1169,16 @@ class SemanticRankerPolicy(nn.Module):
         else:
             magnitude = math.log1p(lambda_value) / math.log1p(self.max_lambda)
             controller = self.alpha * magnitude * predicted_privacy.detach()
-            combined_logits = utility_logits + controller
+            if getattr(self, "alpha_utility_routing", None) == "per-decision":
+                # Numerically identical forward pass; alpha's gradient through the
+                # utility/entropy/KL channels is decision-averaged so both of the
+                # controller's opposing pressures share one per-decision scale
+                # (decision-log fork: objective normalization mix, 2026-07-28).
+                scale = 1.0 / max(1, len(state.document.policy_decisions))
+                routed = controller.detach() + (controller - controller.detach()) * scale
+            else:
+                routed = controller
+            combined_logits = utility_logits + routed
             count_combined = utility_logits.detach() + controller
         return ActionDistribution(
             action_ids=legal_ids,

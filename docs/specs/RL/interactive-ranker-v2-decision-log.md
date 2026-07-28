@@ -433,9 +433,27 @@ checks but leaves a reproducible tower-side length pathology; retain the current
 only if its measured D-dependence is already negligible; sum-all is a negative
 control unless it uniquely avoids long-document privacy inflation.
 
-**Status.** OPEN — pending spike. On adoption, the chosen normalization and its
-rationale move to the normative spec (interactive-ranker-v2.md) and this entry is
-updated with the measured b_D per arm. Timing constraint: must be settled before the
-first multi-epoch full-corpus run (training records under different λ semantics are
-not comparable). Consultation transcript: Codex Sol session 019f8fa3, 2026-07-28.
+**Status: CLOSED 2026-07-28 — current mix retained (null adjudication).** Two
+measurement rounds (frozen-state, then the approved training-dynamics revision:
+2 arms × 4 length-binned docs × 8 epochs × 8 rollouts, identical seeds): the b_D
+diagnostic is unmeasurable — current-mix slope flipped sign across rounds
+(+0.45 → −0.71) at R² ≤ 0.04 with 9/16 groups advantage-degenerate, and the
+routing arm measured −1.70 (outside ±0.25). Both arms were behaviorally identical
+to four decimals (α moved ~1e-3 over 8 epochs; routing's relative count-pressure
+gain visible only as α_end 1.0012 vs 1.0008). Preregistered fallback applied:
+retain the current mix. The alpha-routing implementation stays as tested,
+default-off infrastructure (`--alpha-utility-routing per-decision`).
+
+**Discoveries superseding the fork.** (1) The α utility-pull is a noise-dominated
+covariance (diffusive ~√D), so no fixed-exponent renormalization is identifiable —
+the theoretical D-scaling describes only the signal component, which is negligible
+at reachable scales. (2) The binding constraint is CONTROLLER STRENGTH, not
+normalization: realized privacy is ~0.14 at every λ including λ3 (whose menu
+replay shows 88% placeholder), because α·g(λ)·privacy at α≈1 cannot move
+BC-sharpened utility logits, and α's learning timescale (~1e-3 / 8 epochs) is
+hundreds of epochs. Same-λ short-vs-long privacy gaps (0.07–0.15) are
+composition-driven (identical across arms). SUCCESSOR FORK to open before
+full-corpus runs: α initialization / parametrization / count-loss scale.
+Artifacts: results/ranker_v2/architecture/objective-normalization-*.json;
+spike scripts/spikes/objective_normalization_spike.py.
 

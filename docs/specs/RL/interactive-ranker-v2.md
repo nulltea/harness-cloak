@@ -765,3 +765,13 @@ implementation plan, but these responsibility boundaries are normative.
   alternatives and escalation evidence.
 - [QA builder v2](../qa-builder-v2.md) — implemented shared assertion artifact and scoring
   contract.
+
+## Objective normalization (adjudicated 2026-07-28)
+
+The hybrid group objective keeps its mixed normalization: utility, entropy, and KL
+decision-summed; the count term decision-averaged (×λ/decisions/rollouts). A
+preregistered spike (decision log: "objective normalization mix") found the proposed
+alternatives empirically unidentifiable and behaviorally inert at reachable scales;
+the practically binding controller question is strength/initialization of α, tracked
+as its own fork. The decision-averaged alpha-routing variant remains available as
+default-off infrastructure (`train --alpha-utility-routing per-decision`).

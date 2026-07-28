@@ -1248,3 +1248,27 @@ def test_policy_caches_static_decision_inputs_and_invalidates_on_apply():
     third = policy.distribution(state, decision, menu, profiles[0])
     assert len(document_calls) > calls_after_first
     assert torch.equal(first.log_probs, third.log_probs)
+
+
+def test_alpha_utility_routing_scales_alpha_gradient_only():
+    policy, store, document, decision, profiles = _semantic_policy()
+    menu = tuple(action.action_id for action in decision.actions)
+    nonzero = profiles[1]
+
+    def alpha_grad_and_logits(routing):
+        policy.alpha_utility_routing = routing
+        policy.zero_grad(set_to_none=True)
+        state = policy.begin_document(document, nonzero)
+        row = policy.distribution(state, decision, menu, nonzero)
+        row.log_probs.sum().backward()
+        grad = float(policy.alpha_raw.grad)
+        return grad, row.combined_logits.detach().clone(), row.count_log_probs.detach().clone()
+
+    base_grad, base_logits, base_count = alpha_grad_and_logits(None)
+    routed_grad, routed_logits, routed_count = alpha_grad_and_logits("per-decision")
+
+    decision_count = len(document.policy_decisions)
+    assert torch.equal(base_logits, routed_logits)          # forward identical
+    assert torch.equal(base_count, routed_count)            # count channel untouched
+    assert routed_grad == pytest.approx(base_grad / decision_count, rel=1e-5)
+    policy.alpha_utility_routing = None

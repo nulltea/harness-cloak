@@ -901,6 +901,8 @@ def _run_train(args) -> None:
     _validate_semantic_bc_policy_config(
         bc_checkpoint.get("policy_config", {}), policy,
     )
+    if getattr(args, "alpha_utility_routing", "none") == "per-decision":
+        policy.alpha_utility_routing = "per-decision"
     optimizer = torch.optim.Adam(policy.parameters(), lr=args.learning_rate)
     schedule = build_latin_cycle_schedule(documents, profiles, seed=args.seed)
     architecture_pin = policy_architecture_pin(policy)
