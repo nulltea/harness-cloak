@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-22
+updated: 2026-07-28
 tags: [rl, ranker, reward-design, credit-assignment, decision-log, privacy, utility]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-diagnostics.md,
@@ -386,3 +386,56 @@ to fixed decisions; treat fixed-only links as linked policy credit; invent depen
 from provenance; merge the divergent branch wholesale. The first three change the reward or
 policy routing, the fourth fabricates absent artifact state, and the last imports unrelated drift
 instead of the reviewed contract corrections.
+
+## OPEN FORK — objective normalization mix across document sizes (2026-07-28)
+
+**The fork.** The hybrid group objective mixes normalizations: utility, entropy, and KL
+are decision-summed; the count term is decision-averaged (×λ/D/rollouts). Analysis of
+gradient routing sharpens the issue: all decision-summed terms feed the utility tower
+AND alpha, while the count term feeds ONLY alpha — so the tower's internal term ratios
+are already composition-invariant, and the sole pathology is that **alpha's two opposing
+pressures scale differently with document decision count D** (utility pull ∝ D, count
+pull D-invariant; D spans 4–24, a ~6× ratio drift). Consequences: lambda's realized
+per-decision pressure depends on document composition, and alpha's equilibrium
+over-weights long documents' utility side. Adam absorbs across-step scale, not
+within-step term ratios on the shared scalar.
+
+**Candidate designs (spike arms).**
+1. *Current mix* (baseline / possible no-op if measured D-dependence is negligible).
+2. *Average-all*: divide utility/entropy/KL by D too. Fixes the alpha ratio; also
+   rescales tower gradients per document and perturbs λ=0 dynamics.
+3. *Sum-all*: drop the count term's /D. Fixes the alpha ratio with both pulls ∝ D
+   (long documents vote proportionally on alpha); λ=0 pathways byte-identical.
+4. *Alpha-channel routing* (Codex Sol recommendation, 2026-07-28): numerically
+   identical forward pass and logged losses via a stop-gradient identity
+   z̃ = u + sg(c) + (c − sg(c))/D for the utility/entropy/KL logits, count logits
+   unchanged — alpha's utility-side gradient becomes decision-averaged, matching the
+   count side; the tower keeps full document-level gradients; λ=0 identity and the
+   frozen calibration replay are untouched. Lambda's meaning becomes a
+   document-composition-stable per-decision privacy preference.
+
+**Preregistered decision protocol (user-selected primary criterion: alpha-pressure
+length-invariance; stability battery as hard gate).** Spike: 4 arms × 8 cached
+documents stratified over D (2 each in 4–7, 8–12, 13–18, 19–24, mixed task families)
+× 12 epochs (three full 4-profile Latin cycles) × 3 seeds, identical initial
+checkpoints and seeded document ordering; fully cached reward. Per group, record
+signed/absolute alpha gradients per term family, alpha trajectory by λ and D bin,
+per-profile mode rates, mean profile-relative privacy, document utility, and exact
+λ0-control divergence. Primary diagnostic: regress
+log(|g_α,U + g_α,H + g_α,KL| + ε) − log(|g_α,P| + ε) on log D over nonzero-λ groups;
+the desired normalization has slope b_D ≈ 0. Decision rule: adopt arm 4 iff it
+(i) cuts |b_D| ≥ 50% vs current and lands |b_D| ≤ 0.25, (ii) same-λ mean privacy
+differs ≤ 0.05 between short and long bins, (iii) mean document utility non-inferior
+within the measured 0.044 reader-noise floor, (iv) λ ordering stays monotonic in
+realized privacy, (v) λ0 divergence exactly zero, (vi) no seed shows collapse or
+non-finite gradients. Fall back to average-all only if routing passes controller
+checks but leaves a reproducible tower-side length pathology; retain the current mix
+only if its measured D-dependence is already negligible; sum-all is a negative
+control unless it uniquely avoids long-document privacy inflation.
+
+**Status.** OPEN — pending spike. On adoption, the chosen normalization and its
+rationale move to the normative spec (interactive-ranker-v2.md) and this entry is
+updated with the measured b_D per arm. Timing constraint: must be settled before the
+first multi-epoch full-corpus run (training records under different λ semantics are
+not comparable). Consultation transcript: Codex Sol session 019f8fa3, 2026-07-28.
+
