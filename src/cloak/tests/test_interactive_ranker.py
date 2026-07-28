@@ -657,18 +657,30 @@ def test_tied_pair_contributes_a_zero_term_without_detaching_its_log_probability
     assert logs[3].grad is not None and logs[3].grad.item() == 0.0
 
 
-def test_provisional_utility_loss_rejects_missing_or_extra_credit_pairs():
+def test_provisional_utility_loss_rejects_missing_but_tolerates_extra_credit_pairs():
     from cloak.ranker.interactive import provisional_utility_loss
     from cloak.reward.utility_credit import DocumentUtilityCredit
 
     logs = tuple(torch.tensor(-0.1, requires_grad=True) for _ in range(4))
-    credit = DocumentUtilityCredit(
+    missing = DocumentUtilityCredit(
         document_utility=(0.0, 0.0), linked_utility={}, residual_utility=(0.0, 0.0),
         provisional_advantage={(0, "p1"): 0.0}, route={"p1": "linked"},
     )
+    with pytest.raises(ValueError, match="credit lacks replayed trajectory pairs"):
+        provisional_utility_loss(_replayed((logs[:2], logs[2:])), missing)
 
-    with pytest.raises(ValueError, match="credit pairs differ from replayed trajectory pairs"):
-        provisional_utility_loss(_replayed((logs[:2], logs[2:])), credit)
+    # Extra pairs (load-time-demoted decisions the walk never visits) are unused.
+    extra = DocumentUtilityCredit(
+        document_utility=(0.0, 0.0), linked_utility={}, residual_utility=(0.0, 0.0),
+        provisional_advantage={
+            (0, "p1"): 1.0, (0, "p2"): 2.0, (0, "demoted"): 9.0,
+            (1, "p1"): -1.0, (1, "p2"): -2.0, (1, "demoted"): -9.0,
+        },
+        route={"p1": "linked", "p2": "document", "demoted": "document"},
+    )
+    loss = provisional_utility_loss(_replayed((logs[:2], logs[2:])), extra)
+    expected = -(1.0 * -0.1 + 2.0 * -0.1 + -1.0 * -0.1 + -2.0 * -0.1) / 2
+    assert torch.isclose(loss, torch.tensor(expected))
 
 
 def test_hybrid_utility_loss_substitutes_pair_terms_in_place_and_divides_once():

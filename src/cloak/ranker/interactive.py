@@ -665,8 +665,12 @@ def provisional_utility_loss(
                 continue
             terms.append(-float(credit.provisional_advantage[pair]) * step.log_prob)
 
-    if replayed_pairs != set(credit.provisional_advantage):
-        raise ValueError("credit pairs differ from replayed trajectory pairs")
+    # Credit prices every artifact policy decision; load-time demotion (scope,
+    # zero-coverage) removes some from the replayed walk, so extra credit pairs
+    # are expected and unused. Missing pairs stay a hard error.
+    if not replayed_pairs <= set(credit.provisional_advantage):
+        missing = sorted(replayed_pairs - set(credit.provisional_advantage))
+        raise ValueError(f"credit lacks replayed trajectory pairs: {missing[:4]}")
     if not terms:
         raise ValueError("provisional utility loss requires at least one decision pair")
     return torch.stack(terms).sum() / rollout_count
@@ -701,8 +705,10 @@ def hybrid_utility_loss(
                 raise ValueError(f"replayed trajectory repeats decision {step.decision_id!r}")
             replayed_pairs.add(pair)
             step_by_pair[pair] = step
-    if replayed_pairs != set(provisional_credit.provisional_advantage):
-        raise ValueError("credit pairs differ from replayed trajectory pairs")
+    # See provisional_utility_loss: demoted decisions leave unused credit pairs.
+    if not replayed_pairs <= set(provisional_credit.provisional_advantage):
+        missing = sorted(replayed_pairs - set(provisional_credit.provisional_advantage))
+        raise ValueError(f"credit lacks replayed trajectory pairs: {missing[:4]}")
     unknown = sorted(set(counterfactual_losses) - replayed_pairs)
     if unknown:
         raise ValueError(f"unknown counterfactual loss pairs: {unknown}")
