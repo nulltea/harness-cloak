@@ -487,7 +487,10 @@ def test_reader_jitter_uses_paired_cached_refresh_vectors_only():
         split_by_doc={"doc": "development"},
     )
 
-    assert jitter == {"development": (pytest.approx(-0.2),)}
+    # Policy-only credit: the "residual" row is monitoring mass, so the jitter is the
+    # linked component's own swing, 0.4 - 0.8 = -0.4 (was -0.2 when the constant 0.6
+    # residual score still sat in the numerator over the stored denominator 1.0).
+    assert jitter == {"development": (pytest.approx(-0.4),)}
 
 
 def test_cache_only_missing_report_names_exact_vectors_and_work_counts(tmp_path: Path):

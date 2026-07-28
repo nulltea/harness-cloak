@@ -846,15 +846,19 @@ def test_builder_records_unmet_relation_threshold_without_teacher():
 def test_runtime_scores_context_assertions_per_assertion():
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "policy_decision_ids": ["dec1"]}},
         "assertions": {
             "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
-                   "question": "Q1", "accepted_values": ["endocrine"], "weight": 0.3},
+                   "question": "Q1", "accepted_values": ["endocrine"], "weight": 0.3,
+                   "policy_dependency_decision_ids": ["dec1"]},
             "c2": {"assertion_id": "c2", "doc_id": "d1", "family": "context",
-                   "question": "Q2", "accepted_values": ["arthritis"], "weight": 0.3},
+                   "question": "Q2", "accepted_values": ["arthritis"], "weight": 0.3,
+                   "policy_dependency_decision_ids": ["dec1"]},
             "d1": {"assertion_id": "d1", "doc_id": "d1", "family": "delivered",
                    "scoring_contract": {"kind": "contains", "value": "kidney transplant"},
-                   "weight": 0.4},
+                   "weight": 0.4,
+                   "policy_dependency_decision_ids": ["dec1"]},
         },
     }
     calls = []
@@ -882,13 +886,17 @@ def test_runtime_scores_context_assertions_per_assertion():
 def test_staged_runtime_scoring_is_identical_to_direct_scoring():
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"d1": {"utility_weight_denominator": 2.0}},
+        "documents": {"d1": {"utility_weight_denominator": 2.0,
+                             "policy_decision_ids": ["dec1"]}},
         "assertions": {
             "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
-                   "question": "Q", "accepted_values": ["answer"], "weight": 0.5},
+                   "question": "Q", "accepted_values": ["answer"], "weight": 0.5,
+                   "policy_dependency_decision_ids": ["dec1"]},
+            # No policy dependency -> monitoring mass, out of the utility aggregate.
             "d1": {"assertion_id": "d1", "doc_id": "d1", "family": "delivered",
                    "scoring_contract": {"kind": "contains", "value": "delivered"},
-                   "weight": 0.5},
+                   "weight": 0.5,
+                   "policy_dependency_decision_ids": []},
         },
     }
 
@@ -904,9 +912,79 @@ def test_staged_runtime_scoring_is_identical_to_direct_scoring():
     )
     staged = finalize_utility_scoring(prepared, ["answer"])
 
+    # Utility is the weighted mean over the policy row alone (0.5*1.0/0.5 = 1.0); the
+    # stored denominator 2.0 and the monitoring row's weight 0.5 only surface in the
+    # reported monitoring aggregate.
     assert staged == direct == {
-        "component_scores": {"c1": 1.0, "d1": 1.0}, "utility": 0.5,
+        "component_scores": {"c1": 1.0, "d1": 1.0},
+        "utility": 1.0,
+        "monitoring": {"utility": 1.0, "weight": 0.5},
     }
+
+
+def test_utility_credits_policy_role_assertions_and_only_reports_monitoring_mass():
+    from cloak.qa.scoring import assertion_reward_role
+
+    document = {
+        "utility_weight_denominator": 1.0,
+        "policy_decision_ids": ["dec1"],
+    }
+    assertions = {
+        "policy-context": {
+            "assertion_id": "policy-context", "doc_id": "d1", "family": "context",
+            "question": "Q", "accepted_values": ["answer"], "weight": 0.5,
+            "policy_dependency_decision_ids": ["dec1"],
+        },
+        "policy-delivered": {
+            "assertion_id": "policy-delivered", "doc_id": "d1", "family": "delivered",
+            "weight": 0.3, "policy_dependency_decision_ids": ["dec1"],
+            "scoring_contract": {"kind": "contains", "value": "delivered"},
+        },
+        # DEMOGRAPHIC field probe: no policy decision governs it, so it is monitoring.
+        "monitoring-demographic": {
+            "assertion_id": "monitoring-demographic", "doc_id": "d1",
+            "family": "delivered", "weight": 0.2,
+            "policy_dependency_decision_ids": [],
+            "scoring_contract": {
+                "kind": "field_value", "section": "DEMOGRAPHIC",
+                "field": "sex", "value": "male",
+            },
+        },
+    }
+    artifact = {
+        "reader_pin": TEST_READER_PIN,
+        "documents": {"d1": document},
+        "assertions": assertions,
+    }
+
+    assert {
+        assertion_id: assertion_reward_role(row, document)
+        for assertion_id, row in assertions.items()
+    } == {
+        "policy-context": "policy",
+        "policy-delivered": "policy",
+        "monitoring-demographic": "monitoring",
+    }
+
+    def reader(questions, context, clauses=None):
+        return ["answer"]
+
+    _pin_reader(reader)
+    result = score_utility(
+        artifact,
+        "d1",
+        doc_p="context",
+        out_final="A 62-year-old female delivered summary.",
+        reader=reader,
+    )
+
+    # The monitoring probe fails (female, not male) yet cannot drag the utility down:
+    # policy only, (0.5*1.0 + 0.3*1.0)/0.8 = 1.0. Its own aggregate is 0.0 at weight 0.2.
+    assert result["component_scores"] == {
+        "policy-context": 1.0, "policy-delivered": 1.0, "monitoring-demographic": 0.0,
+    }
+    assert result["utility"] == pytest.approx(1.0)
+    assert result["monitoring"] == {"utility": 0.0, "weight": 0.2}
 
 
 def test_batched_context_reader_refresh_only_bypasses_reader_transport_cache():
@@ -937,13 +1015,15 @@ def test_runtime_linked_answer_scored_by_lattice_entailment(monkeypatch):
     artifact = {
         "reader_pin": TEST_READER_PIN,
         "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "policy_decision_ids": ["dec1"],
                              "decisions": [{"decision_id": "dec1", "semantic_chain": chain}]}},
         "assertions": {
             "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
                    "question": "What history contraindicates those medications?",
                    "answer_target": {"kind": "linked_decision", "decision_id": "dec1",
                                      "required_property": "solid organ transplant"},
-                   "weight": 1.0},
+                   "weight": 1.0,
+                   "policy_dependency_decision_ids": ["dec1"]},
         },
     }
 
@@ -1395,11 +1475,13 @@ def test_score_utility_passes_frozen_clause_to_reader():
     _pin_reader(reader)
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "policy_decision_ids": ["dec1"]}},
         "assertions": {
             "c1": {"assertion_id": "c1", "doc_id": "d1", "family": "context",
                    "question": "Q1", "accepted_values": ["endocrine"],
-                   "reader_clause": clause, "weight": 1.0},
+                   "reader_clause": clause, "weight": 1.0,
+                   "policy_dependency_decision_ids": ["dec1"]},
         },
     }
     result = score_utility(artifact, "d1", doc_p="generalized", out_final="", reader=reader)
@@ -3421,13 +3503,25 @@ Arthritis.
 def test_aci_scorer_returns_zero_for_incomplete_labeled_relation():
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"aci/incomplete": {"utility_weight_denominator": 1.0}},
+        "documents": {"aci/incomplete": {"utility_weight_denominator": 1.0,
+                                         "policy_decision_ids": ["dec1"]}},
         "assertions": {
+            # exact_relation is gold-exactness, hence monitoring whatever it depends on;
+            # this policy-role row supplies the reward mass the scorer requires.
+            "content": {
+                "assertion_id": "content",
+                "doc_id": "aci/incomplete",
+                "family": "delivered",
+                "weight": 1.0,
+                "policy_dependency_decision_ids": ["dec1"],
+                "scoring_contract": {"kind": "contains", "value": "Arthritis"},
+            },
             "relation": {
                 "assertion_id": "relation",
                 "doc_id": "aci/incomplete",
                 "family": "delivered",
                 "weight": 1.0,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {
                     "kind": "exact_relation",
                     "section": "PLAN",
@@ -3450,7 +3544,8 @@ Arthritis.
         reader=_pin_reader(lambda questions, context, clauses=None: pytest.fail("reader must not be called")),
     )
 
-    assert result["component_scores"] == {"relation": 0.0}
+    assert result["component_scores"] == {"content": 1.0, "relation": 0.0}
+    assert result["monitoring"] == {"utility": 0.0, "weight": 1.0}
 
 
 def test_aci_delivered_candidates_compile_reference_backed_groups_with_capped_structure():
@@ -3568,11 +3663,13 @@ def test_aci_structure_accepts_heading_only_and_inline_none_sections(reference):
     structure = next(row for row in candidates if row["subtype"] == "structure")
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "policy_decision_ids": ["dec1"]}},
         "assertions": {
             "structure": {
                 "assertion_id": "structure", "doc_id": "d1", "family": "delivered",
                 "weight": 1.0, "scoring_contract": structure["scoring_contract"],
+                "policy_dependency_decision_ids": ["dec1"],
             },
         },
     }
@@ -3634,16 +3731,19 @@ Arthritis — physical therapy — mobility assessment
 def test_score_utility_evaluates_every_deterministic_delivered_contract():
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "policy_decision_ids": ["dec1"]}},
         "assertions": {
             "content": {
                 "assertion_id": "content", "doc_id": "d1", "family": "delivered",
                 "weight": 0.25,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {"kind": "contains", "value": "hypothyroidism"},
             },
             "field": {
                 "assertion_id": "field", "doc_id": "d1", "family": "delivered",
                 "weight": 0.25,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {
                     "kind": "field_value", "section": "ASSESSMENT",
                     "row": "hypothyroidism", "field": "status", "value": "stable",
@@ -3652,14 +3752,17 @@ def test_score_utility_evaluates_every_deterministic_delivered_contract():
             "structure": {
                 "assertion_id": "structure", "doc_id": "d1", "family": "delivered",
                 "weight": 0.25,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {
                     "kind": "required_sections",
                     "sections": ["HISTORY OF PRESENT ILLNESS", "ASSESSMENT", "PLAN"],
                 },
             },
+            # Dependency-linked but gold-exactness, so still monitoring mass.
             "relation": {
                 "assertion_id": "relation", "doc_id": "d1", "family": "delivered",
                 "weight": 0.25,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {
                     "kind": "exact_relation", "section": "PLAN",
                     "condition": "hypothyroidism", "treatment": "Synthroid",
@@ -3686,11 +3789,14 @@ Hypothyroidism — Synthroid — thyroid labs
         ),
     )
 
+    # Every contract scores, but the utility averages the three policy rows only
+    # (3*0.25*1.0 / 0.75); "relation" is reported as monitoring mass of weight 0.25.
     assert result == {
         "component_scores": {
             "content": 1.0, "field": 1.0, "relation": 1.0, "structure": 1.0,
         },
         "utility": 1.0,
+        "monitoring": {"utility": 1.0, "weight": 0.25},
     }
 
 
@@ -3905,11 +4011,13 @@ def test_relational_compiler_rejects_protected_locator_leakage():
 def test_delivered_only_scoring_is_deterministic_without_reader_call():
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "policy_decision_ids": ["dec1"]}},
         "assertions": {
             "d1": {
                 "assertion_id": "d1", "doc_id": "d1", "family": "delivered",
                 "weight": 1.0,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {"kind": "contains", "value": "kidney transplant"},
             }
         },
@@ -3925,22 +4033,30 @@ def test_delivered_only_scoring_is_deterministic_without_reader_call():
         ),
     )
 
-    assert result == {"component_scores": {"d1": 1.0}, "utility": 1.0}
+    # Sole policy row, no monitoring mass -> the monitoring aggregate reports 0.0/0.0.
+    assert result == {
+        "component_scores": {"d1": 1.0},
+        "utility": 1.0,
+        "monitoring": {"utility": 0.0, "weight": 0.0},
+    }
 
 
 def test_runtime_component_scores_follow_stable_assertion_id_order():
     artifact = {
         "reader_pin": TEST_READER_PIN,
-        "documents": {"d1": {"utility_weight_denominator": 1.0}},
+        "documents": {"d1": {"utility_weight_denominator": 1.0,
+                             "policy_decision_ids": ["dec1"]}},
         "assertions": {
             "z": {
                 "assertion_id": "z", "doc_id": "d1", "family": "delivered",
                 "weight": 0.5,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {"kind": "contains", "value": "kidney transplant"},
             },
             "a": {
                 "assertion_id": "a", "doc_id": "d1", "family": "delivered",
                 "weight": 0.5,
+                "policy_dependency_decision_ids": ["dec1"],
                 "scoring_contract": {"kind": "contains", "value": "female"},
             },
         },

@@ -17,7 +17,26 @@ from copy import deepcopy
 from math import isfinite
 from numbers import Real
 
-UTILITY_SCORER_VERSION = "qa-utility-runtime-v1"
+# v2 (2026-07-28): utility aggregates over policy-role assertions only; probes with
+# no policy-decision dependency (DEMOGRAPHIC fields, placeholder round-trips,
+# structural checks) become a reported monitoring aggregate, not reward mass.
+UTILITY_SCORER_VERSION = "qa-utility-runtime-v2"
+
+
+# Contract kinds that demand verbatim reproduction of the gold reference (measured
+# 0-pass on real remote notes, 2026-07-28): unwinnable by any action, so they carry
+# no policy signal even when dependency-linked. Revisit at the next artifact rebuild.
+_GOLD_EXACTNESS_CONTRACT_KINDS = frozenset({"exact_relation"})
+
+
+def assertion_reward_role(assertion, document_entry) -> str:
+    """"policy" when the assertion depends on a policy decision, else "monitoring"."""
+    contract = assertion.get("scoring_contract") or {}
+    if contract.get("kind") in _GOLD_EXACTNESS_CONTRACT_KINDS:
+        return "monitoring"
+    dependencies = set(assertion.get("policy_dependency_decision_ids") or ())
+    policy_ids = set(document_entry.get("policy_decision_ids") or ())
+    return "policy" if dependencies & policy_ids else "monitoring"
 
 
 QA_MODEL = "medgemma-4b-it"  # THE context reader -- the SINGLE definition. Every reader path
@@ -930,6 +949,12 @@ def prepare_utility_scoring(
         "utility_weight_denominator": float(
             artifact["documents"][doc_id]["utility_weight_denominator"]
         ),
+        "reward_roles": {
+            str(row["assertion_id"]): assertion_reward_role(
+                row, artifact["documents"][doc_id]
+            )
+            for row in assertions
+        },
     }
 
 
@@ -956,11 +981,28 @@ def finalize_utility_scoring(
     ):
         raise ValueError("utility scoring produced an invalid component score")
 
-    numerator = sum(float(row["weight"]) * scores[str(row["assertion_id"])]
-                    for row in assertions)
-    denominator = float(prepared["utility_weight_denominator"])
-    utility = numerator / denominator if denominator else 0.0
-    return {"component_scores": scores, "utility": utility}
+    roles = prepared["reward_roles"]
+
+    def _aggregate(role: str) -> tuple[float, float]:
+        rows = [row for row in assertions if roles[str(row["assertion_id"])] == role]
+        weight = sum(float(row["weight"]) for row in rows)
+        numerator = sum(
+            float(row["weight"]) * scores[str(row["assertion_id"])] for row in rows
+        )
+        return (numerator / weight if weight else 0.0), weight
+
+    utility, policy_weight = _aggregate("policy")
+    if policy_weight <= 0.0:
+        raise ValueError("utility scoring requires positive policy reward mass")
+    monitoring_utility, monitoring_weight = _aggregate("monitoring")
+    return {
+        "component_scores": scores,
+        "utility": utility,
+        "monitoring": {
+            "utility": monitoring_utility,
+            "weight": monitoring_weight,
+        },
+    }
 
 
 def _call_runtime_reader(

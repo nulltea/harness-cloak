@@ -75,11 +75,23 @@ def utility_binding(artifact: Mapping, doc_id: str) -> dict[str, Any]:
     if not ids or len(ids) != len(set(ids)):
         raise ValueError("utility binding requires unique accepted assertion IDs")
     rows = {assertion_id: assertions[assertion_id] for assertion_id in ids}
-    weights = {assertion_id: rows[assertion_id]["weight"] for assertion_id in ids}
+    # qa-utility-runtime-v2: parity weights cover the policy-role assertions only;
+    # assertion_ids keep full coverage so every component score stays validated.
+    from cloak.qa.scoring import assertion_reward_role
+
+    policy_ids = [
+        assertion_id for assertion_id in ids
+        if assertion_reward_role(rows[assertion_id], document) == "policy"
+    ]
+    if not policy_ids:
+        raise ValueError("utility binding requires policy reward mass")
+    weights = {assertion_id: rows[assertion_id]["weight"] for assertion_id in policy_ids}
     binding = {
         "assertion_ids": ids,
         "weights": weights,
-        "utility_weight_denominator": document["utility_weight_denominator"],
+        "utility_weight_denominator": sum(
+            float(rows[assertion_id]["weight"]) for assertion_id in policy_ids
+        ),
         "assertion_binding_hash": stable_hash(rows),
     }
     _validate_binding(binding)
@@ -135,7 +147,8 @@ def _validate_binding(binding: Any) -> None:
         or any(not isinstance(value, str) or not value for value in ids)
         or len(ids) != len(set(ids))
         or not isinstance(weights, Mapping)
-        or set(weights) != set(ids)
+        or not weights
+        or not set(weights) <= set(ids)
         or not isinstance(binding.get("assertion_binding_hash"), str)
         or not binding["assertion_binding_hash"].startswith("sha256:")
         or isinstance(denominator, bool)
@@ -303,9 +316,8 @@ def _validate_result(
     ):
         raise ValueError("utility cache has an invalid component score")
     expected = sum(
-        float(binding["weights"][assertion_id])
-        * float(payload["component_scores"][assertion_id])
-        for assertion_id in binding["assertion_ids"]
+        float(weight) * float(payload["component_scores"][assertion_id])
+        for assertion_id, weight in binding["weights"].items()
     ) / float(binding["utility_weight_denominator"])
     if not math.isclose(
         float(payload["utility"]), expected, rel_tol=0.0, abs_tol=_FLOAT_TOLERANCE,

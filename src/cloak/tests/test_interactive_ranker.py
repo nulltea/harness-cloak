@@ -785,12 +785,15 @@ def _utility_artifact():
         },
         "documents": {
             "fixture/doc": {
-                "assertion_ids": ["a-delivered"],
+                "assertion_ids": ["a-delivered", "a-linked"],
                 "policy_decision_ids": ["alpha", "beta"],
-                "utility_weight_denominator": 1.0,
+                # Total weight 2.0, of which the policy mass is a-linked's 1.0.
+                "utility_weight_denominator": 2.0,
             },
         },
         "assertions": {
+            # Monitoring mass: no policy dependency, so it is reported per component
+            # but excluded from the credited utility.
             "a-delivered": {
                 "assertion_id": "a-delivered",
                 "doc_id": "fixture/doc",
@@ -800,23 +803,35 @@ def _utility_artifact():
                 "credit_routing": "residual",
                 "policy_dependency_decision_ids": [],
             },
+            "a-linked": {
+                "assertion_id": "a-linked",
+                "doc_id": "fixture/doc",
+                "family": "delivered",
+                "status": "accepted",
+                "weight": 1.0,
+                "credit_routing": "linked",
+                "policy_dependency_decision_ids": ["alpha"],
+            },
         },
     }
     artifact["artifact_hash"] = stable_hash(artifact)
     return artifact
 
 
-def _utility_result(action_vector, utility):
+def _utility_result(action_vector, utility, monitoring=None):
+    """Both components score `utility` by default, so the credited (policy-only)
+    utility, the all-assertion cache parity value, and `utility` all coincide."""
     from cloak.reward.utility_cache import make_result
 
+    monitoring = utility if monitoring is None else monitoring
     return make_result(
         doc_id="fixture/doc",
         action_vector=action_vector,
         doc_p="rendered",
         out_p="remote",
         out_final="final",
-        component_scores={"a-delivered": utility},
-        utility=utility,
+        component_scores={"a-delivered": monitoring, "a-linked": utility},
+        utility=(monitoring + utility) / 2.0,
     )
 
 
@@ -991,7 +1006,9 @@ def test_trajectory_point_recomputes_fixed_denominator_utility_and_count_score()
     )
 
     trajectory = behavior_clone_trajectory(_document(), "lambda-zero")
-    result = _utility_result(trajectory.action_vector, 0.7)
+    # Monitoring 0.1, policy 0.7 -> the reported all-assertion utility is 0.4, the
+    # credited policy-only utility is 1.0*0.7/1.0 = 0.7.
+    result = _utility_result(trajectory.action_vector, 0.7, monitoring=0.1)
     point = trajectory_point(
         trajectory,
         result,
@@ -999,9 +1016,10 @@ def test_trajectory_point_recomputes_fixed_denominator_utility_and_count_score()
         utility_artifact=_utility_artifact(),
     )
 
+    assert result.utility == pytest.approx(0.4)
     assert point.utility == pytest.approx(0.7)
     assert point.count_score == pytest.approx(0.6)
-    assert point.component_scores == {"a-delivered": 0.7}
+    assert point.component_scores == {"a-delivered": 0.1, "a-linked": 0.7}
     assert point.result_hash == result.result_hash
 
 

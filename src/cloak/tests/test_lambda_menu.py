@@ -326,7 +326,10 @@ def test_calibration_pool_stores_complete_pins_components_and_count_provenance()
         reward_pins=point.reward_pins,
     )
 
-    assert point.utility == pytest.approx(0.7)
+    # Recomputed over the policy weight mass alone: the "linked" row (weight 0.5,
+    # score 0.8) carries it, so 0.5*0.8/0.5 = 0.8 -- the monitoring "residual" row is
+    # still reported in component_scores but no longer moves the utility.
+    assert point.utility == pytest.approx(0.8)
     assert point.count_score == pytest.approx(0.1)
     assert point.component_scores == {"linked": 0.8, "residual": 0.6}
     assert point.count_provenance["fine"]["source_family"] == "fixture"

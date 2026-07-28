@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import math
+
+from cloak.qa.scoring import assertion_reward_role
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
@@ -85,7 +87,6 @@ def _partitions(artifact: Mapping, doc_id: str) -> _Partitions:
     assertions: dict[str, Mapping] = {}
     weights: dict[str, float] = {}
     linked_by_decision: dict[str, set[str]] = {}
-    residual_ids: set[str] = set()
     for assertion_id in raw_assertion_ids:
         row = all_assertions.get(assertion_id)
         if not isinstance(row, Mapping):
@@ -122,23 +123,34 @@ def _partitions(artifact: Mapping, doc_id: str) -> _Partitions:
                 raise ValueError(
                     f"linked utility assertion {assertion_id!r} has no policy dependency"
                 )
-            for decision_id in dependencies:
-                linked_by_decision.setdefault(decision_id, set()).add(assertion_id)
         elif routing == "residual":
             if dependencies:
                 raise ValueError(
                     f"residual utility assertion {assertion_id!r} has policy dependencies"
                 )
-            residual_ids.add(assertion_id)
         else:
             raise ValueError(
                 f"utility assertion {assertion_id!r} has invalid credit_routing"
             )
+        if assertion_reward_role(row, document) == "monitoring":
+            # Monitoring mass (no policy dependency, or a gold-exactness contract)
+            # leaves the reward aggregate entirely under qa-utility-runtime-v2;
+            # it is reported by the scorer, never credited — and never registered
+            # as a decision's linked assertion (a monitoring-only decision routes
+            # as "document" credit downstream).
+            continue
+        if routing == "linked":
+            for decision_id in dependencies:
+                linked_by_decision.setdefault(decision_id, set()).add(assertion_id)
         assertions[assertion_id] = row
         weights[assertion_id] = float(weight)
 
+    policy_weight = sum(weights.values())
+    if policy_weight <= 0.0:
+        raise ValueError(f"document {doc_id!r} has no policy reward mass")
+
     return _Partitions(
-        denominator=float(denominator),
+        denominator=float(policy_weight),
         policy_decision_ids=policy_decision_ids,
         assertions=MappingProxyType(assertions),
         weights=MappingProxyType(weights),
@@ -146,7 +158,7 @@ def _partitions(artifact: Mapping, doc_id: str) -> _Partitions:
             decision_id: frozenset(assertion_ids)
             for decision_id, assertion_ids in linked_by_decision.items()
         }),
-        residual_ids=frozenset(residual_ids),
+        residual_ids=frozenset(),
     )
 
 
@@ -205,7 +217,7 @@ def _loo_advantages(values: Sequence[float]) -> tuple[float, ...]:
 def document_utility(
     component_scores: Mapping[str, float], artifact: Mapping, doc_id: str,
 ) -> float:
-    """Aggregate all accepted assertions with the stored fixed denominator."""
+    """Aggregate policy-role assertions over the fixed policy weight mass."""
     partitions = _partitions(artifact, doc_id)
     assertion_ids = frozenset(partitions.assertions)
     try:

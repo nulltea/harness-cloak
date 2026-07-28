@@ -94,16 +94,22 @@ def test_partitions_policy_fixed_mixed_global_and_uncovered_credit():
 
     credit = provisional_credit(_vectors(), _artifact(), "d1")
 
+    # Policy-only denominator: policy(0.2) + mixed(0.3) = 0.5; the monitoring rows
+    # ("fixed", "global") leave both the numerator and the denominator.
+    #   document: (0.2*1 + 0.3*0)/0.5 = 0.4 | (0.2*0 + 0.3*1)/0.5 = 0.6
+    #   p1 {policy, mixed}: 0.2/0.5 = 0.4 | 0.3/0.5 = 0.6
+    #   p2 {mixed}:         0.0/0.5 = 0.0 | 0.3/0.5 = 0.6
     assert credit.document_utility == pytest.approx((0.4, 0.6))
     assert credit.linked_utility == {
-        "p1": pytest.approx((0.2, 0.3)),
-        "p2": pytest.approx((0.0, 0.3)),
+        "p1": pytest.approx((0.4, 0.6)),
+        "p2": pytest.approx((0.0, 0.6)),
     }
-    assert credit.residual_utility == pytest.approx((0.2, 0.3))
+    assert credit.residual_utility == pytest.approx((0.0, 0.0))
     assert credit.route == {"p1": "linked", "p2": "linked", "p3": "document"}
+    # Two rollouts: leave-one-out advantage is value - other_value; residual is 0.
     assert credit.provisional_advantage == pytest.approx({
         (0, "p1"): -0.2, (1, "p1"): 0.2,
-        (0, "p2"): -0.4, (1, "p2"): 0.4,
+        (0, "p2"): -0.6, (1, "p2"): 0.6,
         (0, "p3"): -0.2, (1, "p3"): 0.2,
     })
 
@@ -134,15 +140,18 @@ def test_mixed_hyperedge_routes_once_to_each_unique_policy_dependency():
     ]
     credit = provisional_credit(_vectors(), artifact, "d1")
 
-    assert credit.linked_utility["p1"] == pytest.approx((0.2, 0.3))
-    assert credit.linked_utility["p2"] == pytest.approx((0.0, 0.3))
+    # "mixed" (weight 0.3) is credited once per unique dependency, over the
+    # policy-only denominator 0.5: p1 also carries "policy" (weight 0.2).
+    assert credit.linked_utility["p1"] == pytest.approx((0.4, 0.6))
+    assert credit.linked_utility["p2"] == pytest.approx((0.0, 0.6))
 
 
-def test_missing_family_uses_real_stored_fixed_denominator():
+def test_credit_denominator_is_policy_weight_sum_not_the_stored_denominator():
     from cloak.reward.utility_credit import document_utility, provisional_credit
 
-    # Migrated v16 semantics: delivered budget 0.4, absent context budget 0.6,
-    # stored denominator remains 1.0 rather than being recomputed to 0.4.
+    # Delivered budget 0.4, absent context budget 0.6, stored denominator 1.0. The
+    # credit denominator is the linked (policy-role) weight sum 0.4, so the stored
+    # field no longer participates: 0.4*1.0/0.4 = 1.0, not 0.4.
     artifact = {
         "artifact_version": "utility-assertions-v2",
         "documents": {"partial": {
@@ -161,26 +170,32 @@ def test_missing_family_uses_real_stored_fixed_denominator():
         }},
     }
 
-    assert document_utility({"delivered": 1.0}, artifact, "partial") == 0.4
+    assert document_utility({"delivered": 1.0}, artifact, "partial") == 1.0
     credit = provisional_credit(
         [{"delivered": 1.0}, {"delivered": 0.0}], artifact, "partial",
     )
-    assert credit.document_utility == pytest.approx((0.4, 0.0))
+    assert credit.document_utility == pytest.approx((1.0, 0.0))
     assert credit.provisional_advantage == pytest.approx({
-        (0, "p1"): 0.4, (1, "p1"): -0.4,
+        (0, "p1"): 1.0, (1, "p1"): -1.0,
     })
+
+    # The stored field is inert: drifting it cannot move the credit.
+    artifact["documents"]["partial"]["utility_weight_denominator"] = 0.25
+    assert document_utility({"delivered": 1.0}, artifact, "partial") == 1.0
 
 
 def test_missing_assertion_scores_report_all_missing_ids():
     from cloak.reward.utility_credit import document_utility, provisional_credit
 
-    with pytest.raises(ValueError, match=r"missing assertion scores.*fixed.*global.*mixed"):
-        document_utility({"policy": 1.0}, _artifact(), "d1")
+    # Only the policy-role rows ("policy", "mixed") are required; monitoring scores
+    # in the vector are neither required nor sufficient.
+    with pytest.raises(ValueError, match=r"missing assertion scores.*mixed.*policy"):
+        document_utility({"fixed": 1.0, "global": 1.0}, _artifact(), "d1")
     with pytest.raises(
-        ValueError, match=r"rollout 1 missing assertion scores.*fixed.*mixed",
+        ValueError, match=r"rollout 1 missing assertion scores.*mixed.*policy",
     ):
         provisional_credit(
-            [_vectors()[0], {"policy": 0.0, "global": 1.0}], _artifact(), "d1",
+            [_vectors()[0], {"fixed": 0.0, "global": 1.0}], _artifact(), "d1",
         )
 
 
@@ -218,8 +233,11 @@ def test_three_rollout_loo_is_not_standard_deviation_normalized():
         [{"q": 1.0}, {"q": 0.5}, {"q": 0.0}], artifact, "d",
     )
 
+    # Sole policy row, so utilities are the raw scores (0.4*s/0.4). Leave-one-out over
+    # (1.0, 0.5, 0.0): 1.0-0.25 = 0.75, 0.5-0.5 = 0.0, 0.0-0.75 = -0.75. A
+    # standard-deviation-normalized advantage would instead be ±1.0/0.0.
     assert credit.provisional_advantage == pytest.approx({
-        (0, "p"): 0.3, (1, "p"): 0.0, (2, "p"): -0.3,
+        (0, "p"): 0.75, (1, "p"): 0.0, (2, "p"): -0.75,
     })
 
 
@@ -250,3 +268,42 @@ def test_invalid_v2_routing_metadata_fails_closed(mutation, message):
     mutation(artifact)
     with pytest.raises(ValueError, match=message):
         provisional_credit(_vectors(), artifact, "d1")
+
+
+def test_monitoring_linked_rows_never_register_as_decision_credit():
+    """A linked-routing gold-exactness row is excluded from weights AND from
+    linked_by_decision — otherwise provisional_credit KeyErrors on it."""
+    from cloak.reward.utility_credit import _partitions, provisional_credit
+
+    artifact = {
+        "artifact_version": "utility-assertions-v2",
+        "documents": {"doc": {
+            "utility_weight_denominator": 1.0,
+            "policy_decision_ids": ["d1"],
+            "assertion_ids": ["a-policy", "a-exact"],
+        }},
+        "assertions": {
+            "a-policy": {
+                "assertion_id": "a-policy", "doc_id": "doc", "weight": 0.5,
+                "credit_routing": "linked",
+                "policy_dependency_decision_ids": ["d1"],
+                "scoring_contract": {"kind": "contains", "value": "x"},
+            },
+            "a-exact": {
+                "assertion_id": "a-exact", "doc_id": "doc", "weight": 0.5,
+                "credit_routing": "linked",
+                "policy_dependency_decision_ids": ["d1"],
+                "scoring_contract": {
+                    "kind": "exact_relation", "section": "PLAN",
+                    "condition": "c", "treatment": "t", "test": "s",
+                },
+            },
+        },
+    }
+    parts = _partitions(artifact, "doc")
+    assert set(parts.assertions) == {"a-policy"}
+    assert parts.linked_by_decision["d1"] == frozenset({"a-policy"})
+    credit = provisional_credit(
+        [{"a-policy": 0.2}, {"a-policy": 0.8}], artifact, "doc",
+    )
+    assert credit.document_utility == (0.2, 0.8)

@@ -69,10 +69,13 @@ def _artifact(
             "clinical/fixture": {
                 "assertion_ids": ["context-a", "delivered-a"],
                 "utility_weight_denominator": 1.0,
+                "policy_decision_ids": ["decision-a"],
                 "decisions": [],
             },
         },
         "assertions": {
+            # Both probes depend on the policy decision, so the policy weight mass is
+            # the full 1.0 and the scored utility still matches the stored denominator.
             "context-a": {
                 "assertion_id": "context-a",
                 "doc_id": "clinical/fixture",
@@ -80,6 +83,7 @@ def _artifact(
                 "question": "Who completed the task?",
                 "accepted_values": ["person"],
                 "weight": context_weight,
+                "policy_dependency_decision_ids": ["decision-a"],
             },
             "delivered-a": {
                 "assertion_id": "delivered-a",
@@ -87,6 +91,7 @@ def _artifact(
                 "family": "delivered",
                 "scoring_contract": {"kind": "contains", "value": "completed"},
                 "weight": 1.0 - context_weight,
+                "policy_dependency_decision_ids": ["decision-a"],
             },
         },
     }
