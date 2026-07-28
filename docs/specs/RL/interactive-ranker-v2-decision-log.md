@@ -501,4 +501,24 @@ reset after import. Terminology: the readout is the SELECTED COUNT SCORE — a
 shaping proxy; realized privacy remains attacker success and no privacy claim
 follows from this spike.
 
-**Status.** OPEN — screening pending.
+**Adjudication 2026-07-29.** Screening + 3-seed confirmation + approved 24-epoch
+extension. RESPONSIVENESS SOLVED: switch-calibrated initialization (measured raw
+threshold median 7.13; gap-normalized 0.73) revives the controller on every seed —
+selected count score monotone across profiles, Delta P(lambda-3) = +0.22..+0.41,
+placeholder rate <= 7% (privacy from generalization levels, not collapse), alpha
+stable, lambda-zero utility preserved; the current alpha=1 arm stays flat on every
+seed. Preregistered preference selected gap-scaled; items 1-6 and 8 pass on all
+seeds at 12 and 24 epochs. ITEM 7 FAILS DEFINITIVELY: median utility regret vs the
+cached (U,P) frontier plateaus at 0.063-0.084 (floor 0.044), flat from cycle ~4 —
+not under-training. Interpretations, in decreasing likelihood: (a) the spike loop
+omits counterfactual credit and KL — the production mechanisms built for
+frontier-tracking — so item 7 was evaluated under a weaker optimizer than the one
+that would ship; (b) the frontier is exploration-enriched (every arm's samples,
+~2.3k vectors) — an in-hindsight bar; (c) a genuine limit of one global scalar
+alpha. Artifacts: results/ranker_v2/architecture/controller-strength-*.json
+(12ep snapshots + 24ep extension).
+
+**Status.** OPEN — responsiveness component (switch-calibrated init + gap scaling)
+is the adopted CANDIDATE; final adoption gated on re-evaluating item 7 under the
+production trainer (counterfactual credit + KL enabled) rather than the simplified
+spike loop. If it fails there too, iterate on per-decision credit, not on alpha.

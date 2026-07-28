@@ -1272,3 +1272,26 @@ def test_alpha_utility_routing_scales_alpha_gradient_only():
     assert torch.equal(base_count, routed_count)            # count channel untouched
     assert routed_grad == pytest.approx(base_grad / decision_count, rel=1e-5)
     policy.alpha_utility_routing = None
+
+
+def test_controller_gap_scaling_multiplies_by_detached_logit_range():
+    policy, store, document, decision, profiles = _semantic_policy()
+    menu = tuple(action.action_id for action in decision.actions)
+    nonzero = profiles[2]  # max lambda -> g = 1
+
+    state = policy.begin_document(document, nonzero)
+    base = policy.distribution(state, decision, menu, nonzero)
+    policy.controller_gap_scaling = "utility-gap"
+    scaled = policy.distribution(state, decision, menu, nonzero)
+    policy.controller_gap_scaling = None
+
+    gap = (base.utility_logits.max() - base.utility_logits.min()).item()
+    base_shift = base.combined_logits - base.utility_logits
+    scaled_shift = scaled.combined_logits - scaled.utility_logits
+    assert torch.allclose(scaled_shift, base_shift * gap, atol=1e-6)
+    # lambda-zero untouched
+    zero_state = policy.begin_document(document, profiles[0])
+    policy.controller_gap_scaling = "utility-gap"
+    row = policy.distribution(zero_state, decision, menu, profiles[0])
+    policy.controller_gap_scaling = None
+    assert torch.equal(row.combined_logits, row.utility_logits)

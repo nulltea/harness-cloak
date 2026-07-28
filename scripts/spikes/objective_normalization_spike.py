@@ -280,8 +280,152 @@ def phase2(arm: str) -> None:
     print(f"arm {arm} -> {out}", flush=True)
 
 
+
+
+
+# ---- Phase 3: controller-strength arms (preregistered fork, 2026-07-28) ----
+PHASE3_EPOCHS = int(__import__("os").environ.get("PHASE3_EPOCHS", "12"))
+
+
+def _switch_thresholds(policy, documents, profiles):
+    """Weighted per-doc switch thresholds from BC menus (raw and gap-normalized)."""
+    raw_pairs, norm_pairs = [], []
+    for document in documents:
+        state = policy.begin_document(document, profiles[-1])
+        per_raw, per_norm = [], []
+        for decision in document.policy_decisions:
+            menu = tuple(a.action_id for a in decision.actions)
+            with torch.no_grad():
+                row = policy.distribution(state, decision, menu, profiles[-1])
+            u, pv = row.utility_logits, row.predicted_privacy
+            star = int(torch.argmax(u))
+            gaps = [
+                (float(u[star] - u[j]), float(pv[j] - pv[star]))
+                for j in range(len(menu)) if float(pv[j]) > float(pv[star])
+            ]
+            if not gaps:
+                continue
+            t_raw = min(max(du, 0.0) / dp for du, dp in gaps)
+            per_raw.append(t_raw)
+            span = float(u.max() - u.min())
+            if span > 0:
+                per_norm.append(t_raw / span)
+        for values, out in ((per_raw, raw_pairs), (per_norm, norm_pairs)):
+            if values:
+                weight = 1.0 / len(values)
+                out.extend((weight, value) for value in values)
+
+    def weighted_median(pairs):
+        pairs = sorted(pairs, key=lambda x: x[1])
+        total = sum(w for w, _ in pairs)
+        cum = 0.0
+        for w, value in pairs:
+            cum += w
+            if cum >= total / 2:
+                return value
+        return pairs[-1][1] if pairs else float("nan")
+
+    return weighted_median(raw_pairs), weighted_median(norm_pairs)
+
+
+def _set_alpha(policy, target: float) -> None:
+    with torch.no_grad():
+        policy.alpha_raw.fill_(math.log(math.expm1(max(target, 1e-4))))
+
+
+def phase3(arm: str, seed: int) -> None:
+    targets_payload = json.loads(Path(_Args.profile_count_targets).read_text())
+    utility_artifact = json.loads(Path("results/ranker_v2/qa/aci-full.utility").read_text())
+    environment_hash = json.loads(Path("results/ranker_v2/environment/ranker-env.json").read_text())[
+        "frozen_environment"]["environment_hash"]
+    documents = tuple(load_ranker_environment(Path("results/ranker_v2/environment/ranker-env.json")).values())
+    documents, _ = _demote_out_of_scope_decisions(documents, DirectCountPrivacyProvider(targets_payload))
+    documents = tuple(d for d in documents if d.doc_id in PHASE2_DOCS)
+    menu = json.loads(Path("results/ranker_v2/preflight/lambda-menu.json").read_text())
+    profiles = tuple(LambdaProfile(n, float(v)) for n, v in zip(menu["profile_names"], menu["values"], strict=True))
+    targets = ProfileCountTargets.from_artifact(targets_payload)
+    from cloak.ranker.interactive import build_latin_cycle_schedule
+
+    torch.manual_seed(seed)
+    policy = _semantic_training_policy(_Args, documents, profiles)
+    optimizer = torch.optim.Adam(policy.parameters(), lr=1e-4)
+    behavior_clone(policy, documents, lambda_zero=profiles[0], optimizer=optimizer, epochs=3)
+    t_raw, t_norm = _switch_thresholds(policy, documents, profiles)
+    print(f"switch thresholds: raw median {t_raw:.3f} | gap-normalized {t_norm:.3f}", flush=True)
+    if arm == "init-only":
+        _set_alpha(policy, t_raw)
+    elif arm == "gap-scaled":
+        policy.controller_gap_scaling = "utility-gap"
+        _set_alpha(policy, t_norm)
+    policy.train()
+    optimizer = torch.optim.Adam(policy.parameters(), lr=1e-4)
+    schedule = build_latin_cycle_schedule(documents, profiles, seed=seed)
+    cache = UtilityCache("results/ranker_v2/cache/utility-results.jsonl")
+    generator = torch.Generator().manual_seed(seed)
+    rows = []
+    for epoch in range(PHASE3_EPOCHS):
+        for document in documents:
+            profile = schedule.profile_for(document.doc_id, epoch)
+            D = len(document.policy_decisions)
+            lam = float(profile.value)
+            trajectories = tuple(
+                sample_trajectory(policy, document, profile, greedy=False, generator=generator)
+                for _ in range(PHASE2_ROLLOUTS)
+            )
+            points = score_trajectories(
+                (document,), trajectories, utility_artifact=utility_artifact,
+                environment_hash=environment_hash, count_reward=targets, cache=cache,
+                remote_workers=6, reader_workers=6,
+            )
+            credit = provisional_credit(
+                tuple(p.component_scores for p in points), utility_artifact, document.doc_id,
+            )
+            replayed = tuple(replay_trajectory(policy, document, t, profile) for t in trajectories)
+            steps = tuple(s for t in replayed for s in t.steps)
+            total = provisional_utility_loss(replayed, credit) \
+                - 0.01 * torch.stack([s.entropy for s in steps]).sum() / PHASE2_ROLLOUTS
+            if lam > 0:
+                total = total + expected_profile_count_loss(
+                    steps, targets, lambda_value=lam, decision_count=D,
+                    rollout_count=PHASE2_ROLLOUTS,
+                )
+            policy.zero_grad(set_to_none=True)
+            total.backward()
+            torch.nn.utils.clip_grad_norm_(policy.parameters(), 1.0)
+            optimizer.step()
+            modes = {"level": 0, "keep": 0, "placeholder": 0}
+            for trajectory in trajectories:
+                for decision in document.policy_decisions:
+                    action_id = trajectory.action_vector[decision.decision_id]
+                    action = next(a for a in decision.actions if a.action_id == action_id)
+                    modes[action.mode] += 1
+            total_modes = sum(modes.values())
+            rows.append({
+                "epoch": epoch, "cycle": epoch // 4, "doc_id": document.doc_id, "D": D,
+                "profile": profile.name, "lambda": lam,
+                "P": float(sum(p.count_score for p in points) / len(points)),
+                "utility": float(sum(p.utility for p in points) / len(points)),
+                "alpha": float(torch.nn.functional.softplus(policy.alpha_raw)),
+                "mode_rates": {k: v / total_modes for k, v in modes.items()},
+                "unique_vectors": len({json.dumps(dict(t.action_vector), sort_keys=True) for t in trajectories}),
+                "finite": bool(torch.isfinite(total)),
+            })
+            print(f"  ep{epoch} {document.doc_id} {profile.name}: P={rows[-1]['P']:.3f} "
+                  f"u={rows[-1]['utility']:.3f} a={rows[-1]['alpha']:.3f} "
+                  f"ph={rows[-1]['mode_rates']['placeholder']:.2f}", flush=True)
+    out = Path(f"results/ranker_v2/architecture/controller-strength-{arm}-s{seed}.json")
+    out.write_text(json.dumps({
+        "arm": arm, "seed": seed,
+        "thresholds": {"raw_median": t_raw, "gap_normalized_median": t_norm},
+        "rows": rows,
+    }, indent=1))
+    print(f"arm {arm} seed {seed} -> {out}", flush=True)
+
+
 if __name__ == "__main__":
     if len(sys.argv) > 1 and sys.argv[1] == "phase2":
         phase2(sys.argv[2])
+    elif len(sys.argv) > 1 and sys.argv[1] == "phase3":
+        phase3(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else SEED)
     else:
         main()

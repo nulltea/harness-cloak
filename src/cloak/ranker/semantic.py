@@ -1169,6 +1169,13 @@ class SemanticRankerPolicy(nn.Module):
         else:
             magnitude = math.log1p(lambda_value) / math.log1p(self.max_lambda)
             controller = self.alpha * magnitude * predicted_privacy.detach()
+            if getattr(self, "controller_gap_scaling", None) == "utility-gap":
+                # Scale-aware controller (controller-strength fork, decision log
+                # 2026-07-28): multiply by the detached per-menu utility-logit
+                # range so a sharpening tower cannot silently defeat alpha.
+                controller = controller * (
+                    utility_logits.max() - utility_logits.min()
+                ).detach()
             if getattr(self, "alpha_utility_routing", None) == "per-decision":
                 # Numerically identical forward pass; alpha's gradient through the
                 # utility/entropy/KL channels is decision-averaged so both of the
