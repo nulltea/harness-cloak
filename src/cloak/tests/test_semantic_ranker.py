@@ -1295,3 +1295,50 @@ def test_controller_gap_scaling_multiplies_by_detached_logit_range():
     row = policy.distribution(zero_state, decision, menu, profiles[0])
     policy.controller_gap_scaling = None
     assert torch.equal(row.combined_logits, row.utility_logits)
+
+
+def test_switch_threshold_calibration_flips_argmax_at_threshold():
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    menu = tuple(action.action_id for action in decision.actions)
+    max_profile = profiles[-1]  # g = 1, so alpha is the controller pressure
+
+    raw_median, norm_median = semantic_ranker_module.switch_threshold_calibration(
+        policy, (document,), profiles,
+    )
+    assert math.isfinite(raw_median) and raw_median > 0.0
+    assert math.isfinite(norm_median) and norm_median > 0.0
+
+    def combined_vs_utility_argmax(alpha, *, gap_scaling=None):
+        policy.controller_gap_scaling = gap_scaling
+        semantic_ranker_module.calibrate_alpha(policy, alpha)
+        policy.controller_gap_scaling = None
+        assert float(policy.alpha) == pytest.approx(alpha, rel=1e-5)
+        policy.controller_gap_scaling = gap_scaling
+        state = policy.begin_document(document, max_profile)
+        with torch.no_grad():
+            row = policy.distribution(state, decision, menu, max_profile)
+        policy.controller_gap_scaling = None
+        return int(torch.argmax(row.combined_logits)), int(torch.argmax(row.utility_logits))
+
+    below, utility_star = combined_vs_utility_argmax(raw_median * 0.99)
+    above, _ = combined_vs_utility_argmax(raw_median * 1.01)
+    assert below == utility_star
+    assert above != utility_star
+
+    # The gap-normalized threshold plays the same switching role once the
+    # controller is scaled by the per-menu utility-logit range.
+    below_scaled, _ = combined_vs_utility_argmax(
+        norm_median * 0.99, gap_scaling="utility-gap",
+    )
+    above_scaled, _ = combined_vs_utility_argmax(
+        norm_median * 1.01, gap_scaling="utility-gap",
+    )
+    assert below_scaled == utility_star
+    assert above_scaled != utility_star
+
+
+def test_calibrate_alpha_rejects_non_positive_or_non_finite_targets():
+    policy, _, _, _, _ = _semantic_policy()
+    for target in (0.0, -1.0, float("nan"), float("inf")):
+        with pytest.raises(ValueError):
+            semantic_ranker_module.calibrate_alpha(policy, target)

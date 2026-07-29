@@ -39,7 +39,11 @@ from cloak.ranker.privacy import (
 )
 from cloak.ranker.environment import load_ranker_environment
 from cloak.ranker.representation import RankerRepresentationStore
-from cloak.ranker.semantic import SemanticRankerPolicy
+from cloak.ranker.semantic import (
+    SemanticRankerPolicy,
+    calibrate_alpha,
+    switch_threshold_calibration,
+)
 from cloak.reward.utility_cache import UtilityCache, stable_hash
 
 
@@ -142,6 +146,16 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--learning-rate", type=float, default=1e-4)
     train.add_argument("--beta", type=float, default=0.01)
     train.add_argument("--eta", type=float, default=0.01)
+    train.add_argument(
+        "--alpha-utility-routing", choices=("none", "per-decision"), default="none",
+    )
+    train.add_argument(
+        "--controller-gap-scaling", choices=("none", "utility-gap"), default="none",
+    )
+    train.add_argument(
+        "--alpha-init", choices=("checkpoint", "switch-calibrated"),
+        default="checkpoint",
+    )
     return parser
 
 
@@ -803,6 +817,21 @@ def _write_epoch_reports(
     os.replace(temporary, destination)
 
 
+def _apply_controller_options(policy, args) -> None:
+    """Apply the adopted controller-strength options to a trainer policy.
+
+    Gap scaling changes the forward pass, so it also retags controller_transform:
+    the semantic contract (and thus every architecture pin) diverges exactly when
+    the controller semantics diverge (controller-strength fork, decision log
+    2026-07-28).
+    """
+    if getattr(args, "alpha_utility_routing", "none") == "per-decision":
+        policy.alpha_utility_routing = "per-decision"
+    if getattr(args, "controller_gap_scaling", "none") == "utility-gap":
+        policy.controller_gap_scaling = "utility-gap"
+        policy.controller_transform = "log1p-over-log1p-max-utility-gap-v1"
+
+
 def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
     return {
         "learning_rate": float(args.learning_rate),
@@ -815,6 +844,9 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         "reader_workers": int(args.reader_workers),
         "seed": int(args.seed),
         "fixed_lambda_zero_control": bool(fixed_control),
+        "alpha_utility_routing": getattr(args, "alpha_utility_routing", "none"),
+        "controller_gap_scaling": getattr(args, "controller_gap_scaling", "none"),
+        "alpha_init": getattr(args, "alpha_init", "checkpoint"),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
 
@@ -901,8 +933,7 @@ def _run_train(args) -> None:
     _validate_semantic_bc_policy_config(
         bc_checkpoint.get("policy_config", {}), policy,
     )
-    if getattr(args, "alpha_utility_routing", "none") == "per-decision":
-        policy.alpha_utility_routing = "per-decision"
+    _apply_controller_options(policy, args)
     optimizer = torch.optim.Adam(policy.parameters(), lr=args.learning_rate)
     schedule = build_latin_cycle_schedule(documents, profiles, seed=args.seed)
     architecture_pin = policy_architecture_pin(policy)
@@ -950,7 +981,29 @@ def _run_train(args) -> None:
             exit_winners=exit_winners,
             optimizer=optimizer,
         )
-        reference_state = dict(warm.reference_state_dict)
+        if getattr(args, "alpha_init", "checkpoint") == "switch-calibrated":
+            raw_median, norm_median = switch_threshold_calibration(
+                policy, documents, profiles,
+            )
+            target = (
+                norm_median
+                if getattr(args, "controller_gap_scaling", "none") == "utility-gap"
+                else raw_median
+            )
+            calibrate_alpha(policy, target)
+            print(
+                f"alpha switch calibration: raw median {raw_median:.4f} | "
+                f"gap-normalized {norm_median:.4f} | applied {target:.4f}",
+                flush=True,
+            )
+            # KL anchors to the calibrated-init policy; anchoring to the
+            # uncalibrated warm start would pull the controller back to dead.
+            reference_state = {
+                key: value.detach().clone()
+                for key, value in policy.state_dict().items()
+            }
+        else:
+            reference_state = dict(warm.reference_state_dict)
         _save_reference_checkpoint(
             args.kl_reference_checkpoint,
             state_dict=reference_state,
@@ -959,6 +1012,7 @@ def _run_train(args) -> None:
             code_revision=code_revision,
         )
     reference_policy = _semantic_training_policy(args, documents, profiles)
+    _apply_controller_options(reference_policy, args)
     reference_policy.load_state_dict(reference_state, strict=True)
     reference_policy.eval()
     for parameter in reference_policy.parameters():

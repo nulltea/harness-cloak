@@ -1243,6 +1243,72 @@ class SemanticRankerPolicy(nn.Module):
         )
 
 
+def switch_threshold_calibration(
+    policy: "SemanticRankerPolicy",
+    documents: Sequence[RankerDocument],
+    profiles: Sequence[LambdaProfile],
+) -> tuple[float, float]:
+    """Weighted-median per-doc controller switch thresholds from the warm-started policy.
+
+    For each decision, the switch threshold is the smallest controller pressure
+    that moves the argmax off the utility-preferred action onto a more-private
+    one: min over more-private actions of (u* - u_j) / (p_j - p*). Returns the
+    document-weighted medians of the raw thresholds and of the per-menu
+    utility-logit-range-normalized thresholds (the gap-scaled controller's
+    natural unit). Graduated from the controller-strength spike
+    (decision log 2026-07-28, scripts/spikes/objective_normalization_spike.py).
+    """
+    raw_pairs: list[tuple[float, float]] = []
+    norm_pairs: list[tuple[float, float]] = []
+    reference_profile = profiles[-1]
+    for document in documents:
+        state = policy.begin_document(document, reference_profile)
+        per_raw: list[float] = []
+        per_norm: list[float] = []
+        for decision in document.policy_decisions:
+            menu = tuple(action.action_id for action in decision.actions)
+            with torch.no_grad():
+                row = policy.distribution(state, decision, menu, reference_profile)
+            utility, privacy = row.utility_logits, row.predicted_privacy
+            star = int(torch.argmax(utility))
+            gaps = [
+                (float(utility[star] - utility[j]), float(privacy[j] - privacy[star]))
+                for j in range(len(menu))
+                if float(privacy[j]) > float(privacy[star])
+            ]
+            if not gaps:
+                continue
+            threshold = min(max(du, 0.0) / dp for du, dp in gaps)
+            per_raw.append(threshold)
+            span = float(utility.max() - utility.min())
+            if span > 0:
+                per_norm.append(threshold / span)
+        for values, out in ((per_raw, raw_pairs), (per_norm, norm_pairs)):
+            if values:
+                weight = 1.0 / len(values)
+                out.extend((weight, value) for value in values)
+
+    def weighted_median(pairs: list[tuple[float, float]]) -> float:
+        pairs = sorted(pairs, key=lambda pair: pair[1])
+        total = sum(weight for weight, _ in pairs)
+        cumulative = 0.0
+        for weight, value in pairs:
+            cumulative += weight
+            if cumulative >= total / 2:
+                return value
+        return float("nan")
+
+    return weighted_median(raw_pairs), weighted_median(norm_pairs)
+
+
+def calibrate_alpha(policy: "SemanticRankerPolicy", target: float) -> None:
+    """Set the controller strength so softplus(alpha_raw) equals target exactly."""
+    if not math.isfinite(target) or target <= 0.0:
+        raise ValueError("alpha calibration target must be finite and positive")
+    with torch.no_grad():
+        policy.alpha_raw.fill_(math.log(math.expm1(max(target, 1e-4))))
+
+
 def production_decision_order(
     document: RankerDocument,
 ) -> tuple[RankerDecision, ...]:
