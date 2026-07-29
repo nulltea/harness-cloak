@@ -58,703 +58,362 @@
         role="img"
         aria-label="Top-to-bottom computation graph for the Ranker v2 semantic policy architecture"
       >
+        <div class="ranker-model-diagram__layout">
+
+          <section class="ranker-model-diagram__module" data-module-id="encoder">
+            <div class="ranker-model-diagram__module-label">Shared frozen encoder</div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:1fr 1.2fr 1fr 0.9fr">
+              <div class="ranker-model-diagram__col">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="document_chunks">
+                  <div class="ranker-model-diagram__node-title">Document chunks</div>
+                  <div class="ranker-model-diagram__node-detail">512 tokens · 64-token overlap</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="relation_sequence">
+                  <div class="ranker-model-diagram__node-title">TYPE · SOURCE · CANDIDATE</div>
+                  <div class="ranker-model-diagram__node-detail">ordered relation sequence</div>
+                </div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder" data-node-id="clinical_encoder">
+                <div class="ranker-model-diagram__node-title">BioClinical ModernBERT-base</div>
+                <div class="ranker-model-diagram__node-detail">frozen shared encoder · h = 768<br>bidirectional token states</div>
+              </div>
+              <div class="ranker-model-diagram__col">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="document_bank">
+                  <div class="ranker-model-diagram__node-title">H_doc</div>
+                  <div class="ranker-model-diagram__node-detail">token bank [T × 768]</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="field_means">
+                  <div class="ranker-model-diagram__node-title">Field-aware means</div>
+                  <div class="ranker-model-diagram__node-detail">type · source · candidate [768]</div>
+                </div>
+              </div>
+              <div class="ranker-model-diagram__col">
+                <div class="ranker-model-diagram__node" data-node-id="pair_composition">
+                  <div class="ranker-model-diagram__node-title">Pair composition</div>
+                  <div class="ranker-model-diagram__node-detail">concat · difference · product</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_pair">
+                  <div class="ranker-model-diagram__node-title">r_pair</div>
+                  <div class="ranker-model-diagram__node-detail">[A × 3840]</div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:minmax(0,2.5fr) minmax(320px,1fr);gap:var(--dg-gap-lg)">
+
+            <section class="ranker-model-diagram__module" data-module-id="utility">
+              <div class="ranker-model-diagram__module-label">Utility scoring</div>
+
+              <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:minmax(0,1.55fr) minmax(0,1fr)">
+                <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="token-fusion">
+                  <div class="ranker-model-diagram__module-label">Token feature fusion</div>
+                  <div class="ranker-model-diagram__row" style="grid-template-columns:1fr 1fr">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="document_projection">
+                      <div class="ranker-model-diagram__node-title">Linear</div>
+                      <div class="ranker-model-diagram__node-detail">H_doc 768 → 768</div>
+                    </div>
+                    <div></div>
+                  </div>
+                  <div class="ranker-model-diagram__row" style="grid-template-columns:repeat(3,1fr)">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="role_embedding">
+                      <div class="ranker-model-diagram__node-title">E_role</div>
+                      <div class="ranker-model-diagram__node-detail">3 × 768</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="relative_embedding">
+                      <div class="ranker-model-diagram__node-title">E_relative</div>
+                      <div class="ranker-model-diagram__node-detail">17 × 768</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="position_embedding">
+                      <div class="ranker-model-diagram__node-title">E_doc-position</div>
+                      <div class="ranker-model-diagram__node-detail">16 × 768</div>
+                    </div>
+                  </div>
+                  <div class="ranker-model-diagram__row" style="grid-template-columns:auto minmax(0,1fr)">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="token_sum" data-port-shape="circle">
+                      <div class="ranker-model-diagram__node-title">+</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="augmented_tokens">
+                      <div class="ranker-model-diagram__node-title">Augmented tokens</div>
+                      <div class="ranker-model-diagram__node-detail">H_doc + M_j</div>
+                    </div>
+                  </div>
+                </section>
+
+                <div class="ranker-model-diagram__col" style="align-content:space-between;height:100%">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="utility_projection">
+                    <div class="ranker-model-diagram__node-title">Utility projection</div>
+                    <div class="ranker-model-diagram__node-detail">Linear 3840 → 768</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="utility_relation">
+                    <div class="ranker-model-diagram__node-title">r_U</div>
+                    <div class="ranker-model-diagram__node-detail">[A × 768]</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="query_projection">
+                    <div class="ranker-model-diagram__node-title">Query projection</div>
+                    <div class="ranker-model-diagram__node-detail">Linear 768 → 768</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ranker-model-diagram__row" style="grid-template-columns:repeat(3,1fr)">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="target_attention">
+                  <div class="ranker-model-diagram__node-title">Target attention</div>
+                  <div class="ranker-model-diagram__node-detail">MHA · occurrence summaries + E_occ-pos</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="local_attention">
+                  <div class="ranker-model-diagram__node-title">Local attention</div>
+                  <div class="ranker-model-diagram__node-detail">MHA · target-containing chunks</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="global_attention">
+                  <div class="ranker-model-diagram__node-title">Global attention</div>
+                  <div class="ranker-model-diagram__node-detail">MHA · complete token bank</div>
+                </div>
+              </div>
+
+              <div class="ranker-model-diagram__col ranker-model-diagram__col--tight" style="justify-self:center;width:240px">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="context_merge" data-port-shape="circle">
+                  <div class="ranker-model-diagram__node-title">⊕</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="context_projection">
+                  <div class="ranker-model-diagram__node-title">Context projection</div>
+                  <div class="ranker-model-diagram__node-detail">Linear 2304 → 768</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="document_context">
+                  <div class="ranker-model-diagram__node-title">c_context</div>
+                  <div class="ranker-model-diagram__node-detail">[A × 768]</div>
+                </div>
+              </div>
+
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="selected-memory">
+                <div class="ranker-model-diagram__module-label">Selected-action memory</div>
+                <div class="ranker-model-diagram__row" style="grid-template-columns:1.2fr 1fr auto 1fr">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="earlier_selections">
+                    <div class="ranker-model-diagram__node-title">Earlier selections</div>
+                    <div class="ranker-model-diagram__node-detail">r_U + mode/type + position embeddings</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="memory_kv">
+                    <div class="ranker-model-diagram__node-title">Memory KV</div>
+                    <div class="ranker-model-diagram__node-detail">Linear 3072 → 768</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="memory_query_join" data-port-shape="circle">
+                    <div class="ranker-model-diagram__node-title">⊕</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="memory_query">
+                    <div class="ranker-model-diagram__node-title">Memory query</div>
+                    <div class="ranker-model-diagram__node-detail">Linear 1536 → 768</div>
+                  </div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="history_attention" style="width:72%;justify-self:center">
+                  <div class="ranker-model-diagram__node-title">Selected-action cross-attention</div>
+                  <div class="ranker-model-diagram__node-detail">MHA · 8 heads · h_hist [A × 768]</div>
+                </div>
+              </section>
+
+              <div class="ranker-model-diagram__row" style="grid-template-columns:0.9fr 1fr auto 1.4fr 1fr">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="mode_embedding">
+                  <div class="ranker-model-diagram__node-title">E_mode</div>
+                  <div class="ranker-model-diagram__node-detail">3 × 768</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="type_embedding">
+                  <div class="ranker-model-diagram__node-title">E_runtime-type</div>
+                  <div class="ranker-model-diagram__node-detail">N_type × 768</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="context_interaction" data-port-shape="circle">
+                  <div class="ranker-model-diagram__node-title">⊙</div>
+                </div>
+                <div class="ranker-model-diagram__node" data-node-id="feature_concat">
+                  <div class="ranker-model-diagram__node-title">Feature concat</div>
+                  <div class="ranker-model-diagram__node-detail">r_U · c_context · interaction · h_hist · mode · type</div>
+                </div>
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="utility_hidden">
+                    <div class="ranker-model-diagram__node-title">4608 → 768</div>
+                    <div class="ranker-model-diagram__node-detail">Utility MLP · Linear</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="utility_gelu">
+                    <div class="ranker-model-diagram__node-title">GELU</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="utility_output">
+                    <div class="ranker-model-diagram__node-title">768 → 1</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="utility_logit">
+                    <div class="ranker-model-diagram__node-title">u(a)</div>
+                    <div class="ranker-model-diagram__node-detail">utility logit</div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <div class="ranker-model-diagram__col" style="grid-template-rows:1fr auto;gap:var(--dg-gap-lg);justify-items:stretch">
+
+              <section class="ranker-model-diagram__module" data-module-id="privacy">
+                <div class="ranker-model-diagram__module-label">Semantic privacy estimation</div>
+                <div class="ranker-model-diagram__col" style="align-content:space-between;height:100%">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="count_basis">
+                    <div class="ranker-model-diagram__node-title">count-basis token</div>
+                    <div class="ranker-model-diagram__node-detail">optional categorical B</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="privacy_join" data-port-shape="circle">
+                    <div class="ranker-model-diagram__node-title">⊕</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="privacy_projection">
+                    <div class="ranker-model-diagram__node-title">Privacy projection</div>
+                    <div class="ranker-model-diagram__node-detail">Linear (3840 + B) → 256</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="privacy_hidden">
+                    <div class="ranker-model-diagram__node-title">Hidden projection</div>
+                    <div class="ranker-model-diagram__node-detail">Linear 256 → 256</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="privacy_gelu">
+                    <div class="ranker-model-diagram__node-title">GELU</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="distribution_projection">
+                    <div class="ranker-model-diagram__node-title">Distribution projection</div>
+                    <div class="ranker-model-diagram__node-detail">Linear 256 → 2</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="positive_parameters">
+                    <div class="ranker-model-diagram__node-title">Softplus</div>
+                    <div class="ranker-model-diagram__node-detail">positive μ_logK and σ_logK</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="log_count">
+                    <div class="ranker-model-diagram__node-title">Log-count distribution</div>
+                    <div class="ranker-model-diagram__node-detail">μ_logK · σ_logK · σ retained for audit</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="profile_normalization">
+                    <div class="ranker-model-diagram__node-title">Profile-menu normalization</div>
+                    <div class="ranker-model-diagram__node-detail">μ / max(level μ) · KEEP = 0 · placeholder = 1</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="privacy_score" style="width:70%">
+                    <div class="ranker-model-diagram__node-title">p̂(a)</div>
+                    <div class="ranker-model-diagram__node-detail">profile-relative</div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ranker-model-diagram__module" data-module-id="controller">
+                <div class="ranker-model-diagram__module-label">
+                  Additive lambda controller
+                  <span class="ranker-model-diagram__module-sublabel">b(a, λ) = α · g(λ) · p̂(a)</span>
+                </div>
+                <div class="ranker-model-diagram__row" style="grid-template-columns:auto 1fr auto auto auto">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="additive_controller" data-port-shape="circle">
+                    <div class="ranker-model-diagram__node-title">+</div>
+                  </div>
+                  <div></div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="alpha" data-port-shape="circle">
+                    <div class="ranker-model-diagram__node-title">α</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="lambda_transform" data-port-shape="circle">
+                    <div class="ranker-model-diagram__node-title">g(λ)</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="privacy_control" data-port-shape="circle">
+                    <div class="ranker-model-diagram__node-title">p̂</div>
+                  </div>
+                </div>
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node" data-node-id="legal_gather" style="width:80%">
+                    <div class="ranker-model-diagram__node-title">Legal-action gather</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="log_softmax" style="width:44%">
+                    <div class="ranker-model-diagram__node-title">log_softmax</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="policy_output">
+                    <div class="ranker-model-diagram__node-title">π(a | s, λ)</div>
+                  </div>
+                </div>
+              </section>
+
+            </div>
+          </div>
+        </div>
+
+        <svg class="ranker-model-diagram__edges" aria-hidden="true" focusable="false"></svg>
+
         <script type="text/vnd.graphviz" data-ranker-model-dot>
-digraph RankerV2 {
-  graph [
-    rankdir=TB,
-    newrank=true,
-    compound=true,
-    splines=ortho,
-    outputorder=edgesfirst,
-    bgcolor="transparent",
-    pad=0.16,
-    nodesep=0.16,
-    ranksep=0.27,
-    fontname="Courier",
-    fontcolor="#34393e",
-    fontsize=9
-  ];
-  node [
-    shape=box,
-    style="rounded,filled",
-    color="#34393e",
-    fillcolor="#f2f0eb",
-    fontname="Courier",
-    fontcolor="#24282c",
-    fontsize=11,
-    penwidth=1.1,
-    margin="0.13,0.09"
-  ];
-  edge [
-    color="#34393e",
-    penwidth=1.15,
-    arrowsize=0.58
-  ];
+digraph RankerV2Edges {
+  edge [color="#34393e", penwidth=1.15, arrowsize=0.62];
 
-  subgraph cluster_encoder {
-    class="module module-encoder grid-top";
-    label="SHARED FROZEN ENCODER";
-    labelloc=t;
-    labeljust=l;
-    color="#747980";
-    fillcolor="#edf1ef";
-    style="rounded,dashed,filled";
-    penwidth=1.0;
-    margin=12;
+  /* shared frozen encoder */
+  document_chunks -> clinical_encoder;
+  relation_sequence -> clinical_encoder;
+  clinical_encoder -> document_bank;
+  clinical_encoder -> field_means;
+  field_means -> pair_composition;
+  pair_composition -> relation_pair;
 
-    document_chunks [
-      class="node-input",
-      width=3.35,
-      label=<<B>Document chunks</B><BR/><FONT POINT-SIZE="8">512 tokens · 64-token overlap</FONT>>
-    ];
-    relation_sequence [
-      class="node-input",
-      width=3.35,
-      label=<<B>TYPE · SOURCE · CANDIDATE</B><BR/><FONT POINT-SIZE="8">ordered relation sequence</FONT>>
-    ];
-    clinical_encoder [
-      class="node-encoder",
-      width=3.95,
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>BioClinical ModernBERT-base</B><BR/><FONT POINT-SIZE="8">frozen shared encoder · h = 768</FONT><BR/><FONT POINT-SIZE="8">bidirectional token states</FONT>>
-    ];
-    document_bank [
-      class="node-tensor",
-      width=3.25,
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>H_doc</B><BR/><FONT POINT-SIZE="8">token bank [T × 768]</FONT>>
-    ];
-    field_means [
-      class="node-tensor",
-      width=3.25,
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>Field-aware means</B><BR/><FONT POINT-SIZE="8">type · source · candidate</FONT><BR/><FONT POINT-SIZE="8">[768]</FONT>>
-    ];
-    pair_composition [
-      class="node-process",
-      width=2.75,
-      label=<<B>Pair composition</B><BR/><FONT POINT-SIZE="8">concat · difference</FONT><BR/><FONT POINT-SIZE="8">· product</FONT>>
-    ];
-    relation_pair [
-      class="node-tensor",
-      width=2.75,
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>r_pair</B><BR/><FONT POINT-SIZE="8">[A × 3840]</FONT>>
-    ];
-    encoder_stage_gap [
-      class="node-spacer",
-      shape=box,
-      style=invis,
-      fixedsize=true,
-      width=2.97,
-      height=0.01,
-      label=""
-    ];
-
-    { rank=same; document_chunks; clinical_encoder; document_bank; encoder_stage_gap; pair_composition; }
-    { rank=same; relation_sequence; field_means; relation_pair; }
-    document_chunks -> clinical_encoder;
-    relation_sequence -> clinical_encoder [constraint=false];
-    clinical_encoder -> document_bank;
-    clinical_encoder -> field_means [constraint=false];
-    field_means -> pair_composition [constraint=false];
-    pair_composition -> relation_pair;
-    document_bank -> encoder_stage_gap -> pair_composition [style=invis, weight=100];
-    document_chunks -> relation_sequence [style=invis, weight=100];
-    document_bank -> field_means [style=invis, weight=100];
-  }
-
-  subgraph cluster_utility {
-    class="module module-utility grid-left";
-    label="UTILITY SCORING";
-    labelloc=t;
-    labeljust=l;
-    color="#747980";
-    fillcolor="#edf1ef";
-    style="rounded,dashed,filled";
-    penwidth=1.0;
-    margin=17;
-
-    subgraph cluster_token_fusion {
-      class="module module-secondary";
-      label="TOKEN FEATURE FUSION";
-      labelloc=t;
-      labeljust=l;
-      color="#92979c";
-      fillcolor="#f7f4ef";
-      style="rounded,dashed,filled";
-      margin=12;
-
-      document_projection [
-        class="node-linear",
-        width=2.8,
-        shape=trapezium,
-        style=filled,
-        margin="0.02,0.02",
-        color="#8d554f",
-        fillcolor="#ead8d5",
-        label=<<B>Linear</B><BR/><FONT POINT-SIZE="8">H_doc 768 → 768</FONT>>
-      ];
-      position_embedding [
-        class="node-embedding",
-        width=1.72,
-        color="#496454",
-        fillcolor="#dbe8df",
-        label=<<B>E_doc-position</B><BR/><FONT POINT-SIZE="8">16 × 768</FONT>>
-      ];
-      role_embedding [
-        class="node-embedding",
-        width=1.72,
-        color="#496454",
-        fillcolor="#dbe8df",
-        label=<<B>E_role</B><BR/><FONT POINT-SIZE="8">3 × 768</FONT>>
-      ];
-      relative_embedding [
-        class="node-embedding",
-        width=1.72,
-        color="#496454",
-        fillcolor="#dbe8df",
-        label=<<B>E_relative</B><BR/><FONT POINT-SIZE="8">17 × 768</FONT>>
-      ];
-      token_sum [
-        class="node-operator",
-        shape=circle,
-        fixedsize=true,
-        width=0.42,
-        height=0.42,
-        margin=0,
-        label="+"
-      ];
-      augmented_tokens [
-        class="node-tensor",
-        width=5.15,
-        ordering=out,
-        color="#496454",
-        fillcolor="#dbe8df",
-        label=<<B>Augmented tokens</B><BR/><FONT POINT-SIZE="8">H_doc + M_j</FONT>>
-      ];
-
-      { rank=same; role_embedding; relative_embedding; position_embedding; }
-      { rank=same; token_sum; augmented_tokens; }
-      document_projection -> token_sum [arrowhead=none];
-      role_embedding -> token_sum [arrowhead=none];
-      relative_embedding -> token_sum [arrowhead=none];
-      position_embedding -> token_sum [arrowhead=none];
-      token_sum -> augmented_tokens;
-    }
-
-    utility_projection [
-      class="node-linear",
-      width=2.9,
-      group="utility_query_stack",
-      shape=trapezium,
-      style=filled,
-      margin="0.02,0.02",
-      color="#8d554f",
-      fillcolor="#ead8d5",
-      label=<<B>Utility projection</B><BR/><FONT POINT-SIZE="8">Linear 3840 → 768</FONT>>
-    ];
-    utility_relation [
-      class="node-tensor",
-      width=3.45,
-      group="utility_query_stack",
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>r_U</B><BR/><FONT POINT-SIZE="8">[A × 768]</FONT>>
-    ];
-    query_projection [
-      class="node-linear",
-      width=2.9,
-      ordering=out,
-      group="utility_query_stack",
-      shape=trapezium,
-      style=filled,
-      margin="0.02,0.02",
-      color="#8d554f",
-      fillcolor="#ead8d5",
-      label=<<B>Query projection</B><BR/><FONT POINT-SIZE="8">Linear 768 → 768</FONT>>
-    ];
-    target_attention [
-      class="node-attention",
-      width=3.55,
-      color="#3d6287",
-      fillcolor="#dbe7f3",
-      label=<<B>Target attention</B><BR/><FONT POINT-SIZE="8">MHA · occurrence summaries</FONT><BR/><FONT POINT-SIZE="8">+ E_occ-pos</FONT>>
-    ];
-    local_attention [
-      class="node-attention",
-      width=3.55,
-      color="#3d6287",
-      fillcolor="#dbe7f3",
-      label=<<B>Local attention</B><BR/><FONT POINT-SIZE="8">MHA · target-containing</FONT><BR/><FONT POINT-SIZE="8">chunks</FONT>>
-    ];
-    global_attention [
-      class="node-attention",
-      width=3.55,
-      color="#3d6287",
-      fillcolor="#dbe7f3",
-      label=<<B>Global attention</B><BR/><FONT POINT-SIZE="8">MHA · complete</FONT><BR/><FONT POINT-SIZE="8">token bank</FONT>>
-    ];
-    context_merge [
-      class="node-operator",
-      group="utility_context_stack",
-      shape=circle,
-      fixedsize=true,
-      width=0.46,
-      height=0.46,
-      margin=0,
-      label="⊕"
-    ];
-    context_projection [
-      class="node-linear",
-      width=2.6,
-      group="utility_context_stack",
-      shape=trapezium,
-      style=filled,
-      margin="0.02,0.02",
-      color="#8d554f",
-      fillcolor="#ead8d5",
-      label=<<B>Context projection</B><BR/><FONT POINT-SIZE="8">Linear 2304 → 768</FONT>>
-    ];
-    document_context [
-      class="node-tensor",
-      width=3.1,
-      group="utility_context_stack",
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>c_context</B><BR/><FONT POINT-SIZE="8">[A × 768]</FONT>>
-    ];
-
-    subgraph cluster_selected_memory {
-      class="module module-secondary";
-      label="SELECTED-ACTION MEMORY";
-      labelloc=t;
-      labeljust=l;
-      color="#92979c";
-      fillcolor="#f7f4ef";
-      style="rounded,dashed,filled";
-      margin=12;
-
-      earlier_selections [
-        class="node-input",
-        width=2.75,
-        label=<<B>Earlier selections</B><BR/><FONT POINT-SIZE="8">r_U + mode/type</FONT><BR/><FONT POINT-SIZE="8">+ position embeddings</FONT>>
-      ];
-      memory_kv [
-        class="node-linear",
-        width=2.3,
-        shape=trapezium,
-        style=filled,
-        margin="0.02,0.02",
-        color="#8d554f",
-        fillcolor="#ead8d5",
-        label=<<B>Memory KV</B><BR/><FONT POINT-SIZE="8">Linear 3072 → 768</FONT>>
-      ];
-      memory_query_join [
-        class="node-operator",
-        shape=circle,
-        fixedsize=true,
-        width=0.46,
-        height=0.46,
-        margin=0,
-        label="⊕"
-      ];
-      memory_query [
-        class="node-linear",
-        width=2.3,
-        shape=trapezium,
-        style=filled,
-        margin="0.02,0.02",
-        color="#8d554f",
-        fillcolor="#ead8d5",
-        label=<<B>Memory query</B><BR/><FONT POINT-SIZE="8">Linear 1536 → 768</FONT>>
-      ];
-      history_attention [
-        class="node-attention",
-        width=11.3,
-        color="#3d6287",
-        fillcolor="#dbe7f3",
-        label=<<B>Selected-action cross-attention</B><BR/><FONT POINT-SIZE="8">MHA · 8 heads · h_hist [A × 768]</FONT>>
-      ];
-
-      { rank=same; earlier_selections; memory_kv; memory_query_join; memory_query; }
-      earlier_selections -> memory_kv;
-      memory_query_join -> memory_query;
-      memory_kv -> history_attention;
-      memory_query -> history_attention;
-    }
-
-    mode_embedding [
-      class="node-embedding",
-      width=2.05,
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>E_mode</B><BR/><FONT POINT-SIZE="8">3 × 768</FONT>>
-    ];
-    type_embedding [
-      class="node-embedding",
-      width=2.35,
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>E_runtime-type</B><BR/><FONT POINT-SIZE="8">N_type × 768</FONT>>
-    ];
-    context_interaction [
-      class="node-operator",
-      shape=circle,
-      fixedsize=true,
-      width=0.46,
-      height=0.46,
-      margin=0,
-      label="⊙"
-    ];
-    feature_concat [
-      class="node-process",
-      width=3.15,
-      label=<<B>Feature concat</B><BR/><FONT POINT-SIZE="8">r_U · c_context · interaction</FONT><BR/><FONT POINT-SIZE="8">h_hist · mode · type</FONT>>
-    ];
-    utility_mlp_order_gap [
-      class="node-spacer",
-      shape=point,
-      style=invis,
-      fixedsize=true,
-      width=0.01,
-      height=0.01,
-      label=""
-    ];
-
-    utility_hidden [
-      class="node-linear",
-      width=1.9,
-      shape=trapezium,
-      style=filled,
-      margin="0.02,0.02",
-      color="#8d554f",
-      fillcolor="#ead8d5",
-      xlabel=<<FONT POINT-SIZE="8">UTILITY MLP</FONT>>,
-      label=<<B>4608 → 768</B>>
-    ];
-    utility_gelu [
-      class="node-activation",
-      shape=hexagon,
-      style=filled,
-      margin="0.02,0.02",
-      color="#59704f",
-      fillcolor="#e3ebdf",
-      label="GELU"
-    ];
-    utility_output [
-      class="node-linear",
-      width=1.7,
-      shape=trapezium,
-      style=filled,
-      margin="0.02,0.02",
-      color="#8d554f",
-      fillcolor="#ead8d5",
-      label=<<B>768 → 1</B>>
-    ];
-    utility_hidden -> utility_gelu -> utility_output;
-
-    utility_logit [
-      class="node-tensor",
-      color="#496454",
-      fillcolor="#dbe8df",
-      label=<<B>u(a)</B><BR/><FONT POINT-SIZE="8">utility logit</FONT>>
-    ];
-
-    { rank=same; document_projection; utility_projection; }
-    { rank=same; target_attention; local_attention; global_attention; }
-    { rank=same; mode_embedding; type_embedding; context_interaction; feature_concat; utility_mlp_order_gap; utility_hidden; }
-
-    utility_projection -> utility_relation -> query_projection;
-    augmented_tokens -> target_attention;
-    augmented_tokens -> local_attention;
-    augmented_tokens -> global_attention;
-    query_projection -> target_attention;
-    query_projection -> local_attention;
-    query_projection -> global_attention;
-    target_attention -> context_merge [arrowhead=none];
-    local_attention -> context_merge [arrowhead=none];
-    global_attention -> context_merge [arrowhead=none];
-    context_merge -> context_projection -> document_context;
-    utility_relation -> memory_query_join [arrowhead=none];
-    document_context -> memory_query_join [arrowhead=none];
-    utility_relation -> context_interaction [arrowhead=none];
-    document_context -> context_interaction [arrowhead=none];
-    history_attention -> feature_concat [arrowhead=none];
-    mode_embedding -> type_embedding -> context_interaction -> feature_concat [
-      style=invis,
-      weight=10000
-    ];
-    feature_concat -> utility_mlp_order_gap -> utility_hidden [style=invis, weight=10000];
-    mode_embedding -> feature_concat [arrowhead=none];
-    type_embedding -> feature_concat [arrowhead=none];
-    context_interaction -> feature_concat [arrowhead=none];
-    feature_concat:e -> utility_hidden:w [constraint=false];
-    utility_output -> utility_logit;
-  }
-
-  subgraph cluster_right_column {
-    class="layout-column";
-    label="";
-    color="transparent";
-    style=invis;
-    margin=0;
-
-    subgraph cluster_privacy {
-      class="module module-privacy grid-right-top";
-      label="SEMANTIC PRIVACY ESTIMATION";
-      labelloc=t;
-      labeljust=l;
-      color="#747980";
-      fillcolor="#edf1ef";
-      style="rounded,dashed,filled";
-      penwidth=1.0;
-      margin=12;
-
-      count_basis [
-        class="node-embedding",
-        width=3.6,
-        group="privacy_stack",
-        color="#496454",
-        fillcolor="#dbe8df",
-        label=<<B>count-basis token</B><BR/><FONT POINT-SIZE="8">optional categorical B</FONT>>
-      ];
-      privacy_header_balance [
-        class="node-spacer",
-        shape=box,
-        style=invis,
-        fixedsize=true,
-        width=0.01,
-        height=1.49,
-        label=""
-      ];
-      privacy_join [
-        class="node-operator",
-        group="privacy_stack",
-        shape=circle,
-        fixedsize=true,
-        width=0.46,
-        height=0.46,
-        margin=0,
-        label="⊕"
-      ];
-      privacy_projection [
-        class="node-linear",
-        width=3.2,
-        group="privacy_stack",
-        shape=trapezium,
-        style=filled,
-        margin="0.02,0.02",
-        color="#8d554f",
-        fillcolor="#ead8d5",
-        label=<<B>Privacy projection</B><BR/><FONT POINT-SIZE="8">Linear (3840 + B) → 256</FONT>>
-      ];
-      privacy_hidden [
-        class="node-linear",
-        width=3.2,
-        group="privacy_stack",
-        shape=trapezium,
-        style=filled,
-        margin="0.02,0.02",
-        color="#8d554f",
-        fillcolor="#ead8d5",
-        label=<<B>Hidden projection</B><BR/><FONT POINT-SIZE="8">Linear 256 → 256</FONT>>
-      ];
-      privacy_gelu [
-        class="node-activation",
-        group="privacy_stack",
-        shape=hexagon,
-        style=filled,
-        margin="0.02,0.02",
-        color="#59704f",
-        fillcolor="#e3ebdf",
-        label="GELU"
-      ];
-      distribution_projection [
-        class="node-linear",
-        width=3.2,
-        group="privacy_stack",
-        shape=trapezium,
-        style=filled,
-        margin="0.02,0.02",
-        color="#8d554f",
-        fillcolor="#ead8d5",
-        label=<<B>Distribution projection</B><BR/><FONT POINT-SIZE="8">Linear 256 → 2</FONT>>
-      ];
-      positive_parameters [
-        class="node-activation",
-        width=2.45,
-        group="privacy_stack",
-        shape=hexagon,
-        style=filled,
-        margin="0.02,0.02",
-        color="#59704f",
-        fillcolor="#e3ebdf",
-        label=<<B>Softplus</B><BR/><FONT POINT-SIZE="8">positive μ_logK and σ_logK</FONT>>
-      ];
-      log_count [
-        class="node-tensor",
-        width=3.85,
-        group="privacy_stack",
-        color="#496454",
-        fillcolor="#dbe8df",
-        label=<<B>Log-count distribution</B><BR/><FONT POINT-SIZE="8">μ_logK · σ_logK · σ retained for audit</FONT>>
-      ];
-      profile_normalization [
-        class="node-normalization",
-        width=3.85,
-        group="privacy_stack",
-        shape=box,
-        style=filled,
-        color="#555b61",
-        fillcolor="#e7e6e3",
-        label=<<B>Profile-menu normalization</B><BR/><FONT POINT-SIZE="8">μ / max(level μ) · KEEP = 0 · placeholder = 1</FONT>>
-      ];
-      privacy_score [
-        class="node-tensor",
-        width=2.65,
-        group="privacy_stack",
-        color="#496454",
-        fillcolor="#dbe8df",
-        label=<<B>p̂(a)</B><BR/><FONT POINT-SIZE="8">profile-relative</FONT>>
-      ];
-
-      { rank=same; privacy_header_balance; count_basis; }
-      count_basis -> privacy_join [arrowhead=none];
-      privacy_join -> privacy_projection -> privacy_hidden -> privacy_gelu;
-      privacy_gelu -> distribution_projection -> positive_parameters -> log_count;
-      log_count -> profile_normalization -> privacy_score;
-    }
-
-    subgraph cluster_controller {
-      class="module module-controller grid-right-bottom";
-      label=<<B>ADDITIVE LAMBDA CONTROLLER</B><BR/><FONT POINT-SIZE="8" COLOR="#a06079">b(a, λ) = α · g(λ) · p̂(a)</FONT>>;
-      labelloc=t;
-      labeljust=l;
-      color="#747980";
-      fillcolor="#edf1ef";
-      style="rounded,dashed,filled";
-      penwidth=1.0;
-      margin=12;
-
-      additive_controller [
-        class="node-operator",
-        shape=circle,
-        fixedsize=true,
-        width=0.46,
-        height=0.46,
-        margin=0,
-        label="+"
-      ];
-      alpha [
-        class="node-controller",
-        shape=circle,
-        fixedsize=true,
-        width=0.54,
-        height=0.54,
-        color="#7a5e76",
-        fillcolor="#eee8ef",
-        label="α"
-      ];
-      privacy_bias_arrow [
-        class="node-junction",
-        shape=point,
-        fixedsize=true,
-        width=0.01,
-        height=0.01,
-        color="#a06079",
-        fillcolor="#a06079",
-        label=""
-      ];
-      lambda_transform [
-        class="node-controller",
-        shape=circle,
-        fixedsize=true,
-        width=0.62,
-        height=0.62,
-        color="#7a5e76",
-        fillcolor="#eee8ef",
-        label="g(λ)"
-      ];
-      privacy_control [
-        class="node-controller",
-        shape=circle,
-        fixedsize=true,
-        width=0.54,
-        height=0.54,
-        color="#7a5e76",
-        fillcolor="#eee8ef",
-        label="p̂"
-      ];
-      legal_gather [
-        class="node-process",
-        width=3.86,
-        label=<<B>Legal-action gather</B>>
-      ];
-      log_softmax [
-        class="node-normalization",
-        shape=box,
-        style=filled,
-        color="#555b61",
-        fillcolor="#e7e6e3",
-        label=<<B>log_softmax</B>>
-      ];
-      policy_output [
-        class="node-output",
-        shape=oval,
-        style=filled,
-        fillcolor="#faf9f5",
-        label=<<B>π(a | s, λ)</B>>
-      ];
-      { rank=same; additive_controller; privacy_bias_arrow; alpha; lambda_transform; privacy_control; }
-      lambda_transform -> privacy_control [
-        color="#a06079",
-        penwidth=1.6,
-        dir=none
-      ];
-      alpha -> lambda_transform [
-        color="#a06079",
-        penwidth=1.6,
-        dir=none
-      ];
-      privacy_bias_arrow -> alpha [
-        color="#a06079",
-        penwidth=1.6,
-        dir=back
-      ];
-      additive_controller -> privacy_bias_arrow [
-        color="#a06079",
-        penwidth=1.6,
-        dir=none
-      ];
-      additive_controller -> legal_gather -> log_softmax -> policy_output;
-    }
-
-    privacy_score -> privacy_control [
-      color="#a06079",
-      penwidth=1.6,
-      arrowhead=none
-    ];
-  }
-
+  /* encoder representations feed both heads */
   document_bank -> document_projection [color="#666d73", penwidth=1.35];
-  document_chunks -> document_projection [style=invis, weight=100];
   relation_pair -> utility_projection [color="#666d73", penwidth=1.35];
   relation_pair -> privacy_join [color="#666d73", penwidth=1.35, arrowhead=none];
-  utility_logit -> additive_controller [arrowhead=none, constraint=false, weight=0];
 
-  { rank=same; document_projection; utility_projection; count_basis; }
-  utility_projection -> count_basis [style=invis, weight=10000];
+  /* token feature fusion */
+  document_projection -> token_sum [arrowhead=none];
+  role_embedding -> token_sum [arrowhead=none];
+  relative_embedding -> token_sum [arrowhead=none];
+  position_embedding -> token_sum [arrowhead=none];
+  token_sum -> augmented_tokens;
+
+  /* utility context readout */
+  utility_projection -> utility_relation;
+  utility_relation -> query_projection;
+  augmented_tokens -> target_attention;
+  augmented_tokens -> local_attention;
+  augmented_tokens -> global_attention;
+  query_projection -> target_attention;
+  query_projection -> local_attention;
+  query_projection -> global_attention;
+  target_attention -> context_merge [arrowhead=none];
+  local_attention -> context_merge [arrowhead=none];
+  global_attention -> context_merge [arrowhead=none];
+  context_merge -> context_projection;
+  context_projection -> document_context;
+
+  /* selected-action memory */
+  utility_relation -> memory_query_join [arrowhead=none];
+  document_context -> memory_query_join [arrowhead=none];
+  earlier_selections -> memory_kv;
+  memory_query_join -> memory_query;
+  memory_kv -> history_attention;
+  memory_query -> history_attention;
+
+  /* utility head */
+  utility_relation -> context_interaction [arrowhead=none];
+  document_context -> context_interaction [arrowhead=none];
+  history_attention -> feature_concat [arrowhead=none];
+  mode_embedding -> feature_concat [arrowhead=none];
+  type_embedding -> feature_concat [arrowhead=none];
+  context_interaction -> feature_concat [arrowhead=none];
+  feature_concat -> utility_hidden;
+  utility_hidden -> utility_gelu;
+  utility_gelu -> utility_output;
+  utility_output -> utility_logit;
+
+  /* semantic privacy estimation */
+  count_basis -> privacy_join [arrowhead=none];
+  privacy_join -> privacy_projection;
+  privacy_projection -> privacy_hidden;
+  privacy_hidden -> privacy_gelu;
+  privacy_gelu -> distribution_projection;
+  distribution_projection -> positive_parameters;
+  positive_parameters -> log_count;
+  log_count -> profile_normalization;
+  profile_normalization -> privacy_score;
+
+  /* additive lambda controller */
+  privacy_score -> privacy_control [color="#a06079", penwidth=1.6, arrowhead=none];
+  privacy_control -> lambda_transform [color="#a06079", penwidth=1.6, arrowhead=none];
+  lambda_transform -> alpha [color="#a06079", penwidth=1.6, arrowhead=none];
+  alpha -> additive_controller [color="#a06079", penwidth=1.6];
+  utility_logit -> additive_controller [arrowhead=none];
+  additive_controller -> legal_gather;
+  legal_gather -> log_softmax;
+  log_softmax -> policy_output;
 }
         </script>
-        <div class="ranker-model-diagram__graph" aria-hidden="true"></div>
-        <div class="ranker-model-diagram__status">Computing architecture layout…</div>
+        <div class="ranker-model-diagram__status">Computing edge routing…</div>
       </div>
-      <noscript><p class="lede">Figure M1 requires JavaScript to compute its graph layout.</p></noscript>
+      <noscript><p class="lede">Figure M1 lays out without JavaScript; edge routing requires it.</p></noscript>
     </div>
 
     <p class="lede">The implemented policy is a shallow, factorized attention model over frozen 768-dimensional clinical representations, not a Transformer stack.</p>
