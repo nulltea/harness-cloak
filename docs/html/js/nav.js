@@ -4,7 +4,8 @@
 (function () {
   var PAGES = [
     { href: "infer-dtp.html", label: "InferDPT &amp; RANTEXT" },
-    { href: "LatticeCloak.html", label: "LatticeCloak" }
+    { href: "LatticeCloak.html", label: "LatticeCloak" },
+    { href: "interactive-ranker-v2.html", label: "Ranker v2 · Architecture &amp; RL" }
   ];
   var here = location.pathname.split("/").pop() || "infer-dtp.html";
   var links = PAGES.map(function (p) {

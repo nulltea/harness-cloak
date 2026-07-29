@@ -669,55 +669,75 @@ html {
   font-weight: 500;
 }
 
-/* FIG M1: DOM nodes measured by the browser and positioned by ELK.js. */
+/* FIG M1: nested CSS grids own node placement; Graphviz (neato, pinned
+   positions, splines=ortho) routes only the connecting edges.
+   All spacing derives from the four custom properties below. */
 .ranker-model-diagram {
+  --dg-gap-lg: 26px; /* between sections / top-level rows */
+  --dg-gap: 16px;    /* between rows and columns inside a section */
+  --dg-gap-sm: 14px; /* inside tight stacks (MLP chains): keeps every arrow a visible shaft, not just a head */
+  --dg-pad: 18px;    /* section frame inner padding */
+  --dg-label-clear: 40px; /* top padding clearing the section label */
   position: relative;
-  min-height: 420px;
-  min-width: 100%;
+  width: max-content;
   color: var(--ink);
 }
-.ranker-model-diagram__viewport {
+
+/* layout primitives: every level of nesting is a __row or a __col; column
+   templates live inline on the element so composition stays in the page. */
+.ranker-model-diagram__layout {
+  display: grid;
+  gap: var(--dg-gap-lg);
+}
+.ranker-model-diagram__row {
+  display: grid;
+  gap: var(--dg-gap);
+  align-items: center;
+  justify-items: center;
+  justify-content: space-between;
+  min-width: 0;
+}
+.ranker-model-diagram__row--top {
+  align-items: start;
+}
+.ranker-model-diagram__row--stretch {
+  align-items: stretch;
+}
+.ranker-model-diagram__col {
+  display: grid;
+  gap: var(--dg-gap);
+  align-content: start;
+  justify-items: center;
+  min-width: 0;
+}
+.ranker-model-diagram__col--tight {
+  gap: var(--dg-gap-sm);
+}
+
+/* section frames */
+.ranker-model-diagram__module {
   position: relative;
-  min-width: 100%;
-  margin: 0 auto;
-  background: transparent;
-}
-.ranker-model-diagram__groups,
-.ranker-model-diagram__nodes,
-.ranker-model-diagram__edges {
-  position: absolute;
-  inset: 0;
-}
-.ranker-model-diagram__groups {
-  z-index: 0;
-  pointer-events: none;
-}
-.ranker-model-diagram__edges {
-  z-index: 3;
-  overflow: visible;
-  pointer-events: none;
-}
-.ranker-model-diagram__nodes {
-  z-index: 2;
-}
-.ranker-model-diagram__group {
-  position: absolute;
-  left: 0;
-  top: 0;
+  justify-self: stretch;
+  display: grid;
+  gap: var(--dg-gap);
   box-sizing: border-box;
+  min-width: 0;
+  height: 100%;
+  padding: var(--dg-label-clear) var(--dg-pad) var(--dg-pad);
   border: 1px dashed #747980;
   border-radius: 14px;
-  background: rgb(250 249 245 / 0.42);
+  background: rgb(228 234 231 / 0.52);
 }
-.ranker-model-diagram__group--secondary {
-  border-color: #9a9da1;
+.ranker-model-diagram__module--secondary {
+  border-color: #8f9398;
   border-radius: 10px;
-  background: rgb(250 249 245 / 0.25);
+  background: rgb(226 231 235 / 0.48);
 }
-.ranker-model-diagram__group-label {
+.ranker-model-diagram__module-label {
   position: absolute;
-  top: 10px;
-  left: 16px;
+  top: 13px;
+  left: var(--dg-pad);
+  z-index: 1;
   padding: 0 5px;
   background: var(--paper);
   font-family: "JetBrains Mono", monospace;
@@ -728,158 +748,31 @@ html {
   text-transform: uppercase;
   white-space: nowrap;
 }
-.ranker-model-diagram__node {
-  position: absolute;
-  top: 0;
-  left: 0;
-  visibility: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  box-sizing: border-box;
-  min-width: 138px;
-  max-width: 252px;
-  min-height: 52px;
-  padding: 12px 18px;
-  border: 1.35px solid #34393e;
-  border-radius: 7px;
-  background: #f2f0eb;
-  text-align: center;
-  overflow-wrap: anywhere;
-}
-.ranker-model-diagram__node-title {
-  font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
-  font-weight: 550;
-  line-height: 1.25;
-}
-.ranker-model-diagram__node-detail {
-  margin-top: 5px;
-  color: #62686e;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
+.ranker-model-diagram__module-sublabel {
+  display: block;
+  margin-top: 3px;
+  color: #884d66;
   font-weight: 400;
-  line-height: 1.35;
+  letter-spacing: 0.02em;
+  text-transform: none;
 }
-.ranker-model-diagram__node--encoder,
-.ranker-model-diagram__node--tensor,
-.ranker-model-diagram__node--embedding {
-  border-color: #496454;
-  background: #dbe8df;
-}
-.ranker-model-diagram__node--encoder {
-  min-width: 246px;
-  padding-block: 17px;
-}
-.ranker-model-diagram__node--attention {
-  border-color: #3d6287;
-  background: #dbe7f3;
-}
-.ranker-model-diagram__node--linear {
-  min-width: 170px;
-  padding-inline: 26px;
-  isolation: isolate;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: #8d554f;
-  clip-path: polygon(7% 0, 93% 0, 100% 100%, 0 100%);
-}
-.ranker-model-diagram__node--linear::before,
-.ranker-model-diagram__node--activation::before {
-  content: "";
-  position: absolute;
-  z-index: 0;
-  inset: 1.35px;
-  clip-path: inherit;
-}
-.ranker-model-diagram__node--linear::before {
-  background: #ead8d5;
-}
-.ranker-model-diagram__node--normalization {
-  border-color: #555b61;
-  border-radius: 1px;
-  background: #e7e6e3;
-}
-.ranker-model-diagram__node--activation {
-  min-width: 96px;
-  isolation: isolate;
-  overflow: hidden;
-  border: 0;
-  border-radius: 0;
-  background: #59704f;
-  clip-path: polygon(14% 0, 86% 0, 100% 50%, 86% 100%, 14% 100%, 0 50%);
-}
-.ranker-model-diagram__node--activation::before {
-  background: #e3ebdf;
-}
-.ranker-model-diagram__node--linear > *,
-.ranker-model-diagram__node--activation > * {
-  position: relative;
-  z-index: 1;
-}
-.ranker-model-diagram__node--controller,
-.ranker-model-diagram__node--controller-wide {
-  border-color: #7a5e76;
-  border-radius: 999px;
-  background: #eee8ef;
-}
-.ranker-model-diagram__node--controller {
-  min-width: 118px;
-}
-.ranker-model-diagram__node--controller-wide {
-  min-width: 210px;
-}
-.ranker-model-diagram__node--operator {
-  min-width: 86px;
-  min-height: 78px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.ranker-model-diagram__node--operator .ranker-model-diagram__node-title {
-  display: grid;
-  width: 48px;
-  height: 48px;
+
+/* node placeholders: sized at runtime from the DOT's Graphviz-computed
+   node sizes; the visible nodes are drawn by Graphviz in the overlay. */
+.ranker-model-diagram__node {
   box-sizing: border-box;
-  place-items: center;
-  border: 1.35px solid #34393e;
-  border-radius: 50%;
-  background: #f2f0eb;
-  font-size: 16px;
 }
-.ranker-model-diagram__node--operator .ranker-model-diagram__node-detail {
-  margin-top: 4px;
-  white-space: nowrap;
+
+/* runtime-routed edge overlay */
+.ranker-model-diagram__edges {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: visible;
+  pointer-events: none;
 }
-.ranker-model-diagram__node--output {
-  min-width: 176px;
-  border-width: 1.7px;
-  border-radius: 999px;
-  background: var(--paper);
-}
-.ranker-model-diagram__edge {
-  fill: none;
-  stroke: #34393e;
-  stroke-width: 1.45;
-  marker-end: url("#ranker-model-arrow");
-}
-.ranker-model-diagram__edge--representation {
-  stroke: #666d73;
-  stroke-width: 1.5;
-}
-.ranker-model-diagram__edge--privacy {
-  stroke: #a06079;
-  stroke-width: 1.9;
-  marker-end: url("#ranker-model-arrow-privacy");
-}
-.ranker-model-diagram__edge--no-arrow {
-  marker-end: none;
-}
-.ranker-model-diagram__edge--mid-arrow {
-  marker-mid: url("#ranker-model-arrow-privacy");
-  marker-end: none;
+.ranker-model-diagram__edges text {
+  font-family: "JetBrains Mono", monospace;
 }
 .ranker-model-diagram__status {
   position: absolute;
@@ -889,316 +782,6 @@ html {
   font-family: "JetBrains Mono", monospace;
   font-size: 11px;
   text-align: center;
-}
-
-/* FIG M1 structured layout: committed composition with auto-sized HTML nodes. */
-.ranker-model-diagram[data-layout="structured"] {
-  min-width: 1180px;
-}
-.ranker-model-diagram[data-layout="structured"] .ranker-model-diagram__viewport {
-  min-width: 1180px;
-}
-.ranker-model-diagram[data-layout="structured"] .ranker-model-diagram__groups {
-  display: none;
-}
-.ranker-model-diagram[data-layout="structured"] .ranker-model-diagram__nodes {
-  position: relative;
-  inset: auto;
-  height: auto;
-}
-.ranker-model-diagram__layout {
-  position: relative;
-  display: grid;
-  grid-template-rows: auto auto auto;
-  align-content: start;
-  gap: 24px;
-  width: 100%;
-  box-sizing: border-box;
-  padding: 8px 0;
-}
-.ranker-model-diagram__module {
-  position: relative;
-  box-sizing: border-box;
-  min-width: 0;
-  margin: 0;
-  padding: 38px 28px 22px;
-  border: 1px dashed #747980;
-  border-radius: 14px;
-  background: rgb(228 234 231 / 0.52);
-}
-.ranker-model-diagram__module--secondary {
-  padding: 36px 20px 18px;
-  border-color: #8f9398;
-  border-radius: 10px;
-  background: rgb(226 231 235 / 0.48);
-}
-.ranker-model-diagram__module-label {
-  position: absolute;
-  top: 13px;
-  left: 18px;
-  z-index: 1;
-  padding: 0 5px;
-  background: var(--paper);
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1.2;
-  letter-spacing: 0.15em;
-  text-transform: uppercase;
-  white-space: nowrap;
-}
-.ranker-model-diagram[data-layout="structured"] .ranker-model-diagram__node {
-  position: relative;
-  top: auto;
-  left: auto;
-  visibility: visible;
-  width: 100%;
-  min-width: 0;
-  max-width: none;
-  transform: none;
-}
-.ranker-model-diagram[data-layout="structured"] .ranker-model-diagram__node--operator {
-  width: 86px;
-  min-width: 86px;
-}
-.ranker-model-diagram[data-layout="structured"] .ranker-model-diagram__node--activation {
-  width: min(100%, 170px);
-}
-.ranker-model-diagram__encoder-grid {
-  display: grid;
-  grid-template-columns: 1.16fr 1.18fr 1.05fr 0.9fr;
-  gap: 30px;
-  align-items: center;
-  min-height: 190px;
-}
-.ranker-model-diagram__encoder-inputs,
-.ranker-model-diagram__encoder-outputs,
-.ranker-model-diagram__encoder-pair {
-  display: grid;
-  gap: 28px;
-  align-items: center;
-}
-.ranker-model-diagram__encoder-pair {
-  gap: 14px;
-}
-.ranker-model-diagram__main-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(310px, 1.18fr);
-  align-content: start;
-  gap: 24px;
-  align-items: start;
-}
-.ranker-model-diagram__utility-grid {
-  display: grid;
-  align-content: start;
-  gap: 16px;
-}
-.ranker-model-diagram__utility-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1.45fr) minmax(190px, 0.72fr);
-  gap: 38px;
-  align-items: start;
-}
-.ranker-model-diagram__module--utility {
-  padding: 34px 28px 18px;
-}
-.ranker-model-diagram__module--token-fusion {
-  padding: 32px 20px 14px;
-}
-.ranker-model-diagram__token-grid {
-  display: grid;
-  gap: 12px;
-}
-.ranker-model-diagram__token-grid > .ranker-model-diagram__node:first-child {
-  width: 48%;
-  min-width: 190px;
-}
-.ranker-model-diagram__embedding-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12px;
-}
-.ranker-model-diagram__token-output-row {
-  display: flex;
-  gap: 18px;
-  align-items: center;
-  justify-content: center;
-}
-.ranker-model-diagram__token-output-row .ranker-model-diagram__node--tensor {
-  width: min(52%, 210px);
-}
-.ranker-model-diagram__utility-relation {
-  display: grid;
-  gap: 12px;
-  align-items: center;
-}
-.ranker-model-diagram__attention-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 30px;
-}
-.ranker-model-diagram__context-stack {
-  display: grid;
-  width: 240px;
-  gap: 6px;
-  margin: 0 auto;
-  justify-items: center;
-}
-.ranker-model-diagram__context-stack > .ranker-model-diagram__node {
-  min-height: 46px;
-  padding-block: 8px;
-}
-.ranker-model-diagram__context-stack > .ranker-model-diagram__node--operator {
-  min-height: 60px;
-  padding: 0;
-}
-.ranker-model-diagram__memory-top {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 44px;
-  align-items: end;
-}
-.ranker-model-diagram__memory-lane {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 24px;
-  align-items: center;
-}
-.ranker-model-diagram__module--selected-memory > .ranker-model-diagram__node--attention {
-  width: 72%;
-  min-height: 48px;
-  margin: 12px auto 0;
-  padding-block: 8px;
-}
-.ranker-model-diagram__module--selected-memory {
-  padding: 32px 20px 14px;
-}
-.ranker-model-diagram__output-row {
-  display: grid;
-  grid-template-columns: 0.88fr 1.05fr 82px 1.35fr 0.95fr;
-  gap: 12px;
-  align-items: center;
-}
-.ranker-model-diagram__utility-mlp-column,
-.ranker-model-diagram__mlp-stack,
-.ranker-model-diagram__privacy-stack,
-.ranker-model-diagram__controller-output {
-  display: grid;
-  justify-items: center;
-}
-.ranker-model-diagram__utility-mlp-column {
-  align-self: start;
-  gap: 6px;
-}
-.ranker-model-diagram__mlp-stack {
-  gap: 5px;
-}
-.ranker-model-diagram__module--utility-mlp {
-  width: 100%;
-  padding: 30px 10px 10px;
-}
-.ranker-model-diagram__module--utility-mlp .ranker-model-diagram__node {
-  min-height: 40px;
-  padding: 7px 12px;
-}
-.ranker-model-diagram__module--utility-mlp .ranker-model-diagram__node--activation {
-  width: min(100%, 128px);
-}
-.ranker-model-diagram__utility-mlp-column > .ranker-model-diagram__node--tensor {
-  width: min(100%, 150px);
-  min-height: 46px;
-  padding: 8px 12px;
-}
-.ranker-model-diagram__privacy-stack {
-  gap: 14px;
-}
-.ranker-model-diagram__privacy-stack > .ranker-model-diagram__node {
-  width: 86%;
-}
-.ranker-model-diagram__privacy-stack > .ranker-model-diagram__node--operator {
-  width: 86px;
-}
-.ranker-model-diagram__privacy-stack > .ranker-model-diagram__node--activation {
-  width: 72%;
-}
-.ranker-model-diagram__controller-grid {
-  display: grid;
-  grid-template-columns: 220px minmax(480px, 1fr);
-  align-content: start;
-  gap: 42px;
-  width: min(800px, 68%);
-  min-height: 152px;
-  margin: 0 auto;
-  align-items: start;
-}
-.ranker-model-diagram__module--controller {
-  padding: 34px 24px 14px;
-}
-.ranker-model-diagram__controller-output {
-  padding-top: 6px;
-  gap: 6px;
-}
-.ranker-model-diagram__controller-output > .ranker-model-diagram__node:not(.ranker-model-diagram__node--operator) {
-  width: 168px;
-  min-height: 42px;
-  padding: 7px 12px;
-}
-.ranker-model-diagram__controller-output > .ranker-model-diagram__node--operator {
-  min-height: 58px;
-}
-.ranker-model-diagram__controller-inputs {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  column-gap: 36px;
-  row-gap: 14px;
-  align-items: start;
-  padding-top: 2px;
-}
-.ranker-model-diagram[data-layout="structured"] .ranker-model-diagram__controller-inputs > .ranker-model-diagram__node--controller {
-  width: 52px;
-  min-width: 52px;
-  min-height: 52px;
-  justify-self: center;
-  padding: 0;
-  overflow: visible;
-}
-.ranker-model-diagram__controller-inputs > .ranker-model-diagram__node--controller .ranker-model-diagram__node-title {
-  font-size: 15px;
-}
-.ranker-model-diagram__controller-inputs > .ranker-model-diagram__node--controller .ranker-model-diagram__node-detail {
-  position: absolute;
-  top: 58px;
-  left: 50%;
-  width: 148px;
-  margin: 0;
-  transform: translateX(-50%);
-  font-size: 9px;
-  white-space: nowrap;
-}
-.ranker-model-diagram__controller-formula {
-  grid-column: 1 / -1;
-  justify-self: center;
-  margin-top: 14px;
-  color: #884d66;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 10px;
-  line-height: 1.2;
-  white-space: nowrap;
-}
-
-/* FIG M1 Graphviz prototype: DOT owns graph structure, sizing, and routing. */
-.ranker-model-diagram__graph {
-  width: 100%;
-  min-width: 1180px;
-}
-.ranker-model-diagram__graph svg {
-  display: block;
-  width: 100%;
-  height: auto;
-  overflow: visible;
-}
-.ranker-model-diagram__graph text {
-  font-family: "Courier New", Courier, monospace;
 }
 
 /* ────── RESULT PLOTS (PLOT-STYLE.md) ────── */
