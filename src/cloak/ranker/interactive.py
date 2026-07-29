@@ -1549,8 +1549,14 @@ def train_hybrid_document_group(
         "KL": float(eta) * objective.kl,
     })
     reconstructed = torch.stack(tuple(family_terms.values())).sum()
-    if not torch.allclose(reconstructed, objective.total, rtol=0.0, atol=1e-7):
-        raise ValueError("hybrid family terms do not reconstruct the objective")
+    # fp32 tolerance: the family split rounds -(l+r)·logp as two products and
+    # sums in a different order than the objective; at ~200 terms the drift
+    # legitimately exceeds 1e-7 (seed-29 production run, 2026-07-29).
+    if not torch.allclose(reconstructed, objective.total, rtol=1e-5, atol=1e-6):
+        raise ValueError(
+            "hybrid family terms do not reconstruct the objective: "
+            f"{float(reconstructed)!r} vs {float(objective.total)!r}"
+        )
     parameters = tuple(
         parameter for parameter in policy.parameters() if parameter.requires_grad
     )
