@@ -620,85 +620,101 @@ digraph RankerV2Edges {
         <text x="590" y="256" text-anchor="middle" class="rs">zero-signal documents (no policy-role reward mass) are dropped from training at load time</text>
 
         <text x="28" y="314" class="rk">02 · WARM START · PRIVACY HEAD → BC → EXIT → λ MENU → CONTROLLER CALIBRATION</text>
-        <rect x="20" y="328" width="1140" height="524" rx="16" class="rb"/>
+        <rect x="20" y="328" width="1140" height="550" rx="16" class="rb"/>
 
-        <rect x="44" y="364" width="230" height="100" rx="7" class="rp"/>
-        <text x="159" y="389" text-anchor="middle" class="rt">privacy pretraining</text>
-        <text x="159" y="409" text-anchor="middle" class="rs">profile-held-out log-count</text>
-        <text x="159" y="425" text-anchor="middle" class="rs">must beat shortcut baselines</text>
-        <text x="159" y="441" text-anchor="middle" class="rs">→ frozen p̂ for the policy</text>
+        <rect x="44" y="350" width="540" height="134" rx="10" class="rb"/>
+        <text x="60" y="372" class="rki">BEHAVIOR CLONING · SUPERVISED WARM START · λ-INDEPENDENT</text>
+        <rect x="60" y="384" width="250" height="84" rx="7" class="rm"/>
+        <text x="185" y="407" text-anchor="middle" class="rt">teacher rule (no model)</text>
+        <text x="185" y="426" text-anchor="middle" class="rs">hand-coded walk per decision:</text>
+        <text x="185" y="442" text-anchor="middle" class="rs">finest legal lattice level,</text>
+        <text x="185" y="458" text-anchor="middle" class="rs">else the typed placeholder</text>
+        <rect x="330" y="384" width="238" height="84" rx="7" class="ru"/>
+        <text x="449" y="407" text-anchor="middle" class="rt">cross-entropy training</text>
+        <text x="449" y="426" text-anchor="middle" class="rs">L = −log π(teacher action)</text>
+        <text x="449" y="442" text-anchor="middle" class="rs">over each dynamic legal menu</text>
+        <text x="449" y="458" text-anchor="middle" class="rs">∇ → utility scoring path</text>
+        <path d="M310 426H326" class="rl" marker-end="url(#rl-arrow)"/>
 
-        <rect x="298" y="350" width="540" height="130" rx="10" class="rb"/>
-        <text x="314" y="372" class="rki">BEHAVIOR CLONING · λ-INDEPENDENT · SUPPORT-PRESERVING INIT</text>
-        <rect x="314" y="386" width="250" height="76" rx="7" class="rm"/>
-        <text x="439" y="409" text-anchor="middle" class="rt">deterministic teacher</text>
-        <text x="439" y="428" text-anchor="middle" class="rs">walks decisions: finest legal</text>
-        <text x="439" y="444" text-anchor="middle" class="rs">level, else placeholder · claims fills</text>
-        <rect x="584" y="386" width="238" height="76" rx="7" class="ru"/>
-        <text x="703" y="409" text-anchor="middle" class="rt">cross-entropy fit</text>
-        <text x="703" y="428" text-anchor="middle" class="rs">match teacher action IDs</text>
-        <text x="703" y="444" text-anchor="middle" class="rs">over each dynamic legal menu</text>
-        <path d="M564 424H580" class="rl" marker-end="url(#rl-arrow)"/>
+        <rect x="608" y="364" width="250" height="100" rx="7" class="ru"/>
+        <text x="733" y="389" text-anchor="middle" class="rt">policy π · the M1 model</text>
+        <text x="733" y="409" text-anchor="middle" class="rs">trains: utility scoring path</text>
+        <text x="733" y="425" text-anchor="middle" class="rs">frozen: encoder · privacy p̂</text>
+        <text x="733" y="441" text-anchor="middle" class="rs">α untouched until calibration</text>
 
-        <path d="M274 414H294" class="rld" marker-end="url(#rl-arrow)"/>
+        <rect x="890" y="364" width="246" height="100" rx="7" class="rp"/>
+        <text x="1013" y="389" text-anchor="middle" class="rt">privacy pretraining</text>
+        <text x="1013" y="409" text-anchor="middle" class="rs">profile-held-out log-count</text>
+        <text x="1013" y="425" text-anchor="middle" class="rs">must beat shortcut baselines</text>
+        <text x="1013" y="441" text-anchor="middle" class="rs">→ frozen p̂ for the policy</text>
 
-        <rect x="44" y="504" width="1092" height="150" rx="10" class="rb"/>
-        <text x="60" y="526" class="rki">UTILITY-ONLY EXIT · λ = 0 · PER DOCUMENT, UNTIL NO VERIFIED IMPROVEMENT</text>
-        <rect x="60" y="540" width="196" height="86" rx="7" class="ru"/>
-        <text x="158" y="563" text-anchor="middle" class="rt">sample G rollouts</text>
-        <text x="158" y="582" text-anchor="middle" class="rs">current policy · λ = 0</text>
-        <text x="158" y="598" text-anchor="middle" class="rs">complete trajectories</text>
-        <rect x="272" y="540" width="196" height="86" rx="7" class="rf"/>
-        <text x="370" y="563" text-anchor="middle" class="rt">score pure U_total</text>
-        <text x="370" y="582" text-anchor="middle" class="rs">full round trip + reader</text>
-        <text x="370" y="598" text-anchor="middle" class="rs">no count · no λ term</text>
-        <rect x="484" y="540" width="196" height="86" rx="7" class="rm"/>
-        <text x="582" y="563" text-anchor="middle" class="rt">winner selection</text>
-        <text x="582" y="582" text-anchor="middle" class="rs">best rollout must strictly</text>
-        <text x="582" y="598" text-anchor="middle" class="rs">beat the BC reference</text>
-        <rect x="696" y="540" width="196" height="86" rx="7" class="rr"/>
-        <text x="794" y="563" text-anchor="middle" class="rt">serial reverify</text>
-        <text x="794" y="582" text-anchor="middle" class="rs">winner + reference rescored</text>
-        <text x="794" y="598" text-anchor="middle" class="rs">fresh reader pass (jitter)</text>
-        <rect x="908" y="540" width="196" height="86" rx="7" class="ru"/>
-        <text x="1006" y="563" text-anchor="middle" class="rt">clone winner</text>
-        <text x="1006" y="582" text-anchor="middle" class="rs">CE on every winner action</text>
-        <text x="1006" y="598" text-anchor="middle" class="rs">→ utility tower + memory</text>
-        <path d="M256 583H268" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M468 583H480" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M680 583H692" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M892 583H904" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M1006 626C1006 646 158 646 158 630" class="rld" marker-end="url(#rl-arrow)"/>
-        <path d="M703 462C703 494 590 490 584 536" class="rld" marker-end="url(#rl-arrow)"/>
-        <text x="600" y="498" class="rs">BC reference</text>
+        <path d="M572 426H604" class="rlg" marker-end="url(#rl-arrow)"/>
+        <path d="M886 414H862" class="rld" marker-end="url(#rl-arrow)"/>
 
-        <rect x="44" y="678" width="800" height="150" rx="10" class="rb"/>
-        <text x="60" y="700" class="rki">λ MENU + THRESHOLD MANIFEST · FROM CACHED (U,P) TRAJECTORIES</text>
-        <rect x="60" y="714" width="240" height="86" rx="7" class="rm"/>
-        <text x="180" y="737" text-anchor="middle" class="rt">calibration pool</text>
-        <text x="180" y="756" text-anchor="middle" class="rs">BC + ExIt winners + anchors</text>
-        <text x="180" y="771" text-anchor="middle" class="rs">+ samples + measured CFs</text>
-        <text x="180" y="786" text-anchor="middle" class="rs">≥3 distinct (U,P) per doc</text>
-        <rect x="324" y="714" width="240" height="86" rx="7" class="rm"/>
-        <text x="444" y="737" text-anchor="middle" class="rt">frontier switch points</text>
-        <text x="444" y="756" text-anchor="middle" class="rs">merge ties · drop dominated</text>
-        <text x="444" y="771" text-anchor="middle" class="rs">upper convex envelope</text>
-        <text x="444" y="786" text-anchor="middle" class="rs">→ candidate λ profiles</text>
-        <rect x="588" y="714" width="236" height="86" rx="7" class="rm"/>
-        <text x="706" y="737" text-anchor="middle" class="rt">replay acceptance</text>
-        <text x="706" y="756" text-anchor="middle" class="rs">snap to observed thresholds</text>
-        <text x="706" y="771" text-anchor="middle" class="rs">replay · ≥3 responsive</text>
-        <text x="706" y="786" text-anchor="middle" class="rs">profiles, else stop</text>
-        <path d="M300 757H320" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M564 757H584" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M700 464V514H158V562" class="rlu" marker-end="url(#rl-arrow)"/>
+        <text x="710" y="482" class="rs">acts at λ = 0</text>
+        <path d="M185 468V492H578V562" class="rld" marker-end="url(#rl-arrow)"/>
+        <text x="240" y="506" class="rs">BC reference (teacher U_total)</text>
+        <path d="M1006 562V500H874V434H862" class="rlg" marker-end="url(#rl-arrow)"/>
+        <text x="888" y="494" class="rs">∇ winner CE</text>
 
-        <rect x="868" y="714" width="268" height="86" rx="7" class="rc"/>
-        <text x="1002" y="737" text-anchor="middle" class="rt">controller calibration</text>
-        <text x="1002" y="756" text-anchor="middle" class="rs">switch thresholds → alpha init</text>
-        <text x="1002" y="771" text-anchor="middle" class="rs">gap-normalized weighted median</text>
-        <text x="1002" y="786" text-anchor="middle" class="rs">then capture KL reference</text>
-        <path d="M844 757H864" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M590 654V674" class="rl" marker-end="url(#rl-arrow)"/>
+        <rect x="44" y="530" width="1092" height="150" rx="10" class="rb"/>
+        <text x="60" y="552" class="rki">UTILITY-ONLY EXIT · λ = 0 · PER DOCUMENT, UNTIL NO VERIFIED IMPROVEMENT</text>
+        <rect x="60" y="566" width="196" height="86" rx="7" class="ru"/>
+        <text x="158" y="589" text-anchor="middle" class="rt">sample G rollouts</text>
+        <text x="158" y="608" text-anchor="middle" class="rs">warm-started policy · λ=0</text>
+        <text x="158" y="624" text-anchor="middle" class="rs">complete trajectories</text>
+        <rect x="272" y="566" width="196" height="86" rx="7" class="rf"/>
+        <text x="370" y="589" text-anchor="middle" class="rt">score pure U_total</text>
+        <text x="370" y="608" text-anchor="middle" class="rs">full round trip per rollout</text>
+        <text x="370" y="624" text-anchor="middle" class="rs">measured document utility</text>
+        <rect x="484" y="566" width="196" height="86" rx="7" class="rm"/>
+        <text x="582" y="589" text-anchor="middle" class="rt">winner selection</text>
+        <text x="582" y="607" text-anchor="middle" class="rs">argmax U_total among G;</text>
+        <text x="582" y="622" text-anchor="middle" class="rs">must strictly beat the BC</text>
+        <text x="582" y="637" text-anchor="middle" class="rs">reference's measured U_total</text>
+        <rect x="696" y="566" width="196" height="86" rx="7" class="rr"/>
+        <text x="794" y="589" text-anchor="middle" class="rt">serial reverify</text>
+        <text x="794" y="608" text-anchor="middle" class="rs">winner + reference rescored</text>
+        <text x="794" y="624" text-anchor="middle" class="rs">fresh reader pass (jitter)</text>
+        <rect x="908" y="566" width="196" height="86" rx="7" class="ru"/>
+        <text x="1006" y="589" text-anchor="middle" class="rt">clone winner</text>
+        <text x="1006" y="607" text-anchor="middle" class="rs">supervised CE update on</text>
+        <text x="1006" y="622" text-anchor="middle" class="rs">every winner action</text>
+        <text x="1006" y="637" text-anchor="middle" class="rs">∇ → utility scoring path</text>
+        <path d="M256 609H268" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M468 609H480" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M680 609H692" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M892 609H904" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M1006 652C1006 672 158 672 158 656" class="rld" marker-end="url(#rl-arrow)"/>
+
+        <rect x="44" y="704" width="800" height="150" rx="10" class="rb"/>
+        <text x="60" y="726" class="rki">λ MENU + THRESHOLD MANIFEST · FROM CACHED (U,P) TRAJECTORIES</text>
+        <rect x="60" y="740" width="240" height="86" rx="7" class="rm"/>
+        <text x="180" y="763" text-anchor="middle" class="rt">calibration pool</text>
+        <text x="180" y="782" text-anchor="middle" class="rs">BC + ExIt winners + anchors</text>
+        <text x="180" y="797" text-anchor="middle" class="rs">+ samples + measured CFs</text>
+        <text x="180" y="812" text-anchor="middle" class="rs">≥3 distinct (U,P) per doc</text>
+        <rect x="324" y="740" width="240" height="86" rx="7" class="rm"/>
+        <text x="444" y="763" text-anchor="middle" class="rt">frontier switch points</text>
+        <text x="444" y="782" text-anchor="middle" class="rs">merge ties · drop dominated</text>
+        <text x="444" y="797" text-anchor="middle" class="rs">upper convex envelope</text>
+        <text x="444" y="812" text-anchor="middle" class="rs">→ candidate λ profiles</text>
+        <rect x="588" y="740" width="236" height="86" rx="7" class="rm"/>
+        <text x="706" y="763" text-anchor="middle" class="rt">replay acceptance</text>
+        <text x="706" y="782" text-anchor="middle" class="rs">snap to observed thresholds</text>
+        <text x="706" y="797" text-anchor="middle" class="rs">replay · ≥3 responsive</text>
+        <text x="706" y="812" text-anchor="middle" class="rs">profiles, else stop</text>
+        <path d="M300 783H320" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M564 783H584" class="rl" marker-end="url(#rl-arrow)"/>
+
+        <rect x="868" y="740" width="268" height="86" rx="7" class="rc"/>
+        <text x="1002" y="763" text-anchor="middle" class="rt">controller calibration</text>
+        <text x="1002" y="782" text-anchor="middle" class="rs">switch thresholds → alpha init</text>
+        <text x="1002" y="797" text-anchor="middle" class="rs">gap-normalized weighted median</text>
+        <text x="1002" y="812" text-anchor="middle" class="rs">then capture KL reference</text>
+        <path d="M844 783H864" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M590 680V700" class="rl" marker-end="url(#rl-arrow)"/>
 
         <text x="28" y="904" class="rk">03 · HYBRID RL · LAMBDA-CONDITIONED EPISODE LOOP</text>
         <rect x="20" y="918" width="1140" height="900" rx="16" class="rb"/>
