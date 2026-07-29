@@ -714,15 +714,23 @@ html {
   gap: var(--dg-gap-sm);
 }
 
+/* nested layout containers fill their cell; only leaf nodes get centered */
+.ranker-model-diagram__row > .ranker-model-diagram__row,
+.ranker-model-diagram__row > .ranker-model-diagram__col,
+.ranker-model-diagram__col > .ranker-model-diagram__row,
+.ranker-model-diagram__col > .ranker-model-diagram__col {
+  justify-self: stretch;
+}
+
 /* section frames */
 .ranker-model-diagram__module {
   position: relative;
   justify-self: stretch;
+  margin: 0; /* shield the figure's <section> frames from page section chrome */
   display: grid;
   gap: var(--dg-gap);
   box-sizing: border-box;
   min-width: 0;
-  height: 100%;
   padding: var(--dg-label-clear) var(--dg-pad) var(--dg-pad);
   border: 1px dashed #747980;
   border-radius: 14px;
@@ -757,10 +765,122 @@ html {
   text-transform: none;
 }
 
-/* node placeholders: sized at runtime from the DOT's Graphviz-computed
-   node sizes; the visible nodes are drawn by Graphviz in the overlay. */
+/* nodes: styled HTML, sized by the browser; Graphviz sees only their
+   measured boxes. Sloped shapes (trapezium, hexagon) get their outline from
+   an inline SVG path with vector-effect="non-scaling-stroke", so the stroke
+   stays uniform at any box size — unlike a clip-path inset. */
 .ranker-model-diagram__node {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   box-sizing: border-box;
+  width: 100%;
+  min-height: 52px;
+  padding: 9px 16px;
+  border: 1.35px solid #34393e;
+  border-radius: 7px;
+  background: #f2f0eb;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.ranker-model-diagram__node-title {
+  position: relative;
+  z-index: 1;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 13px;
+  font-weight: 550;
+  line-height: 1.25;
+}
+.ranker-model-diagram__node-detail {
+  position: relative;
+  z-index: 1;
+  margin-top: 4px;
+  color: #62686e;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.35;
+}
+.ranker-model-diagram__node-outline {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.ranker-model-diagram__node--encoder,
+.ranker-model-diagram__node--tensor,
+.ranker-model-diagram__node--embedding {
+  border-color: #496454;
+  background: #dbe8df;
+}
+.ranker-model-diagram__node--encoder {
+  padding-block: 14px;
+}
+.ranker-model-diagram__node--attention {
+  border-color: #3d6287;
+  background: #dbe7f3;
+}
+.ranker-model-diagram__node--normalization {
+  border-color: #555b61;
+  border-radius: 1px;
+  background: #e7e6e3;
+}
+.ranker-model-diagram__node--linear,
+.ranker-model-diagram__node--activation {
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.ranker-model-diagram__node--linear {
+  padding-inline: 26px;
+}
+.ranker-model-diagram__node--linear > .ranker-model-diagram__node-outline path {
+  fill: #ead8d5;
+  stroke: #8d554f;
+  stroke-width: 1.35;
+}
+.ranker-model-diagram__node--activation {
+  width: auto;
+  min-width: 96px;
+  padding-inline: 22px;
+}
+.ranker-model-diagram__node--activation > .ranker-model-diagram__node-outline path {
+  fill: #e3ebdf;
+  stroke: #59704f;
+  stroke-width: 1.35;
+}
+.ranker-model-diagram__node--operator,
+.ranker-model-diagram__node--controller {
+  width: 48px;
+  min-width: 48px;
+  height: 48px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 50%;
+}
+.ranker-model-diagram__node--operator .ranker-model-diagram__node-title,
+.ranker-model-diagram__node--controller .ranker-model-diagram__node-title {
+  font-size: 15px;
+}
+.ranker-model-diagram__node--controller {
+  width: 54px;
+  min-width: 54px;
+  height: 54px;
+  min-height: 54px;
+  border-color: #7a5e76;
+  background: #eee8ef;
+}
+.ranker-model-diagram__node--output {
+  width: auto;
+  min-width: 176px;
+  padding: 10px 22px;
+  border-width: 1.7px;
+  border-radius: 999px;
+  background: var(--paper);
 }
 
 /* runtime-routed edge overlay */
@@ -770,9 +890,6 @@ html {
   z-index: 2;
   overflow: visible;
   pointer-events: none;
-}
-.ranker-model-diagram__edges text {
-  font-family: "JetBrains Mono", monospace;
 }
 .ranker-model-diagram__status {
   position: absolute;

@@ -1,10 +1,12 @@
 ---
 type: plan
-status: current
+status: stale
 created: 2026-07-23
 updated: 2026-07-23
 tags: [html-report, diagrams, graphviz, viz-js, architecture]
 supersedes: docs/plans/2026-07-23-html-native-architecture-diagrams.md
+superseded_by: docs/plans/2026-07-23-grid-pinned-graphviz-diagrams.md
+archive_reason: Letting dot own node placement required invisible edges, rank hacks, and post-hoc cluster rewriting to approximate a grid; placement moved to page CSS grids with Graphviz reduced to pinned-position edge routing.
 ---
 
 # Graphviz Architecture Diagrams Implementation Plan

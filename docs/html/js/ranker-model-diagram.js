@@ -1,10 +1,8 @@
-/* Generic renderer for HTML-grid diagrams: CSS grid owns node placement via
-   invisible placeholder divs; Graphviz draws the nodes and routes the edges.
-   A sizing pass renders the page's DOT once to read each node's
-   Graphviz-computed size and applies it to the matching [data-node-id]
-   placeholder, so grid geometry and drawn geometry always agree. A routing
-   pass then pins the measured placeholder centers (neato, splines=ortho) and
-   overlays the resulting SVG. Knows no diagram-specific node or edge names. */
+/* Generic edge router for HTML-grid diagrams: CSS grid owns node placement
+   and styling; Graphviz (neato with pinned positions, splines=ortho) routes
+   only the edges declared in the page's DOT block, treating every
+   [data-node-id] box as an obstacle. Knows no diagram-specific node or edge
+   names. */
 (() => {
   const diagram = document.getElementById("ranker-model-diagram");
   if (!diagram) return;
@@ -37,90 +35,65 @@
     dotText.lastIndexOf("}"),
   );
 
+  function measureNodes() {
+    // The layout div is the overlay's coordinate origin; a plain div rect is
+    // reliable everywhere, unlike an auto-sized <svg> rect in Firefox.
+    const origin = layout.getBoundingClientRect();
+    return Array.from(layout.querySelectorAll("[data-node-id]"), (element) => {
+      const rect = element.getBoundingClientRect();
+      return {
+        id: element.dataset.nodeId,
+        shape: element.dataset.portShape === "circle" ? "circle" : "box",
+        cx: rect.left - origin.left + rect.width / 2,
+        cy: rect.top - origin.top + rect.height / 2,
+        width: rect.width,
+        height: rect.height,
+      };
+    });
+  }
+
+  // Pins measured px geometry into neato (72pt = 1in = 72px, y flipped).
+  // Nodes are declared invisible but keep their geometry, so they act as
+  // routing obstacles and calibration anchors.
+  function pinnedDot(nodes) {
+    const pins = nodes
+      .map(
+        (n) =>
+          `"${n.id}" [pos="${(n.cx / 72).toFixed(4)},${(-n.cy / 72).toFixed(4)}!", ` +
+          `width=${(n.width / 72).toFixed(4)}, height=${(n.height / 72).toFixed(4)}, ` +
+          `shape=${n.shape}, fixedsize=true, label=""];`,
+      )
+      .join("\n");
+    return `digraph Routing {
+graph [splines=ortho, sep="+10"];
+node [color=none, fillcolor=none, style=filled];
+${pins}
+${dotBody}
+}`;
+  }
+
   // Bounding box of a rendered node group, in raw Graphviz SVG coordinates.
   function shapeBox(group) {
     const ellipse = group.querySelector("ellipse");
     if (ellipse) {
-      const rx = Number(ellipse.getAttribute("rx"));
-      const ry = Number(ellipse.getAttribute("ry"));
       return {
         cx: Number(ellipse.getAttribute("cx")),
         cy: Number(ellipse.getAttribute("cy")),
-        width: rx * 2,
-        height: ry * 2,
       };
     }
-    const polygon = group.querySelector("polygon, path");
+    const polygon = group.querySelector("polygon");
     if (!polygon) return null;
-    const coords = (polygon.getAttribute("points") ?? polygon.getAttribute("d"))
-      .replace(/[MCLZ]/gi, " ")
+    const coords = polygon
+      .getAttribute("points")
       .trim()
       .split(/[\s,]+/)
       .map(Number);
     const xs = coords.filter((_, i) => i % 2 === 0);
     const ys = coords.filter((_, i) => i % 2 === 1);
-    const minX = Math.min(...xs);
-    const maxX = Math.max(...xs);
-    const minY = Math.min(...ys);
-    const maxY = Math.max(...ys);
     return {
-      cx: (minX + maxX) / 2,
-      cy: (minY + maxY) / 2,
-      width: maxX - minX,
-      height: maxY - minY,
+      cx: (Math.min(...xs) + Math.max(...xs)) / 2,
+      cy: (Math.min(...ys) + Math.max(...ys)) / 2,
     };
-  }
-
-  function nodeGroups(svg) {
-    const groups = new Map();
-    for (const group of svg.querySelectorAll("g.node")) {
-      const title = group.querySelector("title")?.textContent;
-      if (title) groups.set(title, group);
-    }
-    return groups;
-  }
-
-  // Sizing pass: Graphviz decides every node's size from the DOT; the
-  // placeholders adopt those sizes so the grid reserves the exact space.
-  function sizePlaceholders(viz, placeholders) {
-    const svg = viz.renderSVGElement(`digraph Sizing {\n${dotBody}\n}`, {
-      engine: "dot",
-    });
-    const groups = nodeGroups(svg);
-    for (const element of placeholders) {
-      const group = groups.get(element.dataset.nodeId);
-      const box = group && shapeBox(group);
-      if (!box) throw new Error(`No DOT node sizes ${element.dataset.nodeId}`);
-      element.style.width = `${box.width}px`;
-      element.style.height = `${box.height}px`;
-    }
-  }
-
-  function measureCenters(placeholders) {
-    const origin = layout.getBoundingClientRect();
-    return placeholders.map((element) => {
-      const rect = element.getBoundingClientRect();
-      return {
-        id: element.dataset.nodeId,
-        cx: rect.left - origin.left + rect.width / 2,
-        cy: rect.top - origin.top + rect.height / 2,
-      };
-    });
-  }
-
-  // Pins measured px centers into neato (72pt = 1in = 72px, y flipped).
-  function pinnedDot(centers) {
-    const pins = centers
-      .map(
-        (n) =>
-          `"${n.id}" [pos="${(n.cx / 72).toFixed(4)},${(-n.cy / 72).toFixed(4)}!"];`,
-      )
-      .join("\n");
-    return `digraph Routing {
-graph [splines=ortho, sep="+10"];
-${dotBody}
-${pins}
-}`;
   }
 
   // Least-squares per-axis affine fit from rendered node centers to the
@@ -140,21 +113,22 @@ ${pins}
     return { scale, offset: meanOut - scale * meanIn };
   }
 
-  function renderOverlay(viz, centers) {
-    const svg = viz.renderSVGElement(pinnedDot(centers), { engine: "neato" });
+  function renderOverlay(viz, nodes) {
+    const svg = viz.renderSVGElement(pinnedDot(nodes), { engine: "neato" });
     const graph = svg.querySelector("g.graph");
     if (!graph) throw new Error("Graphviz output has no graph group.");
 
-    const byId = new Map(centers.map((n) => [n.id, n]));
+    const byId = new Map(nodes.map((n) => [n.id, n]));
     const xPairs = [];
     const yPairs = [];
-    for (const [title, group] of nodeGroups(svg)) {
-      const node = byId.get(title);
+    for (const group of graph.querySelectorAll("g.node")) {
+      const node = byId.get(group.querySelector("title")?.textContent);
       const box = shapeBox(group);
       if (node && box) {
         xPairs.push([box.cx, node.cx]);
         yPairs.push([box.cy, node.cy]);
       }
+      group.remove();
     }
     if (xPairs.length < 2) throw new Error("Too few nodes for calibration.");
     const fx = fitAxis(xPairs);
@@ -180,16 +154,14 @@ ${pins}
     document.fonts?.ready ?? Promise.resolve(),
   ])
     .then(([viz]) => {
-      const placeholders = Array.from(layout.querySelectorAll("[data-node-id]"));
-      sizePlaceholders(viz, placeholders);
       let frame;
       const render = () => {
         try {
-          renderOverlay(viz, measureCenters(placeholders));
+          renderOverlay(viz, measureNodes());
           if (status) status.hidden = true;
           diagram.dataset.renderer = "grid-neato";
         } catch (error) {
-          fail("Graphviz could not render this diagram.", error);
+          fail("Graphviz could not route the diagram edges.", error);
         }
       };
       render();
@@ -199,5 +171,5 @@ ${pins}
       });
       observer.observe(layout);
     })
-    .catch((error) => fail("Graphviz could not render this diagram.", error));
+    .catch((error) => fail("Graphviz could not route this diagram.", error));
 })();

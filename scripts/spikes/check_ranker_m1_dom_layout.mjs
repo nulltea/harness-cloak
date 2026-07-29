@@ -14,15 +14,60 @@ const committedReport = execFileSync(
   { encoding: "utf8" },
 );
 
+// Contract: the page owns nodes as styled HTML (CSS grid placement, SVG
+// outlines for sloped shapes); the page DOT block owns only edge topology;
+// the renderer is generic (measure -> pin -> neato ortho routing).
+
 assert.match(
   report,
   /id="ranker-model-diagram"[^>]*class="ranker-model-diagram"/,
   "M1 must keep its isolated figure container",
 );
+assert.ok(
+  (report.match(/data-node-id="/g) ?? []).length >= 40,
+  "M1 must declare its complete architecture as HTML nodes",
+);
+assert.ok(
+  (report.match(/ranker-model-diagram__node-title/g) ?? []).length >= 40,
+  "M1 nodes must carry their labels as page HTML",
+);
+assert.ok(
+  report.includes('vector-effect="non-scaling-stroke"'),
+  "sloped node shapes must use SVG outlines with non-scaling stroke",
+);
+for (const nodeId of [
+  "clinical_encoder",
+  "document_bank",
+  "augmented_tokens",
+  "utility_logit",
+  "history_attention",
+  "privacy_score",
+  "additive_controller",
+  "policy_output",
+]) {
+  assert.ok(
+    report.includes(`data-node-id="${nodeId}"`),
+    `M1 must declare HTML node ${nodeId}`,
+  );
+}
+for (const sectionLabel of [
+  "Shared frozen encoder",
+  "Utility scoring",
+  "Token feature fusion",
+  "Selected-action memory",
+  "Semantic privacy estimation",
+  "Additive lambda controller",
+]) {
+  assert.ok(
+    report.includes(sectionLabel),
+    `M1 must keep the ${sectionLabel} section frame`,
+  );
+}
 assert.equal(
-  (report.match(/<svg\b/g) ?? []).length,
-  3,
-  "M1 SVG must be generated at runtime; the three downstream figures remain inline",
+  (report.match(/<svg\b/g) ?? []).length
+    - (report.match(/ranker-model-diagram__node-outline/g) ?? []).length,
+  4,
+  "M1 contributes only shape outlines and the empty edge overlay; the three downstream figures remain inline",
 );
 assert.ok(
   report.indexOf("@viz-js/viz@3.28.0/dist/viz-global.js")
@@ -33,55 +78,40 @@ assert.ok(
 const dotMatch = report.match(
   /<script type="text\/vnd\.graphviz" data-ranker-model-dot>([\s\S]*?)<\/script>/,
 );
-assert.ok(dotMatch, "M1 must keep editable DOT source beside the figure");
+assert.ok(dotMatch, "M1 must keep editable DOT edge source beside the figure");
 const dot = dotMatch[1];
-for (const fragment of [
-  "digraph RankerV2",
-  "rankdir=TB",
-  "newrank=true",
-  "subgraph cluster_encoder",
-  "subgraph cluster_utility",
-  "subgraph cluster_right_column",
-  "subgraph cluster_privacy",
-  "subgraph cluster_controller",
-  "grid-top",
-  "grid-left",
-  "grid-right-top",
-  "grid-right-bottom",
-  "clinical_encoder",
-  "document_context",
-  "utility_logit",
-  "privacy_score",
-  "additive_controller",
-  "policy_output",
+for (const edge of [
+  "document_chunks -> clinical_encoder",
+  "document_bank -> document_projection",
+  "relation_pair -> privacy_join",
+  "token_sum -> augmented_tokens",
+  "query_projection -> global_attention",
   "utility_relation -> context_interaction",
-  "document_context -> context_interaction",
-  "lambda_transform -> privacy_control",
-  "alpha -> lambda_transform",
+  "memory_query -> history_attention",
+  "profile_normalization -> privacy_score",
+  "lambda_transform -> alpha",
+  "log_softmax -> policy_output",
 ]) {
-  assert.ok(dot.includes(fragment), `DOT source must contain ${fragment}`);
+  assert.ok(dot.includes(edge), `DOT source must contain edge ${edge}`);
 }
 assert.ok(
-  (dot.match(/\bclass="node-/g) ?? []).length >= 40,
-  "M1 must declare its complete architecture directly in DOT",
+  (dot.match(/->/g) ?? []).length >= 45,
+  "DOT source must carry the full edge topology",
 );
-assert.ok(
-  (dot.match(/subgraph cluster_/g) ?? []).length >= 6,
-  "M1 must retain its semantic module hierarchy as Graphviz clusters",
-);
-assert.ok(
-  (dot.match(/rank\s*=\s*same/g) ?? []).length <= 15,
-  "M1 must not require excessive manual rank constraints",
-);
-assert.doesNotMatch(dot, /\bpos\s*=/, "M1 must not hardcode node coordinates");
+// The DOT block is edges-only: no node declarations, placement, or clusters.
+for (const forbidden of [/\bpos\s*=/, /\brank\s*=/, /subgraph/, /\bgroup\s*=/, /invis/, /\bconstraint\s*=/, /\bweight\s*=/, /\bshape\s*=/, /\bfillcolor\s*=/, /\blabel\s*=/]) {
+  assert.doesNotMatch(dot, forbidden, `DOT edge source must not contain ${forbidden}`);
+}
 
 for (const requiredFragment of [
   "Viz.instance",
   "renderSVGElement",
   "data-ranker-model-dot",
-  "replaceChildren",
-  "snapSectionGrid",
-  "setRoundedRect",
+  "data-node-id",
+  "engine: \"neato\"",
+  "fixedsize=true",
+  "splines=ortho",
+  "ResizeObserver",
 ]) {
   assert.ok(renderer.includes(requiredFragment), `renderer must contain ${requiredFragment}`);
 }
@@ -89,7 +119,6 @@ for (const forbiddenFragment of [
   "nodeSpecs",
   "edgeSpecs",
   "busSpecs",
-  "getBoundingClientRect",
   "clinical_encoder",
   "utility_relation",
   "privacy_control",
@@ -100,11 +129,18 @@ for (const forbiddenFragment of [
   );
 }
 
-assert.match(
-  stylesheet,
-  /\.ranker-model-diagram__graph\s+svg\s*\{/,
-  "stylesheet must size the generated SVG through one generic graph container",
-);
+// Spacing consistency: one variable scale, reusable row/col primitives.
+for (const cssFragment of [
+  "--dg-gap-lg:",
+  "--dg-gap:",
+  "--dg-gap-sm:",
+  "--dg-pad:",
+  ".ranker-model-diagram__row {",
+  ".ranker-model-diagram__col {",
+  ".ranker-model-diagram__edges {",
+]) {
+  assert.ok(stylesheet.includes(cssFragment), `stylesheet must contain ${cssFragment}`);
+}
 
 const unchangedBoundary = '<section id="preliminaries">';
 assert.equal(
@@ -113,4 +149,4 @@ assert.equal(
   "Figures T1, R1, and I1 and their surrounding report content must remain unchanged",
 );
 
-console.log("M1 Graphviz source, generic renderer, and downstream boundary are valid.");
+console.log("M1 HTML nodes, edge-only DOT, generic neato renderer, and downstream boundary are valid.");
