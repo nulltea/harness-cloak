@@ -558,9 +558,15 @@ every doc (2/4, 7/12, 10/21, 9/18). NOT reopened: objective normalization
 
 **Preregistered spike (staged, production trainer, 4 spike docs).** Arms are
 isolated interventions over the completed 3-seed 12-epoch production baseline:
-- Arm R — support-scaled rollouts: per-document rollout count
-  R_d = clamp(ceil(64/D), 8, 32) (D2N005 32, D2N027 8->16-24 band, large docs
-  8). Duplicate vectors are cache-identical, so extra rollouts cost almost no
+- Arm R — support-scaled rollouts (formula corrected pre-implementation:
+  the initially logged ceil(64/D) was arithmetically inconsistent with its own
+  worked example): per group, compute the dominant-trajectory probability
+  p_hat exactly (product of per-decision max probabilities along the greedy
+  legal walk under the current policy and profile) and set
+  R = clamp(ceil(log(0.05)/log(p_hat)), 8, 32) — i.e., enough rollouts to hold
+  the fully-degenerate probability under 5%, capped. Self-tuning per document
+  and epoch; measured p_hat~0.90 gives D2N005 R=29-32, diverse large docs stay
+  at 8. Duplicate vectors are cache-identical, so extra rollouts cost almost no
   new scoring.
 - Arm C — counterfactual dedup + broadcast + degeneracy-triggered coverage:
   budget counts unique (vector, decision, alternative) interventions; a measured
