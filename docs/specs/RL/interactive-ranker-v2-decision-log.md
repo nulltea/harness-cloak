@@ -522,3 +522,74 @@ alpha. Artifacts: results/ranker_v2/architecture/controller-strength-*.json
 is the adopted CANDIDATE; final adoption gated on re-evaluating item 7 under the
 production trainer (counterfactual credit + KL enabled) rather than the simplified
 spike loop. If it fails there too, iterate on per-decision credit, not on alpha.
+
+## OPEN FORK — small-document credit support: rollout collapse kills LOO utility credit (2026-07-29)
+
+**Problem (measured).** Seed-to-seed spread of the controller's per-document
+lambda response localizes entirely to small documents: final-cycle
+Delta P(lambda-3) across the three 12-epoch gap-scaled spike seeds is
++0.13/+0.61/+0.35 on D2N005 (D=4) and +0.05/+0.31/+0.25 on D2N027 (D=12), vs
+seed-invariant +-0.03 bands on D2N031 (D=25) and D2N063 (D=19). The production
+seed-17 run shows the same behavior (D2N005 lambda-3 collapses to utility 1.00 /
+count score ~0.10 by cycle 1). Direct diagnostics from the production epoch
+reports: D2N005 groups average 2.58 unique action vectors of 8 rollouts with
+5/12 groups FULLY degenerate (all 8 rollouts identical); D2N027 3.67 unique,
+4/12 fully degenerate; large docs 5.4-6.0 unique, 0 fully degenerate. A fully
+degenerate group has every leave-one-out advantage exactly zero — the
+provisional utility gradient is dead, the exact count gradient reaches only
+global alpha, entropy (beta=0.01) is negligible, and the KL collapse trigger is
+aggregate-level and blind to per-document collapse.
+
+**Causal chain (joint adjudication, this session + Codex Sol High session
+019f8fa3).** Small D -> low trajectory support under the BC-sharpened policy
+(implied per-rollout dominant-vector probability ~0.90 on D2N005) -> duplicate
+rollouts -> dead or noisy LOO credit -> the surviving rare vectors make early
+utility updates a coin flip -> self-reinforcing sharpening -> seed-specific mode
+lock. This is mode SELECTION by early luck, not a small-document bias. Ranked
+contributors: (1) trajectory collapse (dominant, measured); (2) reward-effective
+diversity below action diversity — distinct vectors with identical assertion
+scores or differences under the 0.044 reader-noise floor; (3) estimator support
+~sqrt(D) fewer credit-bearing terms per update; (4) linked-mass/sensitivity
+heterogeneity (D2N005 linked assertions per decision [1,2,2,11]); (5) global KL
+trigger misses local collapse (amplifier). REFUTED as a cause: global-alpha
+starvation — the switchable-decision fraction at the calibrated alpha is ~50% on
+every doc (2/4, 7/12, 10/21, 9/18). NOT reopened: objective normalization
+(closed fork; this is an estimator-support problem, not a normalization one).
+
+**Preregistered spike (staged, production trainer, 4 spike docs).** Arms are
+isolated interventions over the completed 3-seed 12-epoch production baseline:
+- Arm R — support-scaled rollouts: per-document rollout count
+  R_d = clamp(ceil(64/D), 8, 32) (D2N005 32, D2N027 8->16-24 band, large docs
+  8). Duplicate vectors are cache-identical, so extra rollouts cost almost no
+  new scoring.
+- Arm C — counterfactual dedup + broadcast + degeneracy-triggered coverage:
+  budget counts unique (vector, decision, alternative) interventions; a measured
+  Delta U broadcasts its substituted pair loss to every rollout with the
+  identical complete vector (exact, zero extra calls); when unique vectors <= 3,
+  cover every eligible decision of the dominant vector; budget 5*ceil(D/5)
+  capped at 15 via a spike-labeled threshold-manifest version (base stays 5).
+- Staging: both arms 8 epochs on seed 17 (mechanism screening) -> the arm(s)
+  passing mechanism checks run 12 epochs on seeds 29/47 (+ seed-17 12-epoch
+  completion) for the behavioral gates.
+- Mechanism checks: Arm R — small-doc fully-degenerate rate <= 10%, median
+  unique vectors >= 4, reward-distinct vectors >= 2x baseline. Arm C — raw
+  degeneracy unchanged, utility-dead groups after substitution <= 10%, >= 75% of
+  small-doc decisions receive a counterfactual per Latin cycle.
+- Behavioral gates (3 seeds): small-doc Delta P(lambda-3) sample SD <= 0.07 and
+  cross-seed range <= 0.15; count-responsiveness items of the controller fork
+  still pass; conditional lambda-zero utility within 0.044 of the fixed
+  control; no placeholder collapse or non-finite values. Frontier regret
+  (item 7, <= 0.044) is reported per arm and adjudicated for the controller
+  fork, not this one.
+- Readouts recorded per group: unique action vectors; unique component-score
+  vectors (reward-distinct); utility-dead groups before/after counterfactual
+  substitution; per-decision probe coverage and |Delta U| vs the 0.044 floor;
+  gradient norms by term family; paired Delta P; regret; lambda-zero identity.
+
+**Interactions.** The item-7 24-epoch extension of the controller fork runs on
+whichever credit configuration this fork adopts — a dead-credit trainer
+under-uses added epochs. Production-readiness note independent of arms: the KL
+collapse trigger should gain a per-document condition (tracked, not an arm).
+
+**Status.** OPEN — evidence and design recorded; implementation and runs
+awaiting approval.
