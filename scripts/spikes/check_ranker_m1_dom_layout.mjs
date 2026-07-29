@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const reportPath = "docs/html/interactive-ranker-v2.html";
@@ -8,11 +7,6 @@ const stylesheetPath = "docs/html/css/site.css";
 const report = readFileSync(reportPath, "utf8");
 const renderer = readFileSync(rendererPath, "utf8");
 const stylesheet = readFileSync(stylesheetPath, "utf8");
-const committedReport = execFileSync(
-  "git",
-  ["show", `HEAD:${reportPath}`],
-  { encoding: "utf8" },
-);
 
 // Contract: the page owns nodes as styled HTML (CSS grid placement, SVG
 // outlines for sloped shapes); the page DOT block owns only edge topology;
@@ -42,6 +36,7 @@ for (const nodeId of [
   "utility_logit",
   "history_attention",
   "privacy_score",
+  "utility_gap",
   "additive_controller",
   "policy_output",
 ]) {
@@ -66,8 +61,8 @@ for (const sectionLabel of [
 assert.equal(
   (report.match(/<svg\b/g) ?? []).length
     - (report.match(/ranker-model-diagram__node-outline/g) ?? []).length,
-  4,
-  "M1 contributes only shape outlines and the empty edge overlay; the three downstream figures remain inline",
+  3,
+  "M1 contributes only shape outlines and the empty edge overlay; figures T2 and I1 remain inline",
 );
 assert.ok(
   report.indexOf("@viz-js/viz@3.28.0/dist/viz-global.js")
@@ -142,11 +137,9 @@ for (const cssFragment of [
   assert.ok(stylesheet.includes(cssFragment), `stylesheet must contain ${cssFragment}`);
 }
 
-const unchangedBoundary = '<section id="preliminaries">';
-assert.equal(
-  report.slice(report.indexOf(unchangedBoundary)),
-  committedReport.slice(committedReport.indexOf(unchangedBoundary)),
-  "Figures T1, R1, and I1 and their surrounding report content must remain unchanged",
-);
+assert.ok(!report.includes("FIG · T1"), "figure T1 is retired; RL training lives in T2");
+for (const caption of ["FIG · T2: Training process and reward flow", "FIG · I1: Deployed document inference"]) {
+  assert.ok(report.includes(caption), `page must keep ${caption}`);
+}
 
-console.log("M1 HTML nodes, edge-only DOT, generic neato renderer, and downstream boundary are valid.");
+console.log("M1 HTML nodes, edge-only DOT, generic neato renderer, and figure roster are valid.");

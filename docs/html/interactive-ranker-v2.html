@@ -37,7 +37,7 @@
     <div class="prose">
       <p>The policy acts on each distinct detected value in a document. It may keep the source text, choose a truthful lattice generalization, or use a typed placeholder. Utility is measured only after the complete privacy round trip: rewrite <code>doc_orig</code> into <code>doc_p</code>, run the remote task, locally unperturb <code>out_p</code>, and score <code>out_final</code>. Privacy pressure comes from a separately pretrained semantic head that predicts how the candidate changes the source profile's log count.</p>
       <p><strong>The architectural rule.</strong> The utility tower never sees true counts, predicted privacy, lattice position, menu size, or lambda. The privacy head never sees document context, task assertions, action history, or lambda. Their outputs meet only in an explicit additive controller. This blocks the direct metadata shortcut in which the actor can optimize count reward without learning the candidate's meaning.</p>
-      <p><strong>Status.</strong> This page documents the selected prototype and the normative RL design. Reward-flow and <code>semantic-v1</code> model implementations exist in the main worktree, but representative real-data validation and the architecture promotion gates remain incomplete. Count shaping is experimental. Realized privacy is still measured by a held-out inference or re-identification attacker on <code>doc_p</code> and <code>out_final</code>.</p>
+      <p><strong>Status.</strong> This page documents the selected prototype and the normative RL design. Reward-flow and <code>semantic-v1</code> model implementations exist in the main worktree, but representative real-data validation and the architecture promotion gates remain incomplete. Count shaping is experimental. Realized privacy is still measured by a held-out inference or re-identification attacker on <code>doc_p</code> and <code>out_final</code>. Interim: production runs currently inject direct grounded counts as the controller's privacy score while a proper k-anonymity estimator model is trained; the figures deliberately keep depicting the semantic privacy head (see the spec's implementation-status section).</p>
     </div>
   </section>
 
@@ -307,14 +307,17 @@
               <section class="ranker-model-diagram__module" data-module-id="controller">
                 <div class="ranker-model-diagram__module-label">
                   Additive lambda controller
-                  <span class="ranker-model-diagram__module-sublabel">b(a, λ) = α · g(λ) · p̂(a)</span>
+                  <span class="ranker-model-diagram__module-sublabel">b(a, λ) = α · g(λ) · gap · p̂(a)</span>
                 </div>
-                <div class="ranker-model-diagram__row" style="grid-template-columns:auto 1fr auto auto auto">
+                <div class="ranker-model-diagram__row" style="grid-template-columns:auto 1fr auto auto auto auto">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="additive_controller" data-port-shape="circle">
                     <div class="ranker-model-diagram__node-title">+</div>
                   </div>
                   <div></div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="alpha" data-port-shape="circle">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="utility_gap" data-port-shape="circle" title="utility-logit range max u − min u per legal menu · detached (stop-gradient)">
+                    <div class="ranker-model-diagram__node-title">gap</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="alpha" data-port-shape="circle" title="init = weighted-median switch threshold measured on BC menus (gap-normalized)">
                     <div class="ranker-model-diagram__node-title">α</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="lambda_transform" data-port-shape="circle">
@@ -335,6 +338,7 @@
                     <div class="ranker-model-diagram__node-title">π(a | s, λ)</div>
                   </div>
                 </div>
+                <div class="ranker-model-diagram__node-detail" style="text-align:center">λ = 0 → separate branch: combined logits ≡ utility logits</div>
               </section>
 
             </div>
@@ -417,7 +421,9 @@ digraph RankerV2Edges {
   privacy_score -> privacy_control [color="#a06079", penwidth=1.6, arrowhead=none];
   privacy_control -> lambda_transform [color="#a06079", penwidth=1.6, arrowhead=none];
   lambda_transform -> alpha [color="#a06079", penwidth=1.6, arrowhead=none];
-  alpha -> additive_controller [color="#a06079", penwidth=1.6];
+  alpha -> utility_gap [color="#a06079", penwidth=1.6, arrowhead=none];
+  utility_gap -> additive_controller [color="#a06079", penwidth=1.6];
+  utility_logit -> utility_gap [color="#666d73", penwidth=1.15, style=dashed];
   utility_logit -> additive_controller [arrowhead=none];
   additive_controller -> legal_gather;
   legal_gather -> log_softmax;
@@ -435,7 +441,7 @@ digraph RankerV2Edges {
       <p><strong>Context readout.</strong> The document projection is summed with role, signed relative-position, and document-position embeddings. A candidate query drives three independent <code>nn.MultiheadAttention</code> modules over occurrence summaries, target-containing tokens, and every source token. Their outputs concatenate and project back to 768 dimensions.</p>
       <p><strong>Selected-action memory.</strong> Each earlier selected decision becomes one 768-wide key/value row. The current candidate's relation and document context form the query. One eight-head cross-attention layer returns a candidate-specific history vector. Empty memory returns an exact zero vector.</p>
       <p><strong>Normalization.</strong> The current model has no <code>LayerNorm</code>, batch normalization, or residual MLP blocks. The only normalizations are semantic profile-menu normalization of predicted log counts and the final legal-action <code>log_softmax</code>.</p>
-      <p><strong>Controller parameters.</strong> The trainable scalar <code>alpha = softplus(alpha_raw)</code> scales the fixed <code>g(lambda)</code> transform on the deployed privacy-bias path. By contrast, <code>gamma</code> weights profile-relative Huber calibration only while pretraining the privacy head. It is absent from policy inference and hybrid-RL logits.</p>
+      <p><strong>Controller parameters.</strong> The trainable scalar <code>alpha = softplus(alpha_raw)</code> scales the fixed <code>g(lambda)</code> transform on the deployed privacy-bias path. In the production configuration the controller term is additionally multiplied by the detached per-menu utility-logit range <code>gap = stopgrad(max_a u(a) − min_a u(a))</code>, so a sharpening utility tower cannot silently defeat the controller, and <code>alpha</code> is initialized from the weighted-median switch threshold measured on behavior-cloned menus (gap-normalized) instead of a default constant. Calibrated init and gap scaling are the adopted candidate of the controller-strength fork (RL decision log); final adoption is gated on a production-trainer re-evaluation. By contrast, <code>gamma</code> weights profile-relative Huber calibration only while pretraining the privacy head. It is absent from policy inference and hybrid-RL logits.</p>
     </div>
   </section>
 
@@ -491,188 +497,6 @@ digraph RankerV2Edges {
       <p>The same pinned clinical encoder serves two cached paths. The document path encodes every source token in overlapping chunks. The relation path jointly encodes runtime type, source surface, and candidate wording. Frozen shared computation is followed by separate trainable utility and privacy projections, so branch-specific supervision cannot modify the other branch.</p>
     </div>
 
-    <div class="diagram-frame">
-      <div class="diagram-cap">
-        <span class="l">FIG · T1: Training-time semantic and gradient separation</span>
-        <span>green = frozen · blue = utility · red = privacy · rose = lambda control</span>
-      </div>
-      <svg viewBox="0 0 1180 760" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="arch-title arch-desc" style="display:block;width:100%;height:auto;background:transparent">
-        <title id="arch-title">Interactive Ranker v2 model architecture</title>
-        <desc id="arch-desc">A frozen BioClinical ModernBERT encoder creates a complete document token bank and an ordered source-to-candidate relation. Trainable candidate-conditioned attention and selected-action memory produce a utility logit. A separate semantic privacy head predicts a log-count distribution. An explicit lambda controller adds predicted privacy to utility before legal masking and softmax.</desc>
-        <defs>
-          <marker id="arch-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
-          <style>
-            .ab{fill:#f8f7f3;stroke:#747980;stroke-width:1.4;stroke-dasharray:7 6}
-            .am{fill:#f2f0eb;stroke:#34393e;stroke-width:1.4}
-            .af{fill:#d9e7de;stroke:#496454;stroke-width:1.4}
-            .au{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.4}
-            .ap{fill:#f1ddda;stroke:#9a5c54;stroke-width:1.4}
-            .ac{fill:#eee8ef;stroke:#7a5e76;stroke-width:1.4}
-            .at{fill:#1c2024;font:500 15px 'JetBrains Mono',monospace}
-            .as{fill:#62686e;font:400 11px 'JetBrains Mono',monospace}
-            .ak{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.6px}
-            .al{fill:none;stroke:#34393e;stroke-width:1.5}
-            .alu{fill:none;stroke:#3d6f9d;stroke-width:1.8}
-            .alp{fill:none;stroke:#ad665e;stroke-width:1.8}
-            .ald{fill:none;stroke:#777c82;stroke-width:1.2;stroke-dasharray:4 4}
-          </style>
-        </defs>
-        <rect width="1180" height="760" fill="transparent"/>
-
-        <text x="28" y="34" class="ak">FROZEN SEMANTIC COMPUTE</text>
-        <rect x="20" y="48" width="655" height="334" rx="16" class="ab"/>
-
-        <rect x="42" y="83" width="112" height="50" rx="6" class="am"/>
-        <text x="98" y="104" text-anchor="middle" class="at">doc_orig</text>
-        <text x="98" y="120" text-anchor="middle" class="as">complete source</text>
-
-        <rect x="188" y="78" width="154" height="60" rx="6" class="am"/>
-        <text x="265" y="101" text-anchor="middle" class="at">512-token chunks</text>
-        <text x="265" y="119" text-anchor="middle" class="as">64-token overlap</text>
-
-        <rect x="378" y="70" width="188" height="76" rx="7" class="af"/>
-        <text x="472" y="96" text-anchor="middle" class="at">BioClinical</text>
-        <text x="472" y="114" text-anchor="middle" class="at">ModernBERT-base</text>
-        <text x="472" y="132" text-anchor="middle" class="as">frozen · pinned revision</text>
-
-        <rect x="594" y="78" width="60" height="60" rx="7" class="af"/>
-        <text x="624" y="101" text-anchor="middle" class="at">H_doc</text>
-        <text x="624" y="119" text-anchor="middle" class="as">token bank</text>
-
-        <rect x="42" y="224" width="190" height="114" rx="7" class="am"/>
-        <text x="137" y="248" text-anchor="middle" class="at">ordered relation</text>
-        <text x="58" y="274" class="as">[TYPE] health-condition</text>
-        <text x="58" y="294" class="as">[SOURCE] kidney transplant</text>
-        <text x="58" y="314" class="as" style="font-size:9px">[CANDIDATE] organ transplant</text>
-
-        <rect x="270" y="232" width="184" height="96" rx="7" class="af"/>
-        <text x="362" y="258" text-anchor="middle" class="at">shared pair encoder</text>
-        <text x="362" y="279" text-anchor="middle" class="as">field-aware means</text>
-        <text x="362" y="298" text-anchor="middle" class="as">difference + product</text>
-        <text x="362" y="316" text-anchor="middle" class="as">same frozen checkpoint</text>
-
-        <rect x="492" y="250" width="86" height="60" rx="7" class="af"/>
-        <text x="535" y="276" text-anchor="middle" class="at">r_pair</text>
-        <text x="535" y="295" text-anchor="middle" class="as">fixed relation</text>
-
-        <rect x="604" y="224" width="50" height="42" rx="6" class="au"/>
-        <text x="629" y="250" text-anchor="middle" class="at">r_U</text>
-        <rect x="604" y="294" width="50" height="42" rx="6" class="ap"/>
-        <text x="629" y="320" text-anchor="middle" class="at">r_P</text>
-
-        <path d="M154 108H184" class="al" marker-end="url(#arch-arrow)"/>
-        <path d="M342 108H374" class="al" marker-end="url(#arch-arrow)"/>
-        <path d="M566 108H590" class="al" marker-end="url(#arch-arrow)"/>
-        <path d="M232 281H266" class="al" marker-end="url(#arch-arrow)"/>
-        <path d="M454 280H488" class="al" marker-end="url(#arch-arrow)"/>
-        <path d="M578 272C592 272 590 245 600 245" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M578 288C592 288 590 315 600 315" class="alp" marker-end="url(#arch-arrow)"/>
-
-        <text x="706" y="34" class="ak">TRAINABLE UTILITY PATH</text>
-        <rect x="696" y="48" width="464" height="334" rx="16" class="ab"/>
-
-        <rect x="720" y="78" width="164" height="70" rx="7" class="au"/>
-        <text x="802" y="102" text-anchor="middle" class="at">target attention</text>
-        <text x="802" y="120" text-anchor="middle" class="as">all mapped occurrences</text>
-        <text x="802" y="137" text-anchor="middle" class="as">source positions retained</text>
-
-        <rect x="720" y="166" width="164" height="70" rx="7" class="au"/>
-        <text x="802" y="190" text-anchor="middle" class="at">local attention</text>
-        <text x="802" y="208" text-anchor="middle" class="as">target chunks</text>
-        <text x="802" y="225" text-anchor="middle" class="as">candidate query</text>
-
-        <rect x="720" y="254" width="164" height="70" rx="7" class="au"/>
-        <text x="802" y="278" text-anchor="middle" class="at">global attention</text>
-        <text x="802" y="296" text-anchor="middle" class="as">complete H_doc</text>
-        <text x="802" y="313" text-anchor="middle" class="as">candidate query</text>
-
-        <rect x="916" y="110" width="202" height="66" rx="7" class="au"/>
-        <text x="1017" y="136" text-anchor="middle" class="at">context projection</text>
-        <text x="1017" y="156" text-anchor="middle" class="as">target + local + global</text>
-
-        <rect x="916" y="212" width="202" height="66" rx="7" class="au"/>
-        <text x="1017" y="238" text-anchor="middle" class="at">selected-action memory</text>
-        <text x="1017" y="258" text-anchor="middle" class="as">one cross-attention block</text>
-
-        <rect x="916" y="306" width="202" height="52" rx="7" class="au"/>
-        <text x="1017" y="329" text-anchor="middle" class="at">utility tower</text>
-        <text x="1017" y="347" text-anchor="middle" class="as">u_theta(h, a)</text>
-
-        <path d="M654 108C680 108 686 113 716 113" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M654 108C680 108 686 201 716 201" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M654 108C680 108 686 289 716 289" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M654 245C686 245 688 113 716 113" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M654 245C684 245 688 225 716 225" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M654 245C686 245 688 289 716 289" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M884 113C900 113 900 130 912 143" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M884 201H906C916 201 916 176 916 160" class="alu"/>
-        <path d="M884 289H902C912 289 912 176 916 160" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M1017 176V208" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M1017 278V302" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M1017 176C1100 180 1136 220 1118 306" class="alu" marker-end="url(#arch-arrow)"/>
-
-        <text x="28" y="420" class="ak">SEMANTIC PRIVACY + EXPLICIT CONTROLLER</text>
-        <rect x="20" y="434" width="1140" height="294" rx="16" class="ab"/>
-
-        <rect x="48" y="488" width="180" height="82" rx="7" class="ap"/>
-        <text x="138" y="514" text-anchor="middle" class="at">semantic privacy head</text>
-        <text x="138" y="534" text-anchor="middle" class="as">source → candidate</text>
-        <text x="138" y="552" text-anchor="middle" class="as">mu_logK · sigma_logK</text>
-
-        <rect x="270" y="488" width="188" height="82" rx="7" class="ap"/>
-        <text x="364" y="514" text-anchor="middle" class="at">profile normalization</text>
-        <text x="364" y="534" text-anchor="middle" class="as">mu / max menu mu</text>
-        <text x="364" y="552" text-anchor="middle" class="as">KEEP 0 · placeholder 1</text>
-
-        <rect x="48" y="626" width="180" height="54" rx="7" class="am"/>
-        <text x="138" y="649" text-anchor="middle" class="at">exact level_counts</text>
-        <text x="138" y="667" text-anchor="middle" class="as">training target only</text>
-
-        <circle cx="630" cy="545" r="36" class="ac"/>
-        <text x="630" y="540" text-anchor="middle" class="at">+</text>
-        <text x="630" y="559" text-anchor="middle" class="as">logit sum</text>
-
-        <rect x="482" y="630" width="156" height="50" rx="7" class="ac"/>
-        <text x="560" y="651" text-anchor="middle" class="at">lambda profile</text>
-        <text x="560" y="669" text-anchor="middle" class="as">fixed g(lambda)</text>
-
-        <rect x="680" y="630" width="132" height="50" rx="7" class="ac"/>
-        <text x="746" y="651" text-anchor="middle" class="at">alpha ≥ 0</text>
-        <text x="746" y="669" text-anchor="middle" class="as">one global scale</text>
-
-        <rect x="856" y="508" width="96" height="72" rx="7" class="ac"/>
-        <text x="904" y="533" text-anchor="middle" class="at">z(a,lambda)</text>
-        <text x="904" y="553" text-anchor="middle" class="as">combined</text>
-        <text x="904" y="570" text-anchor="middle" class="as">action logit</text>
-
-        <rect x="984" y="508" width="84" height="72" rx="7" class="am"/>
-        <text x="1026" y="533" text-anchor="middle" class="at">legal</text>
-        <text x="1026" y="553" text-anchor="middle" class="as">dynamic</text>
-        <text x="1026" y="570" text-anchor="middle" class="as">mask</text>
-
-        <rect x="1092" y="508" width="48" height="72" rx="7" class="am"/>
-        <text x="1116" y="539" text-anchor="middle" class="at">pi</text>
-        <text x="1116" y="558" text-anchor="middle" class="as">soft</text>
-        <text x="1116" y="574" text-anchor="middle" class="as">max</text>
-
-        <path d="M629 336C629 398 150 398 138 484" class="alp" marker-end="url(#arch-arrow)"/>
-        <path d="M228 529H266" class="alp" marker-end="url(#arch-arrow)"/>
-        <path d="M458 529C530 529 548 545 590 545" class="alp" marker-end="url(#arch-arrow)"/>
-        <path d="M1017 358C1017 412 666 402 646 515" class="alu" marker-end="url(#arch-arrow)"/>
-        <path d="M638 655H676" class="alp" marker-end="url(#arch-arrow)"/>
-        <path d="M746 630C746 590 688 564 664 554" class="alp" marker-end="url(#arch-arrow)"/>
-        <path d="M666 545H852" class="alp" marker-end="url(#arch-arrow)"/>
-        <path d="M952 544H980" class="al" marker-end="url(#arch-arrow)"/>
-        <path d="M1068 544H1088" class="al" marker-end="url(#arch-arrow)"/>
-        <path d="M138 626V574" class="ald" marker-end="url(#arch-arrow)"/>
-        <text x="148" y="605" class="as">pretrain</text>
-        <path d="M228 653C350 653 395 702 746 680" class="ald" marker-end="url(#arch-arrow)"/>
-
-        <text x="270" y="600" class="as">predicted privacy shapes deployed odds</text>
-        <text x="48" y="708" class="as">dashed supervision: exact counts update alpha only during hybrid RL; they never enter the actor</text>
-      </svg>
-    </div>
-
     <div class="prose">
       <p><strong>Complete document observability.</strong> The frozen encoder is <code>thomas-sounack/BioClinical-ModernBERT-base</code> at revision <code>c3648aa87af95837c809e6f0c5f85d08160db437</code>, with hidden size 768 and remote model code disabled. It processes the entire document in 512-token inputs with 64 source-token overlap and no silent truncation. Target markers distinguish the current decision, other controlled occurrences, ordinary tokens, relative target distance, and source position. Candidate queries retrieve target, local, repeated-occurrence, and long-range evidence from the cached token bank.</p>
       <p><strong>Candidate semantics.</strong> The pair input is ordered as type, source, then candidate. Field means, signed candidate-minus-source features, and elementwise products preserve both shared meaning and abstraction direction. KEEP and placeholder traverse the same relation path as lattice levels.</p>
@@ -696,19 +520,20 @@ digraph RankerV2Edges {
         <tr><td><code>p_hat(a)</code></td><td><code>clip(mu_logK(a) / max_b mu_logK(b), 0, 1)</code></td><td>Predicted profile-relative privacy progress used in deployed logits.</td></tr>
         <tr><td><code>p(a)</code></td><td><code>clip(log K(a) / max_b log K(b), 0, 1)</code></td><td>Exact target from admitted own-profile counts. Training and diagnostics only.</td></tr>
         <tr><td><code>g(lambda)</code></td><td><code>log1p(lambda) / log1p(max Lambda)</code></td><td>Fixed strength for one supported operating profile.</td></tr>
+        <tr><td><code>gap</code></td><td><code>stopgrad(max_b u(b) − min_b u(b))</code></td><td>Detached per-menu utility-logit range; scale-matches the controller to the utility tower.</td></tr>
       </tbody>
     </table>
     <div class="two-col">
       <div>
         <h4>Combined logit</h4>
-        <p><code>z(a, lambda) = u(a) + alpha · g(lambda) · p_hat(a)</code></p>
-        <p><code>alpha = softplus(alpha_raw)</code></p>
+        <p><code>z(a, lambda) = u(a) + alpha · g(lambda) · gap · p_hat(a)</code></p>
+        <p><code>alpha = softplus(alpha_raw)</code>, initialized from the weighted-median switch threshold measured on behavior-cloned menus (gap-normalized).</p>
         <p>After the dynamic legal mask, softmax converts <code>z</code> into the action distribution.</p>
       </div>
       <div>
         <h4>How privacy changes selection</h4>
-        <p><code>log pi(a)/pi(b) = u(a)-u(b) + alpha·g(lambda)·(p_hat(a)-p_hat(b))</code></p>
-        <p>At lambda zero, privacy contributes exactly zero. At larger lambda, a candidate needs enough predicted privacy gain to overcome any utility disadvantage.</p>
+        <p><code>log pi(a)/pi(b) = u(a)-u(b) + alpha·g(lambda)·gap·(p_hat(a)-p_hat(b))</code></p>
+        <p>At lambda zero the code takes a separate branch: combined logits are identically the utility logits, not merely a numerical zero bias. At larger lambda, a candidate needs enough predicted privacy gain to overcome any utility disadvantage.</p>
       </div>
     </div>
     <div class="prose">
@@ -721,16 +546,16 @@ digraph RankerV2Edges {
   <section id="rl-process">
     <header class="section-head">
       <div class="section-num">§06</div><h2 class="section-title">Reinforcement Learning Process</h2>
-      <div class="section-meta">freeze · initialize · sample · measure · correct</div>
+      <div class="section-meta">inputs · warm start · episode loop · outputs</div>
     </header>
     <div class="diagram-frame">
       <div class="diagram-cap">
         <span class="l">FIG · T2: Training process and reward flow</span>
-        <span>solid = rollout data · dashed = supervision or gradient ownership</span>
+        <span>solid = data flow · dashed gray = supervision/iteration · dashed blue = backward pass (gradients) · amber = external medgemma-4b-it</span>
       </div>
-      <svg viewBox="0 0 1180 800" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rl-title rl-desc" style="display:block;width:100%;height:auto;background:transparent">
+      <svg viewBox="0 0 1180 2052" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rl-title rl-desc" style="display:block;width:100%;height:auto;background:transparent">
         <title id="rl-title">Interactive Ranker v2 reinforcement learning process</title>
-        <desc id="rl-desc">The process freezes detector, utility, count, and remote environment artifacts; pretrains and freezes the semantic privacy head; initializes utility at lambda zero; then runs balanced lambda-conditioned rollout groups. Complete round trips produce assertion vectors for provisional RLOO credit and sparse one-decision counterfactual correction. Exact count targets update only the controller scale.</desc>
+        <desc id="rl-desc">Training consumes a frozen environment: corpus with detector decisions, lattice profiles with exact counts, QA assertions with policy roles, the pinned round-trip environment, and the semantic-v1 policy checkpoint. Warm start: privacy-head pretraining then freeze, behavior cloning, a utility-only expert-iteration loop at lambda zero, lambda-menu and threshold-manifest freeze, controller calibration, and KL-reference capture. The hybrid episode loop schedules one lambda per document group; the policy subsection shows frozen representations feeding the trainable utility path and the frozen privacy head, whose outputs meet in the additive controller before legal masking and softmax. Each rollout crosses the round-trip environment: doc_p goes to the external medgemma remote task model, the output is locally unperturbed, and the external medgemma QA reader scores context assertions on doc_p and delivered assertions on out_final into per-assertion vectors. RLOO leave-one-out credit routed by QA links, counterfactual reruns, and the exact-count objective assemble the loss; gradients reach the utility path and alpha while encoder and privacy head stay frozen. Outputs are the trained checkpoint, per-lambda evaluation, run diagnostics, and calibration artifacts.</desc>
         <defs>
           <marker id="rl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
           <style>
@@ -740,145 +565,311 @@ digraph RankerV2Edges {
             .ru{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.4}
             .rp{fill:#f1ddda;stroke:#9a5c54;stroke-width:1.4}
             .rc{fill:#e9e1ed;stroke:#765e82;stroke-width:1.4}
+            .rr{fill:#f7ead2;stroke:#9b6a2d;stroke-width:1.4}
             .rt{fill:#1c2024;font:500 14px 'JetBrains Mono',monospace}
             .rs{fill:#62686e;font:400 10.5px 'JetBrains Mono',monospace}
             .rk{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.6px}
+            .rki{fill:#62686e;font:600 9px 'JetBrains Mono',monospace;letter-spacing:1.4px}
             .rl{fill:none;stroke:#34393e;stroke-width:1.45}
             .rlu{fill:none;stroke:#3d6f9d;stroke-width:1.75}
             .rlp{fill:none;stroke:#ad665e;stroke-width:1.75}
             .rlc{fill:none;stroke:#765e82;stroke-width:1.75}
+            .rlr{fill:none;stroke:#a16f31;stroke-width:1.75}
             .rld{fill:none;stroke:#777c82;stroke-width:1.2;stroke-dasharray:4 4}
+            .rlg{fill:none;stroke:#3d6f9d;stroke-width:1.6;stroke-dasharray:5 4}
           </style>
         </defs>
-        <rect width="1180" height="800" fill="transparent"/>
+        <rect width="1180" height="2052" fill="transparent"/>
 
-        <text x="28" y="32" class="rk">01 · FREEZE THE ENVIRONMENT</text>
-        <rect x="20" y="46" width="1140" height="154" rx="16" class="rb"/>
-        <rect x="44" y="82" width="200" height="78" rx="7" class="rf"/>
-        <text x="144" y="107" text-anchor="middle" class="rt">detector artifact</text>
-        <text x="144" y="127" text-anchor="middle" class="rs">occurrences → decisions</text>
-        <text x="144" y="145" text-anchor="middle" class="rs">menus · first-occurrence order</text>
+        <text x="28" y="32" class="rk">01 · INPUTS · FROZEN ENVIRONMENT + POLICY CHECKPOINT</text>
+        <rect x="20" y="46" width="1140" height="236" rx="16" class="rb"/>
 
-        <rect x="274" y="82" width="200" height="78" rx="7" class="rf"/>
-        <text x="374" y="107" text-anchor="middle" class="rt">QA assertion artifact</text>
-        <text x="374" y="127" text-anchor="middle" class="rs">context + delivered scores</text>
-        <text x="374" y="145" text-anchor="middle" class="rs">weights · dependencies · Z_d</text>
+        <rect x="44" y="82" width="204" height="100" rx="7" class="rm"/>
+        <text x="146" y="107" text-anchor="middle" class="rt">training corpus</text>
+        <text x="146" y="127" text-anchor="middle" class="rs">documents + frozen detector</text>
+        <text x="146" y="143" text-anchor="middle" class="rs">occurrences → decisions</text>
+        <text x="146" y="159" text-anchor="middle" class="rs">menus · first-occurrence order</text>
 
-        <rect x="504" y="82" width="200" height="78" rx="7" class="rf"/>
-        <text x="604" y="107" text-anchor="middle" class="rt">count artifact</text>
-        <text x="604" y="127" text-anchor="middle" class="rs">100% explicit level coverage</text>
-        <text x="604" y="145" text-anchor="middle" class="rs">provenance · monotonicity</text>
+        <rect x="266" y="82" width="204" height="100" rx="7" class="rf"/>
+        <text x="368" y="107" text-anchor="middle" class="rt">lattice profiles</text>
+        <text x="368" y="127" text-anchor="middle" class="rs">truthful generalization levels</text>
+        <text x="368" y="143" text-anchor="middle" class="rs">exact level_counts · provenance</text>
+        <text x="368" y="159" text-anchor="middle" class="rs">profile normalization</text>
 
-        <rect x="734" y="82" width="200" height="78" rx="7" class="rf"/>
-        <text x="834" y="107" text-anchor="middle" class="rt">round-trip environment</text>
-        <text x="834" y="127" text-anchor="middle" class="rs">remote task · extractor</text>
-        <text x="834" y="145" text-anchor="middle" class="rs">reader · scorer · caches</text>
+        <rect x="488" y="82" width="204" height="100" rx="7" class="rf"/>
+        <text x="590" y="107" text-anchor="middle" class="rt">QA assertion artifact</text>
+        <text x="590" y="127" text-anchor="middle" class="rs">context + delivered scores</text>
+        <text x="590" y="143" text-anchor="middle" class="rs">policy vs monitoring roles</text>
+        <text x="590" y="159" text-anchor="middle" class="rs">Z_d = policy-role weight mass</text>
 
-        <rect x="964" y="82" width="172" height="78" rx="7" class="rf"/>
-        <text x="1050" y="107" text-anchor="middle" class="rt">lambda protocol</text>
-        <text x="1050" y="127" text-anchor="middle" class="rs">finite-menu rules</text>
-        <text x="1050" y="145" text-anchor="middle" class="rs">includes lambda = 0</text>
+        <rect x="710" y="82" width="204" height="100" rx="7" class="rf"/>
+        <text x="812" y="107" text-anchor="middle" class="rt">round-trip environment</text>
+        <text x="812" y="127" text-anchor="middle" class="rs">remote task LLM · extractor</text>
+        <text x="812" y="143" text-anchor="middle" class="rs">QA reader · scorer · caches</text>
+        <text x="812" y="159" text-anchor="middle" class="rs">all pinned + versioned</text>
 
-        <text x="28" y="238" class="rk">02 · BUILD A SEMANTIC STARTING POINT</text>
-        <rect x="20" y="252" width="1140" height="152" rx="16" class="rb"/>
-        <rect x="54" y="288" width="260" height="78" rx="7" class="rp"/>
-        <text x="184" y="313" text-anchor="middle" class="rt">privacy-head pretraining</text>
-        <text x="184" y="333" text-anchor="middle" class="rs">profile-held-out log-count</text>
-        <text x="184" y="351" text-anchor="middle" class="rs">calibration + ordering → freeze</text>
+        <rect x="932" y="82" width="204" height="100" rx="7" class="ru"/>
+        <text x="1034" y="107" text-anchor="middle" class="rt">policy model in</text>
+        <text x="1034" y="127" text-anchor="middle" class="rs">semantic-v1 checkpoint</text>
+        <text x="1034" y="143" text-anchor="middle" class="rs">trainable: utility path · α</text>
+        <text x="1034" y="159" text-anchor="middle" class="rs">frozen: encoder · privacy head</text>
 
-        <rect x="374" y="288" width="188" height="78" rx="7" class="ru"/>
-        <text x="468" y="313" text-anchor="middle" class="rt">behavior cloning</text>
-        <text x="468" y="333" text-anchor="middle" class="rs">support-preserving</text>
-        <text x="468" y="351" text-anchor="middle" class="rs">lambda-independent</text>
+        <rect x="44" y="200" width="1092" height="62" rx="7" class="rm"/>
+        <text x="590" y="221" text-anchor="middle" class="rt">load-time training transforms</text>
+        <text x="590" y="240" text-anchor="middle" class="rs">initial-RL scope: drug · health-condition · medical-procedure are ranker-controlled — out-of-scope or count-uncovered decisions → fixed KEEP</text>
+        <text x="590" y="256" text-anchor="middle" class="rs">zero-signal documents (no policy-role reward mass) are dropped from training at load time</text>
 
-        <rect x="622" y="288" width="236" height="78" rx="7" class="ru"/>
-        <text x="740" y="313" text-anchor="middle" class="rt">utility-only ExIt</text>
-        <text x="740" y="333" text-anchor="middle" class="rs">lambda = 0 · pure U_total</text>
-        <text x="740" y="351" text-anchor="middle" class="rs">verified winner cloning</text>
+        <text x="28" y="314" class="rk">02 · WARM START · PRIVACY HEAD → BC → EXIT → λ MENU → CONTROLLER CALIBRATION</text>
+        <rect x="20" y="328" width="1140" height="524" rx="16" class="rb"/>
 
-        <rect x="918" y="288" width="188" height="78" rx="7" class="rm"/>
-        <text x="1012" y="313" text-anchor="middle" class="rt">calibration + menu</text>
-        <text x="1012" y="333" text-anchor="middle" class="rs">nondominated (U,P)</text>
-        <text x="1012" y="351" text-anchor="middle" class="rs">switch points → freeze values</text>
+        <rect x="44" y="364" width="230" height="100" rx="7" class="rp"/>
+        <text x="159" y="389" text-anchor="middle" class="rt">privacy pretraining</text>
+        <text x="159" y="409" text-anchor="middle" class="rs">profile-held-out log-count</text>
+        <text x="159" y="425" text-anchor="middle" class="rs">must beat shortcut baselines</text>
+        <text x="159" y="441" text-anchor="middle" class="rs">→ frozen p̂ for the policy</text>
 
-        <path d="M314 327H370" class="rld" marker-end="url(#rl-arrow)"/>
-        <path d="M562 327H618" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M858 327H914" class="rl" marker-end="url(#rl-arrow)"/>
+        <rect x="298" y="350" width="540" height="130" rx="10" class="rb"/>
+        <text x="314" y="372" class="rki">BEHAVIOR CLONING · λ-INDEPENDENT · SUPPORT-PRESERVING INIT</text>
+        <rect x="314" y="386" width="250" height="76" rx="7" class="rm"/>
+        <text x="439" y="409" text-anchor="middle" class="rt">deterministic teacher</text>
+        <text x="439" y="428" text-anchor="middle" class="rs">walks decisions: finest legal</text>
+        <text x="439" y="444" text-anchor="middle" class="rs">level, else placeholder · claims fills</text>
+        <rect x="584" y="386" width="238" height="76" rx="7" class="ru"/>
+        <text x="703" y="409" text-anchor="middle" class="rt">cross-entropy fit</text>
+        <text x="703" y="428" text-anchor="middle" class="rs">match teacher action IDs</text>
+        <text x="703" y="444" text-anchor="middle" class="rs">over each dynamic legal menu</text>
+        <path d="M564 424H580" class="rl" marker-end="url(#rl-arrow)"/>
 
-        <text x="28" y="442" class="rk">03 · LAMBDA-CONDITIONED HYBRID EPISODE</text>
-        <rect x="20" y="456" width="1140" height="320" rx="16" class="rb"/>
+        <path d="M274 414H294" class="rld" marker-end="url(#rl-arrow)"/>
 
-        <rect x="42" y="494" width="146" height="68" rx="7" class="rm"/>
-        <text x="115" y="518" text-anchor="middle" class="rt">choose lambda</text>
-        <text x="115" y="538" text-anchor="middle" class="rs">balanced Latin cycle</text>
-        <text x="115" y="554" text-anchor="middle" class="rs">one value per group</text>
+        <rect x="44" y="504" width="1092" height="150" rx="10" class="rb"/>
+        <text x="60" y="526" class="rki">UTILITY-ONLY EXIT · λ = 0 · PER DOCUMENT, UNTIL NO VERIFIED IMPROVEMENT</text>
+        <rect x="60" y="540" width="196" height="86" rx="7" class="ru"/>
+        <text x="158" y="563" text-anchor="middle" class="rt">sample G rollouts</text>
+        <text x="158" y="582" text-anchor="middle" class="rs">current policy · λ = 0</text>
+        <text x="158" y="598" text-anchor="middle" class="rs">complete trajectories</text>
+        <rect x="272" y="540" width="196" height="86" rx="7" class="rf"/>
+        <text x="370" y="563" text-anchor="middle" class="rt">score pure U_total</text>
+        <text x="370" y="582" text-anchor="middle" class="rs">full round trip + reader</text>
+        <text x="370" y="598" text-anchor="middle" class="rs">no count · no λ term</text>
+        <rect x="484" y="540" width="196" height="86" rx="7" class="rm"/>
+        <text x="582" y="563" text-anchor="middle" class="rt">winner selection</text>
+        <text x="582" y="582" text-anchor="middle" class="rs">best rollout must strictly</text>
+        <text x="582" y="598" text-anchor="middle" class="rs">beat the BC reference</text>
+        <rect x="696" y="540" width="196" height="86" rx="7" class="rr"/>
+        <text x="794" y="563" text-anchor="middle" class="rt">serial reverify</text>
+        <text x="794" y="582" text-anchor="middle" class="rs">winner + reference rescored</text>
+        <text x="794" y="598" text-anchor="middle" class="rs">fresh reader pass (jitter)</text>
+        <rect x="908" y="540" width="196" height="86" rx="7" class="ru"/>
+        <text x="1006" y="563" text-anchor="middle" class="rt">clone winner</text>
+        <text x="1006" y="582" text-anchor="middle" class="rs">CE on every winner action</text>
+        <text x="1006" y="598" text-anchor="middle" class="rs">→ utility tower + memory</text>
+        <path d="M256 583H268" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M468 583H480" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M680 583H692" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M892 583H904" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M1006 626C1006 646 158 646 158 630" class="rld" marker-end="url(#rl-arrow)"/>
+        <path d="M703 462C703 494 590 490 584 536" class="rld" marker-end="url(#rl-arrow)"/>
+        <text x="600" y="498" class="rs">BC reference</text>
 
-        <rect x="224" y="494" width="170" height="68" rx="7" class="ru"/>
-        <text x="309" y="518" text-anchor="middle" class="rt">sequential policy</text>
-        <text x="309" y="538" text-anchor="middle" class="rs">first-occurrence walk</text>
-        <text x="309" y="554" text-anchor="middle" class="rs">dynamic legal mask</text>
+        <rect x="44" y="678" width="800" height="150" rx="10" class="rb"/>
+        <text x="60" y="700" class="rki">λ MENU + THRESHOLD MANIFEST · FROM CACHED (U,P) TRAJECTORIES</text>
+        <rect x="60" y="714" width="240" height="86" rx="7" class="rm"/>
+        <text x="180" y="737" text-anchor="middle" class="rt">calibration pool</text>
+        <text x="180" y="756" text-anchor="middle" class="rs">BC + ExIt winners + anchors</text>
+        <text x="180" y="771" text-anchor="middle" class="rs">+ samples + measured CFs</text>
+        <text x="180" y="786" text-anchor="middle" class="rs">≥3 distinct (U,P) per doc</text>
+        <rect x="324" y="714" width="240" height="86" rx="7" class="rm"/>
+        <text x="444" y="737" text-anchor="middle" class="rt">frontier switch points</text>
+        <text x="444" y="756" text-anchor="middle" class="rs">merge ties · drop dominated</text>
+        <text x="444" y="771" text-anchor="middle" class="rs">upper convex envelope</text>
+        <text x="444" y="786" text-anchor="middle" class="rs">→ candidate λ profiles</text>
+        <rect x="588" y="714" width="236" height="86" rx="7" class="rm"/>
+        <text x="706" y="737" text-anchor="middle" class="rt">replay acceptance</text>
+        <text x="706" y="756" text-anchor="middle" class="rs">snap to observed thresholds</text>
+        <text x="706" y="771" text-anchor="middle" class="rs">replay · ≥3 responsive</text>
+        <text x="706" y="786" text-anchor="middle" class="rs">profiles, else stop</text>
+        <path d="M300 757H320" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M564 757H584" class="rl" marker-end="url(#rl-arrow)"/>
 
-        <rect x="430" y="494" width="136" height="68" rx="7" class="ru"/>
-        <text x="498" y="518" text-anchor="middle" class="rt">G rollouts</text>
-        <text x="498" y="538" text-anchor="middle" class="rs">complete action</text>
-        <text x="498" y="554" text-anchor="middle" class="rs">trajectories</text>
+        <rect x="868" y="714" width="268" height="86" rx="7" class="rc"/>
+        <text x="1002" y="737" text-anchor="middle" class="rt">controller calibration</text>
+        <text x="1002" y="756" text-anchor="middle" class="rs">switch thresholds → alpha init</text>
+        <text x="1002" y="771" text-anchor="middle" class="rs">gap-normalized weighted median</text>
+        <text x="1002" y="786" text-anchor="middle" class="rs">then capture KL reference</text>
+        <path d="M844 757H864" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M590 654V674" class="rl" marker-end="url(#rl-arrow)"/>
 
-        <rect x="602" y="486" width="208" height="84" rx="7" class="rf"/>
-        <text x="706" y="509" text-anchor="middle" class="rt">complete round trip</text>
-        <text x="706" y="530" text-anchor="middle" class="rs">doc_orig → doc_p → remote</text>
-        <text x="706" y="548" text-anchor="middle" class="rs">out_p → unperturb → out_final</text>
-        <text x="706" y="563" text-anchor="middle" class="rs">score full assertion vector</text>
+        <text x="28" y="904" class="rk">03 · HYBRID RL · LAMBDA-CONDITIONED EPISODE LOOP</text>
+        <rect x="20" y="918" width="1140" height="900" rx="16" class="rb"/>
 
-        <rect x="846" y="486" width="272" height="84" rx="7" class="ru"/>
-        <text x="982" y="509" text-anchor="middle" class="rt">provisional utility credit</text>
-        <text x="982" y="530" text-anchor="middle" class="rs">linked RLOO + residual RLOO</text>
-        <text x="982" y="548" text-anchor="middle" class="rs">uncovered → document fallback</text>
-        <text x="982" y="563" text-anchor="middle" class="rs">fixed Z_d · no SD normalization</text>
+        <rect x="42" y="980" width="170" height="80" rx="7" class="rm"/>
+        <text x="127" y="1004" text-anchor="middle" class="rt">episode scheduler</text>
+        <text x="127" y="1024" text-anchor="middle" class="rs">epochs × balanced Latin</text>
+        <text x="127" y="1040" text-anchor="middle" class="rs">cycle · one λ per group</text>
 
-        <path d="M188 528H220" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M394 528H426" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M566 528H598" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M810 528H842" class="rlu" marker-end="url(#rl-arrow)"/>
+        <rect x="236" y="950" width="746" height="250" rx="10" class="rb"/>
+        <text x="252" y="972" class="rki">POLICY π(a | s, λ) · SEMANTIC-V1 · THE FIG M1 MODEL · SEQUENTIAL WALK</text>
 
-        <rect x="42" y="632" width="214" height="94" rx="7" class="rp"/>
-        <text x="149" y="656" text-anchor="middle" class="rt">exact count objective</text>
-        <text x="149" y="677" text-anchor="middle" class="rs">full legal menu expectation</text>
-        <text x="149" y="695" text-anchor="middle" class="rs">stopgrad u + stopgrad p_hat</text>
-        <text x="149" y="713" text-anchor="middle" class="rs">gradient → alpha only</text>
+        <rect x="252" y="984" width="170" height="72" rx="7" class="rf"/>
+        <text x="337" y="1007" text-anchor="middle" class="rt">frozen encoder</text>
+        <text x="337" y="1026" text-anchor="middle" class="rs">shared clinical encoder</text>
+        <text x="337" y="1042" text-anchor="middle" class="rs">H_doc · r_pair · frozen</text>
 
-        <rect x="300" y="632" width="250" height="94" rx="7" class="rc"/>
-        <text x="425" y="656" text-anchor="middle" class="rt">priority counterfactual</text>
-        <text x="425" y="677" text-anchor="middle" class="rs">change one decision, all occurrences</text>
-        <text x="425" y="695" text-anchor="middle" class="rs">rerun full round trip + full vector</text>
-        <text x="425" y="713" text-anchor="middle" class="rs">adjacent first · endpoints reserved</text>
+        <rect x="478" y="984" width="180" height="72" rx="7" class="ru"/>
+        <text x="568" y="1007" text-anchor="middle" class="rt">utility scoring</text>
+        <text x="568" y="1026" text-anchor="middle" class="rs">3× attention + memory</text>
+        <text x="568" y="1042" text-anchor="middle" class="rs">MLP → u(a) · trainable</text>
 
-        <rect x="594" y="632" width="218" height="94" rx="7" class="rc"/>
-        <text x="703" y="656" text-anchor="middle" class="rt">in-place correction</text>
-        <text x="703" y="677" text-anchor="middle" class="rs">delta_U over evaluated pair</text>
-        <text x="703" y="695" text-anchor="middle" class="rs">replace provisional 1/G term</text>
-        <text x="703" y="713" text-anchor="middle" class="rs">never add duplicate utility credit</text>
+        <rect x="478" y="1100" width="180" height="72" rx="7" class="rp"/>
+        <text x="568" y="1123" text-anchor="middle" class="rt">privacy head</text>
+        <text x="568" y="1142" text-anchor="middle" class="rs">log-count → p̂(a)</text>
+        <text x="568" y="1158" text-anchor="middle" class="rs">pretrained · frozen</text>
 
-        <rect x="856" y="624" width="262" height="110" rx="7" class="rm"/>
-        <text x="987" y="648" text-anchor="middle" class="rt">joint optimization</text>
-        <text x="987" y="670" text-anchor="middle" class="rs">utility / CF → utility + alpha</text>
-        <text x="987" y="688" text-anchor="middle" class="rs">exact count → alpha only</text>
-        <text x="987" y="706" text-anchor="middle" class="rs">entropy + KL regularization</text>
-        <text x="987" y="724" text-anchor="middle" class="rs">privacy head remains frozen</text>
+        <rect x="714" y="1100" width="180" height="72" rx="7" class="rc"/>
+        <text x="804" y="1123" text-anchor="middle" class="rt">λ controller</text>
+        <text x="804" y="1142" text-anchor="middle" class="rs">b = α·g(λ)·gap·p̂</text>
+        <text x="804" y="1158" text-anchor="middle" class="rs">α trainable</text>
 
-        <path d="M309 562C309 592 190 594 174 628" class="rlp" marker-end="url(#rl-arrow)"/>
-        <path d="M982 570C982 606 474 588 438 628" class="rlc" marker-end="url(#rl-arrow)"/>
-        <path d="M982 570V620" class="rlu" marker-end="url(#rl-arrow)"/>
-        <text x="992" y="600" class="rs">untested terms</text>
-        <path d="M550 679H590" class="rlc" marker-end="url(#rl-arrow)"/>
-        <path d="M812 679H852" class="rlc" marker-end="url(#rl-arrow)"/>
-        <path d="M149 726V750H987V738" class="rlp" marker-end="url(#rl-arrow)"/>
+        <rect x="714" y="984" width="180" height="72" rx="7" class="rm"/>
+        <text x="804" y="1007" text-anchor="middle" class="rt">π head</text>
+        <text x="804" y="1026" text-anchor="middle" class="rs">z = u + b · legal mask</text>
+        <text x="804" y="1042" text-anchor="middle" class="rs">log_softmax → sample</text>
+
+        <path d="M422 1016H474" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M422 1034C450 1034 448 1136 474 1136" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M658 1016H710" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M658 1136H710" class="rlp" marker-end="url(#rl-arrow)"/>
+        <path d="M794 1100V1060" class="rlc" marker-end="url(#rl-arrow)"/>
+
+        <path d="M710 1044H662" class="rlg" marker-end="url(#rl-arrow)"/>
+        <path d="M824 1060V1096" class="rlg" marker-end="url(#rl-arrow)"/>
+
+        <rect x="1006" y="984" width="130" height="72" rx="7" class="ru"/>
+        <text x="1071" y="1007" text-anchor="middle" class="rt">G rollouts</text>
+        <text x="1071" y="1026" text-anchor="middle" class="rs">complete action</text>
+        <text x="1071" y="1042" text-anchor="middle" class="rs">vectors → doc_p</text>
+
+        <path d="M212 1020H248" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M894 1000C950 1000 950 1020 1002 1020" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M1071 1056V1270" class="rlu" marker-end="url(#rl-arrow)"/>
+
+        <rect x="256" y="1244" width="880" height="186" rx="10" class="rb"/>
+        <text x="272" y="1266" class="rki">ROUND-TRIP ENVIRONMENT · EXTERNAL MODEL = MEDGEMMA-4B-IT · PER ROLLOUT</text>
+
+        <rect x="1008" y="1274" width="110" height="70" rx="7" class="rm"/>
+        <text x="1063" y="1300" text-anchor="middle" class="rt">doc_p</text>
+        <text x="1063" y="1320" text-anchor="middle" class="rs">only text sent</text>
+
+        <rect x="790" y="1266" width="180" height="86" rx="7" class="rr"/>
+        <text x="880" y="1290" text-anchor="middle" class="rt">remote task LLM</text>
+        <text x="880" y="1310" text-anchor="middle" class="rs">medgemma-4b-it · untrusted</text>
+        <text x="880" y="1326" text-anchor="middle" class="rs">closed box · returns out_p</text>
+
+        <rect x="610" y="1274" width="150" height="70" rx="7" class="rf"/>
+        <text x="685" y="1298" text-anchor="middle" class="rt">unperturb</text>
+        <text x="685" y="1318" text-anchor="middle" class="rs">out_p + R → out_final</text>
+
+        <rect x="412" y="1266" width="170" height="86" rx="7" class="rr"/>
+        <text x="497" y="1290" text-anchor="middle" class="rt">QA reader</text>
+        <text x="497" y="1310" text-anchor="middle" class="rs">medgemma-4b-it</text>
+        <text x="497" y="1326" text-anchor="middle" class="rs">scores each assertion</text>
+
+        <rect x="272" y="1274" width="110" height="70" rx="7" class="rm"/>
+        <text x="327" y="1300" text-anchor="middle" class="rt">u_g[q]</text>
+        <text x="327" y="1320" text-anchor="middle" class="rs">scores in [0,1]</text>
+
+        <path d="M1004 1302H974" class="rlr" marker-end="url(#rl-arrow)"/>
+        <path d="M786 1302H764" class="rlr" marker-end="url(#rl-arrow)"/>
+        <path d="M606 1302H586" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M408 1302H386" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M1063 1344C1063 1390 500 1392 497 1356" class="rld" marker-end="url(#rl-arrow)"/>
+        <text x="560" y="1408" class="rs">context assertions on doc_p · delivered assertions on out_final</text>
+
+        <rect x="42" y="1460" width="340" height="120" rx="7" class="ru"/>
+        <text x="212" y="1484" text-anchor="middle" class="rt">RLOO credit assignment</text>
+        <text x="212" y="1505" text-anchor="middle" class="rs">U[g,j] = Σ w_q·u_g[q] / Z_d (policy-role)</text>
+        <text x="212" y="1521" text-anchor="middle" class="rs">A[g,j] = U[g,j] − mean_{g'≠g} U[g',j]</text>
+        <text x="212" y="1537" text-anchor="middle" class="rs">routing: linked → residual → fallback</text>
+        <text x="212" y="1553" text-anchor="middle" class="rs">monitoring reported, never credited</text>
+
+        <rect x="414" y="1460" width="310" height="120" rx="7" class="rc"/>
+        <text x="569" y="1484" text-anchor="middle" class="rt">counterfactual correction</text>
+        <text x="569" y="1505" text-anchor="middle" class="rs">scheduler → one decision changed</text>
+        <text x="569" y="1521" text-anchor="middle" class="rs">full round-trip rerun → measured ΔU</text>
+        <text x="569" y="1537" text-anchor="middle" class="rs">replaces that decision's 1/G term</text>
+        <text x="569" y="1553" text-anchor="middle" class="rs">L_cf = −ΔU · (q_pair − ½)</text>
+
+        <rect x="756" y="1460" width="230" height="120" rx="7" class="rp"/>
+        <text x="871" y="1484" text-anchor="middle" class="rt">exact count objective</text>
+        <text x="871" y="1505" text-anchor="middle" class="rs">level_counts → p target</text>
+        <text x="871" y="1521" text-anchor="middle" class="rs">π_count on full legal menu</text>
+        <text x="871" y="1537" text-anchor="middle" class="rs">stopgrad(u) · stopgrad(p̂)</text>
+        <text x="871" y="1553" text-anchor="middle" class="rs">gradient → α only</text>
+
+        <path d="M327 1344C327 1394 250 1414 232 1456" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M569 1456V1434" class="rlc" marker-end="url(#rl-arrow)"/>
+        <text x="580" y="1450" class="rs">rerun environment</text>
+
+        <rect x="42" y="1632" width="600" height="96" rx="7" class="rm"/>
+        <text x="342" y="1656" text-anchor="middle" class="rt">loss assembly</text>
+        <text x="342" y="1678" text-anchor="middle" class="rs">ℓ[g,j] = −A[g,j] · log π(a_gj | s, λ) — counterfactual terms substitute in place</text>
+        <text x="342" y="1696" text-anchor="middle" class="rs">L = mean_d (1/G) Σ ℓ + L_count − β·entropy + η·KL(π ‖ π_ref = calibrated)</text>
+
+        <path d="M212 1580C212 1606 300 1610 320 1628" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M569 1580C569 1606 420 1610 400 1628" class="rlc" marker-end="url(#rl-arrow)"/>
+        <path d="M871 1580C871 1604 620 1600 566 1628" class="rlp" marker-end="url(#rl-arrow)"/>
+
+        <rect x="686" y="1632" width="210" height="96" rx="7" class="rm"/>
+        <text x="791" y="1656" text-anchor="middle" class="rt">optimizer step</text>
+        <text x="791" y="1678" text-anchor="middle" class="rs">AdamW applies accumulated ∇</text>
+        <text x="791" y="1694" text-anchor="middle" class="rs">to utility scoring + α only</text>
+        <text x="791" y="1710" text-anchor="middle" class="rs">then next (doc, λ)</text>
+
+        <rect x="930" y="1632" width="206" height="96" rx="7" class="rf"/>
+        <text x="1033" y="1656" text-anchor="middle" class="rt">stays frozen</text>
+        <text x="1033" y="1676" text-anchor="middle" class="rs">encoder · privacy head p̂</text>
+        <text x="1033" y="1692" text-anchor="middle" class="rs">exact counts: supervision</text>
+        <text x="1033" y="1708" text-anchor="middle" class="rs">only, never actor features</text>
+
+        <path d="M642 1680H682" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M600 1628V1606H1148V1222H930V1044H898" class="rlg" marker-end="url(#rl-arrow)"/>
+        <text x="938" y="1214" class="rs">backward pass ∂L</text>
+
+        <path d="M791 1728V1764H34V1020H38" class="rl" marker-end="url(#rl-arrow)"/>
+        <text x="70" y="1756" class="rs">next episode: same policy, updated weights</text>
+
+        <text x="28" y="1870" class="rk">04 · OUTPUTS</text>
+        <rect x="20" y="1884" width="1140" height="144" rx="16" class="rb"/>
+
+        <rect x="44" y="1916" width="255" height="88" rx="7" class="ru"/>
+        <text x="171" y="1941" text-anchor="middle" class="rt">trained checkpoint</text>
+        <text x="171" y="1961" text-anchor="middle" class="rs">utility path + calibrated α</text>
+        <text x="171" y="1977" text-anchor="middle" class="rs">controller-transform pinned</text>
+
+        <rect x="317" y="1916" width="255" height="88" rx="7" class="rm"/>
+        <text x="444" y="1941" text-anchor="middle" class="rt">per-λ evaluation</text>
+        <text x="444" y="1961" text-anchor="middle" class="rs">utility + selected count score</text>
+        <text x="444" y="1977" text-anchor="middle" class="rs">verdict = held-out attacker</text>
+
+        <rect x="590" y="1916" width="255" height="88" rx="7" class="rm"/>
+        <text x="717" y="1941" text-anchor="middle" class="rt">run diagnostics</text>
+        <text x="717" y="1961" text-anchor="middle" class="rs">α trajectory · mode rates</text>
+        <text x="717" y="1977" text-anchor="middle" class="rs">regret vs cached (U,P) frontier</text>
+
+        <rect x="863" y="1916" width="255" height="88" rx="7" class="rc"/>
+        <text x="990" y="1941" text-anchor="middle" class="rt">calibration artifacts</text>
+        <text x="990" y="1961" text-anchor="middle" class="rs">threshold manifest</text>
+        <text x="990" y="1977" text-anchor="middle" class="rs">KL reference checkpoint</text>
       </svg>
     </div>
 
     <div class="prose">
-      <p><strong>Freeze first.</strong> The detector artifact, action menus, counts and provenance, accepted QA assertions, remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches form one versioned environment. Changing any item invalidates cached utility, lambda calibration, and trained-policy comparisons together.</p>
+      <p><strong>Freeze first.</strong> The detector artifact, action menus, counts and provenance, accepted QA assertions, remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches form one versioned environment. Changing any item invalidates cached utility, lambda calibration, and trained-policy comparisons together. Two load-time transforms then shape the initial-RL corpus: only <code>drug</code>, <code>health-condition</code>, and <code>medical-procedure</code> decisions are ranker-controlled — out-of-scope or count-uncovered decisions are demoted to fixed KEEP — and documents with no policy-role reward mass are dropped from training.</p>
+      <p><strong>Warm start.</strong> The behavior-cloning teacher is a deterministic walk: for every decision it selects the finest legal lattice level, else the placeholder, claiming fills as it goes; the policy is fit by cross-entropy to these teacher actions over each dynamic legal menu at lambda zero, preserving support on all legal actions. ExIt then improves pure utility: sample G rollouts at lambda zero, score complete round trips, keep a winner only if it strictly beats the BC reference and survives serial reverification under a fresh reader pass, and clone its actions once into the utility tower. The lambda menu and threshold manifest are frozen from the cached (U,P) trajectory pool before controller calibration.</p>
+      <p><strong>Calibrate the controller before hybrid RL.</strong> Switch thresholds are measured on the warm-started policy's menus, <code>alpha</code> is initialized to their gap-normalized weighted median, and the KL reference checkpoint is captured only after calibration — anchoring KL to an uncalibrated reference would pull the controller back into the dead regime. This configuration is the adopted candidate of the controller-strength fork (RL decision log), pending re-evaluation under the production trainer.</p>
       <p><strong>One lambda per episode.</strong> A seeded balanced Latin-cycle schedule gives every document every supported lambda profile over each complete block. Independent random sampling is disallowed because it can confound operating preference with corpus or type exposure.</p>
-      <p><strong>One complete round trip per measured trajectory.</strong> Context assertions are scored on <code>doc_p</code>; delivered assertions are scored on <code>out_final</code>. Both contribute to the same fixed-denominator utility vector. Counterfactuals regenerate <code>doc_p</code>, rerun the remote task and local extraction, then rescore the complete vector.</p>
+      <p><strong>One complete round trip per measured trajectory.</strong> Context assertions are scored on <code>doc_p</code>; delivered assertions are scored on <code>out_final</code>. Both contribute to the same fixed policy-role-denominator utility vector; monitoring assertions (document-wide demographic probes, exact-relation contracts) are scored and reported but never credited. Counterfactuals regenerate <code>doc_p</code>, rerun the remote task and local extraction, then rescore the complete vector.</p>
     </div>
   </section>
 
@@ -903,6 +894,7 @@ digraph RankerV2Edges {
       <div>
         <h4>Utility objective</h4>
         <p><code>U(g,Q) = sum_q w_q u_g[q] / Z_d</code></p>
+        <p><code>Z_d</code> is the fixed policy-role weight mass; monitoring assertions never enter it.</p>
         <p><code>A[g,j] = U[g,j] - loo_mean(U[-g,j])</code></p>
         <p>No standard-deviation normalization. A constant assertion supplies no gradient.</p>
       </div>
@@ -914,7 +906,7 @@ digraph RankerV2Edges {
       </div>
     </div>
     <div class="prose">
-      <p><strong>Exact count view.</strong> <code>pi_count = softmax(mask(stopgrad(u) + alpha · g(lambda) · stopgrad(p_hat)))</code>. The dense objective is the negative expected exact target over every legal action, weighted by <code>lambda / |D_d|</code> and the same rollout-group factor <code>1/G</code>. Only <code>alpha</code> receives this gradient.</p>
+      <p><strong>Exact count view.</strong> <code>pi_count = softmax(mask(stopgrad(u) + alpha · g(lambda) · gap · stopgrad(p_hat)))</code>. The dense objective is the negative expected exact target over every legal action, weighted by <code>lambda / |D_d|</code> and the same rollout-group factor <code>1/G</code>. Only <code>alpha</code> receives this gradient.</p>
       <p><strong>Overall loss.</strong> <code>L = mean_d L_utility(d) + L_count - beta · entropy + eta · KL(pi || pi_ref)</code>. Counterfactual terms replace their corresponding provisional utility terms; they are not averaged into a separate unweighted bonus.</p>
       <p><strong>Scheduler.</strong> Counterfactual budget first covers decisions with no linked assertions, then multi-decision links and uncertain or stale measured pairs, while reserving nonzero probability for every eligible decision. Adjacent finer or coarser actions are preferred, with a pre-registered minority of KEEP and placeholder endpoint tests.</p>
     </div>
@@ -983,11 +975,13 @@ digraph RankerV2Edges {
         <rect x="44" y="82" width="120" height="66" rx="6" class="ii"/>
         <text x="104" y="108" text-anchor="middle" class="it">doc_orig</text>
         <text x="104" y="128" text-anchor="middle" class="is">private source</text>
-        <rect x="196" y="72" width="194" height="86" rx="6" class="if"/>
-        <text x="293" y="97" text-anchor="middle" class="it">detect + group</text>
-        <text x="293" y="117" text-anchor="middle" class="is">occurrences → decisions</text>
-        <text x="293" y="135" text-anchor="middle" class="is">lattice menus · stable IDs</text>
-        <text x="293" y="151" text-anchor="middle" class="is">first-occurrence order</text>
+        <rect x="196" y="60" width="194" height="116" rx="6" class="if"/>
+        <text x="293" y="84" text-anchor="middle" class="it">detect + group</text>
+        <text x="293" y="103" text-anchor="middle" class="is">occurrences → decisions</text>
+        <text x="293" y="118" text-anchor="middle" class="is">controlled: drug · health-</text>
+        <text x="293" y="133" text-anchor="middle" class="is">condition · medical-procedure</text>
+        <text x="293" y="148" text-anchor="middle" class="is">PERSON/CODE → placeholder</text>
+        <text x="293" y="163" text-anchor="middle" class="is">other detected → fixed KEEP</text>
         <rect x="430" y="72" width="216" height="86" rx="6" class="if"/>
         <text x="538" y="97" text-anchor="middle" class="it">representation store</text>
         <text x="538" y="117" text-anchor="middle" class="is">H_doc + r_pair per action</text>
@@ -1016,11 +1010,11 @@ digraph RankerV2Edges {
         <text x="277" y="310" text-anchor="middle" class="it">legal action IDs</text>
         <text x="277" y="330" text-anchor="middle" class="is">KEEP · levels · PH</text>
         <text x="277" y="347" text-anchor="middle" class="is">remove fill collisions</text>
-        <rect x="380" y="278" width="172" height="88" rx="6" class="iu"/>
-        <text x="466" y="303" text-anchor="middle" class="it">semantic-v1 forward</text>
-        <text x="466" y="323" text-anchor="middle" class="is">u + alpha·g(lambda)·p_hat</text>
-        <text x="466" y="341" text-anchor="middle" class="is">legal gather</text>
-        <text x="466" y="358" text-anchor="middle" class="is">log_softmax → log pi</text>
+        <rect x="380" y="278" width="186" height="88" rx="6" class="iu"/>
+        <text x="473" y="303" text-anchor="middle" class="it">semantic-v1 forward</text>
+        <text x="473" y="323" text-anchor="middle" class="is">u + alpha·g(lambda)·gap·p_hat</text>
+        <text x="473" y="341" text-anchor="middle" class="is">legal gather</text>
+        <text x="473" y="358" text-anchor="middle" class="is">log_softmax → log pi</text>
         <rect x="584" y="286" width="148" height="72" rx="6" class="iu"/>
         <text x="658" y="310" text-anchor="middle" class="it">select action</text>
         <text x="658" y="330" text-anchor="middle" class="is">deployment argmax</text>
@@ -1043,7 +1037,7 @@ digraph RankerV2Edges {
 
         <path d="M174 322H202" class="ilu" marker-end="url(#infer-arrow)"/>
         <path d="M348 322H376" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M552 322H580" class="ilu" marker-end="url(#infer-arrow)"/>
+        <path d="M566 322H580" class="ilu" marker-end="url(#infer-arrow)"/>
         <path d="M658 358C658 396 250 392 211 420" class="ilu" marker-end="url(#infer-arrow)"/>
         <path d="M304 468H340" class="ilu" marker-end="url(#infer-arrow)"/>
         <path d="M540 468H576" class="ilu" marker-end="url(#infer-arrow)"/>
@@ -1064,10 +1058,11 @@ digraph RankerV2Edges {
         <path d="M916 326H950" class="ilr" marker-end="url(#infer-arrow)"/>
 
         <rect x="782" y="450" width="378" height="140" rx="15" class="ib"/>
-        <rect x="806" y="482" width="182" height="74" rx="6" class="if"/>
+        <rect x="806" y="482" width="182" height="90" rx="6" class="if"/>
         <text x="897" y="507" text-anchor="middle" class="it">local unperturb</text>
         <text x="897" y="527" text-anchor="middle" class="is">out_p + substitution R</text>
-        <text x="897" y="545" text-anchor="middle" class="is">deterministic inversion</text>
+        <text x="897" y="543" text-anchor="middle" class="is">alias → first source surface</text>
+        <text x="897" y="559" text-anchor="middle" class="is">deterministic inversion</text>
         <rect x="1022" y="482" width="112" height="74" rx="6" class="ii"/>
         <text x="1078" y="508" text-anchor="middle" class="it">out_final</text>
         <text x="1078" y="528" text-anchor="middle" class="is">delivered</text>

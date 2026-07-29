@@ -1,9 +1,10 @@
 ---
 type: plan
-status: current
+status: stale
 created: 2026-07-29
 updated: 2026-07-29
 tags: [ranker-v2, html, figures, controller, documentation]
+archive_reason: Implemented 2026-07-29. Deviation by Timo's direction — FIG T1 was dropped entirely (not the planned secondary touch); its gradient-ownership content moved into FIG T2 panel 04, and T2 was restructured into a four-panel RL-training overview.
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-decision-log.md]
 ---
