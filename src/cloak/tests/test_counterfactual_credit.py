@@ -353,6 +353,117 @@ def test_selected_endpoint_pair_is_eligible_only_inside_endpoint_reserve():
     assert d1_requests[0].direction == "keep"
 
 
+def _keep_trajectory(document):
+    action_vector = {
+        decision.decision_id: f"{decision.decision_id}-keep"
+        for decision in document.policy_decisions
+    }
+    steps = tuple(
+        SampledStep(
+            decision_id=decision.decision_id,
+            legal_action_ids=tuple(
+                action.action_id for action in decision.actions
+            ),
+            selected_action_id=action_vector[decision.decision_id],
+            claimed_fills_before=(),
+        )
+        for decision in document.policy_decisions
+    )
+    return SampledTrajectory(
+        doc_id=document.doc_id,
+        lambda_profile="lambda-zero",
+        steps=steps,
+        action_vector=MappingProxyType(action_vector),
+    )
+
+
+def _keep_replayed(document):
+    steps = []
+    for decision in document.policy_decisions:
+        menu = tuple(action.action_id for action in decision.actions)
+        logits = torch.tensor([0.0, 0.4, -0.2, -0.5, -0.8], requires_grad=True)
+        log_probs = torch.log_softmax(logits, dim=0)
+        steps.append(ReplayedStep(
+            decision_id=decision.decision_id,
+            selected_action_id=f"{decision.decision_id}-keep",
+            legal_action_ids=menu,
+            log_prob=log_probs[3],
+            log_probs=log_probs,
+            count_log_probs=log_probs,
+            utility_logits=log_probs,
+            predicted_privacy=torch.zeros_like(log_probs),
+            entropy=torch.tensor(0.2),
+        ))
+    return ReplayedTrajectory(
+        doc_id=document.doc_id,
+        lambda_profile="lambda-zero",
+        steps=tuple(steps),
+    )
+
+
+def test_scheduler_degrades_to_endpoint_probes_for_all_keep_groups():
+    # Production defect 2026-07-29: a lambda-zero group whose rollouts converge
+    # to all-KEEP has zero adjacent-capable pairs; the scheduler must retype
+    # its adjacent slots to endpoint probes (keep -> finest level) instead of
+    # raising and killing the run.
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
+
+    document = _document()
+    trajectories = (_keep_trajectory(document), _keep_trajectory(document))
+    replayed = (_keep_replayed(document), _keep_replayed(document))
+    requests, diagnostics = schedule_counterfactuals(
+        {document.doc_id: document},
+        trajectories,
+        replayed,
+        utility_artifact=_utility_artifact(document),
+        credit_routes={document.doc_id: {
+            "d1": "document", "d2": "linked", "d3": "linked",
+        }},
+        pair_history={},
+        budget=5,
+        endpoint_budget=1,
+        seed=17,
+        current_round=10,
+    )
+
+    assert len(requests) == 5
+    assert all(
+        request.selected_action_id.endswith("-keep") for request in requests
+    )
+    assert all(
+        request.alternative_action_id.endswith("-fine") for request in requests
+    )
+    assert diagnostics["scheduled"] == 5
+    assert diagnostics["slot_shortfall"] == 0
+    assert diagnostics["retyped_slots"] == 4
+
+
+def test_scheduler_schedules_capacity_when_pairs_fall_short_of_budget():
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
+
+    document = _document()
+    trajectories = (_trajectory(document),)
+    replayed = (_replayed(document)[0],)
+    requests, diagnostics = schedule_counterfactuals(
+        {document.doc_id: document},
+        trajectories,
+        replayed,
+        utility_artifact=_utility_artifact(document),
+        credit_routes={document.doc_id: {
+            "d1": "document", "d2": "linked", "d3": "linked",
+        }},
+        pair_history={},
+        budget=5,
+        endpoint_budget=1,
+        seed=17,
+        current_round=10,
+    )
+
+    assert len(requests) == 3
+    assert diagnostics["scheduled"] == 3
+    assert diagnostics["slot_shortfall"] == 2
+
+
 @pytest.mark.parametrize("budget", [0, 3, 6, 5.0])
 def test_scheduler_rejects_nonpositive_or_nondivisible_budget(budget):
     from cloak.ranker.counterfactuals import schedule_counterfactuals

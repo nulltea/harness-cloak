@@ -380,10 +380,11 @@ def schedule_counterfactuals(
                     document.doc_id, rollout_index, decision.decision_id,
                 ))
 
-    if len(pairs) < budget:
-        raise ValueError(
-            f"counterfactual budget {budget} exceeds {len(pairs)} eligible pairs"
-        )
+    # Budget is a cap, not an exact demand (production defect 2026-07-29: a
+    # lambda-zero group whose rollouts converge to all-KEEP has zero
+    # adjacent-capable pairs, and small groups can have fewer eligible pairs
+    # than budget). Scarce groups schedule what capacity allows; the slot loop
+    # below degrades per slot instead of raising.
     rng = random.Random(seed)
     uniform_budget = budget // 5
     endpoint_slots = set(rng.sample(range(budget), endpoint_budget))
@@ -453,6 +454,7 @@ def schedule_counterfactuals(
             return oldest, (0, oldest_age)
         return balanced, (0, -1)
 
+    retyped_slots = 0
     for slot in range(budget):
         endpoint = slot in endpoint_slots
         pool = [
@@ -461,7 +463,25 @@ def schedule_counterfactuals(
             and preserves_remaining_slots(pair, slot)
         ]
         if not pool:
-            raise ValueError("counterfactual budget cannot satisfy endpoint constraints")
+            # Degrade instead of raising: first drop the lookahead (it presumes
+            # every future slot is fillable, which scarce groups violate), then
+            # retype the slot to the other probe kind, then stop scheduling.
+            # The strict path above is untouched, so full-capacity groups
+            # behave exactly as before.
+            pool = [
+                pair for pair in remaining
+                if candidates_for(pair, endpoint=endpoint)
+            ]
+            if not pool:
+                endpoint = not endpoint
+                pool = [
+                    pair for pair in remaining
+                    if candidates_for(pair, endpoint=endpoint)
+                ]
+                if pool:
+                    retyped_slots += 1
+            if not pool:
+                break
         if slot < uniform_budget:
             pair = rng.choice(pool)
             options, _history_priority = balanced_options(
@@ -519,12 +539,15 @@ def schedule_counterfactuals(
         )
         requests.append(request)
 
-    skip_reasons["budget_unselected"] += len(pairs) - budget
+    skip_reasons["budget_unselected"] += len(pairs) - len(selected_rows)
     directions_by_profile: dict[str, dict[str, int]] = {}
     for (profile_id, direction), count in sorted(profile_direction_counts.items()):
         directions_by_profile.setdefault(profile_id, {})[direction] = count
     diagnostics: dict[str, Any] = {
         "budget": budget,
+        "scheduled": len(selected_rows),
+        "slot_shortfall": budget - len(selected_rows),
+        "retyped_slots": retyped_slots,
         "uniform_allocation": uniform_budget,
         "priority_allocation": budget - uniform_budget,
         "endpoint_fraction": endpoint_budget / budget,
