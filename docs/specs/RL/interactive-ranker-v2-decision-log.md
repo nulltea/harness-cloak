@@ -597,5 +597,24 @@ whichever credit configuration this fork adopts — a dead-credit trainer
 under-uses added epochs. Production-readiness note independent of arms: the KL
 collapse trigger should gain a per-document condition (tracked, not an arm).
 
-**Status.** OPEN — evidence and design recorded; implementation and runs
-awaiting approval.
+**Mechanism screening adjudicated 2026-07-29 (seed 17, 8 epochs, matched
+baseline window).** Arm R FAILS: it eliminates fully-degenerate groups (25% ->
+0% on both small docs, mean 14 rollouts on D2N005) but the extra rollouts are
+reward-identical — reward-distinct vectors 1.06x/1.14x baseline against the
+preregistered >= 2x bar, and D2N005 median unique vectors 3.0 < 4. The
+preregistered diagnostic branch fires: the bottleneck is reward-effective
+diversity (assertion sensitivity), not rollout count — sampled-diversity
+approaches cannot fix small documents. Arm C PASSES: raw degeneracy comparable
+(12% vs 25%), utility-dead groups after substitution 0/16 (bar <= 10%),
+per-decision probe coverage 100% on both small docs at steady state (cycle 1;
+cycle 0 is the empty-history ramp: 50%/25%), 293 broadcast pair losses + 674
+deduplicated duplicate probes over 8 epochs. Probe signal is live where it
+matters: measured |Delta U| on D2N005 reaches 0.273 with 36% nonzero probes
+(large docs invert: 90% nonzero but small magnitudes — per-decision utility
+share scales inversely with D).
+
+**Status.** OPEN — Arm C (counterfactual dedup + broadcast + degeneracy-
+triggered coverage) graduates to stage 2: 12 epochs x seeds 17/29/47 under the
+production trainer, judged on the preregistered behavioral gates. Arm R
+rejected; no blind combination (the reward-insensitivity finding explains R's
+failure and C already targets it).
