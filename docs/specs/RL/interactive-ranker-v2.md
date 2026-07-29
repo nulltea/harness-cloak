@@ -2,7 +2,7 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-27
+updated: 2026-07-29
 tags: [rl, ranker, interactive-policy, reward-design, credit-assignment, counterfactual,
        anonymity-counts, lambda-conditioning, semantic-privacy, pareto, spec]
 supersedes: docs/specs/RL/count-privacy-reward.md
@@ -18,8 +18,10 @@ companion: [docs/specs/RL/interactive-ranker-v2-decision-log.md,
 
 # Interactive ranker v2 — conditional privacy–utility policy with structured credit
 
-**Status: normative design; reward-flow implementation exists, selected architecture remains to
-be implemented and validated.** This specification replaces the ranker reward, credit-assignment,
+**Status: normative design; implemented as the semantic-v1 policy and validated end-to-end at
+smoke scale (BC → ExIt → calibrated preflight → hybrid training, RL-ranker v7 record). Interim
+deviations from this document are enumerated in "Implementation status and interim deviations
+(2026-07-29)" at the end.** This specification replaces the ranker reward, credit-assignment,
 and operating-point design in the round-trip ranker spec. The companion
 `ranker-v2-architecture.md` is normative for model inputs, representations, and controller
 factorization. The infiller and pinned round-trip generation/reader machinery remain governed by
@@ -245,6 +247,15 @@ Z_d = utility_weight_denominator stored for document d
 
 `w_q` is the assertion weight stored by the QA artifact. `Z_d` is fixed even when a measurement
 family is missing; a subset is never renormalized by its own weight sum. `U(g, empty) = 0`.
+
+Under the live scorer (`qa-utility-runtime-v2`), every assertion carries a reward role: it is
+**policy** exactly when its dependency set intersects the document's policy decisions and its
+contract kind is not a gold-exactness kind (currently `exact_relation`); otherwise it is
+**monitoring**. `Z_d` is the weight mass of policy-role assertions only. Monitoring assertions —
+document-wide demographic probes, exact-relation contracts, and anything the ranker's actions
+cannot causally affect — are scored and reported alongside the reward but contribute no
+denominator mass, no credit, and no gradient. This keeps the utility signal undiluted by
+outcomes the policy cannot move.
 
 One scorer submission may flatten every context assertion from a rollout batch into one bounded
 work queue. Each assertion retains its own pinned question, reader clause, turn excerpt, answer
@@ -775,3 +786,38 @@ alternatives empirically unidentifiable and behaviorally inert at reachable scal
 the practically binding controller question is strength/initialization of α, tracked
 as its own fork. The decision-averaged alpha-routing variant remains available as
 default-off infrastructure (`train --alpha-utility-routing per-decision`).
+
+## Implementation status and interim deviations (2026-07-29)
+
+Enumerated deviations of the live implementation from the normative text above. Each is either
+an interim measure with a named exit condition or a candidate pending its preregistered gate;
+nothing here silently amends the normative sections.
+
+- **Interim privacy signal: direct grounded counts, not the semantic privacy head.** The learned
+  head failed its transfer gates (decision basis in the architecture decision log); production
+  runs use `DirectCountPrivacyProvider` — the frozen own-profile exact targets injected as the
+  controller's privacy score, provenance-tagged `direct-count`. This is a temporary measure while
+  a proper k-anonymity estimator model is trained; the privacy-head path (`--privacy-checkpoint`)
+  remains first-class in the trainer and the normative controller text is unchanged. Documentation
+  figures deliberately keep the privacy head as the depicted component.
+- **Controller strength (candidate, gate open).** Switch-calibrated alpha initialization plus
+  gap-scaled controller (decision log: "controller strength" fork) revives lambda responsiveness
+  on every spike seed and is the adopted candidate, wired default-off into the trainer
+  (`train --controller-gap-scaling utility-gap --alpha-init switch-calibrated`). Gap scaling
+  retags `controller_transform`, so architecture pins diverge exactly when controller semantics
+  do, and the KL reference is captured after calibration so KL anchors to the calibrated init.
+  Final adoption is gated on re-running the frontier-regret criterion under the production
+  trainer (counterfactual credit + KL enabled).
+- **Initial-RL controlled-type scope.** The first production runs control only `drug`,
+  `health-condition`, and `medical-procedure`. Out-of-scope or count-uncovered policy decisions
+  are demoted at load time to fixed KEEP (no action, no gradient, no count contribution);
+  PERSON/CODE remain rule-substituted placeholders and are tracked as monitoring assertions only.
+  Full-schema control re-enters per type once its count coverage and utility probes pass the
+  existing gates.
+- **Zero-signal document filter.** Documents whose policy assertions provide no reward mass under
+  the policy-role denominator are dropped from training at load time and logged; they remain in
+  evaluation corpora.
+- **Pinned remote and reader models.** Round-trip remote model and QA reader are both
+  `medgemma-4b-it` (single reader definition in the QA scorer); the utility-cache identity embeds
+  the extractor and runtime-type source hashes, so any change to either invalidates cached
+  utilities rather than silently reusing them.
