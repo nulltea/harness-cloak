@@ -548,12 +548,12 @@ digraph RankerV2Edges {
       <div class="section-num">§06</div><h2 class="section-title">Reinforcement Learning Process</h2>
       <div class="section-meta">inputs · warm start · episode loop · outputs</div>
     </header>
-    <div class="diagram-frame">
+    <div class="diagram-frame" style="width:min(1584px,calc(100vw - 48px));box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
       <div class="diagram-cap">
         <span class="l">FIG · T2: Training process and reward flow</span>
         <span>solid = data flow · dashed gray = supervision/iteration · dashed blue = backward pass (gradients) · amber = external medgemma-4b-it</span>
       </div>
-      <svg viewBox="0 0 1180 2052" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rl-title rl-desc" style="display:block;width:100%;height:auto;background:transparent">
+      <svg viewBox="0 0 1520 1836" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rl-title rl-desc" style="display:block;width:100%;height:auto;background:transparent">
         <title id="rl-title">Interactive Ranker v2 reinforcement learning process</title>
         <desc id="rl-desc">Training consumes a frozen environment: corpus with detector decisions, lattice profiles with exact counts, QA assertions with policy roles, the pinned round-trip environment, and the semantic-v1 policy checkpoint. Warm start: privacy-head pretraining then freeze, behavior cloning, a utility-only expert-iteration loop at lambda zero, lambda-menu and threshold-manifest freeze, controller calibration, and KL-reference capture. The hybrid episode loop schedules one lambda per document group; the policy subsection shows frozen representations feeding the trainable utility path and the frozen privacy head, whose outputs meet in the additive controller before legal masking and softmax. Each rollout crosses the round-trip environment: doc_p goes to the external medgemma remote task model, the output is locally unperturbed, and the external medgemma QA reader scores context assertions on doc_p and delivered assertions on out_final into per-assertion vectors. RLOO leave-one-out credit routed by QA links, counterfactual reruns, and the exact-count objective assemble the loss; gradients reach the utility path and alpha while encoder and privacy head stay frozen. Outputs are the trained checkpoint, per-lambda evaluation, run diagnostics, and calibration artifacts.</desc>
         <defs>
@@ -579,7 +579,7 @@ digraph RankerV2Edges {
             .rlg{fill:none;stroke:#3d6f9d;stroke-width:1.6;stroke-dasharray:5 4}
           </style>
         </defs>
-        <rect width="1180" height="2052" fill="transparent"/>
+        <rect width="1520" height="1836" fill="transparent"/>
 
         <text x="28" y="32" class="rk">01 · INPUTS · FROZEN ENVIRONMENT + POLICY CHECKPOINT</text>
         <rect x="20" y="46" width="1140" height="236" rx="16" class="rb"/>
@@ -716,8 +716,45 @@ digraph RankerV2Edges {
         <path d="M844 783H864" class="rl" marker-end="url(#rl-arrow)"/>
         <path d="M590 680V700" class="rl" marker-end="url(#rl-arrow)"/>
 
+        <rect x="1194" y="314" width="306" height="1035" rx="16" class="rb"/>
+        <text x="1210" y="336" class="rki">ROUND-TRIP ENVIRONMENT</text>
+        <text x="1210" y="352" class="rki">MEDGEMMA-4B-IT · SHARED BY 02 + 03</text>
+
+        <rect x="1220" y="380" width="254" height="70" rx="7" class="rm"/>
+        <text x="1347" y="406" text-anchor="middle" class="rt">doc_p</text>
+        <text x="1347" y="426" text-anchor="middle" class="rs">only text sent · per rollout</text>
+
+        <rect x="1220" y="480" width="254" height="86" rx="7" class="rr"/>
+        <text x="1347" y="503" text-anchor="middle" class="rt">remote task LLM</text>
+        <text x="1347" y="522" text-anchor="middle" class="rs">medgemma-4b-it · untrusted</text>
+        <text x="1347" y="538" text-anchor="middle" class="rs">closed box · returns out_p</text>
+
+        <rect x="1220" y="606" width="254" height="70" rx="7" class="rf"/>
+        <text x="1347" y="630" text-anchor="middle" class="rt">unperturb</text>
+        <text x="1347" y="650" text-anchor="middle" class="rs">out_p + R → out_final</text>
+
+        <rect x="1220" y="716" width="254" height="86" rx="7" class="rr"/>
+        <text x="1347" y="739" text-anchor="middle" class="rt">QA reader</text>
+        <text x="1347" y="758" text-anchor="middle" class="rs">medgemma-4b-it</text>
+        <text x="1347" y="774" text-anchor="middle" class="rs">scores each assertion</text>
+
+        <rect x="1220" y="1255" width="254" height="70" rx="7" class="rm"/>
+        <text x="1347" y="1281" text-anchor="middle" class="rt">u_g[q]</text>
+        <text x="1347" y="1301" text-anchor="middle" class="rs">scores in [0,1]</text>
+
+        <path d="M1347 450V476" class="rlr" marker-end="url(#rl-arrow)"/>
+        <path d="M1347 566V602" class="rlr" marker-end="url(#rl-arrow)"/>
+        <path d="M1347 676V712" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M1347 802V986" class="rl"/>
+        <text x="1347" y="1010" text-anchor="middle" class="rs">context assertions on doc_p</text>
+        <text x="1347" y="1026" text-anchor="middle" class="rs">delivered on out_final</text>
+        <path d="M1347 1040V1251" class="rl" marker-end="url(#rl-arrow)"/>
+
+        <path d="M370 566V524H1178" class="rld" marker-end="url(#rl-arrow)"/>
+        <text x="760" y="518" class="rs">ExIt scoring uses the same environment</text>
+
         <text x="28" y="904" class="rk">03 · HYBRID RL · LAMBDA-CONDITIONED EPISODE LOOP</text>
-        <rect x="20" y="918" width="1140" height="900" rx="16" class="rb"/>
+        <rect x="20" y="918" width="1140" height="690" rx="16" class="rb"/>
 
         <rect x="42" y="980" width="170" height="80" rx="7" class="rm"/>
         <text x="127" y="1004" text-anchor="middle" class="rt">episode scheduler</text>
@@ -768,115 +805,84 @@ digraph RankerV2Edges {
 
         <path d="M212 1020H248" class="rl" marker-end="url(#rl-arrow)"/>
         <path d="M894 1000C950 1000 950 1020 1002 1020" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M1071 1056V1270" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M1136 1020H1182V415H1216" class="rlu" marker-end="url(#rl-arrow)"/>
 
-        <rect x="256" y="1244" width="880" height="186" rx="10" class="rb"/>
-        <text x="272" y="1266" class="rki">ROUND-TRIP ENVIRONMENT · EXTERNAL MODEL = MEDGEMMA-4B-IT · PER ROLLOUT</text>
 
-        <rect x="1008" y="1274" width="110" height="70" rx="7" class="rm"/>
-        <text x="1063" y="1300" text-anchor="middle" class="rt">doc_p</text>
-        <text x="1063" y="1320" text-anchor="middle" class="rs">only text sent</text>
+        <rect x="42" y="1244" width="230" height="120" rx="7" class="rp"/>
+        <text x="157" y="1268" text-anchor="middle" class="rt">exact count objective</text>
+        <text x="157" y="1289" text-anchor="middle" class="rs">level_counts → p target</text>
+        <text x="157" y="1305" text-anchor="middle" class="rs">π_count on legal menu</text>
+        <text x="157" y="1321" text-anchor="middle" class="rs">stopgrad(u) · stopgrad(p̂)</text>
+        <text x="157" y="1337" text-anchor="middle" class="rs">gradient → α only</text>
 
-        <rect x="790" y="1266" width="180" height="86" rx="7" class="rr"/>
-        <text x="880" y="1290" text-anchor="middle" class="rt">remote task LLM</text>
-        <text x="880" y="1310" text-anchor="middle" class="rs">medgemma-4b-it · untrusted</text>
-        <text x="880" y="1326" text-anchor="middle" class="rs">closed box · returns out_p</text>
+        <rect x="296" y="1244" width="310" height="120" rx="7" class="rc"/>
+        <text x="451" y="1268" text-anchor="middle" class="rt">counterfactual correction</text>
+        <text x="451" y="1289" text-anchor="middle" class="rs">scheduler → one decision changed</text>
+        <text x="451" y="1305" text-anchor="middle" class="rs">full round-trip rerun → measured ΔU</text>
+        <text x="451" y="1321" text-anchor="middle" class="rs">replaces that decision's 1/G term</text>
+        <text x="451" y="1337" text-anchor="middle" class="rs">L_cf = −ΔU · (q_pair − ½)</text>
 
-        <rect x="610" y="1274" width="150" height="70" rx="7" class="rf"/>
-        <text x="685" y="1298" text-anchor="middle" class="rt">unperturb</text>
-        <text x="685" y="1318" text-anchor="middle" class="rs">out_p + R → out_final</text>
+        <rect x="646" y="1244" width="340" height="120" rx="7" class="ru"/>
+        <text x="816" y="1268" text-anchor="middle" class="rt">RLOO credit assignment</text>
+        <text x="816" y="1289" text-anchor="middle" class="rs">U[g,j] = Σ w_q·u_g[q] / Z_d (policy-role)</text>
+        <text x="816" y="1305" text-anchor="middle" class="rs">A[g,j] = U[g,j] − mean_{g'≠g} U[g',j]</text>
+        <text x="816" y="1321" text-anchor="middle" class="rs">routing: linked → residual → fallback</text>
+        <text x="816" y="1337" text-anchor="middle" class="rs">monitoring reported, never credited</text>
 
-        <rect x="412" y="1266" width="170" height="86" rx="7" class="rr"/>
-        <text x="497" y="1290" text-anchor="middle" class="rt">QA reader</text>
-        <text x="497" y="1310" text-anchor="middle" class="rs">medgemma-4b-it</text>
-        <text x="497" y="1326" text-anchor="middle" class="rs">scores each assertion</text>
+        <path d="M1216 1290H990" class="rlu" marker-end="url(#rl-arrow)"/>
+        <path d="M521 1364V1382H1182V1024" class="rld" marker-end="url(#rl-arrow)"/>
+        <text x="600" y="1376" class="rs">rerun full round trip</text>
 
-        <rect x="272" y="1274" width="110" height="70" rx="7" class="rm"/>
-        <text x="327" y="1300" text-anchor="middle" class="rt">u_g[q]</text>
-        <text x="327" y="1320" text-anchor="middle" class="rs">scores in [0,1]</text>
+        <rect x="42" y="1416" width="600" height="96" rx="7" class="rm"/>
+        <text x="342" y="1440" text-anchor="middle" class="rt">loss assembly</text>
+        <text x="342" y="1462" text-anchor="middle" class="rs">ℓ[g,j] = −A[g,j] · log π(a_gj | s, λ) — counterfactual terms substitute in place</text>
+        <text x="342" y="1480" text-anchor="middle" class="rs">L = mean_d (1/G) Σ ℓ + L_count − β·entropy + η·KL(π ‖ π_ref = calibrated)</text>
 
-        <path d="M1004 1302H974" class="rlr" marker-end="url(#rl-arrow)"/>
-        <path d="M786 1302H764" class="rlr" marker-end="url(#rl-arrow)"/>
-        <path d="M606 1302H586" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M408 1302H386" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M1063 1344C1063 1390 500 1392 497 1356" class="rld" marker-end="url(#rl-arrow)"/>
-        <text x="560" y="1408" class="rs">context assertions on doc_p · delivered assertions on out_final</text>
+        <path d="M157 1364V1412" class="rlp" marker-end="url(#rl-arrow)"/>
+        <path d="M411 1364C411 1390 400 1396 392 1412" class="rlc" marker-end="url(#rl-arrow)"/>
+        <path d="M660 1364C660 1390 630 1396 616 1412" class="rlu" marker-end="url(#rl-arrow)"/>
 
-        <rect x="42" y="1460" width="340" height="120" rx="7" class="ru"/>
-        <text x="212" y="1484" text-anchor="middle" class="rt">RLOO credit assignment</text>
-        <text x="212" y="1505" text-anchor="middle" class="rs">U[g,j] = Σ w_q·u_g[q] / Z_d (policy-role)</text>
-        <text x="212" y="1521" text-anchor="middle" class="rs">A[g,j] = U[g,j] − mean_{g'≠g} U[g',j]</text>
-        <text x="212" y="1537" text-anchor="middle" class="rs">routing: linked → residual → fallback</text>
-        <text x="212" y="1553" text-anchor="middle" class="rs">monitoring reported, never credited</text>
+        <rect x="686" y="1416" width="210" height="96" rx="7" class="rm"/>
+        <text x="791" y="1440" text-anchor="middle" class="rt">optimizer step</text>
+        <text x="791" y="1462" text-anchor="middle" class="rs">AdamW applies accumulated ∇</text>
+        <text x="791" y="1478" text-anchor="middle" class="rs">to utility scoring + α only</text>
+        <text x="791" y="1494" text-anchor="middle" class="rs">then next (doc, λ)</text>
 
-        <rect x="414" y="1460" width="310" height="120" rx="7" class="rc"/>
-        <text x="569" y="1484" text-anchor="middle" class="rt">counterfactual correction</text>
-        <text x="569" y="1505" text-anchor="middle" class="rs">scheduler → one decision changed</text>
-        <text x="569" y="1521" text-anchor="middle" class="rs">full round-trip rerun → measured ΔU</text>
-        <text x="569" y="1537" text-anchor="middle" class="rs">replaces that decision's 1/G term</text>
-        <text x="569" y="1553" text-anchor="middle" class="rs">L_cf = −ΔU · (q_pair − ½)</text>
+        <rect x="930" y="1416" width="206" height="96" rx="7" class="rf"/>
+        <text x="1033" y="1440" text-anchor="middle" class="rt">stays frozen</text>
+        <text x="1033" y="1460" text-anchor="middle" class="rs">encoder · privacy head p̂</text>
+        <text x="1033" y="1476" text-anchor="middle" class="rs">exact counts: supervision</text>
+        <text x="1033" y="1492" text-anchor="middle" class="rs">only, never actor features</text>
 
-        <rect x="756" y="1460" width="230" height="120" rx="7" class="rp"/>
-        <text x="871" y="1484" text-anchor="middle" class="rt">exact count objective</text>
-        <text x="871" y="1505" text-anchor="middle" class="rs">level_counts → p target</text>
-        <text x="871" y="1521" text-anchor="middle" class="rs">π_count on full legal menu</text>
-        <text x="871" y="1537" text-anchor="middle" class="rs">stopgrad(u) · stopgrad(p̂)</text>
-        <text x="871" y="1553" text-anchor="middle" class="rs">gradient → α only</text>
-
-        <path d="M327 1344C327 1394 250 1414 232 1456" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M569 1456V1434" class="rlc" marker-end="url(#rl-arrow)"/>
-        <text x="580" y="1450" class="rs">rerun environment</text>
-
-        <rect x="42" y="1632" width="600" height="96" rx="7" class="rm"/>
-        <text x="342" y="1656" text-anchor="middle" class="rt">loss assembly</text>
-        <text x="342" y="1678" text-anchor="middle" class="rs">ℓ[g,j] = −A[g,j] · log π(a_gj | s, λ) — counterfactual terms substitute in place</text>
-        <text x="342" y="1696" text-anchor="middle" class="rs">L = mean_d (1/G) Σ ℓ + L_count − β·entropy + η·KL(π ‖ π_ref = calibrated)</text>
-
-        <path d="M212 1580C212 1606 300 1610 320 1628" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M569 1580C569 1606 420 1610 400 1628" class="rlc" marker-end="url(#rl-arrow)"/>
-        <path d="M871 1580C871 1604 620 1600 566 1628" class="rlp" marker-end="url(#rl-arrow)"/>
-
-        <rect x="686" y="1632" width="210" height="96" rx="7" class="rm"/>
-        <text x="791" y="1656" text-anchor="middle" class="rt">optimizer step</text>
-        <text x="791" y="1678" text-anchor="middle" class="rs">AdamW applies accumulated ∇</text>
-        <text x="791" y="1694" text-anchor="middle" class="rs">to utility scoring + α only</text>
-        <text x="791" y="1710" text-anchor="middle" class="rs">then next (doc, λ)</text>
-
-        <rect x="930" y="1632" width="206" height="96" rx="7" class="rf"/>
-        <text x="1033" y="1656" text-anchor="middle" class="rt">stays frozen</text>
-        <text x="1033" y="1676" text-anchor="middle" class="rs">encoder · privacy head p̂</text>
-        <text x="1033" y="1692" text-anchor="middle" class="rs">exact counts: supervision</text>
-        <text x="1033" y="1708" text-anchor="middle" class="rs">only, never actor features</text>
-
-        <path d="M642 1680H682" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M600 1628V1606H1148V1222H930V1044H898" class="rlg" marker-end="url(#rl-arrow)"/>
+        <path d="M642 1464H682" class="rl" marker-end="url(#rl-arrow)"/>
+        <path d="M600 1416V1398H1148V1222H930V1044H898" class="rlg" marker-end="url(#rl-arrow)"/>
         <text x="938" y="1214" class="rs">backward pass ∂L</text>
 
-        <path d="M791 1728V1764H34V1020H38" class="rl" marker-end="url(#rl-arrow)"/>
-        <text x="70" y="1756" class="rs">next episode: same policy, updated weights</text>
+        <path d="M791 1512V1548H34V1020H38" class="rl" marker-end="url(#rl-arrow)"/>
+        <text x="70" y="1540" class="rs">next episode: same policy, updated weights</text>
 
-        <text x="28" y="1870" class="rk">04 · OUTPUTS</text>
-        <rect x="20" y="1884" width="1140" height="144" rx="16" class="rb"/>
+        <text x="28" y="1654" class="rk">04 · OUTPUTS</text>
+        <rect x="20" y="1668" width="1140" height="144" rx="16" class="rb"/>
 
-        <rect x="44" y="1916" width="255" height="88" rx="7" class="ru"/>
-        <text x="171" y="1941" text-anchor="middle" class="rt">trained checkpoint</text>
-        <text x="171" y="1961" text-anchor="middle" class="rs">utility path + calibrated α</text>
-        <text x="171" y="1977" text-anchor="middle" class="rs">controller-transform pinned</text>
+        <rect x="44" y="1700" width="255" height="88" rx="7" class="ru"/>
+        <text x="171" y="1725" text-anchor="middle" class="rt">trained checkpoint</text>
+        <text x="171" y="1745" text-anchor="middle" class="rs">utility path + calibrated α</text>
+        <text x="171" y="1761" text-anchor="middle" class="rs">controller-transform pinned</text>
 
-        <rect x="317" y="1916" width="255" height="88" rx="7" class="rm"/>
-        <text x="444" y="1941" text-anchor="middle" class="rt">per-λ evaluation</text>
-        <text x="444" y="1961" text-anchor="middle" class="rs">utility + selected count score</text>
-        <text x="444" y="1977" text-anchor="middle" class="rs">verdict = held-out attacker</text>
+        <rect x="317" y="1700" width="255" height="88" rx="7" class="rm"/>
+        <text x="444" y="1725" text-anchor="middle" class="rt">per-λ evaluation</text>
+        <text x="444" y="1745" text-anchor="middle" class="rs">utility + selected count score</text>
+        <text x="444" y="1761" text-anchor="middle" class="rs">verdict = held-out attacker</text>
 
-        <rect x="590" y="1916" width="255" height="88" rx="7" class="rm"/>
-        <text x="717" y="1941" text-anchor="middle" class="rt">run diagnostics</text>
-        <text x="717" y="1961" text-anchor="middle" class="rs">α trajectory · mode rates</text>
-        <text x="717" y="1977" text-anchor="middle" class="rs">regret vs cached (U,P) frontier</text>
+        <rect x="590" y="1700" width="255" height="88" rx="7" class="rm"/>
+        <text x="717" y="1725" text-anchor="middle" class="rt">run diagnostics</text>
+        <text x="717" y="1745" text-anchor="middle" class="rs">α trajectory · mode rates</text>
+        <text x="717" y="1761" text-anchor="middle" class="rs">regret vs cached (U,P) frontier</text>
 
-        <rect x="863" y="1916" width="255" height="88" rx="7" class="rc"/>
-        <text x="990" y="1941" text-anchor="middle" class="rt">calibration artifacts</text>
-        <text x="990" y="1961" text-anchor="middle" class="rs">threshold manifest</text>
-        <text x="990" y="1977" text-anchor="middle" class="rs">KL reference checkpoint</text>
+        <rect x="863" y="1700" width="255" height="88" rx="7" class="rc"/>
+        <text x="990" y="1725" text-anchor="middle" class="rt">calibration artifacts</text>
+        <text x="990" y="1745" text-anchor="middle" class="rs">threshold manifest</text>
+        <text x="990" y="1761" text-anchor="middle" class="rs">KL reference checkpoint</text>
       </svg>
     </div>
 
