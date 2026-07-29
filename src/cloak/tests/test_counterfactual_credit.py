@@ -464,6 +464,109 @@ def test_scheduler_schedules_capacity_when_pairs_fall_short_of_budget():
     assert diagnostics["slot_shortfall"] == 2
 
 
+def test_scheduler_dedups_identical_vector_pairs():
+    # Small-document credit-support fork: rollouts with identical complete
+    # vectors contribute pairs once per decision; the executor broadcast covers
+    # the duplicates, so budget must not be spent on them.
+    from cloak.ranker.counterfactuals import schedule_counterfactuals
+
+    document = _document()
+    trajectories = tuple(_trajectory(document) for _ in range(4))
+    replayed = tuple(_replayed(document)[0] for _ in range(4))
+    requests, diagnostics = schedule_counterfactuals(
+        {document.doc_id: document},
+        trajectories,
+        replayed,
+        utility_artifact=_utility_artifact(document),
+        credit_routes={document.doc_id: {
+            "d1": "document", "d2": "linked", "d3": "linked",
+        }},
+        pair_history={},
+        budget=5,
+        endpoint_budget=1,
+        seed=17,
+        current_round=10,
+        dedup_identical_vectors=True,
+    )
+
+    # 4 identical rollouts x 3 decisions -> only 3 unique-vector pairs remain.
+    assert len(requests) == 3
+    assert all(request.rollout_index == 0 for request in requests)
+    assert diagnostics["deduplicated_pairs"] == 9
+    assert diagnostics["skip_reasons"]["duplicate_vector_pair"] == 9
+
+
+def test_executor_broadcasts_measured_loss_to_identical_rollouts(tmp_path):
+    from cloak.ranker.counterfactuals import (
+        CounterfactualRequest,
+        execute_counterfactuals,
+    )
+
+    document = _document()
+    trajectories = (_trajectory(document), _trajectory(document))
+    replayed = (_replayed(document)[0], _replayed(document)[0])
+    artifact = _utility_artifact(document)
+
+    def scorer(requests, *, cache, remote_workers, reader_workers, reader_refresh=False):
+        del remote_workers, reader_workers, reader_refresh
+        cache.last_batch_metrics = {"cache_hits": 0}
+        output = []
+        for request in requests:
+            rendered, _ = assemble_action_vector(
+                request.document, request.action_vector,
+            )
+            utility = 0.8 if request.action_vector["d1"] == "d1-middle" else 0.3
+            output.append(make_result(
+                doc_id=request.document.doc_id,
+                action_vector=request.action_vector,
+                doc_p=rendered,
+                out_p="fixture-remote",
+                out_final="fixture-final",
+                component_scores={"a-residual": utility, "a-hyperedge": utility},
+                utility=utility,
+            ))
+        return output
+
+    losses, diagnostics = execute_counterfactuals(
+        (CounterfactualRequest(
+            document.doc_id, 0, "d1", "d1-middle", "d1-fine", "finer", 0,
+        ),),
+        {document.doc_id: document},
+        trajectories,
+        replayed,
+        utility_artifact=artifact,
+        environment_hash="env-hash",
+        cache=UtilityCache(tmp_path / "cache.jsonl"),
+        remote_workers=1,
+        reader_workers=1,
+        score_batch=scorer,
+        scheduler_diagnostics={"budget": 1, "skip_reasons": {}},
+        broadcast=True,
+    )
+
+    assert losses.keys() == {(0, "d1"), (1, "d1")}
+    assert torch.allclose(losses[(0, "d1")], losses[(1, "d1")])
+    assert diagnostics["broadcast_pairs"] == 1
+    # without broadcast the duplicate pair stays uncovered
+    losses_off, diagnostics_off = execute_counterfactuals(
+        (CounterfactualRequest(
+            document.doc_id, 0, "d1", "d1-middle", "d1-fine", "finer", 0,
+        ),),
+        {document.doc_id: document},
+        trajectories,
+        replayed,
+        utility_artifact=artifact,
+        environment_hash="env-hash",
+        cache=UtilityCache(tmp_path / "cache2.jsonl"),
+        remote_workers=1,
+        reader_workers=1,
+        score_batch=scorer,
+        scheduler_diagnostics={"budget": 1, "skip_reasons": {}},
+    )
+    assert losses_off.keys() == {(0, "d1")}
+    assert diagnostics_off["broadcast_pairs"] == 0
+
+
 @pytest.mark.parametrize("budget", [0, 3, 6, 5.0])
 def test_scheduler_rejects_nonpositive_or_nondivisible_budget(budget):
     from cloak.ranker.counterfactuals import schedule_counterfactuals

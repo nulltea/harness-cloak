@@ -156,6 +156,13 @@ def build_parser() -> argparse.ArgumentParser:
         "--alpha-init", choices=("checkpoint", "switch-calibrated"),
         default="checkpoint",
     )
+    train.add_argument(
+        "--rollout-scaling", choices=("fixed", "support"), default="fixed",
+    )
+    train.add_argument(
+        "--counterfactual-coverage", choices=("fixed", "degeneracy"),
+        default="fixed",
+    )
     return parser
 
 
@@ -847,6 +854,10 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         "alpha_utility_routing": getattr(args, "alpha_utility_routing", "none"),
         "controller_gap_scaling": getattr(args, "controller_gap_scaling", "none"),
         "alpha_init": getattr(args, "alpha_init", "checkpoint"),
+        "rollout_scaling": getattr(args, "rollout_scaling", "fixed"),
+        "counterfactual_coverage": getattr(
+            args, "counterfactual_coverage", "fixed",
+        ),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
 
@@ -1064,6 +1075,10 @@ def _run_train(args) -> None:
         kl_enabled=kl_enabled,
         cache_only=args.cache_only,
         epoch_callback=save_epoch,
+        rollout_scaling=getattr(args, "rollout_scaling", "fixed"),
+        counterfactual_coverage=getattr(
+            args, "counterfactual_coverage", "fixed",
+        ),
     )
 
     zero_profiles = (profiles[0],)
@@ -1134,6 +1149,10 @@ def _run_train(args) -> None:
         generator=control_generator,
         cache_only=args.cache_only,
         epoch_callback=save_control_epoch,
+        rollout_scaling=getattr(args, "rollout_scaling", "fixed"),
+        counterfactual_coverage=getattr(
+            args, "counterfactual_coverage", "fixed",
+        ),
     )
     _write_epoch_reports(
         args.epoch_reports,

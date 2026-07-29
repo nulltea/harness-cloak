@@ -858,6 +858,53 @@ def sample_trajectory(
     )
 
 
+def dominant_trajectory_probability(
+    policy: TrajectoryPolicy,
+    document: RankerDocument,
+    lambda_profile,
+) -> float:
+    """Exact probability of the greedy legal walk under the current policy.
+
+    The greedy walk is the (near-)dominant complete action vector; its
+    probability p_hat drives support-scaled rollouts: a group of R rollouts is
+    fully degenerate with probability ~p_hat^R (small-document credit-support
+    fork, decision log 2026-07-29).
+    """
+    occurrence_by_id, _ = _occurrence_maps(document)
+    reserved = tuple(_fixed_fill_claims(document, occurrence_by_id))
+    claimed: dict[str, str] = {}
+    state = policy.begin_document(document, lambda_profile)
+    log_probability = 0.0
+    with torch.no_grad():
+        for decision in document.policy_decisions:
+            menu = legal_action_ids(decision, claimed, reserved)
+            log_probs = _checked_log_probs(
+                policy, state, decision, menu, lambda_profile,
+            )
+            index = int(torch.argmax(log_probs).item())
+            log_probability += float(log_probs[index])
+            action = _action_by_id(decision, menu[index])
+            if action.mode == "level":
+                assert action.fill is not None
+                claimed.setdefault(_fill_key(action.fill), decision.decision_id)
+            state = policy.advance(state, decision, menu[index])
+    return math.exp(log_probability)
+
+
+def support_scaled_rollouts(
+    p_hat: float,
+    base: int,
+    *,
+    cap: int = 32,
+    degenerate_target: float = 0.05,
+) -> int:
+    """Smallest rollout count holding P[all rollouts identical] under target."""
+    if not 0.0 < p_hat < 1.0:
+        return cap if p_hat >= 1.0 else base
+    needed = math.ceil(math.log(degenerate_target) / math.log(p_hat))
+    return max(base, min(cap, needed))
+
+
 def replay_trajectory(
     policy: TrajectoryPolicy,
     document: RankerDocument,
@@ -1426,6 +1473,7 @@ def train_hybrid_document_group(
     counterfactual_executor: Callable | None = None,
     cache_only: bool = False,
     max_grad_norm: float | None = None,
+    counterfactual_coverage: str = "fixed",
 ) -> DocumentTrainingResult:
     """Run one complete sampled/scored/replayed optimizer step for a document group."""
 
@@ -1473,6 +1521,30 @@ def train_hybrid_document_group(
         replay_trajectory(policy, document, trajectory, profile)
         for trajectory in trajectories
     )
+    effective_budget = counterfactual_budget
+    effective_endpoint = endpoint_budget
+    scheduler_options: dict[str, Any] = {}
+    executor_options: dict[str, Any] = {}
+    if counterfactual_coverage == "degeneracy":
+        # Small-document credit-support fork (decision log 2026-07-29): dedup
+        # identical-vector pairs, broadcast measured losses back to them, and
+        # widen the unique-intervention budget when the group is degenerate so
+        # every decision of the dominant vector can be probed.
+        unique_vectors = len({
+            tuple(sorted(trajectory.action_vector.items()))
+            for trajectory in trajectories
+        })
+        if unique_vectors <= 3:
+            coverage_budget = min(
+                15, 5 * math.ceil(len(document.policy_decisions) / 5),
+            )
+            if coverage_budget > counterfactual_budget:
+                effective_budget = coverage_budget
+                effective_endpoint = (
+                    coverage_budget * endpoint_budget // counterfactual_budget
+                )
+        scheduler_options["dedup_identical_vectors"] = True
+        executor_options["broadcast"] = True
     requests, scheduler_diagnostics = scheduler(
         {document.doc_id: document},
         trajectories,
@@ -1480,10 +1552,11 @@ def train_hybrid_document_group(
         utility_artifact=utility_artifact,
         credit_routes={document.doc_id: credit.route},
         pair_history=pair_history,
-        budget=counterfactual_budget,
-        endpoint_budget=endpoint_budget,
+        budget=effective_budget,
+        endpoint_budget=effective_endpoint,
         seed=seed,
         current_round=current_round,
+        **scheduler_options,
     )
     if cache_only and requests:
         utility_requests = []
@@ -1514,6 +1587,7 @@ def train_hybrid_document_group(
         reader_workers=reader_workers,
         scheduler_diagnostics=scheduler_diagnostics,
         score_batch=score_batch,
+        **executor_options,
     )
     counterfactual_cache_metrics = dict(cache.last_batch_metrics)
     if requests:
@@ -2027,6 +2101,8 @@ def train_hybrid_policy(
     score_batch: Callable[..., Sequence[UtilityResult]] | None = None,
     group_trainer: Callable = train_hybrid_document_group,
     epoch_callback: Callable[[int, Sequence[Mapping], Mapping, bool], None] | None = None,
+    rollout_scaling: str = "fixed",
+    counterfactual_coverage: str = "fixed",
 ) -> HybridTrainingResult:
     """Train document groups in a seeded balanced profile cycle."""
 
@@ -2047,12 +2123,22 @@ def train_hybrid_policy(
         groups = []
         for document_index, document in enumerate(documents):
             profile = schedule.profile_for(document.doc_id, epoch)
+            group_rollouts = rollouts
+            if rollout_scaling == "support":
+                group_rollouts = support_scaled_rollouts(
+                    dominant_trajectory_probability(policy, document, profile),
+                    rollouts,
+                )
+            group_options: dict[str, Any] = {}
+            if counterfactual_coverage != "fixed":
+                group_options["counterfactual_coverage"] = counterfactual_coverage
             groups.append(group_trainer(
                 policy,
                 reference_policy,
                 document,
                 profile,
-                rollouts=rollouts,
+                rollouts=group_rollouts,
+                **group_options,
                 utility_artifact=utility_artifact,
                 environment_hash=environment_hash,
                 profile_targets=profile_targets,

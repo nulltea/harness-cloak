@@ -83,6 +83,12 @@ finiteness/stability) not regressing vs the spike.
   from epoch 0 (deterministic replay through the cache reproduces the first
   8 epochs).
 
+- 2026-07-29, seed 29 epoch 0: the family-term reconstruction diagnostic
+  (fp32 sums in different order, atol 1e-7/rtol 0) tripped on the sharper
+  ExIt-cloned policy (first seed with live winners: 2). Tolerance set to the
+  standard fp32 rtol 1e-5/atol 1e-6; diagnostics-only, training math
+  untouched. Seeds 29/47 restarted from BC (deterministic).
+
 ## Results
 
 pending

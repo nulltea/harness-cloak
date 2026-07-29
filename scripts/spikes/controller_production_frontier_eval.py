@@ -56,7 +56,11 @@ def main() -> None:
     for line in Path(
         "results/ranker_v2/cache/utility-results.jsonl"
     ).read_text().splitlines():
-        row = json.loads(line)["result"]
+        try:
+            row = json.loads(line)["result"]
+        except json.JSONDecodeError:
+            # trailing partial line while a trainer is appending
+            continue
         doc_id = row["doc_id"]
         if doc_id not in docs:
             continue

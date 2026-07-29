@@ -262,8 +262,16 @@ def schedule_counterfactuals(
     endpoint_budget: int,
     seed: int,
     current_round: int,
+    dedup_identical_vectors: bool = False,
 ) -> tuple[tuple[CounterfactualRequest, ...], dict[str, Any]]:
-    """Allocate the exact 20/80 call budget without exposing reward values."""
+    """Allocate the exact 20/80 call budget without exposing reward values.
+
+    With dedup_identical_vectors, rollouts sharing a complete action vector
+    contribute pairs only once per decision — a measured intervention is exact
+    for every duplicate (small-document credit-support fork, decision log
+    2026-07-29), so spending budget on duplicates is pure waste; the executor's
+    broadcast substitutes the measured loss into the duplicate pairs.
+    """
 
     if (
         not isinstance(budget, int)
@@ -286,6 +294,8 @@ def schedule_counterfactuals(
     skip_reasons: Counter[str] = Counter()
     pairs: list[_EligiblePair] = []
     never_measured_ids: set[tuple[str, int, str]] = set()
+    seen_vector_decisions: set[tuple[tuple[tuple[str, str], ...], str]] = set()
+    deduplicated_pairs = 0
     for rollout_index, (trajectory, replay) in enumerate(
         zip(trajectories, replayed, strict=True)
     ):
@@ -303,6 +313,7 @@ def schedule_counterfactuals(
         routes = credit_routes.get(document.doc_id)
         if routes is None:
             raise ValueError(f"missing credit routes for {document.doc_id}")
+        vector_items = tuple(sorted(trajectory.action_vector.items()))
         for decision in document.policy_decisions:
             try:
                 replayed_step = replay_steps[decision.decision_id]
@@ -311,6 +322,13 @@ def schedule_counterfactuals(
                 raise ValueError(
                     f"missing replay/credit route for {decision.decision_id}"
                 ) from error
+            if dedup_identical_vectors:
+                vector_decision = (vector_items, decision.decision_id)
+                if vector_decision in seen_vector_decisions:
+                    deduplicated_pairs += 1
+                    skip_reasons["duplicate_vector_pair"] += 1
+                    continue
+                seen_vector_decisions.add(vector_decision)
             eligible, reasons = _eligible_with_reasons(
                 document, trajectory, decision.decision_id,
             )
@@ -548,6 +566,7 @@ def schedule_counterfactuals(
         "scheduled": len(selected_rows),
         "slot_shortfall": budget - len(selected_rows),
         "retyped_slots": retyped_slots,
+        "deduplicated_pairs": deduplicated_pairs,
         "uniform_allocation": uniform_budget,
         "priority_allocation": budget - uniform_budget,
         "endpoint_fraction": endpoint_budget / budget,
@@ -585,8 +604,16 @@ def execute_counterfactuals(
     reader_workers: int,
     scheduler_diagnostics: Mapping[str, Any],
     score_batch: Callable[..., Sequence[UtilityResult]] | None = None,
+    broadcast: bool = False,
 ) -> tuple[dict[tuple[int, str], torch.Tensor], dict[str, Any]]:
-    """Measure complete one-decision vectors and build graph-bearing pair losses."""
+    """Measure complete one-decision vectors and build graph-bearing pair losses.
+
+    With broadcast, a measured delta-U also substitutes a pair loss into every
+    other rollout whose complete action vector is identical to the probed one —
+    exact by construction (identical selected vector, counterfactual vector, and
+    replay state), at zero extra scorer calls (small-document credit-support
+    fork, decision log 2026-07-29).
+    """
 
     requests = tuple(requests)
     trajectories = tuple(trajectories)
@@ -674,6 +701,7 @@ def execute_counterfactuals(
 
     losses: dict[tuple[int, str], torch.Tensor] = {}
     deltas: list[float] = []
+    broadcast_pairs = 0
     for index, (request, trajectory, replayed_step, alternative_vector) in enumerate(validated):
         selected_result = results[2 * index]
         alternative_result = results[2 * index + 1]
@@ -707,8 +735,42 @@ def execute_counterfactuals(
             raise ValueError("non-finite counterfactual pair loss")
         losses[(request.rollout_index, request.decision_id)] = pair_loss
         deltas.append(float(delta_u))
+        if broadcast:
+            selected_items = tuple(sorted(trajectory.action_vector.items()))
+            for other_index, other_replay in enumerate(replayed):
+                if other_index == request.rollout_index:
+                    continue
+                other_items = tuple(sorted(
+                    trajectories[other_index].action_vector.items()
+                ))
+                if other_items != selected_items:
+                    continue
+                other_pair = (other_index, request.decision_id)
+                if other_pair in losses:
+                    continue
+                other_steps = [
+                    step for step in other_replay.steps
+                    if step.decision_id == request.decision_id
+                ]
+                if (
+                    len(other_steps) != 1
+                    or other_steps[0].legal_action_ids
+                    != replayed_step.legal_action_ids
+                ):
+                    continue
+                other_step = other_steps[0]
+                other_q = torch.softmax(torch.stack((
+                    other_step.log_probs[selected_index],
+                    other_step.log_probs[alternative_index],
+                )), dim=0)[0]
+                other_loss = -float(delta_u) * (other_q - 0.5)
+                if not bool(torch.isfinite(other_loss)):
+                    raise ValueError("non-finite broadcast counterfactual pair loss")
+                losses[other_pair] = other_loss
+                broadcast_pairs += 1
 
     diagnostics = copy.deepcopy(dict(scheduler_diagnostics))
+    diagnostics["broadcast_pairs"] = broadcast_pairs
     diagnostics["cache_hits"] = int(
         cache.last_batch_metrics.get("cache_hits", cache.hits - hits_before)
     )

@@ -2733,3 +2733,38 @@ def test_assembly_alias_group_fills_restore_instead_of_retaining():
     assert stats["gen_retained"] == 0
     assert "fill" not in out_final.lower()
     assert "Foo" in out_final
+
+
+def test_support_scaled_rollouts_targets_degeneracy_probability():
+    from cloak.ranker.interactive import support_scaled_rollouts
+
+    # p_hat^R <= 0.05: p=0.9 needs 29, p=0.97 hits the cap, diverse docs stay at base
+    assert support_scaled_rollouts(0.90, 8) == 29
+    assert support_scaled_rollouts(0.97, 8) == 32
+    assert support_scaled_rollouts(0.10, 8) == 8
+    assert support_scaled_rollouts(1.0, 8) == 32
+    assert support_scaled_rollouts(0.0, 8) == 8
+    for p_hat in (0.5, 0.8, 0.9, 0.95):
+        rollouts = support_scaled_rollouts(p_hat, 8)
+        assert p_hat ** rollouts <= 0.05 or rollouts == 32
+
+
+def test_dominant_trajectory_probability_matches_greedy_walk():
+    import math
+
+    from cloak.ranker.interactive import (
+        dominant_trajectory_probability,
+        sample_trajectory,
+        replay_trajectory,
+    )
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, _, profiles, _ = _direct_count_policy()
+    p_hat = dominant_trajectory_probability(policy, document, profiles[0])
+    assert 0.0 < p_hat <= 1.0
+    greedy = sample_trajectory(
+        policy, document, profiles[0], greedy=True, generator=None,
+    )
+    replayed = replay_trajectory(policy, document, greedy, profiles[0])
+    expected = math.exp(sum(float(step.log_prob) for step in replayed.steps))
+    assert p_hat == pytest.approx(expected, rel=1e-5)
