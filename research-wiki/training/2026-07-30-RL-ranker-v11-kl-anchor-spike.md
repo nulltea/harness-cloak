@@ -73,7 +73,18 @@ controller capacity.
 
 ## Results
 
-pending
+- FORWARD arm, seed 47: KILLED at cycle 1 per the early-kill rule — item 1
+  failed definitively (synchronous D2N005 Delta P(lambda-3) = +0.02..+0.05
+  across epochs 0-3 vs the >= 0.20 bar; "every completed cycle" cannot be
+  recovered). The anchor itself works mechanically: logit ranges bounded at
+  9-18 (reference 9-15; unanchored stage-2 exploded to 277-327), flat-decision
+  expected privacy ~0.53, no drift. Failure mode: OVER-ANCHORING — a
+  symmetric tug-of-war that suppresses all profile separation (lambda-zero
+  stuck at P~0.46 instead of converging to utility-optimal ~0; lambda-3 at
+  ~0.50, BELOW the reference's 0.66). Forward KL at eta=0.01 slows learning
+  everywhere rather than owning only the reward-silent directions.
+- REVERSE arm, seed 47: running (gradient profile — silent when pi ~= ref,
+  strong when drifting — is exactly what the forward failure calls for).
 
 ## Cost
 
