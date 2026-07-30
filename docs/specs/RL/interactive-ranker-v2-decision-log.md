@@ -635,13 +635,55 @@ decision's switch threshold drifts with per-seed logit sharpening — a few
 discrete coin flips dominate the doc-level Delta P. Large D averages these
 flips out (D2N027/31/63 stable); D=4 cannot.
 
-**Status.** Arm C = adopted INFRASTRUCTURE (strict improvement, no
-regressions: stabilizes mid-size docs, converts duplicate probes into exact
-broadcast credit at zero cost, tightens regret) — but it does NOT close the
-fork for D=4-class documents. Remaining causes are (a) discreteness of
-tiny-doc P and (b) global-scalar-alpha switch-threshold drift (the
-controller-strength fork's interpretation (c), now measured at doc level),
-plus (c) fully reward-flat decisions where only the controller can anchor
-behavior. Next-step decision (Timo): per-decision/threshold-relative
-controller calibration fork vs. accepting tiny-doc variance with a
-documented bound vs. reward-artifact enrichment for flat decisions.
+**Root-cause investigation 2026-07-30 (systematic-debugging, this session +
+independent Codex Sol High pass; full convergence).** The lambda-3 coin flip
+is a deterministic property of the learned logits, not sampling (fixed-
+checkpoint replay, 128 trajectories: final E[P|lambda-3] = 0.498/0.271/0.084
+for s17/s29/s47; 8-rollout SE 0.003-0.017). Causal chain, each link measured:
+(1) D2N005's reward surface is tie-dominated at the top of every menu —
+U(L0) == U(keep) EXACTLY in 113/113 cached single-decision contexts, and one
+decision is flat across its whole menu — so utility credit cannot order the
+lambda-3-relevant choices (level-0 generalization is utility-FREE privacy the
+policy leaves on the table). (2) The tie is filled by cross-document
+generalization through shared parameters: at BC init keep-L0 margins are
+NEGATIVE (-5.6..-7.6, BC clones levels); after RL they are +41..+225 with the
+same direction on every seed — the corpus-wide truth "keep is utility-safe"
+leaks into pairs where this document's reward is silent. (3) Unbounded softmax
+sharpening (driven by the real signal punishing deep levels; no gradient
+clipping — max_grad_norm=null; entropy 0.01 negligible) amplifies the
+inherited margin without limit: seed-47 logit ranges exploded 9 -> 277-327,
+saturating the distribution and killing entropy/count/forward-KL gradients.
+(4) The controller's bounded shift alpha*dp*range (<= ~43% of range for
+keep->L1) races the amplified margin fraction — crossings = cycle flips,
+runaway = seed-47 all-keep collapse. (5) Nothing can push back: the count
+gradient reaches ONLY global alpha by design, and the KL trigger is
+aggregate-level (never fired) with a forward direction whose gradient
+vanishes exactly when needed. Codex additionally showed the calibrated KL
+REFERENCES are healthy anchors (E[P|lambda-3] ~0.66-0.67, ranges 9-15) that
+the trigger never uses, and flagged a measurement confound: Latin-cycle
+Delta P mixes lambda-conditioning with between-epoch policy evolution —
+synchronous fixed-checkpoint evaluation is the correct instrument. REFUTED:
+profile count targets (monotone, well-separated, no inversion — audited),
+alpha-calibration staleness as primary (calibration is correct; margins are
+re-shaped after it), and sampling noise. Verdict: SYSTEMIC (tie-breaking is
+undefined and drifts keep-ward; sharpening unbounded; count bottlenecked
+through one scalar) exposed maximally by D2N005's tie/saturation structure.
+
+**Proposed next spike (awaiting approval).** Always-on low-weight KL to the
+calibrated reference from epoch 0 (two arms: current forward direction
+KL(pi||ref) vs reverse KL(ref||pi), eta=0.01 — reverse keeps a nonzero
+~(pi-ref) gradient under saturation), seeds 17+47, 12 epochs, Arm C
+broadcast active, no clipping in the same runs (separate safety ablation
+later). Synchronous per-cycle 4-profile evaluation of the SAME checkpoint as
+primary readout. Preregistered pass: D2N005 synchronous
+E[P|l3]-E[P|l0] >= 0.20 every completed cycle, lambda-3 exact-P cycle range
+<= 0.10, cross-seed final difference <= 0.10, reward-flat decision expected
+p >= 0.50, regret <= 0.044 unchanged as the item-7 gate, lambda-zero within
+0.044 of control, logit range growth <= 3x the reference. Escalation if KL
+stabilizes but pins suboptimal behavior: learned context-conditioned
+controller gain alpha_j = alpha_global + delta_alpha_phi(decision state),
+trained by count+utility gradients, initialized to zero — no stored
+per-decision constants, training stays meaningful (addresses the rejected
+pre-baked-threshold objection). Explicitly NOT recommended: routing count
+gradient into the utility tower (shortcut risk, breaks the utility semantics
+of u and lambda-zero comparability).
