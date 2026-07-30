@@ -1,6 +1,9 @@
 ---
-type: training-experiment
+type: experiment
+node_id: exp:RL-ranker-v7-hybrid-direct-count-smoke
 status: done
+verdict: yes
+confidence: high
 created: 2026-07-28
 model: semantic-v1 policy (BC warm start, pinned frozen encoder
   thomas-sounack/BioClinical-ModernBERT-base@c3648aa8, direct-count privacy signal)

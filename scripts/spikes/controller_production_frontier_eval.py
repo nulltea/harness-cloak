@@ -8,7 +8,7 @@ frontier pool is every cached full-coverage vector per document. Utility
 regret = max cached utility at count score >= the group's, minus the group's
 utility; the passing rule is median regret <= 0.044 per seed (reader-noise
 floor). Companion run record:
-research-wiki/training/2026-07-29-RL-ranker-v8-controller-production-frontier.md
+research-wiki/experiments/2026-07-29-RL-ranker-v8-controller-production-frontier.md
 """
 from __future__ import annotations
 

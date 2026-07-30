@@ -1,6 +1,9 @@
 ---
-type: training-experiment
+type: experiment
+node_id: exp:RL-ranker-v11-kl-anchor-spike
 status: done
+verdict: no
+confidence: high
 created: 2026-07-30
 model: semantic-v1 policy (controller_production BC/ExIt warm starts reused,
   gap-scaled controller + switch-calibrated alpha init, Arm C counterfactual

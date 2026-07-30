@@ -1,6 +1,9 @@
 ---
-type: training-experiment
+type: experiment
+node_id: exp:RL-ranker-v10-credit-support-stage2-broadcast
 status: done
+verdict: partial
+confidence: high
 created: 2026-07-29
 model: semantic-v1 policy (per-seed BC warm starts, gap-scaled controller +
   switch-calibrated alpha init, counterfactual dedup/broadcast/coverage)

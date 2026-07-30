@@ -1,6 +1,9 @@
 ---
-type: training-experiment
+type: experiment
+node_id: exp:RL-ranker-v9-credit-support-screening
 status: done
+verdict: yes
+confidence: high
 created: 2026-07-29
 model: semantic-v1 policy (controller_production seed-17 BC warm start reused,
   gap-scaled controller + switch-calibrated alpha init)

@@ -1,6 +1,9 @@
 ---
-type: training-experiment
+type: experiment
+node_id: exp:RL-ranker-v8-controller-production-frontier
 status: planned
+verdict: partial
+confidence: high
 created: 2026-07-29
 model: semantic-v1 policy (fresh BC warm start per seed, pinned frozen encoder
   thomas-sounack/BioClinical-ModernBERT-base, direct-count privacy signal,

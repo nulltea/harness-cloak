@@ -1,5 +1,6 @@
 ---
-type: training-experiment
+type: experiment
+node_id: exp:RL-ranker-v12-tie-ownership-screening
 status: running
 created: 2026-07-30
 model: semantic-v1 policy (controller_production BC/ExIt warm starts reused,
@@ -50,7 +51,9 @@ gate); flat-decision expected privacy >= 0.50 at lambda-3.
 
 ## Results
 
-pending
+- **softcap seed 47 (done, interim adjudication).** Boundedness fully works: max menu-logit range 38.2 anywhere (gate 50; the same seed exploded to 277-327 uncapped), lambda-zero converges freely (D2N005 lambda-zero P -> ~0.0 by epoch 1 — the v11 over-anchoring failure is absent), synchronous Delta P(lambda-3) >= 0.20 from epoch 1 (final +0.25), no non-finites. TWO GATES FAIL: (1) cycle stability — lambda-3 synchronous P swings 0.20..0.56 across epochs, and the DETERMINISTIC greedy path confirms it is real policy churn, not sampling (greedy_P: 0.56 -> 0.25 -> 0.34 -> 0.56 -> 0.25 -> 0.15 -> 0.00 -> 0.00); (2) by epochs 6-7 the greedy lambda-3 policy is ALL-KEEP (greedy_P = 0.00) while sampled P reads 0.22-0.50 — logit ranges shrank to 2-4 and the apparent separation comes from distribution softness around an indecisive near-tie, not a decisive private preference. Sampled Delta P alone is gameable by softness; greedy-path stability is added to the adjudication of all arms. Verdict so far: the cap is necessary-not-sufficient — boundedness solved, tie OWNERSHIP still absent.
+- sensitivity seed 47: running. softcap/sensitivity seed 17: queued.
+- Operational: the sensitivity arm's first launch crashed on a diagnostics-family consistency check (profile_sensitivity missing from absolute_weighted_mass) — fixed and pinned before rerun.
 
 ## Cost
 
