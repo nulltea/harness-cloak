@@ -25,6 +25,7 @@ from cloak.ranker.interactive import (
     collect_exit_winners,
     initialize_hybrid_warm_start,
     load_hybrid_checkpoint,
+    measure_profile_sensitivity_target,
     policy_architecture_pin,
     save_hybrid_checkpoint,
     score_trajectories,
@@ -171,6 +172,8 @@ def build_parser() -> argparse.ArgumentParser:
         "--kl-direction", choices=("forward", "reverse"), default="forward",
     )
     train.add_argument("--synchronous-profile-eval", action="store_true")
+    train.add_argument("--utility-logit-softcap", type=float, default=None)
+    train.add_argument("--profile-sensitivity-reg", type=float, default=0.0)
     return parser
 
 
@@ -845,6 +848,18 @@ def _apply_controller_options(policy, args) -> None:
     if getattr(args, "controller_gap_scaling", "none") == "utility-gap":
         policy.controller_gap_scaling = "utility-gap"
         policy.controller_transform = "log1p-over-log1p-max-utility-gap-v1"
+    softcap = getattr(args, "utility_logit_softcap", None)
+    if softcap is not None:
+        if not math.isfinite(softcap) or softcap <= 0.0:
+            raise ValueError("utility logit softcap must be finite and positive")
+        # Forward-semantics change: retag the transform so semantic contracts
+        # and architecture pins diverge exactly when capping is active
+        # (tie-ownership fork, decision log 2026-07-30).
+        policy.utility_logit_softcap = float(softcap)
+        policy.controller_transform = (
+            f"{getattr(policy, 'controller_transform', 'log1p-over-log1p-max-v1')}"
+            f"+softcap{softcap:g}"
+        )
 
 
 def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
@@ -868,6 +883,10 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         ),
         "kl_schedule": getattr(args, "kl_schedule", "collapse-trigger"),
         "kl_direction": getattr(args, "kl_direction", "forward"),
+        "utility_logit_softcap": getattr(args, "utility_logit_softcap", None),
+        "profile_sensitivity_reg": float(
+            getattr(args, "profile_sensitivity_reg", 0.0)
+        ),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
 
@@ -1032,6 +1051,21 @@ def _run_train(args) -> None:
             architecture_pin=architecture_pin,
             code_revision=code_revision,
         )
+    sensitivity_reg = float(getattr(args, "profile_sensitivity_reg", 0.0))
+    sensitivity_target = 0.0
+    if sensitivity_reg > 0.0:
+        if args.resume:
+            raise ValueError(
+                "--profile-sensitivity-reg does not support --resume "
+                "(the target is measured at the calibrated warm start)"
+            )
+        sensitivity_target = measure_profile_sensitivity_target(
+            policy, documents, profiles,
+        )
+        print(
+            f"profile sensitivity target: {sensitivity_target:.4f} KL per unit g",
+            flush=True,
+        )
     reference_policy = _semantic_training_policy(args, documents, profiles)
     _apply_controller_options(reference_policy, args)
     reference_policy.load_state_dict(reference_state, strict=True)
@@ -1094,6 +1128,8 @@ def _run_train(args) -> None:
         synchronous_profile_eval=getattr(
             args, "synchronous_profile_eval", False,
         ),
+        profile_sensitivity_coefficient=sensitivity_reg,
+        profile_sensitivity_target=sensitivity_target,
     )
 
     zero_profiles = (profiles[0],)

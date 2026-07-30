@@ -1342,3 +1342,23 @@ def test_calibrate_alpha_rejects_non_positive_or_non_finite_targets():
     for target in (0.0, -1.0, float("nan"), float("inf")):
         with pytest.raises(ValueError):
             semantic_ranker_module.calibrate_alpha(policy, target)
+
+
+def test_utility_logit_softcap_bounds_and_preserves_order_and_lambda_zero():
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    menu = tuple(a.action_id for a in decision.actions)
+    state = policy.begin_document(document, profiles[0])
+    base = policy.distribution(state, decision, menu, profiles[0])
+
+    policy.utility_logit_softcap = 0.05  # tiny cap to force visible squashing
+    policy.float()  # invalidate feature caches so the forward re-runs
+    capped_state = policy.begin_document(document, profiles[0])
+    capped = policy.distribution(capped_state, decision, menu, profiles[0])
+    policy.utility_logit_softcap = None
+
+    assert float(capped.utility_logits.abs().max()) <= 0.05 + 1e-6
+    assert torch.equal(
+        torch.argsort(base.utility_logits), torch.argsort(capped.utility_logits),
+    )
+    # lambda-zero stays the exact identity under capping
+    assert torch.equal(capped.combined_logits, capped.utility_logits)

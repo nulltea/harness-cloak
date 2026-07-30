@@ -2887,3 +2887,64 @@ def test_synchronous_profile_snapshot_reads_all_profiles_from_one_policy():
         policy, (document,), profiles, StubTargets(), samples=8, seed=3,
     )
     assert again == snapshot
+
+
+def test_profile_sensitivity_loss_matches_manual_kl_and_reaches_alpha():
+    import math
+
+    from cloak.ranker.interactive import profile_sensitivity_loss
+    from cloak.ranker.environment import LambdaProfile
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    from cloak.ranker.interactive import replay_trajectory, sample_trajectory
+
+    greedy = sample_trajectory(
+        policy, document, profiles[0], greedy=True, generator=None,
+    )
+    replayed = replay_trajectory(policy, document, greedy, profiles[0])
+
+    loss = profile_sensitivity_loss(
+        (replayed,), policy, profiles, target_kl_per_unit=0.0,
+    )
+    assert loss.ndim == 0 and float(loss) >= 0.0
+
+    # manual reconstruction for the single decision, target 0:
+    step = replayed.steps[0]
+    alpha = policy.alpha
+    ramp = [
+        math.log1p(float(p.value)) / math.log1p(float(policy.max_lambda))
+        for p in profiles
+    ]
+    logs = [
+        torch.log_softmax(
+            step.utility_logits + alpha * g * step.predicted_privacy.detach()
+            if g > 0.0 else step.utility_logits,
+            dim=0,
+        )
+        for g in ramp
+    ]
+    manual = []
+    for k in range(len(ramp) - 1):
+        dg = ramp[k + 1] - ramp[k]
+        if dg <= 0.0:
+            continue
+        kl = torch.sum(logs[k].exp() * (logs[k] - logs[k + 1]))
+        manual.append(kl ** 2)
+    expected = torch.stack(manual).mean()
+    assert float(loss) == pytest.approx(float(expected), rel=1e-5)
+
+    # gradient reaches alpha
+    policy.zero_grad(set_to_none=True)
+    loss.backward()
+    assert policy.alpha_raw.grad is not None
+    assert float(policy.alpha_raw.grad.abs()) > 0.0
+
+
+def test_measure_profile_sensitivity_target_is_finite_and_positive():
+    from cloak.ranker.interactive import measure_profile_sensitivity_target
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    target = measure_profile_sensitivity_target(policy, (document,), profiles)
+    assert math.isfinite(target) and target >= 0.0

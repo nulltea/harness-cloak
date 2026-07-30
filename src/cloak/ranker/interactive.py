@@ -575,6 +575,116 @@ def compose_hybrid_document_objective(
     )
 
 
+def profile_sensitivity_loss(
+    replayed: Sequence["ReplayedTrajectory"],
+    policy: Any,
+    profiles: Sequence[Any],
+    target_kl_per_unit: float,
+) -> torch.Tensor:
+    """Penalize deviation of adjacent-profile sensitivity from a measured target.
+
+    Scaled-diversity regularizer in the D3PO sense (tie-ownership fork,
+    decision log 2026-07-30): profile separation becomes an explicit objective.
+    Because the utility tower is lambda-blind, the conditional distribution at
+    ANY profile is analytically reconstructible from a replayed step's utility
+    logits and privacy scores (z = u + alpha*g(lambda)*gap*p_hat; lambda-zero
+    is the exact identity), so no extra forward passes are needed. For each
+    replayed decision and each adjacent profile pair the loss is
+    (KL(pi_k || pi_k+1) - target * (g_k+1 - g_k))^2; the gradient reaches
+    alpha and the utility shape.
+    """
+    if not 0.0 <= float(target_kl_per_unit) < math.inf:
+        raise ValueError("profile sensitivity target must be finite and nonnegative")
+    alpha = policy.alpha
+    max_lambda = float(policy.max_lambda)
+    ramp = [
+        math.log1p(float(profile.value)) / math.log1p(max_lambda)
+        for profile in profiles
+    ]
+    gap_scaled = getattr(policy, "controller_gap_scaling", None) == "utility-gap"
+    terms = []
+    for trajectory in replayed:
+        for step in trajectory.steps:
+            utility = step.utility_logits
+            privacy = step.predicted_privacy.detach()
+            gap = (
+                (utility.max() - utility.min()).detach()
+                if gap_scaled else utility.new_ones(())
+            )
+            log_distributions = [
+                torch.log_softmax(
+                    utility + alpha * g * gap * privacy if g > 0.0 else utility,
+                    dim=0,
+                )
+                for g in ramp
+            ]
+            for k in range(len(ramp) - 1):
+                delta_g = ramp[k + 1] - ramp[k]
+                if delta_g <= 0.0:
+                    continue
+                lower, upper = log_distributions[k], log_distributions[k + 1]
+                kl = torch.sum(lower.exp() * (lower - upper))
+                terms.append((kl - float(target_kl_per_unit) * delta_g) ** 2)
+    if not terms:
+        raise ValueError("profile sensitivity loss requires replayed decisions")
+    return torch.stack(terms).mean()
+
+
+def measure_profile_sensitivity_target(
+    policy: TrajectoryPolicy,
+    documents: Sequence[RankerDocument],
+    profiles: Sequence[Any],
+) -> float:
+    """Measured adjacent-profile KL per unit g under the calibrated warm start.
+
+    Sets the sensitivity regularizer's target from a measurement (never
+    invented): the greedy-walk decisions of every document, scored with the
+    same analytic reconstruction the loss uses.
+    """
+    total_kl = 0.0
+    total_dg = 0.0
+    with torch.no_grad():
+        for document in documents:
+            greedy = sample_trajectory(
+                policy, document, profiles[0], greedy=True, generator=None,
+            )
+            replayed = replay_trajectory(policy, document, greedy, profiles[0])
+            alpha = policy.alpha
+            max_lambda = float(policy.max_lambda)
+            ramp = [
+                math.log1p(float(profile.value)) / math.log1p(max_lambda)
+                for profile in profiles
+            ]
+            gap_scaled = (
+                getattr(policy, "controller_gap_scaling", None) == "utility-gap"
+            )
+            for step in replayed.steps:
+                utility = step.utility_logits
+                privacy = step.predicted_privacy
+                gap = (
+                    (utility.max() - utility.min())
+                    if gap_scaled else utility.new_ones(())
+                )
+                logs = [
+                    torch.log_softmax(
+                        utility + alpha * g * gap * privacy if g > 0.0 else utility,
+                        dim=0,
+                    )
+                    for g in ramp
+                ]
+                for k in range(len(ramp) - 1):
+                    delta_g = ramp[k + 1] - ramp[k]
+                    if delta_g <= 0.0:
+                        continue
+                    total_kl += float(torch.sum(
+                        logs[k].exp() * (logs[k] - logs[k + 1])
+                    ))
+                    total_dg += delta_g
+    if total_dg <= 0.0:
+        raise ValueError("sensitivity target measurement found no profile gaps")
+    return total_kl / total_dg
+
+
 def synchronous_profile_snapshot(
     policy: TrajectoryPolicy,
     documents: Sequence[RankerDocument],
@@ -1569,6 +1679,9 @@ def train_hybrid_document_group(
     max_grad_norm: float | None = None,
     counterfactual_coverage: str = "fixed",
     kl_direction: str = "forward",
+    profile_sensitivity_coefficient: float = 0.0,
+    profile_sensitivity_target: float = 0.0,
+    sensitivity_profiles: Sequence[Any] | None = None,
 ) -> DocumentTrainingResult:
     """Run one complete sampled/scored/replayed optimizer step for a document group."""
 
@@ -1710,6 +1823,20 @@ def train_hybrid_document_group(
         reference_log_probs=reference_log_probs,
         kl_direction=kl_direction,
     )
+    total_objective = objective.total
+    sensitivity_term = None
+    if profile_sensitivity_coefficient > 0.0:
+        if not sensitivity_profiles:
+            raise ValueError(
+                "profile sensitivity regularizer requires the full profile menu"
+            )
+        sensitivity_term = float(profile_sensitivity_coefficient) * (
+            profile_sensitivity_loss(
+                replayed, policy, sensitivity_profiles,
+                profile_sensitivity_target,
+            )
+        )
+        total_objective = total_objective + sensitivity_term
     family_terms, absolute_mass = _utility_family_terms_and_mass(
         replayed, credit, counterfactual_losses,
     )
@@ -1718,14 +1845,16 @@ def train_hybrid_document_group(
         "entropy": -float(beta) * objective.entropy,
         "KL": float(eta) * objective.kl,
     })
+    if sensitivity_term is not None:
+        family_terms["profile_sensitivity"] = sensitivity_term
     reconstructed = torch.stack(tuple(family_terms.values())).sum()
     # fp32 tolerance: the family split rounds -(l+r)·logp as two products and
     # sums in a different order than the objective; at ~200 terms the drift
     # legitimately exceeds 1e-7 (seed-29 production run, 2026-07-29).
-    if not torch.allclose(reconstructed, objective.total, rtol=1e-5, atol=1e-6):
+    if not torch.allclose(reconstructed, total_objective, rtol=1e-5, atol=1e-6):
         raise ValueError(
             "hybrid family terms do not reconstruct the objective: "
-            f"{float(reconstructed)!r} vs {float(objective.total)!r}"
+            f"{float(reconstructed)!r} vs {float(total_objective)!r}"
         )
     parameters = tuple(
         parameter for parameter in policy.parameters() if parameter.requires_grad
@@ -1743,7 +1872,7 @@ def train_hybrid_document_group(
     if architecture == "semantic-v1":
         alpha_raw = getattr(policy, "alpha_raw")
         alpha_gradient = torch.autograd.grad(
-            objective.total, alpha_raw, retain_graph=True, allow_unused=True,
+            total_objective, alpha_raw, retain_graph=True, allow_unused=True,
         )[0]
         alpha_value = getattr(policy, "alpha", None)
         if callable(alpha_value):
@@ -1761,7 +1890,7 @@ def train_hybrid_document_group(
         for name in ("count", "entropy", "KL")
     })
     optimizer.zero_grad(set_to_none=True)
-    objective.total.backward()
+    total_objective.backward()
     if max_grad_norm is not None:
         torch.nn.utils.clip_grad_norm_(parameters, float(max_grad_norm))
     if any(
@@ -1899,7 +2028,7 @@ def train_hybrid_document_group(
         corpus=document.corpus,
         profile_name=str(profile.name),
         rollout_count=rollouts,
-        loss=float(objective.total.detach()),
+        loss=float(total_objective.detach()),
         utility=sum(credit.document_utility) / rollouts,
         count_score=sum(point.count_score for point in points) / rollouts,
         entropy=float(objective.entropy.detach()),
@@ -2202,6 +2331,8 @@ def train_hybrid_policy(
     kl_schedule: str = "collapse-trigger",
     kl_direction: str = "forward",
     synchronous_profile_eval: bool = False,
+    profile_sensitivity_coefficient: float = 0.0,
+    profile_sensitivity_target: float = 0.0,
 ) -> HybridTrainingResult:
     """Train document groups in a seeded balanced profile cycle."""
 
@@ -2240,6 +2371,14 @@ def train_hybrid_policy(
                 group_options["counterfactual_coverage"] = counterfactual_coverage
             if kl_direction != "forward":
                 group_options["kl_direction"] = kl_direction
+            if profile_sensitivity_coefficient > 0.0:
+                group_options["profile_sensitivity_coefficient"] = (
+                    profile_sensitivity_coefficient
+                )
+                group_options["profile_sensitivity_target"] = (
+                    profile_sensitivity_target
+                )
+                group_options["sensitivity_profiles"] = profiles
             groups.append(group_trainer(
                 policy,
                 reference_policy,

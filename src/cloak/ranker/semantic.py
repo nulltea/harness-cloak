@@ -1128,6 +1128,15 @@ class SemanticRankerPolicy(nn.Module):
             dim=-1,
         )
         complete_utility = self.utility_head(utility_inputs).squeeze(-1)
+        softcap = getattr(self, "utility_logit_softcap", None)
+        if softcap is not None:
+            # Order-preserving bound on logit scale (Gemma-2 style tanh cap;
+            # tie-ownership fork, decision log 2026-07-30): margins can never
+            # outgrow 2*cap, so the calibrated additive controller keeps
+            # authority over reward-tied actions.
+            complete_utility = float(softcap) * torch.tanh(
+                complete_utility / float(softcap)
+            )
 
         with torch.no_grad():
             if self.privacy_provider is not None:
