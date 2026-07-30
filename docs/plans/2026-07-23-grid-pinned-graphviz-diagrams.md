@@ -2,7 +2,7 @@
 type: plan
 status: current
 created: 2026-07-23
-updated: 2026-07-23
+updated: 2026-07-29
 tags: [html-report, diagrams, graphviz, viz-js, css-grid, architecture]
 supersedes: docs/plans/2026-07-23-graphviz-architecture-diagrams.md
 ---
@@ -11,6 +11,13 @@ supersedes: docs/plans/2026-07-23-graphviz-architecture-diagrams.md
 
 **Goal:** Make M1's within-section layout an explicit, consistently spaced grid while keeping
 automatic, obstacle-aware edge routing.
+
+**Adoption:** FIG T2 (training process) uses the same methodology since 2026-07-29, and FIG I1
+(deployed document inference) since 2026-07-30 — the renderer handles any number of
+`.ranker-model-diagram` instances on the page, each with its own `data-ranker-model-dot` edge
+block. I1 additionally carries real example data (document `aci/D2N005`, its lattice action
+menu, and a cached round trip's `doc_p`/`out_p`/`out_final`) as `--doc` excerpt nodes with
+action-colored `__mark` highlights.
 
 **Architecture (implemented):** The page owns everything visual — nodes are styled HTML in a
 CSS grid; Graphviz routes only the edges at grid-pinned positions.
@@ -37,6 +44,11 @@ CSS grid; Graphviz routes only the edges at grid-pinned positions.
   - Firefox note: the overlay SVG gets explicit `width`/`height`/`viewBox` attributes each render
     and the coordinate origin is measured from the layout **div** — Firefox returns the 300×150
     intrinsic default from `getBoundingClientRect()` on an auto-sized `<svg>`.
+  - Routing self-check: Graphviz's ortho maze router can silently give up on an edge and draw it
+    straight through obstacles (no warning, geometry-dependent and bistable — exactly
+    pixel-aligned pins can hit degenerate maze configurations). The renderer samples every routed
+    edge against the node boxes and retries with a deterministic sub-pixel pin jitter (≤0.72px,
+    imperceptible) until no edge crosses a box, up to five attempts.
 
 **Why the predecessors failed:** jsPlumb kept HTML nodes but routed edges through them (no
 obstacle awareness); pure dot routed well but placed nodes arbitrarily, needing invisible edges,

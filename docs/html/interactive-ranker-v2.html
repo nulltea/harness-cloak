@@ -256,7 +256,7 @@
             <div class="ranker-model-diagram__col" style="grid-template-rows:1fr auto;gap:var(--dg-gap-lg);justify-items:stretch">
 
               <section class="ranker-model-diagram__module" data-module-id="privacy">
-                <div class="ranker-model-diagram__module-label">Semantic privacy estimation</div>
+                <div class="ranker-model-diagram__module-label" data-node-id="m1_label_privacy">Semantic privacy estimation</div>
                 <div class="ranker-model-diagram__col" style="align-content:space-between;height:100%">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="count_basis">
                     <div class="ranker-model-diagram__node-title">count-basis token</div>
@@ -305,7 +305,7 @@
               </section>
 
               <section class="ranker-model-diagram__module" data-module-id="controller">
-                <div class="ranker-model-diagram__module-label">
+                <div class="ranker-model-diagram__module-label" data-node-id="m1_label_controller">
                   Additive lambda controller
                   <span class="ranker-model-diagram__module-sublabel">b(a, λ) = α · g(λ) · gap · p̂(a)</span>
                 </div>
@@ -432,7 +432,7 @@ digraph RankerV2Edges {
         </script>
         <div class="ranker-model-diagram__status">Computing architecture rendering…</div>
       </div>
-      <noscript><p class="lede">Figure M1 requires JavaScript to render its Graphviz nodes and edges.</p></noscript>
+      <noscript><p class="lede">Figure M1 lays out without JavaScript; edge routing requires it.</p></noscript>
     </div>
 
     <p class="lede">The implemented policy is a shallow, factorized attention model over frozen 768-dimensional clinical representations, not a Transformer stack.</p>
@@ -548,342 +548,283 @@ digraph RankerV2Edges {
       <div class="section-num">§06</div><h2 class="section-title">Reinforcement Learning Process</h2>
       <div class="section-meta">inputs · warm start · episode loop · outputs</div>
     </header>
-    <div class="diagram-frame" style="width:min(1584px,calc(100vw - 48px));box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
+    <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
       <div class="diagram-cap">
         <span class="l">FIG · T2: Training process and reward flow</span>
-        <span>solid = data flow · dashed gray = supervision/iteration · dashed blue = backward pass (gradients) · amber = external medgemma-4b-it</span>
+        <span>solid = data flow · dashed = backward pass (gradients) · dashed outline = trainable · amber = external medgemma-4b-it</span>
       </div>
-      <svg viewBox="0 0 1520 1836" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="rl-title rl-desc" style="display:block;width:100%;height:auto;background:transparent">
-        <title id="rl-title">Interactive Ranker v2 reinforcement learning process</title>
-        <desc id="rl-desc">Training consumes a frozen environment: corpus with detector decisions, lattice profiles with exact counts, QA assertions with policy roles, the pinned round-trip environment, and the semantic-v1 policy checkpoint. Warm start: privacy-head pretraining then freeze, behavior cloning, a utility-only expert-iteration loop at lambda zero, lambda-menu and threshold-manifest freeze, controller calibration, and KL-reference capture. The hybrid episode loop schedules one lambda per document group; the policy subsection shows frozen representations feeding the trainable utility path and the frozen privacy head, whose outputs meet in the additive controller before legal masking and softmax. Each rollout crosses the round-trip environment: doc_p goes to the external medgemma remote task model, the output is locally unperturbed, and the external medgemma QA reader scores context assertions on doc_p and delivered assertions on out_final into per-assertion vectors. RLOO leave-one-out credit routed by QA links, counterfactual reruns, and the exact-count objective assemble the loss; gradients reach the utility path and alpha while encoder and privacy head stay frozen. Outputs are the trained checkpoint, per-lambda evaluation, run diagnostics, and calibration artifacts.</desc>
-        <defs>
-          <marker id="rl-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
-          <style>
-            .rb{fill:#f8f7f3;stroke:#747980;stroke-width:1.4;stroke-dasharray:7 6}
-            .rm{fill:#f2f0eb;stroke:#34393e;stroke-width:1.4}
-            .rf{fill:#d9e7de;stroke:#496454;stroke-width:1.4}
-            .ru{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.4}
-            .rp{fill:#f1ddda;stroke:#9a5c54;stroke-width:1.4}
-            .rc{fill:#e9e1ed;stroke:#765e82;stroke-width:1.4}
-            .rr{fill:#f7ead2;stroke:#9b6a2d;stroke-width:1.4}
-            .rt{fill:#1c2024;font:500 14px 'JetBrains Mono',monospace}
-            .rs{fill:#62686e;font:400 10.5px 'JetBrains Mono',monospace}
-            .rk{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.6px}
-            .rki{fill:#62686e;font:600 9px 'JetBrains Mono',monospace;letter-spacing:1.4px}
-            .rl{fill:none;stroke:#34393e;stroke-width:1.45}
-            .rlu{fill:none;stroke:#3d6f9d;stroke-width:1.75}
-            .rlp{fill:none;stroke:#ad665e;stroke-width:1.75}
-            .rlc{fill:none;stroke:#765e82;stroke-width:1.75}
-            .rlr{fill:none;stroke:#a16f31;stroke-width:1.75}
-            .rld{fill:none;stroke:#777c82;stroke-width:1.2;stroke-dasharray:4 4}
-            .rlg{fill:none;stroke:#3d6f9d;stroke-width:1.6;stroke-dasharray:5 4}
-          </style>
-        </defs>
-        <rect width="1520" height="1836" fill="transparent"/>
+      <div
+        class="ranker-model-diagram"
+        role="img"
+        aria-label="Reinforcement-learning training process for the Ranker v2 semantic policy: frozen inputs, warm start, a shared external round-trip environment, the lambda-conditioned hybrid episode loop, and training outputs"
+      >
+        <div class="ranker-model-diagram__layout" style="grid-template-columns:minmax(0,1fr) auto">
 
-        <text x="28" y="32" class="rk">01 · INPUTS · FROZEN ENVIRONMENT + POLICY CHECKPOINT</text>
-        <rect x="20" y="46" width="1140" height="236" rx="16" class="rb"/>
+          <section class="ranker-model-diagram__module" data-module-id="t2-inputs">
+            <div class="ranker-model-diagram__module-label">01 · Inputs — frozen environment + policy checkpoint</div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:repeat(4,1fr)">
+              <div class="ranker-model-diagram__node" data-node-id="training_corpus">
+                <div class="ranker-model-diagram__node-title">Training corpus</div>
+                <div class="ranker-model-diagram__node-detail">documents + frozen detector<br>occurrences → decisions<br>menus · first-occurrence order</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="lattice_profiles">
+                <div class="ranker-model-diagram__node-title">Lattice profiles</div>
+                <div class="ranker-model-diagram__node-detail">truthful generalization levels<br>exact level_counts · provenance<br>profile normalization</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="qa_artifact">
+                <div class="ranker-model-diagram__node-title">QA assertion artifact</div>
+                <div class="ranker-model-diagram__node-detail">context + delivered scores<br>policy vs monitoring roles<br>Z_d = policy-role weight mass</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="environment_artifact">
+                <div class="ranker-model-diagram__node-title">Round-trip environment</div>
+                <div class="ranker-model-diagram__node-detail">remote task LLM · extractor<br>QA reader · scorer · caches<br>all pinned + versioned</div>
+              </div>
+            </div>
+          </section>
 
-        <rect x="44" y="82" width="204" height="100" rx="7" class="rm"/>
-        <text x="146" y="107" text-anchor="middle" class="rt">training corpus</text>
-        <text x="146" y="127" text-anchor="middle" class="rs">documents + frozen detector</text>
-        <text x="146" y="143" text-anchor="middle" class="rs">occurrences → decisions</text>
-        <text x="146" y="159" text-anchor="middle" class="rs">menus · first-occurrence order</text>
+          <section class="ranker-model-diagram__module" data-module-id="t2-warm-start" style="gap:28px">
+            <div class="ranker-model-diagram__module-label">02 · Warm start — privacy head → BC → ExIt → λ menu → controller calibration</div>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:1.6fr 1fr;gap:32px">
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="t2-bc">
+                <div class="ranker-model-diagram__module-label" data-node-id="t2_label_3">Behavior cloning · λ-independent</div>
+                <div class="ranker-model-diagram__row" style="grid-template-columns:1fr 1fr;gap:32px">
+                  <div class="ranker-model-diagram__node" data-node-id="teacher_rule">
+                    <div class="ranker-model-diagram__node-title">Teacher rule (no model)</div>
+                    <div class="ranker-model-diagram__node-detail">hand-coded walk per decision:<br>finest legal lattice level,<br>else the typed placeholder</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="ce_training">
+                    <div class="ranker-model-diagram__node-title">Cross-entropy training</div>
+                    <div class="ranker-model-diagram__node-detail">L = −log π(teacher action)<br>over each dynamic legal menu<br>∇ → utility scoring path</div>
+                  </div>
+                </div>
+              </section>
+              <div class="ranker-model-diagram__col" style="gap:24px;justify-items:stretch">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="privacy_pretraining">
+                      <div class="ranker-model-diagram__node-title">Privacy pretraining</div>
+                      <div class="ranker-model-diagram__node-detail">profile-held-out log-count<br>must beat shortcut baselines<br>→ frozen p̂ for the policy</div>
+                  </div>
+                  <div class="ranker-model-diagram__node--trainable ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="warmstart_policy">
+                      <div class="ranker-model-diagram__node-title">Policy π · the M1 model</div>
+                      <div class="ranker-model-diagram__node-detail">trains: utility scoring path<br>frozen: encoder · privacy p̂<br>α untouched until calibration<br>acts at λ = 0</div>
+                  </div>
+              </div>
+            </div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:1.6fr 1fr;gap:32px;min-height:44px;margin:-14px 0">
+              <div></div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="exit_clone_via" style="justify-self:center;align-self:center;position:relative">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--note" data-node-id="exit_clone_note" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);width:max-content;max-width:280px;text-align:right">
+                  <div class="ranker-model-diagram__node-detail">supervised CE update on every winner action · ∇ → utility scoring</div>
+                </div>
+              </div>
+            </div>
+            <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="t2-exit">
+              <div class="ranker-model-diagram__module-label" data-node-id="t2_label_4">Utility-only ExIt · λ = 0 · per document, until no verified improvement</div>
+              <div class="ranker-model-diagram__row" style="grid-template-columns:repeat(4,1fr);gap:32px">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="exit_sample">
+                  <div class="ranker-model-diagram__node-title">Sample G rollouts</div>
+                  <div class="ranker-model-diagram__node-detail">warm-started policy · λ=0<br>complete trajectories</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="exit_score">
+                  <div class="ranker-model-diagram__node-title">Score pure U_total</div>
+                  <div class="ranker-model-diagram__node-detail">full round trip per rollout<br>via the shared environment →</div>
+                </div>
+                <div class="ranker-model-diagram__node" data-node-id="exit_winner">
+                  <div class="ranker-model-diagram__node-title">Winner selection</div>
+                  <div class="ranker-model-diagram__node-detail">argmax U_total among G;<br>must strictly beat the BC<br>reference (teacher U_total)</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="exit_reverify">
+                  <div class="ranker-model-diagram__node-title">Rescore</div>
+                  <div class="ranker-model-diagram__node-detail">winner + reference rescored<br>fresh reader pass (jitter)</div>
+                </div>
+              </div>
+            </section>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:auto 1fr;gap:32px">
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="t2-menu">
+                <div class="ranker-model-diagram__module-label">λ menu + threshold manifest · from cached (U,P) trajectories</div>
+                <div class="ranker-model-diagram__row" style="grid-template-columns:repeat(3,1fr);gap:32px">
+                  <div class="ranker-model-diagram__node" data-node-id="calibration_pool">
+                    <div class="ranker-model-diagram__node-title">Calibration pool</div>
+                    <div class="ranker-model-diagram__node-detail">BC + ExIt winners + anchors<br>+ samples + measured CFs<br>≥3 distinct (U,P) per doc</div>
+                  </div>
+                  <div class="ranker-model-diagram__node" data-node-id="frontier_switch">
+                    <div class="ranker-model-diagram__node-title">Frontier switch points</div>
+                    <div class="ranker-model-diagram__node-detail">merge ties · drop dominated<br>upper convex envelope<br>→ candidate λ profiles</div>
+                  </div>
+                  <div class="ranker-model-diagram__node" data-node-id="replay_acceptance">
+                    <div class="ranker-model-diagram__node-title">Replay acceptance</div>
+                    <div class="ranker-model-diagram__node-detail">snap to observed thresholds<br>replay · ≥3 responsive<br>profiles, else stop</div>
+                  </div>
+                </div>
+              </section>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="controller_calibration" style="align-self:center">
+                <div class="ranker-model-diagram__node-title">Controller calibration</div>
+                <div class="ranker-model-diagram__node-detail">switch thresholds → alpha init<br>gap-normalized weighted median<br>then capture KL reference</div>
+              </div>
+            </div>
+          </section>
 
-        <rect x="266" y="82" width="204" height="100" rx="7" class="rf"/>
-        <text x="368" y="107" text-anchor="middle" class="rt">lattice profiles</text>
-        <text x="368" y="127" text-anchor="middle" class="rs">truthful generalization levels</text>
-        <text x="368" y="143" text-anchor="middle" class="rs">exact level_counts · provenance</text>
-        <text x="368" y="159" text-anchor="middle" class="rs">profile normalization</text>
+          <section class="ranker-model-diagram__module" data-module-id="t2-environment" style="grid-column:2;grid-row:1/5;align-self:center">
+            <div class="ranker-model-diagram__module-label">
+              Round-trip environment
+            </div>
+            <div class="ranker-model-diagram__col" style="gap:44px">
+              <div class="ranker-model-diagram__node" data-node-id="env_docp">
+                <div class="ranker-model-diagram__node-title">doc_p</div>
+                <div class="ranker-model-diagram__node-detail">only text sent · per rollout</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="env_remote">
+                <div class="ranker-model-diagram__node-title">Remote task LLM</div>
+                <div class="ranker-model-diagram__node-detail">medgemma-4b-it · untrusted<br>closed box · returns out_p</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="env_unperturb">
+                <div class="ranker-model-diagram__node-title">Unperturb</div>
+                <div class="ranker-model-diagram__node-detail">out_p + R → out_final</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="env_reader">
+                <div class="ranker-model-diagram__node-title">QA reader</div>
+                <div class="ranker-model-diagram__node-detail">medgemma-4b-it<br>context assertions on doc_p<br>delivered on out_final</div>
+              </div>
+              <div class="ranker-model-diagram__node" data-node-id="env_scores">
+                <div class="ranker-model-diagram__node-title">u_g[q]</div>
+                <div class="ranker-model-diagram__node-detail">per-assertion scores in [0,1]</div>
+              </div>
+            </div>
+          </section>
 
-        <rect x="488" y="82" width="204" height="100" rx="7" class="rf"/>
-        <text x="590" y="107" text-anchor="middle" class="rt">QA assertion artifact</text>
-        <text x="590" y="127" text-anchor="middle" class="rs">context + delivered scores</text>
-        <text x="590" y="143" text-anchor="middle" class="rs">policy vs monitoring roles</text>
-        <text x="590" y="159" text-anchor="middle" class="rs">Z_d = policy-role weight mass</text>
+          <section class="ranker-model-diagram__module" data-module-id="t2-hybrid" style="gap:28px">
+            <div class="ranker-model-diagram__module-label">03 · Hybrid RL — lambda-conditioned episode loop</div>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:auto minmax(0,1fr) auto;gap:32px">
+              <div class="ranker-model-diagram__node" data-node-id="episode_scheduler" style="align-self:center">
+                <div class="ranker-model-diagram__node-title">Episode scheduler</div>
+                <div class="ranker-model-diagram__node-detail">epochs × balanced Latin<br>cycle · one λ per group</div>
+              </div>
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="t2-policy">
+                <div class="ranker-model-diagram__module-label">Policy π(a | s, λ) · semantic-v1 · the FIG M1 model · sequential walk</div>
+                <div class="ranker-model-diagram__row" style="grid-template-columns:auto auto auto;gap:44px">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="policy_encoder">
+                    <div class="ranker-model-diagram__node-title">Frozen encoder</div>
+                    <div class="ranker-model-diagram__node-detail">shared clinical encoder<br>H_doc · r_pair · frozen</div>
+                  </div>
+                  <div class="ranker-model-diagram__node--trainable ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="policy_utility">
+                    <div class="ranker-model-diagram__node-title">Utility scoring</div>
+                    <div class="ranker-model-diagram__node-detail">3× attention + memory<br>MLP → u(a) · trainable</div>
+                  </div>
+                  <div class="ranker-model-diagram__node" data-node-id="policy_pihead">
+                    <div class="ranker-model-diagram__node-title">π head</div>
+                    <div class="ranker-model-diagram__node-detail">z = u + b · legal mask<br>log_softmax → sample</div>
+                  </div>
+                </div>
+                <div class="ranker-model-diagram__row" style="grid-template-columns:auto auto auto;gap:44px">
+                  <div></div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="policy_privhead">
+                    <div class="ranker-model-diagram__node-title">Privacy head</div>
+                    <div class="ranker-model-diagram__node-detail">log-count → p̂(a)<br>pretrained · frozen</div>
+                  </div>
+                  <div class="ranker-model-diagram__node--trainable ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="policy_controller">
+                    <div class="ranker-model-diagram__node-title">λ controller</div>
+                    <div class="ranker-model-diagram__node-detail">b = α·g(λ)·gap·p̂<br>α trainable</div>
+                  </div>
+                </div>
+              </section>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="hybrid_rollouts" style="align-self:center">
+                <div class="ranker-model-diagram__node-title">G rollouts</div>
+                <div class="ranker-model-diagram__node-detail">complete action<br>vectors → doc_p</div>
+              </div>
+            </div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:1fr 1.3fr 1.3fr;gap:32px">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="count_objective">
+                <div class="ranker-model-diagram__node-title">Exact count objective</div>
+                <div class="ranker-model-diagram__node-detail">level_counts → p target<br>π_count on full legal menu<br>stopgrad(u) · stopgrad(p̂)<br>gradient → α only</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="cf_correction" style="position:relative">
+                <div class="ranker-model-diagram__node-title">Counterfactual correction</div>
+                <div class="ranker-model-diagram__node-detail">scheduler → one decision changed<br>full round-trip rerun → measured ΔU<br>replaces that decision's 1/G term<br>L_cf = −ΔU · (q_pair − ½)</div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="loss_grad_via" style="position:absolute;right:-17px;top:50%;transform:translateY(-50%)"></div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--note" data-node-id="loss_grad_note" style="position:absolute;right:2px;top:calc(100% + 6px);width:max-content;text-align:right">
+                  <div class="ranker-model-diagram__node-detail">backward pass ∂L</div>
+                </div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="rloo_credit">
+                <div class="ranker-model-diagram__node-title">RLOO credit assignment</div>
+                <div class="ranker-model-diagram__node-detail">U[g,j] = Σ w_q·u_g[q] / Z_d (policy-role)<br>A[g,j] = U[g,j] − mean_{g'≠g} U[g',j]<br>routing: linked → residual → fallback<br>monitoring reported, never credited</div>
+              </div>
+            </div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:1fr 2fr;gap:32px">
+              <div class="ranker-model-diagram__node" data-node-id="optimizer_step">
+                <div class="ranker-model-diagram__node-title">Optimizer step</div>
+                <div class="ranker-model-diagram__node-detail">AdamW applies accumulated ∇<br>to utility scoring + α only<br>then next (doc, λ)</div>
+              </div>
+              <div class="ranker-model-diagram__node" data-node-id="loss_assembly">
+                <div class="ranker-model-diagram__node-title">Loss assembly</div>
+                <div class="ranker-model-diagram__node-detail">ℓ[g,j] = −A[g,j] · log π(a_gj | s, λ) — CF terms substitute in place<br>L = mean_d (1/G) Σ ℓ + L_count − β·entropy + η·KL(π ‖ π_ref = calibrated)</div>
+              </div>
+            </div>
+          </section>
+        </div>
 
-        <rect x="710" y="82" width="204" height="100" rx="7" class="rf"/>
-        <text x="812" y="107" text-anchor="middle" class="rt">round-trip environment</text>
-        <text x="812" y="127" text-anchor="middle" class="rs">remote task LLM · extractor</text>
-        <text x="812" y="143" text-anchor="middle" class="rs">QA reader · scorer · caches</text>
-        <text x="812" y="159" text-anchor="middle" class="rs">all pinned + versioned</text>
+        <svg class="ranker-model-diagram__edges" aria-hidden="true" focusable="false"></svg>
 
-        <rect x="932" y="82" width="204" height="100" rx="7" class="ru"/>
-        <text x="1034" y="107" text-anchor="middle" class="rt">policy model in</text>
-        <text x="1034" y="127" text-anchor="middle" class="rs">semantic-v1 checkpoint</text>
-        <text x="1034" y="143" text-anchor="middle" class="rs">trainable: utility path · α</text>
-        <text x="1034" y="159" text-anchor="middle" class="rs">frozen: encoder · privacy head</text>
+        <script type="text/vnd.graphviz" data-ranker-model-dot>
+digraph RankerV2Training {
+  edge [color="#34393e", penwidth=1.3, arrowsize=0.62];
 
-        <rect x="44" y="200" width="1092" height="62" rx="7" class="rm"/>
-        <text x="590" y="221" text-anchor="middle" class="rt">load-time training transforms</text>
-        <text x="590" y="240" text-anchor="middle" class="rs">initial-RL scope: drug · health-condition · medical-procedure are ranker-controlled — out-of-scope or count-uncovered decisions → fixed KEEP</text>
-        <text x="590" y="256" text-anchor="middle" class="rs">zero-signal documents (no policy-role reward mass) are dropped from training at load time</text>
+  /* ── warm start: behavior cloning ── */
+  teacher_rule -> ce_training;
+  ce_training -> warmstart_policy [color="#3d6f9d", style=dashed, penwidth=1.5];
+  privacy_pretraining -> warmstart_policy;
 
-        <text x="28" y="314" class="rk">02 · WARM START · PRIVACY HEAD → BC → EXIT → λ MENU → CONTROLLER CALIBRATION</text>
-        <rect x="20" y="328" width="1140" height="550" rx="16" class="rb"/>
+  /* ── warm start: utility-only ExIt ── */
+  warmstart_policy -> exit_sample;
+  teacher_rule -> exit_winner;
+  exit_sample -> exit_score;
+  exit_score -> exit_winner;
+  exit_winner -> exit_reverify;
+  exit_reverify -> env_reader [color="#a16f31", penwidth=1.6];
+  exit_reverify -> exit_sample;
+  exit_reverify -> exit_clone_via [color="#3d6f9d", style=dashed, penwidth=1.5, arrowhead=none];
+  exit_clone_via -> warmstart_policy [color="#3d6f9d", style=dashed, penwidth=1.5];
 
-        <rect x="44" y="350" width="540" height="134" rx="10" class="rb"/>
-        <text x="60" y="372" class="rki">BEHAVIOR CLONING · SUPERVISED WARM START · λ-INDEPENDENT</text>
-        <rect x="60" y="384" width="250" height="84" rx="7" class="rm"/>
-        <text x="185" y="407" text-anchor="middle" class="rt">teacher rule (no model)</text>
-        <text x="185" y="426" text-anchor="middle" class="rs">hand-coded walk per decision:</text>
-        <text x="185" y="442" text-anchor="middle" class="rs">finest legal lattice level,</text>
-        <text x="185" y="458" text-anchor="middle" class="rs">else the typed placeholder</text>
-        <rect x="330" y="384" width="238" height="84" rx="7" class="ru"/>
-        <text x="449" y="407" text-anchor="middle" class="rt">cross-entropy training</text>
-        <text x="449" y="426" text-anchor="middle" class="rs">L = −log π(teacher action)</text>
-        <text x="449" y="442" text-anchor="middle" class="rs">over each dynamic legal menu</text>
-        <text x="449" y="458" text-anchor="middle" class="rs">∇ → utility scoring path</text>
-        <path d="M310 426H326" class="rl" marker-end="url(#rl-arrow)"/>
+  /* ── warm start: lambda menu + controller calibration ── */
+  calibration_pool -> frontier_switch;
+  frontier_switch -> replay_acceptance;
+  replay_acceptance -> controller_calibration;
 
-        <rect x="608" y="364" width="250" height="100" rx="7" class="ru"/>
-        <text x="733" y="389" text-anchor="middle" class="rt">policy π · the M1 model</text>
-        <text x="733" y="409" text-anchor="middle" class="rs">trains: utility scoring path</text>
-        <text x="733" y="425" text-anchor="middle" class="rs">frozen: encoder · privacy p̂</text>
-        <text x="733" y="441" text-anchor="middle" class="rs">α untouched until calibration</text>
+  /* ── shared round-trip environment ── */
+  exit_score -> env_docp;
+  env_docp -> env_remote [color="#a16f31", penwidth=1.6];
+  env_remote -> env_unperturb [color="#a16f31", penwidth=1.6];
+  env_unperturb -> env_reader;
+  env_reader -> env_scores;
 
-        <rect x="890" y="364" width="246" height="100" rx="7" class="rp"/>
-        <text x="1013" y="389" text-anchor="middle" class="rt">privacy pretraining</text>
-        <text x="1013" y="409" text-anchor="middle" class="rs">profile-held-out log-count</text>
-        <text x="1013" y="425" text-anchor="middle" class="rs">must beat shortcut baselines</text>
-        <text x="1013" y="441" text-anchor="middle" class="rs">→ frozen p̂ for the policy</text>
+  /* ── hybrid RL: policy forward pass ── */
+  episode_scheduler -> policy_encoder;
+  policy_encoder -> policy_utility;
+  policy_encoder -> policy_privhead;
+  policy_utility -> policy_pihead;
+  policy_privhead -> policy_controller;
+  policy_controller -> policy_pihead;
+  policy_pihead -> hybrid_rollouts;
+  hybrid_rollouts -> env_docp;
 
-        <path d="M572 426H604" class="rlg" marker-end="url(#rl-arrow)"/>
-        <path d="M886 414H862" class="rld" marker-end="url(#rl-arrow)"/>
+  /* ── hybrid RL: credit, loss, optimization ── */
+  env_scores -> rloo_credit;
+  cf_correction -> env_docp;
+  count_objective -> loss_assembly;
+  cf_correction -> loss_assembly;
+  rloo_credit -> loss_assembly;
+  loss_assembly -> optimizer_step;
+  optimizer_step -> episode_scheduler;
 
-        <path d="M700 464V514H158V562" class="rlu" marker-end="url(#rl-arrow)"/>
-        <text x="710" y="482" class="rs">acts at λ = 0</text>
-        <path d="M185 468V492H578V562" class="rld" marker-end="url(#rl-arrow)"/>
-        <text x="240" y="506" class="rs">BC reference (teacher U_total)</text>
-        <path d="M1006 562V500H874V434H862" class="rlg" marker-end="url(#rl-arrow)"/>
-        <text x="888" y="494" class="rs">∇ winner CE</text>
-
-        <rect x="44" y="530" width="1092" height="150" rx="10" class="rb"/>
-        <text x="60" y="552" class="rki">UTILITY-ONLY EXIT · λ = 0 · PER DOCUMENT, UNTIL NO VERIFIED IMPROVEMENT</text>
-        <rect x="60" y="566" width="196" height="86" rx="7" class="ru"/>
-        <text x="158" y="589" text-anchor="middle" class="rt">sample G rollouts</text>
-        <text x="158" y="608" text-anchor="middle" class="rs">warm-started policy · λ=0</text>
-        <text x="158" y="624" text-anchor="middle" class="rs">complete trajectories</text>
-        <rect x="272" y="566" width="196" height="86" rx="7" class="rf"/>
-        <text x="370" y="589" text-anchor="middle" class="rt">score pure U_total</text>
-        <text x="370" y="608" text-anchor="middle" class="rs">full round trip per rollout</text>
-        <text x="370" y="624" text-anchor="middle" class="rs">measured document utility</text>
-        <rect x="484" y="566" width="196" height="86" rx="7" class="rm"/>
-        <text x="582" y="589" text-anchor="middle" class="rt">winner selection</text>
-        <text x="582" y="607" text-anchor="middle" class="rs">argmax U_total among G;</text>
-        <text x="582" y="622" text-anchor="middle" class="rs">must strictly beat the BC</text>
-        <text x="582" y="637" text-anchor="middle" class="rs">reference's measured U_total</text>
-        <rect x="696" y="566" width="196" height="86" rx="7" class="rr"/>
-        <text x="794" y="589" text-anchor="middle" class="rt">serial reverify</text>
-        <text x="794" y="608" text-anchor="middle" class="rs">winner + reference rescored</text>
-        <text x="794" y="624" text-anchor="middle" class="rs">fresh reader pass (jitter)</text>
-        <rect x="908" y="566" width="196" height="86" rx="7" class="ru"/>
-        <text x="1006" y="589" text-anchor="middle" class="rt">clone winner</text>
-        <text x="1006" y="607" text-anchor="middle" class="rs">supervised CE update on</text>
-        <text x="1006" y="622" text-anchor="middle" class="rs">every winner action</text>
-        <text x="1006" y="637" text-anchor="middle" class="rs">∇ → utility scoring path</text>
-        <path d="M256 609H268" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M468 609H480" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M680 609H692" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M892 609H904" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M1006 652C1006 672 158 672 158 656" class="rld" marker-end="url(#rl-arrow)"/>
-
-        <rect x="44" y="704" width="800" height="150" rx="10" class="rb"/>
-        <text x="60" y="726" class="rki">λ MENU + THRESHOLD MANIFEST · FROM CACHED (U,P) TRAJECTORIES</text>
-        <rect x="60" y="740" width="240" height="86" rx="7" class="rm"/>
-        <text x="180" y="763" text-anchor="middle" class="rt">calibration pool</text>
-        <text x="180" y="782" text-anchor="middle" class="rs">BC + ExIt winners + anchors</text>
-        <text x="180" y="797" text-anchor="middle" class="rs">+ samples + measured CFs</text>
-        <text x="180" y="812" text-anchor="middle" class="rs">≥3 distinct (U,P) per doc</text>
-        <rect x="324" y="740" width="240" height="86" rx="7" class="rm"/>
-        <text x="444" y="763" text-anchor="middle" class="rt">frontier switch points</text>
-        <text x="444" y="782" text-anchor="middle" class="rs">merge ties · drop dominated</text>
-        <text x="444" y="797" text-anchor="middle" class="rs">upper convex envelope</text>
-        <text x="444" y="812" text-anchor="middle" class="rs">→ candidate λ profiles</text>
-        <rect x="588" y="740" width="236" height="86" rx="7" class="rm"/>
-        <text x="706" y="763" text-anchor="middle" class="rt">replay acceptance</text>
-        <text x="706" y="782" text-anchor="middle" class="rs">snap to observed thresholds</text>
-        <text x="706" y="797" text-anchor="middle" class="rs">replay · ≥3 responsive</text>
-        <text x="706" y="812" text-anchor="middle" class="rs">profiles, else stop</text>
-        <path d="M300 783H320" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M564 783H584" class="rl" marker-end="url(#rl-arrow)"/>
-
-        <rect x="868" y="740" width="268" height="86" rx="7" class="rc"/>
-        <text x="1002" y="763" text-anchor="middle" class="rt">controller calibration</text>
-        <text x="1002" y="782" text-anchor="middle" class="rs">switch thresholds → alpha init</text>
-        <text x="1002" y="797" text-anchor="middle" class="rs">gap-normalized weighted median</text>
-        <text x="1002" y="812" text-anchor="middle" class="rs">then capture KL reference</text>
-        <path d="M844 783H864" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M590 680V700" class="rl" marker-end="url(#rl-arrow)"/>
-
-        <rect x="1194" y="314" width="306" height="1035" rx="16" class="rb"/>
-        <text x="1210" y="336" class="rki">ROUND-TRIP ENVIRONMENT</text>
-        <text x="1210" y="352" class="rki">MEDGEMMA-4B-IT · SHARED BY 02 + 03</text>
-
-        <rect x="1220" y="380" width="254" height="70" rx="7" class="rm"/>
-        <text x="1347" y="406" text-anchor="middle" class="rt">doc_p</text>
-        <text x="1347" y="426" text-anchor="middle" class="rs">only text sent · per rollout</text>
-
-        <rect x="1220" y="480" width="254" height="86" rx="7" class="rr"/>
-        <text x="1347" y="503" text-anchor="middle" class="rt">remote task LLM</text>
-        <text x="1347" y="522" text-anchor="middle" class="rs">medgemma-4b-it · untrusted</text>
-        <text x="1347" y="538" text-anchor="middle" class="rs">closed box · returns out_p</text>
-
-        <rect x="1220" y="606" width="254" height="70" rx="7" class="rf"/>
-        <text x="1347" y="630" text-anchor="middle" class="rt">unperturb</text>
-        <text x="1347" y="650" text-anchor="middle" class="rs">out_p + R → out_final</text>
-
-        <rect x="1220" y="716" width="254" height="86" rx="7" class="rr"/>
-        <text x="1347" y="739" text-anchor="middle" class="rt">QA reader</text>
-        <text x="1347" y="758" text-anchor="middle" class="rs">medgemma-4b-it</text>
-        <text x="1347" y="774" text-anchor="middle" class="rs">scores each assertion</text>
-
-        <rect x="1220" y="1255" width="254" height="70" rx="7" class="rm"/>
-        <text x="1347" y="1281" text-anchor="middle" class="rt">u_g[q]</text>
-        <text x="1347" y="1301" text-anchor="middle" class="rs">scores in [0,1]</text>
-
-        <path d="M1347 450V476" class="rlr" marker-end="url(#rl-arrow)"/>
-        <path d="M1347 566V602" class="rlr" marker-end="url(#rl-arrow)"/>
-        <path d="M1347 676V712" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M1347 802V986" class="rl"/>
-        <text x="1347" y="1010" text-anchor="middle" class="rs">context assertions on doc_p</text>
-        <text x="1347" y="1026" text-anchor="middle" class="rs">delivered on out_final</text>
-        <path d="M1347 1040V1251" class="rl" marker-end="url(#rl-arrow)"/>
-
-        <path d="M370 566V524H1178" class="rld" marker-end="url(#rl-arrow)"/>
-        <text x="760" y="518" class="rs">ExIt scoring uses the same environment</text>
-
-        <text x="28" y="904" class="rk">03 · HYBRID RL · LAMBDA-CONDITIONED EPISODE LOOP</text>
-        <rect x="20" y="918" width="1140" height="690" rx="16" class="rb"/>
-
-        <rect x="42" y="980" width="170" height="80" rx="7" class="rm"/>
-        <text x="127" y="1004" text-anchor="middle" class="rt">episode scheduler</text>
-        <text x="127" y="1024" text-anchor="middle" class="rs">epochs × balanced Latin</text>
-        <text x="127" y="1040" text-anchor="middle" class="rs">cycle · one λ per group</text>
-
-        <rect x="236" y="950" width="746" height="250" rx="10" class="rb"/>
-        <text x="252" y="972" class="rki">POLICY π(a | s, λ) · SEMANTIC-V1 · THE FIG M1 MODEL · SEQUENTIAL WALK</text>
-
-        <rect x="252" y="984" width="170" height="72" rx="7" class="rf"/>
-        <text x="337" y="1007" text-anchor="middle" class="rt">frozen encoder</text>
-        <text x="337" y="1026" text-anchor="middle" class="rs">shared clinical encoder</text>
-        <text x="337" y="1042" text-anchor="middle" class="rs">H_doc · r_pair · frozen</text>
-
-        <rect x="478" y="984" width="180" height="72" rx="7" class="ru"/>
-        <text x="568" y="1007" text-anchor="middle" class="rt">utility scoring</text>
-        <text x="568" y="1026" text-anchor="middle" class="rs">3× attention + memory</text>
-        <text x="568" y="1042" text-anchor="middle" class="rs">MLP → u(a) · trainable</text>
-
-        <rect x="478" y="1100" width="180" height="72" rx="7" class="rp"/>
-        <text x="568" y="1123" text-anchor="middle" class="rt">privacy head</text>
-        <text x="568" y="1142" text-anchor="middle" class="rs">log-count → p̂(a)</text>
-        <text x="568" y="1158" text-anchor="middle" class="rs">pretrained · frozen</text>
-
-        <rect x="714" y="1100" width="180" height="72" rx="7" class="rc"/>
-        <text x="804" y="1123" text-anchor="middle" class="rt">λ controller</text>
-        <text x="804" y="1142" text-anchor="middle" class="rs">b = α·g(λ)·gap·p̂</text>
-        <text x="804" y="1158" text-anchor="middle" class="rs">α trainable</text>
-
-        <rect x="714" y="984" width="180" height="72" rx="7" class="rm"/>
-        <text x="804" y="1007" text-anchor="middle" class="rt">π head</text>
-        <text x="804" y="1026" text-anchor="middle" class="rs">z = u + b · legal mask</text>
-        <text x="804" y="1042" text-anchor="middle" class="rs">log_softmax → sample</text>
-
-        <path d="M422 1016H474" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M422 1034C450 1034 448 1136 474 1136" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M658 1016H710" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M658 1136H710" class="rlp" marker-end="url(#rl-arrow)"/>
-        <path d="M794 1100V1060" class="rlc" marker-end="url(#rl-arrow)"/>
-
-        <path d="M710 1044H662" class="rlg" marker-end="url(#rl-arrow)"/>
-        <path d="M824 1060V1096" class="rlg" marker-end="url(#rl-arrow)"/>
-
-        <rect x="1006" y="984" width="130" height="72" rx="7" class="ru"/>
-        <text x="1071" y="1007" text-anchor="middle" class="rt">G rollouts</text>
-        <text x="1071" y="1026" text-anchor="middle" class="rs">complete action</text>
-        <text x="1071" y="1042" text-anchor="middle" class="rs">vectors → doc_p</text>
-
-        <path d="M212 1020H248" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M894 1000C950 1000 950 1020 1002 1020" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M1136 1020H1182V415H1216" class="rlu" marker-end="url(#rl-arrow)"/>
-
-
-        <rect x="42" y="1244" width="230" height="120" rx="7" class="rp"/>
-        <text x="157" y="1268" text-anchor="middle" class="rt">exact count objective</text>
-        <text x="157" y="1289" text-anchor="middle" class="rs">level_counts → p target</text>
-        <text x="157" y="1305" text-anchor="middle" class="rs">π_count on legal menu</text>
-        <text x="157" y="1321" text-anchor="middle" class="rs">stopgrad(u) · stopgrad(p̂)</text>
-        <text x="157" y="1337" text-anchor="middle" class="rs">gradient → α only</text>
-
-        <rect x="296" y="1244" width="310" height="120" rx="7" class="rc"/>
-        <text x="451" y="1268" text-anchor="middle" class="rt">counterfactual correction</text>
-        <text x="451" y="1289" text-anchor="middle" class="rs">scheduler → one decision changed</text>
-        <text x="451" y="1305" text-anchor="middle" class="rs">full round-trip rerun → measured ΔU</text>
-        <text x="451" y="1321" text-anchor="middle" class="rs">replaces that decision's 1/G term</text>
-        <text x="451" y="1337" text-anchor="middle" class="rs">L_cf = −ΔU · (q_pair − ½)</text>
-
-        <rect x="646" y="1244" width="340" height="120" rx="7" class="ru"/>
-        <text x="816" y="1268" text-anchor="middle" class="rt">RLOO credit assignment</text>
-        <text x="816" y="1289" text-anchor="middle" class="rs">U[g,j] = Σ w_q·u_g[q] / Z_d (policy-role)</text>
-        <text x="816" y="1305" text-anchor="middle" class="rs">A[g,j] = U[g,j] − mean_{g'≠g} U[g',j]</text>
-        <text x="816" y="1321" text-anchor="middle" class="rs">routing: linked → residual → fallback</text>
-        <text x="816" y="1337" text-anchor="middle" class="rs">monitoring reported, never credited</text>
-
-        <path d="M1216 1290H990" class="rlu" marker-end="url(#rl-arrow)"/>
-        <path d="M521 1364V1382H1182V1024" class="rld" marker-end="url(#rl-arrow)"/>
-        <text x="600" y="1376" class="rs">rerun full round trip</text>
-
-        <rect x="42" y="1416" width="600" height="96" rx="7" class="rm"/>
-        <text x="342" y="1440" text-anchor="middle" class="rt">loss assembly</text>
-        <text x="342" y="1462" text-anchor="middle" class="rs">ℓ[g,j] = −A[g,j] · log π(a_gj | s, λ) — counterfactual terms substitute in place</text>
-        <text x="342" y="1480" text-anchor="middle" class="rs">L = mean_d (1/G) Σ ℓ + L_count − β·entropy + η·KL(π ‖ π_ref = calibrated)</text>
-
-        <path d="M157 1364V1412" class="rlp" marker-end="url(#rl-arrow)"/>
-        <path d="M411 1364C411 1390 400 1396 392 1412" class="rlc" marker-end="url(#rl-arrow)"/>
-        <path d="M660 1364C660 1390 630 1396 616 1412" class="rlu" marker-end="url(#rl-arrow)"/>
-
-        <rect x="686" y="1416" width="210" height="96" rx="7" class="rm"/>
-        <text x="791" y="1440" text-anchor="middle" class="rt">optimizer step</text>
-        <text x="791" y="1462" text-anchor="middle" class="rs">AdamW applies accumulated ∇</text>
-        <text x="791" y="1478" text-anchor="middle" class="rs">to utility scoring + α only</text>
-        <text x="791" y="1494" text-anchor="middle" class="rs">then next (doc, λ)</text>
-
-        <rect x="930" y="1416" width="206" height="96" rx="7" class="rf"/>
-        <text x="1033" y="1440" text-anchor="middle" class="rt">stays frozen</text>
-        <text x="1033" y="1460" text-anchor="middle" class="rs">encoder · privacy head p̂</text>
-        <text x="1033" y="1476" text-anchor="middle" class="rs">exact counts: supervision</text>
-        <text x="1033" y="1492" text-anchor="middle" class="rs">only, never actor features</text>
-
-        <path d="M642 1464H682" class="rl" marker-end="url(#rl-arrow)"/>
-        <path d="M600 1416V1398H1148V1222H930V1044H898" class="rlg" marker-end="url(#rl-arrow)"/>
-        <text x="938" y="1214" class="rs">backward pass ∂L</text>
-
-        <path d="M791 1512V1548H34V1020H38" class="rl" marker-end="url(#rl-arrow)"/>
-        <text x="70" y="1540" class="rs">next episode: same policy, updated weights</text>
-
-        <text x="28" y="1654" class="rk">04 · OUTPUTS</text>
-        <rect x="20" y="1668" width="1140" height="144" rx="16" class="rb"/>
-
-        <rect x="44" y="1700" width="255" height="88" rx="7" class="ru"/>
-        <text x="171" y="1725" text-anchor="middle" class="rt">trained checkpoint</text>
-        <text x="171" y="1745" text-anchor="middle" class="rs">utility path + calibrated α</text>
-        <text x="171" y="1761" text-anchor="middle" class="rs">controller-transform pinned</text>
-
-        <rect x="317" y="1700" width="255" height="88" rx="7" class="rm"/>
-        <text x="444" y="1725" text-anchor="middle" class="rt">per-λ evaluation</text>
-        <text x="444" y="1745" text-anchor="middle" class="rs">utility + selected count score</text>
-        <text x="444" y="1761" text-anchor="middle" class="rs">verdict = held-out attacker</text>
-
-        <rect x="590" y="1700" width="255" height="88" rx="7" class="rm"/>
-        <text x="717" y="1725" text-anchor="middle" class="rt">run diagnostics</text>
-        <text x="717" y="1745" text-anchor="middle" class="rs">α trajectory · mode rates</text>
-        <text x="717" y="1761" text-anchor="middle" class="rs">regret vs cached (U,P) frontier</text>
-
-        <rect x="863" y="1700" width="255" height="88" rx="7" class="rc"/>
-        <text x="990" y="1725" text-anchor="middle" class="rt">calibration artifacts</text>
-        <text x="990" y="1745" text-anchor="middle" class="rs">threshold manifest</text>
-        <text x="990" y="1761" text-anchor="middle" class="rs">KL reference checkpoint</text>
-      </svg>
+  /* ── backward pass ── */
+  loss_assembly -> loss_grad_via [color="#3d6f9d", style=dashed, penwidth=1.5, arrowhead=none];
+  loss_grad_via -> policy_pihead [color="#3d6f9d", style=dashed, penwidth=1.5];
+  policy_pihead -> policy_utility [color="#3d6f9d", style=dashed, penwidth=1.5];
+  policy_pihead -> policy_controller [color="#3d6f9d", style=dashed, penwidth=1.5];
+}
+        </script>
+        <div class="ranker-model-diagram__status">Computing training-process rendering…</div>
+      </div>
+      <noscript><p class="lede">Figure T2 lays out without JavaScript; edge routing requires it.</p></noscript>
     </div>
 
     <div class="prose">
@@ -965,139 +906,152 @@ digraph RankerV2Edges {
     </header>
     <p class="lede">Inference selects one supported lambda, walks frozen policy decisions once in first-occurrence order, and returns a complete action vector before any remote task call.</p>
 
-    <div class="diagram-frame">
+    <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
       <div class="diagram-cap">
-        <span class="l">FIG · I1: Deployed document inference</span>
-        <span>green = frozen/local · blue = ranker · amber = untrusted remote · dashed feedback = sequential state</span>
+        <span class="l">FIG · I1: Deployed document inference — walked on aci/D2N012 · illustrative operating point</span>
+        <span>real document + real lattice menus · actions hand-picked by span sensitivity, not a trained policy · marks: green = kept · blue = generalized · plum = placeholder</span>
       </div>
-      <svg viewBox="0 0 1180 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="infer-title infer-desc" style="display:block;width:100%;height:auto;background:transparent">
-        <title id="infer-title">Interactive Ranker v2 deployed document inference process</title>
-        <desc id="infer-desc">A local detector and lattice artifact produce grouped policy decisions and legal actions. Frozen document and relation representations feed the semantic ranker. The ranker walks decisions in first-occurrence order, applies dynamic injectivity constraints, chooses an action, updates selected-action memory, and rewrites all mapped occurrences. Only the anonymized document reaches the remote model. A local substitution record restores the remote output into the final answer.</desc>
-        <defs>
-          <marker id="infer-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
-          <style>
-            .ib{fill:#f8f7f3;stroke:#747980;stroke-width:1.4;stroke-dasharray:7 6}
-            .ii{fill:#f2f0eb;stroke:#34393e;stroke-width:1.35}
-            .if{fill:#d9e7de;stroke:#496454;stroke-width:1.35}
-            .iu{fill:#dbe7f3;stroke:#3d6287;stroke-width:1.35}
-            .ir{fill:#f7ead2;stroke:#9b6a2d;stroke-width:1.35}
-            .it{fill:#1c2024;font:500 13px 'JetBrains Mono',monospace}
-            .is{fill:#62686e;font:400 10px 'JetBrains Mono',monospace}
-            .ik{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.5px}
-            .il{fill:none;stroke:#34393e;stroke-width:1.35}
-            .ilu{fill:none;stroke:#3d6f9d;stroke-width:1.65}
-            .ilr{fill:none;stroke:#a16f31;stroke-width:1.65}
-            .ild{fill:none;stroke:#777c82;stroke-width:1.1;stroke-dasharray:4 4}
-          </style>
-        </defs>
-        <rect width="1180" height="720" fill="transparent"/>
+      <div
+        class="ranker-model-diagram"
+        role="img"
+        aria-label="Deployed inference walk on document aci/D2N012: detection and decision grouping, the sequential lambda-conditioned ranking loop generalizing the mental-health diagnosis and its medications while keeping low-sensitivity inhalers and findings, and the remote round trip that sends only the anonymized document and locally restores the delivered note"
+      >
+        <div class="ranker-model-diagram__layout">
 
-        <text x="28" y="30" class="ik">LOCAL PREPARATION</text>
-        <rect x="20" y="44" width="1140" height="150" rx="15" class="ib"/>
-        <rect x="44" y="82" width="120" height="66" rx="6" class="ii"/>
-        <text x="104" y="108" text-anchor="middle" class="it">doc_orig</text>
-        <text x="104" y="128" text-anchor="middle" class="is">private source</text>
-        <rect x="196" y="60" width="194" height="116" rx="6" class="if"/>
-        <text x="293" y="84" text-anchor="middle" class="it">detect + group</text>
-        <text x="293" y="103" text-anchor="middle" class="is">occurrences → decisions</text>
-        <text x="293" y="118" text-anchor="middle" class="is">controlled: drug · health-</text>
-        <text x="293" y="133" text-anchor="middle" class="is">condition · medical-procedure</text>
-        <text x="293" y="148" text-anchor="middle" class="is">PERSON/CODE → placeholder</text>
-        <text x="293" y="163" text-anchor="middle" class="is">other detected → fixed KEEP</text>
-        <rect x="430" y="72" width="216" height="86" rx="6" class="if"/>
-        <text x="538" y="97" text-anchor="middle" class="it">representation store</text>
-        <text x="538" y="117" text-anchor="middle" class="is">H_doc + r_pair per action</text>
-        <text x="538" y="135" text-anchor="middle" class="is">pinned encoder revision</text>
-        <text x="538" y="151" text-anchor="middle" class="is">cache or local encode</text>
-        <rect x="686" y="72" width="196" height="86" rx="6" class="iu"/>
-        <text x="784" y="97" text-anchor="middle" class="it">begin document</text>
-        <text x="784" y="117" text-anchor="middle" class="is">supported lambda fixed</text>
-        <text x="784" y="135" text-anchor="middle" class="is">selected memory = empty</text>
-        <text x="784" y="151" text-anchor="middle" class="is">claimed fills = fixed claims</text>
-        <rect x="930" y="82" width="188" height="66" rx="6" class="ii"/>
-        <text x="1024" y="108" text-anchor="middle" class="it">user lambda profile</text>
-        <text x="1024" y="128" text-anchor="middle" class="is">one finite supported value</text>
-        <path d="M164 115H192" class="il" marker-end="url(#infer-arrow)"/>
-        <path d="M390 115H426" class="il" marker-end="url(#infer-arrow)"/>
-        <path d="M646 115H682" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M930 115H886" class="ilu" marker-end="url(#infer-arrow)"/>
+          <section class="ranker-model-diagram__module" data-module-id="i1-input">
+            <div class="ranker-model-diagram__module-label">01 · Input — local preparation · aci/D2N012 · chronic-problem follow-up</div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:1fr">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--doc" data-node-id="i1_doc" style="max-width:1240px">
+                <div class="ranker-model-diagram__node-title">Source document · doc_orig · excerpt</div>
+                <div class="ranker-model-diagram__node-detail">[doctor] okay . <span class="ranker-model-diagram__mark ranker-model-diagram__mark--placeholder">joseph</span> is a 59 year old male here for routine follow-up of his chronic problems . so , <span class="ranker-model-diagram__mark ranker-model-diagram__mark--placeholder">joseph</span> , how have you been doing ?<br>[patient] yeah , i've been kind of managing through my <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">depression</span> , and , uh , my <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">asthma</span>'s been acting up 'cause we had a really bad pollen season , and i am at least keeping my <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">diabetes</span> under control … <br>[doctor] … i know we have you on the , on the <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">prozac</span> 20mg a day . are you taking that ? … hey , dragon , show me the <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">pfts</span> . … <br>[doctor] from an <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">asthma</span> standpoint , let's continue you on the <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">albuterol</span> , two puffs , every four to six hours as needed , and we'll add <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">symbicort</span> , two puffs twice a day during the summer … and then , from a <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">depression</span> standpoint , we'll start you on a different medication , <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">zoloft</span> , um , 25 mg once a day .</div>
+              </div>
+            </div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:repeat(4,1fr);gap:32px">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="i1_detector">
+                <div class="ranker-model-diagram__node-title">Detector</div>
+                <div class="ranker-model-diagram__node-detail">GLiNER-PII ∪ Presidio · frozen<br>occurrences + runtime types</div>
+              </div>
+              <div class="ranker-model-diagram__node" data-node-id="i1_grouping">
+                <div class="ranker-model-diagram__node-title">Group into decisions</div>
+                <div class="ranker-model-diagram__node-detail">canonical key · 13 ranker-controlled<br>PERSON · CODE → fixed placeholder</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="i1_repr">
+                <div class="ranker-model-diagram__node-title">Representation store</div>
+                <div class="ranker-model-diagram__node-detail">frozen encoder · H_doc · r_pair<br>pinned revision · cache or encode</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="i1_lambda">
+                <div class="ranker-model-diagram__node-title">λ profile</div>
+                <div class="ranker-model-diagram__node-detail">caller fixes one supported λ<br>deployed menu 0 · 0.48 · 1.05 · 1.53</div>
+              </div>
+            </div>
+          </section>
 
-        <text x="28" y="232" class="ik">SEQUENTIAL LOCAL RANKING</text>
-        <rect x="20" y="246" width="742" height="344" rx="15" class="ib"/>
-        <rect x="44" y="286" width="130" height="72" rx="6" class="ii"/>
-        <text x="109" y="310" text-anchor="middle" class="it">next decision</text>
-        <text x="109" y="330" text-anchor="middle" class="is">first-occurrence</text>
-        <text x="109" y="347" text-anchor="middle" class="is">walk order</text>
-        <rect x="206" y="286" width="142" height="72" rx="6" class="iu"/>
-        <text x="277" y="310" text-anchor="middle" class="it">legal action IDs</text>
-        <text x="277" y="330" text-anchor="middle" class="is">KEEP · levels · PH</text>
-        <text x="277" y="347" text-anchor="middle" class="is">remove fill collisions</text>
-        <rect x="380" y="278" width="186" height="88" rx="6" class="iu"/>
-        <text x="473" y="303" text-anchor="middle" class="it">semantic-v1 forward</text>
-        <text x="473" y="323" text-anchor="middle" class="is">u + alpha·g(lambda)·gap·p_hat</text>
-        <text x="473" y="341" text-anchor="middle" class="is">legal gather</text>
-        <text x="473" y="358" text-anchor="middle" class="is">log_softmax → log pi</text>
-        <rect x="584" y="286" width="148" height="72" rx="6" class="iu"/>
-        <text x="658" y="310" text-anchor="middle" class="it">select action</text>
-        <text x="658" y="330" text-anchor="middle" class="is">deployment argmax</text>
-        <text x="658" y="347" text-anchor="middle" class="is">stable action ID</text>
+          <section class="ranker-model-diagram__module" data-module-id="i1-ranking">
+            <div class="ranker-model-diagram__module-label">02 · Sequential ranking — one local pass · λ fixed · first-occurrence order</div>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:auto auto auto;gap:44px">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--doc" data-node-id="i1_queue">
+                <div class="ranker-model-diagram__node-title">Decision queue · walk window</div>
+                <div class="ranker-model-diagram__node-detail">joseph&nbsp;·&nbsp;PERSON&nbsp;→ <span class="ranker-model-diagram__mark ranker-model-diagram__mark--placeholder">&lt;PERSON_1&gt;</span>&nbsp;· fixed<br>depression&nbsp;·&nbsp;mental health&nbsp; ◀ current<br>asthma&nbsp;·&nbsp;chronic&nbsp; · diabetes&nbsp;·&nbsp;chronic<br>prozac&nbsp;·&nbsp;psychotropic&nbsp; · pfts&nbsp;·&nbsp;routine<br>albuterol · symbicort · zoloft · pneumonia</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--doc" data-node-id="i1_menu">
+                <div class="ranker-model-diagram__node-title">Legal action menu · lattice profile of the current decision</div>
+                <div class="ranker-model-diagram__node-detail">KEEP&nbsp;· depression&nbsp;· mental-health diagnosis, 4 occurrences<br>mood disorder&nbsp;· 12&nbsp;· still near-identifying<br><span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">cognitive disorder</span>&nbsp;· 81&nbsp; ◀ selected<br>disease of mental health&nbsp;· 59996&nbsp;· utility collapses<br><span class="ranker-model-diagram__mark ranker-model-diagram__mark--placeholder">&lt;HEALTH-CONDITION_n&gt;</span>&nbsp;· placeholder<br>dynamic legality drops fills already claimed</div>
+              </div>
+              <div class="ranker-model-diagram__col" style="gap:24px;justify-items:stretch">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="i1_forward">
+                  <div class="ranker-model-diagram__node-title">Semantic policy forward</div>
+                  <div class="ranker-model-diagram__node-detail">z = u + α·g(λ)·gap·p̂ · full menu<br>gather legal IDs · log_softmax</div>
+                </div>
+                <div class="ranker-model-diagram__node" data-node-id="i1_select">
+                  <div class="ranker-model-diagram__node-title">Select action · deployment argmax</div>
+                  <div class="ranker-model-diagram__node-detail">→ cognitive disorder · generalize<br>mental-health diagnosis → anonymity set 81</div>
+                </div>
+              </div>
+            </div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:1fr auto auto;gap:44px">
+              <div></div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="i1_memory">
+                <div class="ranker-model-diagram__node-title">Advance state</div>
+                <div class="ranker-model-diagram__node-detail">selected-action memory row<br>claim fill · λ unchanged</div>
+              </div>
+              <div class="ranker-model-diagram__node" data-node-id="i1_apply">
+                <div class="ranker-model-diagram__node-title">Apply decision</div>
+                <div class="ranker-model-diagram__node-detail">rewrite all mapped occurrences (4)<br>append inverse row to record R</div>
+              </div>
+            </div>
+            <div class="ranker-model-diagram__row" style="grid-template-columns:1fr">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--doc" data-node-id="i1_vector" style="max-width:1240px">
+                <div class="ranker-model-diagram__node-title">Complete action vector · 13 decisions · the more a surface identifies, the deeper the level</div>
+                <div class="ranker-model-diagram__node-detail">mental health → deep level:&nbsp; depression → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">cognitive disorder</span>&nbsp;· 81&nbsp;&nbsp;·&nbsp;&nbsp;prozac → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">antidepressant</span>&nbsp;· 40&nbsp;&nbsp;·&nbsp;&nbsp;zoloft → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">psychotropic agent</span>&nbsp;· 250<br>&nbsp;&nbsp;&nbsp;&nbsp;zoloft cannot reuse <i>antidepressant</i> — dynamic legality drops the fill prozac already claimed<br>chronic diagnosis → shallow level:&nbsp; asthma → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">bronchial disease</span>&nbsp;· 53&nbsp;&nbsp;·&nbsp;&nbsp;diabetes → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">glucose metabolism disease</span>&nbsp;· 80<br>&nbsp;&nbsp;&nbsp;&nbsp;metformin → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">antidiabetic agent</span>&nbsp;· 150&nbsp;&nbsp;·&nbsp;&nbsp;cervical lymphadenopathy → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">regional lymphadenopathy</span>&nbsp;· 45<br>low sensitivity, high task value → keep:&nbsp; albuterol · symbicort · inhaler · pfts · shortness of breath · pneumonia → <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">KEEP</span><br>assemble action vector → doc_p + substitution record R</div>
+              </div>
+            </div>
+          </section>
 
-        <rect x="118" y="424" width="186" height="88" rx="6" class="iu"/>
-        <text x="211" y="449" text-anchor="middle" class="it">apply decision</text>
-        <text x="211" y="469" text-anchor="middle" class="is">rewrite every mapped</text>
-        <text x="211" y="487" text-anchor="middle" class="is">occurrence consistently</text>
-        <text x="211" y="504" text-anchor="middle" class="is">record inverse mapping R</text>
-        <rect x="344" y="424" width="196" height="88" rx="6" class="iu"/>
-        <text x="442" y="449" text-anchor="middle" class="it">advance state</text>
-        <text x="442" y="469" text-anchor="middle" class="is">append selected memory row</text>
-        <text x="442" y="487" text-anchor="middle" class="is">claim selected level fill</text>
-        <text x="442" y="504" text-anchor="middle" class="is">lambda unchanged</text>
-        <rect x="580" y="430" width="152" height="76" rx="6" class="if"/>
-        <text x="656" y="455" text-anchor="middle" class="it">final action vector</text>
-        <text x="656" y="475" text-anchor="middle" class="is">one action / decision</text>
-        <text x="656" y="493" text-anchor="middle" class="is">doc_p + local R</text>
+          <section class="ranker-model-diagram__module" data-module-id="i1-roundtrip">
+            <div class="ranker-model-diagram__module-label">03 · Remote round trip — only doc_p leaves the device</div>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:1fr auto 1fr;gap:44px">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--doc" data-node-id="i1_docp">
+                <div class="ranker-model-diagram__node-title">Anonymized document · doc_p</div>
+                <div class="ranker-model-diagram__node-detail">[doctor] okay . <span class="ranker-model-diagram__mark ranker-model-diagram__mark--placeholder">&lt;PERSON_1&gt;</span> is a 59 year old male here for<br>routine follow-up of his chronic problems . …<br>[patient] yeah , i've been kind of managing through my<br><span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">cognitive disorder</span> , and , uh , my <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">bronchial disease</span><br>'s been acting up 'cause we had a really bad pollen<br>season , and i am at least keeping my<br><span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">glucose metabolism disease</span> under control … <br>[doctor] … on the <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">antidepressant</span> 20mg a day … show me<br>the <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">pfts</span> . … continue you on the <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">albuterol</span> , two puffs …<br>we'll add <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">symbicort</span> … we'll start you on a different<br>medication , <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">psychotropic agent</span> , um , 25 mg once a day .</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="i1_remote" style="align-self:center">
+                <div class="ranker-model-diagram__node-title">Remote task LLM</div>
+                <div class="ranker-model-diagram__node-detail">medgemma-4b-it · untrusted<br>closed box · sees only doc_p<br>task: write clinical visit note</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--doc" data-node-id="i1_outp">
+                <div class="ranker-model-diagram__node-title">Remote output · out_p · illustrative</div>
+                <div class="ranker-model-diagram__node-detail">**Patient:** <span class="ranker-model-diagram__mark ranker-model-diagram__mark--placeholder">&lt;PERSON_1&gt;</span> , 59-year-old male<br>**Assessment:**<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">Bronchial disease</span> — exacerbated by pollen season.<br>&nbsp; Continue <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">albuterol</span> 2 puffs q4–6h PRN;<br>&nbsp; add <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">symbicort</span> 2 puffs BID for the summer.<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">Cognitive disorder</span> — switching from<br>&nbsp; <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">antidepressant</span> 20 mg to <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">psychotropic agent</span> 25 mg daily.<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--level">Glucose metabolism disease</span> — controlled.<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">pfts</span> reviewed; no <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">pneumonia</span> on chest x-ray.</div>
+              </div>
+            </div>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:1fr auto 1fr;gap:44px">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="i1_record" style="justify-self:center;align-self:center">
+                <div class="ranker-model-diagram__node-title">Substitution record R · local only</div>
+                <div class="ranker-model-diagram__node-detail">&lt;PERSON_1&gt; → joseph<br>cognitive disorder → depression&nbsp; · bronchial disease → asthma<br>glucose metabolism disease → diabetes<br>antidepressant → prozac&nbsp; · psychotropic agent → zoloft</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="i1_unperturb" style="align-self:center">
+                <div class="ranker-model-diagram__node-title">Unperturb · local</div>
+                <div class="ranker-model-diagram__node-detail">invert(out_p, R)<br>alias → first source surface</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--doc" data-node-id="i1_outfinal">
+                <div class="ranker-model-diagram__node-title">Delivered answer · out_final · illustrative</div>
+                <div class="ranker-model-diagram__node-detail">**Patient:** <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">joseph</span> , 59-year-old male<br>**Assessment:**<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">Asthma</span> — exacerbated by pollen season.<br>&nbsp; Continue <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">albuterol</span> 2 puffs q4–6h PRN;<br>&nbsp; add <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">symbicort</span> 2 puffs BID for the summer.<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">Depression</span> — switching from<br>&nbsp; <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">prozac</span> 20 mg to <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">zoloft</span> 25 mg daily.<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">Diabetes</span> — controlled.<br>· <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">pfts</span> reviewed; no <span class="ranker-model-diagram__mark ranker-model-diagram__mark--keep">pneumonia</span> on chest x-ray.</div>
+              </div>
+            </div>
+          </section>
+        </div>
 
-        <path d="M174 322H202" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M348 322H376" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M566 322H580" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M658 358C658 396 250 392 211 420" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M304 468H340" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M540 468H576" class="ilu" marker-end="url(#infer-arrow)"/>
-        <path d="M442 424C442 394 109 400 109 362" class="ild" marker-end="url(#infer-arrow)"/>
-        <text x="270" y="395" class="is">repeat until no decisions remain</text>
+        <svg class="ranker-model-diagram__edges" aria-hidden="true" focusable="false"></svg>
 
-        <text x="796" y="232" class="ik">REMOTE TASK + LOCAL POST-PROCESSING</text>
-        <rect x="782" y="246" width="378" height="176" rx="15" class="ib"/>
-        <rect x="806" y="286" width="110" height="80" rx="6" class="ii"/>
-        <text x="861" y="312" text-anchor="middle" class="it">doc_p</text>
-        <text x="861" y="332" text-anchor="middle" class="is">only text sent</text>
-        <text x="861" y="349" text-anchor="middle" class="is">off-device</text>
-        <rect x="954" y="278" width="180" height="96" rx="6" class="ir"/>
-        <text x="1044" y="305" text-anchor="middle" class="it">remote task LLM</text>
-        <text x="1044" y="326" text-anchor="middle" class="is">untrusted closed box</text>
-        <text x="1044" y="344" text-anchor="middle" class="is">sees no doc_orig or R</text>
-        <text x="1044" y="362" text-anchor="middle" class="is">returns out_p</text>
-        <path d="M916 326H950" class="ilr" marker-end="url(#infer-arrow)"/>
+        <script type="text/vnd.graphviz" data-ranker-model-dot>
+digraph RankerV2Inference {
+  edge [color="#34393e", penwidth=1.3, arrowsize=0.62];
 
-        <rect x="782" y="450" width="378" height="140" rx="15" class="ib"/>
-        <rect x="806" y="482" width="182" height="90" rx="6" class="if"/>
-        <text x="897" y="507" text-anchor="middle" class="it">local unperturb</text>
-        <text x="897" y="527" text-anchor="middle" class="is">out_p + substitution R</text>
-        <text x="897" y="543" text-anchor="middle" class="is">alias → first source surface</text>
-        <text x="897" y="559" text-anchor="middle" class="is">deterministic inversion</text>
-        <rect x="1022" y="482" width="112" height="74" rx="6" class="ii"/>
-        <text x="1078" y="508" text-anchor="middle" class="it">out_final</text>
-        <text x="1078" y="528" text-anchor="middle" class="is">delivered</text>
-        <text x="1078" y="545" text-anchor="middle" class="is">to caller</text>
-        <path d="M988 519H1018" class="il" marker-end="url(#infer-arrow)"/>
-        <path d="M1044 374C1044 430 940 442 918 478" class="ilr" marker-end="url(#infer-arrow)"/>
-        <path d="M732 468C770 468 772 519 802 519" class="il" marker-end="url(#infer-arrow)"/>
-        <path d="M732 468C770 468 774 326 802 326" class="ilu" marker-end="url(#infer-arrow)"/>
+  i1_doc -> i1_detector;
+  i1_detector -> i1_grouping;
+  i1_doc -> i1_repr;
+  i1_grouping -> i1_queue;
 
-        <rect x="20" y="626" width="1140" height="58" rx="8" class="ii"/>
-        <text x="590" y="650" text-anchor="middle" class="it">absent at inference</text>
-        <text x="590" y="670" text-anchor="middle" class="is">QA assertions · reader/scorer · RLOO · counterfactual calls · exact count targets · policy-gradient losses</text>
-      </svg>
+  i1_queue -> i1_menu;
+  i1_menu -> i1_forward;
+  i1_repr -> i1_forward;
+  i1_lambda -> i1_forward;
+  i1_forward -> i1_select;
+  i1_select -> i1_apply;
+  i1_apply -> i1_memory;
+  i1_memory -> i1_queue [color="#777c82", style=dashed, penwidth=1.2];
+  i1_apply -> i1_vector;
+
+  i1_vector -> i1_docp;
+  i1_vector -> i1_record;
+  i1_docp -> i1_remote [color="#a16f31", penwidth=1.6];
+  i1_remote -> i1_outp [color="#a16f31", penwidth=1.6];
+  i1_outp -> i1_unperturb;
+  i1_record -> i1_unperturb;
+  i1_unperturb -> i1_outfinal;
+}
+        </script>
+        <div class="ranker-model-diagram__status">Computing inference rendering…</div>
+      </div>
     </div>
 
     <div class="prose">

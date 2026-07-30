@@ -668,6 +668,14 @@ html {
   color: var(--ink);
   font-weight: 500;
 }
+/* Grid figures size their frame to the diagram (width: max-content), so the
+   caption must not contribute to that intrinsic width — it wraps inside the
+   resolved width instead of stretching the frame past the diagram. */
+.diagram-frame:has(.ranker-model-diagram) .diagram-cap {
+  width: 0;
+  min-width: 100%;
+  gap: 24px;
+}
 
 /* FIG M1: nested CSS grids own node placement; Graphviz (neato, pinned
    positions, splines=ortho) routes only the connecting edges.
@@ -677,7 +685,6 @@ html {
   --dg-gap: 16px;    /* between rows and columns inside a section */
   --dg-gap-sm: 14px; /* inside tight stacks (MLP chains): keeps every arrow a visible shaft, not just a head */
   --dg-pad: 18px;    /* section frame inner padding */
-  --dg-label-clear: 40px; /* top padding clearing the section label */
   position: relative;
   width: max-content;
   color: var(--ink);
@@ -688,6 +695,7 @@ html {
 .ranker-model-diagram__layout {
   display: grid;
   gap: var(--dg-gap-lg);
+  padding-top: 22px; /* headroom for the top sections' outside titles */
 }
 .ranker-model-diagram__row {
   display: grid;
@@ -731,7 +739,7 @@ html {
   gap: var(--dg-gap);
   box-sizing: border-box;
   min-width: 0;
-  padding: var(--dg-label-clear) var(--dg-pad) var(--dg-pad);
+  padding: var(--dg-pad);
   border: 1px dashed #747980;
   border-radius: 14px;
   background: rgb(228 234 231 / 0.52);
@@ -741,13 +749,27 @@ html {
   border-radius: 10px;
   background: rgb(226 231 235 / 0.48);
 }
+/* a section whose first row nests another section needs headroom for the
+   nested section's outside title */
+.ranker-model-diagram__module:has(
+    > .ranker-model-diagram__module-label
+      + .ranker-model-diagram__row
+      > .ranker-model-diagram__module
+  ) {
+  padding-top: 32px;
+}
+/* a section directly below another needs room for its outside title */
+.ranker-model-diagram__module + .ranker-model-diagram__module {
+  margin-top: 16px;
+}
+/* section title above the frame, like the inline figures' band titles */
 .ranker-model-diagram__module-label {
   position: absolute;
-  top: 13px;
-  left: var(--dg-pad);
+  bottom: 100%;
+  left: 8px;
   z-index: 1;
-  padding: 0 5px;
-  background: var(--paper);
+  margin-bottom: 6px;
+  color: #34393e;
   font-family: "JetBrains Mono", monospace;
   font-size: 10px;
   font-weight: 600;
@@ -828,6 +850,68 @@ html {
   border-color: #555b61;
   border-radius: 1px;
   background: #e7e6e3;
+}
+.ranker-model-diagram__node--privacy {
+  border-color: #9a5c54;
+  background: #f1ddda;
+}
+.ranker-model-diagram__node--control {
+  border-color: #765e82;
+  background: #e9e1ed;
+}
+.ranker-model-diagram__node--external {
+  border-color: #9b6a2d;
+  background: #f7ead2;
+}
+.ranker-model-diagram__node--trainable {
+  border-style: dashed;
+}
+/* document-excerpt nodes: real example text, left-aligned */
+.ranker-model-diagram__node--doc {
+  align-items: flex-start;
+}
+.ranker-model-diagram__node--doc .ranker-model-diagram__node-title {
+  text-align: left;
+}
+.ranker-model-diagram__node--doc .ranker-model-diagram__node-detail {
+  text-align: left;
+  line-height: 1.7;
+}
+/* highlighted example spans, colored by the action applied to them */
+.ranker-model-diagram__mark {
+  padding: 0 3px;
+  border-radius: 3px;
+  background: #e7e6e3;
+  box-shadow: inset 0 0 0 1px #b9bdc2;
+}
+.ranker-model-diagram__mark--keep {
+  background: #d9e7de;
+  box-shadow: inset 0 0 0 1px #85a290;
+}
+.ranker-model-diagram__mark--level {
+  background: #dbe7f3;
+  box-shadow: inset 0 0 0 1px #8aa7c4;
+}
+.ranker-model-diagram__mark--placeholder {
+  background: #e9e1ed;
+  box-shadow: inset 0 0 0 1px #a993b5;
+}
+.ranker-model-diagram__node--note {
+  width: auto;
+  min-height: 0;
+  padding: 2px 8px;
+  border: 0;
+  background: none;
+}
+.ranker-model-diagram__node--via {
+  width: 3px;
+  min-width: 3px;
+  height: 3px;
+  min-height: 3px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
 }
 .ranker-model-diagram__node--linear,
 .ranker-model-diagram__node--activation {

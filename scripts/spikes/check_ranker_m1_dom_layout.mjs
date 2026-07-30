@@ -62,7 +62,7 @@ assert.equal(
   (report.match(/<svg\b/g) ?? []).length
     - (report.match(/ranker-model-diagram__node-outline/g) ?? []).length,
   3,
-  "M1 contributes only shape outlines and the empty edge overlay; figures T2 and I1 remain inline",
+  "each grid figure (M1, T2, I1) contributes shape outlines plus one empty edge overlay",
 );
 assert.ok(
   report.indexOf("@viz-js/viz@3.28.0/dist/viz-global.js")
@@ -141,5 +141,26 @@ assert.ok(!report.includes("FIG · T1"), "figure T1 is retired; RL training live
 for (const caption of ["FIG · T2: Training process and reward flow", "FIG · I1: Deployed document inference"]) {
   assert.ok(report.includes(caption), `page must keep ${caption}`);
 }
+assert.equal(
+  (report.match(/data-ranker-model-dot/g) ?? []).length,
+  3,
+  "M1, T2, and I1 each carry an edge-only DOT block for the shared renderer",
+);
+for (const t2Node of ["env_docp", "warmstart_policy", "rloo_credit", "optimizer_step"]) {
+  assert.ok(
+    report.includes(`data-node-id="${t2Node}"`),
+    `T2 must declare HTML node ${t2Node}`,
+  );
+}
+for (const i1Node of ["i1_doc", "i1_menu", "i1_docp", "i1_remote", "i1_record", "i1_outfinal"]) {
+  assert.ok(
+    report.includes(`data-node-id="${i1Node}"`),
+    `I1 must declare HTML node ${i1Node}`,
+  );
+}
+assert.ok(
+  !report.includes("absent at inference"),
+  "I1 no longer carries the absent-at-inference strip",
+);
 
 console.log("M1 HTML nodes, edge-only DOT, generic neato renderer, and figure roster are valid.");
