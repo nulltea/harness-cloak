@@ -1,0 +1,79 @@
+---
+type: training-experiment
+status: running
+created: 2026-07-30
+model: semantic-v1 policy (controller_production BC/ExIt warm starts reused,
+  gap-scaled controller + switch-calibrated alpha init, Arm C counterfactual
+  broadcast, always-on KL to the calibrated reference)
+dataset: aci 4-doc controller-strength spike set (D2N005/D2N027/D2N063/D2N031),
+  frozen environment sha256:4cc754a7, qa-utility-runtime-v2 policy denominator
+result: pending
+tags: [rl, ranker-v2, kl-anchor, tie-drift, saturation, coin-flip]
+companion: ../../docs/specs/RL/interactive-ranker-v2-decision-log.md
+---
+
+# RL-ranker v11 — KL-anchor spike (forward vs reverse, always-on)
+
+Fix spike for the lambda-3 coin-flip root cause (decision log 2026-07-30):
+utility-tied action pairs (L0 == keep exactly on D2N005) inherit a keep-ward
+prior through shared parameters, unbounded softmax sharpening amplifies it past
+the bounded controller shift, and nothing pushes back (count gradient reaches
+only alpha; the KL collapse trigger is aggregate-level, never fired, and the
+forward direction loses its gradient under saturation while the calibrated
+references are healthy anchors, E[P|lambda-3] ~0.66).
+
+## Objective & hypothesis
+
+An always-on low-weight KL to the calibrated reference (eta=0.01 from epoch 0)
+owns the reward-silent ties and bounds margin drift, making lambda-3 behavior
+deterministic on D2N005 without dulling reward-live learning. Reverse KL
+(ref||pi) should dominate if saturation recovery matters (its ~(pi-ref)
+gradient survives sharp policies; measured >100x forward at +-12 logits).
+
+## Training config
+
+Production trainer, 12 epochs, base 8 rollouts, Arm C
+(--counterfactual-coverage degeneracy), gap-scaled controller +
+switch-calibrated alpha init, lr 1e-4, beta 0.01, eta 0.01, no gradient
+clipping (kept null — clipping is a separate later ablation, never bundled).
+Arms: --kl-schedule always-on with --kl-direction forward | reverse.
+Seeds 17 (healthy high-P mode) and 47 (collapsed all-keep mode, logit ranges
+277-327 at stage-2 end) — prevention and recovery in one design.
+--synchronous-profile-eval on: every epoch report carries a same-checkpoint
+4-profile readout (64 sampled vectors per profile, count-score only — no
+remote calls; per-decision expected privacy score and utility-logit range).
+Implementation commit 2b5ff6f.
+
+## Evaluation & success criteria (preregistered, from the decision log)
+
+On the synchronous readout, per arm, both seeds:
+1. D2N005 sampled Delta P(lambda-3 vs lambda-0) >= 0.20 after every completed
+   cycle;
+2. D2N005 lambda-3 sampled-P range across cycles <= 0.10;
+3. cross-seed final lambda-3 sampled-P difference <= 0.10;
+4. reward-flat decision (atrial fibrillation) expected privacy score >= 0.50
+   at lambda-3;
+5. median frontier regret <= 0.044 held (item-7 gate, from the usual groups);
+6. conditional lambda-zero utility within 0.044 of the fixed control;
+7. no placeholder collapse, no non-finite values;
+8. D2N005 utility-logit ranges grow <= 3x the calibrated reference's (9-15).
+
+Adjudication: both pass -> adopt forward (smaller semantic change); only
+reverse -> adopt reverse; behavior stable but regret/lambda-zero degrade ->
+escalate to learned context-conditioned controller gain; neither stops the
+range explosion -> one isolated max_grad_norm=1.0 arm before touching
+controller capacity.
+
+## Results
+
+pending
+
+## Cost
+
+Local only, shared iGPU, 4 chains sequential, heavily cache-backed.
+
+## Artifacts
+
+results/ranker_v2/architecture/kl_anchor/{train,control,kl-ref,epochs}-
+{forward,reverse}-s{17,47}.*, spike.log. Predecessors: RL-ranker v10
+(stage 2), root-cause adjudication in the decision log (2026-07-30).
