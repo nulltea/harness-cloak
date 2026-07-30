@@ -320,10 +320,21 @@ def _import_unconditioned_state(
     source_state: Mapping[str, torch.Tensor],
 ) -> None:
     target = policy.state_dict()
-    if set(source_state) != set(target):
+    # The controller gain head is created AFTER behavior cloning (tie-ownership
+    # escalation); its zero-initialized parameters are legitimately absent from
+    # the BC checkpoint and keep their init values. Everything else stays a
+    # strict one-to-one import.
+    optional = {
+        name for name in target
+        if name.startswith("gain_head.") and name not in source_state
+    }
+    if set(source_state) != set(target) - optional:
         raise ValueError("BC checkpoint parameters differ from conditional policy")
     imported = {}
     for name, target_value in target.items():
+        if name in optional:
+            imported[name] = target_value.detach().clone()
+            continue
         source_value = source_state[name]
         if source_value.shape != target_value.shape:
             raise ValueError(f"BC parameter shape differs: {name}")
@@ -732,6 +743,10 @@ def synchronous_profile_snapshot(
                 replayed = replay_trajectory(policy, document, greedy, profile)
                 decisions = []
                 greedy_scores = []
+                gain_enabled = getattr(policy, "controller_gain_mode", None)
+                if gain_enabled:
+                    from cloak.ranker.semantic import decision_controller_alpha
+                    gain_state = policy.begin_document(document, profile)
                 for decision, step in zip(
                     document.policy_decisions, replayed.steps, strict=True,
                 ):
@@ -745,7 +760,7 @@ def synchronous_profile_snapshot(
                     greedy_scores.append(float(profile_targets.action_scores(
                         decision.decision_id, (step.selected_action_id,),
                     )[0]))
-                    decisions.append({
+                    entry = {
                         "decision_id": decision.decision_id,
                         "greedy_action_score": greedy_scores[-1],
                         "expected_p": float(
@@ -754,7 +769,12 @@ def synchronous_profile_snapshot(
                         "utility_logit_range": float(
                             step.utility_logits.max() - step.utility_logits.min()
                         ),
-                    })
+                    }
+                    if gain_enabled:
+                        entry["controller_alpha"] = decision_controller_alpha(
+                            policy, gain_state, decision, step.legal_action_ids,
+                        )
+                    decisions.append(entry)
                 per_profile[str(profile.name)] = {
                     "sampled_P_mean": sum(sampled_p) / len(sampled_p),
                     "sampled_P_count": samples,

@@ -1177,7 +1177,22 @@ class SemanticRankerPolicy(nn.Module):
             count_combined = utility_logits.detach()
         else:
             magnitude = math.log1p(lambda_value) / math.log1p(self.max_lambda)
-            controller = self.alpha * magnitude * predicted_privacy.detach()
+            alpha_value = self.alpha
+            gain_mode = getattr(self, "controller_gain_mode", None)
+            if gain_mode == "learned":
+                bound = float(self.controller_gain_bound)
+                residual = self.gain_head(
+                    utility_inputs.detach().mean(dim=0)
+                ).squeeze(-1)
+                alpha_value = F.softplus(
+                    self.alpha_raw + bound * torch.tanh(residual / bound)
+                )
+            elif gain_mode == "random":
+                offset = _random_gain_offset(
+                    decision.decision_id, float(self.controller_gain_bound),
+                )
+                alpha_value = F.softplus(self.alpha_raw + offset)
+            controller = alpha_value * magnitude * predicted_privacy.detach()
             if getattr(self, "controller_gap_scaling", None) == "utility-gap":
                 # Scale-aware controller (controller-strength fork, decision log
                 # 2026-07-28): multiply by the detached per-menu utility-logit
@@ -1252,6 +1267,56 @@ class SemanticRankerPolicy(nn.Module):
         )
 
 
+def _linear_layers(module: nn.Module) -> list[nn.Linear]:
+    return [layer for layer in module.modules() if isinstance(layer, nn.Linear)]
+
+
+def enable_controller_gain(
+    policy: "SemanticRankerPolicy",
+    mode: str,
+    *,
+    hidden_dim: int = 32,
+    bound: float = 1.5,
+) -> None:
+    """Attach the state-conditioned controller gain (tie-ownership escalation).
+
+    alpha_j = softplus(alpha_raw + bound * tanh(delta_phi(stopgrad(h_j)) / bound))
+    where h_j is the decision's pooled frozen utility-input feature vector.
+    The residual delta_phi is ZERO-INITIALIZED (exact identity with the
+    calibrated global alpha at start) and BOUNDED in raw-logit space (the
+    attested learned-multiplier failure is unbounded upward growth). "random"
+    mode replaces delta_phi with a deterministic per-decision offset in
+    [-bound, bound] — the mandatory random-gain control before any adoption
+    claim. Gradients reach delta_phi through the count objective and the
+    lambda>0 sampling terms; the utility tower stays count-free.
+    """
+    if mode not in ("learned", "random"):
+        raise ValueError(f"unsupported controller gain mode: {mode!r}")
+    if not math.isfinite(bound) or bound <= 0.0:
+        raise ValueError("controller gain bound must be finite and positive")
+    policy.controller_gain_mode = mode
+    policy.controller_gain_bound = float(bound)
+    if mode == "learned":
+        input_dim = _linear_layers(policy.utility_head)[0].in_features
+        head = nn.Sequential(
+            nn.Linear(input_dim, int(hidden_dim)),
+            nn.Tanh(),
+            nn.Linear(int(hidden_dim), 1),
+        )
+        with torch.no_grad():
+            head[-1].weight.zero_()
+            head[-1].bias.zero_()
+        policy.gain_head = head.to(
+            next(policy.utility_head.parameters()).device
+        )
+
+
+def _random_gain_offset(decision_id: str, bound: float) -> float:
+    digest = hashlib.sha256(f"controller-gain\0{decision_id}".encode()).digest()
+    unit = int.from_bytes(digest[:8], "big") / float(2 ** 64)
+    return (2.0 * unit - 1.0) * bound
+
+
 def switch_threshold_calibration(
     policy: "SemanticRankerPolicy",
     documents: Sequence[RankerDocument],
@@ -1308,6 +1373,51 @@ def switch_threshold_calibration(
         return float("nan")
 
     return weighted_median(raw_pairs), weighted_median(norm_pairs)
+
+
+def decision_controller_alpha(
+    policy: "SemanticRankerPolicy",
+    state: "SemanticPolicyState",
+    decision: RankerDecision,
+    legal_action_ids: Sequence[str],
+) -> float:
+    """Effective per-decision controller gain (diagnostics; cheap via caches)."""
+    gain_mode = getattr(policy, "controller_gain_mode", None)
+    with torch.no_grad():
+        if gain_mode is None:
+            return float(policy.alpha)
+        if gain_mode == "random":
+            offset = _random_gain_offset(
+                decision.decision_id, float(policy.controller_gain_bound),
+            )
+            return float(F.softplus(policy.alpha_raw + offset))
+        actions, pair_features, token_bank, features = policy._decision_inputs(
+            state, decision
+        )
+        utility_relations = policy.utility_projection(pair_features)
+        contexts = policy.context_readout(token_bank, features, utility_relations)
+        histories = policy.memory(
+            torch.cat([utility_relations, contexts], dim=-1),
+            state.selected_records,
+        )
+        mode_ids, runtime_type_ids = policy._category_ids(actions, decision)
+        interaction = policy.interaction_projection(
+            utility_relations * policy.context_to_relation(contexts)
+        )
+        utility_inputs = torch.cat(
+            [
+                utility_relations, contexts, interaction,
+                policy.action_mode_embedding(mode_ids),
+                policy.runtime_type_embedding(runtime_type_ids),
+                histories,
+            ],
+            dim=-1,
+        )
+        bound = float(policy.controller_gain_bound)
+        residual = policy.gain_head(utility_inputs.mean(dim=0)).squeeze(-1)
+        return float(F.softplus(
+            policy.alpha_raw + bound * torch.tanh(residual / bound)
+        ))
 
 
 def calibrate_alpha(policy: "SemanticRankerPolicy", target: float) -> None:

@@ -1362,3 +1362,76 @@ def test_utility_logit_softcap_bounds_and_preserves_order_and_lambda_zero():
     )
     # lambda-zero stays the exact identity under capping
     assert torch.equal(capped.combined_logits, capped.utility_logits)
+
+
+def test_learned_controller_gain_zero_init_identity_bound_and_gradient():
+    from cloak.ranker.semantic import decision_controller_alpha, enable_controller_gain
+
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    menu = tuple(a.action_id for a in decision.actions)
+    nonzero = profiles[-1]
+
+    state = policy.begin_document(document, nonzero)
+    base = policy.distribution(state, decision, menu, nonzero)
+
+    enable_controller_gain(policy, "learned", hidden_dim=8, bound=1.5)
+    policy.float()  # drop feature caches
+    gain_state = policy.begin_document(document, nonzero)
+    gained = policy.distribution(gain_state, decision, menu, nonzero)
+
+    # zero-init residual -> exact identity with the global-alpha controller
+    assert torch.allclose(base.combined_logits, gained.combined_logits, atol=1e-6)
+    assert decision_controller_alpha(
+        policy, gain_state, decision, menu,
+    ) == pytest.approx(float(policy.alpha), rel=1e-5)
+
+    # bound: even a huge residual cannot push alpha past softplus(raw + bound)
+    with torch.no_grad():
+        policy.gain_head[-1].bias.fill_(1000.0)
+    policy.float()
+    bounded_state = policy.begin_document(document, nonzero)
+    ceiling = float(torch.nn.functional.softplus(policy.alpha_raw + 1.5))
+    assert decision_controller_alpha(
+        policy, bounded_state, decision, menu,
+    ) == pytest.approx(ceiling, rel=1e-4)
+    with torch.no_grad():
+        policy.gain_head[-1].bias.zero_()
+
+    # gradient reaches the gain head through the count channel
+    policy.float()
+    policy.zero_grad(set_to_none=True)
+    grad_state = policy.begin_document(document, nonzero)
+    row = policy.distribution(grad_state, decision, menu, nonzero)
+    row.count_log_probs.sum().backward()
+    grads = [p.grad for p in policy.gain_head.parameters() if p.grad is not None]
+    assert grads and any(float(g.abs().sum()) > 0 for g in grads)
+
+    # lambda-zero stays the exact identity
+    zero_state = policy.begin_document(document, profiles[0])
+    zero = policy.distribution(zero_state, decision, menu, profiles[0])
+    assert torch.equal(zero.combined_logits, zero.utility_logits)
+    del policy.gain_head
+    policy.controller_gain_mode = None
+
+
+def test_random_controller_gain_is_deterministic_and_parameter_free():
+    from cloak.ranker.semantic import (
+        _random_gain_offset,
+        decision_controller_alpha,
+        enable_controller_gain,
+    )
+
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    menu = tuple(a.action_id for a in decision.actions)
+    parameter_count = sum(1 for _ in policy.parameters())
+    enable_controller_gain(policy, "random", bound=1.5)
+    assert sum(1 for _ in policy.parameters()) == parameter_count
+
+    state = policy.begin_document(document, profiles[-1])
+    first = decision_controller_alpha(policy, state, decision, menu)
+    second = decision_controller_alpha(policy, state, decision, menu)
+    assert first == second
+    offset = _random_gain_offset(decision.decision_id, 1.5)
+    assert abs(offset) <= 1.5
+    assert _random_gain_offset("some-other-decision", 1.5) != offset
+    policy.controller_gain_mode = None

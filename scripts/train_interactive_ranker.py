@@ -43,6 +43,7 @@ from cloak.ranker.representation import RankerRepresentationStore
 from cloak.ranker.semantic import (
     SemanticRankerPolicy,
     calibrate_alpha,
+    enable_controller_gain,
     switch_threshold_calibration,
 )
 from cloak.reward.utility_cache import UtilityCache, stable_hash
@@ -174,6 +175,12 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--synchronous-profile-eval", action="store_true")
     train.add_argument("--utility-logit-softcap", type=float, default=None)
     train.add_argument("--profile-sensitivity-reg", type=float, default=0.0)
+    train.add_argument(
+        "--controller-gain", choices=("none", "learned", "random"),
+        default="none",
+    )
+    train.add_argument("--controller-gain-bound", type=float, default=1.5)
+    train.add_argument("--controller-gain-hidden", type=int, default=32)
     return parser
 
 
@@ -860,6 +867,18 @@ def _apply_controller_options(policy, args) -> None:
             f"{getattr(policy, 'controller_transform', 'log1p-over-log1p-max-v1')}"
             f"+softcap{softcap:g}"
         )
+    gain_mode = getattr(args, "controller_gain", "none")
+    if gain_mode != "none":
+        enable_controller_gain(
+            policy,
+            gain_mode,
+            hidden_dim=int(getattr(args, "controller_gain_hidden", 32)),
+            bound=float(getattr(args, "controller_gain_bound", 1.5)),
+        )
+        policy.controller_transform = (
+            f"{getattr(policy, 'controller_transform', 'log1p-over-log1p-max-v1')}"
+            f"+gain-{gain_mode}"
+        )
 
 
 def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
@@ -886,6 +905,13 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         "utility_logit_softcap": getattr(args, "utility_logit_softcap", None),
         "profile_sensitivity_reg": float(
             getattr(args, "profile_sensitivity_reg", 0.0)
+        ),
+        "controller_gain": getattr(args, "controller_gain", "none"),
+        "controller_gain_bound": float(
+            getattr(args, "controller_gain_bound", 1.5)
+        ),
+        "controller_gain_hidden": int(
+            getattr(args, "controller_gain_hidden", 32)
         ),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
