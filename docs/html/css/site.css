@@ -34,6 +34,7 @@
   --div-neg: #2a5092; /* client navy — negative */
   --div-pos: #a3460a; /* warn amber — positive */
   --plot-series: #2a5092; /* primary data series — navy (no trust-zone semantics) */
+  --prose-size: 17px; /* one reading size: paragraphs, ledes, lists, table cells */
 }
 
 * {
@@ -47,18 +48,34 @@ body {
   color: var(--ink);
 }
 body {
-  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-  font-size: 13px;
-  line-height: 1.55;
-  font-feature-settings:
-    "ss01" 1,
-    "ss02" 1,
-    "calt" 1;
+  /* Prose is set in Fraunces; the mono face is reserved for code and figures. */
+  font-family: "Fraunces", "Iowan Old Style", Charter, Georgia, serif;
+  /* wght is left to font-weight so <strong> still resolves to a bold axis
+     position; pinning it in font-variation-settings would override it. */
+  font-variation-settings:
+    "opsz" 18,
+    "SOFT" 40;
+  font-weight: 380;
+  font-size: var(--prose-size);
+  line-height: 1.5;
+  color: var(--ink-2);
   background-image: radial-gradient(
     rgba(20, 24, 28, 0.03) 1px,
     transparent 1px
   );
   background-size: 4px 4px;
+}
+code,
+pre,
+kbd,
+samp {
+  font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+  font-variation-settings: normal;
+  font-feature-settings:
+    "ss01" 1,
+    "ss02" 1,
+    "calt" 1;
 }
 ::selection {
   background: var(--ink);
@@ -373,20 +390,10 @@ section {
   font-size: 10px;
   color: var(--ink-3);
 }
+/* A lede is ordinary prose that happens to open a section: same face, size,
+   weight, colour, and rhythm as every other paragraph. */
 .lede {
-  font-family: "Fraunces", serif;
-  font-variation-settings:
-    "opsz" 18,
-    "wght" 380,
-    "SOFT" 40;
-  font-size: 17px;
-  line-height: 1.5;
-  color: var(--ink-2);
-  margin: 0 0 24px;
-}
-.lede em {
-  color: var(--accent);
-  font-style: italic;
+  margin: 0 0 14px;
 }
 
 /* ────── HEADING ANCHORS ────── */
@@ -655,9 +662,22 @@ html {
   margin: 8px 0 36px;
   overflow-x: auto;
 }
+/* KaTeX: formulas render in the math face while identifiers, file names, and
+   artifact fields stay in the mono <code> face. */
+.katex {
+  font-size: 1.03em;
+  color: inherit;
+}
+.katex-display {
+  margin: 16px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
 .diagram-cap {
   display: flex;
   justify-content: space-between;
+  font-family: "JetBrains Mono", monospace;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.18em;
@@ -1315,7 +1335,7 @@ table.spec {
   width: 100%;
   border-collapse: collapse;
   border: 1px solid var(--ink);
-  font-size: 12px;
+  font-size: var(--prose-size);
   margin: 16px 0 28px;
 }
 table.spec th,
@@ -1423,16 +1443,32 @@ table.spec .accent {
 }
 
 /* ────── PROSE ────── */
-.prose p {
-  font-size: 13px;
-  line-height: 1.65;
-  margin: 0 0 14px;
+.prose p,
+.lede {
+  line-height: 1.5;
+  margin: 0 0 16px;
 }
-.prose p strong {
+.prose p strong,
+.prose li strong,
+table.spec strong,
+.two-col li strong {
+  color: var(--ink);
+  font-weight: 650;
+}
+.prose ul {
+  margin: 0 0 16px;
+  padding-left: 20px;
+}
+.prose li {
+  margin-bottom: 10px;
+}
+/* provenance line inside a hyperparameter entry */
+.prose li br + em {
+  display: inline-block;
+  margin-top: 3px;
   color: var(--ink);
 }
 .prose code {
-  font-size: 11.5px;
   background: var(--paper-2);
   padding: 0 4px;
   border: 1px solid var(--paper-3);
@@ -1452,7 +1488,23 @@ table.spec .accent {
 .two-col > div:last-child {
   border-right: none;
 }
+/* subsection heading inside a numbered section (nav.js gives it an anchor) */
+section h3 {
+  font-family: "Fraunces", serif;
+  font-variation-settings:
+    "opsz" 40,
+    "wght" 470;
+  font-size: 23px;
+  letter-spacing: -0.01em;
+  margin: 40px 0 14px;
+  color: var(--ink);
+}
+section h3 + .prose p:first-child {
+  margin-top: 0;
+}
+
 .two-col h4 {
+  color: var(--ink);
   font-family: "Fraunces", serif;
   font-variation-settings:
     "opsz" 26,
@@ -1463,7 +1515,7 @@ table.spec .accent {
 .two-col ul {
   padding-left: 18px;
   margin: 0;
-  font-size: 12px;
+  font-size: var(--prose-size);
   line-height: 1.6;
 }
 .two-col li {

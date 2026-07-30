@@ -6,8 +6,12 @@
 <title>HarnessCloak · Interactive Ranker v2</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght,SOFT,WONK@0,9..144,300..900,0..100,0..1;1,9..144,300..900,0..100,0..1&family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.css">
 <link rel="stylesheet" href="css/site.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.22/dist/contrib/auto-render.min.js"></script>
+<script defer src="js/render-math.js"></script>
 <script defer src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.28.0/dist/viz-global.js"></script>
 <script defer src="js/ranker-model-diagram.js"></script>
 </head>
@@ -23,7 +27,7 @@
     <div class="rev">normative design report · 2026-07-23</div>
     <div class="abstract">
       <div class="abstract-label">Abstract</div>
-      <p class="subtitle">Interactive Ranker v2 is a selected, unvalidated architecture for choosing KEEP, truthful lattice generalizations, or placeholders under a user-selected privacy-utility setting. A frozen clinical encoder provides complete-document context and ordered source-to-candidate semantics. Separate trainable branches produce a utility logit and a profile-relative predicted privacy score; an explicit additive lambda controller combines them without exposing true counts to the actor. Training uses full round-trip task utility, assertion-routed document RLOO, sparse one-decision counterfactual correction, and exact own-profile count shaping restricted to the controller scale. Count remains an experimental proxy; final method comparisons require held-out attacker outcomes at matched realized privacy.</p>
+      <p class="subtitle">Interactive Ranker v2 is a selected, unvalidated architecture for choosing KEEP, truthful lattice generalizations, or placeholders under a user-selected privacy-utility setting. A frozen clinical encoder provides complete-document context and ordered source-to-candidate semantics. Separate trainable branches produce a utility logit and a profile-relative predicted privacy score; an explicit additive \(\lambda\) controller combines them without exposing true counts to the actor. Training uses full round-trip task utility, assertion-routed document RLOO, sparse one-decision counterfactual correction, and exact own-profile count shaping restricted to the controller scale. Count remains an experimental proxy; final method comparisons require held-out attacker outcomes at matched realized privacy.</p>
     </div>
   </header>
 
@@ -36,15 +40,57 @@
     <p class="lede">Ranker v2 chooses one legal rewrite per controlled value while keeping task utility, semantic privacy prediction, exact count shaping, and realized privacy evaluation as four distinct objects.</p>
     <div class="prose">
       <p>The policy acts on each distinct detected value in a document. It may keep the source text, choose a truthful lattice generalization, or use a typed placeholder. Utility is measured only after the complete privacy round trip: rewrite <code>doc_orig</code> into <code>doc_p</code>, run the remote task, locally unperturb <code>out_p</code>, and score <code>out_final</code>. Privacy pressure comes from a separately pretrained semantic head that predicts how the candidate changes the source profile's log count.</p>
-      <p><strong>The architectural rule.</strong> The utility tower never sees true counts, predicted privacy, lattice position, menu size, or lambda. The privacy head never sees document context, task assertions, action history, or lambda. Their outputs meet only in an explicit additive controller. This blocks the direct metadata shortcut in which the actor can optimize count reward without learning the candidate's meaning.</p>
+      <p><strong>The architectural rule.</strong> The utility tower never sees true counts, predicted privacy, lattice position, menu size, or \(\lambda\). The privacy head never sees document context, task assertions, action history, or \(\lambda\). Their outputs meet only in an explicit additive controller. This blocks the direct metadata shortcut in which the actor can optimize count reward without learning the candidate's meaning.</p>
       <p><strong>Status.</strong> This page documents the selected prototype and the normative RL design. Reward-flow and <code>semantic-v1</code> model implementations exist in the main worktree, but representative real-data validation and the architecture promotion gates remain incomplete. Count shaping is experimental. Realized privacy is still measured by a held-out inference or re-identification attacker on <code>doc_p</code> and <code>out_final</code>. Interim: production runs currently inject direct grounded counts as the controller's privacy score while a proper k-anonymity estimator model is trained; the figures deliberately keep depicting the semantic privacy head (see the spec's implementation-status section).</p>
     </div>
   </section>
 
+  <section id="preliminaries">
+    <header class="section-head">
+      <div class="section-num">§02</div><h2 class="section-title">Preliminaries</h2>
+      <div class="section-meta">objects · scores · causal scope</div>
+    </header>
+    <table class="spec spec--wide">
+      <thead><tr><th style="width:22%">term</th><th>definition</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Occurrence</strong></td><td>One frozen detector output at one document offset. Occurrences preserve evidence and routing identity.</td></tr>
+        <tr><td><strong>Policy decision</strong></td><td>One action for all occurrences sharing document, runtime type, and normalized canonical profile or surface.</td></tr>
+        <tr><td><strong>Legal action</strong></td><td>KEEP, one truthful lattice level, or placeholder after dynamic injectivity masking.</td></tr>
+        <tr><td><strong>Utility logit \(u\)</strong></td><td>Candidate-conditioned judgment of whether an action preserves task-relevant document meaning.</td></tr>
+        <tr><td><strong>Predicted privacy \(\hat{p}\)</strong></td><td>Profile-relative normalization of the semantic privacy head's predicted log-count mean. It is a deployed control signal, not a privacy guarantee.</td></tr>
+        <tr><td><strong>Exact target \(p\)</strong></td><td>Frozen profile-relative score computed from admitted <code>level_counts</code>. It is training supervision and a diagnostic, never an actor feature.</td></tr>
+        <tr><td><strong>\(\lambda\)</strong></td><td>One user-selected operating preference held fixed for a complete document episode and its rollout group.</td></tr>
+        <tr><td><strong>Assertion</strong></td><td>A QA-builder v2 context or delivered-utility measurement with a stable ID, weight, and dependency routing.</td></tr>
+        <tr><td><strong>Counterfactual</strong></td><td>A complete round-trip rerun after changing exactly one policy decision across all of its occurrences.</td></tr>
+      </tbody>
+    </table>
+    <div class="two-col">
+      <div>
+        <h4>Decision scope</h4>
+        <ul>
+          <li>Detector spans remain occurrence-level evidence.</li>
+          <li>Actions and policy gradients are decision-level.</li>
+          <li>Repeated occurrences share one selected action.</li>
+          <li>First occurrence fixes deterministic walk order.</li>
+        </ul>
+      </div>
+      <div>
+        <h4>Reward scope</h4>
+        <ul>
+          <li>Utility is a document outcome.</li>
+          <li>Assertion links route cheap provisional credit.</li>
+          <li>Counterfactuals supply local causal correction.</li>
+          <li>Count value is analytic per legal action.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+
   <section id="model-internals">
     <header class="section-head">
-      <div class="section-num">§02</div><h2 class="section-title">Ranker Model Architecture</h2>
-      <div class="section-meta">semantic-v1 · implemented computation graph</div>
+      <div class="section-num">§03</div><h2 class="section-title">Ranker Model Architecture</h2>
+      <div class="section-meta">two judgments · one controller · what was chosen and why</div>
     </header>
 
     <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
@@ -435,78 +481,63 @@ digraph RankerV2Edges {
       <noscript><p class="lede">Figure M1 lays out without JavaScript; edge routing requires it.</p></noscript>
     </div>
 
-    <p class="lede">The implemented policy is a shallow, factorized attention model over frozen 768-dimensional clinical representations, not a Transformer stack.</p>
+    <p class="lede">The policy scores one candidate rewrite at a time by asking two independent questions — does this wording preserve what the document is about, and how much anonymity does it buy — and lets a single transparent knob decide how far the second answer may move the first.</p>
     <div class="prose">
-      <p>The current trainer fixes <code>relation_dim = context_dim = history_dim = utility_hidden_dim = 768</code>, uses eight attention heads, and sets dropout to zero. The ordered relation vector concatenates type, source, candidate, signed difference, and elementwise product fields, so <code>pair_dim = 3840</code>. The semantic privacy checkpoint controls its own projection widths; the current training CLI defaults both to 256.</p>
-      <p><strong>Context readout.</strong> The document projection is summed with role, signed relative-position, and document-position embeddings. A candidate query drives three independent <code>nn.MultiheadAttention</code> modules over occurrence summaries, target-containing tokens, and every source token. Their outputs concatenate and project back to 768 dimensions.</p>
-      <p><strong>Selected-action memory.</strong> Each earlier selected decision becomes one 768-wide key/value row. The current candidate's relation and document context form the query. One eight-head cross-attention layer returns a candidate-specific history vector. Empty memory returns an exact zero vector.</p>
-      <p><strong>Normalization.</strong> The current model has no <code>LayerNorm</code>, batch normalization, or residual MLP blocks. The only normalizations are semantic profile-menu normalization of predicted log counts and the final legal-action <code>log_softmax</code>.</p>
-      <p><strong>Controller parameters.</strong> The trainable scalar <code>alpha = softplus(alpha_raw)</code> scales the fixed <code>g(lambda)</code> transform on the deployed privacy-bias path. In the production configuration the controller term is additionally multiplied by the detached per-menu utility-logit range <code>gap = stopgrad(max_a u(a) − min_a u(a))</code>, so a sharpening utility tower cannot silently defeat the controller, and <code>alpha</code> is initialized from the weighted-median switch threshold measured on behavior-cloned menus (gap-normalized) instead of a default constant. Calibrated init and gap scaling are the adopted candidate of the controller-strength fork (RL decision log); final adoption is gated on a production-trainer re-evaluation. By contrast, <code>gamma</code> weights profile-relative Huber calibration only while pretraining the privacy head. It is absent from policy inference and hybrid-RL logits.</p>
+      <p><strong>Scoring one action.</strong> A frozen clinical encoder reads the whole document once, and the vector it produces for every token is kept — one row per token, computed once and reused by every decision in that document. That cache is the <em>token bank</em> (<code>H_doc</code> in the figure, sized tokens × 768); no part of the policy fine-tunes the encoder that produced it. Each candidate action is written out as an ordered relation — <code>[TYPE] health-condition · [SOURCE] kidney transplant · [CANDIDATE] solid organ transplant</code> — and pushed through that same frozen encoder, so a candidate is always represented <em>relative to the value it would replace</em> rather than as a free-standing phrase. Two small trainable projections then split that relation vector: one serves the utility path, the other the privacy path, and neither can modify the other's features.</p>
+      <p><strong>The utility side</strong> turns its projection into a query and attends three times over the cached document: over summaries of the occurrences this decision controls, over the chunks containing them, and over every token in the document. A cross-attention block additionally looks up the decisions already made for this document. The concatenated readout, the relation, and their explicit interaction pass through one MLP to a single number, the utility logit \(u(a)\).</p>
+      <p><strong>The privacy side</strong> sees only the relation. It predicts a standardized log of the candidate's anonymity-set size, \(\mu_{\log K}(a)\); dividing by the largest predicted value in the current profile's own menu converts it into profile-relative privacy progress \(\hat{p}(a)\) in \([0,1]\), with KEEP pinned at \(0\) and the typed placeholder at \(1\). The two sides meet exactly once, in an additive controller — \(z(a,\lambda) = u(a) + \alpha\, g(\lambda)\, \hat{p}(a)\) — after which dynamic legality masks unavailable fills and a <code>log_softmax</code> over the legal menu yields the action distribution.</p>
+      <p><strong>Separate branches are not enough on their own.</strong> Two modules mean nothing if every loss updates both, so gradient ownership is explicit: utility and counterfactual losses update the utility tower and its memory; the exact count objective updates only the controller scale; privacy calibration updates only the privacy projection and head. The privacy head stays frozen through the first hybrid run so count pressure cannot quietly redefine what \(\hat{p}\) means. The controller scale is the one deliberate exception — it receives both utility and count gradients, because with privacy gradient alone its optimum would be unbounded privacy tilt. At \(\lambda = 0\) the controller contributes exactly zero, so combined logits are bitwise equal to utility logits; this is an architectural identity, not an initialization that training could erode.</p>
+    </div>
+
+    <h3>Design decisions</h3>
+    <div class="prose">
+      <p><strong>Privacy signal — a semantic head, not the count itself.</strong> The head predicts a candidate's log-count from the source-to-candidate relation and normalizes it within that profile's own menu, so privacy pressure is an inspectable quantity the actor never sees. Predicting it rather than reading it off an artifact is what lets the policy score wording it has never encountered, and normalizing within the profile keeps the score meaningful when count scales differ between profiles. <em>Also considered:</em> one \(\lambda\)-conditioned scorer over all features, and strict type-normalized grounded counts — the latter retained as the more auditable fallback.</p>
+      <p><strong>\(\lambda\) conditioning — one global scalar, applied after both branches.</strong> A single trainable \(\alpha\) weights a fixed transform \(g(\lambda) = \log(1{+}\lambda)\,/\,\log(1{+}\lambda_{\max})\), which buys three things at once: \(\lambda = 0\) is exactly the utility policy by construction rather than by initialization, one checkpoint serves the whole operating menu, and the privacy weight stays legible because a scalar signal is matched by a scalar knob. It is also the smallest form that can fail informatively — if one \(\alpha\) cannot produce distinct operating points, the fork reopens instead of quietly growing capacity. <em>Also considered:</em> full-representation FiLM, privacy-only FiLM, per-profile slopes, profile embeddings, separate profile heads.</p>
+      <p><strong>Document context — read per candidate over the whole document.</strong> A candidate-conditioned query attends over the token bank — every token of the document, each encoded with both its left and right context — so two candidates for the same decision retrieve different evidence and the model can judge whether <em>this</em> generalization survives <em>this</em> document. Bidirectional and full-length both matter: clinical explanations often follow the mention rather than precede it, and the dependencies that decide utility are frequently nowhere near the span. Freezing the encoder is what makes that bank reusable at all, and keeps a readout gain distinguishable from corpus memorization. <em>Also considered:</em> local CLS plus occurrence mean, bidirectional local target-span pooling, a unidirectional state at the span, full fine-tuning or LoRA, a candidate-rendered cross-encoder.</p>
+      <p><strong>Candidate features — encoded jointly with the value they replace.</strong> Type, source, and candidate go through one frozen pass, are pooled per field, and become an ordered vector carrying the signed difference and elementwise product. Encoding the pair rather than the phrase is the whole point: generality is a relation, not a property of wording, and the ordering makes <code>kidney transplant → solid organ transplant</code> distinguishable from its reverse. Because the vector has no parameters of its own, the two branch projections downstream cannot leak into each other. <em>Also considered:</em> candidate text alone, an independent bi-encoder, retrieval and synonymy embeddings (SapBERT, MedCPT, MedEmbed, NeuML), with BioLORD-2023 held as the first escalation.</p>
+      <p><strong>Encoder checkpoint — one frozen clinical encoder, pinned to an immutable revision.</strong> <code>BioClinical-ModernBERT-base</code> adds clinical-note and biomedical pretraining while keeping the same architecture and 768-wide interface the policy already used, so it is a drop-in at base-model cost, and pinning the revision makes it part of the experiment's identity and cache key. One caveat travels with it: this encoder saw all of ACI-BENCH during pretraining, so ACI can support development and training but cannot be used to select an encoder or to claim out-of-corpus generalization. <em>Also considered:</em> the large variant, ClinicalMosaic, Clinical_ModernBERT, Bio_ClinicalBERT, PubMedBERT, and plain ModernBERT-base as a non-clinical control.</p>
+      <p><strong>Action history — earlier decisions stored, not summarized.</strong> Prior selected actions stay as an explicit set that the current candidate queries by cross-attention, so a candidate can retrieve the one earlier choice that bears on it and ignore the rest. This matches the environment's semantics — the rewrite is assembled from the whole action vector, so semantic choices are not intrinsically ordered — and the memory therefore carries source position but no selection-step index, making the policy invariant to row order. With 4–38 decisions per document, one attention block is cheap. <em>Also considered:</em> no history at all (retained as the baseline that must be beaten), a count-blind GRU, a Decision Transformer.</p>
+      <p><strong>Privacy-head objective — fit the mean, quarantine the uncertainty.</strong> The controller consumes only the predicted mean, so the head optimizes exactly that: a deterministic mean on train-standardized log counts plus direct calibration of the profile-relative score the controller will actually use, with profiles weighted equally so no large menu dominates. Uncertainty is estimated once after the fact as a single clamped residual scale, which keeps it reportable for audit without letting variance calibration gate a controller that never reads it. <em>Also considered:</em> a learned heteroscedastic \(\sigma\), negative log likelihood as a blocking gate, an unbounded logistic rank loss.</p>
+    </div>
+
+    <h3>Shapes and parts</h3>
+    <div class="prose">
+      <p>One number sets almost everything: the frozen encoder's hidden size, 768. The trainer reads it from the encoder manifest and derives the rest, so there are no independently tuned widths that can drift apart.</p>
+      <ul>
+        <li><strong>Working width — 768.</strong> Relation, context, history, and utility-hidden dimensions are all the encoder's hidden size, so everything the policy passes around is a 768-vector.</li>
+        <li><strong>Relation vector — 3840.</strong> Five times the width, because the ordered pair vector concatenates five fields: type, source, candidate, candidate − source, and source ⊙ candidate.</li>
+        <li><strong>Attention heads — 8</strong> (falling back to 1 if the width were not divisible by 8), with <strong>dropout 0</strong> throughout.</li>
+        <li><strong>Three context reads.</strong> Independent attention modules over occurrence summaries, target-containing chunks, and every document token; their outputs concatenate and project back to 768.</li>
+        <li><strong>One memory block.</strong> A single eight-head cross-attention over 768-wide rows of prior selected actions, returning an exact zero vector when the memory is empty.</li>
+        <li><strong>Privacy projections — 256</strong> by default; a loaded privacy checkpoint carries its own widths.</li>
+        <li><strong>No normalization layers.</strong> There is no <code>LayerNorm</code>, batch normalization, or residual block anywhere in the model. The only normalizations are profile-menu normalization of predicted log counts and the final legal-action <code>log_softmax</code>.</li>
+      </ul>
+    </div>
+
+    <h3>Hyperparameters</h3>
+    <div class="prose">
+      <p>Two of these were measured rather than chosen — the controller scale and the \(\lambda\) menu. The rest are conventional defaults carried unchanged, and are named as such rather than presented as tuned.</p>
+      <p><strong>Controller.</strong></p>
+      <ul>
+        <li><strong>\(\alpha\) — the controller scale, and the only trainable parameter outside the two towers.</strong> It converts profile-relative privacy into logit pressure, as \(\alpha = \mathrm{softplus}(\alpha_{\mathrm{raw}})\): one global scalar shared by every document, action, runtime type, and \(\lambda\). It is deliberately the smallest form that can express a privacy–utility tilt, so that failing to produce distinct operating points is a reportable result rather than something more capacity would paper over. Training pulls it from both sides, since utility and exact-count gradients both reach it, and it is frozen in the checkpoint before held-out evaluation.<br><em>Calibration:</em> the default carries the value over from the behaviour-cloning checkpoint. The adopted candidate measures it instead: for each decision, the smallest controller pressure that would move the argmax off the utility-preferred action onto a more private one, \(\min_j (u^* - u_j)/(\hat{p}_j - \hat{p}^*)\) over the more-private actions; each threshold is divided by that menu's utility-logit range, and the document-weighted median across behaviour-cloned menus becomes the initial \(\alpha\).</li>
+        <li><strong>gap — a scale match, not a free parameter.</strong> The detached per-menu utility range \(\mathrm{stopgrad}\big(\max_a u(a) - \min_a u(a)\big)\) multiplies the controller term. It exists because the raw controller measurably stopped working: at \(\alpha = 1\) the shift could not move behaviour-cloned utility logits at all — the selected count score sat at roughly 0.135–0.15 at <em>every</em> profile including the strongest, while \(\alpha\) drifted about 1e-3 per eight epochs, leaving \(\lambda\) behaviourally disconnected on trainable timescales. Expressing pressure in units of the menu's own utility spread makes the controller track the tower instead of being diluted as the tower sharpens. It was adopted against a preregistered rule over four composition-diverse documents spanning 4 to 22 decisions, twelve epochs, eight rollouts, one screening seed and two confirmation seeds, requiring exact \(\lambda\)-zero identity, a non-decreasing selected count score across profiles, and at least a 0.20 gain from the weakest to the strongest profile, among eight criteria.<br><em>Computation:</em> recomputed from the current legal menu at every forward pass as the detached spread of its utility logits, and detached so it contributes no gradient. There is no value to pick — the mechanism is only switched on or off by flag.</li>
+        <li><strong>\(g(\lambda)\) and the \(\lambda\) menu — fixed, not learned.</strong> \(g\) is the deterministic transform \(\log(1{+}\lambda)/\log(1{+}\lambda_{\max})\), and its shape is doing two specific jobs: \(g(0) = 0\) is what makes the \(\lambda\)-zero identity hold by construction rather than by initialization, and dividing by \(\log(1{+}\lambda_{\max})\) sets \(g(\lambda_{\max}) = 1\), so \(\alpha\) means exactly "controller pressure at the strongest supported profile" instead of an arbitrary scale. The menu is finite and ordered so one checkpoint can serve every operating point.<br><em>Derivation:</em> each document's cached utility–privacy trajectory points are de-duplicated, weakly dominated points dropped, and an upper convex envelope taken; every adjacent pair on that envelope yields the \(\lambda\) at which the frontier winner changes, \((u_{\text{left}} - u_{\text{right}})/(p_{\text{right}} - p_{\text{left}})\). Those switch points are pooled with each document carrying equal total weight, read off at fixed quantiles in log-\(\lambda\) space (0.25, 0.60, 0.90 for a four-value menu) with zero prepended, and values producing identical action vectors are merged. The candidate menu is replayed across the pool and rejected unless it clears the frozen feasibility gates — adjacent-profile winner change, a placeholder ceiling, per-corpus document support, per-type decision support — with at most two replacement passes. The deployed values (0, 0.48, 1.05, 1.53) passed with zero replacement passes.</li>
+      </ul>
+      <p><strong>Hybrid RL objective.</strong></p>
+      <ul>
+        <li><strong>\(\beta\) — entropy weight, default 0.01.</strong> It is there to keep probability mass on legal alternatives so a rollout group does not collapse onto a single trajectory. On the evidence so far it is not achieving that: the small-document diagnosis found its effect negligible beside rollout degeneracy, where whole groups return identical action vectors and every leave-one-out advantage is exactly zero.<br><em>Provenance:</em> a conventional default, carried unchanged and never swept.</li>
+        <li><strong>\(\eta\) — KL weight, default 0.01.</strong> It anchors the policy to its warm-started behaviour. What matters more than the weight is what it anchors <em>to</em> and when it applies: the reference checkpoint is captured after controller calibration, because an uncalibrated reference would pull the controller back into the dead regime, and the default schedule arms KL only once an epoch's measured adjacent-profile winner-change falls below the frozen threshold in the manifest. The alternative keeps it on from epoch zero, adopted after that trigger proved too coarse to rescue an already-saturated policy.<br><em>Provenance:</em> the weight is a conventional default, carried unchanged and never swept; the reference and schedule are deliberate choices recorded in the decision log.</li>
+        <li><strong>G — rollouts per document group.</strong> It sets how many complete round trips each leave-one-out advantage is computed over, so it governs both credit quality and run cost: too few rollouts and duplicate trajectories drive the advantage to zero, killing the utility gradient outright.<br><em>Provenance:</em> supplied explicitly per run with no default, precisely because it is the cost knob and should be a visible choice; an opt-in mode derives it per document instead, scaling by the dominant-trajectory probability.</li>
+        <li><strong>Learning rate — 1e-4 with AdamW</strong> for both behaviour cloning and hybrid RL, with one behaviour-cloning epoch by default.<br><em>Provenance:</em> conventional defaults, carried unchanged and never swept.</li>
+      </ul>
+      <p><strong>Wired but off by default.</strong> Per-decision \(\alpha\) routing, gap scaling, switch-calibrated \(\alpha\) initialization, support-scaled rollouts, degeneracy-driven counterfactual coverage, always-on KL, reverse KL, a utility-logit softcap, and profile-sensitivity regularization all exist in the trainer behind flags whose defaults preserve the older behaviour, so enabling one is visible in the run command rather than implied by a code change.</p>
     </div>
   </section>
 
-
-  <section id="preliminaries">
-    <header class="section-head">
-      <div class="section-num">§03</div><h2 class="section-title">Preliminaries</h2>
-      <div class="section-meta">objects · scores · causal scope</div>
-    </header>
-    <table class="spec spec--wide">
-      <thead><tr><th style="width:22%">term</th><th>definition</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Occurrence</strong></td><td>One frozen detector output at one document offset. Occurrences preserve evidence and routing identity.</td></tr>
-        <tr><td><strong>Policy decision</strong></td><td>One action for all occurrences sharing document, runtime type, and normalized canonical profile or surface.</td></tr>
-        <tr><td><strong>Legal action</strong></td><td>KEEP, one truthful lattice level, or placeholder after dynamic injectivity masking.</td></tr>
-        <tr><td><strong>Utility logit <code>u</code></strong></td><td>Candidate-conditioned judgment of whether an action preserves task-relevant document meaning.</td></tr>
-        <tr><td><strong>Predicted privacy <code>p_hat</code></strong></td><td>Profile-relative normalization of the semantic privacy head's predicted log-count mean. It is a deployed control signal, not a privacy guarantee.</td></tr>
-        <tr><td><strong>Exact target <code>p</code></strong></td><td>Frozen profile-relative score computed from admitted <code>level_counts</code>. It is training supervision and a diagnostic, never an actor feature.</td></tr>
-        <tr><td><strong>Lambda</strong></td><td>One user-selected operating preference held fixed for a complete document episode and its rollout group.</td></tr>
-        <tr><td><strong>Assertion</strong></td><td>A QA-builder v2 context or delivered-utility measurement with a stable ID, weight, and dependency routing.</td></tr>
-        <tr><td><strong>Counterfactual</strong></td><td>A complete round-trip rerun after changing exactly one policy decision across all of its occurrences.</td></tr>
-      </tbody>
-    </table>
-    <div class="two-col">
-      <div>
-        <h4>Decision scope</h4>
-        <ul>
-          <li>Detector spans remain occurrence-level evidence.</li>
-          <li>Actions and policy gradients are decision-level.</li>
-          <li>Repeated occurrences share one selected action.</li>
-          <li>First occurrence fixes deterministic walk order.</li>
-        </ul>
-      </div>
-      <div>
-        <h4>Reward scope</h4>
-        <ul>
-          <li>Utility is a document outcome.</li>
-          <li>Assertion links route cheap provisional credit.</li>
-          <li>Counterfactuals supply local causal correction.</li>
-          <li>Count value is analytic per legal action.</li>
-        </ul>
-      </div>
-    </div>
-  </section>
-
-
-  <section id="architecture">
-    <header class="section-head">
-      <div class="section-num">§04</div><h2 class="section-title">Training Architecture</h2>
-      <div class="section-meta">frozen semantics · trainable readout · explicit control</div>
-    </header>
-    <div class="prose">
-      <p>The same pinned clinical encoder serves two cached paths. The document path encodes every source token in overlapping chunks. The relation path jointly encodes runtime type, source surface, and candidate wording. Frozen shared computation is followed by separate trainable utility and privacy projections, so branch-specific supervision cannot modify the other branch.</p>
-    </div>
-
-    <div class="prose">
-      <p><strong>Complete document observability.</strong> The frozen encoder is <code>thomas-sounack/BioClinical-ModernBERT-base</code> at revision <code>c3648aa87af95837c809e6f0c5f85d08160db437</code>, with hidden size 768 and remote model code disabled. It processes the entire document in 512-token inputs with 64 source-token overlap and no silent truncation. Target markers distinguish the current decision, other controlled occurrences, ordinary tokens, relative target distance, and source position. Candidate queries retrieve target, local, repeated-occurrence, and long-range evidence from the cached token bank.</p>
-      <p><strong>Candidate semantics.</strong> The pair input is ordered as type, source, then candidate. Field means, signed candidate-minus-source features, and elementwise products preserve both shared meaning and abstraction direction. KEEP and placeholder traverse the same relation path as lattice levels.</p>
-      <p><strong>Action history.</strong> Earlier selected decisions become count-blind utility-memory rows. Each current candidate queries this memory through one cross-attention block. There is no GRU, no selection-step embedding, and no future-action visibility. Empty history returns exactly zero.</p>
-    </div>
-  </section>
 
   <section id="controller">
     <header class="section-head">
-      <div class="section-num">§05</div><h2 class="section-title">Privacy Signal and Controller</h2>
+      <div class="section-num">§04</div><h2 class="section-title">Privacy Signal and Controller</h2>
       <div class="section-meta">log-count prediction · profile scale · lambda</div>
     </header>
     <div class="prose">
@@ -515,38 +546,38 @@ digraph RankerV2Edges {
     <table class="spec spec--wide">
       <thead><tr><th>quantity</th><th>definition</th><th>policy role</th></tr></thead>
       <tbody>
-        <tr><td><code>mu_logK(a)</code></td><td><code>softplus(mu_raw(a))</code></td><td>Predicted log-count mean.</td></tr>
-        <tr><td><code>sigma_logK(a)</code></td><td><code>sigma_min + softplus(sigma_raw(a))</code></td><td>Audit, calibration, and abstention diagnostic only.</td></tr>
-        <tr><td><code>p_hat(a)</code></td><td><code>clip(mu_logK(a) / max_b mu_logK(b), 0, 1)</code></td><td>Predicted profile-relative privacy progress used in deployed logits.</td></tr>
-        <tr><td><code>p(a)</code></td><td><code>clip(log K(a) / max_b log K(b), 0, 1)</code></td><td>Exact target from admitted own-profile counts. Training and diagnostics only.</td></tr>
-        <tr><td><code>g(lambda)</code></td><td><code>log1p(lambda) / log1p(max Lambda)</code></td><td>Fixed strength for one supported operating profile.</td></tr>
-        <tr><td><code>gap</code></td><td><code>stopgrad(max_b u(b) − min_b u(b))</code></td><td>Detached per-menu utility-logit range; scale-matches the controller to the utility tower.</td></tr>
+        <tr><td>\(\mu_{\log K}(a)\)</td><td>\(\mathrm{softplus}(\mu_{\mathrm{raw}}(a))\)</td><td>Predicted log-count mean.</td></tr>
+        <tr><td>\(\sigma_{\log K}(a)\)</td><td>\(\sigma_{\min} + \mathrm{softplus}(\sigma_{\mathrm{raw}}(a))\)</td><td>Audit, calibration, and abstention diagnostic only.</td></tr>
+        <tr><td>\(\hat{p}(a)\)</td><td>\(\mathrm{clip}\big(\mu_{\log K}(a) / \max_b \mu_{\log K}(b),\; 0,\; 1\big)\)</td><td>Predicted profile-relative privacy progress used in deployed logits.</td></tr>
+        <tr><td>\(p(a)\)</td><td>\(\mathrm{clip}\big(\log K(a) / \max_b \log K(b),\; 0,\; 1\big)\)</td><td>Exact target from admitted own-profile counts. Training and diagnostics only.</td></tr>
+        <tr><td>\(g(\lambda)\)</td><td>\(\log(1{+}\lambda)\,/\,\log(1{+}\max\Lambda)\)</td><td>Fixed strength for one supported operating profile.</td></tr>
+        <tr><td>\(\mathrm{gap}\)</td><td>\(\mathrm{stopgrad}\big(\max_b u(b) - \min_b u(b)\big)\)</td><td>Detached per-menu utility-logit range; scale-matches the controller to the utility tower.</td></tr>
       </tbody>
     </table>
     <div class="two-col">
       <div>
         <h4>Combined logit</h4>
-        <p><code>z(a, lambda) = u(a) + alpha · g(lambda) · gap · p_hat(a)</code></p>
-        <p><code>alpha = softplus(alpha_raw)</code>, initialized from the weighted-median switch threshold measured on behavior-cloned menus (gap-normalized).</p>
-        <p>After the dynamic legal mask, softmax converts <code>z</code> into the action distribution.</p>
+        <p>\(z(a,\lambda) = u(a) + \alpha\, g(\lambda)\, \mathrm{gap}\, \hat{p}(a)\)</p>
+        <p>\(\alpha = \mathrm{softplus}(\alpha_{\mathrm{raw}})\), initialized from the weighted-median switch threshold measured on behavior-cloned menus (gap-normalized).</p>
+        <p>After the dynamic legal mask, softmax converts \(z\) into the action distribution.</p>
       </div>
       <div>
         <h4>How privacy changes selection</h4>
-        <p><code>log pi(a)/pi(b) = u(a)-u(b) + alpha·g(lambda)·gap·(p_hat(a)-p_hat(b))</code></p>
-        <p>At lambda zero the code takes a separate branch: combined logits are identically the utility logits, not merely a numerical zero bias. At larger lambda, a candidate needs enough predicted privacy gain to overcome any utility disadvantage.</p>
+        <p>\(\log\frac{\pi(a)}{\pi(b)} = u(a) - u(b) + \alpha\, g(\lambda)\, \mathrm{gap}\,\big(\hat{p}(a) - \hat{p}(b)\big)\)</p>
+        <p>At \(\lambda = 0\) the code takes a separate branch: combined logits are identically the utility logits, not merely a numerical zero bias. At larger \(\lambda\), a candidate needs enough predicted privacy gain to overcome any utility disadvantage.</p>
       </div>
     </div>
     <div class="prose">
-      <p><strong>Why the head is pretrained.</strong> Profile-held-out count supervision forces the head to learn source-to-candidate abstraction before policy optimization. It must beat authored position, action mode and type, stable identity, and candidate-only baselines. The validated head is frozen during hybrid RL so the policy cannot bend <code>p_hat</code> into an uncalibrated preference.</p>
-      <p><strong>Privacy pretraining loss.</strong> <code>L_privacy = L_logcount_nll + rho · L_pairwise_rank + gamma · L_huber(p_hat, p)</code>. The likelihood preserves approximate count magnitude and uncertainty, the pairwise term checks ordering within a profile menu, and the Huber term calibrates the score consumed by the controller.</p>
-      <p><strong>What exact counts do.</strong> Exact <code>level_counts</code> do not select actions directly and do not update the utility tower. They evaluate the current privacy contribution over the complete legal menu and update only the global scale <code>alpha</code>. Utility gradients oppose unbounded privacy pressure and also reach <code>alpha</code>, allowing one scalar to settle the useful range of the finite lambda menu.</p>
+      <p><strong>Why the head is pretrained.</strong> Profile-held-out count supervision forces the head to learn source-to-candidate abstraction before policy optimization. It must beat authored position, action mode and type, stable identity, and candidate-only baselines. The validated head is frozen during hybrid RL so the policy cannot bend \(\hat{p}\) into an uncalibrated preference.</p>
+      <p><strong>Privacy pretraining loss.</strong> \(\mathcal{L}_{\text{privacy}} = \mathcal{L}_{\text{nll}} + \rho\, \mathcal{L}_{\text{rank}} + \gamma\, \mathcal{L}_{\text{huber}}(\hat{p},\, p)\). The likelihood preserves approximate count magnitude and uncertainty, the pairwise term checks ordering within a profile menu, and the Huber term calibrates the score consumed by the controller.</p>
+      <p><strong>What exact counts do.</strong> Exact <code>level_counts</code> do not select actions directly and do not update the utility tower. They evaluate the current privacy contribution over the complete legal menu and update only the global scale \(\alpha\). Utility gradients oppose unbounded privacy pressure and also reach \(\alpha\), allowing one scalar to settle the useful range of the finite \(\lambda\) menu.</p>
     </div>
   </section>
 
   <section id="rl-process">
     <header class="section-head">
-      <div class="section-num">§06</div><h2 class="section-title">Reinforcement Learning Process</h2>
-      <div class="section-meta">inputs · warm start · episode loop · outputs</div>
+      <div class="section-num">§05</div><h2 class="section-title">Training: Supervised &amp; RL</h2>
+      <div class="section-meta">staged pipeline · what each stage buys · episode loop</div>
     </header>
     <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
       <div class="diagram-cap">
@@ -827,18 +858,52 @@ digraph RankerV2Training {
       <noscript><p class="lede">Figure T2 lays out without JavaScript; edge routing requires it.</p></noscript>
     </div>
 
+    <p class="lede">Training is a sequence of stages, each buying one property the next stage depends on, and each freezing what it produced before the next begins.</p>
     <div class="prose">
-      <p><strong>Freeze first.</strong> The detector artifact, action menus, counts and provenance, accepted QA assertions, remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches form one versioned environment. Changing any item invalidates cached utility, lambda calibration, and trained-policy comparisons together. Two load-time transforms then shape the initial-RL corpus: only <code>drug</code>, <code>health-condition</code>, and <code>medical-procedure</code> decisions are ranker-controlled — out-of-scope or count-uncovered decisions are demoted to fixed KEEP — and documents with no policy-role reward mass are dropped from training.</p>
-      <p><strong>Warm start.</strong> The behavior-cloning teacher is a deterministic walk: for every decision it selects the finest legal lattice level, else the placeholder, claiming fills as it goes; the policy is fit by cross-entropy to these teacher actions over each dynamic legal menu at lambda zero, preserving support on all legal actions. ExIt then improves pure utility: sample G rollouts at lambda zero, score complete round trips, keep a winner only if it strictly beats the BC reference and survives serial reverification under a fresh reader pass, and clone its actions once into the utility tower. The lambda menu and threshold manifest are frozen from the cached (U,P) trajectory pool before controller calibration.</p>
-      <p><strong>Calibrate the controller before hybrid RL.</strong> Switch thresholds are measured on the warm-started policy's menus, <code>alpha</code> is initialized to their gap-normalized weighted median, and the KL reference checkpoint is captured only after calibration — anchoring KL to an uncalibrated reference would pull the controller back into the dead regime. This configuration is the adopted candidate of the controller-strength fork (RL decision log), pending re-evaluation under the production trainer.</p>
-      <p><strong>One lambda per episode.</strong> A seeded balanced Latin-cycle schedule gives every document every supported lambda profile over each complete block. Independent random sampling is disallowed because it can confound operating preference with corpus or type exposure.</p>
-      <p><strong>One complete round trip per measured trajectory.</strong> Context assertions are scored on <code>doc_p</code>; delivered assertions are scored on <code>out_final</code>. Both contribute to the same fixed policy-role-denominator utility vector; monitoring assertions (document-wide demographic probes, exact-relation contracts) are scored and reported but never credited. Counterfactuals regenerate <code>doc_p</code>, rerun the remote task and local extraction, then rescore the complete vector.</p>
+      <p><strong>Why it is staged at all.</strong> The policy has to learn two different things — which rewrite preserves meaning, and how much anonymity a rewrite buys — and the second must not be allowed to teach the first. Doing them together is exactly the shortcut the architecture exists to block, so they are separated in time as well as in structure: the privacy head is trained and frozen before the policy sees a single reward, and the controller that lets privacy influence a decision is switched off until the utility policy already works on its own.</p>
+      <p><strong>Freeze the environment first.</strong> One versioned environment covers the detector span artifact, action menus, own-profile counts with provenance, accepted QA assertions, and the remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches. These freeze together because they fail together: changing any one of them invalidates cached utility, the \(\lambda\) calibration, and every trained-policy comparison at the same time. Two load-time transforms then shape the initial-RL corpus — only <code>drug</code>, <code>health-condition</code>, and <code>medical-procedure</code> decisions are ranker-controlled, with out-of-scope or count-uncovered decisions demoted to fixed KEEP, and documents carrying no policy-role reward mass are dropped from training.</p>
+      <p><strong>Supervised warm start.</strong> The behaviour-cloning teacher is a hand-written walk, not a model: for each decision it takes the finest legal lattice level, or the typed placeholder when no level is legal, claiming fills as it goes. The policy is fit to those actions by cross-entropy over each dynamic legal menu at \(\lambda = 0\), which gives it a legal, support-preserving starting distribution rather than a random one. Expert iteration then lifts it above the teacher on utility alone: sample G complete rollouts at \(\lambda = 0\), score full round trips, keep a winner only if it strictly beats the behaviour-cloning reference <em>and</em> survives a serial reverification pass with a fresh reader, then clone every action of that verified winner once. Neither stage sees \(\lambda\) or a count.</p>
+      <p><strong>Then calibrate, in this order.</strong> The \(\lambda\) menu and threshold manifest are frozen from the cached utility–privacy trajectory pool; the controller scale is calibrated against the warm-started policy's own menus; and only then is the KL reference checkpoint captured. The order is forced by a measured failure: anchoring KL to an uncalibrated reference pulls the controller straight back into the regime where \(\lambda\) changes nothing.</p>
+      <p><strong>The hybrid episode.</strong> One document, one \(\lambda\), G rollouts. Each rollout walks the decisions in first-occurrence order, emits a complete action vector, and is rendered into <code>doc_p</code>; the remote model answers; local inversion produces <code>out_final</code>; context assertions are scored on <code>doc_p</code> and delivered assertions on <code>out_final</code>, against a fixed policy-role denominator, with monitoring assertions scored and reported but never credited. Advantages are leave-one-out within the group, sparse counterfactual reruns replace individual terms with measured causal differences, and the exact count objective reaches only the controller scale. One honest caveat: on small documents the group frequently degenerates — every rollout returns the same action vector, so every leave-one-out advantage is exactly zero and the utility gradient dies. That is an open fork, not a solved problem.</p>
+    </div>
+
+    <h3>Design decisions</h3>
+    <div class="prose">
+      <p><strong>Stage order — privacy frozen before policy, controller off until utility works.</strong> Pretraining the privacy head on held-out profiles and freezing it means the exact-count objective can never quietly redefine what the privacy score <em>means</em> during RL; starting the controller at zero means the utility tower is trained on its own merits first. Both are what make a later comparison across operating points interpretable at all.<br><em>Also considered:</em> training everything jointly from the start.</p>
+      <p><strong>Warm start — a deterministic teacher, not a learned one.</strong> A hand-written finest-legal-level walk is cheap, reproducible, and needs no model of its own, and cross-entropy against it leaves probability mass on every legal action rather than collapsing onto one. It is \(\lambda\)-independent, so a single warm start serves every operating point.<br><em>Also considered:</em> beginning hybrid RL directly from a randomly initialized policy, which reopens the quantized-reward and tied-group failure that motivated a warm start in the first place.</p>
+      <p><strong>Expert iteration — utility-only, and deliberately coarse.</strong> Selecting winners by document utility alone keeps privacy pressure out of the initializer entirely, and requiring a strict win over the behaviour-cloning reference plus a fresh-reader reverification stops reader noise being cloned as signal. Its labels are knowingly approximate — a winning trajectory carries passenger actions — because the hybrid stage exists to correct them with linked credit and counterfactuals.<br><em>Also considered:</em> counterfactually filtering every winner before cloning, and dropping expert iteration altogether.</p>
+      <p><strong>Operating points — one checkpoint over a finite \(\lambda\) menu.</strong> Three to five pre-registered values, \(\lambda\) held fixed for a whole document group, and no behaviour promised between them. One checkpoint keeps training cost and deployment simple while still exposing a real frontier, and a finite menu means every published operating point is one that was actually trained and replayed.<br><em>Also considered:</em> a separate checkpoint per \(\lambda\), and a continuous \(\lambda\) slider.</p>
+      <p><strong>Episode schedule — a seeded balanced Latin cycle.</strong> Over each block of \(|\Lambda|\) epochs every document is trained once at every supported profile, so a difference between operating points cannot be an artifact of which documents or types happened to be drawn at which \(\lambda\).<br><em>Also considered:</em> independent random sampling of \(\lambda\) per episode, which is explicitly disallowed rather than merely discouraged.</p>
+      <p><strong>Credit — episodic for utility, analytic for counts.</strong> The two objectives are kept on separate paths instead of being collapsed into one document scalar. Utility has to stay episodic because the remote model consumes the whole rewritten document and span choices interact through semantics and the injectivity mask; the count score, by contrast, is known in closed form for every legal action, so it is optimized as an exact local expectation rather than sampled — spending rollout variance on a quantity already known would be wasteful.<br><em>Also considered:</em> broadcasting one combined document reward to every selected action, and training independent per-span utility rewards.</p>
+      <p><strong>Objective shape — additive, with coefficients fixed per run.</strong> The loss is utility plus a privacy-shaping term rather than a \((1-\lambda)U + \lambda P\) blend, which keeps the utility scale constant as \(\lambda\) moves and keeps entropy and KL coefficients comparable across profiles. They are fixed per run and never rescaled per \(\lambda\).<br><em>Also considered:</em> the convex-blend form, and per-profile coefficient tuning.</p>
+    </div>
+
+    <h3>Training data — QA assertions</h3>
+    <div class="prose">
+      <p>The reward is not one score. Each document carries a frozen vector of assertions, and they are measured at two different points in the round trip: <strong>context assertions read the anonymized document \(doc_p\)</strong>, and <strong>delivered assertions read the final answer \(out_{\text{final}}\)</strong>. Splitting them is deliberate — a placeholder-heavy rewrite can still produce a well-formed note that satisfies the delivered checks while destroying the relations a reader needed, so the two families are not collapsible into one number. The ACI artifact currently holds 1357 accepted assertions: 634 context and 723 delivered. Weight budgets are split equally across fact groups and then across each group's assertions, and the document's denominator is fixed, so a missing family costs utility rather than being renormalized away.</p>
+
+      <p><strong>Context assertions — can the relation still be recovered from \(doc_p\)?</strong> Each is a question with pinned accepted answers and an answer target naming which decision must retain which property. They are proposed from the source document, then filtered by a three-point reader gate that renders the same question against three versions — the original document, a representative anchor with every linked decision at its required level, and an all-placeholder floor — and keeps the assertion only if the first two are answerable <em>and</em> the floor is not. That last condition is what makes an assertion discriminative rather than free: it must become unanswerable when the content is destroyed. Each row also freezes a relation-constrained reader clause that is reused verbatim at gate time and at runtime, so the gate and the reward use the same instrument.</p>
+      <ul>
+        <li><code>procedure_for</code> — "For what medical condition was the transthoracic echocardiography performed?" → <em>heart disease</em></li>
+        <li><code>tests_for</code> — "Which test or investigation was ordered to evaluate the mitral valve disease?" → <em>echocardiography</em></li>
+        <li><code>causes_or_explains</code> — "What single medical condition causes or explains heart murmur? Name only the condition." → <em>thoracic disease</em></li>
+      </ul>
+
+      <p><strong>Delivered assertions — did the answer survive the round trip?</strong> These are deterministic and adapter-owned: their truth comes from the human reference note or the fixed task schema, never from a teacher's interpretation of the output. Four kinds, in descending count:</p>
+      <ul>
+        <li><strong>content</strong> (606) — a reference-backed controlled value must reappear in \(out_{\text{final}}\); this is the omission channel. Examples: <code>contains "congestive heart failure"</code>, <code>contains "kidney transplant"</code>, <code>contains "autoimmune panel"</code>.</li>
+        <li><strong>field</strong> (94) — exact agreement on parsed note fields against the reference, for example <code>DEMOGRAPHIC · age = "50-year-old"</code>.</li>
+        <li><strong>structure</strong> (14) — required sections present and parseable, for example <code>HISTORY OF PRESENT ILLNESS · ASSESSMENT · PLAN</code> with the expected labelled-row shapes. Its share is capped by a structural budget so formatting compliance can never stand in for semantic retention.</li>
+        <li><strong>exact_relation</strong> (9) — a PLAN row still carrying its expected treatment and test, for example condition <em>Arthritis</em> with treatment "Initiate Ultram 50 mg every 6 hours as needed." and test "We will order an autoimmune panel for further evaluation."</li>
+      </ul>
+
+      <p><strong>Which assertions actually pay.</strong> Role is decided per document at scoring time, not baked into the artifact: an assertion is policy-role only if it depends on a decision this ranker actually controls, and everything else is monitoring — scored and reported, never credited. The policy-role weight mass is the denominator \(Z_d\) that utility is measured against. One family is currently demoted wholesale: <code>exact_relation</code> is forced to monitoring because it measured a zero pass rate on real remote notes, making it unwinnable by any action and therefore signal-free even where it is dependency-linked.</p>
     </div>
   </section>
 
   <section id="credit-and-loss">
     <header class="section-head">
-      <div class="section-num">§07</div><h2 class="section-title">Credit Assignment and Loss</h2>
+      <div class="section-num">§06</div><h2 class="section-title">Credit Assignment and Loss</h2>
       <div class="section-meta">routing hints · RLOO · causal replacement</div>
     </header>
     <div class="prose">
@@ -847,37 +912,37 @@ digraph RankerV2Training {
     <table class="spec spec--wide">
       <thead><tr><th>path</th><th>computation</th><th>recipient</th></tr></thead>
       <tbody>
-        <tr><td><strong>Linked</strong></td><td>RLOO over assertions whose unique policy dependencies contain decision <code>j</code>.</td><td>That linked decision once, even when several occurrences map to it.</td></tr>
+        <tr><td><strong>Linked</strong></td><td>RLOO over assertions whose unique policy dependencies contain decision \(j\).</td><td>That linked decision once, even when several occurrences map to it.</td></tr>
         <tr><td><strong>Residual</strong></td><td>RLOO over assertions with no policy dependency, including global and fixed-only effects.</td><td>Added to every decision that already has linked credit.</td></tr>
         <tr><td><strong>Fallback</strong></td><td>RLOO over the complete assertion vector.</td><td>Only decisions with no linked assertions. Missing QA never means zero utility.</td></tr>
-        <tr><td><strong>Counterfactual</strong></td><td>Measured <code>delta_U</code> between the selected action and one legal alternative.</td><td>Replaces that decision's provisional term under the same <code>1/G</code> weighting.</td></tr>
+        <tr><td><strong>Counterfactual</strong></td><td>Measured \(\Delta U\) between the selected action and one legal alternative.</td><td>Replaces that decision's provisional term under the same \(1/G\) weighting.</td></tr>
       </tbody>
     </table>
     <div class="two-col">
       <div>
         <h4>Utility objective</h4>
-        <p><code>U(g,Q) = sum_q w_q u_g[q] / Z_d</code></p>
-        <p><code>Z_d</code> is the fixed policy-role weight mass; monitoring assertions never enter it.</p>
-        <p><code>A[g,j] = U[g,j] - loo_mean(U[-g,j])</code></p>
+        <p>\(U(g,Q) = \textstyle\sum_q w_q\, u_g[q] \,/\, Z_d\)</p>
+        <p>\(Z_d\) is the fixed policy-role weight mass; monitoring assertions never enter it.</p>
+        <p>\(A[g,j] = U[g,j] - \operatorname{mean}_{g' \neq g} U[g',j]\)</p>
         <p>No standard-deviation normalization. A constant assertion supplies no gradient.</p>
       </div>
       <div>
         <h4>Counterfactual pair</h4>
-        <p><code>q_pair = pi(a) / (pi(a) + pi(b))</code></p>
-        <p><code>L_cf = -delta_U · (q_pair - 1/2)</code></p>
+        <p>\(q_{\text{pair}} = \pi(a) / \big(\pi(a) + \pi(b)\big)\)</p>
+        <p>\(\mathcal{L}_{\text{cf}} = -\Delta U \cdot \big(q_{\text{pair}} - \tfrac{1}{2}\big)\)</p>
         <p>The pairwise loss favors the measured better action and is bounded as confidence grows.</p>
       </div>
     </div>
     <div class="prose">
-      <p><strong>Exact count view.</strong> <code>pi_count = softmax(mask(stopgrad(u) + alpha · g(lambda) · gap · stopgrad(p_hat)))</code>. The dense objective is the negative expected exact target over every legal action, weighted by <code>lambda / |D_d|</code> and the same rollout-group factor <code>1/G</code>. Only <code>alpha</code> receives this gradient.</p>
-      <p><strong>Overall loss.</strong> <code>L = mean_d L_utility(d) + L_count - beta · entropy + eta · KL(pi || pi_ref)</code>. Counterfactual terms replace their corresponding provisional utility terms; they are not averaged into a separate unweighted bonus.</p>
+      <p><strong>Exact count view.</strong> \(\pi_{\text{count}} = \mathrm{softmax}\big(\mathrm{mask}(\mathrm{stopgrad}(u) + \alpha\, g(\lambda)\, \mathrm{gap}\, \mathrm{stopgrad}(\hat{p}))\big)\). The dense objective is the negative expected exact target over every legal action, weighted by \(\lambda / |D_d|\) and the same rollout-group factor \(1/G\). Only \(\alpha\) receives this gradient.</p>
+      <p><strong>Overall loss.</strong> \(\mathcal{L} = \operatorname{mean}_d \mathcal{L}_{\text{utility}}(d) + \mathcal{L}_{\text{count}} - \beta\, \mathrm{entropy} + \eta\, \mathrm{KL}(\pi \,\|\, \pi_{\text{ref}})\). Counterfactual terms replace their corresponding provisional utility terms; they are not averaged into a separate unweighted bonus.</p>
       <p><strong>Scheduler.</strong> Counterfactual budget first covers decisions with no linked assertions, then multi-decision links and uncertain or stale measured pairs, while reserving nonzero probability for every eligible decision. Adjacent finer or coarser actions are preferred, with a pre-registered minority of KEEP and placeholder endpoint tests.</p>
     </div>
   </section>
 
   <section id="training-and-gates">
     <header class="section-head">
-      <div class="section-num">§08</div><h2 class="section-title">Training Sequence and Gates</h2>
+      <div class="section-num">§07</div><h2 class="section-title">Training Sequence and Gates</h2>
       <div class="section-meta">fail closed · validate shortcuts · freeze interfaces</div>
     </header>
     <table class="spec spec--wide">
@@ -888,12 +953,12 @@ digraph RankerV2Training {
         <tr><td><strong>Privacy pretraining</strong></td><td>Fit log-count likelihood, within-menu ordering, and profile-relative calibration.</td><td>Failure to beat position, type, identity, and candidate-only shortcuts rejects the semantic prototype.</td></tr>
         <tr><td><strong>Context spike</strong></td><td>Test local, long-range, repeated-occurrence, and multi-decision utility with context and candidate swaps.</td><td>Metadata-only success or source-region invisibility blocks promotion.</td></tr>
         <tr><td><strong>History spike</strong></td><td>Compare no history, corrected utility-only GRU, and selected-action cross-attention.</td><td>No multi-decision gain or permutation/selectivity failure removes action history.</td></tr>
-        <tr><td><strong>Lambda menu</strong></td><td>Select observed switch points from the upper convex envelope of cached <code>(U,P)</code> trajectories.</td><td>Fewer than three distinct responsive profiles stops conditional RL.</td></tr>
-        <tr><td><strong>Held-out evaluation</strong></td><td>Evaluate every supported lambda independently for utility and attacker outcomes.</td><td>Lambda-zero utility regression or count/attacker inversion rejects the relevant claim.</td></tr>
+        <tr><td><strong>\(\lambda\) menu</strong></td><td>Select observed switch points from the upper convex envelope of cached \((U,P)\) trajectories.</td><td>Fewer than three distinct responsive profiles stops conditional RL.</td></tr>
+        <tr><td><strong>Held-out evaluation</strong></td><td>Evaluate every supported \(\lambda\) independently for utility and attacker outcomes.</td><td>\(\lambda\)-zero utility regression or count/attacker inversion rejects the relevant claim.</td></tr>
       </tbody>
     </table>
     <div class="prose">
-      <p><strong>Lambda menu selection.</strong> Start at zero, then choose three to five supported values from observed per-document utility and count switch points. Values are snapped to observed thresholds and replayed. Redundant profiles are merged rather than padded with invented precision.</p>
+      <p><strong>\(\lambda\) menu selection.</strong> Start at zero, then choose three to five supported values from observed per-document utility and count switch points. Values are snapped to observed thresholds and replayed. Redundant profiles are merged rather than padded with invented precision.</p>
       <p><strong>Encoder caveat.</strong> The pinned clinical encoder saw all ACI-BENCH documents during pretraining. ACI artifacts may support development diagnostics and pipeline training, but they cannot select the encoder or establish out-of-corpus generalization. Those claims require a non-ACI clinical validation corpus.</p>
     </div>
   </section>
@@ -901,10 +966,10 @@ digraph RankerV2Training {
 
   <section id="document-inference">
     <header class="section-head">
-      <div class="section-num">§09</div><h2 class="section-title">Document Inference</h2>
+      <div class="section-num">§08</div><h2 class="section-title">Document Inference</h2>
       <div class="section-meta">local ranking · dynamic legality · remote round trip</div>
     </header>
-    <p class="lede">Inference selects one supported lambda, walks frozen policy decisions once in first-occurrence order, and returns a complete action vector before any remote task call.</p>
+    <p class="lede">Inference selects one supported \(\lambda\), walks frozen policy decisions once in first-occurrence order, and returns a complete action vector before any remote task call.</p>
 
     <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
       <div class="diagram-cap">
@@ -1055,7 +1120,7 @@ digraph RankerV2Inference {
     </div>
 
     <div class="prose">
-      <p><strong>One local pass.</strong> The caller chooses one supported lambda before ranking. The policy initializes empty selected-action memory and walks the frozen decision sequence. Dynamic legality removes any level fill already reserved or claimed. The model scores all actions in the complete menu, gathers the legal action IDs, and applies <code>log_softmax</code>. Deployment uses deterministic argmax.</p>
+      <p><strong>One local pass.</strong> The caller chooses one supported \(\lambda\) before ranking. The policy initializes empty selected-action memory and walks the frozen decision sequence. Dynamic legality removes any level fill already reserved or claimed. The model scores all actions in the complete menu, gathers the legal action IDs, and applies <code>log_softmax</code>. Deployment uses deterministic argmax.</p>
       <p><strong>Decision-level action, occurrence-level rewrite.</strong> Selecting one action updates every occurrence mapped to that decision. The selected utility relation, action mode, runtime type, and source-position pool become one history row for later decisions. Repeated occurrences do not create repeated policy steps.</p>
       <p><strong>Remote boundary.</strong> Ranking itself uses no QA probes, reader, reward model, exact count target, or counterfactual call. Only <code>doc_p</code> reaches the remote task model. The substitution record <code>R</code> stays local and combines with <code>out_p</code> to produce <code>out_final</code>.</p>
     </div>
@@ -1063,14 +1128,14 @@ digraph RankerV2Inference {
 
   <section id="boundaries">
     <header class="section-head">
-      <div class="section-num">§10</div><h2 class="section-title">Boundaries and Audit</h2>
+      <div class="section-num">§09</div><h2 class="section-title">Boundaries and Audit</h2>
       <div class="section-meta">what the design means · what it does not prove</div>
     </header>
     <div class="two-col">
       <div>
         <h4>Normative invariants</h4>
         <ul>
-          <li>Lambda zero exactly equals utility logits before masking.</li>
+          <li>\(\lambda = 0\) exactly equals utility logits before masking.</li>
           <li>True counts never enter semantic actor features.</li>
           <li>Exact count gradients cannot update utility or memory.</li>
           <li>Privacy-head training cannot update utility features.</li>
@@ -1082,7 +1147,7 @@ digraph RankerV2Inference {
         <h4>Open empirical questions</h4>
         <ul>
           <li>Can semantic log-count prediction transfer to unseen profiles?</li>
-          <li>Can one global alpha realize useful distinct operating points?</li>
+          <li>Can one global \(\alpha\) realize useful distinct operating points?</li>
           <li>Does frozen candidate-conditioned attention expose enough context?</li>
           <li>Does selected-action memory improve multi-decision utility?</li>
           <li>Does higher count score track lower realized attacker success?</li>
@@ -1093,7 +1158,7 @@ digraph RankerV2Inference {
     <div class="prose">
       <p><strong>Repeated-context leakage.</strong> The exact document count score averages once per distinct policy decision, so repeated mentions do not multiply count reward. This is an explicit approximation, not a claim that repetition is harmless. Repeated values in different contexts may increase linkage or inference risk and require a future occurrence-aware attacker audit.</p>
       <p><strong>Fallback architecture.</strong> If semantic privacy transfer fails or stricter count auditability is required, the retained factorized fallback uses grounded type-normalized counts directly in a separate privacy branch. It remains count-blind on the utility side, but it does not offer the semantic prototype's transfer claim.</p>
-      <p><strong>Verdict rule.</strong> Count score, KEEP rate, lattice depth, and lambda are diagnostics. A method is compared only by utility versus held-out attacker success at matched realized privacy and identical settings. If count score rises while attacker privacy worsens, the approximation is falsified in that region and the failure is reported rather than calibrated away.</p>
+      <p><strong>Verdict rule.</strong> Count score, KEEP rate, lattice depth, and \(\lambda\) are diagnostics. A method is compared only by utility versus held-out attacker success at matched realized privacy and identical settings. If count score rises while attacker privacy worsens, the approximation is falsified in that region and the failure is reported rather than calibrated away.</p>
     </div>
   </section>
 
