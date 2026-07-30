@@ -39,6 +39,13 @@ clipping (kept null — clipping is a separate later ablation, never bundled).
 Arms: --kl-schedule always-on with --kl-direction forward | reverse.
 Seeds 17 (healthy high-P mode) and 47 (collapsed all-keep mode, logit ranges
 277-327 at stage-2 end) — prevention and recovery in one design.
+AMENDMENT (2026-07-30, before any chain completed; time-to-signal): screening
+runs at 8 epochs (2 cycles), seed 47 FIRST in both arms (the decisive
+recovery test), with per-cycle live adjudication and early kill on definitive
+failure; criteria 1-3 read over the 2 available cycles. The surviving arm
+gets the full 12-epoch two-seed confirmation (folded into the item-7 rerun).
+The first forward-s17 chain was stopped at epoch ~1 and its scored vectors
+remain in the shared cache.
 --synchronous-profile-eval on: every epoch report carries a same-checkpoint
 4-profile readout (64 sampled vectors per profile, count-score only — no
 remote calls; per-decision expected privacy score and utility-logit range).
