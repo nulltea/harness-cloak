@@ -7,8 +7,9 @@ import json
 import os
 import tempfile
 import threading
+import time
 
-from openai import OpenAI
+from openai import OpenAI, RateLimitError
 
 DEFAULT_BASE_URL = "https://ai.tail59ea6b.ts.net/v1"
 
@@ -187,7 +188,19 @@ class LLMClient:
         return self._compute(messages, params, path)
 
     def _compute(self, messages: list[Message], params: dict, path: str | None) -> str:
-        resp = self._client.chat.completions.create(model=self.model, messages=messages, **params)
+        # 429s are transient queue-full states (llama-swap slot pressure after
+        # an aborted run, throttled endpoints); retry with backoff instead of
+        # killing a multi-hour training chain (observed 2026-07-30).
+        for attempt in range(6):
+            try:
+                resp = self._client.chat.completions.create(
+                    model=self.model, messages=messages, **params,
+                )
+                break
+            except RateLimitError:
+                if attempt == 5:
+                    raise
+                time.sleep(min(60.0, 2.0 ** attempt * 5.0))
         # Throttled/free endpoints (OpenRouter :free) can return HTTP 200 with no choices — an
         # error payload the SDK's max_retries does not catch. Degrade to "" WITHOUT caching, so
         # the empty is treated as a miss and re-tried on the next run instead of crashing on
