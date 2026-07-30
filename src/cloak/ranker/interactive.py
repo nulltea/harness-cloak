@@ -1887,7 +1887,8 @@ def train_hybrid_document_group(
         }
     absolute_mass.update({
         name: abs(float(family_terms[name].detach()))
-        for name in ("count", "entropy", "KL")
+        for name in family_terms
+        if name not in absolute_mass
     })
     optimizer.zero_grad(set_to_none=True)
     total_objective.backward()
