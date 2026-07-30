@@ -163,6 +163,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--counterfactual-coverage", choices=("fixed", "degeneracy"),
         default="fixed",
     )
+    train.add_argument(
+        "--kl-schedule", choices=("collapse-trigger", "always-on"),
+        default="collapse-trigger",
+    )
+    train.add_argument(
+        "--kl-direction", choices=("forward", "reverse"), default="forward",
+    )
+    train.add_argument("--synchronous-profile-eval", action="store_true")
     return parser
 
 
@@ -858,6 +866,8 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         "counterfactual_coverage": getattr(
             args, "counterfactual_coverage", "fixed",
         ),
+        "kl_schedule": getattr(args, "kl_schedule", "collapse-trigger"),
+        "kl_direction": getattr(args, "kl_direction", "forward"),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
 
@@ -1078,6 +1088,11 @@ def _run_train(args) -> None:
         rollout_scaling=getattr(args, "rollout_scaling", "fixed"),
         counterfactual_coverage=getattr(
             args, "counterfactual_coverage", "fixed",
+        ),
+        kl_schedule=getattr(args, "kl_schedule", "collapse-trigger"),
+        kl_direction=getattr(args, "kl_direction", "forward"),
+        synchronous_profile_eval=getattr(
+            args, "synchronous_profile_eval", False,
         ),
     )
 

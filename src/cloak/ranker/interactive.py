@@ -487,8 +487,15 @@ def compose_hybrid_document_objective(
     beta: float,
     eta: float,
     reference_log_probs: Sequence[Sequence[torch.Tensor]] | None,
+    kl_direction: str = "forward",
 ) -> HybridDocumentObjective:
-    """Compose the rollout-normalized hybrid objective for one document group."""
+    """Compose the rollout-normalized hybrid objective for one document group.
+
+    kl_direction "forward" penalizes KL(pi || ref); "reverse" penalizes
+    KL(ref || pi), whose gradient (~ pi - ref) stays alive when pi saturates —
+    the failure mode of the lambda-3 coin-flip root cause (decision log
+    2026-07-30).
+    """
 
     replayed = tuple(replayed)
     if not replayed:
@@ -543,9 +550,16 @@ def compose_hybrid_document_objective(
                     torch.isfinite(reference_step).all()
                 ):
                     raise ValueError("reference distribution differs from replay menu")
-                kl_terms.append(torch.sum(
-                    step.log_probs.exp() * (step.log_probs - reference_step)
-                ))
+                if kl_direction == "forward":
+                    kl_terms.append(torch.sum(
+                        step.log_probs.exp() * (step.log_probs - reference_step)
+                    ))
+                elif kl_direction == "reverse":
+                    kl_terms.append(torch.sum(
+                        reference_step.exp() * (reference_step - step.log_probs)
+                    ))
+                else:
+                    raise ValueError(f"unsupported KL direction: {kl_direction!r}")
         kl = torch.stack(kl_terms).sum() / len(replayed)
     total = utility_loss + count - float(beta) * entropy + float(eta) * kl
     if not all(bool(torch.isfinite(value)) for value in (count, entropy, kl, total)):
@@ -559,6 +573,86 @@ def compose_hybrid_document_objective(
         beta=float(beta),
         eta=float(eta),
     )
+
+
+def synchronous_profile_snapshot(
+    policy: TrajectoryPolicy,
+    documents: Sequence[RankerDocument],
+    profiles: Sequence[Any],
+    profile_targets: ProfileCountTargets,
+    *,
+    samples: int = 64,
+    seed: int = 0,
+) -> dict[str, dict[str, Any]]:
+    """Evaluate every profile from ONE policy state (confound-free readout).
+
+    Latin-cycle group means observe each profile several optimizer steps apart,
+    mixing lambda-conditioning with policy evolution (root-cause adjudication,
+    decision log 2026-07-30). This snapshot samples action vectors per profile
+    from the same checkpoint — count scores need no remote scoring — plus the
+    greedy walk's per-decision expected privacy score and utility-logit range.
+    Uses its own generator so training RNG streams are untouched.
+    """
+    generator = torch.Generator().manual_seed(seed)
+    snapshot: dict[str, dict[str, Any]] = {}
+    with torch.no_grad():
+        for document in documents:
+            decision_ids = [
+                decision.decision_id for decision in document.policy_decisions
+            ]
+            per_profile: dict[str, Any] = {}
+            for profile in profiles:
+                sampled_p = []
+                for _ in range(samples):
+                    trajectory = sample_trajectory(
+                        policy, document, profile,
+                        greedy=False, generator=generator,
+                    )
+                    scores = [
+                        float(profile_targets.action_scores(
+                            decision_id,
+                            (trajectory.action_vector[decision_id],),
+                        )[0])
+                        for decision_id in decision_ids
+                    ]
+                    sampled_p.append(sum(scores) / len(scores))
+                greedy = sample_trajectory(
+                    policy, document, profile, greedy=True, generator=None,
+                )
+                replayed = replay_trajectory(policy, document, greedy, profile)
+                decisions = []
+                greedy_scores = []
+                for decision, step in zip(
+                    document.policy_decisions, replayed.steps, strict=True,
+                ):
+                    action_scores = torch.tensor([
+                        float(profile_targets.action_scores(
+                            decision.decision_id, (action_id,),
+                        )[0])
+                        for action_id in step.legal_action_ids
+                    ], dtype=step.log_probs.dtype)
+                    probabilities = step.log_probs.exp().cpu()
+                    greedy_scores.append(float(profile_targets.action_scores(
+                        decision.decision_id, (step.selected_action_id,),
+                    )[0]))
+                    decisions.append({
+                        "decision_id": decision.decision_id,
+                        "greedy_action_score": greedy_scores[-1],
+                        "expected_p": float(
+                            torch.sum(probabilities * action_scores)
+                        ),
+                        "utility_logit_range": float(
+                            step.utility_logits.max() - step.utility_logits.min()
+                        ),
+                    })
+                per_profile[str(profile.name)] = {
+                    "sampled_P_mean": sum(sampled_p) / len(sampled_p),
+                    "sampled_P_count": samples,
+                    "greedy_P": sum(greedy_scores) / len(greedy_scores),
+                    "decisions": decisions,
+                }
+            snapshot[document.doc_id] = per_profile
+    return snapshot
 
 
 def build_latin_cycle_schedule(
@@ -1474,6 +1568,7 @@ def train_hybrid_document_group(
     cache_only: bool = False,
     max_grad_norm: float | None = None,
     counterfactual_coverage: str = "fixed",
+    kl_direction: str = "forward",
 ) -> DocumentTrainingResult:
     """Run one complete sampled/scored/replayed optimizer step for a document group."""
 
@@ -1613,6 +1708,7 @@ def train_hybrid_document_group(
         beta=beta,
         eta=eta,
         reference_log_probs=reference_log_probs,
+        kl_direction=kl_direction,
     )
     family_terms, absolute_mass = _utility_family_terms_and_mass(
         replayed, credit, counterfactual_losses,
@@ -2103,6 +2199,9 @@ def train_hybrid_policy(
     epoch_callback: Callable[[int, Sequence[Mapping], Mapping, bool], None] | None = None,
     rollout_scaling: str = "fixed",
     counterfactual_coverage: str = "fixed",
+    kl_schedule: str = "collapse-trigger",
+    kl_direction: str = "forward",
+    synchronous_profile_eval: bool = False,
 ) -> HybridTrainingResult:
     """Train document groups in a seeded balanced profile cycle."""
 
@@ -2118,6 +2217,13 @@ def train_hybrid_policy(
         raise ValueError("hybrid schedule differs from documents or profiles")
     reports = [dict(row) for row in existing_reports]
     history = pair_history if isinstance(pair_history, dict) else dict(pair_history)
+    if kl_schedule == "always-on":
+        # KL-anchor fix (decision log 2026-07-30): the collapse trigger is
+        # aggregate-level and fires too late to recover a saturated policy;
+        # anchor to the calibrated reference from epoch zero instead.
+        kl_enabled = True
+    elif kl_schedule != "collapse-trigger":
+        raise ValueError(f"unsupported KL schedule: {kl_schedule!r}")
     for epoch in range(start_epoch, max_epochs):
         epoch_kl_enabled = kl_enabled
         groups = []
@@ -2132,6 +2238,8 @@ def train_hybrid_policy(
             group_options: dict[str, Any] = {}
             if counterfactual_coverage != "fixed":
                 group_options["counterfactual_coverage"] = counterfactual_coverage
+            if kl_direction != "forward":
+                group_options["kl_direction"] = kl_direction
             groups.append(group_trainer(
                 policy,
                 reference_policy,
@@ -2175,6 +2283,11 @@ def train_hybrid_policy(
                 "adjacent_winner_change": None,
             }
         report["kl_enabled_for_epoch"] = bool(eta > 0.0 and epoch_kl_enabled)
+        if synchronous_profile_eval:
+            report["synchronous_profiles"] = synchronous_profile_snapshot(
+                policy, documents, profiles, profile_targets,
+                samples=64, seed=seed + 90000 + epoch,
+            )
         reports.append(report)
         if epoch_callback is not None:
             epoch_callback(epoch, tuple(reports), history, kl_enabled)

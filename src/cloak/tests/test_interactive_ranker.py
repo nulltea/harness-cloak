@@ -1788,6 +1788,56 @@ def test_hybrid_document_objective_matches_two_rollout_two_decision_equation():
     assert objective.eta == 0.2
 
 
+def test_reverse_kl_direction_matches_manual_formula_and_keeps_saturated_gradient():
+    from cloak.ranker.interactive import (
+        compose_hybrid_document_objective,
+        hybrid_utility_loss,
+    )
+
+    replayed, profile_targets, credit = _objective_fixture()
+    utility = hybrid_utility_loss(replayed, credit, {})
+    reference = tuple(
+        tuple(torch.log(torch.tensor([0.5, 0.5], dtype=torch.float64)) for _ in row.steps)
+        for row in replayed
+    )
+    objective = compose_hybrid_document_objective(
+        replayed,
+        utility_loss=utility,
+        profile_targets=profile_targets,
+        lambda_value=2.0,
+        beta=0.0,
+        eta=0.2,
+        reference_log_probs=reference,
+        kl_direction="reverse",
+    )
+    # KL(ref || pi) with pi = (0.75, 0.25), ref = (0.5, 0.5), per step
+    per_step = (0.5 * torch.log(torch.tensor(0.5 / 0.75))
+                + 0.5 * torch.log(torch.tensor(0.5 / 0.25)))
+    assert float(objective.kl.detach()) == pytest.approx(2 * float(per_step))
+
+    with pytest.raises(ValueError, match="unsupported KL direction"):
+        compose_hybrid_document_objective(
+            replayed,
+            utility_loss=utility,
+            profile_targets=profile_targets,
+            lambda_value=2.0,
+            beta=0.0,
+            eta=0.2,
+            reference_log_probs=reference,
+            kl_direction="sideways",
+        )
+
+    # gradient survives saturation: pi -> one-hot, forward KL grad ~ 0, reverse stays
+    sharp = torch.tensor([12.0, -12.0], requires_grad=True)
+    log_pi = torch.log_softmax(sharp, dim=0)
+    ref = torch.log(torch.tensor([0.5, 0.5]))
+    forward = torch.sum(log_pi.exp() * (log_pi - ref))
+    reverse = torch.sum(ref.exp() * (ref - log_pi))
+    grad_f = torch.autograd.grad(forward, sharp, retain_graph=True)[0]
+    grad_r = torch.autograd.grad(reverse, sharp)[0]
+    assert float(grad_r.abs().max()) > 100 * float(grad_f.abs().max())
+
+
 def test_count_gradient_survives_tied_utility_and_is_not_divided_twice():
     from cloak.ranker.interactive import (
         compose_hybrid_document_objective,
@@ -2617,6 +2667,40 @@ def test_hybrid_training_loop_uses_latin_profiles_and_enables_kl_after_block():
     assert [row[:2] for row in checkpoints] == [(0, 1), (1, 2), (2, 3), (3, 4)]
     assert checkpoints[2][3] is True
 
+    # always-on schedule: KL from epoch zero, direction forwarded to groups
+    calls.clear()
+    always = train_hybrid_policy(
+        policy=object(),
+        reference_policy=object(),
+        documents=documents,
+        profiles=profiles,
+        schedule=schedule,
+        optimizer=object(),
+        utility_artifact={},
+        environment_hash="env",
+        profile_targets=object(),
+        cache=object(),
+        threshold_manifest={
+            "feasibility_gates": {"min_adjacent_winner_change": 0.2},
+        },
+        max_epochs=1,
+        rollouts=2,
+        beta=0.01,
+        eta=0.3,
+        counterfactual_budget=5,
+        endpoint_budget=1,
+        pair_history={},
+        seed=7,
+        remote_workers=1,
+        reader_workers=1,
+        generator=torch.Generator().manual_seed(4),
+        group_trainer=group_trainer,
+        kl_schedule="always-on",
+    )
+    assert all(eta == 0.3 for *_, eta in calls)
+    assert always.kl_enabled is True
+    assert always.epoch_reports[0]["kl_enabled_for_epoch"] is True
+
 
 def test_scope_demotion_moves_uncovered_and_out_of_scope_menus_to_fixed_keep():
     import train_interactive_ranker
@@ -2768,3 +2852,38 @@ def test_dominant_trajectory_probability_matches_greedy_walk():
     replayed = replay_trajectory(policy, document, greedy, profiles[0])
     expected = math.exp(sum(float(step.log_prob) for step in replayed.steps))
     assert p_hat == pytest.approx(expected, rel=1e-5)
+
+
+def test_synchronous_profile_snapshot_reads_all_profiles_from_one_policy():
+    from cloak.ranker.interactive import synchronous_profile_snapshot
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, decision, profiles, scores = _direct_count_policy()
+    score_by_action = {
+        action.action_id: value
+        for action, value in zip(decision.actions, scores, strict=True)
+    }
+
+    class StubTargets:
+        def action_scores(self, decision_id, action_ids):
+            del decision_id
+            return tuple(score_by_action[a] for a in action_ids)
+
+    snapshot = synchronous_profile_snapshot(
+        policy, (document,), profiles, StubTargets(), samples=8, seed=3,
+    )
+    per_profile = snapshot[document.doc_id]
+    assert set(per_profile) == {profile.name for profile in profiles}
+    for name, row in per_profile.items():
+        assert 0.0 <= row["sampled_P_mean"] <= 1.0
+        assert row["sampled_P_count"] == 8
+        assert 0.0 <= row["greedy_P"] <= 1.0
+        assert len(row["decisions"]) == len(document.policy_decisions)
+        for entry in row["decisions"]:
+            assert 0.0 <= entry["expected_p"] <= 1.0
+            assert entry["utility_logit_range"] >= 0.0
+    # deterministic given the seed, and the same policy state serves all profiles
+    again = synchronous_profile_snapshot(
+        policy, (document,), profiles, StubTargets(), samples=8, seed=3,
+    )
+    assert again == snapshot
