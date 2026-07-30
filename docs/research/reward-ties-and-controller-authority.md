@@ -171,7 +171,71 @@ knobs; auditable mechanisms only.
   formalization of "free privacy"; second-line escalation because it leans on
   counterfactual attribution quality.
 
-## Novelty gaps (found by the sweep, relevant for eventual write-up)
+## Head-to-head evidence for the fix families (second sweep, 2026-07-30)
+
+A focused follow-up sweep (37 verified sources) looked for corroboration of
+each fix family and for direct comparisons. Verdict per family:
+
+**Learned state-conditioned controller gain — corroborated, with an attested
+failure mode and known mitigations.**
+[calvofullana2021_state_augmented_constrained_rl](../../research-wiki/papers/calvofullana2021_state_augmented_constrained_rl.md)
+([arXiv 2102.11941](https://arxiv.org/abs/2102.11941)) proves the optimal
+constrained policy cannot be induced by ANY fixed scalar weighting — the
+strongest theoretical case that one global α is structurally insufficient.
+Architectural precedents work (per-state multiplier networks, learned
+per-state decoding temperatures, zero-init gates into frozen trunks), and
+[zhang2026_alam_multiplier_network](../../research-wiki/papers/zhang2026_alam_multiplier_network.md)
+([arXiv 2605.00667](https://arxiv.org/abs/2605.00667)) adds an auditability
+asset: learned per-state multipliers become a readable map of where the
+secondary objective binds. The attested failure direction is UP, not gaming:
+[roy2021_direct_behavior_specification_crl](../../research-wiki/papers/roy2021_direct_behavior_specification_crl.md)
+([arXiv 2112.12228](https://arxiv.org/abs/2112.12228)) documents a learned
+multiplier climbing without bound against a resistant objective until the
+system collapses — on our reward-tied actions that is a live risk, so a gain
+ceiling/normalization is a precondition, and ALaM warns that per-state
+multiplier networks oscillate in ways scalar stabilizers cannot fix (ours is
+gradient-trained, not dual-ascent, which likely sidesteps this — verify the
+gain field is smooth across λ). Mandatory controls before adoption:
+random-gain and fixed-rule-gain ablations, per
+[lin2021_random_weighting_multitask](../../research-wiki/papers/lin2021_random_weighting_multitask.md)
+([arXiv 2111.10603](https://arxiv.org/abs/2111.10603)) — twelve dynamic
+weighting methods matched by random weights.
+
+**Entropy floor — materially weakened for our discrete-menu setting.**
+The target entropy is itself a sensitive pre-baked constant with a real
+optimum, and
+[xu2021_target_entropy_annealing_discrete_sac](../../research-wiki/papers/xu2021_target_entropy_annealing_discrete_sac.md)
+([arXiv 2112.02852](https://arxiv.org/abs/2112.02852)) shows the entropy
+mechanism itself CAUSING logit saturation in discrete SAC when the target is
+low — the hazard we are trying to remove. Entropy is also a lossy proxy for
+the property we care about (it can be held constant while the protected
+behavior collapses). The better instantiation of the margin-bounding family
+is **direct logit soft-capping** — `logits <- cap · tanh(logits/cap)` — the
+production-proven Gemma 2 primitive
+([gemmateam2024_gemma2_logit_softcap](../../research-wiki/papers/gemmateam2024_gemma2_logit_softcap.md),
+[arXiv 2408.00118](https://arxiv.org/abs/2408.00118)): one auditable
+constant, order-preserving, stateless, bounding exactly the quantity the
+additive shift competes against.
+
+**A third family that may dissolve the fork: regularize λ-sensitivity
+directly.**
+[ambadkar2026_d3po_diversity_regularizer](../../research-wiki/papers/ambadkar2026_d3po_diversity_regularizer.md)
+([arXiv 2602.07764](https://arxiv.org/abs/2602.07764)) names our failure
+(representational mode collapse across the conditioning space) and fixes it
+by penalizing the gap between the actual KL between action distributions at
+nearby conditioning values and a target KL proportional to conditioning
+distance — a direct constraint on dπ/dλ. No learned gain, no entropy
+constant, no reference policy; the regularizer's own value IS the
+controllability measurement. Applied here: per decision, require
+KL(π_λk ‖ π_λk+1) to track the profile distance — profile separation becomes
+an explicit training objective instead of an emergent hope.
+
+**Direct comparisons: none exist.** The closest is a safe-RL benchmark
+finding that no multiplier-update mechanism is consistently best (regime-
+dependent). An entropy/capping-vs-learned-gain comparison for preserving a
+conditioning signal is unpublished — our spike would be the first.
+
+## Novelty gaps (found by the sweeps, relevant for eventual write-up)
 
 1. "Bounded additive controller authority vs unbounded logit scale" as a
    design quantity — the required ratio between controller range and margin
@@ -183,12 +247,16 @@ knobs; auditable mechanisms only.
 4. No standard metric tracks logit *range/margin* directly (entropy is the
    universal proxy); our 9 → 300 measurement has no published counterpart.
 
-## Adjudication protocol (preregistered in the decision log)
+## Adjudication protocol (updated after the second sweep)
 
-Two arms test the two live hypotheses head-to-head — Arm E (entropy floor,
-no KL) vs Arm G (learned monotone gain, no KL) — seeds 17+47, 8-epoch
-screening with the synchronous snapshot, early kill, v11 and unanchored runs
-as frozen controls. Gates: per-document λ0 utility loss ≤ 0.044 vs the fixed
+Three candidate arms, seeds 17+47, 8-epoch screening with the synchronous
+snapshot, early kill, v11 and unanchored runs as frozen controls: Arm C-cap
+(logit soft-capping — replaces the entropy floor as the margin-bounding
+representative, per the discrete-SAC saturation evidence), Arm G (learned
+monotone gain WITH a ceiling/normalization per the attested upward-divergence
+failure, plus random-gain and fixed-rule-gain controls before any adoption
+claim), and Arm S (λ-sensitivity regularizer, D3PO-style target-KL between
+adjacent profiles). Gates: per-document λ0 utility loss ≤ 0.044 vs the fixed
 control; D2N005 synchronous ΔP(λ3) ≥ 0.20 by the final cycle with cycle range
 ≤ 0.10; cross-seed final difference ≤ 0.10; no menu-logit range > 50 and no
 persistent action probability > 0.999; frontier regret reported. Decision
