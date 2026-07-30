@@ -1,13 +1,13 @@
 ---
 type: training-experiment
-status: running
+status: done
 created: 2026-07-30
 model: semantic-v1 policy (controller_production BC/ExIt warm starts reused,
   gap-scaled controller + switch-calibrated alpha init, Arm C counterfactual
   broadcast, always-on KL to the calibrated reference)
 dataset: aci 4-doc controller-strength spike set (D2N005/D2N027/D2N063/D2N031),
   frozen environment sha256:4cc754a7, qa-utility-runtime-v2 policy denominator
-result: pending
+result: "Both KL directions at uniform eta over-anchor: lambda-3 held\n  near reference and sharpening bounded, but lambda-zero pinned to BC (item 6\n  failing) — reference-too-restrictive branch; escalation decision pending"
 tags: [rl, ranker-v2, kl-anchor, tie-drift, saturation, coin-flip]
 companion: ../../docs/specs/RL/interactive-ranker-v2-decision-log.md
 ---
@@ -83,8 +83,29 @@ controller capacity.
   stuck at P~0.46 instead of converging to utility-optimal ~0; lambda-3 at
   ~0.50, BELOW the reference's 0.66). Forward KL at eta=0.01 slows learning
   everywhere rather than owning only the reward-silent directions.
-- REVERSE arm, seed 47: running (gradient profile — silent when pi ~= ref,
-  strong when drifting — is exactly what the forward failure calls for).
+- REVERSE arm, seed 47: KILLED at cycle 1 — same signature as forward
+  (synchronous D2N005 Delta P(lambda-3) = +0.03..+0.04). The readout localizes
+  the failure: lambda-3 IS held near the reference (0.49-0.53 vs the
+  unanchored collapse to 0.084) and ranges stay bounded (7-16), but
+  lambda-zero is pinned at ~0.45 instead of converging to utility-optimal ~0
+  (D2N031 lambda-zero likewise stuck 0.38-0.47) — uniform-eta KL freezes the
+  utility side, so profile separation never opens. Item 6 (lambda-zero
+  non-inferiority vs the freely-trained control) was headed for failure on
+  both arms.
+- Adjudication: the preregistered "reference too restrictive" branch fires
+  for BOTH directions at uniform eta=0.01. The stabilization goals all hold
+  (bounded sharpening, flat-decision privacy ~0.5, no drift); the damage is
+  confined to anchoring profiles whose job is to LEAVE the reference
+  (lambda-zero). Caveat recorded: pass-rule item 1 (>=0.20 per cycle,
+  synchronous) was preregistered without a synchronous baseline trajectory —
+  an unanchored run may also fail it at cycle 1 — but the trajectory evidence
+  (lambda-zero pinned, no separation trend, lambda-3 drifting down not up)
+  supports the branch decision independent of that bar's calibration.
+- Operational note: the first reverse-s47 attempt crashed on a 429 caused by
+  a failed kill leaving forward-s47 running concurrently (~15 min overlap;
+  both trainers hammered llama-swap). Contaminated partial artifacts were
+  deleted; the adjudicated reverse run executed on a verified-empty GPU.
+  LLMClient now retries 429s with capped backoff (commit 0daddeb).
 
 ## Cost
 
