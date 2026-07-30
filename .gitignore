@@ -30,3 +30,7 @@ results
 
 .lessons
 _attic.tar.zst
+
+# 107 MB local-only lattice cache: exceeds GitHub's 100 MB limit, kept on disk for
+# scripts/build_mined_lattice_profiles.py but never committed.
+data/lattice_profiles/fine_lattice_profiles.json
