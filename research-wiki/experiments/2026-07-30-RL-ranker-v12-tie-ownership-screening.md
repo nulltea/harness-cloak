@@ -1,7 +1,7 @@
 ---
 type: experiment
 node_id: exp:RL-ranker-v12-tie-ownership-screening
-status: running
+status: done
 created: 2026-07-30
 model: semantic-v1 policy (controller_production BC/ExIt warm starts reused,
   gap-scaled controller + switch-calibrated alpha init, Arm C counterfactual
@@ -9,7 +9,7 @@ model: semantic-v1 policy (controller_production BC/ExIt warm starts reused,
   regularizer)
 dataset: aci 4-doc controller-strength spike set (D2N005/D2N027/D2N063/D2N031),
   frozen environment sha256:4cc754a7, qa-utility-runtime-v2 policy denominator
-result: pending
+result: "All four capacity-free arms fail; cap+no-gap solve scale and lambda-zero freedom and find a stable equilibrium with insufficient separation — escalation to the learned controller gain is triggered"
 tags: [rl, ranker-v2, tie-ownership, logit-softcap, sensitivity-regularizer]
 companion: ../../docs/research/reward-ties-and-controller-authority.md
 ---
@@ -55,7 +55,9 @@ gate); flat-decision expected privacy >= 0.50 at lambda-3.
 - **sensitivity seed 47 (done).** Complementary-opposite failure: epochs 0-4 show REAL tie ownership (Delta P +0.21..+0.32 with genuine greedy separation, lambda-zero argmax 0.00-0.28 vs lambda-3 argmax 0.34-0.52 — the softcap arm never achieved this), then the logit ranges explode anyway (54 -> 81 -> 124, max 170; gate 50 FAIL) and Delta P collapses to +0.01 before partially recovering (+0.13 final; gate FAIL). Mechanism identified: with the GAP-SCALED controller the shift grows with the range, making the adjacent-profile KL the regularizer targets roughly scale-invariant — it pins the shape of the lambda-response while the scale race runs underneath, and extreme sharpness eventually collapses the shape too. Measured target 0.2295 KL per unit g.
 - **Adjudication of the single arms: both fail, on exactly complementary halves** — softcap = bounds without ownership; sensitivity = ownership without bounds. The pre-declared composition trigger is met: the composed arm (softcap 25 + sensitivity 0.1) ran on seed 47 (the moot sensitivity-17 single arm and the softcap-17 confirmation were cancelled per time-to-signal review — a second seed of a rejected single arm buys nothing; composed-17 is gated on composed-47).
 - **composed seed 47 (done): FAIL, new failure shape.** Best epochs of any arm (0-4: Delta P +0.13 -> +0.42 with real greedy separation, greedy lambda-0 at 0.00 vs lambda-3 at 0.38-0.56; flat-decision expected privacy ~0.6; ranges bounded <= 42 — the scale channel is fully controlled), then epoch-cadence collapse-recover oscillation: epochs 5 and 7 total lambda-3 collapse (greedy 0/0, flat 0.01-0.05, all profiles ~0.00), partial sampled recovery at 6 with greedy still dead. With scale controlled, the flip driver is the utility SHAPE: per-epoch credit on the shared tower swings the keep-margin across the shift line faster than the sensitivity term (coeff 0.1, measured target 0.1867) pulls back. Ranges 5.6-11 during the dead ep6 recovery = the downward-authority regime of gap-scaling. Gates: ranges PASS, lambda-zero freedom PASS; final Delta P, cycle stability (both readouts), and flat-decision privacy FAIL.
-- Per the preregistered no-gap ablation (decision log 2026-07-30), A1's failure triggers the no-gap arm unconditionally: running on seed 47 (same configuration minus gap-scaling; alpha from the raw switch-threshold median on capped logits; constant absolute controller authority).
+- Per the preregistered no-gap ablation (decision log 2026-07-30), A1's failure triggered the no-gap arm unconditionally on seed 47 (alpha applied 5.35 in raw units on capped logits; measured sensitivity target 0.1633).
+- **no-gap seed 47 (done): FAILS the gate set but uniquely finds a stable equilibrium.** Early churn transient (epochs 2-3 collapse, greedy 0/0) then recovery (+0.34) and — unprecedented across all arms — THREE consecutive greedy-stable, lambda-ordered epochs (5-7: greedy lambda-0 = 0.18, lambda-3 = 0.34 constant; sampled Delta P +0.11..+0.15; ranges settled 15-20; flat-decision ~0.5). The authority-wandering hypothesis is CONFIRMED in mechanism (constant absolute shift -> an equilibrium exists and the system stays in it) but the equilibrium's separation magnitude fails the gate (final Delta P +0.12 < 0.20): the fixed shift calibrated at warm-start ranges (~10) lost switchable fraction as ranges grew to ~17 under training — raw switch thresholds scale with the range even when the shift does not.
+- **Screening verdict (v12 complete): all four capacity-free arms fail** — softcap (bounds, no ownership), sensitivity (ownership, no bounds), composed (both, but epoch-cadence shape churn outruns the damping), no-gap (stable equilibrium, insufficient separation magnitude). Scale control and lambda-zero freedom are solved by cap+no-gap; the residual problem is per-decision authority against utility-shape churn on the shared tower. The preregistered escalation applies: learned state-conditioned controller gain (with the literature-mandated ceiling, non-dual-ascent training, gain-field smoothness check, and random/fixed-rule-gain controls).
 - Operational: the sensitivity arm's first launch crashed on a diagnostics-family consistency check (profile_sensitivity missing from absolute_weighted_mass) — fixed and pinned before rerun.
 
 ## Cost
