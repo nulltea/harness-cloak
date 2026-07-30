@@ -687,3 +687,83 @@ per-decision constants, training stays meaningful (addresses the rejected
 pre-baked-threshold objection). Explicitly NOT recommended: routing count
 gradient into the utility tower (shortcut risk, breaks the utility semantics
 of u and lambda-zero comparability).
+
+## Fork continuation — tie-ownership and margin control: three-way analysis + literature taxonomy (2026-07-30)
+
+**Inputs.** (1) This session's brainstorm; (2) independent Codex Sol High pass
+(session 019f8fa3); (3) a literature sweep (27 verified sources, 9 registered
+in the wiki). All three start from the v11 adjudication: fixed-reference KL
+stabilizes sharpening and holds lambda-3 but pins lambda-zero — "reference too
+restrictive" for a profile whose job is to leave the reference.
+
+**Failure-mode taxonomy (each root-cause link is a named phenomenon).**
+Link 1 (tie silence) = advantage collapse / value-function interference from a
+many-to-one utility — [vamplew2024_value_function_interference](../../research-wiki/papers/vamplew2024_value_function_interference.md)
+([arXiv 2402.06266](https://arxiv.org/abs/2402.06266)) is the closest published
+account of links 1->2->4 as one chain and prescribes DETERMINISTIC, stated
+tie-breaking; [yu2025_dapo_open_source_llm_rl](../../research-wiki/papers/yu2025_dapo_open_source_llm_rl.md)
+([arXiv 2503.14476](https://arxiv.org/abs/2503.14476)) treats reward-homogeneous
+groups as gradient-dead and filters them at runtime. Link 2 (cross-doc drift) =
+underspecification — [damour2020_underspecification_ml](../../research-wiki/papers/damour2020_underspecification_ml.md)
+([arXiv 2011.03395](https://arxiv.org/abs/2011.03395)) — plus policy churn —
+[schaul2022_policy_churn](../../research-wiki/papers/schaul2022_policy_churn.md)
+([arXiv 2206.00730](https://arxiv.org/abs/2206.00730)). Link 3 (unbounded
+sharpening) = entropy collapse with a derived covariance law explaining WHY a
+fixed entropy bonus is outrun rather than mis-tuned —
+[cui2025_entropy_mechanism_rl](../../research-wiki/papers/cui2025_entropy_mechanism_rl.md)
+([arXiv 2505.22617](https://arxiv.org/abs/2505.22617)). Link 4 (bounded shift
+loses the race) = preference-conditioning controllability failure —
+[delasheras2026_controllability_preference_morl](../../research-wiki/papers/delasheras2026_controllability_preference_morl.md)
+([arXiv 2605.10585](https://arxiv.org/abs/2605.10585)): conditioned agents can
+ace aggregate metrics while the conditioning input is behaviorally inert;
+controllability must be measured first-class (our synchronous snapshot IS that
+metric). Link 5 (fixed-ref KL pins lambda-zero) = the fixed-reference vs
+current-policy regularization tension, independently published as a premise —
+[he2026_unifying_stable_optimization_reference_regularization](../../research-wiki/papers/he2026_unifying_stable_optimization_reference_regularization.md)
+([arXiv 2602.11523](https://arxiv.org/abs/2602.11523)). Unpublished-synthesis
+gaps the sweep could NOT find sources for: (a) "bounded additive controller
+authority vs unbounded logit scale" as a named design quantity — our link 4
+appears novel; (b) regularizing specifically ON the reward-indifference set
+(closest precedent: runtime-statistic-gated KL,
+[lin2026_tepo_token_level_policy_optimization](../../research-wiki/papers/lin2026_tepo_token_level_policy_optimization.md)
+([arXiv 2604.12736](https://arxiv.org/abs/2604.12736))); (c) exact ties from a
+graded scorer as a distinct phenomenon.
+
+**Three-way solution ranking (disagreement made explicit).**
+- This session: entropy FLOOR first — bounded margins make the existing
+  calibrated controller a deterministic tie-owner (satisfying Vamplew's
+  prescription with zero new capacity); SAC-style auto-tuned target entropy
+  ([haarnoja2018_sac_algorithms_applications](../../research-wiki/papers/haarnoja2018_sac_algorithms_applications.md),
+  [arXiv 1812.05905](https://arxiv.org/abs/1812.05905)) replaces the dead
+  beta=0.01 bonus with a dual variable. Learned gain = escalation.
+- Codex Sol High: learned state-conditioned monotone gain alpha_j =
+  softplus(alpha_raw + delta_phi(stopgrad(h_j))) FIRST — names conditional
+  negative transfer (four lambda-tasks share one lambda-blind tower; only the
+  controller can separate them, so controller CAPACITY is load-bearing);
+  entropy floor second ("entropy says remain uncertain, not choose more
+  private"); gated KL demoted to adjunct (high-lambda KL still updates shared
+  u — indirect pinning). Second escalation: epsilon-lexicographic constrained
+  controller (max E[P] s.t. utility loss <= 0.044) — the faithful
+  formalization of free privacy, gated on counterfactual attribution quality.
+- Literature: entropy-floor/covariance-clamp family is "the best structural
+  fit" for a bounded additive shift on shared logits; lexicographic family is
+  the theory of tie-ownership; anchor-selectivity (KL-on-ties) is promising
+  but unprecedented; fixed-vs-current anchor tension is structural, so eta
+  coefficient search is a dead end.
+
+**Proposed decisive spike (awaiting approval).** Two arms x seeds 17+47,
+8-epoch screening s47-first with synchronous evaluation and early kill, v11
+runs as controls: Arm E = auto-tuned target-entropy floor (target normalized
+entropy 0.10, dual update, no fixed KL) — tests "bounded margins + existing
+calibrated shift suffice as deterministic tie-owner". Arm G = learned
+monotone controller gain (zero-init residual over frozen features, count +
+high-lambda utility trainable, u untouched, lambda-zero exact identity) —
+tests "controller capacity is load-bearing". Gates (adapted from the joint
+lists): lambda-zero per-doc utility loss <= 0.044 vs control; D2N005
+synchronous Delta P(lambda-3) >= 0.20 by final cycle with cycle range <= 0.10;
+cross-seed final difference <= 0.10; no menu-logit range > 50 and no
+persistent action probability > 0.999; frontier regret reported. Decision
+rule: E alone passes -> adopt E (simpler, no capacity risk; G stays available
+for item-7 escalation); G alone passes -> adopt G; both pass -> adopt E and
+record G as the item-7 candidate; both fail -> combine (Codex's Arm-2) or
+escalate to epsilon-lexicographic.
