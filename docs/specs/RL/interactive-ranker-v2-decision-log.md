@@ -613,8 +613,35 @@ matters: measured |Delta U| on D2N005 reaches 0.273 with 36% nonzero probes
 (large docs invert: 90% nonzero but small magnitudes — per-decision utility
 share scales inversely with D).
 
-**Status.** OPEN — Arm C (counterfactual dedup + broadcast + degeneracy-
-triggered coverage) graduates to stage 2: 12 epochs x seeds 17/29/47 under the
-production trainer, judged on the preregistered behavioral gates. Arm R
-rejected; no blind combination (the reward-insensitivity finding explains R's
-failure and C already targets it).
+**Stage 2 adjudicated 2026-07-30 (Arm C, 12 epochs x seeds 17/29/47).**
+Mechanically clean on all seeds: TRAIN PASS, lambda-zero identity exact,
+monotone profile response, conditional lambda-zero utility within the 0.044
+floor of the fixed control (gaps 0.003/0.041/0.040). D2N027 CLOSES: final-cycle
+Delta P(lambda-3) = +0.10/+0.14/+0.07, SD 0.036 (bar 0.07), range 0.072 (bar
+0.15) — versus baseline SD ~0.14. Frontier regret tightens to 0.064-0.069
+across seeds (baseline 0.067/0.072) but stays above the 0.044 item-7 floor.
+D2N005 FAILS the primary gate: +0.42/+0.29/+0.05, SD 0.190, range 0.374 — the
+seed lottery on the smallest doc survives exact per-decision credit.
+
+**Post-hoc sensitivity measurement (preregistered next probe).** From cached
+single-decision pairs: D2N005's reward surface is LIVE on 3 of 4 decisions
+(74-90% nonzero utility spans, medians 0.07-0.27, well above reader noise) and
+PERFECTLY FLAT on one (38/38 contexts span exactly 0.000 — the utility
+artifact never distinguishes its actions). D2N027 shows a gradient of
+sensitivity (medians 0.000-0.175). Residual D2N005 variance is therefore NOT
+dead credit: with D=4, each decision's lambda-3 switch is a discrete ~0.25
+quantum of P, and whether the calibrated GLOBAL alpha crosses a given
+decision's switch threshold drifts with per-seed logit sharpening — a few
+discrete coin flips dominate the doc-level Delta P. Large D averages these
+flips out (D2N027/31/63 stable); D=4 cannot.
+
+**Status.** Arm C = adopted INFRASTRUCTURE (strict improvement, no
+regressions: stabilizes mid-size docs, converts duplicate probes into exact
+broadcast credit at zero cost, tightens regret) — but it does NOT close the
+fork for D=4-class documents. Remaining causes are (a) discreteness of
+tiny-doc P and (b) global-scalar-alpha switch-threshold drift (the
+controller-strength fork's interpretation (c), now measured at doc level),
+plus (c) fully reward-flat decisions where only the controller can anchor
+behavior. Next-step decision (Timo): per-decision/threshold-relative
+controller calibration fork vs. accepting tiny-doc variance with a
+documented bound vs. reward-artifact enrichment for flat decisions.

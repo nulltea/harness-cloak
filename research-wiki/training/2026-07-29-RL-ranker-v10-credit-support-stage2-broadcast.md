@@ -1,12 +1,12 @@
 ---
 type: training-experiment
-status: running
+status: done
 created: 2026-07-29
 model: semantic-v1 policy (per-seed BC warm starts, gap-scaled controller +
   switch-calibrated alpha init, counterfactual dedup/broadcast/coverage)
 dataset: aci 4-doc controller-strength spike set (D2N005/D2N027/D2N063/D2N031),
   frozen environment sha256:4cc754a7, qa-utility-runtime-v2 policy denominator
-result: pending
+result: "Mixed: D2N027 seed-stable (SD 0.036 PASS), lambda-zero\n  non-inferior, regret tightens 0.064-0.069 (still > 0.044); D2N005 fails\n  primary gate (SD 0.190) — residual variance is switch-quantum discreteness +\n  one fully reward-flat decision, not dead credit"
 tags: [rl, ranker-v2, credit-support, counterfactual-broadcast, multi-seed]
 companion: ../../docs/specs/RL/interactive-ranker-v2-decision-log.md
 ---
@@ -46,9 +46,26 @@ Implementation commit 83ea0e4; screening adjudication 4e40afb.
 - Frontier regret (item 7, median <= 0.044 from cycle >= 1) reported per seed —
   adjudicated for the controller-strength fork, not this one.
 
-## Results
+## Results (measured, 12 epochs x seeds 17/29/47)
 
-pending
+- All seeds TRAIN PASS; lambda-zero identity 0 failures; monotone profile
+  response every seed; conditional lambda-zero utility gap to fixed control
+  0.003/0.041/0.040 (all within the 0.044 floor).
+- D2N027 final-cycle Delta P(lambda-3): +0.10/+0.14/+0.07 — SD 0.036 PASS,
+  range 0.072 PASS (baseline SD ~0.14, range 0.26).
+- D2N005: +0.42/+0.29/+0.05 — SD 0.190 FAIL, range 0.374 FAIL.
+- Median frontier regret: 0.0682/0.0644/0.0693 (baseline 0.0674/0.0723) —
+  tighter across seeds, still above the item-7 floor 0.044.
+- Sensitivity probe (cached single-decision pairs): D2N005 has 3/4 decisions
+  reward-live (median spans 0.07-0.27) and exactly one fully reward-flat
+  decision (38/38 contexts span 0.000). Residual D2N005 spread is the
+  discrete lambda-3 switch quantum (~0.25 P per decision at D=4) interacting
+  with per-seed switch-threshold drift under the global scalar alpha.
+
+Verdict: Arm C adopted as infrastructure (strict improvement, no
+regressions); fork remains open for D=4-class docs — decision escalated (per-
+decision controller calibration vs accepted variance bound vs reward
+enrichment for flat decisions).
 
 ## Cost
 
