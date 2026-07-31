@@ -3117,3 +3117,124 @@ def test_batched_sampler_matches_sequential_distributions_and_legality():
     ]
     # replay accepts batched trajectories (contract compatibility)
     replay_trajectory(policy, document, first[0], profiles[-1])
+
+
+def test_equivalence_gate_canonicalizes_identically_in_both_paths():
+    from cloak.ranker.semantic import distribution_batch
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    menu = tuple(a.action_id for a in decision.actions)
+    state_zero = policy.begin_document(document, profiles[0])
+    state = policy.begin_document(document, profiles[-1])
+    with torch.no_grad():
+        baseline_zero = policy.distribution(
+            state_zero, decision, menu, profiles[0]
+        )
+        baseline_max = policy.distribution(state, decision, menu, profiles[-1])
+
+    def accept_all(features: torch.Tensor) -> torch.Tensor:
+        return torch.ones(features.shape[0], dtype=torch.bool)
+
+    policy.equivalence_gate = accept_all
+    try:
+        with torch.no_grad():
+            gated_zero = policy.distribution(
+                state_zero, decision, menu, profiles[0]
+            )
+            gated_max = policy.distribution(state, decision, menu, profiles[-1])
+            (complete_ids, batch_lp), = distribution_batch(
+                policy, [state], decision, [menu], profiles[-1],
+            )
+    finally:
+        policy.equivalence_gate = None
+
+    # lambda-0 is exactly untouched by the gate
+    assert torch.equal(gated_zero.log_probs, baseline_zero.log_probs)
+    assert torch.equal(gated_zero.utility_logits, baseline_zero.utility_logits)
+    # accept-all canonicalization flattens utility to the menu max
+    assert torch.allclose(
+        gated_max.utility_logits,
+        baseline_max.utility_logits.max().expand_as(gated_max.utility_logits),
+    )
+    # with flat utility the max-lambda ordering is exactly the privacy ordering
+    ranked_by_z = sorted(
+        range(len(menu)), key=lambda i: -float(gated_max.log_probs[i])
+    )
+    ranked_by_privacy = sorted(
+        range(len(menu)), key=lambda i: -float(gated_max.predicted_privacy[i])
+    )
+    assert ranked_by_z == ranked_by_privacy
+    # batched path matches the sequential gated path entry-for-entry
+    for position, action_id in enumerate(menu):
+        assert float(batch_lp[complete_ids.index(action_id)]) == pytest.approx(
+            float(gated_max.log_probs[position]), abs=1e-5,
+        )
+    # a partial-menu walk canonicalizes over its LEGAL subset only
+    partial_menu = menu[:2]
+    policy.equivalence_gate = accept_all
+    try:
+        with torch.no_grad():
+            partial_row = policy.distribution(
+                state, decision, partial_menu, profiles[-1],
+            )
+            (_, partial_lp), = distribution_batch(
+                policy, [state], decision, [partial_menu], profiles[-1],
+            )
+    finally:
+        policy.equivalence_gate = None
+    for position, action_id in enumerate(partial_menu):
+        assert float(partial_lp[complete_ids.index(action_id)]) == pytest.approx(
+            float(partial_row.log_probs[position]), abs=1e-5,
+        )
+
+
+def test_equivalence_screening_loss_and_certification_math():
+    import sys as _sys
+    from pathlib import Path as _Path
+
+    _sys.path.insert(0, str(
+        _Path(__file__).resolve().parents[3] / "scripts" / "spikes"
+    ))
+    from equivalence_critic_screening import (
+        READER_FLOOR,
+        _auc,
+        _calibrate_threshold,
+        _clopper_pearson_upper,
+    )
+
+    # Clopper-Pearson feasibility table (conformal-gating research round):
+    # n=200 admits 5 violations at 5% risk / 90% confidence, not 6; n=45 is
+    # the smallest certifiable count even at zero violations.
+    assert _clopper_pearson_upper(5, 200, 0.90) <= 0.05
+    assert _clopper_pearson_upper(6, 200, 0.90) > 0.05
+    assert _clopper_pearson_upper(0, 45, 0.90) <= 0.05
+    assert _clopper_pearson_upper(0, 44, 0.90) > 0.05
+    assert _clopper_pearson_upper(0, 0, 0.90) == 1.0
+
+    # epsilon-insensitive residual: zero loss and zero gradient inside the band
+    q = torch.nn.Parameter(torch.tensor([0.02, -0.03, 0.30]))
+    slack = torch.clamp(q.abs() - READER_FLOOR, min=0.0)
+    loss = torch.nn.functional.huber_loss(
+        slack, torch.zeros_like(slack), delta=1.0, reduction="none",
+    )
+    assert float(loss[0]) == 0.0 and float(loss[1]) == 0.0
+    assert float(loss[2]) > 0.0
+    loss.sum().backward()
+    assert float(q.grad[0]) == 0.0 and float(q.grad[1]) == 0.0
+    assert float(q.grad[2]) != 0.0
+
+    # threshold calibration returns the smallest score meeting the bar
+    scores = [0.9, 0.8, 0.7, 0.6]
+    labels = [True, True, True, False]
+    assert _calibrate_threshold(scores, labels) == 0.7
+    assert _calibrate_threshold([0.9, 0.8], [False, False]) is None
+    # equal scores are grouped: the FULL score>=t set must meet the bar
+    # (codex review repro: 25 ties at 0.8 with one violation = 96.15%)
+    tied_scores = [0.9] + [0.8] * 25
+    tied_labels = [True] + [True] * 24 + [False]
+    assert _calibrate_threshold(tied_scores, tied_labels) == 0.9
+
+    # AUC sanity: perfect separation -> 1.0; reversed -> 0.0
+    assert _auc([0.1, 0.2, 0.8, 0.9], [False, False, True, True]) == 1.0
+    assert _auc([0.9, 0.8, 0.2, 0.1], [False, False, True, True]) == 0.0

@@ -1204,6 +1204,35 @@ class SemanticRankerPolicy(nn.Module):
         predicted_privacy = complete_privacy.index_select(0, legal_indices)
 
         lambda_value = float(profile.value)
+        equivalence_gate = getattr(self, "equivalence_gate", None)
+        if equivalence_gate is not None and lambda_value > 0.0:
+            # Predicted-equivalence canonicalization (ties-by-design spec, fork
+            # option i; behavioral leg of the equivalence-critic screening):
+            # accepted legal actions share one utility logit so the count
+            # controller orders inside the set deterministically. Lambda-0 is
+            # untouched by construction. Inference-time semantics change —
+            # adoption must retag controller_transform.
+            if torch.is_grad_enabled():
+                raise RuntimeError(
+                    "equivalence_gate is inference-only; a training path "
+                    "would silently receive detached canonical logits"
+                )
+            if getattr(self, "controller_gap_scaling", None) == "utility-gap":
+                raise ValueError(
+                    "equivalence_gate is unsupported with gap scaling: the "
+                    "canonicalized range collapses the controller to zero"
+                )
+            with torch.no_grad():
+                accepted = equivalence_gate(
+                    utility_inputs.detach().index_select(0, legal_indices)
+                )
+            if bool(accepted.any()):
+                canonical = utility_logits.detach().masked_fill(
+                    ~accepted, float("-inf")
+                ).max()
+                utility_logits = torch.where(
+                    accepted, canonical.expand_as(utility_logits), utility_logits
+                )
         if lambda_value == 0.0:
             combined_logits = utility_logits
             count_combined = utility_logits.detach()
@@ -1456,6 +1485,41 @@ def distribution_batch(
             )
 
     lambda_value = float(profile.value)
+    equivalence_gate = getattr(policy, "equivalence_gate", None)
+    if equivalence_gate is not None and lambda_value > 0.0:
+        # Same canonicalization as distribution(), per walk over its LEGAL
+        # subset (equivalence is a within-menu property; illegal entries are
+        # -inf-masked below and must not join the set).
+        if torch.is_grad_enabled():
+            raise RuntimeError(
+                "equivalence_gate is inference-only; a training path "
+                "would silently receive detached canonical logits"
+            )
+        if getattr(policy, "controller_gap_scaling", None) == "utility-gap":
+            raise ValueError(
+                "equivalence_gate is unsupported with gap scaling: the "
+                "canonicalized range collapses the controller to zero"
+            )
+        index_of_complete = {
+            action_id: i for i, action_id in enumerate(complete_ids)
+        }
+        canonicalized = complete_utility.clone()
+        for walk, menu in enumerate(legal_menus):
+            legal_index = torch.tensor(
+                [index_of_complete[action_id] for action_id in menu],
+                dtype=torch.long, device=complete_utility.device,
+            )
+            accepted = equivalence_gate(
+                inputs[walk].detach().index_select(0, legal_index)
+            )
+            if not bool(accepted.any()):
+                continue
+            legal_utility = complete_utility[walk].index_select(0, legal_index)
+            canonical = legal_utility.detach().masked_fill(
+                ~accepted, float("-inf")
+            ).max()
+            canonicalized[walk][legal_index[accepted]] = canonical
+        complete_utility = canonicalized
     if lambda_value == 0.0:
         z = complete_utility
     else:
