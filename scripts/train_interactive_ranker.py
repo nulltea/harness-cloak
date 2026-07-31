@@ -173,7 +173,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--kl-direction", choices=("forward", "reverse"), default="forward",
     )
     train.add_argument("--synchronous-profile-eval", action="store_true")
-    train.add_argument("--synchronous-profile-samples", type=int, default=64)
+    train.add_argument("--synchronous-profile-samples", type=int, default=16)
     train.add_argument("--utility-logit-softcap", type=float, default=None)
     train.add_argument("--profile-sensitivity-reg", type=float, default=0.0)
     train.add_argument(
@@ -1207,7 +1207,7 @@ def _run_train(args) -> None:
         tie_projection_lr=float(getattr(args, "tie_projection_lr", 1e-2)),
         gain_penalty_coefficient=float(getattr(args, "gain_penalty", 1e-3)),
         synchronous_profile_samples=int(
-            getattr(args, "synchronous_profile_samples", 64)
+            getattr(args, "synchronous_profile_samples", 16)
         ),
     )
 

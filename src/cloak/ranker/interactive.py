@@ -2614,7 +2614,7 @@ def train_hybrid_policy(
     tie_min_contexts: int = 3,
     tie_projection_lr: float = 1e-2,
     gain_penalty_coefficient: float = 1e-3,
-    synchronous_profile_samples: int = 64,
+    synchronous_profile_samples: int = 16,
 ) -> HybridTrainingResult:
     """Train document groups in a seeded balanced profile cycle."""
 
