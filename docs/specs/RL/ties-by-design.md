@@ -43,11 +43,24 @@ What counterfactuals *do* contribute is exactly two things:
 1. **Rescue dead groups.** When all sampled rollouts of a group tie, LOO advantages vanish for every decision; counterfactual pairs restore gradient on the decisions that do have utility differences. This is per-decision causal credit, and it is the reason small documents train at all.
 2. **Measure tie structure.** Every probe emits an evidence row (doc, decision, pair, ΔU, surrounding-context hash) into the evidence ledger. Verified-tie labels distilled from the ledger drive the tie-ownership machinery: the controller-only hinge at max λ and the cycle-boundary projection of α (the evidence-supervised tie-ownership experiment, RL-ranker v14, validated that the policy then tracks the hard lexicographic oracle on training documents).
 
-So counterfactuals convert reward silence from an ambient failure into an explicit, labeled fact — but the zero itself never orders anything. Zero multiplied into a policy-gradient loss is zero. Ordering among ties is deliberately the controller's job, because the desired order is λ-dependent and the tower is λ-blind. The missing operation, and the subject of the fork in section 5, is making the *measured equivalence* transferable across documents rather than a per-document ledger entry.
+So counterfactuals convert reward silence from an ambient failure into an explicit, labeled fact — but the zero itself never orders anything. Zero multiplied into a policy-gradient loss is zero. Ordering among ties is deliberately the controller's job, because the desired order is λ-dependent and the tower is λ-blind. The missing operation, and the subject of the fork in section 6, is making the *measured equivalence* transferable across documents rather than a per-document ledger entry.
 
 The exact-tie regime also has a favorable theoretical property: in lexicographic multi-objective RL, optimizing a secondary objective over the primary objective's *exact* argmax set costs the primary objective nothing ([Skalse et al. 2022](../../../research-wiki/papers/skalse2022_lexicographic_morl.md), [arXiv 2212.13769](https://arxiv.org/abs/2212.13769)); the hazard is scalarized value functions blurring near-ties into interference ([Vamplew et al. 2024](../../../research-wiki/papers/vamplew2024_value_function_interference.md), [arXiv 2402.06266](https://arxiv.org/abs/2402.06266)) — which is precisely what arbitrary tower margins racing a bounded additive shift produce.
 
-## 3. Role of pre-training — BC and ExIt install the initial tie margins
+## 3. The coarse side of the boundary — the utility cliff IS learned
+
+Reward silence holds only *inside* the equivalence set. RL does expose the policy to levels coarser than the utility-preserving ones, and there the tower receives genuine ordering gradient through both channels:
+
+- **Structural-neighbor probes.** The counterfactual scheduler (`_structural_alternatives`) probes the levels *adjacent* to the selected one plus the keep and placeholder endpoints. When the policy sits at the coarsest utility-preserving level, the adjacent-coarser probe measures the utility drop directly and the pair loss −ΔU·(q−0.5) is nonzero — a "one step further is bad" gradient at exactly the cliff edge. The placeholder endpoint measures the maximal-generalization cost regardless of where the policy sits.
+- **On-policy sampling at high λ.** The controller shift drags sampling toward coarser actions; trajectories that cross the boundary and break QA answers lose document utility and are punished by LOO advantages. This is visible in every run as U(λmax) sitting systematically below U(λ0).
+
+Measured (evidence-supervised tie-ownership screening, RL-ranker v14, cycle-projected arm): of 498 counterfactual probes over the run, 57% were live pairs (max |ΔU| 0.68) and 43% exact zeros — the majority of probe gradient is boundary/live supervision, not silence.
+
+Three caveats bound the claim. Exposure is progressive and λ-driven, not exhaustive: probes walk outward from the current policy, so right after BC the adjacent-coarser probe lands deep inside the equivalence set, and the cliff only gets probed once the controller has pushed the policy to its edge — which is where knowing it matters. "Utility 0" overstates the penalty: document utility aggregates assertion scores, so a too-coarse level costs only its linked assertions (fractional ΔU, not collapse). And zero-linked decisions (~13% of the corpus) can never teach coarse-is-bad — even the placeholder is utility-free per the measured reward there, which is consistent with ties-by-design, not a defect.
+
+The net division of knowledge: the tower learns **where utility ends** (the cliff, from above) but not **what is equivalent** (inside the set, margins stay arbitrary). The fork in section 6 targets only the inside of the set; the outside is already supervised.
+
+## 4. Role of pre-training — BC and ExIt install the initial tie margins
 
 Pre-training is where tied actions get their *initial* relative margins, and neither stage orders ties by utility — by construction:
 
@@ -56,7 +69,7 @@ Pre-training is where tied actions get their *initial* relative margins, and nei
 
 The net effect: pre-training hands RL a tower whose tied margins are arbitrary-but-BC-anchored (canonical keep/most-specific preference), and RL's utility channels then have no force holding them there (section 2). The subsequent drift is what the softcap bounds in scale and the tie-ownership machinery overrides on training documents. One implementation consequence is pinned in code: the controller gain head is created *after* BC, so gain parameters are absent from BC checkpoints and keep their init values on import (`_import_unconditioned_state` explicitly tolerates the missing keys).
 
-## 4. The deployment-generalization gap
+## 5. The deployment-generalization gap
 
 The tie-ownership result on training documents does not carry to held-out documents, because the quantities that own ties are per-document. The inventory:
 
@@ -81,7 +94,7 @@ Consequence: on a held-out document, high-λ tie-breaking degenerates to the cal
 
 Accepting this is therefore not viable for the product (see option v below); held-out evaluation must include tie-specific metrics that utility regret cannot see: greedy privacy among utility-equivalent actions, tie-oracle agreement where evidence exists, λ monotonicity, and cross-checkpoint tie-choice stability.
 
-## 5. The design fork — making tie ownership transferable
+## 6. The design fork — making tie ownership transferable
 
 The fork: **tie ownership is solved on training documents by per-document evidence; what mechanism carries it to documents with no evidence?** Candidate solutions, ranked; the decision-log fork entry preregisters the adjudicating experiment.
 
