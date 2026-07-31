@@ -191,6 +191,8 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--tie-min-contexts", type=int, default=3)
     train.add_argument("--tie-projection-lr", type=float, default=1e-2)
     train.add_argument("--gain-penalty", type=float, default=1e-3)
+    train.add_argument("--tie-evidence-bootstrap", action="store_true")
+    train.add_argument("--skip-lambda-zero-control", action="store_true")
     return parser
 
 
@@ -930,6 +932,12 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         "tie_min_contexts": int(getattr(args, "tie_min_contexts", 3)),
         "tie_projection_lr": float(getattr(args, "tie_projection_lr", 1e-2)),
         "gain_penalty": float(getattr(args, "gain_penalty", 1e-3)),
+        "tie_evidence_bootstrap": bool(
+            getattr(args, "tie_evidence_bootstrap", False)
+        ),
+        "skip_lambda_zero_control": bool(
+            getattr(args, "skip_lambda_zero_control", False)
+        ),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
 
@@ -1051,6 +1059,16 @@ def _run_train(args) -> None:
     training_config = _training_config(args, documents, fixed_control=False)
     pair_history = {}
     tie_evidence: dict = {}
+    if getattr(args, "tie_evidence_bootstrap", False):
+        from cloak.ranker.interactive import bootstrap_tie_evidence_from_cache
+        tie_evidence = bootstrap_tie_evidence_from_cache(
+            args.utility_cache, {d.doc_id: d for d in documents},
+        )
+        print(
+            f"tie evidence bootstrapped from cache: {len(tie_evidence)} pairs, "
+            f"{sum(len(v) for v in tie_evidence.values())} records",
+            flush=True,
+        )
     existing_reports = ()
     start_epoch = 0
     kl_enabled = False
@@ -1210,6 +1228,20 @@ def _run_train(args) -> None:
             getattr(args, "synchronous_profile_samples", 16)
         ),
     )
+
+    if getattr(args, "skip_lambda_zero_control", False):
+        # Screening accelerator: the lambda-zero control is arm-independent
+        # (single profile, controller and tie machinery inert at lambda zero);
+        # run it once per seed/base and reuse across arms. Skipping leaves the
+        # lambda-zero utility gate to a control run from a sibling arm.
+        _write_epoch_reports(args.epoch_reports, conditional.epoch_reports, ())
+        print(
+            f"TRAIN PASS documents={len(documents)} profiles={len(profiles)} "
+            f"epochs={args.max_epochs} conditional={args.out_checkpoint} "
+            f"control=SKIPPED",
+            flush=True,
+        )
+        return
 
     zero_profiles = (profiles[0],)
     control = _semantic_training_policy(args, documents, profiles)

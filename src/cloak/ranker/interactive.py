@@ -591,6 +591,69 @@ TIE_EXACT_ATOL = 1e-9
 TIE_EXIT_BOUND = 0.044
 
 
+def bootstrap_tie_evidence_from_cache(
+    cache_path: str | Path,
+    documents: Mapping[str, RankerDocument],
+) -> dict:
+    """Seed the tie ledger from the utility cache's single-decision pairs.
+
+    The cache is accumulated runtime measurement from prior runs: every pair of
+    cached full-coverage vectors differing in exactly one decision is an exact
+    delta-U observation with a known surrounding context. Bootstrapping removes
+    the cycle-0 evidence warm-up entirely (labels can qualify at epoch 0);
+    bootstrap records carry round=-1 so the one-cycle label lag admits them
+    immediately."""
+    import json as _json
+
+    vectors: dict[str, dict[tuple, float]] = {}
+    for line in Path(cache_path).read_text().splitlines():
+        try:
+            row = _json.loads(line)["result"]
+        except (ValueError, KeyError):
+            continue
+        doc_id = row.get("doc_id")
+        document = documents.get(doc_id)
+        if document is None:
+            continue
+        ids = [decision.decision_id for decision in document.policy_decisions]
+        vector = row.get("action_vector", {})
+        if set(vector) != set(ids):
+            continue
+        vectors.setdefault(doc_id, {})[
+            tuple(vector[i] for i in ids)
+        ] = float(row["utility"])
+    ledger: dict = {}
+    for doc_id, cached in vectors.items():
+        ids = [
+            decision.decision_id
+            for decision in documents[doc_id].policy_decisions
+        ]
+        index: dict[tuple, list[tuple]] = {}
+        for key in cached:
+            for position in range(len(ids)):
+                rest = key[:position] + ("*",) + key[position + 1:]
+                index.setdefault((position, rest), []).append(key)
+        for (position, rest), keys in index.items():
+            if len(keys) < 2:
+                continue
+            context = {
+                ids[i]: rest[i] for i in range(len(ids)) if i != position
+            }
+            context_hash = stable_hash(sorted(context.items()))
+            for i in range(len(keys)):
+                for j in range(i + 1, len(keys)):
+                    action_a, action_b = keys[i][position], keys[j][position]
+                    pair = tuple(sorted((action_a, action_b)))
+                    ledger.setdefault(
+                        (doc_id, ids[position], pair[0], pair[1]), [],
+                    ).append({
+                        "delta_u": cached[keys[i]] - cached[keys[j]],
+                        "context_hash": context_hash,
+                        "round": -1,
+                    })
+    return ledger
+
+
 def record_tie_evidence(
     ledger: dict,
     evidence_rows: Sequence[Mapping[str, Any]],
