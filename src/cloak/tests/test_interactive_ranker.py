@@ -2948,3 +2948,107 @@ def test_measure_profile_sensitivity_target_is_finite_and_positive():
     policy, document, decision, profiles, _ = _direct_count_policy()
     target = measure_profile_sensitivity_target(policy, (document,), profiles)
     assert math.isfinite(target) and target >= 0.0
+
+
+def test_tie_evidence_ledger_and_verifiable_core_labels():
+    from cloak.ranker.interactive import (
+        compute_tie_labels,
+        record_tie_evidence,
+    )
+
+    class StubTargets:
+        def action_scores(self, decision_id, action_ids):
+            scores = {"keep": 0.0, "L0": 0.4, "L1": 0.7}
+            return tuple(scores[a] for a in action_ids)
+
+    ledger = {}
+    rows = [
+        {"doc_id": "d", "decision_id": "j", "selected_action_id": "keep",
+         "alternative_action_id": "L0", "delta_u": 0.0, "context_hash": f"c{i}"}
+        for i in range(3)
+    ]
+    record_tie_evidence(ledger, rows, current_round=0)
+    labels = compute_tie_labels(ledger, {}, StubTargets(), min_contexts=3, before_round=1)
+    assert labels == {("d", "j"): (("L0", "keep"),)}  # oriented by count score
+
+    # one-cycle lag: evidence at round >= before_round is invisible
+    assert compute_tie_labels(ledger, {}, StubTargets(), min_contexts=3, before_round=0) == {}
+
+    # contradiction exit: a single above-bound record disqualifies permanently
+    record_tie_evidence(ledger, [{
+        "doc_id": "d", "decision_id": "j", "selected_action_id": "L0",
+        "alternative_action_id": "keep", "delta_u": 0.2, "context_hash": "c9",
+    }], current_round=1)
+    assert compute_tie_labels(ledger, {}, StubTargets(), min_contexts=3, before_round=2) == {}
+
+    # noise-band records neither qualify nor disqualify
+    ledger2 = {}
+    record_tie_evidence(ledger2, rows[:2], current_round=0)
+    record_tie_evidence(ledger2, [{
+        "doc_id": "d", "decision_id": "j", "selected_action_id": "keep",
+        "alternative_action_id": "L0", "delta_u": 0.02, "context_hash": "cx",
+    }], current_round=0)
+    assert compute_tie_labels(ledger2, {}, StubTargets(), min_contexts=3, before_round=1) == {}
+
+    # distinct contexts required: duplicate context hashes do not count twice
+    ledger3 = {}
+    record_tie_evidence(ledger3, [dict(rows[0]), dict(rows[0]), dict(rows[0])], current_round=0)
+    assert compute_tie_labels(ledger3, {}, StubTargets(), min_contexts=3, before_round=1) == {}
+
+
+def test_tie_margin_loss_routes_gradient_to_gain_head_only():
+    from cloak.ranker.interactive import sample_trajectory, tie_margin_loss
+    from cloak.ranker.semantic import enable_controller_gain
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, decision, profiles, scores = _direct_count_policy()
+    enable_controller_gain(policy, "evidence", hidden_dim=8)
+    policy.float()
+
+    # label the two highest-score actions as a qualified tie (orientation by score)
+    ordered = sorted(
+        zip(decision.actions, scores), key=lambda pair: pair[1], reverse=True,
+    )
+    a_plus, a_minus = ordered[0][0].action_id, ordered[-1][0].action_id
+    labels = {(document.doc_id, decision.decision_id): ((a_plus, a_minus),)}
+
+    greedy = sample_trajectory(policy, document, profiles[-1], greedy=True, generator=None)
+    hinge, penalty, satisfied, total = tie_margin_loss(
+        policy, document, greedy, labels, max_profile=profiles[-1], margin=100.0,
+    )
+    assert total == 1 and hinge.ndim == 0 and penalty.ndim == 0
+    assert satisfied == 0  # margin forced unattainable -> hinge active
+
+    policy.zero_grad(set_to_none=True)
+    (hinge + penalty).backward()
+    gain_grads = [p_.grad for p_ in policy.gain_head.parameters() if p_.grad is not None]
+    assert gain_grads and any(float(g.abs().sum()) > 0 for g in gain_grads)
+    assert policy.alpha_raw.grad is None or float(policy.alpha_raw.grad.abs()) == 0.0
+    tower_grads = [p_.grad for p_ in policy.utility_head.parameters() if p_.grad is not None]
+    assert not tower_grads or all(float(g.abs().sum()) == 0.0 for g in tower_grads)
+    policy.controller_gain_mode = None
+
+
+def test_evidence_gain_count_path_trains_alpha_raw_not_residual():
+    from cloak.ranker.semantic import enable_controller_gain
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    enable_controller_gain(policy, "evidence", hidden_dim=8)
+    policy.float()
+    menu = tuple(a.action_id for a in decision.actions)
+    state = policy.begin_document(document, profiles[-1])
+    row = policy.distribution(state, decision, menu, profiles[-1])
+    policy.zero_grad(set_to_none=True)
+    row.count_log_probs.sum().backward()
+    assert policy.alpha_raw.grad is not None and float(policy.alpha_raw.grad.abs()) > 0
+    gain_grads = [p_.grad for p_ in policy.gain_head.parameters() if p_.grad is not None]
+    assert not gain_grads or all(float(g.abs().sum()) == 0.0 for g in gain_grads)
+    # sampling path DOES train the residual
+    policy.zero_grad(set_to_none=True)
+    state2 = policy.begin_document(document, profiles[-1])
+    row2 = policy.distribution(state2, decision, menu, profiles[-1])
+    row2.log_probs.sum().backward()
+    gain_grads = [p_.grad for p_ in policy.gain_head.parameters() if p_.grad is not None]
+    assert gain_grads and any(float(g.abs().sum()) > 0 for g in gain_grads)
+    policy.controller_gain_mode = None

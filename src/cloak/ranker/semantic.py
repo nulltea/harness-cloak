@@ -1178,6 +1178,7 @@ class SemanticRankerPolicy(nn.Module):
         else:
             magnitude = math.log1p(lambda_value) / math.log1p(self.max_lambda)
             alpha_value = self.alpha
+            alpha_count_value = None
             gain_mode = getattr(self, "controller_gain_mode", None)
             if gain_mode == "learned":
                 bound = float(self.controller_gain_bound)
@@ -1186,6 +1187,21 @@ class SemanticRankerPolicy(nn.Module):
                 ).squeeze(-1)
                 alpha_value = F.softplus(
                     self.alpha_raw + bound * torch.tanh(residual / bound)
+                )
+            elif gain_mode == "evidence":
+                # Evidence-supervised tie ownership (round-3 adjudication,
+                # decision log 2026-07-31): UNBOUNDED residual (the tie hinge
+                # is self-limiting; the v13 tanh ceiling froze differentiation)
+                # and the critical gradient split — the count objective sees
+                # the real current strength but trains ONLY global alpha_raw;
+                # the residual is trained by the tie-margin hinge and the
+                # lambda>0 sampling terms.
+                residual = self.gain_head(
+                    utility_inputs.detach().mean(dim=0)
+                ).squeeze(-1)
+                alpha_value = F.softplus(self.alpha_raw + residual)
+                alpha_count_value = F.softplus(
+                    self.alpha_raw + residual.detach()
                 )
             elif gain_mode == "random":
                 offset = _random_gain_offset(
@@ -1210,7 +1226,17 @@ class SemanticRankerPolicy(nn.Module):
             else:
                 routed = controller
             combined_logits = utility_logits + routed
-            count_combined = utility_logits.detach() + controller
+            if alpha_count_value is not None:
+                count_controller = (
+                    alpha_count_value * magnitude * predicted_privacy.detach()
+                )
+                if getattr(self, "controller_gap_scaling", None) == "utility-gap":
+                    count_controller = count_controller * (
+                        utility_logits.max() - utility_logits.min()
+                    ).detach()
+                count_combined = utility_logits.detach() + count_controller
+            else:
+                count_combined = utility_logits.detach() + controller
         return ActionDistribution(
             action_ids=legal_ids,
             utility_logits=utility_logits,
@@ -1290,13 +1316,13 @@ def enable_controller_gain(
     claim. Gradients reach delta_phi through the count objective and the
     lambda>0 sampling terms; the utility tower stays count-free.
     """
-    if mode not in ("learned", "random"):
+    if mode not in ("learned", "random", "evidence"):
         raise ValueError(f"unsupported controller gain mode: {mode!r}")
     if not math.isfinite(bound) or bound <= 0.0:
         raise ValueError("controller gain bound must be finite and positive")
     policy.controller_gain_mode = mode
     policy.controller_gain_bound = float(bound)
-    if mode == "learned":
+    if mode in ("learned", "evidence"):
         input_dim = _linear_layers(policy.utility_head)[0].in_features
         head = nn.Sequential(
             nn.Linear(input_dim, int(hidden_dim)),
@@ -1413,8 +1439,10 @@ def decision_controller_alpha(
             ],
             dim=-1,
         )
-        bound = float(policy.controller_gain_bound)
         residual = policy.gain_head(utility_inputs.mean(dim=0)).squeeze(-1)
+        if gain_mode == "evidence":
+            return float(F.softplus(policy.alpha_raw + residual))
+        bound = float(policy.controller_gain_bound)
         return float(F.softplus(
             policy.alpha_raw + bound * torch.tanh(residual / bound)
         ))

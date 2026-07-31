@@ -22,7 +22,12 @@ from cloak.ranker.environment import (
     RankerDocument,
     assemble_action_vector,
 )
-from cloak.reward.utility_cache import UtilityCache, UtilityRequest, UtilityResult
+from cloak.reward.utility_cache import (
+    UtilityCache,
+    UtilityRequest,
+    UtilityResult,
+    stable_hash,
+)
 from cloak.reward.utility_credit import document_utility
 
 
@@ -701,6 +706,7 @@ def execute_counterfactuals(
 
     losses: dict[tuple[int, str], torch.Tensor] = {}
     deltas: list[float] = []
+    evidence_rows: list[dict[str, Any]] = []
     broadcast_pairs = 0
     for index, (request, trajectory, replayed_step, alternative_vector) in enumerate(validated):
         selected_result = results[2 * index]
@@ -735,6 +741,18 @@ def execute_counterfactuals(
             raise ValueError("non-finite counterfactual pair loss")
         losses[(request.rollout_index, request.decision_id)] = pair_loss
         deltas.append(float(delta_u))
+        surrounding = {
+            key: value for key, value in trajectory.action_vector.items()
+            if key != request.decision_id
+        }
+        evidence_rows.append({
+            "doc_id": request.doc_id,
+            "decision_id": request.decision_id,
+            "selected_action_id": request.selected_action_id,
+            "alternative_action_id": request.alternative_action_id,
+            "delta_u": float(delta_u),
+            "context_hash": stable_hash(sorted(surrounding.items())),
+        })
         if broadcast:
             selected_items = tuple(sorted(trajectory.action_vector.items()))
             for other_index, other_replay in enumerate(replayed):
@@ -770,6 +788,11 @@ def execute_counterfactuals(
                 broadcast_pairs += 1
 
     diagnostics = copy.deepcopy(dict(scheduler_diagnostics))
+    # Value-bearing utility evidence for the tie-ownership ledger (round-3
+    # adjudication 2026-07-31): per-probe delta-U keyed by the surrounding
+    # action-vector context. Broadcast duplicates share the context and are
+    # deliberately not repeated (qualification counts DISTINCT contexts).
+    diagnostics["evidence_rows"] = evidence_rows
     diagnostics["broadcast_pairs"] = broadcast_pairs
     diagnostics["cache_hits"] = int(
         cache.last_batch_metrics.get("cache_hits", cache.hits - hits_before)

@@ -14,6 +14,7 @@ from types import MappingProxyType
 from typing import Any, Protocol
 
 import torch
+import torch.nn.functional as F
 
 from cloak.ranker.environment import (
     RankerAction,
@@ -586,6 +587,175 @@ def compose_hybrid_document_objective(
     )
 
 
+TIE_EXACT_ATOL = 1e-9
+TIE_EXIT_BOUND = 0.044
+
+
+def record_tie_evidence(
+    ledger: dict,
+    evidence_rows: Sequence[Mapping[str, Any]],
+    current_round: int,
+) -> None:
+    """Append value-bearing probe evidence to the tie-ownership ledger."""
+    for row in evidence_rows:
+        pair = tuple(sorted((
+            str(row["selected_action_id"]), str(row["alternative_action_id"]),
+        )))
+        key = (str(row["doc_id"]), str(row["decision_id"]), pair[0], pair[1])
+        ledger.setdefault(key, []).append({
+            "delta_u": float(row["delta_u"]),
+            "context_hash": str(row["context_hash"]),
+            "round": int(current_round),
+        })
+
+
+def compute_tie_labels(
+    ledger: Mapping,
+    documents: Mapping[str, RankerDocument],
+    profile_targets: ProfileCountTargets,
+    *,
+    min_contexts: int = 3,
+    before_round: int | None = None,
+) -> dict[tuple[str, str], tuple[tuple[str, str], ...]]:
+    """Qualified tie pairs per (doc, decision) from the VERIFIABLE core only.
+
+    A pair qualifies iff it has >= min_contexts records with DISTINCT
+    surrounding-context hashes whose |delta_u| is exactly zero (within
+    TIE_EXACT_ATOL), and ZERO records with |delta_u| > TIE_EXIT_BOUND
+    (monotone-until-contradicted exit on the measured bound). Records in the
+    noise band neither qualify nor disqualify. Absence of evidence means
+    UNKNOWN, never tied. Each qualified pair is oriented (a_plus, a_minus) by
+    the frozen profile count score; score-equal pairs are dropped (no
+    preference to enforce). before_round implements the one-cycle label lag.
+    """
+    labels: dict[tuple[str, str], list[tuple[str, str]]] = {}
+    for (doc_id, decision_id, action_a, action_b), records in ledger.items():
+        usable = [
+            record for record in records
+            if before_round is None or record["round"] < before_round
+        ]
+        if not usable:
+            continue
+        if any(abs(r["delta_u"]) > TIE_EXIT_BOUND for r in usable):
+            continue
+        exact_contexts = {
+            r["context_hash"] for r in usable
+            if abs(r["delta_u"]) <= TIE_EXACT_ATOL
+        }
+        if len(exact_contexts) < min_contexts:
+            continue
+        score_a = float(profile_targets.action_scores(decision_id, (action_a,))[0])
+        score_b = float(profile_targets.action_scores(decision_id, (action_b,))[0])
+        if score_a == score_b:
+            continue
+        pair = (action_a, action_b) if score_a > score_b else (action_b, action_a)
+        labels.setdefault((doc_id, decision_id), []).append(pair)
+    return {key: tuple(sorted(pairs)) for key, pairs in labels.items()}
+
+
+def tie_margin_loss(
+    policy: Any,
+    document: RankerDocument,
+    trajectory: SampledTrajectory,
+    labels: Mapping[tuple[str, str], Sequence[tuple[str, str]]],
+    *,
+    max_profile: Any,
+    margin: float = 0.1,
+) -> tuple[torch.Tensor, torch.Tensor, int, int]:
+    """Controller-only hinge enforcing measured tie ownership at max lambda.
+
+    For each qualified tied pair (a_plus, a_minus) of a labeled decision, the
+    max-lambda sampling margin z(a_plus) - z(a_minus) must exceed `margin`.
+    Utility logits and privacy scores are detached; alpha_raw is detached —
+    the gradient reaches ONLY the gain residual (the critical gradient split).
+    Macro-averaged per decision. Returns (hinge, residual_penalty,
+    satisfied_pairs, total_pairs).
+    """
+    if getattr(policy, "controller_gain_mode", None) != "evidence":
+        raise ValueError("tie margin loss requires the evidence controller gain")
+    g_max = math.log1p(float(max_profile.value)) / math.log1p(
+        float(policy.max_lambda)
+    )
+    if g_max <= 0.0:
+        raise ValueError("tie margin loss requires a nonzero max-lambda profile")
+    state = policy.begin_document(document, max_profile)
+    per_decision_terms: list[torch.Tensor] = []
+    residual_penalties: list[torch.Tensor] = []
+    satisfied = total = 0
+    gap_scaled = getattr(policy, "controller_gap_scaling", None) == "utility-gap"
+    for decision in document.policy_decisions:
+        menu = tuple(action.action_id for action in decision.actions)
+        pairs = labels.get((document.doc_id, decision.decision_id), ())
+        if pairs:
+            row = policy.distribution(state, decision, menu, max_profile)
+            utility = row.utility_logits.detach()
+            privacy = row.predicted_privacy.detach()
+            residual = policy.gain_head(
+                policy_tie_pooled_inputs(policy, state, decision)
+            ).squeeze(-1)
+            alpha_tie = F.softplus(policy.alpha_raw.detach() + residual)
+            scale = (
+                (utility.max() - utility.min()) if gap_scaled
+                else utility.new_ones(())
+            )
+            index = {action_id: position for position, action_id in enumerate(menu)}
+            terms = []
+            for a_plus, a_minus in pairs:
+                if a_plus not in index or a_minus not in index:
+                    continue
+                z_gap = (
+                    utility[index[a_plus]] - utility[index[a_minus]]
+                ) + alpha_tie * g_max * scale * (
+                    privacy[index[a_plus]] - privacy[index[a_minus]]
+                )
+                total += 1
+                if float(z_gap) >= margin:
+                    satisfied += 1
+                terms.append(torch.relu(
+                    torch.as_tensor(float(margin), dtype=z_gap.dtype) - z_gap
+                ))
+            if terms:
+                per_decision_terms.append(torch.stack(terms).mean())
+                residual_penalties.append(residual ** 2)
+        selected = trajectory.action_vector[decision.decision_id]
+        state = policy.advance(state, decision, selected)
+    prototype = policy.alpha_raw
+    if not per_decision_terms:
+        zero = prototype.new_zeros(())
+        return zero, zero.clone(), 0, 0
+    hinge = torch.stack(per_decision_terms).mean()
+    penalty = torch.stack(residual_penalties).mean()
+    return hinge, penalty, satisfied, total
+
+
+def policy_tie_pooled_inputs(
+    policy: Any, state: Any, decision: RankerDecision,
+) -> torch.Tensor:
+    """The gain head's pooled, detached feature input for one decision."""
+    actions, pair_features, token_bank, features = policy._decision_inputs(
+        state, decision
+    )
+    utility_relations = policy.utility_projection(pair_features)
+    contexts = policy.context_readout(token_bank, features, utility_relations)
+    histories = policy.memory(
+        torch.cat([utility_relations, contexts], dim=-1),
+        state.selected_records,
+    )
+    mode_ids, runtime_type_ids = policy._category_ids(actions, decision)
+    interaction = policy.interaction_projection(
+        utility_relations * policy.context_to_relation(contexts)
+    )
+    return torch.cat(
+        [
+            utility_relations, contexts, interaction,
+            policy.action_mode_embedding(mode_ids),
+            policy.runtime_type_embedding(runtime_type_ids),
+            histories,
+        ],
+        dim=-1,
+    ).detach().mean(dim=0)
+
+
 def profile_sensitivity_loss(
     replayed: Sequence["ReplayedTrajectory"],
     policy: Any,
@@ -704,6 +874,7 @@ def synchronous_profile_snapshot(
     *,
     samples: int = 64,
     seed: int = 0,
+    tie_labels: Mapping | None = None,
 ) -> dict[str, dict[str, Any]]:
     """Evaluate every profile from ONE policy state (confound-free readout).
 
@@ -775,12 +946,62 @@ def synchronous_profile_snapshot(
                             policy, gain_state, decision, step.legal_action_ids,
                         )
                     decisions.append(entry)
-                per_profile[str(profile.name)] = {
+                row = {
                     "sampled_P_mean": sum(sampled_p) / len(sampled_p),
                     "sampled_P_count": samples,
                     "greedy_P": sum(greedy_scores) / len(greedy_scores),
                     "decisions": decisions,
                 }
+                if tie_labels is not None and float(profile.value) > 0.0:
+                    # Hard lexicographic ORACLE from the same evidence: the
+                    # z-greedy walk, but within each decision's qualified tie
+                    # set the max-count-score member is selected. A free
+                    # ceiling + evidence-sufficiency diagnostic.
+                    oracle_scores = []
+                    oracle_state = policy.begin_document(document, profile)
+                    occurrence_by_id, _ = _occurrence_maps(document)
+                    reserved = tuple(
+                        _fixed_fill_claims(document, occurrence_by_id)
+                    )
+                    claimed: dict[str, str] = {}
+                    for decision in document.policy_decisions:
+                        menu = legal_action_ids(decision, claimed, reserved)
+                        log_probs = _checked_log_probs(
+                            policy, oracle_state, decision, menu, profile,
+                        )
+                        pick = menu[int(torch.argmax(log_probs).item())]
+                        pairs = tie_labels.get(
+                            (document.doc_id, decision.decision_id), (),
+                        )
+                        tied_with_pick = {pick}
+                        for a_plus, a_minus in pairs:
+                            if pick in (a_plus, a_minus):
+                                tied_with_pick.update((a_plus, a_minus))
+                        tied_in_menu = [a for a in tied_with_pick if a in menu]
+                        pick = max(
+                            tied_in_menu,
+                            key=lambda a: float(profile_targets.action_scores(
+                                decision.decision_id, (a,),
+                            )[0]),
+                        )
+                        oracle_scores.append(float(
+                            profile_targets.action_scores(
+                                decision.decision_id, (pick,),
+                            )[0]
+                        ))
+                        action = _action_by_id(decision, pick)
+                        if action.mode == "level":
+                            assert action.fill is not None
+                            claimed.setdefault(
+                                _fill_key(action.fill), decision.decision_id,
+                            )
+                        oracle_state = policy.advance(
+                            oracle_state, decision, pick,
+                        )
+                    row["oracle_greedy_P"] = (
+                        sum(oracle_scores) / len(oracle_scores)
+                    )
+                per_profile[str(profile.name)] = row
             snapshot[document.doc_id] = per_profile
     return snapshot
 
@@ -1702,6 +1923,12 @@ def train_hybrid_document_group(
     profile_sensitivity_coefficient: float = 0.0,
     profile_sensitivity_target: float = 0.0,
     sensitivity_profiles: Sequence[Any] | None = None,
+    tie_evidence: dict | None = None,
+    tie_labels: Mapping | None = None,
+    tie_coefficient: float = 0.0,
+    tie_margin: float = 0.1,
+    gain_penalty_coefficient: float = 1e-3,
+    tie_max_profile: Any = None,
 ) -> DocumentTrainingResult:
     """Run one complete sampled/scored/replayed optimizer step for a document group."""
 
@@ -1818,6 +2045,12 @@ def train_hybrid_document_group(
         **executor_options,
     )
     counterfactual_cache_metrics = dict(cache.last_batch_metrics)
+    if tie_evidence is not None:
+        record_tie_evidence(
+            tie_evidence,
+            scheduler_diagnostics.get("evidence_rows", ()),
+            current_round,
+        )
     if requests:
         if not isinstance(pair_history, dict):
             raise ValueError("counterfactual pair history must be mutable during training")
@@ -1844,6 +2077,21 @@ def train_hybrid_document_group(
         kl_direction=kl_direction,
     )
     total_objective = objective.total
+    tie_term = None
+    tie_penalty_term = None
+    if tie_coefficient > 0.0 and tie_labels:
+        if tie_max_profile is None:
+            raise ValueError("tie margin loss requires the max-lambda profile")
+        hinge, residual_penalty, tie_satisfied, tie_total = tie_margin_loss(
+            policy, document, trajectories[0], tie_labels,
+            max_profile=tie_max_profile, margin=tie_margin,
+        )
+        scheduler_diagnostics["tie_pairs_total"] = tie_total
+        scheduler_diagnostics["tie_pairs_satisfied"] = tie_satisfied
+        if tie_total > 0:
+            tie_term = float(tie_coefficient) * hinge
+            tie_penalty_term = float(gain_penalty_coefficient) * residual_penalty
+            total_objective = total_objective + tie_term + tie_penalty_term
     sensitivity_term = None
     if profile_sensitivity_coefficient > 0.0:
         if not sensitivity_profiles:
@@ -1867,6 +2115,9 @@ def train_hybrid_document_group(
     })
     if sensitivity_term is not None:
         family_terms["profile_sensitivity"] = sensitivity_term
+    if tie_term is not None:
+        family_terms["tie_margin"] = tie_term
+        family_terms["gain_penalty"] = tie_penalty_term
     reconstructed = torch.stack(tuple(family_terms.values())).sum()
     # fp32 tolerance: the family split rounds -(l+r)·logp as two products and
     # sums in a different order than the objective; at ~200 terms the drift
@@ -2354,6 +2605,13 @@ def train_hybrid_policy(
     synchronous_profile_eval: bool = False,
     profile_sensitivity_coefficient: float = 0.0,
     profile_sensitivity_target: float = 0.0,
+    tie_evidence: dict | None = None,
+    tie_mode: str = "none",
+    tie_coefficient: float = 1.0,
+    tie_margin: float = 0.1,
+    tie_min_contexts: int = 3,
+    tie_projection_lr: float = 1e-2,
+    gain_penalty_coefficient: float = 1e-3,
 ) -> HybridTrainingResult:
     """Train document groups in a seeded balanced profile cycle."""
 
@@ -2376,7 +2634,53 @@ def train_hybrid_policy(
         kl_enabled = True
     elif kl_schedule != "collapse-trigger":
         raise ValueError(f"unsupported KL schedule: {kl_schedule!r}")
+    documents_by_id = {document.doc_id: document for document in documents}
+    tie_labels: dict = {}
+    if tie_mode not in ("none", "online", "cycle"):
+        raise ValueError(f"unsupported tie mode: {tie_mode!r}")
     for epoch in range(start_epoch, max_epochs):
+        if tie_mode != "none" and tie_evidence is not None and (
+            epoch % len(profiles) == 0
+        ):
+            # One-cycle label lag: qualification uses only evidence measured
+            # in strictly earlier rounds (round-3 adjudication 2026-07-31).
+            tie_labels = compute_tie_labels(
+                tie_evidence, documents_by_id, profile_targets,
+                min_contexts=tie_min_contexts, before_round=epoch,
+            )
+            if tie_mode == "cycle" and tie_labels and epoch > start_epoch:
+                # Arm B: full-batch controller-only projection at the cycle
+                # boundary; the utility tower and global alpha are untouched.
+                projection_optimizer = torch.optim.Adam(
+                    policy.gain_head.parameters(), lr=float(tie_projection_lr),
+                )
+                for _ in range(25):
+                    hinge_terms = []
+                    penalty_terms = []
+                    unsatisfied = 0
+                    for document in documents:
+                        greedy = sample_trajectory(
+                            policy, document, profiles[-1],
+                            greedy=True, generator=None,
+                        )
+                        hinge, penalty, satisfied, total_pairs = tie_margin_loss(
+                            policy, document, greedy, tie_labels,
+                            max_profile=profiles[-1], margin=tie_margin,
+                        )
+                        if total_pairs:
+                            hinge_terms.append(hinge)
+                            penalty_terms.append(penalty)
+                            unsatisfied += total_pairs - satisfied
+                    if not hinge_terms or unsatisfied == 0:
+                        break
+                    projection_loss = (
+                        float(tie_coefficient) * torch.stack(hinge_terms).mean()
+                        + float(gain_penalty_coefficient)
+                        * torch.stack(penalty_terms).mean()
+                    )
+                    projection_optimizer.zero_grad(set_to_none=True)
+                    projection_loss.backward()
+                    projection_optimizer.step()
         epoch_kl_enabled = kl_enabled
         groups = []
         for document_index, document in enumerate(documents):
@@ -2400,6 +2704,16 @@ def train_hybrid_policy(
                     profile_sensitivity_target
                 )
                 group_options["sensitivity_profiles"] = profiles
+            if tie_mode != "none" and tie_evidence is not None:
+                group_options["tie_evidence"] = tie_evidence
+                group_options["tie_max_profile"] = profiles[-1]
+                if tie_mode == "online":
+                    group_options["tie_labels"] = tie_labels
+                    group_options["tie_coefficient"] = tie_coefficient
+                    group_options["tie_margin"] = tie_margin
+                    group_options["gain_penalty_coefficient"] = (
+                        gain_penalty_coefficient
+                    )
             groups.append(group_trainer(
                 policy,
                 reference_policy,
@@ -2447,6 +2761,7 @@ def train_hybrid_policy(
             report["synchronous_profiles"] = synchronous_profile_snapshot(
                 policy, documents, profiles, profile_targets,
                 samples=64, seed=seed + 90000 + epoch,
+                tie_labels=tie_labels if tie_mode != "none" else None,
             )
         reports.append(report)
         if epoch_callback is not None:
@@ -2608,6 +2923,7 @@ def save_hybrid_checkpoint(
     pair_history: Mapping,
     kl_enabled: bool,
     epoch_reports: Sequence[Mapping],
+    tie_evidence: Mapping | None = None,
 ) -> None:
     """Atomically save all mutable trainer and reproducibility state."""
 
@@ -2642,6 +2958,7 @@ def save_hybrid_checkpoint(
         "code_revision": code_revision,
         "training_config": dict(sorted(training_config.items())),
         "pair_history": dict(pair_history),
+        "tie_evidence": dict(tie_evidence) if tie_evidence is not None else {},
         "kl_enabled": bool(kl_enabled),
         "epoch_reports": tuple(dict(row) for row in epoch_reports),
     }
@@ -2707,6 +3024,7 @@ def load_hybrid_checkpoint(
         "epoch": int(checkpoint["epoch"]),
         "schedule": schedule,
         "pair_history": dict(checkpoint.get("pair_history", {})),
+        "tie_evidence": dict(checkpoint.get("tie_evidence", {})),
         "kl_enabled": bool(checkpoint.get("kl_enabled", False)),
         "epoch_reports": tuple(checkpoint.get("epoch_reports", ())),
         "training_config": dict(checkpoint["training_config"]),

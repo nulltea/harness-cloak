@@ -176,12 +176,20 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--utility-logit-softcap", type=float, default=None)
     train.add_argument("--profile-sensitivity-reg", type=float, default=0.0)
     train.add_argument(
-        "--controller-gain", choices=("none", "learned", "random"),
+        "--controller-gain", choices=("none", "learned", "random", "evidence"),
         default="none",
     )
     train.add_argument("--controller-gain-bound", type=float, default=1.5)
     train.add_argument("--controller-gain-hidden", type=int, default=32)
     train.add_argument("--controller-gain-lr", type=float, default=None)
+    train.add_argument(
+        "--tie-mode", choices=("none", "online", "cycle"), default="none",
+    )
+    train.add_argument("--tie-coefficient", type=float, default=1.0)
+    train.add_argument("--tie-margin", type=float, default=0.1)
+    train.add_argument("--tie-min-contexts", type=int, default=3)
+    train.add_argument("--tie-projection-lr", type=float, default=1e-2)
+    train.add_argument("--gain-penalty", type=float, default=1e-3)
     return parser
 
 
@@ -915,6 +923,12 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
             getattr(args, "controller_gain_hidden", 32)
         ),
         "controller_gain_lr": getattr(args, "controller_gain_lr", None),
+        "tie_mode": getattr(args, "tie_mode", "none"),
+        "tie_coefficient": float(getattr(args, "tie_coefficient", 1.0)),
+        "tie_margin": float(getattr(args, "tie_margin", 0.1)),
+        "tie_min_contexts": int(getattr(args, "tie_min_contexts", 3)),
+        "tie_projection_lr": float(getattr(args, "tie_projection_lr", 1e-2)),
+        "gain_penalty": float(getattr(args, "gain_penalty", 1e-3)),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
 
@@ -1035,6 +1049,7 @@ def _run_train(args) -> None:
     }
     training_config = _training_config(args, documents, fixed_control=False)
     pair_history = {}
+    tie_evidence: dict = {}
     existing_reports = ()
     start_epoch = 0
     kl_enabled = False
@@ -1060,6 +1075,7 @@ def _run_train(args) -> None:
         if resumed["schedule"] != schedule:
             raise ValueError("resume schedule differs from frozen Latin cycle")
         pair_history = resumed["pair_history"]
+        tie_evidence = resumed.get("tie_evidence", {})
         existing_reports = resumed["epoch_reports"]
         start_epoch = resumed["epoch"] + 1
         kl_enabled = resumed["kl_enabled"]
@@ -1140,6 +1156,7 @@ def _run_train(args) -> None:
             pair_history=history,
             kl_enabled=enabled,
             epoch_reports=reports,
+            tie_evidence=tie_evidence,
         )
 
     conditional = train_hybrid_policy(
@@ -1181,6 +1198,13 @@ def _run_train(args) -> None:
         ),
         profile_sensitivity_coefficient=sensitivity_reg,
         profile_sensitivity_target=sensitivity_target,
+        tie_evidence=tie_evidence,
+        tie_mode=getattr(args, "tie_mode", "none"),
+        tie_coefficient=float(getattr(args, "tie_coefficient", 1.0)),
+        tie_margin=float(getattr(args, "tie_margin", 0.1)),
+        tie_min_contexts=int(getattr(args, "tie_min_contexts", 3)),
+        tie_projection_lr=float(getattr(args, "tie_projection_lr", 1e-2)),
+        gain_penalty_coefficient=float(getattr(args, "gain_penalty", 1e-3)),
     )
 
     zero_profiles = (profiles[0],)
