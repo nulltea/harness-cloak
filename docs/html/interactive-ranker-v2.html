@@ -634,8 +634,8 @@ digraph RankerV2Edges {
                     <div class="ranker-model-diagram__node-detail">L = −log π(teacher action)<br>over each dynamic legal menu<br>∇ → utility scoring path</div>
                   </div>
                   <div class="ranker-model-diagram__node" data-node-id="teacher_rule">
-                    <div class="ranker-model-diagram__node-title">Teacher rule (no model)</div>
-                    <div class="ranker-model-diagram__node-detail">hand-coded walk per decision:<br>finest legal lattice level,<br>else the typed placeholder</div>
+                    <div class="ranker-model-diagram__node-title">Teacher rules</div>
+                    <div class="ranker-model-diagram__node-detail">pre-labeled walk per decision:<br>finest legal lattice level,<br>else the typed placeholder</div>
                   </div>
                 </div>
               </section>
@@ -969,33 +969,10 @@ digraph RankerV2Training {
     </div>
   </section>
 
-  <section id="training-and-gates">
-    <header class="section-head">
-      <div class="section-num">§06</div><h2 class="section-title">Training Sequence and Gates</h2>
-      <div class="section-meta">fail closed · validate shortcuts · freeze interfaces</div>
-    </header>
-    <table class="spec spec--wide">
-      <thead><tr><th style="width:18%">stage</th><th>required action</th><th>blocking evidence</th></tr></thead>
-      <tbody>
-        <tr><td><strong>Count gate</strong></td><td>Require explicit finite counts and grounding for every trainable lattice level, with non-decreasing counts from fine to coarse.</td><td>Any missing, default, fallback, sentinel, or non-monotone level blocks the run.</td></tr>
-        <tr><td><strong>Pair-encoder spike</strong></td><td>Compare joint relation encoding against candidate-only and independent bi-encoder baselines on profile-held-out relations.</td><td>Failure on direction, hard negatives, contextual utility ranking, or unseen profiles blocks hybrid RL.</td></tr>
-        <tr><td><strong>Privacy pretraining</strong></td><td>Fit log-count likelihood, within-menu ordering, and profile-relative calibration.</td><td>Failure to beat position, type, identity, and candidate-only shortcuts rejects the semantic prototype.</td></tr>
-        <tr><td><strong>Context spike</strong></td><td>Test local, long-range, repeated-occurrence, and multi-decision utility with context and candidate swaps.</td><td>Metadata-only success or source-region invisibility blocks promotion.</td></tr>
-        <tr><td><strong>History spike</strong></td><td>Compare no history, corrected utility-only GRU, and selected-action cross-attention.</td><td>No multi-decision gain or permutation/selectivity failure removes action history.</td></tr>
-        <tr><td><strong>\(\lambda\) menu</strong></td><td>Select observed switch points from the upper convex envelope of cached \((U,P)\) trajectories.</td><td>Fewer than three distinct responsive profiles stops conditional RL.</td></tr>
-        <tr><td><strong>Held-out evaluation</strong></td><td>Evaluate every supported \(\lambda\) independently for utility and attacker outcomes.</td><td>\(\lambda\)-zero utility regression or count/attacker inversion rejects the relevant claim.</td></tr>
-      </tbody>
-    </table>
-    <div class="prose">
-      <p><strong>\(\lambda\) menu selection.</strong> Start at zero, then choose three to five supported values from observed per-document utility and count switch points. Values are snapped to observed thresholds and replayed. Redundant profiles are merged rather than padded with invented precision.</p>
-      <p><strong>Encoder caveat.</strong> The pinned clinical encoder saw all ACI-BENCH documents during pretraining. ACI artifacts may support development diagnostics and pipeline training, but they cannot select the encoder or establish out-of-corpus generalization. Those claims require a non-ACI clinical validation corpus.</p>
-    </div>
-  </section>
-
 
   <section id="document-inference">
     <header class="section-head">
-      <div class="section-num">§07</div><h2 class="section-title">Document Inference</h2>
+      <div class="section-num">§06</div><h2 class="section-title">Document Inference</h2>
       <div class="section-meta">local ranking · dynamic legality · remote round trip</div>
     </header>
     <p class="lede">Inference selects one supported \(\lambda\), walks frozen policy decisions once in first-occurrence order, and returns a complete action vector before any remote task call.</p>
@@ -1157,7 +1134,7 @@ digraph RankerV2Inference {
 
   <section id="boundaries">
     <header class="section-head">
-      <div class="section-num">§08</div><h2 class="section-title">Boundaries and Audit</h2>
+      <div class="section-num">§07</div><h2 class="section-title">Boundaries and Audit</h2>
       <div class="section-meta">what the design means · what it does not prove</div>
     </header>
     <div class="two-col">
