@@ -13,6 +13,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Protocol
 
+import contextlib
+
 import torch
 import torch.nn.functional as F
 
@@ -961,11 +963,20 @@ def synchronous_profile_snapshot(
             per_profile: dict[str, Any] = {}
             for profile in profiles:
                 sampled_p = []
-                for _ in range(samples):
-                    trajectory = sample_trajectory(
-                        policy, document, profile,
-                        greedy=False, generator=generator,
+                if hasattr(policy, "utility_head"):
+                    sampled_walks = sample_trajectories_batched(
+                        policy, document, profile, samples,
+                        generator=generator,
                     )
+                else:
+                    sampled_walks = tuple(
+                        sample_trajectory(
+                            policy, document, profile,
+                            greedy=False, generator=generator,
+                        )
+                        for _ in range(samples)
+                    )
+                for trajectory in sampled_walks:
                     scores = [
                         float(profile_targets.action_scores(
                             decision_id,
@@ -1374,6 +1385,86 @@ def sample_trajectory(
         lambda_profile=lambda_profile,
         steps=tuple(steps),
         action_vector=MappingProxyType(action_vector),
+    )
+
+
+def sample_trajectories_batched(
+    policy: TrajectoryPolicy,
+    document: RankerDocument,
+    lambda_profile,
+    count: int,
+    *,
+    generator: torch.Generator | None,
+    greedy: bool = False,
+) -> tuple[SampledTrajectory, ...]:
+    """Lockstep-batched equivalent of `count` sample_trajectory calls.
+
+    All walks advance decision-by-decision together; per decision the
+    state-independent features are computed once and the state-dependent head
+    runs as one batched call (cloak.ranker.semantic.distribution_batch). Each
+    walk keeps its own claims/legality and draws from exactly the same
+    per-walk distribution the sequential sampler would produce; draws are
+    taken walk 0..N-1 at each decision, so the generator stream differs from
+    the walk-at-a-time sequential order (a documented, versioned difference —
+    determinism per seed is preserved).
+    """
+    from cloak.ranker.semantic import distribution_batch
+
+    if count <= 0:
+        raise ValueError("batched sampling requires a positive walk count")
+    occurrence_by_id, _ = _occurrence_maps(document)
+    reserved = tuple(_fixed_fill_claims(document, occurrence_by_id))
+    claims: list[dict[str, str]] = [{} for _ in range(count)]
+    states = [
+        policy.begin_document(document, lambda_profile) for _ in range(count)
+    ]
+    steps: list[list[SampledStep]] = [[] for _ in range(count)]
+    vectors: list[dict[str, str]] = [{} for _ in range(count)]
+    with torch.no_grad():
+        for decision in document.policy_decisions:
+            menus = [
+                legal_action_ids(decision, claims[walk], reserved)
+                for walk in range(count)
+            ]
+            rows = distribution_batch(
+                policy, states, decision, menus, lambda_profile,
+            )
+            for walk in range(count):
+                complete_ids, log_probs = rows[walk]
+                if greedy:
+                    selected_index = int(torch.argmax(log_probs).item())
+                else:
+                    selected_index = int(torch.multinomial(
+                        log_probs.exp().cpu(), 1, generator=generator,
+                    ).item())
+                selected_action_id = complete_ids[selected_index]
+                if selected_action_id not in menus[walk]:
+                    raise ValueError("batched sampler selected an illegal action")
+                claimed_before = tuple(sorted(claims[walk]))
+                action = _action_by_id(decision, selected_action_id)
+                if action.mode == "level":
+                    assert action.fill is not None
+                    claims[walk].setdefault(
+                        _fill_key(action.fill), decision.decision_id,
+                    )
+                steps[walk].append(SampledStep(
+                    decision_id=decision.decision_id,
+                    legal_action_ids=menus[walk],
+                    selected_action_id=selected_action_id,
+                    claimed_fills_before=claimed_before,
+                ))
+                vectors[walk][decision.decision_id] = selected_action_id
+                states[walk] = policy.advance(
+                    states[walk], decision, selected_action_id,
+                )
+    return tuple(
+        SampledTrajectory(
+            doc_id=document.doc_id,
+            lambda_profile=lambda_profile,
+            steps=tuple(steps[walk]),
+            action_vector=MappingProxyType(vectors[walk]),
+        )
+        for walk in range(count)
     )
 
 
@@ -1994,6 +2085,7 @@ def train_hybrid_document_group(
     max_grad_norm: float | None = None,
     counterfactual_coverage: str = "fixed",
     kl_direction: str = "forward",
+    batched_rollouts: bool = False,
     profile_sensitivity_coefficient: float = 0.0,
     profile_sensitivity_target: float = 0.0,
     sensitivity_profiles: Sequence[Any] | None = None,
@@ -2022,21 +2114,22 @@ def train_hybrid_document_group(
     scheduler = scheduler or schedule_counterfactuals
     counterfactual_executor = counterfactual_executor or execute_counterfactuals
     inference_window = getattr(policy, "inference_cache", None)
-    if callable(inference_window):
-        with inference_window():
+    window = (
+        inference_window() if callable(inference_window)
+        else contextlib.nullcontext()
+    )
+    with window:
+        if batched_rollouts:
+            trajectories = sample_trajectories_batched(
+                policy, document, profile, rollouts, generator=generator,
+            )
+        else:
             trajectories = tuple(
                 sample_trajectory(
                     policy, document, profile, greedy=False, generator=generator,
                 )
                 for _ in range(rollouts)
             )
-    else:
-        trajectories = tuple(
-            sample_trajectory(
-                policy, document, profile, greedy=False, generator=generator,
-            )
-            for _ in range(rollouts)
-        )
     hits_before = cache.hits
     points = score_trajectories(
         (document,),
@@ -2699,6 +2792,7 @@ def train_hybrid_policy(
     tie_projection_lr: float = 1e-2,
     gain_penalty_coefficient: float = 1e-3,
     synchronous_profile_samples: int = 16,
+    batched_rollouts: bool = False,
 ) -> HybridTrainingResult:
     """Train document groups in a seeded balanced profile cycle."""
 
@@ -2779,6 +2873,8 @@ def train_hybrid_policy(
                     rollouts,
                 )
             group_options: dict[str, Any] = {}
+            if batched_rollouts:
+                group_options["batched_rollouts"] = True
             if counterfactual_coverage != "fixed":
                 group_options["counterfactual_coverage"] = counterfactual_coverage
             if kl_direction != "forward":

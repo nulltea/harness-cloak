@@ -1375,6 +1375,142 @@ def _random_gain_offset(decision_id: str, bound: float) -> float:
     return (2.0 * unit - 1.0) * bound
 
 
+def distribution_batch(
+    policy: "SemanticRankerPolicy",
+    states: Sequence["SemanticPolicyState"],
+    decision: RankerDecision,
+    legal_menus: Sequence[Sequence[str]],
+    profile: LambdaProfile,
+) -> list[tuple[tuple[str, ...], torch.Tensor]]:
+    """Lockstep-batched distributions for N walks at one decision.
+
+    Semantically identical to calling distribution() once per walk: the
+    state-independent stack is computed once, per-walk histories feed one
+    batched utility-head call, and each walk's softmax runs over its own legal
+    menu via -inf masking of the complete action set (softmax over a masked
+    complete set equals softmax over the subset). Returns, per walk, the
+    complete action-id tuple and log-probs with illegal entries at -inf.
+    Inference-only (no autograd contract); use under torch.no_grad().
+    """
+    if len(states) != len(legal_menus) or not states:
+        raise ValueError("batched distribution requires aligned nonempty walks")
+    first = states[0]
+    actions, pair_features, token_bank, features = policy._decision_inputs(
+        first, decision
+    )
+    complete_ids = tuple(action.action_id for action in actions)
+    static_cache = getattr(policy, "_static_stack_cache", None)
+    cached = (
+        static_cache.get(decision.decision_id)
+        if static_cache is not None else None
+    )
+    if cached is not None:
+        utility_relations, contexts, interaction, mode_emb, type_emb = cached
+    else:
+        utility_relations = policy.utility_projection(pair_features)
+        contexts = policy.context_readout(token_bank, features, utility_relations)
+        mode_ids, runtime_type_ids = policy._category_ids(actions, decision)
+        interaction = policy.interaction_projection(
+            utility_relations * policy.context_to_relation(contexts)
+        )
+        mode_emb = policy.action_mode_embedding(mode_ids)
+        type_emb = policy.runtime_type_embedding(runtime_type_ids)
+        if static_cache is not None:
+            static_cache[decision.decision_id] = (
+                utility_relations, contexts, interaction, mode_emb, type_emb,
+            )
+    relation_context = torch.cat([utility_relations, contexts], dim=-1)
+    histories = torch.stack([
+        policy.memory(relation_context, state.selected_records)
+        for state in states
+    ])
+    static_stack = torch.cat(
+        [utility_relations, contexts, interaction, mode_emb, type_emb], dim=-1,
+    )
+    walk_count = len(states)
+    inputs = torch.cat(
+        [
+            static_stack.unsqueeze(0).expand(walk_count, -1, -1),
+            histories,
+        ],
+        dim=-1,
+    )
+    complete_utility = policy.utility_head(inputs).squeeze(-1)
+    softcap = getattr(policy, "utility_logit_softcap", None)
+    if softcap is not None:
+        complete_utility = float(softcap) * torch.tanh(
+            complete_utility / float(softcap)
+        )
+    with torch.no_grad():
+        if policy.privacy_provider is not None:
+            complete_privacy = policy.privacy_provider(
+                (decision.decision_id,) * len(actions),
+                complete_ids,
+                device=policy._device,
+                dtype=complete_utility.dtype,
+            )
+        else:
+            prediction = policy.privacy_head(pair_features)
+            complete_privacy = profile_normalize_predictions(
+                prediction, tuple(action.mode for action in actions),
+            )
+
+    lambda_value = float(profile.value)
+    if lambda_value == 0.0:
+        z = complete_utility
+    else:
+        magnitude = math.log1p(lambda_value) / math.log1p(policy.max_lambda)
+        gain_mode = getattr(policy, "controller_gain_mode", None)
+        if gain_mode in ("learned", "evidence"):
+            pooled = inputs.detach().mean(dim=1)
+            residual = policy.gain_head(pooled).squeeze(-1)
+            if gain_mode == "learned":
+                bound = float(policy.controller_gain_bound)
+                alpha_value = F.softplus(
+                    policy.alpha_raw + bound * torch.tanh(residual / bound)
+                )
+            else:
+                alpha_value = F.softplus(policy.alpha_raw + residual)
+            alpha_value = alpha_value.unsqueeze(-1)
+        elif gain_mode == "random":
+            offset = _random_gain_offset(
+                decision.decision_id, float(policy.controller_gain_bound),
+            )
+            alpha_value = F.softplus(policy.alpha_raw + offset)
+        else:
+            alpha_value = policy.alpha
+        controller = alpha_value * magnitude * complete_privacy.detach()
+        gap_scaled = (
+            getattr(policy, "controller_gap_scaling", None) == "utility-gap"
+        )
+        if gap_scaled:
+            # distribution() computes the gap over each walk's LEGAL subset;
+            # replicate exactly via the per-walk legality masks below.
+            gaps = []
+            for walk, menu in enumerate(legal_menus):
+                legal_index = [
+                    i for i, action_id in enumerate(complete_ids)
+                    if action_id in set(menu)
+                ]
+                legal_utility = complete_utility[walk][legal_index]
+                gaps.append(
+                    (legal_utility.max() - legal_utility.min()).detach()
+                )
+            controller = controller * torch.stack(gaps).unsqueeze(-1)
+        z = complete_utility + controller
+
+    results: list[tuple[tuple[str, ...], torch.Tensor]] = []
+    index_of = {action_id: i for i, action_id in enumerate(complete_ids)}
+    for walk, menu in enumerate(legal_menus):
+        mask = torch.full_like(z[walk], float("-inf"))
+        for action_id in menu:
+            mask[index_of[action_id]] = 0.0
+        results.append((
+            complete_ids, torch.log_softmax(z[walk] + mask, dim=-1),
+        ))
+    return results
+
+
 def switch_threshold_calibration(
     policy: "SemanticRankerPolicy",
     documents: Sequence[RankerDocument],

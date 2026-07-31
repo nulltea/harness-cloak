@@ -3052,3 +3052,68 @@ def test_evidence_gain_count_path_trains_alpha_raw_not_residual():
     gain_grads = [p_.grad for p_ in policy.gain_head.parameters() if p_.grad is not None]
     assert gain_grads and any(float(g.abs().sum()) > 0 for g in gain_grads)
     policy.controller_gain_mode = None
+
+
+def test_batched_sampler_matches_sequential_distributions_and_legality():
+    import math as _math
+
+    from cloak.ranker.interactive import (
+        replay_trajectory,
+        sample_trajectories_batched,
+        sample_trajectory,
+    )
+    from cloak.ranker.semantic import distribution_batch
+    from test_semantic_ranker import _direct_count_policy
+
+    policy, document, decision, profiles, _ = _direct_count_policy()
+
+    # greedy walks are deterministic: batched greedy must equal the sequential
+    # greedy trajectory exactly, for every walk in the batch
+    sequential = sample_trajectory(
+        policy, document, profiles[-1], greedy=True, generator=None,
+    )
+    batched = sample_trajectories_batched(
+        policy, document, profiles[-1], 3, generator=None, greedy=True,
+    )
+    for walk in batched:
+        assert dict(walk.action_vector) == dict(sequential.action_vector)
+        for step_a, step_b in zip(walk.steps, sequential.steps, strict=True):
+            assert step_a.legal_action_ids == step_b.legal_action_ids
+            assert step_a.claimed_fills_before == step_b.claimed_fills_before
+
+    # per-state distribution equality: batch log-probs equal distribution()
+    # log-probs on the legal entries
+    state = policy.begin_document(document, profiles[-1])
+    menu = tuple(a.action_id for a in decision.actions)
+    with torch.no_grad():
+        row = policy.distribution(state, decision, menu, profiles[-1])
+        (complete_ids, batch_lp), = distribution_batch(
+            policy, [state], decision, [menu], profiles[-1],
+        )
+    for position, action_id in enumerate(menu):
+        assert float(batch_lp[complete_ids.index(action_id)]) == pytest.approx(
+            float(row.log_probs[position]), abs=1e-5,
+        )
+    # illegal entries are impossible
+    partial_menu = menu[:2]
+    with torch.no_grad():
+        (_, partial_lp), = distribution_batch(
+            policy, [state], decision, [partial_menu], profiles[-1],
+        )
+    for action_id in menu[2:]:
+        assert _math.isinf(float(partial_lp[complete_ids.index(action_id)]))
+
+    # stochastic determinism: same seed -> identical batch
+    first = sample_trajectories_batched(
+        policy, document, profiles[-1], 4,
+        generator=torch.Generator().manual_seed(11),
+    )
+    second = sample_trajectories_batched(
+        policy, document, profiles[-1], 4,
+        generator=torch.Generator().manual_seed(11),
+    )
+    assert [dict(w.action_vector) for w in first] == [
+        dict(w.action_vector) for w in second
+    ]
+    # replay accepts batched trajectories (contract compatibility)
+    replay_trajectory(policy, document, first[0], profiles[-1])

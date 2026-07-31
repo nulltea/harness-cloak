@@ -193,6 +193,7 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--gain-penalty", type=float, default=1e-3)
     train.add_argument("--tie-evidence-bootstrap", action="store_true")
     train.add_argument("--skip-lambda-zero-control", action="store_true")
+    train.add_argument("--batched-rollouts", action="store_true")
     return parser
 
 
@@ -935,6 +936,7 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         "tie_evidence_bootstrap": bool(
             getattr(args, "tie_evidence_bootstrap", False)
         ),
+        "batched_rollouts": bool(getattr(args, "batched_rollouts", False)),
         "skip_lambda_zero_control": bool(
             getattr(args, "skip_lambda_zero_control", False)
         ),
@@ -1227,6 +1229,7 @@ def _run_train(args) -> None:
         synchronous_profile_samples=int(
             getattr(args, "synchronous_profile_samples", 16)
         ),
+        batched_rollouts=bool(getattr(args, "batched_rollouts", False)),
     )
 
     if getattr(args, "skip_lambda_zero_control", False):
