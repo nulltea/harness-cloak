@@ -577,7 +577,7 @@ digraph RankerV2Edges {
   <section id="rl-process">
     <header class="section-head">
       <div class="section-num">§05</div><h2 class="section-title">Training: Supervised &amp; RL</h2>
-      <div class="section-meta">staged pipeline · what each stage buys · episode loop</div>
+      <div class="section-meta">staged pipeline · what each stage buys · episode loop · RLOO credit</div>
     </header>
     <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
       <div class="diagram-cap">
@@ -615,30 +615,30 @@ digraph RankerV2Edges {
 
           <section class="ranker-model-diagram__module" data-module-id="t2-warm-start" style="gap:28px">
             <div class="ranker-model-diagram__module-label">02 · Warm start — privacy head → BC → ExIt → λ menu → controller calibration</div>
-            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:1.6fr 1fr;gap:32px">
-              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="t2-bc">
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:1fr 1.6fr;gap:32px">
+                <div class="ranker-model-diagram__col" style="gap:24px;justify-items:stretch">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="privacy_pretraining">
+                        <div class="ranker-model-diagram__node-title">Privacy pretraining</div>
+                        <div class="ranker-model-diagram__node-detail">profile-held-out log-count<br>must beat shortcut baselines<br>→ frozen p̂ for the policy</div>
+                    </div>
+                    <div class="ranker-model-diagram__node--trainable ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="warmstart_policy">
+                        <div class="ranker-model-diagram__node-title">Policy π · the M1 model</div>
+                        <div class="ranker-model-diagram__node-detail">trains: utility scoring path<br>frozen: encoder · privacy p̂<br>α untouched until calibration<br>acts at λ = 0</div>
+                    </div>
+                </div>
+                <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="t2-bc">
                 <div class="ranker-model-diagram__module-label" data-node-id="t2_label_3">Behavior cloning · λ-independent</div>
                 <div class="ranker-model-diagram__row" style="grid-template-columns:1fr 1fr;gap:32px">
-                  <div class="ranker-model-diagram__node" data-node-id="teacher_rule">
-                    <div class="ranker-model-diagram__node-title">Teacher rule (no model)</div>
-                    <div class="ranker-model-diagram__node-detail">hand-coded walk per decision:<br>finest legal lattice level,<br>else the typed placeholder</div>
-                  </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="ce_training">
                     <div class="ranker-model-diagram__node-title">Cross-entropy training</div>
                     <div class="ranker-model-diagram__node-detail">L = −log π(teacher action)<br>over each dynamic legal menu<br>∇ → utility scoring path</div>
                   </div>
+                  <div class="ranker-model-diagram__node" data-node-id="teacher_rule">
+                    <div class="ranker-model-diagram__node-title">Teacher rule (no model)</div>
+                    <div class="ranker-model-diagram__node-detail">hand-coded walk per decision:<br>finest legal lattice level,<br>else the typed placeholder</div>
+                  </div>
                 </div>
               </section>
-              <div class="ranker-model-diagram__col" style="gap:24px;justify-items:stretch">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="privacy_pretraining">
-                      <div class="ranker-model-diagram__node-title">Privacy pretraining</div>
-                      <div class="ranker-model-diagram__node-detail">profile-held-out log-count<br>must beat shortcut baselines<br>→ frozen p̂ for the policy</div>
-                  </div>
-                  <div class="ranker-model-diagram__node--trainable ranker-model-diagram__node ranker-model-diagram__node--attention" data-node-id="warmstart_policy">
-                      <div class="ranker-model-diagram__node-title">Policy π · the M1 model</div>
-                      <div class="ranker-model-diagram__node-detail">trains: utility scoring path<br>frozen: encoder · privacy p̂<br>α untouched until calibration<br>acts at λ = 0</div>
-                  </div>
-              </div>
             </div>
             <div class="ranker-model-diagram__row" style="grid-template-columns:1.6fr 1fr;gap:32px;min-height:44px;margin:-14px 0">
               <div></div>
@@ -881,14 +881,41 @@ digraph RankerV2Training {
     <h3>Training data — QA assertions</h3>
     <div class="prose">
       <p>The reward is not one score. Each document carries a frozen vector of assertions, and they are measured at two different points in the round trip: <strong>context assertions read the anonymized document \(doc_p\)</strong>, and <strong>delivered assertions read the final answer \(out_{\text{final}}\)</strong>. Splitting them is deliberate — a placeholder-heavy rewrite can still produce a well-formed note that satisfies the delivered checks while destroying the relations a reader needed, so the two families are not collapsible into one number. The ACI artifact currently holds 1357 accepted assertions: 634 context and 723 delivered. Weight budgets are split equally across fact groups and then across each group's assertions, and the document's denominator is fixed, so a missing family costs utility rather than being renormalized away.</p>
-
-      <p><strong>Context assertions — can the relation still be recovered from \(doc_p\)?</strong> Each is a question with pinned accepted answers and an answer target naming which decision must retain which property. They are proposed from the source document, then filtered by a three-point reader gate that renders the same question against three versions — the original document, a representative anchor with every linked decision at its required level, and an all-placeholder floor — and keeps the assertion only if the first two are answerable <em>and</em> the floor is not. That last condition is what makes an assertion discriminative rather than free: it must become unanswerable when the content is destroyed. Each row also freezes a relation-constrained reader clause that is reused verbatim at gate time and at runtime, so the gate and the reward use the same instrument.</p>
-      <ul>
-        <li><code>procedure_for</code> — "For what medical condition was the transthoracic echocardiography performed?" → <em>heart disease</em></li>
-        <li><code>tests_for</code> — "Which test or investigation was ordered to evaluate the mitral valve disease?" → <em>echocardiography</em></li>
-        <li><code>causes_or_explains</code> — "What single medical condition causes or explains heart murmur? Name only the condition." → <em>thoracic disease</em></li>
-      </ul>
-
+      <p><strong>Context assertions — can the relation still be recovered from \(doc_p\)?</strong> Each is a question plus a <em>required property</em> pinned to one linked decision, and it scores as a binary: 1 while the reader can still recover that property from \(doc_p\), 0 once it cannot. That is the whole training signal — the assertion's weight is either collected in full or forfeited in full. They are proposed from the source document, then filtered by a three-point reader gate that renders the same question against three versions — the original document, a representative anchor with every linked decision at its required level, and an all-placeholder floor — and keeps the assertion only if the first two are answerable <em>and</em> the floor is not. That last condition is what makes an assertion discriminative rather than free: it must become unanswerable when the content is destroyed. Each row also freezes a relation-constrained reader clause that is reused verbatim at gate time and at runtime, so the gate and the reward use the same instrument.</p>
+      <div class="diagram-frame">
+        <div class="diagram-cap">
+          <span class="l">FIG · Q1: Context relations — arguments as written, the level each is named by, and what the answer scores</span>
+          <span>signature = verbatim doc_orig text · amber = locator · blue = answered span · 1 = required property survives</span>
+        </div>
+        <div class="qa-figure">
+          <div class="qa-ladder">
+            <div class="qa-ladder__rel qa-ladder__sig"><strong>tests_for</strong>(&thinsp;<span class="qa-arg qa-arg--locator"><span class="qa-arg__role">subject·span</span>cervical radicularopathy</span>&thinsp;,&thinsp;<span class="qa-arg qa-arg--answer"><span class="qa-arg__role">object·span</span>cervical mri</span>&thinsp;)</div>
+            <div class="qa-ladder__q">“What test is ordered for the <span class="qa-mark--locator">spinal radiculopathy</span>?”</div>
+            <div class="qa-ladder__rungs"><span class="qa-rung qa-rung--pass">cervical mri · KEEP<b>1</b></span><span class="qa-rung qa-rung--pass">spine mri<b>1</b></span><span class="qa-rung qa-rung--fail">diagnostic imaging procedure<b>0</b></span><span class="qa-rung qa-rung--fail">medical procedure<b>0</b></span><span class="qa-rung qa-rung--fail">⟨placeholder⟩<b>0</b></span></div>
+          </div>
+          <div class="qa-ladder">
+            <div class="qa-ladder__rel qa-ladder__sig"><strong>prescribed_with</strong>(&thinsp;<span class="qa-arg qa-arg--locator"><span class="qa-arg__role">subject·span</span>muscle strain</span>&thinsp;,&thinsp;<span class="qa-arg qa-arg--answer"><span class="qa-arg__role">object·span</span>meloxicam</span>&thinsp;)</div>
+            <div class="qa-ladder__q">“Which medication was prescribed for the <span class="qa-mark--locator">sprain</span>?”</div>
+            <div class="qa-ladder__rungs"><span class="qa-rung qa-rung--pass">meloxicam · KEEP<b>1</b></span><span class="qa-rung qa-rung--pass">nonsteroidal anti-inflammatory drug<b>1</b></span><span class="qa-rung qa-rung--fail">analgesic<b>0</b></span><span class="qa-rung qa-rung--fail">⟨placeholder⟩<b>0</b></span></div>
+          </div>
+          <div class="qa-ladder">
+            <div class="qa-ladder__rel qa-ladder__sig"><strong>procedure_for</strong>(&thinsp;<span class="qa-arg qa-arg--locator"><span class="qa-arg__role">subject·span</span>congenital artery</span>&thinsp;,&thinsp;<span class="qa-arg qa-arg--answer"><span class="qa-arg__role">object·span</span>coronary artery bypass grafting</span>&thinsp;)</div>
+            <div class="qa-ladder__q">“What procedure was performed for the <span class="qa-mark--locator">congenital arterial malformation</span>?”</div>
+            <div class="qa-ladder__rungs"><span class="qa-rung qa-rung--pass">coronary artery bypass grafting · KEEP<b>1</b></span><span class="qa-rung qa-rung--pass">heart revascularization surgery<b>1</b></span><span class="qa-rung qa-rung--fail">cardiovascular surgical procedure<b>0</b></span><span class="qa-rung qa-rung--fail">medical procedure<b>0</b></span><span class="qa-rung qa-rung--fail">⟨placeholder⟩<b>0</b></span></div>
+          </div>
+          <div class="qa-ladder">
+            <div class="qa-ladder__rel qa-ladder__sig"><strong>causes_or_explains</strong>(&thinsp;<span class="qa-arg qa-arg--answer"><span class="qa-arg__role">subject·span</span>depression</span>&thinsp;,&thinsp;<span class="qa-arg qa-arg--locator"><span class="qa-arg__role">object·literal</span>some days when i feel extremely low</span>&thinsp;)</div>
+            <div class="qa-ladder__q">“What single medical condition causes or explains <span class="qa-mark--locator">days when i feel extremely low</span>? Name only the condition.”</div>
+            <div class="qa-ladder__rungs"><span class="qa-rung qa-rung--pass">depression · KEEP<b>1</b></span><span class="qa-rung qa-rung--pass">mood disorder<b>1</b></span><span class="qa-rung qa-rung--pass">cognitive disorder<b>1</b></span><span class="qa-rung qa-rung--pass">disease of mental health<b>1</b></span><span class="qa-rung qa-rung--fail">⟨placeholder⟩<b>0</b></span></div>
+          </div>
+          <div class="qa-ladder">
+            <div class="qa-ladder__rel qa-ladder__sig"><strong>contraindicated_because_of</strong>(&thinsp;<span class="qa-arg qa-arg--locator"><span class="qa-arg__role">subject·literal</span>anti-inflammatory medications</span>&thinsp;,&thinsp;<span class="qa-arg qa-arg--answer"><span class="qa-arg__role">object·span</span>kidney transplant</span>&thinsp;)</div>
+            <div class="qa-ladder__q">“What medical condition makes <span class="qa-mark--locator">anti-inflammatory medications</span> unsuitable?”</div>
+            <div class="qa-ladder__rungs"><span class="qa-rung qa-rung--pass">kidney transplant · KEEP<b>1</b></span><span class="qa-rung qa-rung--pass">solid organ transplant<b>1</b></span><span class="qa-rung qa-rung--fail">kidney disease<b>0</b></span><span class="qa-rung qa-rung--fail">medical condition<b>0</b></span><span class="qa-rung qa-rung--fail">⟨placeholder⟩<b>0</b></span></div>
+          </div>
+          <div class="qa-figure__note"><strong>Arguments.</strong> Every relation has one subject and one or more objects, and each argument is either a <em>span</em> — a controlled occurrence carrying a decision and a lattice profile, which the ranker can rewrite — or a <em>literal</em>, uncontrolled source text that is never rewritten and so appears verbatim in every render. The signature above shows each argument <em>as it appears in doc_orig</em>. Because a literal survives even the all-placeholder render, it can never be the answer: <em>span → literal</em> is not a live question shape. Compound forms exist too — {literals} → span, {spans} → span, and set-valued span → {spans} scored by per-member recall.<br><br><strong>Level pinning.</strong> Notice that the highlighted locator in each question is <em>not</em> the source surface: <em>cervical radicularopathy</em> is asked about as "spinal radiculopathy", <em>muscle strain</em> as "the sprain". A span locator is never named by its raw surface, because the ranker may rewrite that surface — a question quoting it could not be grounded in doc_p. Deterministic rows pin the locator at the <em>finest legal level</em>: it is the given premise rather than the measured fact, so the most specific wording that survives rewriting maximizes the reader's ability to find it. The answer side is pinned the other way: <em>required_property</em> is the <em>coarsest</em> level that passed the reader gate, which is why the ladder scores 1 from the source surface up through that level and 0 beyond it. So QA defines a band and rewards any ranking inside it; the pull toward the coarse end comes from the count objective, not from QA. That division of labour is deliberate.<br><br><strong>Ladder.</strong> Each assertion is a step function over the answered span's own levels: every rung scoring 1 is free privacy, and the first rung scoring 0 forfeits the assertion's entire weight from that document's utility, so the policy's job is to stop on the last rung still scoring 1. How far that reaches is not uniform — the depression row tolerates every level and only fails at the placeholder, while the MRI row loses its weight one rung up. One known gap: the question freezes the locator at one level while the policy is free to render that decision at any level, and the reader's ability to bridge the two was never certified across levels — so reward could be maximised by ranking the locator decision at exactly the frozen level, a preference the gate never checked for. Literal locators are immune, since they are never rewritten.</div>
+        </div>
+      </div>
       <p><strong>Delivered assertions — did the answer survive the round trip?</strong> These are deterministic and adapter-owned: their truth comes from the human reference note or the fixed task schema, never from a teacher's interpretation of the output. Four kinds, in descending count:</p>
       <ul>
         <li><strong>content</strong> (606) — a reference-backed controlled value must reappear in \(out_{\text{final}}\); this is the omission channel. Examples: <code>contains "congestive heart failure"</code>, <code>contains "kidney transplant"</code>, <code>contains "autoimmune panel"</code>.</li>
@@ -896,16 +923,10 @@ digraph RankerV2Training {
         <li><strong>structure</strong> (14) — required sections present and parseable, for example <code>HISTORY OF PRESENT ILLNESS · ASSESSMENT · PLAN</code> with the expected labelled-row shapes. Its share is capped by a structural budget so formatting compliance can never stand in for semantic retention.</li>
         <li><strong>exact_relation</strong> (9) — a PLAN row still carrying its expected treatment and test, for example condition <em>Arthritis</em> with treatment "Initiate Ultram 50 mg every 6 hours as needed." and test "We will order an autoimmune panel for further evaluation."</li>
       </ul>
-
       <p><strong>Which assertions actually pay.</strong> Role is decided per document at scoring time, not baked into the artifact: an assertion is policy-role only if it depends on a decision this ranker actually controls, and everything else is monitoring — scored and reported, never credited. The policy-role weight mass is the denominator \(Z_d\) that utility is measured against. One family is currently demoted wholesale: <code>exact_relation</code> is forced to monitoring because it measured a zero pass rate on real remote notes, making it unwinnable by any action and therefore signal-free even where it is dependency-linked.</p>
     </div>
-  </section>
 
-  <section id="credit-and-loss">
-    <header class="section-head">
-      <div class="section-num">§06</div><h2 class="section-title">Credit Assignment and Loss</h2>
-      <div class="section-meta">routing hints · RLOO · causal replacement</div>
-    </header>
+    <h3>Credit assignment and loss</h3>
     <div class="prose">
       <p>Document utility does not become one undifferentiated advantage. QA dependencies route cheap provisional evidence to the decisions that may matter. Sparse one-decision interventions then correct the highest-value uncertain cases.</p>
     </div>
@@ -938,11 +959,19 @@ digraph RankerV2Training {
       <p><strong>Overall loss.</strong> \(\mathcal{L} = \operatorname{mean}_d \mathcal{L}_{\text{utility}}(d) + \mathcal{L}_{\text{count}} - \beta\, \mathrm{entropy} + \eta\, \mathrm{KL}(\pi \,\|\, \pi_{\text{ref}})\). Counterfactual terms replace their corresponding provisional utility terms; they are not averaged into a separate unweighted bonus.</p>
       <p><strong>Scheduler.</strong> Counterfactual budget first covers decisions with no linked assertions, then multi-decision links and uncertain or stale measured pairs, while reserving nonzero probability for every eligible decision. Adjacent finer or coarser actions are preferred, with a pre-registered minority of KEEP and placeholder endpoint tests.</p>
     </div>
+
+    <h3>Utility score ties by design</h3>
+    <div class="prose">
+      <p><strong>What a tie is.</strong> Two actions on the same decision are <em>tied</em> when both preserve every QA-probed answer, so the reader scores the document identically either way. An exact tie measures \(|\Delta U| \le 10^{-9}\); a second band, \(0 &lt; |\Delta U| \le 0.044\), sits below the independently measured reader-resolution floor and is indistinguishable from reader noise. Ties are not rare. In the full-corpus census, 18% of measured decisions are exactly flat and a further 21% are sub-noise — roughly 39% at or below the floor — and 33% of documents carry six decisions or fewer, where a single tie dominates the episode. This is a first-class regime, not a corner case.</p>
+      <p><strong>Why the reward is deliberately silent there.</strong> The lattice and the QA artifact were built so that several generalization levels of the same span can all preserve the probed answers; when they do, only the count preference \(\hat{p}\) separates them. That silence is a design decision, on two grounds. It reflects task semantics: levels that keep every task-relevant answer <em>are</em> equivalent for the consumer of \(out_{\text{final}}\) — utility measures task preservation, privacy preference measures generalization depth, and those are different axes. And it protects the decomposition: awarding partial utility credit by depth would teach the \(\lambda\)-blind tower a privacy ordering, which is wrong by construction at \(\lambda = 0\), double-counts the count signal at \(\lambda &gt; 0\), distorts \(\lambda\) semantics, and corrupts the matched-realized-privacy comparison the project rests on. One qualification bounds the claim: passing the current probes means equivalent <em>for the measured artifact</em>, not universally, so false equivalence from QA incompleteness is the residual risk — richer partial credit is legitimate only if it measures actual answer degradation, never lattice depth as a proxy for it.</p>
+      <p><strong>Counterfactuals are a sensor, not a tie-breaker.</strong> On an exactly tied pair no channel supplies a utility ordering: leave-one-out advantages between tied rollouts are zero, the pair loss \(-\Delta U \cdot (q - \tfrac{1}{2})\) vanishes at \(\Delta U = 0\), and the count score is detached from \(u\) by construction. The sharper statement is that nothing with utility semantics <em>controls</em> that margin, while everything else — other documents sharing features, the KL and entropy regularizers, the sensitivity term — stays free to move it, so tied margins churn unless something else owns them. What the probes do contribute is exactly two things. They <em>rescue dead groups</em>: when every sampled rollout ties, all leave-one-out advantages vanish and counterfactual pairs are the only per-decision credit left, which is why small documents train at all. And they <em>measure tie structure</em>: each probe writes an evidence row — document, decision, pair, \(\Delta U\), surrounding-context hash — and the verified-tie labels distilled from it drive the tie-ownership machinery. Reward silence becomes an explicit, labelled fact; the zero itself still orders nothing. Ordering inside a tie is deliberately the controller's job, because the desired order is \(\lambda\)-dependent and the tower is \(\lambda\)-blind.</p>
+      <p><strong>The coarse boundary is learned; the inside of the set is not.</strong> Silence holds only <em>within</em> the equivalence set. Past its edge the tower does receive ordering gradient, through both channels. Structural-neighbour probes test the levels adjacent to the selected one plus the KEEP and placeholder endpoints, so once the policy sits at the coarsest preserving level the adjacent-coarser probe measures the drop directly — a "one step further is bad" gradient at exactly the cliff edge. And on-policy sampling at high \(\lambda\) drags trajectories across the boundary, where broken answers cost document utility and are punished by leave-one-out advantages. Measured over one screening run, 57% of 498 probes were live pairs (up to \(|\Delta U| = 0.68\)) and 43% exact zeros — most probe gradient is boundary supervision, not silence. Three caveats bound that: exposure is progressive rather than exhaustive, since probes walk outward from the current policy and the cliff is only reached once the controller has pushed the policy to its edge; the penalty is fractional, because document utility aggregates assertions and a too-coarse level forfeits only the assertions linked to it; and the ~13% of decisions with no linked assertions can never teach coarse-is-bad at all. The net division of knowledge is that the tower learns <em>where utility ends</em> but not <em>what is equivalent</em> — inside the set the margins stay arbitrary, and carrying that measured equivalence to unseen documents is an open fork rather than a settled mechanism.</p>
+    </div>
   </section>
 
   <section id="training-and-gates">
     <header class="section-head">
-      <div class="section-num">§07</div><h2 class="section-title">Training Sequence and Gates</h2>
+      <div class="section-num">§06</div><h2 class="section-title">Training Sequence and Gates</h2>
       <div class="section-meta">fail closed · validate shortcuts · freeze interfaces</div>
     </header>
     <table class="spec spec--wide">
@@ -966,7 +995,7 @@ digraph RankerV2Training {
 
   <section id="document-inference">
     <header class="section-head">
-      <div class="section-num">§08</div><h2 class="section-title">Document Inference</h2>
+      <div class="section-num">§07</div><h2 class="section-title">Document Inference</h2>
       <div class="section-meta">local ranking · dynamic legality · remote round trip</div>
     </header>
     <p class="lede">Inference selects one supported \(\lambda\), walks frozen policy decisions once in first-occurrence order, and returns a complete action vector before any remote task call.</p>
@@ -1128,7 +1157,7 @@ digraph RankerV2Inference {
 
   <section id="boundaries">
     <header class="section-head">
-      <div class="section-num">§09</div><h2 class="section-title">Boundaries and Audit</h2>
+      <div class="section-num">§08</div><h2 class="section-title">Boundaries and Audit</h2>
       <div class="section-meta">what the design means · what it does not prove</div>
     </header>
     <div class="two-col">

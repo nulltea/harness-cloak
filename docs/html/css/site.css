@@ -662,6 +662,104 @@ html {
   margin: 8px 0 36px;
   overflow-x: auto;
 }
+/* FIG Q1: context relations — signature, locator, and scoring ladder */
+.qa-figure {
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.qa-ladder {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.qa-ladder + .qa-ladder {
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid var(--paper-3);
+}
+.qa-ladder__rel {
+  color: var(--ink);
+  font-weight: 600;
+}
+.qa-ladder__sig {
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.qa-ladder__sig strong {
+  color: var(--ink);
+}
+.qa-ladder__sig .qa-arg {
+  font-weight: 600;
+}
+.qa-arg {
+  display: inline-block;
+  margin: 1px 0;
+  padding: 1px 7px;
+  border-radius: 3px;
+}
+.qa-arg__role {
+  margin-right: 7px;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.75;
+}
+.qa-arg--locator {
+  background: #f7ead2;
+  box-shadow: inset 0 0 0 1px #c8a870;
+  color: #6b4f1d;
+}
+.qa-arg--answer {
+  background: #dbe7f3;
+  box-shadow: inset 0 0 0 1px #8aa7c4;
+  color: #1f4062;
+}
+.qa-ladder__q {
+  color: var(--ink-2);
+}
+.qa-mark--locator {
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: #f7ead2;
+  box-shadow: inset 0 0 0 1px #c8a870;
+  color: #6b4f1d;
+}
+.qa-ladder__rungs {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.qa-rung {
+  padding: 2px 8px;
+  border-radius: 3px;
+  white-space: nowrap;
+}
+.qa-rung b {
+  margin-left: 7px;
+  font-weight: 600;
+}
+.qa-rung--pass {
+  background: #d9e7de;
+  box-shadow: inset 0 0 0 1px #85a290;
+  color: #23402f;
+}
+.qa-rung--fail {
+  background: var(--paper-2);
+  box-shadow: inset 0 0 0 1px var(--paper-3);
+  color: var(--ink-3);
+}
+.qa-figure__note {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--paper-3);
+  color: var(--ink-3);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 11px;
+  line-height: 1.6;
+}
+
 /* KaTeX: formulas render in the math face while identifiers, file names, and
    artifact fields stay in the mono <code> face. */
 .katex {
@@ -677,6 +775,7 @@ html {
 .diagram-cap {
   display: flex;
   justify-content: space-between;
+  gap: 24px;
   font-family: "JetBrains Mono", monospace;
   font-size: 10px;
   text-transform: uppercase;

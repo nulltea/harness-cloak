@@ -46,6 +46,12 @@
       if (h.querySelector(".heading-anchor")) return;
       if (!h.id) {
         var s = slug(h.textContent);
+        // Same subsection title can repeat across sections ("Design decisions");
+        // qualify with the section id so every anchor stays unique.
+        if (s && document.getElementById(s)) {
+          var sec = h.closest("section[id]");
+          if (sec) s = sec.id + "-" + s;
+        }
         if (s) h.id = s;
       }
       if (h.id) h.appendChild(anchor(h.id));
