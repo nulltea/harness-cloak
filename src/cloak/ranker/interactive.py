@@ -2079,7 +2079,10 @@ def train_hybrid_document_group(
     total_objective = objective.total
     tie_term = None
     tie_penalty_term = None
-    if tie_coefficient > 0.0 and tie_labels:
+    if tie_coefficient > 0.0 and tie_labels is not None:
+        # Families must be identical across every group of an epoch, so the
+        # tie terms are ALWAYS emitted when the machinery is on — exact zeros
+        # for documents without qualified pairs.
         if tie_max_profile is None:
             raise ValueError("tie margin loss requires the max-lambda profile")
         hinge, residual_penalty, tie_satisfied, tie_total = tie_margin_loss(
@@ -2088,10 +2091,9 @@ def train_hybrid_document_group(
         )
         scheduler_diagnostics["tie_pairs_total"] = tie_total
         scheduler_diagnostics["tie_pairs_satisfied"] = tie_satisfied
-        if tie_total > 0:
-            tie_term = float(tie_coefficient) * hinge
-            tie_penalty_term = float(gain_penalty_coefficient) * residual_penalty
-            total_objective = total_objective + tie_term + tie_penalty_term
+        tie_term = float(tie_coefficient) * hinge
+        tie_penalty_term = float(gain_penalty_coefficient) * residual_penalty
+        total_objective = total_objective + tie_term + tie_penalty_term
     sensitivity_term = None
     if profile_sensitivity_coefficient > 0.0:
         if not sensitivity_profiles:
