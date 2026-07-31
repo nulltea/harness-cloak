@@ -181,6 +181,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     train.add_argument("--controller-gain-bound", type=float, default=1.5)
     train.add_argument("--controller-gain-hidden", type=int, default=32)
+    train.add_argument("--controller-gain-lr", type=float, default=None)
     return parser
 
 
@@ -913,6 +914,7 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
         "controller_gain_hidden": int(
             getattr(args, "controller_gain_hidden", 32)
         ),
+        "controller_gain_lr": getattr(args, "controller_gain_lr", None),
         "document_ids_hash": stable_hash(sorted(document.doc_id for document in documents)),
     }
 
@@ -1000,7 +1002,30 @@ def _run_train(args) -> None:
         bc_checkpoint.get("policy_config", {}), policy,
     )
     _apply_controller_options(policy, args)
-    optimizer = torch.optim.Adam(policy.parameters(), lr=args.learning_rate)
+    gain_lr = getattr(args, "controller_gain_lr", None)
+    if gain_lr is not None and hasattr(policy, "gain_head"):
+        # The zero-init gain head cannot express itself at the shared lr within
+        # a screening window (measured: alpha field moved 0.04 raw units over
+        # 8 epochs) — standard small-head param grouping.
+        gain_parameter_ids = {id(p) for p in policy.gain_head.parameters()}
+        optimizer = torch.optim.Adam(
+            [
+                {
+                    "params": [
+                        p for p in policy.parameters()
+                        if id(p) not in gain_parameter_ids
+                    ],
+                    "lr": args.learning_rate,
+                },
+                {
+                    "params": list(policy.gain_head.parameters()),
+                    "lr": float(gain_lr),
+                },
+            ],
+            lr=args.learning_rate,
+        )
+    else:
+        optimizer = torch.optim.Adam(policy.parameters(), lr=args.learning_rate)
     schedule = build_latin_cycle_schedule(documents, profiles, seed=args.seed)
     architecture_pin = policy_architecture_pin(policy)
     artifact_pins = validated["artifact_pins"]
