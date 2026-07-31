@@ -29,7 +29,8 @@ v12 gate set (lambda-zero utility <= 0.044 vs control and free convergence; D2N0
 
 ## Results
 
-pending
+- **gain-learned s47 at shared lr 1e-4: MECHANISM NULL.** Per-decision controller_alpha moved 5.35 -> 5.39 over 8 epochs, UNIFORM across decisions (no differentiation); the trajectory replicates no-gap-s47 nearly exactly (dP series +0.12/+0.14/+0.07/+0.03/+0.36/+0.14/+0.11/+0.19 vs no-gap +0.12/+0.14/+0.07/+0.03/+0.34/+0.15/+0.11/+0.12). The hypothesis was NOT tested: the zero-init head at the shared lr learns orders of magnitude too slowly for a screening window — the same learning-timescale trap that motivated calibrated alpha-init. No smoothness or divergence issues (the field is simply flat). Ranges bounded (max 31.9); ep7 hints late divergence from no-gap (+0.19 final, greedy 0.34/0.52, lambda-zero drifting to L0-ish selections — utility-free by the tie structure).
+- AMENDMENT (pre-rerun): --controller-gain-lr param group added (gain head at 1e-2, 100x the shared lr; everything else unchanged); rerun as the actual mechanism test.
 
 ## Artifacts
 
