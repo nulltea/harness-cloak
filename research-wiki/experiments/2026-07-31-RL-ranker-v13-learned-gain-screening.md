@@ -1,12 +1,12 @@
 ---
 type: experiment
 node_id: exp:RL-ranker-v13-learned-gain-screening
-verdict: ""
-confidence: ""
+verdict: no
+confidence: high
 created: 2026-07-31
 model: semantic-v1 policy (controller_production s47 BC/ExIt warm start, softcap 25, no gap-scaling, alpha-init switch-calibrated raw, sensitivity reg 0.1, LEARNED state-conditioned controller gain)
 dataset: aci 4-doc controller-strength spike set, frozen environment sha256:4cc754a7, qa-utility-runtime-v2 policy denominator
-result: pending
+result: "Gain field never differentiates (spread 0.00 at all epochs); saturates at the bound ceiling 6.84 as a faster global alpha — guardrail/expressivity tension discovered; fork falls to epsilon-lexicographic or variance bound"
 tags: [rl, ranker-v2, tie-ownership, learned-controller-gain, escalation]
 companion: ../../docs/research/reward-ties-and-controller-authority.md
 ---
@@ -33,6 +33,8 @@ v12 gate set (lambda-zero utility <= 0.044 vs control and free convergence; D2N0
 - AMENDMENT (pre-rerun): --controller-gain-lr param group added (gain head at 1e-2, 100x the shared lr; everything else unchanged); rerun as the actual mechanism test.
 - **gain-fastlr s47 (8 epochs): mechanism ALIVE but GLOBAL-ONLY; gates fail on D2N005.** The alpha field now moves decisively (5.1 -> 4.77 -> 6.13) but stays UNIFORM across every decision of every document — the count gradient's common component dominates the zero-init head, so it learns a faster global alpha first; per-decision differentiation (which requires the opposing lambda>0 utility gradients to accumulate: zero on ties, negative on live decisions) has not yet emerged. Split outcome: the large documents reach their strongest separation ever recorded (D2N027 +0.42/+0.55, D2N031 +0.43/+0.49 at epochs 6-7 — the count pathway demonstrably works where authority suffices), while D2N005 goes fully lambda-inert for epochs 2-6 (all profiles 0.00) and only begins recovering as alpha climbs (+0.07 final). Ranges bounded (31.2 max); no oscillation or bound-divergence in the gain field (smoothness trivially satisfied — it is flat across decisions).
 - AMENDMENT 2: 16-epoch extension of gain-fastlr (same config) to test whether per-decision differentiation emerges in the later phase — the classic global-first/differentiate-later learning ordering predicts it; if the field is still uniform at 16 epochs, the state-conditioned head (pooled-feature input) lacks discriminative signal and the fork falls to epsilon-lexicographic or the variance bound.
+- **gain-fastlr 16 epochs (done): DIFFERENTIATION NEVER EMERGES — the candidate fails as designed.** Cross-decision alpha spread is 0.00 at every epoch on every document; the field converges to a single global 6.84 — which is EXACTLY the bound ceiling softplus(raw + 1.5): the head saturated its guardrail in the common direction, and tanh saturation kills the gradient, making differentiation permanently impossible once pinned. Discovery worth the write-up: the divergence guardrail (mandated by the attested learned-multiplier failure) and expressivity are in direct tension — the bound that prevents runaway also freezes the field at global-max. Behaviorally the pinned global ~6.8 buys D2N005 its best sustained separation (epochs 9-15 Delta P +0.17..+0.33, mostly >= 0.20, real greedy separation 0.10-0.18 vs 0.28-0.52) but cycle stability still fails (final-cycle range ~0.14 > 0.10) and the large documents pay for it late (D2N027 falls to +0.13, D2N031 to +0.18 from +0.5 peaks — the global dial reallocates the same seesaw rather than resolving it).
+- **v13 verdict: the learned state-conditioned gain, as designed (pooled-feature head, bounded residual), degenerates to a faster global alpha.** The count gradient's common component dominates the weak per-decision utility opposition at every tested lr and horizon; the pooled decision features carry insufficient discriminative signal. The random-gain control is moot (there is no learned differentiation to test against). The tie-ownership fork falls to its two remaining preregistered exits: the epsilon-lexicographic constrained controller, or a documented tiny-document variance bound.
 
 ## Artifacts
 
