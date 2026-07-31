@@ -67,3 +67,5 @@ strongest available wrapper — it makes precise what such a mask can promise (m
 expected violation rate under exchangeability) and therefore also what it cannot (worst-case,
 per-document, or under user-domain shift). This bounds the option's suitability for a hard
 privacy floor and is the reason it is rated below the structural (counting-based) mask.
+
+Re-surfaced for the utility-equivalence critic's canonicalization gate (`docs/specs/RL/ties-by-design.md` option (i)): CRC is the natural wrapper for a single accept threshold on the critic, but its expectation-only guarantee is the wrong shape for a "≥95% of predicted ties measure |ΔU| ≤ 0.044" claim, which needs a confidence level attached to the rule we actually ship. The (α, δ) version — [bates2021_risk_controlling_prediction_sets](bates2021_risk_controlling_prediction_sets.md) — is what supplies that; CRC's role here is the cheap comparison point that quantifies what dropping δ buys, namely a slack of only (1−α)/n ≈ 0.5 points at n = 200 versus ≈ 2.5 points for the high-probability bound.
