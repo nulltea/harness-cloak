@@ -1435,3 +1435,28 @@ def test_random_controller_gain_is_deterministic_and_parameter_free():
     assert abs(offset) <= 1.5
     assert _random_gain_offset("some-other-decision", 1.5) != offset
     policy.controller_gain_mode = None
+
+
+def test_inference_cache_matches_uncached_and_ignores_grad_contexts():
+    policy, document, decision, profiles, _ = _direct_count_policy()
+    menu = tuple(a.action_id for a in decision.actions)
+    state = policy.begin_document(document, profiles[-1])
+    with torch.no_grad():
+        base = policy.distribution(state, decision, menu, profiles[-1])
+    with policy.inference_cache():
+        with torch.no_grad():
+            cached_state = policy.begin_document(document, profiles[-1])
+            first = policy.distribution(cached_state, decision, menu, profiles[-1])
+            second = policy.distribution(cached_state, decision, menu, profiles[-1])
+        assert policy._static_stack_cache  # populated
+        assert torch.equal(base.log_probs, first.log_probs)
+        assert torch.equal(first.log_probs, second.log_probs)
+        # grad-enabled calls bypass the cache and still build graphs
+        grad_state = policy.begin_document(document, profiles[-1])
+        row = policy.distribution(grad_state, decision, menu, profiles[-1])
+        row.log_probs.sum().backward()
+        assert any(
+            p_.grad is not None and float(p_.grad.abs().sum()) > 0
+            for p_ in policy.utility_head.parameters()
+        )
+    assert policy._static_stack_cache is None  # dropped on exit

@@ -887,7 +887,10 @@ def synchronous_profile_snapshot(
     """
     generator = torch.Generator().manual_seed(seed)
     snapshot: dict[str, dict[str, Any]] = {}
-    with torch.no_grad():
+    inference_window = getattr(policy, "inference_cache", None)
+    from contextlib import nullcontext
+    window = inference_window() if callable(inference_window) else nullcontext()
+    with torch.no_grad(), window:
         for document in documents:
             decision_ids = [
                 decision.decision_id for decision in document.policy_decisions
@@ -950,6 +953,9 @@ def synchronous_profile_snapshot(
                     "sampled_P_mean": sum(sampled_p) / len(sampled_p),
                     "sampled_P_count": samples,
                     "greedy_P": sum(greedy_scores) / len(greedy_scores),
+                    "expected_P_greedy_path": (
+                        sum(d["expected_p"] for d in decisions) / len(decisions)
+                    ),
                     "decisions": decisions,
                 }
                 if tie_labels is not None and float(profile.value) > 0.0:
@@ -1272,7 +1278,12 @@ def sample_trajectory(
     for decision in document.policy_decisions:
         menu = legal_action_ids(decision, claimed, reserved)
         claimed_before = tuple(sorted(claimed))
-        log_probs = _checked_log_probs(policy, state, decision, menu, lambda_profile)
+        with torch.no_grad():
+            # sampling never needs a graph (replay recomputes with grad); this
+            # also enables the frozen-window static-stack cache.
+            log_probs = _checked_log_probs(
+                policy, state, decision, menu, lambda_profile
+            )
         if greedy:
             selected_index = int(torch.argmax(log_probs).item())
         else:
@@ -1947,12 +1958,22 @@ def train_hybrid_document_group(
 
     scheduler = scheduler or schedule_counterfactuals
     counterfactual_executor = counterfactual_executor or execute_counterfactuals
-    trajectories = tuple(
-        sample_trajectory(
-            policy, document, profile, greedy=False, generator=generator,
+    inference_window = getattr(policy, "inference_cache", None)
+    if callable(inference_window):
+        with inference_window():
+            trajectories = tuple(
+                sample_trajectory(
+                    policy, document, profile, greedy=False, generator=generator,
+                )
+                for _ in range(rollouts)
+            )
+    else:
+        trajectories = tuple(
+            sample_trajectory(
+                policy, document, profile, greedy=False, generator=generator,
+            )
+            for _ in range(rollouts)
         )
-        for _ in range(rollouts)
-    )
     hits_before = cache.hits
     points = score_trajectories(
         (document,),

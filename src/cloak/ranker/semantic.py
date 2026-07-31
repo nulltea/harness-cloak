@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import math
+from contextlib import contextmanager
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -944,6 +945,20 @@ class SemanticRankerPolicy(nn.Module):
     def alpha(self) -> torch.Tensor:
         return F.softplus(self.alpha_raw)
 
+    @contextmanager
+    def inference_cache(self):
+        """Frozen-parameter window: cache state-independent decision stacks.
+
+        Valid ONLY while parameters do not change and grad is disabled; the
+        cache is consulted exclusively under torch.no_grad() and dropped on
+        exit.
+        """
+        self._static_stack_cache = {}
+        try:
+            yield
+        finally:
+            self._static_stack_cache = None
+
     def train(self, mode: bool = True) -> "SemanticRankerPolicy":
         super().train(mode)
         if self.privacy_head is not None:
@@ -1104,25 +1119,42 @@ class SemanticRankerPolicy(nn.Module):
         ):
             raise ValueError("semantic policy legal action menu is invalid")
 
-        utility_relations = self.utility_projection(pair_features)
-        contexts = self.context_readout(
-            token_bank, features, utility_relations
+        # ~74% of this forward (dominated by the context attention) is
+        # state-independent; inside a frozen-parameter inference window
+        # (snapshot walks, rollout sampling) it is computed once per decision.
+        static_cache = getattr(self, "_static_stack_cache", None)
+        cache_usable = static_cache is not None and not torch.is_grad_enabled()
+        cached = (
+            static_cache.get(decision.decision_id) if cache_usable else None
         )
+        if cached is not None:
+            utility_relations, contexts, interaction, mode_emb, type_emb = cached
+        else:
+            utility_relations = self.utility_projection(pair_features)
+            contexts = self.context_readout(
+                token_bank, features, utility_relations
+            )
+            mode_ids, runtime_type_ids = self._category_ids(actions, decision)
+            interaction = self.interaction_projection(
+                utility_relations * self.context_to_relation(contexts)
+            )
+            mode_emb = self.action_mode_embedding(mode_ids)
+            type_emb = self.runtime_type_embedding(runtime_type_ids)
+            if cache_usable:
+                static_cache[decision.decision_id] = (
+                    utility_relations, contexts, interaction, mode_emb, type_emb,
+                )
         histories = self.memory(
             torch.cat([utility_relations, contexts], dim=-1),
             state.selected_records,
-        )
-        mode_ids, runtime_type_ids = self._category_ids(actions, decision)
-        interaction = self.interaction_projection(
-            utility_relations * self.context_to_relation(contexts)
         )
         utility_inputs = torch.cat(
             [
                 utility_relations,
                 contexts,
                 interaction,
-                self.action_mode_embedding(mode_ids),
-                self.runtime_type_embedding(runtime_type_ids),
+                mode_emb,
+                type_emb,
                 histories,
             ],
             dim=-1,
