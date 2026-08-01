@@ -537,7 +537,8 @@ def _evaluate_arm(name, scores_by_split, delta_q_by_split, rows_by_split):
     return report
 
 
-def run(args) -> None:
+def _load_policy(args, documents):
+    """Rebuild the frozen adopted policy and its lambda profiles from disk."""
     import torch
     from types import SimpleNamespace
 
@@ -547,22 +548,20 @@ def run(args) -> None:
         _semantic_training_policy,
     )
 
-    documents = _load_documents()
-    payload = json.loads((OUT / "evidence-rows.json").read_text())
-    rows = payload["rows"]
     menu = json.loads(Path(args.lambda_menu).read_text())
     profile_objects = tuple(
         LambdaProfile(name, float(value))
         for name, value in zip(menu["profile_names"], menu["values"], strict=True)
     )
-    policy_args = SimpleNamespace(
-        representation_manifest=args.representation_manifest,
-        privacy_checkpoint=None,
-        profile_count_targets=args.profile_count_targets,
-        device=args.device,
-    )
     policy = _semantic_training_policy(
-        policy_args, tuple(documents.values()), profile_objects
+        SimpleNamespace(
+            representation_manifest=args.representation_manifest,
+            privacy_checkpoint=None,
+            profile_count_targets=args.profile_count_targets,
+            device=args.device,
+        ),
+        tuple(documents.values()),
+        profile_objects,
     )
     _apply_controller_options(policy, SimpleNamespace(
         alpha_utility_routing="none",
@@ -575,6 +574,16 @@ def run(args) -> None:
     checkpoint = torch.load(args.checkpoint, map_location=args.device)
     policy.load_state_dict(checkpoint["policy_state_dict"], strict=True)
     policy.eval()
+    return policy, profile_objects
+
+
+def run(args) -> None:
+    import torch
+
+    documents = _load_documents()
+    payload = json.loads((OUT / "evidence-rows.json").read_text())
+    rows = payload["rows"]
+    policy, profile_objects = _load_policy(args, documents)
 
     features_a, features_b = _extract_features(
         policy, documents, rows, profile_objects[0],
@@ -646,6 +655,316 @@ def run(args) -> None:
     }, indent=1))
     for report in reports:
         print(json.dumps(report, indent=1))
+
+
+def _actor_margin(policy, features_a, features_b):
+    """The margin the controller actually races today: softcapped tower logits."""
+    import torch
+
+    with torch.no_grad():
+        u_a = policy.utility_head(features_a.to(policy._device)).squeeze(-1)
+        u_b = policy.utility_head(features_b.to(policy._device)).squeeze(-1)
+        cap = getattr(policy, "utility_logit_softcap", None)
+        if cap is not None:
+            u_a = float(cap) * torch.tanh(u_a / float(cap))
+            u_b = float(cap) * torch.tanh(u_b / float(cap))
+    return (u_a - u_b).cpu()
+
+
+def _noise_ceiling(rows) -> dict:
+    """Irreducible target spread: the same pair measured in different contexts.
+
+    No predictor can explain variance the target itself does not hold stable
+    across surrounding action vectors, so this bounds the achievable fit and
+    is the reference the gate's R^2 must be read against."""
+    import statistics as st
+
+    groups = defaultdict(list)
+    for row in rows:
+        groups[(
+            row["doc_id"], row["decision_id"], row["action_a"], row["action_b"],
+        )].append(row["delta_u"])
+    within, weights = [], []
+    for values in groups.values():
+        if len(values) < 2:
+            continue
+        within.append(st.pvariance(values))
+        weights.append(len(values))
+    targets = [row["delta_u"] for row in rows]
+    total = st.pvariance(targets) if len(targets) > 1 else 0.0
+    mean_within = (
+        sum(v * w for v, w in zip(within, weights)) / sum(weights)
+        if weights else 0.0
+    )
+    return {
+        "pair_groups_with_repeats": len(within),
+        "mean_within_group_variance": mean_within,
+        "total_target_variance": total,
+        "max_achievable_r2": (1.0 - mean_within / total) if total > 0 else None,
+    }
+
+
+def _score_margins(name, margins, rows) -> dict:
+    """Stratified read-out of one margin source on one held-out split."""
+    import statistics as st
+
+    def tie(row):
+        return row["stratum"] != "live"
+
+    live = [(m, row) for m, row in zip(margins, rows) if row["stratum"] == "live"]
+    # Discrimination EXCLUDING structurally derivable rows: those are an easy,
+    # free-label class and would inflate a pooled number (round-4 caveat).
+    judged = [
+        (m, row) for m, row in zip(margins, rows)
+        if row["stratum"] != "derivable"
+    ]
+    report = {"source": name, "rows": len(rows)}
+    if judged and 0 < sum(1 for _, r in judged if tie(r)) < len(judged):
+        report["tie_auc_excl_derivable"] = _auc(
+            [-abs(m) for m, _ in judged], [tie(r) for _, r in judged]
+        )
+    derivable = [
+        (m, row) for m, row in zip(margins, rows)
+        if row["stratum"] == "derivable"
+    ]
+    if derivable and live:
+        report["tie_auc_derivable_only"] = _auc(
+            [-abs(m) for m, _ in (*derivable, *live)],
+            [tie(r) for _, r in (*derivable, *live)],
+        )
+    if live:
+        report["live_pairs"] = len(live)
+        report["live_sign_agreement"] = sum(
+            1 for m, row in live if m * row["delta_u"] > 0
+        ) / len(live)
+        xs = [m for m, _ in live]
+        ys = [row["delta_u"] for _, row in live]
+        if len(xs) > 2 and st.pvariance(xs) > 0:
+            mean_x, mean_y = st.mean(xs), st.mean(ys)
+            report["calibration_slope"] = sum(
+                (x - mean_x) * (y - mean_y) for x, y in zip(xs, ys)
+            ) / sum((x - mean_x) ** 2 for x in xs)
+        report["live_mae"] = sum(
+            abs(m - row["delta_u"]) for m, row in live
+        ) / len(live)
+    return report
+
+
+def gate1(args) -> None:
+    """Gate 1 — representation gate.
+
+    Can the EXISTING utility representation support being a utility estimator?
+    Trains a frozen-feature probe to regress the linked-restricted delta-U and
+    scores it against the margin the controller races today (the softcapped
+    tower logits) on the same held-out documents, same metrics. Self-
+    adjudicating: if the actor margin already discriminates as well, anchoring
+    buys nothing. Round-4 gate plan, docs/research/tie-ownership-root-cause-and-solution-space.md.
+    """
+    import torch
+    import torch.nn.functional as F
+
+    documents = _load_documents()
+    payload = json.loads((OUT / "evidence-rows-linked.json").read_text())
+    rows = payload["rows"]
+    if args.exclude_derivable:
+        rows = [row for row in rows if not row["derivable_tie"]]
+    policy, profile_objects = _load_policy(args, documents)
+
+    features_a, features_b = _extract_features(
+        policy, documents, rows, profile_objects[0],
+    )
+    targets = torch.tensor([row["delta_u"] for row in rows], dtype=torch.float32)
+    index = {
+        split: torch.tensor(
+            [i for i, row in enumerate(rows) if row["split"] == split],
+            dtype=torch.long,
+        )
+        for split in ("train", "calibration", "certification")
+    }
+    rows_by_split = {
+        split: [rows[int(i)] for i in ids] for split, ids in index.items()
+    }
+
+    ceiling = _noise_ceiling(rows_by_split["train"])
+    print("noise ceiling (train split):")
+    for key, value in ceiling.items():
+        print(f"  {key}: {value}")
+
+    torch.manual_seed(args.seed)
+    dim = features_a.shape[-1]
+    if args.probe == "linear":
+        probe = torch.nn.Linear(dim, 1)
+    else:
+        # Match the actor head exactly (Linear-GELU-Linear); a linear probe is
+        # strictly weaker than the margin it is being compared against.
+        hidden = policy.utility_head[0].out_features
+        probe = torch.nn.Sequential(
+            torch.nn.Linear(dim, hidden), torch.nn.GELU(),
+            torch.nn.Linear(hidden, 1),
+        )
+        if args.probe == "actor-init":
+            # Warm-start from the tower's own head: the direct test of
+            # "repurpose the existing head as a utility estimator".
+            probe.load_state_dict({
+                k: v.detach().cpu().clone()
+                for k, v in policy.utility_head.state_dict().items()
+            })
+    optimizer = torch.optim.Adam(probe.parameters(), lr=1e-3)
+    train_a = features_a[index["train"]]
+    train_b = features_b[index["train"]]
+    train_y = targets[index["train"]]
+    for _ in range(args.epochs):
+        delta_q = (probe(train_a) - probe(train_b)).squeeze(-1)
+        # epsilon-insensitive: never fit inside the instrument's resolution
+        slack = torch.clamp((delta_q - train_y).abs() - args.epsilon, min=0.0)
+        loss = F.huber_loss(slack, torch.zeros_like(slack), delta=1.0)
+        optimizer.zero_grad(set_to_none=True)
+        loss.backward()
+        optimizer.step()
+
+    actor_all = _actor_margin(policy, features_a, features_b)
+    with torch.no_grad():
+        probe_all = (probe(features_a) - probe(features_b)).squeeze(-1)
+
+    report = {
+        "checkpoint": str(args.checkpoint),
+        "probe": args.probe,
+        "epsilon": args.epsilon,
+        "epochs": args.epochs,
+        "exclude_derivable": bool(args.exclude_derivable),
+        "rows": len(rows),
+        "noise_ceiling_train": ceiling,
+        "splits": {},
+    }
+    # Train-split fit separates "cannot learn this at all" from "learns it and
+    # does not transfer" — the two readings have opposite consequences.
+    train_fit = _score_margins(
+        "anchored-probe (TRAIN fit)",
+        [float(v) for v in probe_all[index["train"]]], rows_by_split["train"],
+    )
+    report["train_fit"] = train_fit
+    print("\n=== train split (fit check) ===")
+    for key, value in train_fit.items():
+        if key not in ("source", "rows"):
+            print(
+                f"  {key}: "
+                + (f"{value:.4f}" if isinstance(value, float) else str(value))
+            )
+    for split in ("calibration", "certification"):
+        ids = index[split]
+        split_rows = rows_by_split[split]
+        anchored = _score_margins(
+            "anchored-probe", [float(v) for v in probe_all[ids]], split_rows,
+        )
+        actor = _score_margins(
+            "actor-margin (current tower)",
+            [float(v) for v in actor_all[ids]], split_rows,
+        )
+        per_document = {}
+        for doc_id in sorted({row["doc_id"] for row in split_rows}):
+            keep = [
+                k for k, row in enumerate(split_rows) if row["doc_id"] == doc_id
+            ]
+            doc_rows = [split_rows[k] for k in keep]
+            if len({row["stratum"] != "live" for row in doc_rows}) < 2:
+                continue
+            per_document[doc_id] = {
+                "rows": len(doc_rows),
+                "anchored_auc": _score_margins(
+                    "a", [float(probe_all[ids[k]]) for k in keep], doc_rows,
+                ).get("tie_auc_excl_derivable"),
+                "actor_auc": _score_margins(
+                    "b", [float(actor_all[ids[k]]) for k in keep], doc_rows,
+                ).get("tie_auc_excl_derivable"),
+            }
+        report["splits"][split] = {
+            "anchored": anchored, "actor": actor,
+            "per_document": per_document,
+        }
+        print(f"\n=== {split} ({len(split_rows)} rows) ===")
+        for row in (anchored, actor):
+            print(f"  {row['source']}")
+            for key, value in row.items():
+                if key in ("source", "rows"):
+                    continue
+                print(
+                    f"    {key}: "
+                    + (f"{value:.4f}" if isinstance(value, float) else str(value))
+                )
+        usable = [
+            (v["anchored_auc"], v["actor_auc"]) for v in per_document.values()
+            if v["anchored_auc"] is not None and v["actor_auc"] is not None
+        ]
+        if usable:
+            print(
+                f"  per-document AUC (n={len(usable)}): anchored beats actor on "
+                f"{sum(1 for a, b in usable if a > b)}/{len(usable)} documents"
+            )
+
+    if args.learning_curve:
+        # Does held-out discrimination improve as TRAINING documents are added?
+        # Rising curve => the failure is evidence support (fixable by breadth);
+        # flat curve => the representation does not carry a transferable notion
+        # of utility-equivalence and more documents will not help.
+        train_docs = sorted(TRAIN_DOCS)
+        curve = []
+        cert_ids = index["certification"]
+        cert_rows = rows_by_split["certification"]
+        for count in range(1, len(train_docs) + 1):
+            subset = set(train_docs[:count])
+            keep = torch.tensor(
+                [
+                    i for i, row in enumerate(rows)
+                    if row["split"] == "train" and row["doc_id"] in subset
+                ],
+                dtype=torch.long,
+            )
+            torch.manual_seed(args.seed)
+            curve_probe = torch.nn.Sequential(
+                torch.nn.Linear(dim, policy.utility_head[0].out_features),
+                torch.nn.GELU(),
+                torch.nn.Linear(policy.utility_head[0].out_features, 1),
+            )
+            curve_optimizer = torch.optim.Adam(curve_probe.parameters(), lr=1e-3)
+            sub_a, sub_b = features_a[keep], features_b[keep]
+            sub_y = targets[keep]
+            for _ in range(args.epochs):
+                delta_q = (curve_probe(sub_a) - curve_probe(sub_b)).squeeze(-1)
+                slack = torch.clamp(
+                    (delta_q - sub_y).abs() - args.epsilon, min=0.0
+                )
+                curve_loss = F.huber_loss(
+                    slack, torch.zeros_like(slack), delta=1.0
+                )
+                curve_optimizer.zero_grad(set_to_none=True)
+                curve_loss.backward()
+                curve_optimizer.step()
+            with torch.no_grad():
+                margins = (
+                    curve_probe(features_a[cert_ids])
+                    - curve_probe(features_b[cert_ids])
+                ).squeeze(-1)
+            scored = _score_margins(
+                "curve", [float(v) for v in margins], cert_rows,
+            )
+            curve.append({
+                "train_documents": count,
+                "train_rows": int(len(keep)),
+                "certification_tie_auc": scored.get("tie_auc_excl_derivable"),
+                "certification_live_sign_agreement": scored.get(
+                    "live_sign_agreement"
+                ),
+            })
+            print(
+                f"  learning curve: {count} train doc(s), {len(keep):5d} rows -> "
+                f"certification tie-AUC "
+                f"{scored.get('tie_auc_excl_derivable'):.4f}"
+            )
+        report["learning_curve"] = curve
+
+    OUT.mkdir(parents=True, exist_ok=True)
+    suffix = f"-{args.probe}" + ("-no-derivable" if args.exclude_derivable else "")
+    (OUT / f"gate1-report{suffix}.json").write_text(json.dumps(report, indent=1))
 
 
 def snapshot(args) -> None:
@@ -867,6 +1186,29 @@ def main() -> None:
     runner.add_argument("--device", default="cuda")
     runner.add_argument("--seed", type=int, default=47)
     runner.set_defaults(func=run)
+    gate = subcommands.add_parser("gate1")
+    gate.add_argument("--checkpoint", required=True)
+    gate.add_argument(
+        "--representation-manifest",
+        default="results/ranker_v2/architecture/representation-full/manifest.json",
+    )
+    gate.add_argument(
+        "--profile-count-targets",
+        default="results/ranker_v2/reward/profile-count-targets.json",
+    )
+    gate.add_argument(
+        "--lambda-menu", default="results/ranker_v2/preflight/lambda-menu.json",
+    )
+    gate.add_argument("--device", default="cuda")
+    gate.add_argument("--seed", type=int, default=47)
+    gate.add_argument("--epochs", type=int, default=400)
+    gate.add_argument("--epsilon", type=float, default=READER_FLOOR)
+    gate.add_argument("--exclude-derivable", action="store_true")
+    gate.add_argument(
+        "--probe", choices=("linear", "mlp", "actor-init"), default="mlp",
+    )
+    gate.add_argument("--learning-curve", action="store_true")
+    gate.set_defaults(func=gate1)
     snap = subcommands.add_parser("snapshot")
     snap.add_argument("--arm", default="hurdle-eps044")
     snap.add_argument("--checkpoint", required=True)
