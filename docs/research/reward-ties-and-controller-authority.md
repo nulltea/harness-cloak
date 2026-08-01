@@ -7,6 +7,8 @@ tags: [rl, ranker-v2, reward-ties, entropy-collapse, controllability, kl-anchor,
        failure-taxonomy, literature]
 companion: [docs/specs/RL/interactive-ranker-v2-decision-log.md,
             research-wiki/experiments/2026-07-30-RL-ranker-v11-kl-anchor-spike.md]
+superseded_by: docs/research/tie-ownership-root-cause-and-solution-space.md
+archive_reason: Solution space superseded by the round-4 root-cause reassessment (2026-08-01), which reclassifies the fix families here as scale control applied to a misspecified composition. The five-step failure taxonomy below still stands and remains the canonical reference for it.
 ---
 
 # Reward ties and controller authority: why the privacy dial flips coins on small documents
