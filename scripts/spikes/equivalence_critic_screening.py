@@ -23,6 +23,7 @@ import json
 import math
 import sys
 from collections import defaultdict
+from collections.abc import Mapping
 from pathlib import Path
 
 sys.path.insert(0, "scripts")
@@ -81,8 +82,21 @@ def _load_documents():
 
 
 def mine(args) -> None:
+    """Mine single-decision delta-U evidence under BOTH utility statistics.
+
+    The document-level statistic (what every run through v15 used) differences
+    the whole weighted assertion mass, so assertions the artifact declares
+    CANNOT depend on the flipped decision contribute pure measurement noise.
+    The linked-restricted statistic differences only that decision's linked
+    assertions. Decisions with NO linked assertions are structurally derivable
+    ties (no feedback channel can separate their actions — Bartok duplicate
+    actions); they are labelled, not measured. Round-4 zoom-out, 2026-08-01.
+    """
+    from cloak.reward.utility_credit import _partitions
+
     documents = _load_documents()
-    vectors: dict[str, dict[tuple, float]] = {}
+    artifact = json.loads(Path(args.utility_artifact).read_text())
+    vectors: dict[str, dict[tuple, Mapping]] = {}
     for line in Path(args.utility_cache).read_text().splitlines():
         try:
             row = json.loads(line)["result"]
@@ -93,11 +107,12 @@ def mine(args) -> None:
             continue
         ids = [decision.decision_id for decision in document.policy_decisions]
         vector = row.get("action_vector", {})
-        if not ids or set(vector) != set(ids):
+        scores = row.get("component_scores")
+        if not ids or set(vector) != set(ids) or not isinstance(scores, Mapping):
             continue
         vectors.setdefault(document.doc_id, {})[
             tuple(vector[i] for i in ids)
-        ] = float(row["utility"])
+        ] = scores
 
     rows = []
     for doc_id, cached in vectors.items():
@@ -105,6 +120,9 @@ def mine(args) -> None:
             decision.decision_id
             for decision in documents[doc_id].policy_decisions
         ]
+        partitions = _partitions(artifact, doc_id)
+        weights = partitions.weights
+        denominator = partitions.denominator
         index: dict[tuple, list[tuple]] = {}
         for key in cached:
             for position in range(len(ids)):
@@ -113,6 +131,8 @@ def mine(args) -> None:
         for (position, rest), keys in index.items():
             if len(keys) < 2:
                 continue
+            decision_id = ids[position]
+            linked = partitions.linked_by_decision.get(decision_id, frozenset())
             context = {
                 ids[i]: rest[i] for i in range(len(ids)) if i != position
             }
@@ -125,50 +145,79 @@ def mine(args) -> None:
                         keys[i][position]: cached[keys[i]],
                         keys[j][position]: cached[keys[j]],
                     }
-                    delta_u = by_action[first] - by_action[second]
+                    a_scores, b_scores = by_action[first], by_action[second]
+                    delta_document = sum(
+                        weights[x] * (a_scores[x] - b_scores[x])
+                        for x in weights if x in a_scores and x in b_scores
+                    ) / denominator
+                    delta_linked = sum(
+                        weights[x] * (a_scores[x] - b_scores[x])
+                        for x in linked if x in a_scores and x in b_scores
+                    ) / denominator
                     rows.append({
                         "doc_id": doc_id,
-                        "decision_id": ids[position],
+                        "decision_id": decision_id,
                         "action_a": first,
                         "action_b": second,
-                        "delta_u": delta_u,
+                        "delta_u": delta_linked,
+                        "delta_u_document": delta_document,
+                        "linked_assertions": len(linked),
+                        "derivable_tie": not linked,
                         "context": context,
                         "split": _split_for(doc_id),
-                        "stratum": _stratum(delta_u),
+                        "stratum": "derivable" if not linked else _stratum(delta_linked),
+                        "stratum_document": _stratum(delta_document),
                     })
 
     OUT.mkdir(parents=True, exist_ok=True)
-    (OUT / "evidence-rows.json").write_text(json.dumps({
+    (OUT / "evidence-rows-linked.json").write_text(json.dumps({
         "reader_floor": READER_FLOOR,
         "exact_atol": EXACT_ATOL,
         "precision_target": PRECISION_TARGET,
+        "statistic": "linked-restricted (delta_u); document-level retained as delta_u_document",
         "rows": rows,
     }))
 
-    counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
-    docs: dict[str, set] = defaultdict(set)
-    pairs: dict[str, set] = defaultdict(set)
-    for row in rows:
-        counts[row["split"]][row["stratum"]] += 1
-        docs[row["split"]].add(row["doc_id"])
-        pairs[row["split"]].add((
-            row["doc_id"], row["decision_id"], row["action_a"], row["action_b"],
-        ))
-    print(f"evidence rows total: {len(rows)}")
-    for split in ("train", "calibration", "certification"):
-        strata = counts[split]
-        tie_rows = strata["exact"] + strata["subnoise"]
-        print(
-            f"{split:13s}: docs {len(docs[split]):3d} | rows "
-            f"{sum(strata.values()):5d} (exact {strata['exact']:4d} | subnoise "
-            f"{strata['subnoise']:4d} | live {strata['live']:5d}) | unique "
-            f"pairs {len(pairs[split]):5d} | tie-band rows {tie_rows:5d}"
-        )
-    cert_ties = counts["certification"]["exact"] + counts["certification"]["subnoise"]
+    order = ("derivable", "exact", "subnoise", "live")
+    for label, key in (
+        ("DOCUMENT-level (statistic used through v15)", "stratum_document"),
+        ("LINKED-restricted (corrected statistic)", "stratum"),
+    ):
+        counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+        docs: dict[str, set] = defaultdict(set)
+        for row in rows:
+            counts[row["split"]][row[key]] += 1
+            docs[row["split"]].add(row["doc_id"])
+        print(f"\n{label}: {len(rows)} rows")
+        for split in ("train", "calibration", "certification"):
+            strata = counts[split]
+            ties = sum(strata[name] for name in order if name != "live")
+            print(
+                f"  {split:13s}: docs {len(docs[split]):3d} | "
+                + " | ".join(f"{name} {strata[name]:5d}" for name in order)
+                + f" | tie-band {ties:5d}"
+            )
+    derivable = [row for row in rows if row["derivable_tie"]]
+    contradicted = sum(
+        1 for row in derivable if abs(row["delta_u_document"]) > EXACT_ATOL
+    )
+    print(
+        f"\nstructurally derivable ties: {len(derivable)} rows across "
+        f"{len({row['doc_id'] for row in derivable})} documents "
+        f"({len({row['split'] for row in derivable})} splits) — free, "
+        f"document-diverse labels needing no probe budget"
+    )
+    print(
+        f"document-level statistic reports a NONZERO difference on "
+        f"{contradicted}/{len(derivable)} of them ({100*contradicted/max(1,len(derivable)):.0f}%) "
+        f"— pure measurement contamination on provably equivalent pairs"
+    )
+    cert = [row for row in rows if row["split"] == "certification"]
+    cert_ties = sum(1 for row in cert if row["stratum"] != "live")
     verdict = "PASS" if cert_ties >= MIN_CERT_ACCEPTED else "KILL (undersized)"
     print(
-        f"feasibility: certification tie-band rows {cert_ties} vs minimum "
-        f"acceptable accepted count {MIN_CERT_ACCEPTED} -> {verdict}"
+        f"feasibility (linked statistic): certification tie-band rows "
+        f"{cert_ties} vs minimum {MIN_CERT_ACCEPTED} -> {verdict}"
     )
 
 
@@ -797,6 +846,9 @@ def main() -> None:
     miner.add_argument(
         "--utility-cache",
         default="results/ranker_v2/cache/utility-results.jsonl",
+    )
+    miner.add_argument(
+        "--utility-artifact", default="results/ranker_v2/qa/aci-full.utility",
     )
     miner.set_defaults(func=mine)
     runner = subcommands.add_parser("run")
