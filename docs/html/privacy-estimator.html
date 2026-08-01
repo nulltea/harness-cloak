@@ -8,6 +8,8 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/site.css">
+<script defer src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.28.0/dist/viz-global.js"></script>
+<script defer src="js/ranker-model-diagram.js"></script>
 </head>
 <body>
 <div class="sheet">
@@ -38,185 +40,332 @@
         <p><strong>Architectural limitation.</strong> Both paths reduce the whole encoded sequence to one uniform mean vector before either head acts. The relation branch therefore has no explicit source-to-candidate interaction, field-specific pooling, or occurrence-targeted attention. Its performance plateau after label auditing and weak correct-context advantage make this shared representation bottleneck the next architecture question. The successful detached count head remains a useful baseline rather than evidence that count-specific encoder adaptation is unnecessary.</p>
       </div>
 
-    <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
-      <div class="diagram-cap">
-        <span class="l">FIG · M1: ML k-anonymity privacy estimator</span>
-        <span>navy = relation path · green = count path · rust = trainable · gray = frozen</span>
+      <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
+        <div class="diagram-cap">
+          <span class="l">FIG · M1: ML k-anonymity privacy estimator</span>
+          <span>green = tensor/encoder · rust = linear · gray = normalization/frozen · dashed = trainable boundary/gradient</span>
+        </div>
+        <div
+          id="privacy-estimator-diagram"
+          class="ranker-model-diagram"
+          role="img"
+          aria-label="Component-level computational graph for the ML k-anonymity privacy estimator"
+        >
+          <div class="ranker-model-diagram__layout">
+
+            <div id="relation-pass" class="ranker-model-diagram__module" data-module-id="relation-pass">
+              <div class="ranker-model-diagram__module-label">01 · Relation pass · context-bearing · top-four encoder adaptation</div>
+              <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:230px 240px 240px 205px 220px;gap:34px">
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="relation_fields">
+                    <div class="ranker-model-diagram__node-title">Occurrence bundle</div>
+                    <div class="ranker-model-diagram__node-detail">runtime type · detected source<br>candidate substitution<br>excerpt with one [OCC]…[/OCC]</div>
+                  </div>
+                  <div class="ranker-model-diagram__node" data-node-id="relation_serialization">
+                    <div class="ranker-model-diagram__node-title">Two-segment serialization</div>
+                    <div class="ranker-model-diagram__node-detail">A: type · source · candidate<br>B: marked clinical context</div>
+                  </div>
+                  <div class="ranker-model-diagram__node" data-node-id="relation_sampler">
+                    <div class="ranker-model-diagram__node-title">Balanced row sampler</div>
+                    <div class="ranker-model-diagram__node-detail">equal label mass<br>equal bundle mass within label<br>equal rows within bundle</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node" data-node-id="relation_tokenizer">
+                    <div class="ranker-model-diagram__node-title">ClinicalMosaic tokenizer</div>
+                    <div class="ranker-model-diagram__node-detail">paired input · truncate only B<br>max length 256 · pretokenized once</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="relation_batch">
+                    <div class="ranker-model-diagram__node-title">Length bucket + dynamic pad</div>
+                    <div class="ranker-model-diagram__node-detail">32-token buckets · ≤ 4,096 tokens<br>≤ 16 examples · replacement sampling</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_inputs">
+                    <div class="ranker-model-diagram__node-title">Tokenizer tensors</div>
+                    <div class="ranker-model-diagram__node-detail">input_ids [B × L]<br>attention_mask [B × L]<br>token_type_ids [B × L], if emitted<br>special_tokens_mask [B × L]</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder" data-node-id="frozen_encoder">
+                    <div class="ranker-model-diagram__node-title">ClinicalMosaic</div>
+                    <div class="ranker-model-diagram__node-detail">embeddings + encoder layers 0–7<br>frozen · no relation gradients<br>hidden size 768</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="trainable_encoder">
+                    <div class="ranker-model-diagram__node-title">Encoder layers 8–11</div>
+                    <div class="ranker-model-diagram__node-detail">trainable during relation stage<br>AdamW learning rate 2e-5</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_hidden">
+                    <div class="ranker-model-diagram__node-title">Final token states</div>
+                    <div class="ranker-model-diagram__node-detail">H_rel [B × L × 768]</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="relation_mask">
+                    <div class="ranker-model-diagram__node-title">Pool mask</div>
+                    <div class="ranker-model-diagram__node-detail">attention_mask<br>AND NOT special_tokens_mask<br>M_rel [B × L]</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="relation_pool" data-port-shape="circle" title="Masked sum divided by the number of poolable tokens">
+                    <div class="ranker-model-diagram__node-title">Σ/n</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_vector">
+                    <div class="ranker-model-diagram__node-title">Masked-mean relation vector</div>
+                    <div class="ranker-model-diagram__node-detail">float32 accumulation<br>z_rel [B × 768]</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization ranker-model-diagram__node--trainable" data-node-id="relation_norm">
+                    <div class="ranker-model-diagram__node-title">LayerNorm</div>
+                    <div class="ranker-model-diagram__node-detail">768 features · trainable</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="relation_linear_128">
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                    <div class="ranker-model-diagram__node-title">Linear 768 → 128</div>
+                    <div class="ranker-model-diagram__node-detail">trainable relation head</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="relation_gelu">
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
+                    <div class="ranker-model-diagram__node-title">GELU</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="relation_dropout">
+                    <div class="ranker-model-diagram__node-title">Dropout 0.1</div>
+                    <div class="ranker-model-diagram__node-detail">training only</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="relation_linear_4">
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                    <div class="ranker-model-diagram__node-title">Linear 128 → 4</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_logits">
+                    <div class="ranker-model-diagram__node-title">Four relation logits</div>
+                    <div class="ranker-model-diagram__node-detail">valid generalization · reversal<br>related but non-substitutable · unrelated<br>softmax only at inference</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ranker-model-diagram__row" style="grid-template-columns:260px 260px 310px;gap:46px;justify-content:center">
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="relation_targets">
+                  <div class="ranker-model-diagram__node-title">Audited class target</div>
+                  <div class="ranker-model-diagram__node-detail">one of four labels · integer class index</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_ce">
+                  <div class="ranker-model-diagram__node-title">L_relation</div>
+                  <div class="ranker-model-diagram__node-detail">four-class cross-entropy</div>
+                </div>
+                <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="relation_optimizer">
+                  <div class="ranker-model-diagram__node-title">AdamW + global clip</div>
+                  <div class="ranker-model-diagram__node-detail">head 2e-4 · encoder 2e-5<br>weight decay 0.01 · gradient norm ≤ 1.0<br>updates head + encoder layers 8–11</div>
+                </div>
+              </div>
+            </div>
+
+            <div id="count-pass" class="ranker-model-diagram__module" data-module-id="count-pass">
+              <div class="ranker-model-diagram__module-label">02 · Count pass · candidate-only · frozen cached encoder features</div>
+              <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:225px 250px 210px 210px 230px;gap:34px">
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="count_fields">
+                    <div class="ranker-model-diagram__node-title">Formal universe row</div>
+                    <div class="ranker-model-diagram__node-detail">runtime type<br>candidate substitution<br>canonical member-set cardinality</div>
+                  </div>
+                  <div class="ranker-model-diagram__node" data-node-id="count_serialization">
+                    <div class="ranker-model-diagram__node-title">Candidate-only serialization</div>
+                    <div class="ranker-model-diagram__node-detail">type · candidate<br>no source · no occurrence excerpt</div>
+                  </div>
+                  <div class="ranker-model-diagram__node" data-node-id="count_tokenizer">
+                    <div class="ranker-model-diagram__node-title">ClinicalMosaic tokenizer</div>
+                    <div class="ranker-model-diagram__node-detail">padding + truncation<br>max length 256</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_inputs">
+                    <div class="ranker-model-diagram__node-title">Tokenizer tensors</div>
+                    <div class="ranker-model-diagram__node-detail">input IDs + masks [B × L]</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder" data-node-id="count_encoder">
+                    <div class="ranker-model-diagram__node-title">Relation-adapted ClinicalMosaic</div>
+                    <div class="ranker-model-diagram__node-detail">same checkpoint weights<br>complete encoder frozen<br>eval + no_grad</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_hidden">
+                    <div class="ranker-model-diagram__node-title">Final token states</div>
+                    <div class="ranker-model-diagram__node-detail">H_count [B × L × 768]</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="count_mask">
+                    <div class="ranker-model-diagram__node-title">Pool mask</div>
+                    <div class="ranker-model-diagram__node-detail">attention AND NOT special</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="count_pool" data-port-shape="circle" title="Masked sum divided by the number of poolable tokens">
+                    <div class="ranker-model-diagram__node-title">Σ/n</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_vector">
+                    <div class="ranker-model-diagram__node-title">Masked-mean count vector</div>
+                    <div class="ranker-model-diagram__node-detail">z_count [B × 768]</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_cache">
+                    <div class="ranker-model-diagram__node-title">Cached CPU feature bank</div>
+                    <div class="ranker-model-diagram__node-detail">Z_count [N × 768]<br>encoder never enters optimizer loop</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                  <div class="ranker-model-diagram__node" data-node-id="count_sampler">
+                    <div class="ranker-model-diagram__node-title">Weighted universe batch</div>
+                    <div class="ranker-model-diagram__node-detail">sampling_weight · 64 rows<br>sampled with replacement</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization ranker-model-diagram__node--trainable" data-node-id="count_norm">
+                    <div class="ranker-model-diagram__node-title">LayerNorm</div>
+                    <div class="ranker-model-diagram__node-detail">768 features</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="count_linear_64">
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                    <div class="ranker-model-diagram__node-title">Linear 768 → 64</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="count_gelu">
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
+                    <div class="ranker-model-diagram__node-title">GELU</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="count_linear_1">
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                    <div class="ranker-model-diagram__node-title">Linear 64 → 1</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_standardized">
+                    <div class="ranker-model-diagram__node-title">Standardized prediction</div>
+                    <div class="ranker-model-diagram__node-detail">ŷ_std [B]</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="count_inverse" data-port-shape="circle" title="Restore the training target mean and population standard deviation">
+                    <div class="ranker-model-diagram__node-title">σ+μ</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_output">
+                    <div class="ranker-model-diagram__node-title">Predicted log count</div>
+                    <div class="ranker-model-diagram__node-detail">ŷ_logK = ŷ_std × σ_train + μ_train</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="count_target">
+                    <div class="ranker-model-diagram__node-title">Formal count target</div>
+                    <div class="ranker-model-diagram__node-detail">y = log(count_target)<br>count ≥ 1 · not corpus frequency</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="target_standardize" data-port-shape="circle" title="Subtract the training mean and divide by the population standard deviation">
+                    <div class="ranker-model-diagram__node-title">−μ/σ</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_regression">
+                    <div class="ranker-model-diagram__node-title">L_reg</div>
+                    <div class="ranker-model-diagram__node-detail">Smooth-L1(ŷ_std, y_std)</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="count_optimizer">
+                    <div class="ranker-model-diagram__node-title">AdamW · head only</div>
+                    <div class="ranker-model-diagram__node-detail">learning rate 3e-4<br>weight decay 0.01<br>gradient norm ≤ 1.0</div>
+                  </div>
+                </div>
+
+                <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="formal_pairs">
+                    <div class="ranker-model-diagram__node-title">Formal ordering pairs</div>
+                    <div class="ranker-model-diagram__node-detail">narrow universe ID<br>broad universe ID · same split</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="shared_pair_head">
+                    <div class="ranker-model-diagram__node-title">Shared count head ×2</div>
+                    <div class="ranker-model-diagram__node-detail">ŷ_narrow · ŷ_broad<br>same LayerNorm and MLP weights</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="pair_difference" data-port-shape="circle" title="Broad standardized prediction minus narrow standardized prediction">
+                    <div class="ranker-model-diagram__node-title">Δ</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="pair_loss">
+                    <div class="ranker-model-diagram__node-title">L_pair</div>
+                    <div class="ranker-model-diagram__node-detail">softplus(−Δ)</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="count_loss_sum" data-port-shape="circle" title="Regression loss plus pairwise loss with weight one">
+                    <div class="ranker-model-diagram__node-title">+</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_loss">
+                    <div class="ranker-model-diagram__node-title">L_count</div>
+                    <div class="ranker-model-diagram__node-detail">L_reg + 1.0 × L_pair</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <svg class="ranker-model-diagram__edges" aria-hidden="true" focusable="false"></svg>
+
+          <script type="text/vnd.graphviz" data-ranker-model-dot data-privacy-estimator-dot>
+digraph PrivacyEstimatorEdges {
+  edge [color="#34393e", penwidth=1.15, arrowsize=0.62];
+
+  /* Relation forward path. */
+  relation_fields -> relation_serialization;
+  relation_serialization -> relation_tokenizer;
+  relation_tokenizer -> relation_batch;
+  relation_sampler -> relation_batch [color="#3d6287"];
+  relation_batch -> relation_inputs;
+  relation_inputs -> frozen_encoder;
+  frozen_encoder -> trainable_encoder;
+  trainable_encoder -> relation_hidden;
+  relation_inputs -> relation_mask [color="#666d73"];
+  relation_hidden -> relation_pool [arrowhead=none];
+  relation_mask -> relation_pool [arrowhead=none, color="#666d73"];
+  relation_pool -> relation_vector;
+  relation_vector -> relation_norm;
+  relation_norm -> relation_linear_128;
+  relation_linear_128 -> relation_gelu;
+  relation_gelu -> relation_dropout;
+  relation_dropout -> relation_linear_4;
+  relation_linear_4 -> relation_logits;
+
+  /* Relation supervision and gradient ownership. */
+  relation_targets -> relation_ce [style=dashed, color="#884d66"];
+  relation_logits -> relation_ce [style=dashed, color="#884d66"];
+  relation_ce -> relation_optimizer [style=dashed, color="#a15f54", penwidth=1.45];
+  relation_optimizer -> relation_norm [style=dashed, color="#a15f54", penwidth=1.45];
+  relation_optimizer -> trainable_encoder [style=dashed, color="#a15f54", penwidth=1.45];
+
+  /* Count forward path and checkpoint handoff. */
+  count_fields -> count_serialization;
+  count_serialization -> count_tokenizer;
+  count_tokenizer -> count_inputs;
+  trainable_encoder -> count_encoder [style=dashed, color="#666d73", label="same adapted weights"];
+  count_inputs -> count_encoder;
+  count_encoder -> count_hidden;
+  count_inputs -> count_mask [color="#666d73"];
+  count_hidden -> count_pool [arrowhead=none];
+  count_mask -> count_pool [arrowhead=none, color="#666d73"];
+  count_pool -> count_vector;
+  count_vector -> count_cache;
+  count_cache -> count_sampler;
+  count_sampler -> count_norm;
+  count_norm -> count_linear_64;
+  count_linear_64 -> count_gelu;
+  count_gelu -> count_linear_1;
+  count_linear_1 -> count_standardized;
+  count_standardized -> count_inverse;
+  count_inverse -> count_output;
+
+  /* Count magnitude supervision. */
+  count_target -> target_standardize;
+  target_standardize -> count_sampler [style=dashed, color="#884d66", arrowhead=none];
+  count_sampler -> count_regression [style=dashed, color="#884d66"];
+  count_standardized -> count_regression [style=dashed, color="#884d66"];
+
+  /* Count ordering supervision through the same head. */
+  formal_pairs -> shared_pair_head;
+  count_cache -> shared_pair_head;
+  shared_pair_head -> pair_difference;
+  pair_difference -> pair_loss;
+  count_regression -> count_loss_sum [arrowhead=none];
+  pair_loss -> count_loss_sum [arrowhead=none];
+  count_loss_sum -> count_loss;
+
+  /* Count head is the only trainable count-stage module. */
+  count_loss -> count_optimizer [style=dashed, color="#a15f54", penwidth=1.45];
+  count_optimizer -> count_norm [style=dashed, color="#a15f54", penwidth=1.45];
+}
+          </script>
+          <div class="ranker-model-diagram__status">Computing architecture rendering…</div>
+        </div>
+        <noscript><p class="lede">The component grid remains readable without JavaScript; Graphviz edge routing requires it.</p></noscript>
       </div>
-      <svg viewBox="0 0 1420 1010" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="privacy-estimator-title privacy-estimator-desc" style="display:block;width:100%;min-width:1120px;height:auto;background:transparent">
-        <title id="privacy-estimator-title">ML k-anonymity privacy estimator architecture</title>
-        <desc id="privacy-estimator-desc">Two separate forward passes share ClinicalMosaic weights. The relation pass packs sensitive type, detected source, candidate substitution, and a marked clinical excerpt. It fine-tunes encoder layers 8 through 11 and predicts valid generalization, reversal, related but non-substitutable, or unrelated. The count pass packs sensitive type and candidate substitution only, freezes the encoder, caches masked mean pooled features, and predicts log universe count. Relation learning uses balanced cross-entropy. Count learning uses smooth L1 regression and formal narrow-to-broad ordering pairs.</desc>
-        <defs>
-          <marker id="pe-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
-          <marker id="pe-stop" viewBox="0 0 12 12" refX="6" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M2 2L10 10M10 2L2 10" fill="none" stroke="context-stroke" stroke-width="2"/></marker>
-          <style>
-            .pe-zone{fill:#fbfbfa;stroke:#34393e;stroke-width:1.35}
-            .pe-rel{fill:#e3ebf5;stroke:#3d6287;stroke-width:1.4}
-            .pe-count{fill:#dfece5;stroke:#496454;stroke-width:1.4}
-            .pe-shared{fill:#f2f0eb;stroke:#5f6469;stroke-width:1.4}
-            .pe-train{fill:#f0dfda;stroke:#96594f;stroke-width:1.45}
-            .pe-note{fill:#f7f6f2;stroke:#777c82;stroke-width:1.15;stroke-dasharray:5 4}
-            .pe-output{fill:#fff;stroke:#22272c;stroke-width:1.55}
-            .pe-title{fill:#171b1f;font:600 14px 'JetBrains Mono',monospace}
-            .pe-label{fill:#1c2024;font:500 12px 'JetBrains Mono',monospace}
-            .pe-small{fill:#5f666d;font:400 10.5px 'JetBrains Mono',monospace}
-            .pe-kicker{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.65px}
-            .pe-rel-text{fill:#2f587e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.25px}
-            .pe-count-text{fill:#426753;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.25px}
-            .pe-line{fill:none;stroke:#34393e;stroke-width:1.4}
-            .pe-line-rel{fill:none;stroke:#3d6f9d;stroke-width:1.8}
-            .pe-line-count{fill:none;stroke:#4f735e;stroke-width:1.8}
-            .pe-grad{fill:none;stroke:#a15f54;stroke-width:1.55;stroke-dasharray:5 4}
-            .pe-frozen{fill:none;stroke:#777c82;stroke-width:1.35;stroke-dasharray:5 4}
-          </style>
-        </defs>
-
-        <rect width="1420" height="1010" fill="transparent"/>
-        <text x="24" y="28" class="pe-kicker">IMPLEMENTED V3 · SHARED WEIGHTS · TWO DISTINCT FORWARD PASSES</text>
-
-        <rect x="18" y="48" width="1384" height="430" rx="16" class="pe-zone"/>
-        <text x="36" y="76" class="pe-rel-text">RELATION PASS · CONTEXT-BEARING · ENCODER ADAPTATION</text>
-
-        <rect x="38" y="96" width="238" height="116" rx="8" class="pe-rel"/>
-        <text x="157" y="122" text-anchor="middle" class="pe-title">Occurrence bundle</text>
-        <text x="58" y="148" class="pe-small">runtime type</text>
-        <text x="58" y="166" class="pe-small">detected source → candidate</text>
-        <text x="58" y="184" class="pe-small">excerpt with [OCC] markers</text>
-
-        <rect x="304" y="96" width="196" height="116" rx="8" class="pe-rel"/>
-        <text x="402" y="122" text-anchor="middle" class="pe-title">Relation packing</text>
-        <text x="324" y="148" class="pe-small">segment A: type · source</text>
-        <text x="324" y="166" class="pe-small">candidate substitution</text>
-        <text x="324" y="184" class="pe-small">segment B: clinical context</text>
-
-        <rect x="528" y="88" width="420" height="304" rx="13" class="pe-shared"/>
-        <text x="738" y="116" text-anchor="middle" class="pe-kicker">SIFAL / CLINICALMOSAIC · HIDDEN SIZE 768</text>
-
-        <rect x="552" y="142" width="176" height="86" rx="7" class="pe-shared"/>
-        <text x="640" y="169" text-anchor="middle" class="pe-title">Embeddings + layers 0–7</text>
-        <text x="640" y="192" text-anchor="middle" class="pe-small">frozen</text>
-        <text x="640" y="210" text-anchor="middle" class="pe-small">token states</text>
-
-        <rect x="752" y="142" width="172" height="86" rx="7" class="pe-train"/>
-        <text x="838" y="169" text-anchor="middle" class="pe-title">Encoder layers 8–11</text>
-        <text x="838" y="192" text-anchor="middle" class="pe-small">relation gradients enabled</text>
-        <text x="838" y="210" text-anchor="middle" class="pe-small">learning rate 2e-5</text>
-
-        <rect x="552" y="266" width="372" height="88" rx="7" class="pe-shared"/>
-        <text x="738" y="293" text-anchor="middle" class="pe-title">Masked mean pooling</text>
-        <text x="738" y="316" text-anchor="middle" class="pe-small">average all non-special final token states</text>
-        <text x="738" y="336" text-anchor="middle" class="pe-small">one 768-dimensional vector</text>
-
-        <rect x="978" y="96" width="198" height="208" rx="10" class="pe-train"/>
-        <text x="1077" y="123" text-anchor="middle" class="pe-title">Relation head</text>
-        <text x="1077" y="151" text-anchor="middle" class="pe-small">LayerNorm(768)</text>
-        <text x="1077" y="174" text-anchor="middle" class="pe-small">Linear 768 → 128</text>
-        <text x="1077" y="197" text-anchor="middle" class="pe-small">GELU · Dropout 0.1</text>
-        <text x="1077" y="220" text-anchor="middle" class="pe-small">Linear 128 → 4</text>
-        <text x="1077" y="258" text-anchor="middle" class="pe-small">head learning rate 2e-4</text>
-        <text x="1077" y="280" text-anchor="middle" class="pe-small">trainable with top layers</text>
-
-        <rect x="1204" y="96" width="174" height="208" rx="10" class="pe-output"/>
-        <text x="1291" y="123" text-anchor="middle" class="pe-title">Four relation logits</text>
-        <text x="1222" y="153" class="pe-small">valid generalization</text>
-        <text x="1222" y="178" class="pe-small">reversal</text>
-        <text x="1222" y="203" class="pe-small">related but</text>
-        <text x="1222" y="220" class="pe-small">non-substitutable</text>
-        <text x="1222" y="245" class="pe-small">unrelated</text>
-        <text x="1291" y="280" text-anchor="middle" class="pe-small">softmax at inference</text>
-
-        <path d="M276 154H300" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
-        <path d="M500 154H548" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
-        <path d="M728 185H748" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
-        <path d="M838 228V248C838 258 818 266 802 266" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
-        <path d="M924 310H974" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
-        <path d="M1176 200H1200" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
-
-        <rect x="38" y="336" width="462" height="106" rx="8" class="pe-note"/>
-        <text x="58" y="363" class="pe-kicker">RELATION INPUT CONTRACT</text>
-        <text x="58" y="389" class="pe-small">direction is expressed by serialized field order</text>
-        <text x="58" y="410" class="pe-small">context, occurrence, source, and candidate collapse into one pool</text>
-        <text x="58" y="431" class="pe-small">no field-specific or occurrence-targeted interaction module</text>
-
-        <rect x="978" y="332" width="400" height="110" rx="8" class="pe-rel"/>
-        <text x="998" y="359" class="pe-kicker">RELATION OBJECTIVE + SELECTION</text>
-        <text x="998" y="385" class="pe-small">equal label mass · equal bundle mass within label</text>
-        <text x="998" y="406" class="pe-small">cross-entropy → relation head + encoder layers 8–11</text>
-        <text x="998" y="427" class="pe-small">select: dev macro-F1 · related recall · bundle contrast</text>
-        <path d="M1178 332V309" class="pe-grad" marker-end="url(#pe-arrow)"/>
-        <path d="M978 387C948 387 944 224 916 205" class="pe-grad" marker-end="url(#pe-arrow)"/>
-
-        <text x="36" y="518" class="pe-count-text">COUNT PASS · CANDIDATE-ONLY · DETACHED HEAD</text>
-        <rect x="18" y="490" width="1384" height="302" rx="16" class="pe-zone"/>
-
-        <rect x="38" y="548" width="238" height="108" rx="8" class="pe-count"/>
-        <text x="157" y="575" text-anchor="middle" class="pe-title">Formal count universe</text>
-        <text x="58" y="601" class="pe-small">runtime type</text>
-        <text x="58" y="621" class="pe-small">candidate level label</text>
-        <text x="58" y="641" class="pe-small">explicit member-set cardinality</text>
-
-        <rect x="304" y="548" width="196" height="108" rx="8" class="pe-count"/>
-        <text x="402" y="575" text-anchor="middle" class="pe-title">Count packing</text>
-        <text x="324" y="603" class="pe-small">sensitive type</text>
-        <text x="324" y="624" class="pe-small">candidate substitution</text>
-        <text x="324" y="645" class="pe-small">no source · no excerpt</text>
-
-        <rect x="528" y="540" width="420" height="204" rx="13" class="pe-shared"/>
-        <text x="738" y="568" text-anchor="middle" class="pe-kicker">SAME RELATION-ADAPTED ENCODER WEIGHTS</text>
-        <rect x="552" y="592" width="372" height="60" rx="7" class="pe-shared"/>
-        <text x="738" y="617" text-anchor="middle" class="pe-title">ClinicalMosaic encoder frozen</text>
-        <text x="738" y="639" text-anchor="middle" class="pe-small">no count-stage encoder gradients</text>
-        <rect x="552" y="670" width="372" height="52" rx="7" class="pe-count"/>
-        <text x="738" y="693" text-anchor="middle" class="pe-title">Masked mean pool → cached features</text>
-        <text x="738" y="712" text-anchor="middle" class="pe-small">13,567 train · 2,909 dev universes</text>
-
-        <rect x="978" y="548" width="198" height="174" rx="10" class="pe-train"/>
-        <text x="1077" y="575" text-anchor="middle" class="pe-title">Count head</text>
-        <text x="1077" y="603" text-anchor="middle" class="pe-small">LayerNorm(768)</text>
-        <text x="1077" y="626" text-anchor="middle" class="pe-small">Linear 768 → 64</text>
-        <text x="1077" y="649" text-anchor="middle" class="pe-small">GELU</text>
-        <text x="1077" y="672" text-anchor="middle" class="pe-small">Linear 64 → 1</text>
-        <text x="1077" y="702" text-anchor="middle" class="pe-small">only trainable count module</text>
-
-        <rect x="1204" y="548" width="174" height="174" rx="10" class="pe-output"/>
-        <text x="1291" y="575" text-anchor="middle" class="pe-title">Predicted log count</text>
-        <text x="1291" y="606" text-anchor="middle" class="pe-small">standardized target</text>
-        <text x="1291" y="628" text-anchor="middle" class="pe-small">during optimization</text>
-        <text x="1291" y="660" text-anchor="middle" class="pe-small">restore training mean</text>
-        <text x="1291" y="681" text-anchor="middle" class="pe-small">and scale at output</text>
-
-        <path d="M276 602H300" class="pe-line-count" marker-end="url(#pe-arrow)"/>
-        <path d="M500 602H548" class="pe-line-count" marker-end="url(#pe-arrow)"/>
-        <path d="M738 652V666" class="pe-line-count" marker-end="url(#pe-arrow)"/>
-        <path d="M924 696H974" class="pe-line-count" marker-end="url(#pe-arrow)"/>
-        <path d="M1176 635H1200" class="pe-line-count" marker-end="url(#pe-arrow)"/>
-
-        <rect x="38" y="684" width="462" height="72" rx="8" class="pe-note"/>
-        <text x="58" y="711" class="pe-kicker">FORMAL SUPERVISION</text>
-        <text x="58" y="736" class="pe-small">19,385 ontology-defined universes · counts are not corpus frequencies</text>
-        <path d="M500 720H524" class="pe-frozen" marker-end="url(#pe-stop)"/>
-
-        <path d="M1291 722V770H1077V726" class="pe-grad" marker-end="url(#pe-arrow)"/>
-
-        <rect x="18" y="812" width="1384" height="180" rx="16" class="pe-zone"/>
-        <text x="36" y="841" class="pe-kicker">OBJECTIVES, GRADIENT OWNERSHIP, AND ARCHITECTURE QUESTIONS EXPOSED BY V3</text>
-
-        <rect x="38" y="866" width="408" height="96" rx="8" class="pe-rel"/>
-        <text x="58" y="893" class="pe-title">Relation learning</text>
-        <text x="58" y="918" class="pe-small">balanced four-class cross-entropy</text>
-        <text x="58" y="939" class="pe-small">gradient: relation head + encoder layers 8–11</text>
-
-        <rect x="470" y="866" width="408" height="96" rx="8" class="pe-count"/>
-        <text x="490" y="893" class="pe-title">Count learning</text>
-        <text x="490" y="918" class="pe-small">smooth L1 + narrow-to-broad logistic ordering</text>
-        <text x="490" y="939" class="pe-small">gradient: count head only · encoder frozen</text>
-
-        <rect x="902" y="866" width="476" height="96" rx="8" class="pe-note"/>
-        <text x="922" y="893" class="pe-title">What the current graph cannot express directly</text>
-        <text x="922" y="918" class="pe-small">field-aware source↔candidate interactions · occurrence-targeted pooling</text>
-        <text x="922" y="939" class="pe-small">count-specific encoder adaptation · explicit type-balanced representation</text>
-      </svg>
-    </div>
     </section>
   </main>
 </div>
