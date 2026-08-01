@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>HarnessCloak · Privacy estimator architecture</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/site.css">
+</head>
+<body>
+<div class="sheet">
+  <span class="crosshair tl"></span><span class="crosshair tr"></span>
+  <span class="crosshair bl"></span><span class="crosshair br"></span>
+  <div class="topnav" id="site-nav"></div>
+
+  <header class="masthead">
+    <h1 class="title">Privacy Estimator<span class="title-sub">Relation classification and formal universe count prediction</span></h1>
+    <div class="rev">architecture report · 2026-08-01</div>
+    <div class="abstract">
+      <div class="abstract-label">Abstract</div>
+      <p class="subtitle">Privacy estimation for lattice substitutions requires two judgments: whether a candidate preserves the source relation, and how large the candidate's formal anonymity universe is; the current uniform pooled representation may not retain the interactions needed for the first task. The implemented model routes distinct serialized inputs through shared ClinicalMosaic weights, adapts only the top four encoder layers for four-way relation classification, and trains a detached count head over frozen candidate features. After two rounds of relation-label auditing, the relation head reached 0.7028 development macro-F1, effectively unchanged from its predecessor's 0.7039. Health-condition macro-F1 rose by 0.0244 while drug and procedure macro-F1 fell by 0.0328 and 0.0272, and context-bearing input trailed type-matched shuffled context by 0.0065. The count head reduced candidate-macro log-MAE from the 0.8298 mean baseline to 0.6216, a 25.1% reduction, and achieved 0.8625 narrow-to-broad ordering accuracy. These results point to representation and interaction limits in the relation branch rather than another broad label-cleaning pass, but the evidence comes from one seed on development data; test data remains sealed, and neither task metric measures realized privacy.</p>
+    </div>
+  </header>
+
+  <main>
+    <section id="model-architecture">
+      <header class="section-head">
+        <div class="section-num">§01</div>
+        <h2 class="section-title">Model Architecture</h2>
+        <div class="section-meta">two inputs · shared weights · disjoint objectives</div>
+      </header>
+      <p class="lede">The privacy estimator is one ClinicalMosaic encoder used in two separate task pipelines, not a joint forward pass with a shared input.</p>
+      <div class="prose">
+        <p><strong>Relation path.</strong> The model serializes runtime type, detected source, candidate substitution, and the marked occurrence excerpt into two tokenizer segments. ClinicalMosaic converts the complete sequence into token states, then one masked mean operation collapses every non-special state into a 768-dimensional vector. A LayerNorm and 128-wide GELU head produces logits for valid generalization, reversal, related but non-substitutable, and unrelated. Relation gradients update the head and encoder layers 8 through 11; embeddings and layers 0 through 7 remain frozen.</p>
+        <p><strong>Count path.</strong> The count input contains only runtime type and candidate substitution. It passes through the relation-adapted encoder, but the encoder is frozen and its masked-mean features are cached before count training. A separate 64-wide GELU head predicts log universe size from formal member-set cardinalities. Smooth-L1 regression learns magnitude, and a logistic pairwise loss enforces narrow-to-broad ordering within complete lattice menus.</p>
+        <p><strong>Architectural limitation.</strong> Both paths reduce the whole encoded sequence to one uniform mean vector before either head acts. The relation branch therefore has no explicit source-to-candidate interaction, field-specific pooling, or occurrence-targeted attention. Its performance plateau after label auditing and weak correct-context advantage make this shared representation bottleneck the next architecture question. The successful detached count head remains a useful baseline rather than evidence that count-specific encoder adaptation is unnecessary.</p>
+      </div>
+
+    <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
+      <div class="diagram-cap">
+        <span class="l">FIG · M1: ML k-anonymity privacy estimator</span>
+        <span>navy = relation path · green = count path · rust = trainable · gray = frozen</span>
+      </div>
+      <svg viewBox="0 0 1420 1010" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="privacy-estimator-title privacy-estimator-desc" style="display:block;width:100%;min-width:1120px;height:auto;background:transparent">
+        <title id="privacy-estimator-title">ML k-anonymity privacy estimator architecture</title>
+        <desc id="privacy-estimator-desc">Two separate forward passes share ClinicalMosaic weights. The relation pass packs sensitive type, detected source, candidate substitution, and a marked clinical excerpt. It fine-tunes encoder layers 8 through 11 and predicts valid generalization, reversal, related but non-substitutable, or unrelated. The count pass packs sensitive type and candidate substitution only, freezes the encoder, caches masked mean pooled features, and predicts log universe count. Relation learning uses balanced cross-entropy. Count learning uses smooth L1 regression and formal narrow-to-broad ordering pairs.</desc>
+        <defs>
+          <marker id="pe-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10Z" fill="context-stroke"/></marker>
+          <marker id="pe-stop" viewBox="0 0 12 12" refX="6" refY="6" markerWidth="7" markerHeight="7" orient="auto"><path d="M2 2L10 10M10 2L2 10" fill="none" stroke="context-stroke" stroke-width="2"/></marker>
+          <style>
+            .pe-zone{fill:#fbfbfa;stroke:#34393e;stroke-width:1.35}
+            .pe-rel{fill:#e3ebf5;stroke:#3d6287;stroke-width:1.4}
+            .pe-count{fill:#dfece5;stroke:#496454;stroke-width:1.4}
+            .pe-shared{fill:#f2f0eb;stroke:#5f6469;stroke-width:1.4}
+            .pe-train{fill:#f0dfda;stroke:#96594f;stroke-width:1.45}
+            .pe-note{fill:#f7f6f2;stroke:#777c82;stroke-width:1.15;stroke-dasharray:5 4}
+            .pe-output{fill:#fff;stroke:#22272c;stroke-width:1.55}
+            .pe-title{fill:#171b1f;font:600 14px 'JetBrains Mono',monospace}
+            .pe-label{fill:#1c2024;font:500 12px 'JetBrains Mono',monospace}
+            .pe-small{fill:#5f666d;font:400 10.5px 'JetBrains Mono',monospace}
+            .pe-kicker{fill:#34393e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.65px}
+            .pe-rel-text{fill:#2f587e;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.25px}
+            .pe-count-text{fill:#426753;font:600 10px 'JetBrains Mono',monospace;letter-spacing:1.25px}
+            .pe-line{fill:none;stroke:#34393e;stroke-width:1.4}
+            .pe-line-rel{fill:none;stroke:#3d6f9d;stroke-width:1.8}
+            .pe-line-count{fill:none;stroke:#4f735e;stroke-width:1.8}
+            .pe-grad{fill:none;stroke:#a15f54;stroke-width:1.55;stroke-dasharray:5 4}
+            .pe-frozen{fill:none;stroke:#777c82;stroke-width:1.35;stroke-dasharray:5 4}
+          </style>
+        </defs>
+
+        <rect width="1420" height="1010" fill="transparent"/>
+        <text x="24" y="28" class="pe-kicker">IMPLEMENTED V3 · SHARED WEIGHTS · TWO DISTINCT FORWARD PASSES</text>
+
+        <rect x="18" y="48" width="1384" height="430" rx="16" class="pe-zone"/>
+        <text x="36" y="76" class="pe-rel-text">RELATION PASS · CONTEXT-BEARING · ENCODER ADAPTATION</text>
+
+        <rect x="38" y="96" width="238" height="116" rx="8" class="pe-rel"/>
+        <text x="157" y="122" text-anchor="middle" class="pe-title">Occurrence bundle</text>
+        <text x="58" y="148" class="pe-small">runtime type</text>
+        <text x="58" y="166" class="pe-small">detected source → candidate</text>
+        <text x="58" y="184" class="pe-small">excerpt with [OCC] markers</text>
+
+        <rect x="304" y="96" width="196" height="116" rx="8" class="pe-rel"/>
+        <text x="402" y="122" text-anchor="middle" class="pe-title">Relation packing</text>
+        <text x="324" y="148" class="pe-small">segment A: type · source</text>
+        <text x="324" y="166" class="pe-small">candidate substitution</text>
+        <text x="324" y="184" class="pe-small">segment B: clinical context</text>
+
+        <rect x="528" y="88" width="420" height="304" rx="13" class="pe-shared"/>
+        <text x="738" y="116" text-anchor="middle" class="pe-kicker">SIFAL / CLINICALMOSAIC · HIDDEN SIZE 768</text>
+
+        <rect x="552" y="142" width="176" height="86" rx="7" class="pe-shared"/>
+        <text x="640" y="169" text-anchor="middle" class="pe-title">Embeddings + layers 0–7</text>
+        <text x="640" y="192" text-anchor="middle" class="pe-small">frozen</text>
+        <text x="640" y="210" text-anchor="middle" class="pe-small">token states</text>
+
+        <rect x="752" y="142" width="172" height="86" rx="7" class="pe-train"/>
+        <text x="838" y="169" text-anchor="middle" class="pe-title">Encoder layers 8–11</text>
+        <text x="838" y="192" text-anchor="middle" class="pe-small">relation gradients enabled</text>
+        <text x="838" y="210" text-anchor="middle" class="pe-small">learning rate 2e-5</text>
+
+        <rect x="552" y="266" width="372" height="88" rx="7" class="pe-shared"/>
+        <text x="738" y="293" text-anchor="middle" class="pe-title">Masked mean pooling</text>
+        <text x="738" y="316" text-anchor="middle" class="pe-small">average all non-special final token states</text>
+        <text x="738" y="336" text-anchor="middle" class="pe-small">one 768-dimensional vector</text>
+
+        <rect x="978" y="96" width="198" height="208" rx="10" class="pe-train"/>
+        <text x="1077" y="123" text-anchor="middle" class="pe-title">Relation head</text>
+        <text x="1077" y="151" text-anchor="middle" class="pe-small">LayerNorm(768)</text>
+        <text x="1077" y="174" text-anchor="middle" class="pe-small">Linear 768 → 128</text>
+        <text x="1077" y="197" text-anchor="middle" class="pe-small">GELU · Dropout 0.1</text>
+        <text x="1077" y="220" text-anchor="middle" class="pe-small">Linear 128 → 4</text>
+        <text x="1077" y="258" text-anchor="middle" class="pe-small">head learning rate 2e-4</text>
+        <text x="1077" y="280" text-anchor="middle" class="pe-small">trainable with top layers</text>
+
+        <rect x="1204" y="96" width="174" height="208" rx="10" class="pe-output"/>
+        <text x="1291" y="123" text-anchor="middle" class="pe-title">Four relation logits</text>
+        <text x="1222" y="153" class="pe-small">valid generalization</text>
+        <text x="1222" y="178" class="pe-small">reversal</text>
+        <text x="1222" y="203" class="pe-small">related but</text>
+        <text x="1222" y="220" class="pe-small">non-substitutable</text>
+        <text x="1222" y="245" class="pe-small">unrelated</text>
+        <text x="1291" y="280" text-anchor="middle" class="pe-small">softmax at inference</text>
+
+        <path d="M276 154H300" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
+        <path d="M500 154H548" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
+        <path d="M728 185H748" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
+        <path d="M838 228V248C838 258 818 266 802 266" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
+        <path d="M924 310H974" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
+        <path d="M1176 200H1200" class="pe-line-rel" marker-end="url(#pe-arrow)"/>
+
+        <rect x="38" y="336" width="462" height="106" rx="8" class="pe-note"/>
+        <text x="58" y="363" class="pe-kicker">RELATION INPUT CONTRACT</text>
+        <text x="58" y="389" class="pe-small">direction is expressed by serialized field order</text>
+        <text x="58" y="410" class="pe-small">context, occurrence, source, and candidate collapse into one pool</text>
+        <text x="58" y="431" class="pe-small">no field-specific or occurrence-targeted interaction module</text>
+
+        <rect x="978" y="332" width="400" height="110" rx="8" class="pe-rel"/>
+        <text x="998" y="359" class="pe-kicker">RELATION OBJECTIVE + SELECTION</text>
+        <text x="998" y="385" class="pe-small">equal label mass · equal bundle mass within label</text>
+        <text x="998" y="406" class="pe-small">cross-entropy → relation head + encoder layers 8–11</text>
+        <text x="998" y="427" class="pe-small">select: dev macro-F1 · related recall · bundle contrast</text>
+        <path d="M1178 332V309" class="pe-grad" marker-end="url(#pe-arrow)"/>
+        <path d="M978 387C948 387 944 224 916 205" class="pe-grad" marker-end="url(#pe-arrow)"/>
+
+        <text x="36" y="518" class="pe-count-text">COUNT PASS · CANDIDATE-ONLY · DETACHED HEAD</text>
+        <rect x="18" y="490" width="1384" height="302" rx="16" class="pe-zone"/>
+
+        <rect x="38" y="548" width="238" height="108" rx="8" class="pe-count"/>
+        <text x="157" y="575" text-anchor="middle" class="pe-title">Formal count universe</text>
+        <text x="58" y="601" class="pe-small">runtime type</text>
+        <text x="58" y="621" class="pe-small">candidate level label</text>
+        <text x="58" y="641" class="pe-small">explicit member-set cardinality</text>
+
+        <rect x="304" y="548" width="196" height="108" rx="8" class="pe-count"/>
+        <text x="402" y="575" text-anchor="middle" class="pe-title">Count packing</text>
+        <text x="324" y="603" class="pe-small">sensitive type</text>
+        <text x="324" y="624" class="pe-small">candidate substitution</text>
+        <text x="324" y="645" class="pe-small">no source · no excerpt</text>
+
+        <rect x="528" y="540" width="420" height="204" rx="13" class="pe-shared"/>
+        <text x="738" y="568" text-anchor="middle" class="pe-kicker">SAME RELATION-ADAPTED ENCODER WEIGHTS</text>
+        <rect x="552" y="592" width="372" height="60" rx="7" class="pe-shared"/>
+        <text x="738" y="617" text-anchor="middle" class="pe-title">ClinicalMosaic encoder frozen</text>
+        <text x="738" y="639" text-anchor="middle" class="pe-small">no count-stage encoder gradients</text>
+        <rect x="552" y="670" width="372" height="52" rx="7" class="pe-count"/>
+        <text x="738" y="693" text-anchor="middle" class="pe-title">Masked mean pool → cached features</text>
+        <text x="738" y="712" text-anchor="middle" class="pe-small">13,567 train · 2,909 dev universes</text>
+
+        <rect x="978" y="548" width="198" height="174" rx="10" class="pe-train"/>
+        <text x="1077" y="575" text-anchor="middle" class="pe-title">Count head</text>
+        <text x="1077" y="603" text-anchor="middle" class="pe-small">LayerNorm(768)</text>
+        <text x="1077" y="626" text-anchor="middle" class="pe-small">Linear 768 → 64</text>
+        <text x="1077" y="649" text-anchor="middle" class="pe-small">GELU</text>
+        <text x="1077" y="672" text-anchor="middle" class="pe-small">Linear 64 → 1</text>
+        <text x="1077" y="702" text-anchor="middle" class="pe-small">only trainable count module</text>
+
+        <rect x="1204" y="548" width="174" height="174" rx="10" class="pe-output"/>
+        <text x="1291" y="575" text-anchor="middle" class="pe-title">Predicted log count</text>
+        <text x="1291" y="606" text-anchor="middle" class="pe-small">standardized target</text>
+        <text x="1291" y="628" text-anchor="middle" class="pe-small">during optimization</text>
+        <text x="1291" y="660" text-anchor="middle" class="pe-small">restore training mean</text>
+        <text x="1291" y="681" text-anchor="middle" class="pe-small">and scale at output</text>
+
+        <path d="M276 602H300" class="pe-line-count" marker-end="url(#pe-arrow)"/>
+        <path d="M500 602H548" class="pe-line-count" marker-end="url(#pe-arrow)"/>
+        <path d="M738 652V666" class="pe-line-count" marker-end="url(#pe-arrow)"/>
+        <path d="M924 696H974" class="pe-line-count" marker-end="url(#pe-arrow)"/>
+        <path d="M1176 635H1200" class="pe-line-count" marker-end="url(#pe-arrow)"/>
+
+        <rect x="38" y="684" width="462" height="72" rx="8" class="pe-note"/>
+        <text x="58" y="711" class="pe-kicker">FORMAL SUPERVISION</text>
+        <text x="58" y="736" class="pe-small">19,385 ontology-defined universes · counts are not corpus frequencies</text>
+        <path d="M500 720H524" class="pe-frozen" marker-end="url(#pe-stop)"/>
+
+        <path d="M1291 722V770H1077V726" class="pe-grad" marker-end="url(#pe-arrow)"/>
+
+        <rect x="18" y="812" width="1384" height="180" rx="16" class="pe-zone"/>
+        <text x="36" y="841" class="pe-kicker">OBJECTIVES, GRADIENT OWNERSHIP, AND ARCHITECTURE QUESTIONS EXPOSED BY V3</text>
+
+        <rect x="38" y="866" width="408" height="96" rx="8" class="pe-rel"/>
+        <text x="58" y="893" class="pe-title">Relation learning</text>
+        <text x="58" y="918" class="pe-small">balanced four-class cross-entropy</text>
+        <text x="58" y="939" class="pe-small">gradient: relation head + encoder layers 8–11</text>
+
+        <rect x="470" y="866" width="408" height="96" rx="8" class="pe-count"/>
+        <text x="490" y="893" class="pe-title">Count learning</text>
+        <text x="490" y="918" class="pe-small">smooth L1 + narrow-to-broad logistic ordering</text>
+        <text x="490" y="939" class="pe-small">gradient: count head only · encoder frozen</text>
+
+        <rect x="902" y="866" width="476" height="96" rx="8" class="pe-note"/>
+        <text x="922" y="893" class="pe-title">What the current graph cannot express directly</text>
+        <text x="922" y="918" class="pe-small">field-aware source↔candidate interactions · occurrence-targeted pooling</text>
+        <text x="922" y="939" class="pe-small">count-specific encoder adaptation · explicit type-balanced representation</text>
+      </svg>
+    </div>
+    </section>
+  </main>
+</div>
+<script src="js/nav.js"></script>
+</body>
+</html>
