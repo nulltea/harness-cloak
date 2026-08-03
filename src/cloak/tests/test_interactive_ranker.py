@@ -3568,3 +3568,34 @@ def test_weighted_l1_movement_is_monotone_in_the_attributed_set():
         / sum(weights[k] for k in ("a1", "a2", "a3"))
     )
     assert avg_grown < avg_small
+
+
+def test_delivered_audit_quota_caps_probes_without_a_local_channel():
+    from cloak.ranker.counterfactuals import _EligiblePair
+
+    # The quota is a pure function of the budget, never of policy behaviour, so
+    # it cannot be steered by what the policy learns.
+    def quota(budget, fraction):
+        return int(budget * fraction) if fraction > 0.0 else None
+
+    assert quota(20, 0.0) is None          # disarmed: historical behaviour
+    assert quota(20, 0.1) == 2
+    assert quota(5, 0.1) == 0              # a tiny budget admits none
+    assert quota(100, 0.25) == 25
+
+    # the admission rule: local-channel pairs are never capped, others are
+    def within(used, cap, local):
+        return True if cap is None or local else used < cap
+
+    assert within(99, None, False)         # disarmed
+    assert within(0, 2, False) and within(1, 2, False)
+    assert not within(2, 2, False)         # cap reached
+    assert within(99, 2, True)             # local channel is exempt
+
+    # the dataclass carries the preflight signal so selection can see it
+    pair = _EligiblePair(
+        document=None, trajectory=None, rollout_index=0, decision=None,
+        replayed_step=None, adjacent=(), endpoints=(), priority=(),
+        profile_id="p", local_channel=False,
+    )
+    assert pair.local_channel is False

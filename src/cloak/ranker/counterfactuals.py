@@ -58,6 +58,38 @@ class _EligiblePair:
     endpoints: tuple[str, ...]
     priority: tuple[Any, ...]
     profile_id: str
+    local_channel: bool
+
+
+def _has_local_channel(
+    utility_artifact: Mapping,
+    document: RankerDocument,
+    trajectory: SampledTrajectory,
+    decision_id: str,
+    alternatives: Sequence[str],
+) -> bool:
+    """Does flipping this decision change any context assertion's reader input?
+
+    False means the probe cannot yield locally attributable evidence: every
+    context excerpt is byte-identical, so at temperature 0 every context score is
+    unchanged by construction, and only the delivered channel can move.
+    """
+    from cloak.reward.utility_credit import excerpt_changed_assertions
+
+    selected_vector = dict(trajectory.action_vector)
+    selected_doc, _ = assemble_action_vector(document, selected_vector)
+    for alternative_action_id in alternatives:
+        alternative_vector = dict(selected_vector)
+        alternative_vector[decision_id] = alternative_action_id
+        try:
+            alternative_doc, _ = assemble_action_vector(document, alternative_vector)
+        except ValueError:
+            continue
+        if excerpt_changed_assertions(
+            utility_artifact, document.doc_id, selected_doc, alternative_doc,
+        ):
+            return True
+    return False
 
 
 def _assertion_weight(artifact: Mapping, doc_id: str, assertion_id: str) -> float:
@@ -285,6 +317,7 @@ def schedule_counterfactuals(
     seed: int,
     current_round: int,
     dedup_identical_vectors: bool = False,
+    delivered_audit_fraction: float = 0.0,
 ) -> tuple[tuple[CounterfactualRequest, ...], dict[str, Any]]:
     """Allocate the exact 20/80 call budget without exposing reward values.
 
@@ -395,12 +428,25 @@ def schedule_counterfactuals(
             ages = [current_round - value for value in histories if value is not None]
             if any(age < 0 for age in ages):
                 raise ValueError("pair history lies after current_round")
+            # Context preflight (2026-08-03): a probe can only produce locally
+            # attributable evidence if some CONTEXT assertion's reader excerpt
+            # changes. Pairs without one are measurable only through the remote
+            # model's regenerated note, where movement is deterministic but
+            # chaotic and semantically unowned.
+            local_channel = _has_local_channel(
+                utility_artifact, document, trajectory, decision.decision_id,
+                (*adjacent, *endpoints),
+            )
             priority = (
+                # The quota, when armed, prefers probes that can attribute; with
+                # it disarmed the historical ordering is preserved exactly.
+                *((-int(local_channel),) if delivered_audit_fraction > 0.0 else ()),
                 -int(no_linked),
                 -int(only_hyperedges),
                 -float(replayed_step.entropy.detach()),
             )
             pair = _EligiblePair(
+                local_channel=local_channel,
                 document=document,
                 trajectory=trajectory,
                 rollout_index=rollout_index,
@@ -425,6 +471,25 @@ def schedule_counterfactuals(
     # adjacent-capable pairs, and small groups can have fewer eligible pairs
     # than budget). Scarce groups schedule what capacity allows; the slot loop
     # below degrades per slot instead of raising.
+    if not 0.0 <= float(delivered_audit_fraction) < 1.0:
+        raise ValueError("delivered audit fraction must be in [0, 1)")
+    # Stratified measurement (2026-08-03): probes without a local channel are
+    # admitted only up to a FIXED, preregistered quota, so the expensive global
+    # channel is sampled rather than either dominating the budget or vanishing
+    # from it. The cap is a function of the budget alone — never of policy
+    # behaviour — so it cannot be steered by what the policy learns.
+    audit_quota = (
+        int(budget * float(delivered_audit_fraction))
+        if delivered_audit_fraction > 0.0 else None
+    )
+    audit_used = 0
+    diagnostics_preflight = {
+        "pairs_with_local_channel": sum(1 for pair in pairs if pair.local_channel),
+        "pairs_without_local_channel": sum(
+            1 for pair in pairs if not pair.local_channel
+        ),
+        "delivered_audit_quota": audit_quota,
+    }
     rng = random.Random(seed)
     uniform_budget = budget // 5
     endpoint_slots = set(rng.sample(range(budget), endpoint_budget))
@@ -495,12 +560,19 @@ def schedule_counterfactuals(
         return balanced, (0, -1)
 
     retyped_slots = 0
+    def within_audit_quota(pair: _EligiblePair) -> bool:
+        # Reads the enclosing counter; the slot loop increments it on selection.
+        if audit_quota is None or pair.local_channel:
+            return True
+        return audit_used < audit_quota
+
     for slot in range(budget):
         endpoint = slot in endpoint_slots
         pool = [
             pair for pair in remaining
             if candidates_for(pair, endpoint=endpoint)
             and preserves_remaining_slots(pair, slot)
+            and within_audit_quota(pair)
         ]
         if not pool:
             # Degrade instead of raising: first drop the lookahead (it presumes
@@ -511,6 +583,7 @@ def schedule_counterfactuals(
             pool = [
                 pair for pair in remaining
                 if candidates_for(pair, endpoint=endpoint)
+                and within_audit_quota(pair)
             ]
             if not pool:
                 endpoint = not endpoint
@@ -546,6 +619,8 @@ def schedule_counterfactuals(
         selected_action_id = pair.trajectory.action_vector[pair.decision.decision_id]
         direction = _direction(pair.decision, selected_action_id, alternative_action_id)
         selected_rows.append((pair, alternative_action_id, direction, effective_priority))
+        if audit_quota is not None and not pair.local_channel:
+            audit_used += 1
         remaining.remove(pair)
         direction_counts[direction] += 1
         profile_direction_counts[(pair.profile_id, direction)] += 1
@@ -584,6 +659,8 @@ def schedule_counterfactuals(
     for (profile_id, direction), count in sorted(profile_direction_counts.items()):
         directions_by_profile.setdefault(profile_id, {})[direction] = count
     diagnostics: dict[str, Any] = {
+        **diagnostics_preflight,
+        "delivered_audit_used": audit_used,
         "budget": budget,
         "scheduled": len(selected_rows),
         "slot_shortfall": budget - len(selected_rows),
