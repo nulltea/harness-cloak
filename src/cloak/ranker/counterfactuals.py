@@ -28,7 +28,7 @@ from cloak.reward.utility_cache import (
     UtilityResult,
     stable_hash,
 )
-from cloak.reward.utility_credit import document_utility
+from cloak.reward.utility_credit import decision_delta_utility, document_utility
 
 
 @dataclass(frozen=True)
@@ -745,12 +745,27 @@ def execute_counterfactuals(
             key: value for key, value in trajectory.action_vector.items()
             if key != request.decision_id
         }
+        # Tie qualification compares against a resolution threshold, so it needs
+        # the decision's OWN assertions in the decision's own units, not the whole
+        # document's (measurement revision, 2026-08-03). The pair loss above keeps
+        # the document-level delta deliberately: it is the objective's unit.
+        attributed_document, attributed_linked = decision_delta_utility(
+            selected_result.component_scores,
+            alternative_result.component_scores,
+            utility_artifact,
+            request.doc_id,
+            request.decision_id,
+        )
         evidence_rows.append({
             "doc_id": request.doc_id,
             "decision_id": request.decision_id,
             "selected_action_id": request.selected_action_id,
             "alternative_action_id": request.alternative_action_id,
             "delta_u": float(delta_u),
+            "delta_u_attributed": float(attributed_document),
+            "delta_u_linked": (
+                None if attributed_linked is None else float(attributed_linked)
+            ),
             "context_hash": stable_hash(sorted(surrounding.items())),
         })
         if broadcast:

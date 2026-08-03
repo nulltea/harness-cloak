@@ -3238,3 +3238,75 @@ def test_equivalence_screening_loss_and_certification_math():
     # AUC sanity: perfect separation -> 1.0; reversed -> 0.0
     assert _auc([0.1, 0.2, 0.8, 0.9], [False, False, True, True]) == 1.0
     assert _auc([0.9, 0.8, 0.2, 0.1], [False, False, True, True]) == 0.0
+
+
+def test_decision_delta_utility_restricts_and_renormalizes():
+    from cloak.reward.utility_credit import decision_delta_utility
+
+    # two linked assertions on decision d1 (weights 1+1), one on d2, one residual;
+    # denominator 4.0, so d1's linked mass is half the document
+    artifact = {
+        "artifact_version": "utility-assertions-v2",
+        "assertions": {
+            "a1": {"assertion_id": "a1", "doc_id": "D", "weight": 1.0,
+                   "credit_routing": "linked", "policy_dependency_decision_ids": ["d1"]},
+            "a2": {"assertion_id": "a2", "doc_id": "D", "weight": 1.0,
+                   "credit_routing": "linked", "policy_dependency_decision_ids": ["d1"]},
+            "a3": {"assertion_id": "a3", "doc_id": "D", "weight": 1.0,
+                   "credit_routing": "linked", "policy_dependency_decision_ids": ["d2"]},
+            "a4": {"assertion_id": "a4", "doc_id": "D", "weight": 1.0,
+                   "credit_routing": "residual", "policy_dependency_decision_ids": []},
+        },
+        "documents": {"D": {
+            "assertion_ids": ["a1", "a2", "a3", "a4"],
+            "utility_weight_denominator": 4.0,
+            "policy_decision_ids": ["d1", "d2", "d3"],
+            "decisions": [],
+        }},
+    }
+    # d1 loses one of its two obligations; EVERYTHING else also moves, and must be ignored
+    selected = {"a1": 1.0, "a2": 1.0, "a3": 1.0, "a4": 1.0}
+    alternative = {"a1": 1.0, "a2": 0.0, "a3": 0.0, "a4": 0.0}
+    document, linked = decision_delta_utility(
+        selected, alternative, artifact, "D", "d1",
+    )
+    # Only a2 counts. The reward denominator is the sum of INCLUDED weights (the
+    # residual assertion is monitoring mass and is excluded), so 3.0 here — and
+    # the restriction is proven by this number: had a3/a4's movement counted,
+    # every included assertion moved and the result would be 1.0, not 1/3.
+    assert document == pytest.approx(1.0 / 3.0)
+    # ... while in d1's OWN units it is half its obligations, undiluted
+    assert linked == pytest.approx(0.50)
+
+    # a decision with no linked assertions is a structurally derivable tie
+    document, linked = decision_delta_utility(
+        selected, alternative, artifact, "D", "d3",
+    )
+    assert document == 0.0 and linked is None
+
+    # exact ties are invariant under the renormalization (the load-bearing property)
+    document, linked = decision_delta_utility(
+        selected, selected, artifact, "D", "d1",
+    )
+    assert document == 0.0 and linked == 0.0
+
+
+def test_tie_qualification_requires_every_statistic_to_agree():
+    from cloak.ranker.interactive import TIE_EXIT_BOUND, _tie_statistics
+
+    # legacy record: document delta only
+    assert _tie_statistics({"delta_u": 0.01}) == (0.01,)
+    # revised record: all present statistics are returned
+    assert _tie_statistics({
+        "delta_u": 0.01, "delta_u_attributed": 0.005, "delta_u_linked": 0.5,
+    }) == (0.01, 0.005, 0.5)
+    # a structurally derivable tie constrains nothing beyond the document value
+    assert _tie_statistics({
+        "delta_u": 0.0, "delta_u_attributed": 0.0, "delta_u_linked": None,
+    }) == (0.0, 0.0)
+
+    # the linked statistic can disqualify a pair the document statistic would pass:
+    # 0.5 of this decision's own obligations broken, but only 0.01 of the document
+    record = {"delta_u": 0.01, "delta_u_attributed": 0.01, "delta_u_linked": 0.5}
+    assert any(abs(v) > TIE_EXIT_BOUND for v in _tie_statistics(record))
+    assert not any(abs(v) > TIE_EXIT_BOUND for v in _tie_statistics({"delta_u": 0.01}))

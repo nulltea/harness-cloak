@@ -230,6 +230,45 @@ def document_utility(
     )[0]
 
 
+def decision_delta_utility(
+    selected_scores: Mapping[str, float],
+    alternative_scores: Mapping[str, float],
+    artifact: Mapping,
+    doc_id: str,
+    decision_id: str,
+) -> tuple[float, float | None]:
+    """Per-decision utility difference restricted to the decision's own assertions.
+
+    Returns (document_normalized, linked_normalized). Both difference ONLY the
+    assertions the artifact declares depend on this decision; assertions outside
+    that set cannot be affected by it, so including them adds variance with no
+    signal (measured: 60% of pairs move such assertions, median 0.019, and 65%
+    of provably-tied pairs report nonzero — docs/issues/counterfactual-delta-u-measurement.md).
+
+    The two normalizations serve different purposes and are not interchangeable:
+    dividing by the document weight denominator keeps the value in the OBJECTIVE's
+    units, comparable across documents; dividing by the decision's own linked mass
+    gives the fraction of THIS decision's obligations the change broke, in
+    [-1, 1], which is the right unit for comparing against a resolution threshold
+    (a decision owning 10% of the mass otherwise cannot clear a floor expressed in
+    whole-document units). linked_normalized is None when the decision has no
+    linked assertions — a structurally derivable tie, where no feedback channel
+    can separate its actions.
+    """
+    partitions = _partitions(artifact, doc_id)
+    linked = partitions.linked_by_decision.get(decision_id, frozenset())
+    numerator = sum(
+        partitions.weights[key] * (selected_scores[key] - alternative_scores[key])
+        for key in linked
+        if key in selected_scores and key in alternative_scores
+    )
+    linked_mass = sum(partitions.weights[key] for key in linked)
+    return (
+        numerator / partitions.denominator,
+        (numerator / linked_mass) if linked_mass > 0.0 else None,
+    )
+
+
 def provisional_credit(
     component_vectors: Sequence[Mapping[str, float]], artifact: Mapping, doc_id: str,
 ) -> DocumentUtilityCredit:

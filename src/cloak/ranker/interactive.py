@@ -667,11 +667,36 @@ def record_tie_evidence(
             str(row["selected_action_id"]), str(row["alternative_action_id"]),
         )))
         key = (str(row["doc_id"]), str(row["decision_id"]), pair[0], pair[1])
+        linked = row.get("delta_u_linked")
         ledger.setdefault(key, []).append({
             "delta_u": float(row["delta_u"]),
+            # Decision-attributed deltas (measurement revision 2026-08-03).
+            # Absent on legacy rows, which fall back to delta_u alone.
+            "delta_u_attributed": (
+                None if row.get("delta_u_attributed") is None
+                else float(row["delta_u_attributed"])
+            ),
+            "delta_u_linked": None if linked is None else float(linked),
             "context_hash": str(row["context_hash"]),
             "round": int(current_round),
         })
+
+
+def _tie_statistics(record: Mapping[str, Any]) -> tuple[float, ...]:
+    """Every ΔU statistic present on a ledger record, for the both-agree rule.
+
+    `delta_u_linked` is in the decision's own units (fraction of its obligations
+    broken) and is the statistic a resolution threshold belongs in; `delta_u` is
+    the document-level value every pre-2026-08-03 record carries. A record whose
+    decision has no linked assertions stores None for the linked statistic — a
+    structurally derivable tie, which constrains nothing here.
+    """
+    values = [float(record["delta_u"])]
+    for key in ("delta_u_attributed", "delta_u_linked"):
+        value = record.get(key)
+        if value is not None:
+            values.append(float(value))
+    return tuple(values)
 
 
 def compute_tie_labels(
@@ -701,11 +726,22 @@ def compute_tie_labels(
         ]
         if not usable:
             continue
-        if any(abs(r["delta_u"]) > TIE_EXIT_BOUND for r in usable):
+        # Conservative both-statistics rule (measurement revision 2026-08-03):
+        # a pair qualifies only if EVERY available statistic keeps it inside the
+        # bound, and is disqualified if ANY exceeds it. The document-level delta
+        # manufactures differences on provably-tied pairs, while the linked
+        # delta under-measures wherever the artifact under-declares a dependency
+        # — so requiring both refuses the direction that costs real utility
+        # (a false tie). Legacy rows carry only delta_u and are unaffected.
+        if any(
+            abs(value) > TIE_EXIT_BOUND
+            for r in usable
+            for value in _tie_statistics(r)
+        ):
             continue
         exact_contexts = {
             r["context_hash"] for r in usable
-            if abs(r["delta_u"]) <= TIE_EXACT_ATOL
+            if all(abs(value) <= TIE_EXACT_ATOL for value in _tie_statistics(r))
         }
         if len(exact_contexts) < min_contexts:
             continue
