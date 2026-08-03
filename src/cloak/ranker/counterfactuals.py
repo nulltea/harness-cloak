@@ -29,6 +29,7 @@ from cloak.reward.utility_cache import (
     stable_hash,
 )
 from cloak.reward.utility_credit import (
+    assertion_weights,
     attributed_delta_utility,
     excerpt_changed_assertions,
     decision_delta_utility,
@@ -822,24 +823,38 @@ def execute_counterfactuals(
             alternative_result.component_scores, utility_artifact, request.doc_id,
         )
         delta_total = selected_utility - alternative_utility
-        # Scope-matched credit (2026-08-03): the gradient charges this decision
-        # only for the assertions it is attributed, and hybrid_utility_loss adds
-        # a provisional advantage over the complement. Decisions no assertion
-        # claims are attributed the whole document, so their term is unchanged.
-        delta_u, attributed = attributed_delta_utility(
+        # The GRADIENT uses the total document delta. Leg D (2026-08-03) measured
+        # the alternative — charging a decision only for its attributed
+        # assertions — and it lost: predicting the total effect in a HELD-OUT
+        # surrounding context, sign agreement on the linked route was 0.661 for
+        # the total delta against 0.530 for the attributed delta, with identical
+        # MAE and spread. Spillover is therefore reproducible structure, not
+        # per-context noise, so excluding it discards transferable information
+        # about the objective. Attribution still governs tie QUALIFICATION, where
+        # the question is whether an obligation broke rather than how much the
+        # document moved.
+        attributed_context = excerpt_changed_assertions(
+            utility_artifact,
+            request.doc_id,
+            selected_result.doc_p,
+            alternative_result.doc_p,
+        )
+        _, attributed = attributed_delta_utility(
             selected_result.component_scores,
             alternative_result.component_scores,
             utility_artifact,
             request.doc_id,
             request.decision_id,
-            excerpt_changed_assertions(
-                utility_artifact,
-                request.doc_id,
-                selected_result.doc_p,
-                alternative_result.doc_p,
-            ),
+            attributed_context,
         )
-        attributed_sets[(request.rollout_index, request.decision_id)] = attributed
+        delta_u = delta_total
+        # The gradient covers every assertion, so the scope-matched complement is
+        # empty by construction and hybrid_utility_loss reduces to whole-term
+        # substitution. The mechanism stays available for a future partial-
+        # measurement channel (e.g. a context-only probe).
+        attributed_sets[(request.rollout_index, request.decision_id)] = frozenset(
+            assertion_weights(utility_artifact, request.doc_id)
+        )
         selected_index = replayed_step.legal_action_ids.index(request.selected_action_id)
         alternative_index = replayed_step.legal_action_ids.index(
             request.alternative_action_id

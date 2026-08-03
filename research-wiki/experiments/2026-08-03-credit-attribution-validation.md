@@ -1,7 +1,7 @@
 ---
 type: experiment
 node_id: exp:credit-attribution-validation
-verdict: "Legs A-C PASS. The additivity identity holds on every document; the gradient-delta identity closes exactly at 3047 once cancellation is accounted; document-route credit is retained on all 1,873 pairs. Leg B surfaced a previously unidentified mechanism (union cancellation) that the monotone qualification statistic is immune to by construction. Leg D and the behavioural leg remain unrun."
+verdict: "Leg D FAILS and its preregistered rule fired: the total document delta predicts held-out total effect better than the attributed delta (linked-route sign agreement 0.661 vs 0.530), so spillover is reproducible structure and excluding it from the GRADIENT discards transferable information. The gradient is reverted to the total delta; attribution is retained for tie qualification, where Leg D says nothing. Legs A-C PASS. The additivity identity holds on every document; the gradient-delta identity closes exactly at 3047 once cancellation is accounted; document-route credit is retained on all 1,873 pairs. Leg B surfaced a previously unidentified mechanism (union cancellation) that the monotone qualification statistic is immune to by construction. Leg D and the behavioural leg remain unrun."
 confidence: "high on the identities (exhaustive over the full cache, exact arithmetic); the local floor is still unmeasured, so no gate may consume the movement statistic yet"
 created: 2026-08-03
 model: no training in the cache-only legs; the behavioural leg reuses the frozen adopted v14 cycle checkpoint
@@ -119,9 +119,41 @@ Movement percentiles: p50 0.0000, p75 0.0328, p90 0.1066, p99 0.3956.
 
 The exact-tie stratum nearly doubles because movement is computed over the decision's *own* assertions rather than the whole document, so contamination no longer manufactures spurious nonzeros. **Blocking caveat restated:** these strata use 0.044, which was measured in document-aggregate units and is not dimensionally valid for weighted-L1 movement over a subset. No gate may consume the new statistic until the floor is re-measured in its own units.
 
+### Leg D — FAILED, and the preregistered rule fired
+
+386 groups with repeated contexts, 7,175 leave-one-out folds. Each predictor is measured on training contexts and scored against the total document delta in a **held-out** context, so no predictor can observe its own target.
+
+| predictor | sign agreement | MAE | prediction sd |
+|---|---|---|---|
+| **total** (what we used before) | **0.621** | 0.0378 | 0.0854 |
+| attributed (what step 1 shipped) | 0.524 | 0.0377 | 0.0848 |
+| corrected (attributed + pooled, document-disjoint, shrunk spillover) | 0.548 | 0.0377 | 0.0848 |
+
+By credit route:
+
+| route | n | attributed | total | corrected |
+|---|---|---|---|---|
+| document | 1,863 | 0.507 | 0.507 | 0.516 |
+| linked | 5,312 | 0.530 | **0.661** | 0.559 |
+
+**Harness self-check:** on the document route, attributed *is* the whole document by construction, and the two predictors agree to three decimals — as they must. That validates the measurement before its conclusion is read.
+
+**The rule as written was:** *"If (2) beats both, the revision is wrong and must be reverted."* It does, so it was.
+
+**What this means.** The comparison is cross-context, so if spillover were per-context noise it could not transfer and `total` would gain nothing. It gains 13 points of sign agreement on the linked route, which means the spillover carries **reproducible structure** about the objective — consistent with the 6.4-sigma systematic generalization cost measured earlier. Sol High's objection was correct and my "chaotic and unattributable" framing was wrong. Two further observations sharpen it: attributed is *not* lower-variance (MAE and spread are indistinguishable, so the hoped-for variance reduction does not exist — it is simply less informative, at 0.530 barely above chance); and the pooled spillover correction recovers only 3 points of the 13, so the missing information is pair- and context-specific structure rather than a constant offset that a shrunk estimator can supply.
+
+**Scope of the revert (surgical, not wholesale).** Leg D tested one thing: the delta used as the *gradient*. So the pair loss returns to the total document delta. Everything else stands, because Leg D says nothing about it:
+
+- **retained** — the monotone weighted-L1 qualification statistic (step 3): tie labelling asks whether an obligation broke, not how much the document moved, and it is measured over the decision's own assertions by design.
+- **retained** — excerpt-changed linkage (step 2) for qualification, which is what avoids 305 false zeros.
+- **retained but now inert** — scope-matched substitution (step 1): with the gradient covering every assertion the complement is empty by construction, so `hybrid_utility_loss` reduces to whole-term substitution. The mechanism stays available for a genuine partial-measurement channel, which is exactly what a context-only probe would be.
+- **retained** — the context preflight and audit quota (step 4), still disarmed.
+
+The original R2 framing — *"the objective keeps W; only the per-decision attribution statistic changes"* — was right, and I over-extended it to the gradient. Leg D caught that before any training run consumed it, which is what the leg was for.
+
 ### Not run
 
-Leg D (held-out three-predictor comparison — the decisive test of whether excluding spillover is *biased* rather than merely lower-variance) and Leg E (behavioural). `delivered_audit_fraction` remains at 0.0 pending a preregistered value.
+Leg E (behavioural). `delivered_audit_fraction` remains 0.0 pending a preregistered value. Also unrun: the local resolution floor in movement units, which still gates any use of the monotone statistic in a gate.
 
 ## Artifacts
 
