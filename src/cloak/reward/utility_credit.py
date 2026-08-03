@@ -269,6 +269,41 @@ def decision_delta_utility(
     )
 
 
+def excerpt_changed_assertions(
+    artifact: Mapping,
+    doc_id: str,
+    selected_doc_p: str,
+    alternative_doc_p: str,
+) -> frozenset[str]:
+    """Context assertions whose reader input differs between two rewrites.
+
+    A CONTEXT assertion is scored by the reader on an excerpt of `doc_p`. If the
+    excerpt is byte-identical the reader (temperature 0) returns the identical
+    answer, so only assertions whose excerpt CHANGED can have moved. This is
+    pair-local causal support, deliberately NOT a dependency declaration:
+    an assertion unchanged in this pair may move in another, and rewriting
+    `policy_dependency_decision_ids` from pair-local evidence would add
+    leave-one-out variance and invalidate cache identities.
+
+    Measured motivation: declarations miss real influence on 46 (doc, decision,
+    assertion) triples, leaving 305 pairs recorded as exact ties despite a
+    genuine reader-score change (docs/issues/qa-dependency-underdeclaration.md).
+    DELIVERED assertions have no excerpt, so no analogous local test exists;
+    their global movement stays unattributed spillover.
+    """
+    from cloak.qa.scoring import reader_excerpt
+
+    partitions = _partitions(artifact, doc_id)
+    changed = {
+        assertion_id
+        for assertion_id, row in partitions.assertions.items()
+        if row.get("family") == "context"
+        and reader_excerpt(selected_doc_p, row.get("evidence") or {})
+        != reader_excerpt(alternative_doc_p, row.get("evidence") or {})
+    }
+    return frozenset(changed)
+
+
 def attributed_assertions(
     artifact: Mapping, doc_id: str, decision_id: str,
 ) -> frozenset[str]:

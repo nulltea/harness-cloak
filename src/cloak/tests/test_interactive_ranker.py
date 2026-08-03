@@ -3454,3 +3454,58 @@ def test_scope_matched_substitution_reduces_to_whole_term_when_nothing_excluded(
     # and it stays differentiable through the policy
     with_complement.backward()
     assert lp["d1"].grad is not None
+
+
+def test_excerpt_changed_linkage_is_pair_local_and_cannot_dilute():
+    from cloak.reward.utility_credit import (
+        attributed_delta_utility,
+        excerpt_changed_assertions,
+    )
+
+    # c1's evidence turn mentions the span; c2's does not. Neither declares a
+    # dependency on d2, so only the excerpt comparison can find c1's influence.
+    artifact = {
+        "artifact_version": "utility-assertions-v2",
+        "assertions": {
+            "c1": {"assertion_id": "c1", "doc_id": "D", "weight": 1.0,
+                   "family": "context", "credit_routing": "linked",
+                   "policy_dependency_decision_ids": ["d1"],
+                   "evidence": {"reader_turns": [0]}},
+            "c2": {"assertion_id": "c2", "doc_id": "D", "weight": 1.0,
+                   "family": "context", "credit_routing": "linked",
+                   "policy_dependency_decision_ids": ["d1"],
+                   "evidence": {"reader_turns": [1]}},
+        },
+        "documents": {"D": {
+            "assertion_ids": ["c1", "c2"], "utility_weight_denominator": 2.0,
+            "policy_decision_ids": ["d1", "d2"], "decisions": [],
+        }},
+    }
+    selected = "doctor: the mass was noted\npatient: fine otherwise"
+    alternative = "doctor: the finding was noted\npatient: fine otherwise"
+    changed = excerpt_changed_assertions(artifact, "D", selected, alternative)
+    assert changed == frozenset({"c1"}), "only the turn containing the edit changed"
+    # identical documents change nothing
+    assert excerpt_changed_assertions(artifact, "D", selected, selected) == frozenset()
+
+    # d2 declares nothing, so declared-only attribution credits it with the whole
+    # document; the union can only ADD assertions, never shrink the denominator
+    scores_a = {"c1": 1.0, "c2": 1.0}
+    scores_b = {"c1": 0.0, "c2": 1.0}
+    delta_declared, set_declared = attributed_delta_utility(
+        scores_a, scores_b, artifact, "D", "d1",
+    )
+    delta_union, set_union = attributed_delta_utility(
+        scores_a, scores_b, artifact, "D", "d1", changed,
+    )
+    assert set_declared == frozenset({"c1", "c2"})
+    assert set_union == set_declared            # already covered here
+    assert delta_union == pytest.approx(delta_declared)
+
+    # an assertion that did NOT move contributes exactly zero to the numerator,
+    # and the denominator is the fixed document mass — so no dilution is possible
+    unmoved = {"c1": 1.0, "c2": 1.0}
+    delta_zero, _ = attributed_delta_utility(
+        unmoved, unmoved, artifact, "D", "d1", changed,
+    )
+    assert delta_zero == 0.0

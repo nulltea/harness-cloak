@@ -30,6 +30,7 @@ from cloak.reward.utility_cache import (
 )
 from cloak.reward.utility_credit import (
     attributed_delta_utility,
+    excerpt_changed_assertions,
     decision_delta_utility,
     document_utility,
 )
@@ -742,6 +743,12 @@ def execute_counterfactuals(
             utility_artifact,
             request.doc_id,
             request.decision_id,
+            excerpt_changed_assertions(
+                utility_artifact,
+                request.doc_id,
+                selected_result.doc_p,
+                alternative_result.doc_p,
+            ),
         )
         attributed_sets[(request.rollout_index, request.decision_id)] = attributed
         selected_index = replayed_step.legal_action_ids.index(request.selected_action_id)
