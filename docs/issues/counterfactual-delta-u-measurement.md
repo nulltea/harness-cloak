@@ -98,3 +98,11 @@ Not yet done, in rough cost order:
 ## Artifacts
 
 Reproducible from `results/ranker_v2/architecture/equivalence_critic/evidence-rows-linked.json` (carries both statistics, `linked_assertions`, and `derivable_tie` per row); miner `scripts/spikes/equivalence_critic_screening.py mine`.
+
+## Reader non-determinism at temperature 0 (found 2026-08-03)
+
+Testing the targeted-re-scoring criterion produced an unexpected side finding: **a byte-identical reader excerpt sometimes scores differently.** Over 88,619 checks where the excerpt was byte-identical between two cached scorings, 13 disagreed, every one a full 1.0 flip. Re-assembly was verified exact (0 drift against the cached `doc_p`) and all cache rows share one reader/extractor/task-prompt pin, so these are neither reconstruction nor stale-pin artifacts.
+
+The 13 come from only **4 distinct (document, assertion) pairs** — `aci/D2N027` accounts for 8 — and split into **5 `reader_refresh` mismatches** (a knob in the cache identity, controllable by holding it constant) and **8 genuine same-refresh non-determinism** events. The `aci/D2N027` excerpt is 1,181 characters against 384–408 for the others, so a length or `BatchedContextReader` batch-composition effect is the leading hypothesis.
+
+Rate is 0.015%, and for these cases the disagreement is itself the artifact — two scores from identical input means one is wrong and their difference is spurious. But it contradicts the determinism the reward pin is documented to rely on ("the determinism is load-bearing"), so it is filed rather than absorbed. Open: identify whether long excerpts or batch composition is responsible, and quarantine the 4 assertions meanwhile.

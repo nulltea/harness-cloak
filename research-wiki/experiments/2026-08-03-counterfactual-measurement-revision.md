@@ -1,12 +1,12 @@
 ---
 type: experiment
 node_id: exp:counterfactual-measurement-revision
-verdict: ""
-confidence: ""
+verdict: "Linked-mass normalization ADOPTED — the ambiguous sub-floor band collapses 1204 -> 85 pairs (93%) and live pairs nearly double, with exact ties invariant as required. Targeted context re-scoring FAILS its blocking exactness gate on 13 of 88,619 checks (0.015%), concentrated in 4 assertions and traceable to reader_refresh mismatch (5) plus genuine reader non-determinism (8); conditional adoption proposed, not unconditional."
+confidence: "high — both are exhaustive offline computations over the full cache under a single uniform reward pin; no sampling"
 created: 2026-08-03
 model: no model training — this revises the ΔU measurement instrument used by every ranker experiment
 dataset: results/ranker_v2/cache/utility-results.jsonl (10,459 single-decision pairs), aci-full.utility
-result: pending
+result: normalization adopted (sub-floor 1204->85, live 1291->2410, p75 |delta| 0.030->0.250); targeted re-scoring would skip 78% of context reader calls but failed the zero-violation gate on 13/88,619 checks
 tags: [reward, counterfactual, measurement, targeting, normalization, roundtrip, prompt, ranker-v2]
 companion: ../../docs/issues/counterfactual-delta-u-measurement.md
 ---
@@ -64,9 +64,38 @@ R3 is not. The task prompt is part of the reward pin (`TASK_PROMPT_PIN_VERSION`,
 - Context assertions are 66.9% of the reward denominator (median 68% per document), so a context-only probe channel measures a *majority* but not all of utility; delivered coverage cannot simply be dropped.
 - The 18% systematically-signed residue remains split between dependency under-declaration and real spillover. A free triage rule now exists — does the flipped span appear in the assertion's excerpt — and should be applied before any artifact repair.
 
-## Results
+## Results (2026-08-03)
 
-pending
+### Targeted context re-scoring — gate FAILED, conditionally salvageable
+
+**Saving available:** of 112,918 context assertion-instances across all pairs, **78% (88,619) are provably skippable** and only 22% need re-scoring. Per-document skip fraction: median 67%, range 0–100%.
+
+**Blocking gate: FAILED.** Of the 88,619 skippable instances where both scores were cached, **13 disagreed** — a byte-identical reader excerpt scoring differently — every one of them a full 1.0 flip. The gate was specified as zero-violation, so it fails as written.
+
+**Decomposition, which is what matters:**
+- Re-assembly is exact: for every cached vector, the locally re-assembled `doc_p` matches the cached `doc_p` **byte-for-byte** (0 drift), so the comparison itself is sound and the violations are real.
+- All 9,339 cache rows share one `reader_pin`, `extractor_pin`, and `task_prompt_pin`, so these are **not** stale-pin artifacts.
+- The 13 violations come from just **4 distinct (document, assertion) pairs**, one of which (`aci/D2N027`) accounts for 8 of them.
+- Split by cause: **5 are `reader_refresh` mismatches** — a non-determinism knob that is part of the cache identity and can simply be held constant — and **8 are same-refresh genuine reader non-determinism** despite `temperature=0`. The `aci/D2N027` excerpt is 1,181 characters against 384–408 for the others, making a length or batch-composition effect a plausible cause.
+
+**Interpretation, and why this is not a reason to abandon the criterion.** In all 13 cases the two scores were produced from *byte-identical reader input*, so one of them is simply wrong and the ΔU between them is a pure artifact. The current untargeted pipeline **includes** that artifact as a spurious 1.0 flip; skipping would reuse one score and eliminate it. Skipping therefore removes contamination rather than hiding signal, even on the failures.
+
+**Proposed disposition (needs a decision, not adopted unilaterally):** adopt the criterion conditional on (a) holding `reader_refresh` constant within a probe pair, and (b) quarantining the 4 flagged assertions pending a reader-determinism investigation. Do not report the gate as passed.
+
+### Linked-mass normalization — ADOPTED
+
+| stratum | ÷ W (current) | ÷ W_L (proposed) |
+|---|---|---|
+| structurally derivable | 2,895 | 2,895 |
+| exact tie | 5,069 | 5,069 |
+| **sub-floor** | **1,204** | **85** |
+| **live** | **1,291** | **2,410** |
+
+The ambiguous sub-floor band — the stratum that consumed v13 through v15 — **collapses by 93%**, and live pairs nearly double. |Δ| percentiles move from 0.0000 / 0.0302 / 0.1066 to 0.0000 / 0.2500 / 0.4565.
+
+Exact ties and derivable ties are **invariant** at 5,069 and 2,895, which is the required internal consistency check: a positive rescaling can neither create nor destroy an exact zero. That the counts match exactly confirms the implementation.
+
+**Caveat that blocks reuse of the old threshold.** This restratification holds the numeric 0.044 fixed while changing its units, which is not principled — 0.044 was measured at document granularity. The distributional separation is the real result; the floor must be re-measured under `W_L` before any gate consumes it.
 
 ## Artifacts
 
