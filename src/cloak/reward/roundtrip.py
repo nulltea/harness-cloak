@@ -194,6 +194,47 @@ def _read_utility_work(item: Mapping, *, reader_refresh: bool) -> str:
     return str(answers[0])
 
 
+def deduplicate_reader_work(
+    work_queue: Sequence[tuple[int, Mapping]],
+) -> tuple[list[Mapping], list[int]]:
+    """Collapse identical reader prompts in one batch to one issued call each.
+
+    `_read_utility_work` is a function of exactly (set_valued, question, context,
+    reader_clause) at temperature 0, so issuing a repeat is redundant work and an
+    extra chance to pick up a divergent answer. A single-decision counterfactual
+    changes only the spans inside the flipped decision's own excerpts, so the
+    majority of a document's context prompts are byte-identical between the two
+    scored vectors (measured: 78% of context assertion-instances corpus-wide).
+
+    This is deliberately independent of the content-addressed LLM cache. That
+    cache would also absorb repeats, but only for prompts it has already seen —
+    it gives nothing on a cold cache or a new document, and it is mutated by the
+    `refresh` path (docs/issues/counterfactual-delta-u-measurement.md), so
+    correctness and cost must not depend on its state.
+
+    Returns (representatives, plan): the prompts to actually issue, and for each
+    original position the index of the representative whose answer it takes.
+    Order of `plan` matches `work_queue`, which downstream finalization requires.
+    """
+    slots: dict[tuple, int] = {}
+    representatives: list[Mapping] = []
+    plan: list[int] = []
+    for _rollout_index, item in work_queue:
+        key = (
+            bool(item["set_valued"]),
+            item["question"],
+            item["context"],
+            item["reader_clause"],
+        )
+        slot = slots.get(key)
+        if slot is None:
+            slot = len(representatives)
+            slots[key] = slot
+            representatives.append(item)
+        plan.append(slot)
+    return representatives, plan
+
+
 def _validate_request_readers(request: UtilityRequest) -> None:
     artifact = request.utility_artifact
     validate_utility_reader_pin(read_context_batch, artifact)
@@ -325,16 +366,18 @@ def score_roundtrip_batch(
         for rollout_index, scoring in enumerate(prepared)
         for item in scoring["context_work"]
     ]
+    representatives, plan = deduplicate_reader_work(work_queue)
     metrics["context_assertions"] = len(work_queue)
-    metrics["reader_work_items"] = len(work_queue)
+    metrics["reader_work_items"] = len(representatives)
+    metrics["reader_work_deduplicated"] = len(work_queue) - len(representatives)
     started = time.perf_counter()
     try:
-        answers = _pmap_with_peak(
+        issued = _pmap_with_peak(
             lambda indexed: (
                 indexed[0],
                 _read_utility_work(indexed[1], reader_refresh=reader_refresh),
             ),
-            work_queue,
+            list(enumerate(representatives)),
             reader_workers,
             metrics=metrics,
             peak_name="reader",
@@ -342,6 +385,14 @@ def score_roundtrip_batch(
         )
     finally:
         metrics["stage_latency_seconds"]["reader"] = time.perf_counter() - started
+
+    by_slot = dict(issued)
+    if len(by_slot) != len(representatives):
+        raise ValueError("reader returned answers for the wrong number of prompts")
+    answers = [
+        (work_queue[position][0], by_slot[slot])
+        for position, slot in enumerate(plan)
+    ]
 
     answers_by_rollout: list[list[str]] = [[] for _ in misses]
     for rollout_index, answer in answers:

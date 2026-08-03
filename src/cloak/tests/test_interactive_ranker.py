@@ -3310,3 +3310,50 @@ def test_tie_qualification_requires_every_statistic_to_agree():
     record = {"delta_u": 0.01, "delta_u_attributed": 0.01, "delta_u_linked": 0.5}
     assert any(abs(v) > TIE_EXIT_BOUND for v in _tie_statistics(record))
     assert not any(abs(v) > TIE_EXIT_BOUND for v in _tie_statistics({"delta_u": 0.01}))
+
+
+def test_reader_work_deduplication_is_order_preserving_and_exact():
+    from cloak.reward.roundtrip import deduplicate_reader_work
+
+    def item(question, context, clause=None, set_valued=False):
+        return {
+            "question": question, "context": context,
+            "reader_clause": clause, "set_valued": set_valued,
+        }
+
+    # two scored vectors of one counterfactual pair: rollout 0 and rollout 1 share
+    # every prompt except the one whose excerpt contains the flipped span
+    shared_a, shared_b = item("q1", "turn one"), item("q2", "turn two")
+    changed_0, changed_1 = item("q3", "span OLD"), item("q3", "span NEW")
+    work = [
+        (0, shared_a), (0, shared_b), (0, changed_0),
+        (1, shared_a), (1, shared_b), (1, changed_1),
+    ]
+    representatives, plan = deduplicate_reader_work(work)
+
+    # 6 logical prompts collapse to 4 issued: two shared, plus one per variant
+    assert len(representatives) == 4
+    assert plan == [0, 1, 2, 0, 1, 3]
+
+    # reconstruction must return each position's own answer, in the original order
+    answers = {slot: f"ans{slot}" for slot in range(len(representatives))}
+    rebuilt = [(work[i][0], answers[slot]) for i, slot in enumerate(plan)]
+    assert rebuilt == [
+        (0, "ans0"), (0, "ans1"), (0, "ans2"),
+        (1, "ans0"), (1, "ans1"), (1, "ans3"),
+    ]
+
+    # every distinguishing field participates in the identity — none may be merged
+    for variant in (
+        item("qX", "same", None, False),
+        item("q1", "different", None, False),
+        item("q1", "same", "clause", False),
+        item("q1", "same", None, True),
+    ):
+        base = item("q1", "same", None, False)
+        reps, _ = deduplicate_reader_work([(0, base), (0, variant)])
+        assert len(reps) == 2, f"{variant} was wrongly merged with the base prompt"
+
+    # identical prompts merge regardless of which rollout asked
+    reps, plan = deduplicate_reader_work([(0, shared_a), (1, shared_a), (2, shared_a)])
+    assert len(reps) == 1 and plan == [0, 0, 0]
