@@ -1237,12 +1237,55 @@ def provisional_utility_loss(
     return torch.stack(terms).sum() / rollout_count
 
 
+def _complement_advantages(
+    counterfactual_losses: Mapping[tuple[int, str], torch.Tensor],
+    attributed_sets: Mapping[tuple[int, str], frozenset[str]],
+    component_vectors: Sequence[Mapping[str, float]],
+    utility_artifact: Mapping,
+    doc_id: str,
+) -> dict[tuple[int, str], float]:
+    """Leave-one-out advantage over the assertions a probe did NOT cover.
+
+    Empty for pairs attributed the whole document, so scope-matched substitution
+    collapses to the historical behaviour wherever nothing was excluded.
+    """
+    from cloak.reward.utility_credit import subset_advantages
+
+    everything = frozenset().union(*component_vectors) if component_vectors else frozenset()
+    complements: dict[tuple[int, str], float] = {}
+    cache: dict[frozenset[str], tuple[float, ...]] = {}
+    for pair in counterfactual_losses:
+        attributed = attributed_sets.get(pair)
+        if attributed is None:
+            continue
+        complement = everything - attributed
+        if not complement:
+            continue
+        if complement not in cache:
+            cache[complement] = subset_advantages(
+                component_vectors, utility_artifact, doc_id, complement,
+            )
+        complements[pair] = cache[complement][pair[0]]
+    return complements
+
+
 def hybrid_utility_loss(
     replayed: Sequence["ReplayedTrajectory"],
     provisional_credit: DocumentUtilityCredit,
     counterfactual_losses: Mapping[tuple[int, str], torch.Tensor],
+    complement_advantage: Mapping[tuple[int, str], float] | None = None,
 ) -> torch.Tensor:
-    """Substitute measured pair losses for provisional terms, once per pair."""
+    """Substitute measured pair losses for provisional terms, SCOPE-MATCHED.
+
+    A measured pair loss covers only the assertions the probe is credited for.
+    Replacing the whole provisional term would therefore drop the complement —
+    fatally so for a decision no assertion claims, whose provisional term is the
+    entire document (route-consistency, 2026-08-03). `complement_advantage`
+    supplies the leave-one-out advantage over the unmeasured assertions, which
+    is added back as an ordinary policy-gradient term. Assertion sets are
+    disjoint, so nothing is double counted; an empty complement reduces this
+    exactly to the previous whole-term substitution.
+    """
 
     rollout_count = len(replayed)
     if rollout_count == 0:
@@ -1282,7 +1325,11 @@ def hybrid_utility_loss(
     terms = []
     for pair in sorted(replayed_pairs):
         if pair in counterfactual_losses:
-            terms.append(counterfactual_losses[pair])
+            term = counterfactual_losses[pair]
+            unmeasured = (complement_advantage or {}).get(pair, 0.0)
+            if unmeasured:
+                term = term - float(unmeasured) * step_by_pair[pair].log_prob
+            terms.append(term)
         else:
             terms.append(
                 -float(provisional_credit.provisional_advantage[pair])
@@ -1930,11 +1977,13 @@ def _utility_family_terms_and_mass(
     replayed: Sequence[ReplayedTrajectory],
     credit: DocumentUtilityCredit,
     counterfactual_losses: Mapping[tuple[int, str], torch.Tensor],
+    complement_advantage: Mapping[tuple[int, str], float] | None = None,
 ) -> tuple[dict[str, torch.Tensor], dict[str, float]]:
     rollout_count = len(replayed)
     prototype = replayed[0].steps[0].log_prob
     terms: dict[str, list[torch.Tensor]] = {
         "linked": [], "residual": [], "fallback": [], "counterfactual": [],
+        "counterfactual_complement": [],
     }
     residual = _leave_one_out(credit.residual_utility)
     document = _leave_one_out(credit.document_utility)
@@ -1947,6 +1996,14 @@ def _utility_family_terms_and_mass(
             pair = (rollout_index, step.decision_id)
             if pair in counterfactual_losses:
                 terms["counterfactual"].append(counterfactual_losses[pair])
+                # Scope-matched substitution adds a provisional advantage over
+                # the assertions the probe did not cover; it must appear here too
+                # or the family reconstruction will not equal the objective.
+                unmeasured = (complement_advantage or {}).get(pair, 0.0)
+                if unmeasured:
+                    terms["counterfactual_complement"].append(
+                        -float(unmeasured) * step.log_prob
+                    )
                 continue
             route = credit.route[step.decision_id]
             if route == "linked":
@@ -2275,7 +2332,16 @@ def train_hybrid_document_group(
                 request.selected_action_id,
                 request.alternative_action_id,
             )] = current_round
-    utility_loss = hybrid_utility_loss(replayed, credit, counterfactual_losses)
+    complement_advantage = _complement_advantages(
+        counterfactual_losses,
+        scheduler_diagnostics.get("attributed_sets") or {},
+        tuple(point.component_scores for point in points),
+        utility_artifact,
+        document.doc_id,
+    )
+    utility_loss = hybrid_utility_loss(
+        replayed, credit, counterfactual_losses, complement_advantage,
+    )
     reference_log_probs = _reference_distributions(
         reference_policy, document, trajectories, profile,
     )
@@ -2321,7 +2387,7 @@ def train_hybrid_document_group(
         )
         total_objective = total_objective + sensitivity_term
     family_terms, absolute_mass = _utility_family_terms_and_mass(
-        replayed, credit, counterfactual_losses,
+        replayed, credit, counterfactual_losses, complement_advantage,
     )
     family_terms.update({
         "count": objective.count,

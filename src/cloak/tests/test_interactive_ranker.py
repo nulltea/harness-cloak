@@ -2012,6 +2012,7 @@ def test_one_hybrid_optimizer_step_samples_without_graph_and_reports_all_familie
     assert score_calls == [(2, False)]
     assert set(result.gradient_norms) == {
         "linked", "residual", "fallback", "counterfactual",
+            "counterfactual_complement",
         "count", "entropy", "KL",
     }
     assert set(result.absolute_weighted_mass) == set(result.gradient_norms)
@@ -2107,10 +2108,12 @@ def test_epoch_report_keeps_scheduler_budget_separate_from_reward_magnitude(tmp_
         runtime_type_exposure={"TYPE": 2},
         gradient_norms={name: 0.1 for name in (
             "linked", "residual", "fallback", "counterfactual",
+            "counterfactual_complement",
             "count", "entropy", "KL",
         )},
         absolute_weighted_mass={name: 0.2 for name in (
             "linked", "residual", "fallback", "counterfactual",
+            "counterfactual_complement",
             "count", "entropy", "KL",
         )},
         scheduler_diagnostics={"budget": 5, "delta_u": {"mean_abs": 0.8}},
@@ -2154,6 +2157,7 @@ def test_epoch_report_extends_semantic_gradient_alpha_privacy_diagnostics():
 
     families = (
         "linked", "residual", "fallback", "counterfactual",
+            "counterfactual_complement",
         "count", "entropy", "KL",
     )
     groups = {name: 0.0 for name in ("utility", "history", "privacy", "alpha")}
@@ -2592,6 +2596,7 @@ def test_hybrid_training_loop_uses_latin_profiles_and_enables_kl_after_block():
         families = {
             name: 0.0 for name in (
                 "linked", "residual", "fallback", "counterfactual",
+            "counterfactual_complement",
                 "count", "entropy", "KL",
             )
         }
@@ -3357,3 +3362,95 @@ def test_reader_work_deduplication_is_order_preserving_and_exact():
     # identical prompts merge regardless of which rollout asked
     reps, plan = deduplicate_reader_work([(0, shared_a), (1, shared_a), (2, shared_a)])
     assert len(reps) == 1 and plan == [0, 0, 0]
+
+
+def _scope_artifact():
+    """Two linked assertions on d1, one on d2, and d3 claimed by nobody."""
+    rows = {
+        "a1": ["d1"], "a2": ["d1"], "a3": ["d2"],
+    }
+    return {
+        "artifact_version": "utility-assertions-v2",
+        "assertions": {
+            aid: {"assertion_id": aid, "doc_id": "D", "weight": 1.0,
+                  "credit_routing": "linked", "policy_dependency_decision_ids": deps}
+            for aid, deps in rows.items()
+        },
+        "documents": {"D": {
+            "assertion_ids": list(rows), "utility_weight_denominator": 3.0,
+            "policy_decision_ids": ["d1", "d2", "d3"], "decisions": [],
+        }},
+    }
+
+
+def test_attributed_assertions_follows_the_credit_route():
+    from cloak.reward.utility_credit import attributed_assertions
+
+    artifact = _scope_artifact()
+    # a claimed decision is credited for its OWN assertions
+    assert attributed_assertions(artifact, "D", "d1") == frozenset({"a1", "a2"})
+    assert attributed_assertions(artifact, "D", "d2") == frozenset({"a3"})
+    # a decision nobody claims keeps WHOLE-DOCUMENT credit, matching the
+    # provisional fallback that hybrid_utility_loss would otherwise replace
+    assert attributed_assertions(artifact, "D", "d3") == frozenset({"a1", "a2", "a3"})
+
+
+def test_subset_advantages_are_additive_over_disjoint_sets():
+    from cloak.reward.utility_credit import subset_advantages
+
+    artifact = _scope_artifact()
+    vectors = [
+        {"a1": 1.0, "a2": 0.0, "a3": 1.0},
+        {"a1": 0.0, "a2": 1.0, "a3": 1.0},
+        {"a1": 1.0, "a2": 1.0, "a3": 0.0},
+    ]
+    part_a = subset_advantages(vectors, artifact, "D", {"a1", "a2"})
+    part_b = subset_advantages(vectors, artifact, "D", {"a3"})
+    whole = subset_advantages(vectors, artifact, "D", {"a1", "a2", "a3"})
+    # THE load-bearing identity for scope-matched substitution: A(S) + A(Q\S) == A(Q)
+    for x, y, z in zip(part_a, part_b, whole, strict=True):
+        assert x + y == pytest.approx(z)
+    # an empty subset contributes nothing
+    assert subset_advantages(vectors, artifact, "D", set()) == (0.0, 0.0, 0.0)
+
+
+def test_scope_matched_substitution_reduces_to_whole_term_when_nothing_excluded():
+    from cloak.ranker.interactive import hybrid_utility_loss
+    from cloak.reward.utility_credit import provisional_credit
+
+    artifact = _scope_artifact()
+    vectors = [
+        {"a1": 1.0, "a2": 0.0, "a3": 1.0},
+        {"a1": 0.0, "a2": 1.0, "a3": 0.0},
+    ]
+    credit = provisional_credit(vectors, artifact, "D")
+
+    class _Step:
+        def __init__(self, decision_id, log_prob):
+            self.decision_id = decision_id
+            self.log_prob = log_prob
+
+    class _Traj:
+        def __init__(self, steps):
+            self.steps = steps
+
+    lp = {d: torch.tensor(float(-1 - i), requires_grad=True)
+          for i, d in enumerate(("d1", "d2", "d3"))}
+    replayed = [
+        _Traj([_Step(d, lp[d]) for d in ("d1", "d2", "d3")]) for _ in range(2)
+    ]
+    measured = {(0, "d1"): torch.tensor(0.25)}
+
+    baseline = hybrid_utility_loss(replayed, credit, measured)
+    # an empty complement must be bit-identical to the old whole-term behaviour
+    same = hybrid_utility_loss(replayed, credit, measured, {(0, "d1"): 0.0})
+    assert float(same) == float(baseline)
+    # a nonzero complement adds exactly -advantage * log_prob for that pair
+    with_complement = hybrid_utility_loss(
+        replayed, credit, measured, {(0, "d1"): 0.5},
+    )
+    expected = float(baseline) + (-0.5 * float(lp["d1"])) / 2
+    assert float(with_complement) == pytest.approx(expected)
+    # and it stays differentiable through the policy
+    with_complement.backward()
+    assert lp["d1"].grad is not None

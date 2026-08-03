@@ -4,7 +4,7 @@ from __future__ import annotations
 import math
 
 from cloak.qa.scoring import assertion_reward_role
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from types import MappingProxyType
 
@@ -267,6 +267,71 @@ def decision_delta_utility(
         numerator / partitions.denominator,
         (numerator / linked_mass) if linked_mass > 0.0 else None,
     )
+
+
+def attributed_assertions(
+    artifact: Mapping, doc_id: str, decision_id: str,
+) -> frozenset[str]:
+    """The assertion set a counterfactual at this decision is credited for.
+
+    A decision that some assertion declares a dependency on is credited for its
+    OWN declared assertions — matching `provisional_credit`, which gives such a
+    decision its linked advantage rather than the whole document's. A decision
+    that no assertion claims keeps whole-document credit, because that is the
+    provisional fallback it would otherwise receive and `hybrid_utility_loss`
+    substitutes rather than adds (route-consistency, 2026-08-03).
+    """
+    partitions = _partitions(artifact, doc_id)
+    linked = partitions.linked_by_decision.get(decision_id, frozenset())
+    return linked if linked else frozenset(partitions.weights)
+
+
+def attributed_delta_utility(
+    selected_scores: Mapping[str, float],
+    alternative_scores: Mapping[str, float],
+    artifact: Mapping,
+    doc_id: str,
+    decision_id: str,
+    extra_assertions: Iterable[str] = (),
+) -> tuple[float, frozenset[str]]:
+    """Counterfactual delta over the decision's attributed set, in document units.
+
+    Returns (delta, attributed_set). `extra_assertions` admits pair-local
+    evidence of influence that the static declaration misses; it is a union, so
+    it can only add movement, never dilute (the denominator is the fixed
+    document weight denominator).
+    """
+    partitions = _partitions(artifact, doc_id)
+    attributed = attributed_assertions(artifact, doc_id, decision_id) | (
+        frozenset(extra_assertions) & frozenset(partitions.weights)
+    )
+    delta = sum(
+        partitions.weights[key] * (selected_scores[key] - alternative_scores[key])
+        for key in attributed
+        if key in selected_scores and key in alternative_scores
+    ) / partitions.denominator
+    return delta, attributed
+
+
+def subset_advantages(
+    component_vectors: Sequence[Mapping[str, float]],
+    artifact: Mapping,
+    doc_id: str,
+    assertion_ids: Iterable[str],
+) -> tuple[float, ...]:
+    """Leave-one-out advantages over an arbitrary assertion subset.
+
+    `_weighted_scores` is a sum over assertions and `_loo_advantages` is linear,
+    so advantages are ADDITIVE over disjoint assertion sets. That is what lets
+    scope-matched substitution credit a measured component exactly while leaving
+    the unmeasured complement to its provisional estimate, with no double count
+    and no gap: A(S) + A(Q\\S) == A(Q).
+    """
+    partitions = _partitions(artifact, doc_id)
+    ids = frozenset(assertion_ids) & frozenset(partitions.weights)
+    return _loo_advantages(_weighted_scores(
+        component_vectors, ids, partitions.weights, partitions.denominator,
+    ))
 
 
 def provisional_credit(

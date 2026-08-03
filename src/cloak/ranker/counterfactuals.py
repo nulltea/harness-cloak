@@ -28,7 +28,11 @@ from cloak.reward.utility_cache import (
     UtilityResult,
     stable_hash,
 )
-from cloak.reward.utility_credit import decision_delta_utility, document_utility
+from cloak.reward.utility_credit import (
+    attributed_delta_utility,
+    decision_delta_utility,
+    document_utility,
+)
 
 
 @dataclass(frozen=True)
@@ -705,6 +709,7 @@ def execute_counterfactuals(
         raise ValueError("utility scorer returned wrong counterfactual result count")
 
     losses: dict[tuple[int, str], torch.Tensor] = {}
+    attributed_sets: dict[tuple[int, str], frozenset[str]] = {}
     deltas: list[float] = []
     evidence_rows: list[dict[str, Any]] = []
     broadcast_pairs = 0
@@ -726,7 +731,19 @@ def execute_counterfactuals(
         alternative_utility = document_utility(
             alternative_result.component_scores, utility_artifact, request.doc_id,
         )
-        delta_u = selected_utility - alternative_utility
+        delta_total = selected_utility - alternative_utility
+        # Scope-matched credit (2026-08-03): the gradient charges this decision
+        # only for the assertions it is attributed, and hybrid_utility_loss adds
+        # a provisional advantage over the complement. Decisions no assertion
+        # claims are attributed the whole document, so their term is unchanged.
+        delta_u, attributed = attributed_delta_utility(
+            selected_result.component_scores,
+            alternative_result.component_scores,
+            utility_artifact,
+            request.doc_id,
+            request.decision_id,
+        )
+        attributed_sets[(request.rollout_index, request.decision_id)] = attributed
         selected_index = replayed_step.legal_action_ids.index(request.selected_action_id)
         alternative_index = replayed_step.legal_action_ids.index(
             request.alternative_action_id
@@ -740,7 +757,7 @@ def execute_counterfactuals(
         if not bool(torch.isfinite(pair_loss)):
             raise ValueError("non-finite counterfactual pair loss")
         losses[(request.rollout_index, request.decision_id)] = pair_loss
-        deltas.append(float(delta_u))
+        deltas.append(float(delta_total))
         surrounding = {
             key: value for key, value in trajectory.action_vector.items()
             if key != request.decision_id
@@ -761,7 +778,7 @@ def execute_counterfactuals(
             "decision_id": request.decision_id,
             "selected_action_id": request.selected_action_id,
             "alternative_action_id": request.alternative_action_id,
-            "delta_u": float(delta_u),
+            "delta_u": float(delta_total),
             "delta_u_attributed": float(attributed_document),
             "delta_u_linked": (
                 None if attributed_linked is None else float(attributed_linked)
@@ -797,6 +814,7 @@ def execute_counterfactuals(
                     other_step.log_probs[alternative_index],
                 )), dim=0)[0]
                 other_loss = -float(delta_u) * (other_q - 0.5)
+                attributed_sets[other_pair] = attributed
                 if not bool(torch.isfinite(other_loss)):
                     raise ValueError("non-finite broadcast counterfactual pair loss")
                 losses[other_pair] = other_loss
@@ -807,6 +825,7 @@ def execute_counterfactuals(
     # adjudication 2026-07-31): per-probe delta-U keyed by the surrounding
     # action-vector context. Broadcast duplicates share the context and are
     # deliberately not repeated (qualification counts DISTINCT contexts).
+    diagnostics["attributed_sets"] = attributed_sets
     diagnostics["evidence_rows"] = evidence_rows
     diagnostics["broadcast_pairs"] = broadcast_pairs
     diagnostics["cache_hits"] = int(
