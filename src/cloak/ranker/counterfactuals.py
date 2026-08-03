@@ -60,6 +60,18 @@ class _EligiblePair:
     profile_id: str
 
 
+def _assertion_weight(artifact: Mapping, doc_id: str, assertion_id: str) -> float:
+    from cloak.reward.utility_credit import assertion_weights
+
+    return assertion_weights(artifact, doc_id).get(assertion_id, 0.0)
+
+
+def _document_denominator(artifact: Mapping, doc_id: str) -> float:
+    from cloak.reward.utility_credit import document_denominator
+
+    return document_denominator(artifact, doc_id)
+
+
 def _decision(document: RankerDocument, decision_id: str) -> RankerDecision:
     matches = [
         decision for decision in document.policy_decisions
@@ -780,7 +792,23 @@ def execute_counterfactuals(
             request.doc_id,
             request.decision_id,
         )
+        # Monotone qualification statistic (2026-08-03): tie admission is a
+        # CONJUNCTION — no materially affected obligation may break — not an
+        # average. Weighted-L1 movement over the attributed set is set-monotone:
+        # adding an unmoved assertion cannot lower it, and any moved assertion
+        # can only push a pair toward DISQUALIFICATION. The /W_L average could be
+        # driven down by set growth, which pushed toward false ties.
+        movement = sum(
+            abs(
+                selected_result.component_scores[key]
+                - alternative_result.component_scores[key]
+            ) * _assertion_weight(utility_artifact, request.doc_id, key)
+            for key in attributed
+            if key in selected_result.component_scores
+            and key in alternative_result.component_scores
+        ) / _document_denominator(utility_artifact, request.doc_id)
         evidence_rows.append({
+            "movement_l1": float(movement),
             "doc_id": request.doc_id,
             "decision_id": request.decision_id,
             "selected_action_id": request.selected_action_id,

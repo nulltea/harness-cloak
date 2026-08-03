@@ -269,6 +269,16 @@ def decision_delta_utility(
     )
 
 
+def assertion_weights(artifact: Mapping, doc_id: str) -> Mapping[str, float]:
+    """Credited assertion weights for a document (monitoring mass excluded)."""
+    return _partitions(artifact, doc_id).weights
+
+
+def document_denominator(artifact: Mapping, doc_id: str) -> float:
+    """The fixed reward denominator: the sum of credited assertion weights."""
+    return _partitions(artifact, doc_id).denominator
+
+
 def excerpt_changed_assertions(
     artifact: Mapping,
     doc_id: str,

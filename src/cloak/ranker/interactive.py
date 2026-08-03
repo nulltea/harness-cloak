@@ -667,6 +667,7 @@ def record_tie_evidence(
             str(row["selected_action_id"]), str(row["alternative_action_id"]),
         )))
         key = (str(row["doc_id"]), str(row["decision_id"]), pair[0], pair[1])
+        movement = row.get("movement_l1")
         linked = row.get("delta_u_linked")
         ledger.setdefault(key, []).append({
             "delta_u": float(row["delta_u"]),
@@ -677,6 +678,7 @@ def record_tie_evidence(
                 else float(row["delta_u_attributed"])
             ),
             "delta_u_linked": None if linked is None else float(linked),
+            "movement_l1": None if movement is None else float(movement),
             "context_hash": str(row["context_hash"]),
             "round": int(current_round),
         })
@@ -692,10 +694,19 @@ def _tie_statistics(record: Mapping[str, Any]) -> tuple[float, ...]:
     structurally derivable tie, which constrains nothing here.
     """
     values = [float(record["delta_u"])]
-    for key in ("delta_u_attributed", "delta_u_linked"):
-        value = record.get(key)
-        if value is not None:
-            values.append(float(value))
+    # Prefer the set-monotone weighted-L1 movement over the attributed set when
+    # present: it cannot be lowered by set growth, so it never drifts toward a
+    # false tie. `delta_u_linked` is a /W_L average retained only for legacy
+    # records and diagnostics, and is deliberately NOT consulted when movement
+    # is available (round-5b adjudication).
+    movement = record.get("movement_l1")
+    if movement is not None:
+        values.append(float(movement))
+    else:
+        for key in ("delta_u_attributed", "delta_u_linked"):
+            value = record.get(key)
+            if value is not None:
+                values.append(float(value))
     return tuple(values)
 
 

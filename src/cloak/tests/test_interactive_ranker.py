@@ -3509,3 +3509,62 @@ def test_excerpt_changed_linkage_is_pair_local_and_cannot_dilute():
         unmoved, unmoved, artifact, "D", "d1", changed,
     )
     assert delta_zero == 0.0
+
+
+def test_monotone_qualification_cannot_be_lowered_by_set_growth():
+    from cloak.ranker.interactive import TIE_EXIT_BOUND, _tie_statistics
+
+    # The /W_L average was the wrong SHAPE: growing the attributed set with
+    # unmoved assertions drove it down, pushing toward false ties. Weighted-L1
+    # movement is set-monotone, so it is preferred whenever recorded.
+    tight = {"delta_u": 0.01, "delta_u_linked": 1.0, "movement_l1": 0.30}
+    assert _tie_statistics(tight) == (0.01, 0.30)
+    assert any(abs(v) > TIE_EXIT_BOUND for v in _tie_statistics(tight))
+
+    # the diluted /W_L value is NOT consulted when movement is present, so a
+    # set-growth-shrunken average can no longer admit a tie it should not
+    diluted = {"delta_u": 0.01, "delta_u_linked": 0.01, "movement_l1": 0.30}
+    assert _tie_statistics(diluted) == (0.01, 0.30)
+    assert any(abs(v) > TIE_EXIT_BOUND for v in _tie_statistics(diluted))
+
+    # legacy records without movement fall back to the older statistics
+    assert _tie_statistics({"delta_u": 0.01}) == (0.01,)
+    assert _tie_statistics(
+        {"delta_u": 0.01, "delta_u_attributed": 0.005, "delta_u_linked": 0.5},
+    ) == (0.01, 0.005, 0.5)
+
+    # a genuine tie records zero movement and stays qualifiable
+    assert not any(
+        abs(v) > TIE_EXIT_BOUND
+        for v in _tie_statistics({"delta_u": 0.0, "movement_l1": 0.0})
+    )
+
+
+def test_weighted_l1_movement_is_monotone_in_the_attributed_set():
+    from cloak.reward.utility_credit import assertion_weights, document_denominator
+
+    artifact = _scope_artifact()
+    weights = assertion_weights(artifact, "D")
+    denominator = document_denominator(artifact, "D")
+    assert denominator == pytest.approx(sum(weights.values()))
+
+    selected = {"a1": 1.0, "a2": 1.0, "a3": 1.0}
+    alternative = {"a1": 0.0, "a2": 1.0, "a3": 1.0}
+
+    def movement(attributed):
+        return sum(
+            abs(selected[k] - alternative[k]) * weights[k] for k in attributed
+        ) / denominator
+
+    small = movement({"a1"})
+    grown = movement({"a1", "a2", "a3"})
+    # adding unmoved assertions cannot REDUCE the statistic (unlike an average)
+    assert grown >= small
+    assert grown == pytest.approx(small)
+    # whereas the /W_L average would have fallen by 3x on the same growth
+    avg_small = abs(selected["a1"] - alternative["a1"]) * weights["a1"] / weights["a1"]
+    avg_grown = (
+        abs(selected["a1"] - alternative["a1"]) * weights["a1"]
+        / sum(weights[k] for k in ("a1", "a2", "a3"))
+    )
+    assert avg_grown < avg_small
