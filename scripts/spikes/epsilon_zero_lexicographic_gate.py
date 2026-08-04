@@ -575,7 +575,8 @@ def run_gate(
     environment_hash: str,
     utility_artifact_hash: str,
     input_hashes: dict[str, str] | None = None,
-    comparators: dict[str, Any] | None = None,
+    comparator_vectors: dict[str, dict[str, dict[str, VectorKey]]] | None = None,
+    comparator_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The complete cache-only gate report. Canonical: no timestamps, no wall time."""
     corpus, audit = load_candidate_corpus(
@@ -595,6 +596,11 @@ def run_gate(
             population=population,
             count_state=count_state,
         ))
+    # Built AFTER the verdict inputs and never read by `adjudicate`: a cache miss is a
+    # property of which vectors an archived controller happened to explore.
+    comparators = build_comparator_report(
+        corpus, records, comparator_vectors or {}, comparator_metadata or {},
+    )
     verdict, checks = adjudicate(records, invalid_reasons=invalid_reasons)
     primary = [row for row in records if row["population"] == "primary"]
     campaign = [row for row in records if row["population"] == "campaign"]
@@ -616,10 +622,204 @@ def run_gate(
             "campaign": _population_summary(campaign),
             "all_documents": _population_summary(records),
         },
-        "additive_comparators": comparators or {},
+        "additive_comparators": comparators,
         "adjudication_checks": checks,
         "verdict": verdict.value,
     }
+
+
+# ── archived additive-controller comparators (report-only) ──────────────────────
+
+
+def load_comparator_policy(
+    checkpoint_path: Path,
+    documents: tuple[RankerDocument, ...],
+    profiles: tuple,
+    *,
+    representation_manifest: Path,
+    profile_count_targets: Path,
+    environment_hash: str,
+) -> tuple[Any, dict[str, Any]]:
+    """Rebuild one archived policy on CPU over the FULL retained document set.
+
+    Runtime-type indices are derived from the documents handed to the factory, so a
+    narrower set would shift them and silently mis-embed every decision.
+    """
+    import hashlib
+    from types import SimpleNamespace
+
+    import torch
+
+    from cloak.ranker.semantic import enable_controller_gain
+    from train_interactive_ranker import _semantic_training_policy
+
+    payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+    state_dict = payload.get("policy_state_dict") or payload.get("state_dict")
+    if state_dict is None:
+        raise ValueError(f"checkpoint lacks a policy state dict: {checkpoint_path}")
+    pinned = payload.get("artifact_pins", {}).get("environment_hash")
+    if pinned is not None and str(pinned) != environment_hash:
+        raise ValueError(f"checkpoint environment pin differs: {checkpoint_path}")
+    config = dict(payload.get("training_config", {}))
+    policy = _semantic_training_policy(
+        SimpleNamespace(
+            representation_manifest=str(representation_manifest),
+            profile_count_targets=str(profile_count_targets),
+            privacy_checkpoint=None,
+            device="cpu",
+        ),
+        documents,
+        profiles,
+    )
+    if any("gain_head" in key for key in state_dict):
+        enable_controller_gain(
+            policy,
+            str(config.get("controller_gain", "evidence")),
+            hidden_dim=int(config.get("controller_gain_hidden", 32)),
+            bound=float(config.get("controller_gain_bound", 1.5)),
+        )
+    policy.load_state_dict(state_dict)
+    policy.eval()
+    policy.float()
+    metadata = {
+        "path": str(checkpoint_path),
+        "sha256": "sha256:" + hashlib.sha256(checkpoint_path.read_bytes()).hexdigest(),
+        "checkpoint_version": payload.get("checkpoint_version"),
+        "policy_architecture": payload.get("policy_architecture"),
+        "architecture_pin": payload.get("architecture_pin"),
+        "code_revision": payload.get("code_revision"),
+        "epoch": payload.get("epoch"),
+        "environment_hash": pinned,
+        "controller_gain": config.get("controller_gain"),
+        "count_to_gain": config.get("count_to_gain"),
+        "controller_softcap": config.get("controller_softcap"),
+    }
+    return policy, metadata
+
+
+def greedy_comparator_vectors(
+    policy: Any, documents: tuple[RankerDocument, ...], profiles: tuple,
+) -> dict[str, dict[str, VectorKey]]:
+    """Greedy lambda-zero and lambda-max vectors, through the production menu paths."""
+    from cloak.ranker.interactive import sample_trajectory
+
+    evaluated = (profiles[0], profiles[-1])
+    vectors: dict[str, dict[str, VectorKey]] = {}
+    for document in documents:
+        for profile in evaluated:
+            trajectory = sample_trajectory(
+                policy, document, profile, greedy=True, generator=None,
+            )
+            vectors.setdefault(document.doc_id, {})[profile.name] = tuple(
+                (step.decision_id, step.selected_action_id) for step in trajectory.steps
+            )
+    return vectors
+
+
+def score_comparator_vector(
+    corpus_document: CandidateCorpusDocument,
+    record: dict[str, Any],
+    vector_key: VectorKey,
+) -> dict[str, Any]:
+    """One report-only row. Never feeds the verdict: cache misses differ by checkpoint."""
+    row: dict[str, Any] = {
+        "vector": [[decision_id, action_id] for decision_id, action_id in vector_key],
+        "vector_hash": _vector_hash(vector_key),
+    }
+    if corpus_document.candidate_support_status != "support-complete":
+        return {**row, "status": "unsupported-document"}
+    validated = {
+        candidate.vector_key: candidate
+        for candidate in (
+            *corpus_document.gate_candidates,
+            *corpus_document.expanded_cache_candidates,
+        )
+    }
+    candidate = validated.get(vector_key)
+    if candidate is None:
+        return {**row, "status": "cache-miss"}
+    optimum = max(item.utility_key for item in corpus_document.gate_candidates)
+    inside = candidate.utility_key == optimum
+    privacy_max = max(
+        item.privacy_key for item in corpus_document.gate_candidates
+        if item.utility_key == optimum
+    )
+    return {
+        **row,
+        "status": "cache-hit",
+        "in_standardized_slate": vector_key in {
+            item.vector_key for item in corpus_document.gate_candidates
+        },
+        "utility": candidate.utility,
+        "utility_gap_to_exact_optimum": float(record["epsilon_zero_lexicographic"]["utility"])
+        - candidate.utility,
+        "privacy_score": candidate.privacy_score,
+        "privacy_gap_to_lexicographic": float(
+            record["epsilon_zero_lexicographic"]["privacy_key"]
+        ) - candidate.privacy_score,
+        "inside_exact_optimal_set": inside,
+        "chooses_privacy_max_inside_exact_set": bool(
+            inside and candidate.privacy_key == privacy_max
+        ),
+    }
+
+
+def build_comparator_report(
+    corpus: dict[str, CandidateCorpusDocument],
+    records: list[dict[str, Any]],
+    vectors_by_label: dict[str, dict[str, dict[str, VectorKey]]],
+    metadata_by_label: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    by_id = {row["doc_id"]: row for row in records}
+    report: dict[str, Any] = {}
+    for label in sorted(vectors_by_label):
+        rows: dict[str, dict[str, Any]] = {}
+        for doc_id in sorted(vectors_by_label[label]):
+            record = by_id.get(doc_id)
+            if record is None:
+                continue
+            rows[doc_id] = {
+                "population": record["population"],
+                "profiles": {
+                    profile_name: score_comparator_vector(
+                        corpus[doc_id], record, vector_key,
+                    )
+                    for profile_name, vector_key in sorted(
+                        vectors_by_label[label][doc_id].items()
+                    )
+                },
+            }
+        hits = [
+            row
+            for document in rows.values()
+            for row in document["profiles"].values()
+            if row["status"] == "cache-hit"
+        ]
+        feasible = [row for row in hits if row["inside_exact_optimal_set"]]
+        report[label] = {
+            "adjudicating": False,
+            "checkpoint": metadata_by_label.get(label, {}),
+            "documents": rows,
+            "cache_hit_count": len(hits),
+            "cache_miss_count": sum(
+                1
+                for document in rows.values()
+                for row in document["profiles"].values()
+                if row["status"] == "cache-miss"
+            ),
+            "fraction_below_exact_optimum": (
+                sum(1 for row in hits if not row["inside_exact_optimal_set"]) / len(hits)
+                if hits else None
+            ),
+            "fraction_utility_feasible_missing_privacy_max": (
+                sum(
+                    1 for row in feasible
+                    if not row["chooses_privacy_max_inside_exact_set"]
+                ) / len(feasible)
+                if feasible else None
+            ),
+        }
+    return report
 
 
 def load_scoped_documents(

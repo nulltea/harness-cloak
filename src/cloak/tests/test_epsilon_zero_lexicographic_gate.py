@@ -512,6 +512,115 @@ def test_gate_report_is_byte_identical_under_shuffled_cache_order(tmp_path):
     assert "timestamp" not in first and "wall_time" not in first
 
 
+def _comparator_report(tmp_path, plans, vectors_by_label, *, metadata=None):
+    artifact = _artifact(tuple(plans))
+    rows = [
+        _row(doc_id, vector, artifact, linked=linked)
+        for doc_id, entries in plans.items()
+        for vector, linked in entries
+    ]
+    return gate.run_gate(
+        tuple(_doc(doc_id) for doc_id in plans),
+        _cache(tmp_path, rows),
+        artifact,
+        _count_reward(),
+        _count_state(),
+        environment_hash=ENVIRONMENT_HASH,
+        utility_artifact_hash=artifact["artifact_hash"],
+        comparator_vectors=vectors_by_label,
+        comparator_metadata=metadata or {},
+    )
+
+
+def test_additive_comparator_reports_both_failure_modes_and_cache_misses(tmp_path):
+    plans = {
+        "doc-a": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)],
+    }
+    vectors = {
+        "detached": {
+            "doc-a": {
+                # inside the exact optimum (utility 1.0) but not the privacy maximum
+                "lambda-zero": BC_VECTOR,
+                # never cached under this document
+                "lambda-max": PRIVATE_EXTRA_VECTOR,
+            },
+        },
+        "coupled": {
+            "doc-a": {
+                "lambda-zero": KEEP_VECTOR,          # below the exact optimum
+                "lambda-max": PLACEHOLDER_VECTOR,    # the lexicographic choice itself
+            },
+        },
+    }
+    report = _comparator_report(
+        tmp_path, plans, vectors, metadata={"detached": {"sha256": "sha256:fixture"}},
+    )
+
+    detached = report["additive_comparators"]["detached"]
+    assert detached["adjudicating"] is False
+    assert detached["checkpoint"] == {"sha256": "sha256:fixture"}
+    zero = detached["documents"]["doc-a"]["profiles"]["lambda-zero"]
+    assert zero["status"] == "cache-hit"
+    assert zero["inside_exact_optimal_set"] is True
+    assert zero["chooses_privacy_max_inside_exact_set"] is False
+    assert zero["utility_gap_to_exact_optimum"] == 0.0
+    assert zero["privacy_gap_to_lexicographic"] == pytest.approx(0.4)
+    assert detached["documents"]["doc-a"]["profiles"]["lambda-max"]["status"] == "cache-miss"
+    assert detached["cache_hit_count"] == 1 and detached["cache_miss_count"] == 1
+    assert detached["fraction_below_exact_optimum"] == 0.0
+    assert detached["fraction_utility_feasible_missing_privacy_max"] == 1.0
+
+    coupled = report["additive_comparators"]["coupled"]
+    below = coupled["documents"]["doc-a"]["profiles"]["lambda-zero"]
+    assert below["inside_exact_optimal_set"] is False
+    assert below["utility_gap_to_exact_optimum"] == pytest.approx(0.5)
+    assert coupled["fraction_below_exact_optimum"] == 0.5
+    assert coupled["fraction_utility_feasible_missing_privacy_max"] == 0.0
+
+
+def test_additive_comparator_output_never_changes_the_verdict_or_the_selection(tmp_path):
+    plans = {
+        f"doc-{index}": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)]
+        for index in range(3)
+    }
+    optimistic = {
+        "arm": {
+            doc_id: {"lambda-zero": PLACEHOLDER_VECTOR, "lambda-max": PLACEHOLDER_VECTOR}
+            for doc_id in plans
+        },
+    }
+    pessimistic = {
+        "arm": {
+            doc_id: {"lambda-zero": KEEP_VECTOR, "lambda-max": PRIVATE_EXTRA_VECTOR}
+            for doc_id in plans
+        },
+    }
+    first = _comparator_report(tmp_path / "optimistic", plans, optimistic)
+    second = _comparator_report(tmp_path / "pessimistic", plans, pessimistic)
+
+    assert first["additive_comparators"] != second["additive_comparators"]
+    for key in ("verdict", "adjudication_checks", "documents", "summary"):
+        assert first[key] == second[key]
+
+
+def test_greedy_comparator_vectors_evaluates_only_lambda_zero_and_lambda_max():
+    from cloak.ranker.environment import LambdaProfile
+    from cloak.tests.test_interactive_ranker import SequencePolicy
+
+    document = _doc("doc-a")
+    profiles = (
+        LambdaProfile("lambda-zero", 0.0),
+        LambdaProfile("lambda-mid", 0.5),
+        LambdaProfile("lambda-max", 1.5),
+    )
+    policy = SequencePolicy([dict(BC_VECTOR), dict(KEEP_VECTOR)])
+    vectors = gate.greedy_comparator_vectors(policy, (document,), profiles)
+
+    assert set(vectors["doc-a"]) == {"lambda-zero", "lambda-max"}
+    assert vectors["doc-a"]["lambda-zero"] == BC_VECTOR
+    assert vectors["doc-a"]["lambda-max"] == KEEP_VECTOR
+
+
 def test_candidate_corpus_privacy_key_is_the_document_mean_over_active_decisions(
     tmp_path,
 ):
