@@ -295,6 +295,333 @@ def load_candidate_corpus(
 # ── inputs ──────────────────────────────────────────────────────────────────────
 
 
+def _bc_vector_key(corpus_document: CandidateCorpusDocument) -> VectorKey:
+    matches = [
+        row.vector_key for row in corpus_document.expected_slate
+        if "behavior_cloning" in row.sources
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"expected one BC anchor for {corpus_document.doc_id}")
+    return matches[0]
+
+
+# ── per-document adjudication ───────────────────────────────────────────────────
+
+
+def _vector_hash(vector_key: VectorKey) -> str:
+    from cloak.reward.utility_cache import stable_hash
+
+    return stable_hash([[decision_id, action_id] for decision_id, action_id in vector_key])
+
+
+def _selector_record(selection, *, vector_hash: bool = True) -> dict[str, Any]:
+    candidate = selection.selected
+    record = {
+        "vector": [[decision_id, action_id] for decision_id, action_id in candidate.vector_key],
+        "utility_key": str(candidate.utility_key),
+        "utility": candidate.utility,
+        "privacy_key": str(candidate.privacy_key),
+        "privacy_score": candidate.privacy_score,
+        "result_hash": candidate.result_hash,
+    }
+    if vector_hash:
+        record["vector_hash"] = _vector_hash(candidate.vector_key)
+    return record
+
+
+def _count_provenance(
+    vector_key: VectorKey, count_state: dict,
+) -> dict[str, dict[str, Any]]:
+    rows = count_state.get("action_targets", {})
+    provenance = {}
+    for _decision_id, action_id in vector_key:
+        row = rows.get(action_id)
+        if not isinstance(row, dict):
+            raise ValueError(f"count state lacks provenance for action {action_id}")
+        provenance[action_id] = {
+            key: row.get(key)
+            for key in ("mode", "profile_id", "grounding_status", "source_family")
+        }
+    return provenance
+
+
+def _diagnostic_gains(
+    candidate_document: CandidateCorpusDocument, bc_vector_key: VectorKey,
+) -> dict[str, Any]:
+    """Expanded-cache block: adaptively sampled vectors, explicitly non-adjudicating."""
+    rows = (*candidate_document.gate_candidates, *candidate_document.expanded_cache_candidates)
+    if not rows:
+        return {"adjudicating": False, "candidate_vector_count": 0, "free_count_gain": None}
+    lexicographic = select_epsilon_zero(rows)
+    utility_only = select_utility_only(rows, bc_vector_key)
+    return {
+        "adjudicating": False,
+        "candidate_vector_count": len(rows),
+        "exact_optimal_set_size": lexicographic.feasible_count,
+        "free_count_gain": float(
+            lexicographic.selected.privacy_key - utility_only.selected.privacy_key
+        ),
+        "epsilon_zero_lexicographic": _selector_record(lexicographic),
+        "utility_only": _selector_record(utility_only),
+    }
+
+
+def evaluate_document(
+    document: RankerDocument,
+    candidate_document: CandidateCorpusDocument,
+    bc_vector_key: VectorKey,
+    *,
+    population: Literal["primary", "campaign"],
+    count_state: dict | None = None,
+) -> dict[str, Any]:
+    """One support-aware gate record. Unsupported documents get `null`, never zero."""
+    coverage = {
+        "doc_id": candidate_document.doc_id,
+        "population": population,
+        "policy_decision_count": len(document.policy_decisions),
+        "candidate_vector_count": len(candidate_document.gate_candidates),
+        "expected_slate_size": len(candidate_document.expected_slate),
+        "cached_slate_size": len(candidate_document.gate_candidates),
+        "missing_expected_vectors": [
+            {
+                "vector": [[d, a] for d, a in row.vector_key],
+                "sources": list(row.sources),
+                "vector_hash": _vector_hash(row.vector_key),
+            }
+            for row in candidate_document.missing_expected_vectors
+        ],
+        "missing_anchor_sources": sorted({
+            source
+            for row in candidate_document.missing_expected_vectors
+            for source in row.sources
+        }),
+        "candidate_support_status": candidate_document.candidate_support_status,
+        "bc_vector_hash": _vector_hash(bc_vector_key),
+        "expanded_cache_diagnostic": _diagnostic_gains(candidate_document, bc_vector_key),
+    }
+    if candidate_document.candidate_support_status != "support-complete":
+        return {
+            **coverage,
+            "opportunity_status": None,
+            "exact_optimal_set_size": None,
+            "exact_optimal_privacy_min": None,
+            "exact_optimal_privacy_baseline": None,
+            "exact_optimal_privacy_max": None,
+            "exact_optimal_privacy_spread": None,
+            "free_count_gain": None,
+            "selector_changes_baseline": None,
+            "epsilon_zero_lexicographic": None,
+            "utility_only": None,
+            "selection_hamming_distance": None,
+            "selected_count_provenance": None,
+        }
+
+    candidates = candidate_document.gate_candidates
+    lexicographic = select_epsilon_zero(candidates)
+    utility_only = select_utility_only(candidates, bc_vector_key)
+    maximum = max(row.utility_key for row in candidates)
+    gain = lexicographic.selected.privacy_key - utility_only.selected.privacy_key
+    # Impossible under the definition; an assertion failure here is a defect, not a
+    # finding (plan §5 failure matrix, row 1).
+    assert lexicographic.selected.utility_key == maximum
+    assert utility_only.selected.utility_key == maximum
+    assert lexicographic.selected.privacy_key >= utility_only.selected.privacy_key
+    assert gain >= 0
+    return {
+        **coverage,
+        "opportunity_status": (
+            "supported-opportunity" if gain > 0 else "supported-no-opportunity"
+        ),
+        "exact_optimal_set_size": lexicographic.feasible_count,
+        "exact_optimal_privacy_min": float(lexicographic.feasible_privacy_min),
+        "exact_optimal_privacy_baseline": float(utility_only.selected.privacy_key),
+        "exact_optimal_privacy_max": float(lexicographic.feasible_privacy_max),
+        "exact_optimal_privacy_spread": float(
+            lexicographic.feasible_privacy_max - lexicographic.feasible_privacy_min
+        ),
+        "free_count_gain": float(gain),
+        "selector_changes_baseline": (
+            lexicographic.selected.vector_key != utility_only.selected.vector_key
+        ),
+        "epsilon_zero_lexicographic": _selector_record(lexicographic),
+        "utility_only": _selector_record(utility_only),
+        "selection_hamming_distance": sum(
+            1 for (_, chosen), (_, baseline) in zip(
+                lexicographic.selected.vector_key,
+                utility_only.selected.vector_key,
+                strict=True,
+            )
+            if chosen != baseline
+        ),
+        "selected_count_provenance": (
+            _count_provenance(lexicographic.selected.vector_key, count_state)
+            if count_state is not None else None
+        ),
+    }
+
+
+def lower_mean_gain_bound(
+    gains: list[float], *, seed: int = BOOTSTRAP_SEED, samples: int = BOOTSTRAP_SAMPLES,
+) -> float:
+    """One-sided 95% document-bootstrap lower bound (5th percentile of resample means)."""
+    values = [float(value) for value in gains]
+    if not values:
+        raise ValueError("bootstrap requires at least one support-complete document")
+    generator = random.Random(seed)
+    size = len(values)
+    means = sorted(
+        st.fmean(generator.choices(values, k=size)) for _ in range(samples)
+    )
+    return means[int(0.05 * samples)]
+
+
+def _distribution(values: list[int]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for value in sorted(values):
+        counts[str(value)] = counts.get(str(value), 0) + 1
+    return counts
+
+
+def _population_summary(records: list[dict[str, Any]]) -> dict[str, Any]:
+    supported = [row for row in records if row["candidate_support_status"] == "support-complete"]
+    gains = [float(row["free_count_gain"]) for row in supported]
+    unsupported: dict[str, list[str]] = {}
+    for row in records:
+        status = row["candidate_support_status"]
+        if status != "support-complete":
+            unsupported.setdefault(status, []).append(row["doc_id"])
+    summary = {
+        "document_count": len(records),
+        "support_complete_count": len(supported),
+        "support_complete_fraction": (len(supported) / len(records)) if records else None,
+        "unsupported_document_ids_by_reason": {
+            status: sorted(ids) for status, ids in sorted(unsupported.items())
+        },
+        "positive_gain_document_count": sum(1 for value in gains if value > 0.0),
+        "positive_gain_fraction": (
+            sum(1 for value in gains if value > 0.0) / len(gains) if gains else None
+        ),
+        "mean_free_count_gain": st.fmean(gains) if gains else None,
+        "median_free_count_gain": st.median(gains) if gains else None,
+        "changed_vector_document_count": sum(
+            1 for row in supported if row["selector_changes_baseline"]
+        ),
+        "exact_optimal_set_size_distribution": _distribution(
+            [int(row["exact_optimal_set_size"]) for row in supported]
+        ),
+        "standardized_slate_coverage_distribution": _distribution(
+            [int(row["cached_slate_size"]) for row in records]
+        ),
+        "expanded_cache_coverage_distribution": _distribution([
+            int(row["expanded_cache_diagnostic"]["candidate_vector_count"])
+            for row in records
+        ]),
+        "bootstrap": None,
+    }
+    if gains:
+        summary["bootstrap"] = {
+            "lower_bound_95_one_sided": lower_mean_gain_bound(gains),
+            "observed_mean": st.fmean(gains),
+            "document_count": len(gains),
+            "seed": BOOTSTRAP_SEED,
+            "resamples": BOOTSTRAP_SAMPLES,
+        }
+    return summary
+
+
+def adjudicate(
+    records: list[dict[str, Any]], *, invalid_reasons: list[str],
+) -> tuple[GateVerdict, dict[str, Any]]:
+    """Section 3.5, in order. Only primary documents can decide the verdict."""
+    primary = [row for row in records if row["population"] == "primary"]
+    supported = [
+        row for row in primary if row["candidate_support_status"] == "support-complete"
+    ]
+    gains = [float(row["free_count_gain"]) for row in supported]
+    lower_bound = lower_mean_gain_bound(gains) if gains else None
+    checks = {
+        "invalid_reasons": sorted(invalid_reasons),
+        "primary_document_count": len(primary),
+        "all_primary_documents_support_complete": bool(primary) and len(supported) == len(primary),
+        "any_primary_document_has_positive_gain": any(value > 0.0 for value in gains),
+        "any_primary_document_changes_vector": any(
+            row["selector_changes_baseline"] for row in supported
+        ),
+        "primary_bootstrap_lower_bound": lower_bound,
+        "primary_bootstrap_lower_bound_positive": bool(
+            lower_bound is not None and lower_bound > 0.0
+        ),
+    }
+    if invalid_reasons or not primary:
+        return GateVerdict.INVALID, checks
+    if not checks["all_primary_documents_support_complete"]:
+        return GateVerdict.INSUFFICIENT_CANDIDATE_BREADTH, checks
+    if not checks["any_primary_document_has_positive_gain"]:
+        return GateVerdict.NO_OBSERVED_EXACT_OPPORTUNITY, checks
+    if not checks["primary_bootstrap_lower_bound_positive"]:
+        return GateVerdict.INSUFFICIENT_PRIMARY_SUPPORT, checks
+    if not checks["any_primary_document_changes_vector"]:
+        return GateVerdict.INSUFFICIENT_PRIMARY_SUPPORT, checks
+    return GateVerdict.ADOPT_EXACT_LEXICOGRAPHIC_COMPOSITION, checks
+
+
+def run_gate(
+    documents: tuple[RankerDocument, ...],
+    cache,
+    utility_artifact: dict,
+    targets,
+    count_state: dict,
+    *,
+    environment_hash: str,
+    utility_artifact_hash: str,
+    input_hashes: dict[str, str] | None = None,
+    comparators: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """The complete cache-only gate report. Canonical: no timestamps, no wall time."""
+    corpus, audit = load_candidate_corpus(
+        documents, cache, utility_artifact, targets,
+        environment_hash=environment_hash,
+        utility_artifact_hash=utility_artifact_hash,
+    )
+    records: list[dict[str, Any]] = []
+    invalid_reasons: list[str] = []
+    for document in sorted(documents, key=lambda row: row.doc_id):
+        corpus_document = corpus[document.doc_id]
+        population = "campaign" if document.doc_id in CAMPAIGN_DOCUMENTS else "primary"
+        records.append(evaluate_document(
+            document,
+            corpus_document,
+            _bc_vector_key(corpus_document),
+            population=population,
+            count_state=count_state,
+        ))
+    verdict, checks = adjudicate(records, invalid_reasons=invalid_reasons)
+    primary = [row for row in records if row["population"] == "primary"]
+    campaign = [row for row in records if row["population"] == "campaign"]
+    return {
+        "epsilon": "0",
+        "remote_tasks": 0,
+        "reader_work_items": 0,
+        "inputs": {
+            "environment_hash": environment_hash,
+            "utility_artifact_hash": utility_artifact_hash,
+            "count_target_artifact_hash": count_state.get("artifact_hash"),
+            "file_sha256": dict(sorted((input_hashes or {}).items())),
+        },
+        "campaign_document_ids": list(CAMPAIGN_DOCUMENTS),
+        "rejection_audit": audit,
+        "documents": records,
+        "summary": {
+            "primary": _population_summary(primary),
+            "campaign": _population_summary(campaign),
+            "all_documents": _population_summary(records),
+        },
+        "additive_comparators": comparators or {},
+        "adjudication_checks": checks,
+        "verdict": verdict.value,
+    }
+
+
 def load_scoped_documents(
     environment_path: Path, utility_artifact: dict, count_state: dict,
 ) -> tuple[tuple[RankerDocument, ...], str]:

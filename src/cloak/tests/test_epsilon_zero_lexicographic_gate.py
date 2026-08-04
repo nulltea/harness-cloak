@@ -1,4 +1,7 @@
 """Cache-fixture and report-contract tests for the epsilon-zero lexicographic gate."""
+import json
+import random
+import statistics as st
 import sys
 from dataclasses import replace
 from decimal import Decimal
@@ -139,6 +142,8 @@ PLACEHOLDER_VECTOR = (("alpha", "alpha-placeholder"), ("beta", "beta-placeholder
 SLATE = (BC_VECTOR, KEEP_VECTOR, PLACEHOLDER_VECTOR)
 ILLEGAL_VECTOR = (("alpha", "alpha-level"), ("beta", "beta-level"))
 EXTRA_VECTOR = (("alpha", "alpha-keep"), ("beta", "beta-placeholder"))
+# adaptively cached, legal, and MORE private than the BC anchor (0.95 vs 0.6)
+PRIVATE_EXTRA_VECTOR = (("alpha", "alpha-placeholder"), ("beta", "beta-level"))
 
 
 def _corpus(tmp_path, rows, doc_ids=("valid",), artifact=None, targets=None):
@@ -254,6 +259,257 @@ def test_candidate_corpus_rejects_conflicting_base_results(tmp_path):
     ]
     with pytest.raises(ValueError, match="conflicting base cache results"):
         _corpus(tmp_path, rows, artifact=artifact)
+
+
+def _count_state():
+    """Minimal count-target provenance for the fixture actions."""
+    rows = {}
+    for decision in _document().policy_decisions:
+        for action in decision.actions:
+            rows[action.action_id] = {
+                "mode": action.mode,
+                "profile_id": str(decision.profile_id),
+                "grounding_status": "grounded" if action.mode == "level" else None,
+                "source_family": "fixture" if action.mode == "level" else None,
+            }
+    return {"artifact_hash": "sha256:fixture-count-targets", "action_targets": rows}
+
+
+def _gate_report(tmp_path, plans, *, targets=None, campaign=()):
+    """Run the whole synthetic gate. `plans` maps doc_id -> [(vector, linked score)]."""
+    artifact = _artifact(tuple(plans))
+    rows = [
+        _row(doc_id, vector, artifact, linked=linked)
+        for doc_id, entries in plans.items()
+        for vector, linked in entries
+    ]
+    documents = tuple(_doc(doc_id) for doc_id in plans)
+    monkeypatched = gate.CAMPAIGN_DOCUMENTS
+    gate.CAMPAIGN_DOCUMENTS = tuple(campaign)
+    try:
+        report = gate.run_gate(
+            documents,
+            _cache(tmp_path, rows),
+            artifact,
+            targets if targets is not None else _count_reward(),
+            _count_state(),
+            environment_hash=ENVIRONMENT_HASH,
+            utility_artifact_hash=artifact["artifact_hash"],
+        )
+    finally:
+        gate.CAMPAIGN_DOCUMENTS = monkeypatched
+    return report, {row["doc_id"]: row for row in report["documents"]}
+
+
+def test_document_records_score_gain_only_inside_the_exact_utility_optimum(tmp_path):
+    plans = {
+        # 1: complete support, one optimum, no tie
+        "one-optimum": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 0.25)],
+        # 3: two exact optima with different privacy
+        "two-optima": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)],
+        # 4: the more-private vector is worse by 1e-12 and must be excluded
+        "near-miss": [
+            (BC_VECTOR, 0.5), (KEEP_VECTOR, 0.25), (PLACEHOLDER_VECTOR, 0.5 - 1e-12),
+        ],
+        # 5: three exact optima; BC-nearest and privacy-max differ
+        "three-optima": [(vector, 1.0) for vector in SLATE],
+        # 6: one missing standardized vector despite an extra cached vector
+        "missing-anchor": [
+            (BC_VECTOR, 1.0), (KEEP_VECTOR, 1.0), (EXTRA_VECTOR, 1.0),
+        ],
+        # 7: a one-vector document
+        "one-vector": [(BC_VECTOR, 1.0)],
+    }
+    _report, records = _gate_report(tmp_path, plans)
+
+    positive = {
+        doc_id for doc_id, row in records.items()
+        if row["free_count_gain"] not in (None, 0.0) and row["free_count_gain"] > 0.0
+    }
+    assert positive == {"two-optima", "three-optima"}
+
+    assert records["one-optimum"]["exact_optimal_set_size"] == 1
+    assert records["one-optimum"]["opportunity_status"] == "supported-no-opportunity"
+
+    two = records["two-optima"]
+    assert two["exact_optimal_set_size"] == 2
+    assert two["utility_only"]["vector"] == [list(pair) for pair in BC_VECTOR]
+    assert two["epsilon_zero_lexicographic"]["vector"] == [
+        list(pair) for pair in PLACEHOLDER_VECTOR
+    ]
+    assert two["free_count_gain"] == pytest.approx(0.4)
+    assert two["selection_hamming_distance"] == 1
+    assert two["selector_changes_baseline"] is True
+    assert two["opportunity_status"] == "supported-opportunity"
+    assert set(two["selected_count_provenance"]) == {"alpha-placeholder", "beta-placeholder"}
+
+    near = records["near-miss"]
+    assert near["exact_optimal_set_size"] == 1
+    assert near["epsilon_zero_lexicographic"]["vector"] == [list(p) for p in BC_VECTOR]
+    assert near["free_count_gain"] == 0.0
+
+    three = records["three-optima"]
+    assert three["exact_optimal_set_size"] == 3
+    assert three["exact_optimal_privacy_min"] == 0.0
+    assert three["exact_optimal_privacy_max"] == 1.0
+    assert three["free_count_gain"] == pytest.approx(0.4)
+
+    for doc_id in ("missing-anchor", "one-vector"):
+        row = records[doc_id]
+        assert row["candidate_support_status"] == "unsupported-missing-slate"
+        assert row["free_count_gain"] is None
+        assert row["opportunity_status"] is None
+        assert row["epsilon_zero_lexicographic"] is None
+
+
+def test_two_exact_optima_with_equal_privacy_have_no_opportunity(tmp_path):
+    # alpha_level = 1.0 makes the BC and all-placeholder vectors count-identical.
+    targets = _count_reward(alpha_level=1.0)
+    plans = {"equal-privacy": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)]}
+    _report, records = _gate_report(tmp_path, plans, targets=targets)
+
+    row = records["equal-privacy"]
+    assert row["exact_optimal_set_size"] == 2
+    assert row["exact_optimal_privacy_spread"] == 0.0
+    assert row["free_count_gain"] == 0.0
+    assert row["selector_changes_baseline"] is False
+    assert row["opportunity_status"] == "supported-no-opportunity"
+
+
+def test_verdict_adopts_composition_only_when_every_primary_document_is_supported(
+    tmp_path,
+):
+    supported = {
+        f"doc-{index}": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)]
+        for index in range(3)
+    }
+    report, _records = _gate_report(tmp_path, supported)
+    assert report["verdict"] == "adopt-exact-lexicographic-composition"
+    assert report["adjudication_checks"]["all_primary_documents_support_complete"] is True
+    assert report["summary"]["primary"]["bootstrap"]["lower_bound_95_one_sided"] > 0.0
+
+    # one primary document short of one standardized anchor closes the corpus verdict,
+    # even though the other documents show positive gain
+    starved = {**supported, "doc-thin": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 1.0)]}
+    report, _records = _gate_report(tmp_path / "starved", starved)
+    assert report["verdict"] == "insufficient-candidate-breadth"
+    assert report["adjudication_checks"]["any_primary_document_has_positive_gain"] is True
+    assert report["summary"]["primary"]["unsupported_document_ids_by_reason"] == {
+        "unsupported-missing-slate": ["doc-thin"],
+    }
+
+
+def test_no_observed_exact_opportunity_when_every_supported_gain_is_zero(tmp_path):
+    plans = {
+        f"doc-{index}": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 0.25)]
+        for index in range(3)
+    }
+    report, _records = _gate_report(tmp_path, plans)
+    assert report["verdict"] == "no-observed-exact-opportunity"
+    assert report["summary"]["primary"]["support_complete_fraction"] == 1.0
+    assert report["summary"]["primary"]["mean_free_count_gain"] == 0.0
+
+
+def test_campaign_documents_are_reported_but_never_adjudicate(tmp_path):
+    plans = {
+        "campaign-doc": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)],
+        "primary-doc": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 0.25)],
+    }
+    report, records = _gate_report(tmp_path, plans, campaign=("campaign-doc",))
+    assert records["campaign-doc"]["population"] == "campaign"
+    assert records["campaign-doc"]["free_count_gain"] == pytest.approx(0.4)
+    assert report["summary"]["campaign"]["positive_gain_document_count"] == 1
+    assert report["adjudication_checks"]["primary_document_count"] == 1
+    # the campaign document's gain cannot rescue the primary population
+    assert report["verdict"] == "no-observed-exact-opportunity"
+
+
+def test_bootstrap_ignores_unsupported_documents_and_reports_its_settings(tmp_path):
+    plans = {
+        f"doc-{index}": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)]
+        for index in range(3)
+    }
+    baseline, _records = _gate_report(tmp_path, plans)
+    with_unsupported, _records = _gate_report(
+        tmp_path / "with-unsupported", {**plans, "doc-thin": [(BC_VECTOR, 1.0)]},
+    )
+    assert (
+        with_unsupported["summary"]["primary"]["bootstrap"]
+        == baseline["summary"]["primary"]["bootstrap"]
+    )
+    assert baseline["summary"]["primary"]["bootstrap"]["seed"] == 20260804
+    assert baseline["summary"]["primary"]["bootstrap"]["resamples"] == 10_000
+    assert baseline["summary"]["primary"]["bootstrap"]["document_count"] == 3
+    assert with_unsupported["summary"]["primary"]["support_complete_fraction"] == 0.75
+
+
+def test_lower_mean_gain_bound_is_deterministic_and_bounded_by_the_mean():
+    gains = [0.0, 0.1, 0.4, 0.4, 0.0, 0.2]
+    first = gate.lower_mean_gain_bound(gains)
+    assert first == gate.lower_mean_gain_bound(list(reversed(gains)) and gains)
+    assert 0.0 < first < st.fmean(gains)
+    assert gate.lower_mean_gain_bound([0.0, 0.0]) == 0.0
+    with pytest.raises(ValueError, match="bootstrap"):
+        gate.lower_mean_gain_bound([])
+
+
+def test_expanded_cache_vectors_cannot_change_the_verdict_or_the_selection(tmp_path):
+    plans = {
+        f"doc-{index}": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 0.25)]
+        for index in range(3)
+    }
+    baseline, records = _gate_report(tmp_path, plans)
+    # this extra vector is adaptively cached, ties the exact optimum, and is MORE private
+    expanded = {
+        doc_id: [*entries, (PRIVATE_EXTRA_VECTOR, 1.0)] for doc_id, entries in plans.items()
+    }
+    widened, widened_records = _gate_report(tmp_path / "expanded", expanded)
+
+    assert widened["verdict"] == baseline["verdict"] == "no-observed-exact-opportunity"
+    for doc_id in plans:
+        assert (
+            widened_records[doc_id]["epsilon_zero_lexicographic"]["vector_hash"]
+            == records[doc_id]["epsilon_zero_lexicographic"]["vector_hash"]
+        )
+        assert widened_records[doc_id]["free_count_gain"] == 0.0
+        # the diagnostic block does see it, and says so
+        diagnostic = widened_records[doc_id]["expanded_cache_diagnostic"]
+        assert diagnostic["adjudicating"] is False
+        assert diagnostic["candidate_vector_count"] == 4
+        assert diagnostic["free_count_gain"] > 0.0
+
+
+def test_gate_report_is_byte_identical_under_shuffled_cache_order(tmp_path):
+    plans = {
+        f"doc-{index}": [(BC_VECTOR, 1.0), (KEEP_VECTOR, 0.5), (PLACEHOLDER_VECTOR, 1.0)]
+        for index in range(3)
+    }
+    artifact = _artifact(tuple(plans))
+    rows = [
+        _row(doc_id, vector, artifact, linked=linked)
+        for doc_id, entries in plans.items()
+        for vector, linked in entries
+    ]
+    documents = tuple(_doc(doc_id) for doc_id in plans)
+
+    def report(order, name):
+        return gate.run_gate(
+            documents,
+            _cache(tmp_path, order, name=name),
+            artifact,
+            _count_reward(),
+            _count_state(),
+            environment_hash=ENVIRONMENT_HASH,
+            utility_artifact_hash=artifact["artifact_hash"],
+        )
+
+    generator = random.Random(20260804)
+    shuffled = list(rows)
+    generator.shuffle(shuffled)
+    first = json.dumps(report(rows, "a.jsonl"), indent=1, sort_keys=True)
+    second = json.dumps(report(shuffled, "b.jsonl"), indent=1, sort_keys=True)
+    assert first == second
+    assert "timestamp" not in first and "wall_time" not in first
 
 
 def test_candidate_corpus_privacy_key_is_the_document_mean_over_active_decisions(
