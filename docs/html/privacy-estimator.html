@@ -8,6 +8,72 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght,SOFT,WONK@9..144,300..900,0..100,0..1&amp;family=JetBrains+Mono:ital,wght@0,100..800;1,100..800&amp;display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/site.css">
+<style>
+  #privacy-estimator-diagram .ranker-model-diagram__module {
+    border-style: solid;
+  }
+  #privacy-estimator-diagram {
+    /* Keep at least 12px between a port center and the next grid column:
+       Graphviz expands routing obstacles by 6px on every side. */
+    --privacy-bus-offset: 20px;
+  }
+  #privacy-estimator-diagram .privacy-grad-port {
+    position: absolute;
+    top: 50%;
+    z-index: 3;
+    transform: translateY(-50%);
+  }
+  #privacy-estimator-diagram .privacy-grad-port--left {
+    left: calc(-1 * var(--privacy-bus-offset));
+  }
+  #privacy-estimator-diagram .privacy-grad-port--right {
+    right: calc(-1 * var(--privacy-bus-offset));
+  }
+  #privacy-estimator-diagram .privacy-feature-port {
+    position: absolute;
+    top: 50%;
+    z-index: 3;
+    width: 5px;
+    min-width: 5px;
+    height: 5px;
+    min-height: 5px;
+    background: #3d6287;
+    transform: translateY(-50%);
+  }
+  #privacy-estimator-diagram .privacy-feature-port--output {
+    top: auto;
+    right: auto;
+    bottom: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  #privacy-estimator-diagram .privacy-feature-port--input {
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  #privacy-estimator-diagram .privacy-grad-port--bottom {
+    top: auto;
+    right: auto;
+    bottom: calc(-1 * var(--privacy-bus-offset));
+    left: 50%;
+    transform: translateX(-50%);
+  }
+  #privacy-estimator-diagram .privacy-train-bus-anchor--left {
+    justify-self: start;
+    margin-left: calc(-1 * var(--privacy-bus-offset));
+  }
+  #privacy-estimator-diagram .privacy-train-bus-anchor--right {
+    justify-self: end;
+    margin-right: calc(-1 * var(--privacy-bus-offset));
+  }
+  #privacy-estimator-diagram .privacy-train-bus-anchor--bottom {
+    margin-top: auto;
+  }
+  #privacy-estimator-diagram .privacy-expanded-mlp {
+    min-height: 132px;
+  }
+</style>
 <script defer src="https://cdn.jsdelivr.net/npm/@viz-js/viz@3.28.0/dist/viz-global.js"></script>
 <script defer src="js/ranker-model-diagram.js"></script>
 </head>
@@ -18,11 +84,18 @@
   <div class="topnav" id="site-nav"></div>
 
   <header class="masthead">
-    <h1 class="title">Privacy Estimator<span class="title-sub">Relation classification and formal universe count prediction</span></h1>
-    <div class="rev">architecture report · 2026-08-01</div>
+    <h1 class="title">Privacy Estimator<span class="title-sub">Semantic-fact relation classification and formal universe count prediction</span></h1>
+    <div class="rev">architecture report · 2026-08-03</div>
     <div class="abstract">
       <div class="abstract-label">Abstract</div>
-      <p class="subtitle">Privacy estimation for lattice substitutions requires two judgments: whether a candidate preserves the source relation, and how large the candidate's formal anonymity universe is; the current uniform pooled representation may not retain the interactions needed for the first task. The implemented model routes distinct serialized inputs through shared ClinicalMosaic weights, adapts only the top four encoder layers for four-way relation classification, and trains a detached count head over frozen candidate features. After two rounds of relation-label auditing, the relation head reached 0.7028 development macro-F1, effectively unchanged from its predecessor's 0.7039. Health-condition macro-F1 rose by 0.0244 while drug and procedure macro-F1 fell by 0.0328 and 0.0272, and context-bearing input trailed type-matched shuffled context by 0.0065. The count head reduced candidate-macro log-MAE from the 0.8298 mean baseline to 0.6216, a 25.1% reduction, and achieved 0.8625 narrow-to-broad ordering accuracy. These results point to representation and interaction limits in the relation branch rather than another broad label-cleaning pass, but the evidence comes from one seed on development data; test data remains sealed, and neither task metric measures realized privacy.</p>
+      <p class="subtitle">The v5 privacy estimator treats a source–candidate relation as one semantic fact
+      observed through one or more clinical occurrence excerpts. A fully adapted ClinicalMosaic cross-encoder
+      feeds four independently retrieved role slots to a hierarchical head: a symmetric connectedness decision
+      and an ordered direction decision compose the required four-class probability distribution. This replaces
+      the v4 single-query role pooling path and its top-four-layer-only adaptation. Training balances type,
+      class, and semantic fact; checkpoint selection now averages admitted occurrence-view probabilities within
+      each fact before scoring, so repeated views cannot dominate model selection. The detached count stage is
+      unchanged: it fits a compact head over frozen candidate features from 19,385 ontology-defined universes.</p>
     </div>
   </header>
 
@@ -31,142 +104,218 @@
       <header class="section-head">
         <div class="section-num">§01</div>
         <h2 class="section-title">Model Architecture</h2>
-        <div class="section-meta">two inputs · shared weights · disjoint objectives</div>
+        <div class="section-meta">semantic facts · four-slot retrieval · hierarchical relation · detached count</div>
       </header>
-      <p class="lede">The privacy estimator is one ClinicalMosaic encoder used in two separate task pipelines, not a joint forward pass with a shared input.</p>
+      <p class="lede">Occurrence excerpts are evidence; semantic facts are the supervised and evaluated
+      objects. The relation branch preserves source, candidate, occurrence, and global context as separate
+      retrieved slots, then factors the label into the two decisions the ontology actually requires.</p>
       <div class="prose">
-        <p><strong>Relation path.</strong> The model serializes runtime type, detected source, candidate substitution, and the marked occurrence excerpt into two tokenizer segments. ClinicalMosaic converts the complete sequence into token states, then one masked mean operation collapses every non-special state into a 768-dimensional vector. A LayerNorm and 128-wide GELU head produces logits for valid generalization, reversal, related but non-substitutable, and unrelated. Relation gradients update the head and encoder layers 8 through 11; embeddings and layers 0 through 7 remain frozen.</p>
-        <p><strong>Count path.</strong> The count input contains only runtime type and candidate substitution. It passes through the relation-adapted encoder, but the encoder is frozen and its masked-mean features are cached before count training. A separate 64-wide GELU head predicts log universe size from formal member-set cardinalities. Smooth-L1 regression learns magnitude, and a logistic pairwise loss enforces narrow-to-broad ordering within complete lattice menus.</p>
-        <p><strong>Architectural limitation.</strong> Both paths reduce the whole encoded sequence to one uniform mean vector before either head acts. The relation branch therefore has no explicit source-to-candidate interaction, field-specific pooling, or occurrence-targeted attention. Its performance plateau after label auditing and weak correct-context advantage make this shared representation bottleneck the next architecture question. The successful detached count head remains a useful baseline rather than evidence that count-specific encoder adaptation is unnecessary.</p>
+        <p><strong>Relation path.</strong> The structured query contains typed source and candidate labels plus
+        their canonical definitions; a second segment contains the authentic detected occurrence in its source
+        excerpt. Thirteen atomic markers make these roles explicit. All twelve ClinicalMosaic layers adapt with
+        layer-wise learning-rate decay. A two-layer, six-head Transformer decoder retrieves four 384-wide slots
+        from every unmasked final token state, avoiding the irreversible compression of global masked-mean
+        pooling and the single context-attention bottleneck of v4.</p>
+        <p><strong>Structured decision and evaluation.</strong> A swap-invariant head predicts connected versus
+        unrelated, while an ordered head predicts forward inclusion, reverse inclusion, or related without
+        inclusion. Their probabilities compose valid generalization, reversal, related but non-substitutable,
+        and unrelated. The exact composed four-class negative log likelihood trains the model. On development
+        data, view probabilities are averaged once per <code>semantic_relation_fact_id</code>; fact-level
+        macro-F1 and class recalls select the checkpoint. Row-weighted scores remain diagnostics only.</p>
+        <p><strong>Count path.</strong> The count stage retains candidate-only serialization and masked-mean
+        pooling because it predicts a property of one candidate rather than a directional relation. The
+        relation-adapted encoder is frozen and cached; a 64-wide GELU head learns standardized log universe
+        size with Smooth-L1 magnitude loss and pairwise narrow-to-broad ordering. Counts are formal ontology
+        universe sizes, never corpus mention counts.</p>
       </div>
 
       <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
         <div class="diagram-cap">
-          <span class="l">FIG · M1: ML k-anonymity privacy estimator</span>
-          <span>green = tensor/encoder · rust = linear · gray = normalization/frozen · dashed = trainable boundary/gradient</span>
+          <span class="l">FIG · M1: v5 semantic-fact privacy estimator computational graph</span>
+          <span>green = tensor/encoder · rust = head · blue = attention/control · gray = normalization/frozen · dashed outline = trainable · dashed arrow = training/backpropagation</span>
         </div>
-        <div
-          id="privacy-estimator-diagram"
-          class="ranker-model-diagram"
-          role="img"
-          aria-label="Component-level computational graph for the ML k-anonymity privacy estimator"
-        >
+        <div id="privacy-estimator-diagram" class="ranker-model-diagram" role="img"
+             aria-label="Component-level computational graph for the v5 semantic-fact privacy relation model and detached count stage">
           <div class="ranker-model-diagram__layout">
 
             <div id="relation-pass" class="ranker-model-diagram__module" data-module-id="relation-pass">
-              <div class="ranker-model-diagram__module-label">01 · Relation pass · context-bearing · top-four encoder adaptation</div>
-              <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:230px 240px 240px 205px 220px;gap:34px">
+              <div class="ranker-model-diagram__module-label">01 · Relation pass · semantic-fact balanced · full ClinicalMosaic adaptation</div>
+
+              <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
                 <div class="ranker-model-diagram__col">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="relation_fields">
-                    <div class="ranker-model-diagram__node-title">Occurrence bundle</div>
-                    <div class="ranker-model-diagram__node-detail">runtime type · detected source<br>candidate substitution<br>excerpt with one [OCC]…[/OCC]</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="semantic_facts">
+                    <div class="ranker-model-diagram__node-title">Semantic relation facts</div>
+                    <div class="ranker-model-diagram__node-detail">type · source node · candidate node<br>canonical definitions · four-way label</div>
                   </div>
-                  <div class="ranker-model-diagram__node" data-node-id="relation_serialization">
-                    <div class="ranker-model-diagram__node-title">Two-segment serialization</div>
-                    <div class="ranker-model-diagram__node-detail">A: type · source · candidate<br>B: marked clinical context</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="occurrence_views">
+                    <div class="ranker-model-diagram__node-title">Authentic occurrence views</div>
+                    <div class="ranker-model-diagram__node-detail">detected source span + excerpt<br>zero or more views linked to one fact</div>
                   </div>
-                  <div class="ranker-model-diagram__node" data-node-id="relation_sampler">
-                    <div class="ranker-model-diagram__node-title">Balanced row sampler</div>
-                    <div class="ranker-model-diagram__node-detail">equal label mass<br>equal bundle mass within label<br>equal rows within bundle</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="sampler_input_join"></div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="fact_sampler">
+                    <div class="ranker-model-diagram__node-title">Exact hierarchical sampler</div>
+                    <div class="ranker-model-diagram__node-detail">equal type × class mass<br>uniform fact, then uniform view<br>repeated views add no fact mass</div>
                   </div>
                 </div>
 
                 <div class="ranker-model-diagram__col">
+                  <div class="ranker-model-diagram__node" data-node-id="relation_serialization">
+                    <div class="ranker-model-diagram__node-title">Definition-aware packing</div>
+                    <div class="ranker-model-diagram__node-detail">[TYPE] [SRC] label + definition<br>[CAND] label + definition [SEP]<br>context [OCC] span [/OCC]</div>
+                  </div>
                   <div class="ranker-model-diagram__node" data-node-id="relation_tokenizer">
                     <div class="ranker-model-diagram__node-title">ClinicalMosaic tokenizer</div>
-                    <div class="ranker-model-diagram__node-detail">paired input · truncate only B<br>max length 256 · pretokenized once</div>
+                    <div class="ranker-model-diagram__node-detail">13 atomic role markers<br>segment 0 = structured query<br>segment 1 = occurrence excerpt</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="relation_batch">
                     <div class="ranker-model-diagram__node-title">Length bucket + dynamic pad</div>
-                    <div class="ranker-model-diagram__node-detail">32-token buckets · ≤ 4,096 tokens<br>≤ 16 examples · replacement sampling</div>
+                    <div class="ranker-model-diagram__node-detail">≤ 256 tokens · ≤ 16 examples<br>≤ 4,096 tokens per batch</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_inputs">
-                    <div class="ranker-model-diagram__node-title">Tokenizer tensors</div>
-                    <div class="ranker-model-diagram__node-detail">input_ids [B × L]<br>attention_mask [B × L]<br>token_type_ids [B × L], if emitted<br>special_tokens_mask [B × L]</div>
+                    <div class="ranker-model-diagram__node-title">Inputs + role positions</div>
+                    <div class="ranker-model-diagram__node-detail">IDs · attention · token type [B × L]<br>[SRC] · [CAND] · [OCC] · [CLS]</div>
                   </div>
                 </div>
 
                 <div class="ranker-model-diagram__col">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder" data-node-id="frozen_encoder">
-                    <div class="ranker-model-diagram__node-title">ClinicalMosaic</div>
-                    <div class="ranker-model-diagram__node-detail">embeddings + encoder layers 0–7<br>frozen · no relation gradients<br>hidden size 768</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding ranker-model-diagram__node--trainable" data-node-id="marker_embeddings">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="marker_grad_port"></span>
+                    <div class="ranker-model-diagram__node-title">Atomic marker embeddings</div>
+                    <div class="ranker-model-diagram__node-detail">semantic initialization + noise<br>trainable with role decoder</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="trainable_encoder">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="encoder_low">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="encoder_low_grad_port"></span>
+                    <div class="ranker-model-diagram__node-title">Embeddings + layers 0–3</div>
+                    <div class="ranker-model-diagram__node-detail">trainable · learning rate 5e-6</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="encoder_mid">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="encoder_mid_grad_port"></span>
+                    <div class="ranker-model-diagram__node-title">Encoder layers 4–7</div>
+                    <div class="ranker-model-diagram__node-detail">trainable · learning rate 1e-5</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="encoder_high">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="encoder_high_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">Encoder layers 8–11</div>
-                    <div class="ranker-model-diagram__node-detail">trainable during relation stage<br>AdamW learning rate 2e-5</div>
+                    <div class="ranker-model-diagram__node-detail">trainable · learning rate 2e-5</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_hidden">
                     <div class="ranker-model-diagram__node-title">Final token states</div>
-                    <div class="ranker-model-diagram__node-detail">H_rel [B × L × 768]</div>
+                    <div class="ranker-model-diagram__node-detail">H_rel [B × L × 768]<br>no pooling before retrieval</div>
                   </div>
-                </div>
-
-                <div class="ranker-model-diagram__col">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="relation_mask">
-                    <div class="ranker-model-diagram__node-title">Pool mask</div>
-                    <div class="ranker-model-diagram__node-detail">attention_mask<br>AND NOT special_tokens_mask<br>M_rel [B × L]</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="relation_pool" data-port-shape="circle" title="Masked sum divided by the number of poolable tokens">
-                    <div class="ranker-model-diagram__node-title">Σ/n</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_vector">
-                    <div class="ranker-model-diagram__node-title">Masked-mean relation vector</div>
-                    <div class="ranker-model-diagram__node-detail">float32 accumulation<br>z_rel [B × 768]</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization ranker-model-diagram__node--trainable" data-node-id="relation_norm">
-                    <div class="ranker-model-diagram__node-title">LayerNorm</div>
-                    <div class="ranker-model-diagram__node-detail">768 features · trainable</div>
-                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-train-bus-anchor--left privacy-train-bus-anchor--bottom" data-node-id="encoder_train_split"></div>
                 </div>
 
                 <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="relation_linear_128">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">Linear 768 → 128</div>
-                    <div class="ranker-model-diagram__node-detail">trainable relation head</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="role_state_extraction">
+                    <div class="ranker-model-diagram__node-title">Select contextual role anchors</div>
+                    <div class="ranker-model-diagram__node-detail">H at [SRC] · [CAND] · [OCC] · [CLS]<br>occurrence anchor = 0 when absent · [B × 4 × 768]</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="relation_gelu">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">GELU</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="memory_projection">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="memory_grad_port"></span>
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                    <div class="ranker-model-diagram__node-title">Shared input projection P</div>
+                    <div class="ranker-model-diagram__node-detail">LayerNorm · Linear 768 → 384<br>called separately on H and S · tied weights</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="relation_dropout">
-                    <div class="ranker-model-diagram__node-title">Dropout 0.1</div>
-                    <div class="ranker-model-diagram__node-detail">training only</div>
+                  <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:143px 143px;gap:14px">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="token_memory">
+                      <div class="ranker-model-diagram__node-title">Token memory</div>
+                      <div class="ranker-model-diagram__node-detail">M = P(H)<br>[B × L × 384]</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding ranker-model-diagram__node--trainable" data-node-id="slot_seeds">
+                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="seeds_grad_port"></span>
+                      <div class="ranker-model-diagram__node-title">Initialized role queries</div>
+                      <div class="ranker-model-diagram__node-detail">Q₀ = P(S) + E<sub>role</sub><br>[B × 4 × 384]</div>
+                    </div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="relation_linear_4">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">Linear 128 → 4</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--attention ranker-model-diagram__node--trainable" data-node-id="slot_decoder">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="decoder_grad_port"></span>
+                    <div class="ranker-model-diagram__node-title">Multi-slot query decoder</div>
+                    <div class="ranker-model-diagram__node-detail">tgt = Q₀ · memory = M<br>2 pre-norm layers · 6 heads<br>FFN 1,536 · dropout 0.1<br>each query attends all live tokens</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_logits">
-                    <div class="ranker-model-diagram__node-title">Four relation logits</div>
-                    <div class="ranker-model-diagram__node-detail">valid generalization · reversal<br>related but non-substitutable · unrelated<br>softmax only at inference</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="role_slots">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-feature-port privacy-feature-port--output" data-node-id="role_output_port"></span>
+                    <div class="ranker-model-diagram__node-title">Retrieved role slots</div>
+                    <div class="ranker-model-diagram__node-detail">s source · c candidate<br>o occurrence · x global/context<br>[B × 4 × 384]</div>
                   </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-train-bus-anchor--right privacy-train-bus-anchor--bottom" data-node-id="decoder_train_split"></div>
                 </div>
+
               </div>
 
-              <div class="ranker-model-diagram__row" style="grid-template-columns:260px 260px 310px;gap:46px;justify-content:center">
-                <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="relation_targets">
-                  <div class="ranker-model-diagram__node-title">Audited class target</div>
-                  <div class="ranker-model-diagram__node-detail">one of four labels · integer class index</div>
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="classification-heads">
+                <div class="ranker-model-diagram__module-label">Classification heads · symmetric connectedness + ordered direction</div>
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="classification_split"></div>
+                  <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
+                    <div class="ranker-model-diagram__node" data-node-id="connected_features">
+                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-feature-port privacy-feature-port--input" data-node-id="connected_feature_port"></span>
+                      <div class="ranker-model-diagram__node-title">Symmetric features</div>
+                      <div class="ranker-model-diagram__node-detail">s+c · |s−c| · s⊙c · o · x<br>swap-invariant · 5 × 384</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear privacy-expanded-mlp" data-node-id="connected_head">
+                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--bottom" data-node-id="connected_grad_port"></span>
+                      <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                      <div class="ranker-model-diagram__node-title">Connectedness head</div>
+                      <div class="ranker-model-diagram__node-detail">LayerNorm 1,920<br>Linear 1,920 → 256 · GELU · Dropout 0.1<br>Linear 256 → 1 · connectedness logit</div>
+                    </div>
+                    <div class="ranker-model-diagram__node" data-node-id="direction_features">
+                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-feature-port privacy-feature-port--input" data-node-id="direction_feature_port"></span>
+                      <div class="ranker-model-diagram__node-title">Ordered features</div>
+                      <div class="ranker-model-diagram__node-detail">s · c · s−c · |s−c| · s⊙c · o · x<br>direction-preserving · 7 × 384</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear privacy-expanded-mlp" data-node-id="direction_head">
+                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--bottom" data-node-id="direction_grad_port"></span>
+                      <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                      <div class="ranker-model-diagram__node-title">Conditional direction head</div>
+                      <div class="ranker-model-diagram__node-detail">LayerNorm 2,688<br>Linear 2,688 → 256 · GELU · Dropout 0.1<br>Linear 256 → 3 · forward/reverse/neither logits</div>
+                    </div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="head_train_split"></div>
                 </div>
-                <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_ce">
-                  <div class="ranker-model-diagram__node-title">L_relation</div>
-                  <div class="ranker-model-diagram__node-detail">four-class cross-entropy</div>
+              </section>
+
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="hierarchical-output">
+                <div class="ranker-model-diagram__module-label">Hierarchical probability composition · ontology structure is explicit</div>
+                <div class="ranker-model-diagram__row" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="relation_targets">
+                    <div class="ranker-model-diagram__node-title">Audited fact label</div>
+                    <div class="ranker-model-diagram__node-detail">one target per sampled semantic fact</div>
+                  </div>
+                  <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="relation_loss_join"></div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="relation_optimizer">
+                      <div class="ranker-model-diagram__node-title">Exact four-class NLL → AdamW</div>
+                      <div class="ranker-model-diagram__node-detail">head 2e-4 · encoder LLRD above<br>weight decay 0.01 · norms/bias 0<br>warmup + global clip 1.0</div>
+                    </div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_probabilities">
+                    <div class="ranker-model-diagram__node-title">Four-class probability</div>
+                    <div class="ranker-model-diagram__node-detail">valid = p_c p_f · reversal = p_c p_r<br>related = p_c p_n · unrelated = 1−p_c</div>
+                  </div>
+                  <div class="ranker-model-diagram__row" style="grid-template-columns:52px 230px;gap:18px">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="probability_compose" data-port-shape="circle" title="Compose connectedness and conditional direction probabilities">
+                      <div class="ranker-model-diagram__node-title">×</div>
+                    </div>
+                    <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                      <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="head_merge"></div>
+                      <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="head_probabilities">
+                        <div class="ranker-model-diagram__node-title">Head probabilities</div>
+                        <div class="ranker-model-diagram__node-detail">p_c = sigmoid(connected)<br>p_f, p_r, p_n = softmax(direction)</div>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="relation_optimizer">
-                  <div class="ranker-model-diagram__node-title">AdamW + global clip</div>
-                  <div class="ranker-model-diagram__node-detail">head 2e-4 · encoder 2e-5<br>weight decay 0.01 · gradient norm ≤ 1.0<br>updates head + encoder layers 8–11</div>
-                </div>
-              </div>
+              </section>
+
             </div>
 
             <div id="count-pass" class="ranker-model-diagram__module" data-module-id="count-pass">
-              <div class="ranker-model-diagram__module-label">02 · Count pass · candidate-only · frozen cached encoder features</div>
-              <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:225px 250px 210px 210px 230px;gap:34px">
+              <div class="ranker-model-diagram__module-label">02 · Count pass · candidate-only · frozen cached encoder features · unchanged from v4</div>
+              <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
                 <div class="ranker-model-diagram__col">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="count_fields">
-                    <div class="ranker-model-diagram__node-title">Formal universe row</div>
-                    <div class="ranker-model-diagram__node-detail">runtime type<br>candidate substitution<br>canonical member-set cardinality</div>
+                    <div class="ranker-model-diagram__node-title">19,385 formal universes</div>
+                    <div class="ranker-model-diagram__node-detail">runtime type · candidate substitution<br>canonical member-set cardinality<br>generalization rung identity</div>
                   </div>
                   <div class="ranker-model-diagram__node" data-node-id="count_serialization">
                     <div class="ranker-model-diagram__node-title">Candidate-only serialization</div>
@@ -174,18 +323,19 @@
                   </div>
                   <div class="ranker-model-diagram__node" data-node-id="count_tokenizer">
                     <div class="ranker-model-diagram__node-title">ClinicalMosaic tokenizer</div>
-                    <div class="ranker-model-diagram__node-detail">padding + truncation<br>max length 256</div>
+                    <div class="ranker-model-diagram__node-detail">padding + truncation · max length 256</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_inputs">
                     <div class="ranker-model-diagram__node-title">Tokenizer tensors</div>
                     <div class="ranker-model-diagram__node-detail">input IDs + masks [B × L]</div>
                   </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="count_input_split"></div>
                 </div>
 
                 <div class="ranker-model-diagram__col">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder" data-node-id="count_encoder">
                     <div class="ranker-model-diagram__node-title">Relation-adapted ClinicalMosaic</div>
-                    <div class="ranker-model-diagram__node-detail">same checkpoint weights<br>complete encoder frozen<br>eval + no_grad</div>
+                    <div class="ranker-model-diagram__node-detail">selected v5 checkpoint weights<br>complete encoder frozen · eval + no_grad</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_hidden">
                     <div class="ranker-model-diagram__node-title">Final token states</div>
@@ -195,96 +345,99 @@
                     <div class="ranker-model-diagram__node-title">Pool mask</div>
                     <div class="ranker-model-diagram__node-detail">attention AND NOT special</div>
                   </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="count_pool_join"></div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="count_pool" data-port-shape="circle" title="Masked sum divided by the number of poolable tokens">
                     <div class="ranker-model-diagram__node-title">Σ/n</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_vector">
-                    <div class="ranker-model-diagram__node-title">Masked-mean count vector</div>
-                    <div class="ranker-model-diagram__node-detail">z_count [B × 768]</div>
-                  </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_cache">
-                    <div class="ranker-model-diagram__node-title">Cached CPU feature bank</div>
-                    <div class="ranker-model-diagram__node-detail">Z_count [N × 768]<br>encoder never enters optimizer loop</div>
+                    <div class="ranker-model-diagram__node-title">Cached count features</div>
+                    <div class="ranker-model-diagram__node-detail">Z_count [N × 768] on CPU<br>encoder excluded from optimizer</div>
                   </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="count_cache_split"></div>
                 </div>
 
                 <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
                   <div class="ranker-model-diagram__node" data-node-id="count_sampler">
                     <div class="ranker-model-diagram__node-title">Weighted universe batch</div>
-                    <div class="ranker-model-diagram__node-detail">sampling_weight · 64 rows<br>sampled with replacement</div>
+                    <div class="ranker-model-diagram__node-detail">sampling_weight · 64 rows</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization ranker-model-diagram__node--trainable" data-node-id="count_norm">
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="count_norm_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">LayerNorm</div>
                     <div class="ranker-model-diagram__node-detail">768 features</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="count_linear_64">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="count_linear_64_grad_port"></span>
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
                     <div class="ranker-model-diagram__node-title">Linear 768 → 64</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="count_gelu">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
                     <div class="ranker-model-diagram__node-title">GELU</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="count_linear_1">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="count_linear_1_grad_port"></span>
+                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
                     <div class="ranker-model-diagram__node-title">Linear 64 → 1</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="count_standardized">
                     <div class="ranker-model-diagram__node-title">Standardized prediction</div>
                     <div class="ranker-model-diagram__node-detail">ŷ_std [B]</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="count_inverse" data-port-shape="circle" title="Restore the training target mean and population standard deviation">
-                    <div class="ranker-model-diagram__node-title">σ+μ</div>
-                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="count_prediction_split"></div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_output">
-                    <div class="ranker-model-diagram__node-title">Predicted log count</div>
+                    <div class="ranker-model-diagram__node-title">Predicted log universe size</div>
                     <div class="ranker-model-diagram__node-detail">ŷ_logK = ŷ_std × σ_train + μ_train</div>
-                  </div>
-                </div>
-
-                <div class="ranker-model-diagram__col">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="count_target">
-                    <div class="ranker-model-diagram__node-title">Formal count target</div>
-                    <div class="ranker-model-diagram__node-detail">y = log(count_target)<br>count ≥ 1 · not corpus frequency</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="target_standardize" data-port-shape="circle" title="Subtract the training mean and divide by the population standard deviation">
-                    <div class="ranker-model-diagram__node-title">−μ/σ</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_regression">
-                    <div class="ranker-model-diagram__node-title">L_reg</div>
-                    <div class="ranker-model-diagram__node-detail">Smooth-L1(ŷ_std, y_std)</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="count_optimizer">
-                    <div class="ranker-model-diagram__node-title">AdamW · head only</div>
-                    <div class="ranker-model-diagram__node-detail">learning rate 3e-4<br>weight decay 0.01<br>gradient norm ≤ 1.0</div>
                   </div>
                 </div>
 
                 <div class="ranker-model-diagram__col">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="formal_pairs">
                     <div class="ranker-model-diagram__node-title">Formal ordering pairs</div>
-                    <div class="ranker-model-diagram__node-detail">narrow universe ID<br>broad universe ID · same split</div>
+                    <div class="ranker-model-diagram__node-detail">narrow and broad universe IDs<br>same lattice menu and split</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="shared_pair_head">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="pair_input_join"></div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor ranker-model-diagram__node--trainable" data-node-id="shared_pair_head">
                     <div class="ranker-model-diagram__node-title">Shared count head ×2</div>
-                    <div class="ranker-model-diagram__node-detail">ŷ_narrow · ŷ_broad<br>same LayerNorm and MLP weights</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="pair_difference" data-port-shape="circle" title="Broad standardized prediction minus narrow standardized prediction">
-                    <div class="ranker-model-diagram__node-title">Δ</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="pair_loss">
-                    <div class="ranker-model-diagram__node-title">L_pair</div>
-                    <div class="ranker-model-diagram__node-detail">softplus(−Δ)</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="count_loss_sum" data-port-shape="circle" title="Regression loss plus pairwise loss with weight one">
-                    <div class="ranker-model-diagram__node-title">+</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_loss">
-                    <div class="ranker-model-diagram__node-title">L_count</div>
-                    <div class="ranker-model-diagram__node-detail">L_reg + 1.0 × L_pair</div>
+                    <div class="ranker-model-diagram__node-detail">ŷ_narrow · ŷ_broad</div>
                   </div>
                 </div>
               </div>
+
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="count-objectives">
+                <div class="ranker-model-diagram__module-label">Count objectives and optimization · magnitude + ordering</div>
+                <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
+                  <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="count_target">
+                      <div class="ranker-model-diagram__node-title">Formal count target</div>
+                      <div class="ranker-model-diagram__node-detail">log(canonical set size) · count ≥ 1<br>not occurrence frequency</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="count_regression_join"></div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_regression">
+                      <div class="ranker-model-diagram__node-title">L_reg</div>
+                      <div class="ranker-model-diagram__node-detail">Smooth-L1 on standardized log count</div>
+                    </div>
+                  </div>
+                  <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="count_loss_join"></div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="count_loss">
+                      <div class="ranker-model-diagram__node-title">L_count</div>
+                      <div class="ranker-model-diagram__node-detail">L_reg + 1.0 × L_pair</div>
+                    </div>
+                  </div>
+                  <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="count_optimizer">
+                      <div class="ranker-model-diagram__node-title">AdamW · head only</div>
+                      <div class="ranker-model-diagram__node-detail">learning rate 3e-4 · decay 0.01<br>gradient norm ≤ 1.0</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-train-bus-anchor--left" data-node-id="count_train_split"></div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="pair_loss">
+                    <div class="ranker-model-diagram__node-title">L_pair</div>
+                    <div class="ranker-model-diagram__node-detail">softplus(−(ŷ_broad−ŷ_narrow))</div>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
 
@@ -294,72 +447,105 @@
 digraph PrivacyEstimatorEdges {
   edge [color="#34393e", penwidth=1.15, arrowsize=0.62];
 
-  /* Relation forward path. */
-  relation_fields -> relation_serialization;
+  semantic_facts -> sampler_input_join [arrowhead=none];
+  occurrence_views -> sampler_input_join [arrowhead=none];
+  sampler_input_join -> fact_sampler;
+  fact_sampler -> relation_serialization [color="#3d6287"];
   relation_serialization -> relation_tokenizer;
   relation_tokenizer -> relation_batch;
-  relation_sampler -> relation_batch [color="#3d6287"];
   relation_batch -> relation_inputs;
-  relation_inputs -> frozen_encoder;
-  frozen_encoder -> trainable_encoder;
-  trainable_encoder -> relation_hidden;
-  relation_inputs -> relation_mask [color="#666d73"];
-  relation_hidden -> relation_pool [arrowhead=none];
-  relation_mask -> relation_pool [arrowhead=none, color="#666d73"];
-  relation_pool -> relation_vector;
-  relation_vector -> relation_norm;
-  relation_norm -> relation_linear_128;
-  relation_linear_128 -> relation_gelu;
-  relation_gelu -> relation_dropout;
-  relation_dropout -> relation_linear_4;
-  relation_linear_4 -> relation_logits;
+  relation_inputs -> encoder_low;
+  marker_embeddings -> encoder_low [color="#a15f54"];
+  encoder_low -> encoder_mid;
+  encoder_mid -> encoder_high;
+  encoder_high -> relation_hidden;
+  relation_hidden -> role_state_extraction;
+  relation_hidden -> memory_projection;
+  role_state_extraction -> memory_projection;
+  memory_projection -> token_memory;
+  memory_projection -> slot_seeds;
+  token_memory -> slot_decoder;
+  slot_seeds -> slot_decoder;
+  relation_inputs -> slot_decoder [color="#666d73"];
+  slot_decoder -> role_slots;
+  role_slots -> role_output_port [arrowhead=none, color="#3d6287", penwidth=1.45];
+  role_output_port -> classification_split [arrowhead=none, color="#3d6287", penwidth=1.45];
+  classification_split -> connected_feature_port [arrowhead=none, color="#3d6287", penwidth=1.45];
+  classification_split -> direction_feature_port [arrowhead=none, color="#3d6287", penwidth=1.45];
+  connected_feature_port -> connected_features [color="#3d6287", penwidth=1.45];
+  direction_feature_port -> direction_features [color="#3d6287", penwidth=1.45];
+  connected_features -> connected_head;
+  direction_features -> direction_head;
+  connected_head -> head_merge [arrowhead=none];
+  direction_head -> head_merge [arrowhead=none];
+  head_merge -> head_probabilities;
+  head_probabilities -> probability_compose;
+  probability_compose -> relation_probabilities;
 
-  /* Relation supervision and gradient ownership. */
-  relation_targets -> relation_ce [style=dashed, color="#884d66"];
-  relation_logits -> relation_ce [style=dashed, color="#884d66"];
-  relation_ce -> relation_optimizer [style=dashed, color="#a15f54", penwidth=1.45];
-  relation_optimizer -> relation_norm [style=dashed, color="#a15f54", penwidth=1.45];
-  relation_optimizer -> trainable_encoder [style=dashed, color="#a15f54", penwidth=1.45];
+  relation_probabilities -> relation_loss_join [style=dashed, arrowhead=none, color="#884d66"];
+  relation_targets -> relation_loss_join [style=dashed, arrowhead=none, color="#884d66"];
+  relation_loss_join -> relation_optimizer [style=dashed, color="#884d66"];
+  relation_optimizer -> head_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  head_train_split -> connected_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  head_train_split -> direction_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  direction_grad_port -> direction_head [style=dashed, color="#a15f54", penwidth=1.45];
+  connected_grad_port -> connected_head [style=dashed, color="#a15f54", penwidth=1.45];
+  head_train_split -> decoder_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  decoder_train_split -> decoder_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  decoder_grad_port -> seeds_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  seeds_grad_port -> memory_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  decoder_grad_port -> slot_decoder [style=dashed, color="#a15f54", penwidth=1.45];
+  seeds_grad_port -> slot_seeds [style=dashed, color="#a15f54", penwidth=1.45];
+  memory_grad_port -> memory_projection [style=dashed, color="#a15f54", penwidth=1.45];
+  decoder_train_split -> encoder_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  encoder_train_split -> encoder_high_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  encoder_high_grad_port -> encoder_mid_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  encoder_mid_grad_port -> encoder_low_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  encoder_low_grad_port -> marker_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  encoder_high_grad_port -> encoder_high [style=dashed, color="#a15f54", penwidth=1.45];
+  encoder_mid_grad_port -> encoder_mid [style=dashed, color="#a15f54", penwidth=1.45];
+  encoder_low_grad_port -> encoder_low [style=dashed, color="#a15f54", penwidth=1.45];
+  marker_grad_port -> marker_embeddings [style=dashed, color="#a15f54", penwidth=1.45];
 
-  /* Count forward path and checkpoint handoff. */
   count_fields -> count_serialization;
   count_serialization -> count_tokenizer;
   count_tokenizer -> count_inputs;
-  trainable_encoder -> count_encoder [style=dashed, color="#666d73", label="same adapted weights"];
-  count_inputs -> count_encoder;
+  count_inputs -> count_input_split [arrowhead=none];
+  count_input_split -> count_encoder;
   count_encoder -> count_hidden;
-  count_inputs -> count_mask [color="#666d73"];
-  count_hidden -> count_pool [arrowhead=none];
-  count_mask -> count_pool [arrowhead=none, color="#666d73"];
-  count_pool -> count_vector;
-  count_vector -> count_cache;
-  count_cache -> count_sampler;
+  count_input_split -> count_mask [color="#666d73"];
+  count_hidden -> count_pool_join [arrowhead=none];
+  count_mask -> count_pool_join [arrowhead=none, color="#666d73"];
+  count_pool_join -> count_pool;
+  count_pool -> count_cache;
+  count_cache -> count_cache_split [arrowhead=none];
+  count_cache_split -> count_sampler;
   count_sampler -> count_norm;
   count_norm -> count_linear_64;
   count_linear_64 -> count_gelu;
   count_gelu -> count_linear_1;
   count_linear_1 -> count_standardized;
-  count_standardized -> count_inverse;
-  count_inverse -> count_output;
+  count_standardized -> count_prediction_split [arrowhead=none];
+  count_prediction_split -> count_output;
 
-  /* Count magnitude supervision. */
-  count_target -> target_standardize;
-  target_standardize -> count_sampler [style=dashed, color="#884d66", arrowhead=none];
-  count_sampler -> count_regression [style=dashed, color="#884d66"];
-  count_standardized -> count_regression [style=dashed, color="#884d66"];
-
-  /* Count ordering supervision through the same head. */
-  formal_pairs -> shared_pair_head;
-  count_cache -> shared_pair_head;
-  shared_pair_head -> pair_difference;
-  pair_difference -> pair_loss;
-  count_regression -> count_loss_sum [arrowhead=none];
-  pair_loss -> count_loss_sum [arrowhead=none];
-  count_loss_sum -> count_loss;
-
-  /* Count head is the only trainable count-stage module. */
+  count_target -> count_regression_join [style=dashed, arrowhead=none, color="#884d66"];
+  count_prediction_split -> count_regression_join [style=dashed, arrowhead=none, color="#884d66"];
+  count_regression_join -> count_regression [style=dashed, color="#884d66"];
+  formal_pairs -> pair_input_join [arrowhead=none];
+  count_cache_split -> pair_input_join [arrowhead=none];
+  pair_input_join -> shared_pair_head;
+  shared_pair_head -> pair_loss;
+  count_regression -> count_loss_join [style=dashed, arrowhead=none, color="#884d66"];
+  pair_loss -> count_loss_join [style=dashed, arrowhead=none, color="#884d66"];
+  count_loss_join -> count_loss [style=dashed, color="#884d66"];
   count_loss -> count_optimizer [style=dashed, color="#a15f54", penwidth=1.45];
-  count_optimizer -> count_norm [style=dashed, color="#a15f54", penwidth=1.45];
+  count_optimizer -> count_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  count_train_split -> count_linear_1_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  count_linear_1_grad_port -> count_linear_64_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  count_linear_64_grad_port -> count_norm_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  count_linear_1_grad_port -> count_linear_1 [style=dashed, color="#a15f54", penwidth=1.45];
+  count_linear_64_grad_port -> count_linear_64 [style=dashed, color="#a15f54", penwidth=1.45];
+  count_norm_grad_port -> count_norm [style=dashed, color="#a15f54", penwidth=1.45];
 }
           </script>
           <div class="ranker-model-diagram__status">Computing architecture rendering…</div>
