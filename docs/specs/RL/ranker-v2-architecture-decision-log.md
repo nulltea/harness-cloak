@@ -1,15 +1,16 @@
 ---
 type: reference
-status: partial
+status: current
 created: 2026-07-22
-updated: 2026-07-23
+updated: 2026-08-05
 tags: [rl, ranker, model-architecture, decision-log, shortcut-learning,
        semantic-utility, count-shaping, lambda-conditioning, context-injection,
        attention, state-aliasing, encoder-selection, candidate-pair-encoding,
-       action-history]
+       action-history, low-rank-adapters, freeze-policy]
 companion: [docs/specs/RL/ranker-v2-architecture.md,
             docs/specs/RL/interactive-ranker-v2.md,
-            docs/specs/RL/interactive-ranker-v2-decision-log.md]
+            docs/specs/RL/interactive-ranker-v2-decision-log.md,
+            docs/research/ranker-v2-trainable-multi-objective-rl-review.md]
 ---
 
 # Ranker v2 architecture — design decision log
@@ -782,3 +783,169 @@ work.
 
 **Crux.** Fit the controller input directly with a small profile-balanced mean head, and quarantine
 uncertainty claims behind their own audit gate.
+
+## Additive controller is superseded by a lexicographic residual actor
+
+**Date:** 2026-08-05
+
+**Decision.** Retain the validated frozen semantic representation stack, candidate-conditioned
+context readout, and selected-action cross-attention memory. Train that stack as a utility-only
+policy, then freeze it. Serve the strict positive regime through a zero-initialized
+action-conditioned residual actor trained by separate utility and count policy gradients under a
+training-only document utility dual. The deployed policy performs an ordinary neural forward pass;
+it does not enumerate or filter an action slate.
+
+The selected residual architecture is `lexicographic-residual-ln-gelu16-v1`:
+
+```text
+non-affine LayerNorm over the 4608-dimensional semantic action feature
+-> Linear(4608, 16, bias=True)
+-> non-affine LayerNorm(16)
+-> GELU
+-> Linear(16, 1, bias=False), zero initialized
+```
+
+The input and pre-activation norms address the measured saturation of the former tanh gain head.
+Width `16` is the smallest nonlinear head that passed the architecture preflight; width `32` added
+no material differentiation and is not the default.
+
+**Gradient ownership.** Count and positive-regime utility advantages update the residual actor.
+Count cannot update the frozen utility base, utility feature extractor, selected-action memory, or
+utility critic. Utility cannot update the count critic. Critics consume detached frozen semantic
+features and share no trainable parameters. Per-document dual values are projected nonnegative
+optimizer state, not actor input and not deployment calibration.
+
+**Why this supersedes the selected semantic privacy head.** The semantic privacy-head program
+tested whether candidate wording could predict count. Its transfer gate failed, and production
+experiments consequently used exact direct-count targets. More importantly, the additive
+controller compared count pressure against arbitrary policy-logit margins. Repeated alpha,
+gap-scaling, softcap, gain, hinge, projection, KL, and sensitivity interventions changed authority
+without repairing that solution-concept mismatch. The new design keeps exact counts as rewards and
+lets both objective gradients reach the behavior-producing residual actor.
+
+**Rejected: deterministic lexicographic selector.** Value-based lexicographic filtering is
+literature-backed, but it requires an accurate utility value model and an inference-time action-set
+operator. The user rejected deterministic selection for deployment, and the standardized four-vector
+gate was support-limited. `src/cloak/ranker/lexicographic.py` remains an offline oracle/test utility
+only.
+
+**Rejected: retain additive alpha with a stronger or state-conditioned gain.** The measured gain
+head collapsed to a uniform field, and after its saturation defect was identified the repaired
+authority interval still depended on arbitrary utility-logit scale. Increasing controller capacity
+does not change the weighted-sum solution concept.
+
+**Retained alternative: constrained policy optimization.** If the first-order primal-dual update
+violates utility despite valid advantages, escalate to a CPO-style trust-region constraint rather
+than reviving additive control. If product semantics change from strict utility priority to a smooth
+Pareto tradeoff, MO-MPO/LP3 becomes the relevant alternative and requires a separate fork.
+
+**Evidence and literature.** The full classification and comparison are in
+[Trainable multi-objective RL for ranker v2](../../research/ranker-v2-trainable-multi-objective-rl-review.md).
+The selected training family follows [Lexicographic Multi-Objective Reinforcement Learning](../../../research-wiki/papers/skalse2022_lexicographic_morl.md)
+([arXiv 2212.13769](https://arxiv.org/abs/2212.13769)) and multi-timescale constrained updates from
+[Reward Constrained Policy Optimization](../../../research-wiki/papers/tessler2018_reward_constrained_policy.md)
+([arXiv 1805.11074](https://arxiv.org/abs/1805.11074)). The trust-region escalation is
+[Constrained Policy Optimization](../../../research-wiki/papers/achiam2017_constrained_policy_optimization.md)
+([arXiv 1705.10528](https://arxiv.org/abs/1705.10528)). The smooth-tradeoff alternative is
+[MO-MPO](../../../research-wiki/papers/abdolmaleki2020_distributional_view_multiobjective.md)
+([arXiv 2005.07513](https://arxiv.org/abs/2005.07513)) with preference-selection precedent from
+[LP3](../../../research-wiki/papers/huang2022_constrained_multiobjective_reinforcement.md)
+([PMLR](https://proceedings.mlr.press/v164/huang22a.html)).
+
+**Scope.** This decision authorizes one cache-only four-document mechanism experiment. It does not
+authorize full-corpus training, held-out generalization claims, or privacy claims.
+
+**Crux.** Freeze what represents utility; train one semantic residual policy with both behavioral
+gradients; use utility violation to govern the update rather than adding count to arbitrary logits.
+
+## Frozen-feature residual is superseded by three-tier side adaptation
+
+**Date:** 2026-08-05
+
+**Supersedes:** the representation-freeze portion of “Additive controller is superseded by a
+lexicographic residual actor.” The primal-dual actor objective, separate critics, exact count
+rewards, and immutable utility reference remain selected.
+
+**Trigger.** A head-only residual over `stop_gradient(x_U)` protects the utility reference, but it
+also assumes that the utility branch's final 4,608-dimensional feature is a sufficient statistic
+for learning the secondary objective on unseen states. BC, verified ExIt, and utility-only RL did
+not train that representation to preserve every semantic distinction useful for count-sensitive
+generalization. Freezing the complete semantic stack therefore turns utility initialization into
+an irreversible information bottleneck. Unfreezing the shared stack would solve the bottleneck by
+destroying the immutable utility reference and allowing count gradients to redefine utility.
+
+**Decision.** Use a three-tier freeze policy:
+
+1. **Tier 1 — frozen clinical substrate.** The pinned BioClinical ModernBERT encoder, tokenizer,
+   token/relation banks, masks, frozen action metadata, and canonical selected-action records are
+   frozen from the start.
+2. **Tier 2 — utility semantic branch.** Candidate relation, context readout, selected-action
+   memory, interaction features, and utility head are trained by BC, verified ExIt, and
+   utility-only structured RL, then frozen and hashed.
+3. **Tier 3 — private lexicographic semantic side path.** Frozen Tier-2 maps receive private
+   rank-4 low-rank deltas on the relation, context-attention, context-projection, and
+   selected-action-memory transformations. A normalized GELU-16 head maps the resulting
+   `x_lex` feature to the residual logit. Utility and count actor surrogates update Tier 3 only.
+
+The side path consumes the same detached Tier-1 substrate and canonical sequential state as the
+utility branch. It does not consume only `x_U`, and it does not receive count values, authored
+positions, lambda, or dual values. Frozen utility mode/type embeddings may be reused as semantic
+metadata.
+
+**Initialization.** Every low-rank delta uses zero-product initialization: one factor is randomly
+initialized and its output factor is exactly zero. The residual head is
+`LayerNorm(4608, affine=False) -> Linear(4608,16,bias=True) -> LayerNorm(16,
+affine=False) -> GELU -> Linear(16,1,bias=False)`, with the final map exactly zero. The served
+lexicographic logits therefore equal the frozen utility logits before the first update while all
+selected Tier-3 routes remain trainable.
+
+**Gradient ownership.** Utility and count actor surrogates traverse the residual head and private
+semantic deltas in reverse mode. They stop at the frozen maps and detached Tier-1 substrate. The
+utility critic consumes detached `x_U`; the count critic consumes detached `x_lex`; critic losses
+do not update either actor branch. Document dual loss updates only `mu_d`. Counts remain rewards,
+never features.
+
+**Served contract.** The prototype serves only `z_lex = u_theta + r_psi`. The frozen utility path
+remains callable for utility-reference construction, parity checks, ablations, and audit, but is
+not exposed as a user-selectable report mode. This removes a product distinction that was useful
+for experimentation but irrelevant to the target report.
+
+**Rejected: fully frozen semantic stack plus residual head.** It is maximally auditable and cheap,
+but forces secondary behavior through a representation trained only for the primary objective. It
+remains a diagnostic ablation, not the selected actor.
+
+**Rejected: unfreeze the shared utility branch.** This permits a single expressive actor, but count
+and lexicographic utility gradients can alter `u_theta`, invalidate `b_d`, and erase the exact
+utility-reference identity that gives the constraint operational meaning.
+
+**Rejected: encoder LoRA or partial encoder fine-tuning.** The current failure does not establish
+that the clinical token substrate is deficient. Encoder adaptation increases memory, invalidates
+frozen token caches, and creates the broadest interference route. Reconsider only after the
+post-encoder side path fails a representation-use gate.
+
+**Rejected: duplicate the complete semantic tower.** A full second tower is expressive but wastes
+capacity and weakens the controlled comparison. Rank-4 deltas provide an explicit, auditable
+adaptation budget on the transformations most directly responsible for candidate/context/history
+semantics.
+
+**Cost and auditability.** The architecture figure's roughly 227K trainable Tier-3 label is a
+planning estimate, not an artifact contract. The architecture manifest records the derived exact
+count from the resolved logical adapter maps and fails closed on target-map drift. The design adds
+a second post-encoder semantic pass while preserving the expensive frozen encoder cache.
+
+**Evidence and companions.** See the normative
+[architecture specification](ranker-v2-architecture.md), the
+[interactive RL specification](interactive-ranker-v2.md), the
+[implementation plan](../../plans/2026-08-05-ranker-v2-lexicographic-actor-critic.md), the
+[architecture report](../../html/interactive-ranker-v2.html), and the
+[trainable multi-objective RL review](../../research/ranker-v2-trainable-multi-objective-rl-review.md).
+The optimization family remains grounded in
+[Lexicographic Multi-Objective Reinforcement Learning](../../../research-wiki/papers/skalse2022_lexicographic_morl.md)
+([arXiv 2212.13769](https://arxiv.org/abs/2212.13769)),
+[Reward Constrained Policy Optimization](../../../research-wiki/papers/tessler2018_reward_constrained_policy.md)
+([arXiv 1805.11074](https://arxiv.org/abs/1805.11074)), and
+[Constrained Policy Optimization](../../../research-wiki/papers/achiam2017_constrained_policy_optimization.md)
+([arXiv 1705.10528](https://arxiv.org/abs/1705.10528)).
+
+**Crux.** Freeze the utility function, not every semantic transformation available to the
+lexicographic actor.

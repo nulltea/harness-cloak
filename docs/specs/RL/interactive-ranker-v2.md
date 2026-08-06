@@ -2,9 +2,10 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-07-29
+updated: 2026-08-05
 tags: [rl, ranker, interactive-policy, reward-design, credit-assignment, counterfactual,
-       anonymity-counts, lambda-conditioning, semantic-privacy, pareto, spec]
+       anonymity-counts, lexicographic-rl, primal-dual, actor-critic, low-rank-adapters,
+       freeze-policy, spec]
 supersedes: docs/specs/RL/count-privacy-reward.md
 companion: [docs/specs/RL/interactive-ranker-v2-decision-log.md,
             docs/specs/RL/interactive-ranker-v2-diagnostics.md,
@@ -13,28 +14,29 @@ companion: [docs/specs/RL/interactive-ranker-v2-decision-log.md,
             docs/specs/qa-builder-v2.md,
             docs/specs/RL/training-task-env.md,
             docs/specs/RL/leakage-probe-reward.md,
+            docs/research/ranker-v2-trainable-multi-objective-rl-review.md,
             docs/issues/2026-07-08-rl-env-and-lattice-count-issue-register.md]
 ---
 
-# Interactive ranker v2 — conditional privacy–utility policy with structured credit
+# Interactive ranker v2 — lexicographic policy with structured credit
 
-**Status: normative design; implemented as the semantic-v1 policy and validated end-to-end at
-smoke scale (BC → ExIt → calibrated preflight → hybrid training, RL-ranker v7 record). Interim
-deviations from this document are enumerated in "Implementation status and interim deviations
-(2026-07-29)" at the end.** This specification replaces the ranker reward, credit-assignment,
-and operating-point design in the round-trip ranker spec. The companion
-`ranker-v2-architecture.md` is normative for model inputs, representations, and controller
-factorization. The infiller and pinned round-trip generation/reader machinery remain governed by
-their existing specs unless this document explicitly changes their interface.
+**Status: normative redesign; implementation pending.** The semantic-v1 additive-controller stack
+remains implemented for historical experiments but is superseded as the selected training path.
+This specification retains the frozen environment, exact count targets, QA assertion routing,
+counterfactual scheduler, and sequential policy factorization. It replaces additive lambda
+scalarization with policy-based lexicographic optimization while retaining a user-facing discrete
+lambda setting whose semantics are explicit utility slack, not reward weight. The companion
+`ranker-v2-architecture.md` is normative for the frozen encoder substrate, frozen utility branch,
+private lexicographic semantic side path, objective critics, and training-only dual state.
 
-The ranker is one sequential policy with an explicit lambda controller. For every distinct
-ranker-controlled detected value it chooses KEEP, a lattice generalization, or placeholder. Its
-utility tower learns document-task preservation from the full remote round trip. A separately
-pretrained semantic privacy head predicts each source-to-candidate abstraction's log-count
-distribution, while exact own-profile counts provide the local shaping target. Assertion
-dependencies route cheap provisional utility credit and sparse one-decision counterfactuals
-correct that routing. A finite lambda menu lets one checkpoint change its privacy--utility
-preference per document or session without changing either semantic representation.
+For every distinct ranker-controlled detected value, the ranker chooses KEEP, a lattice
+generalization, or placeholder. One checkpoint serves a learned utility-first/count-second policy
+conditioned on one of three to five frozen user settings $\lambda_k$.
+Its frozen utility branch remains an internal reference and audit path, not a second report mode.
+Count and utility actor surrogates train a private post-encoder semantic side path plus residual
+head while a document-level utility constraint determines how much utility gradient is required.
+No deterministic selector, additive count bonus, or inference-time dual variable participates in
+the served action distribution.
 
 Count shaping is an experimental leakage approximation. It is never a privacy measurement or
 guarantee. All method comparisons remain utility versus held-out LLM re-identification success
@@ -52,15 +54,19 @@ at matched realized privacy and identical settings.
 3. **Assertion dependencies route; they do not certify causality.** Linked assertions provide
    cheap provisional credit. Residual assertions remain active. Sparse counterfactuals supply
    contextual causal comparisons.
-4. **One declared preference per document.** Lambda is selected from a finite supported menu and
-   held fixed across the complete sequential action trajectory and all rollouts in its RLOO
-   group.
-5. **Realized privacy remains external.** Count score, lambda, KEEP rate, and lattice depth are
+4. **One served objective, multiple explicit tolerances.** The checkpoint always implements
+   utility-first/count-second. $\lambda_0$ is the exact utility identity; positive settings share
+   one conditioned Tier-3 actor and differ by pre-registered document-level utility slack.
+5. **Realized privacy remains external.** Count score, KEEP rate, and lattice depth are
    diagnostics. The held-out attacker on `doc_p` and `out_final` supplies the privacy axis.
-6. **Semantic and controller gradients are separated.** Exact count shaping cannot update the
-   utility tower or selected-action memory. Privacy-head supervision cannot update utility
-   parameters. During hybrid RL, utility and exact count objectives may both update the one global
-   controller scale because their opposition determines its finite operating range.
+6. **Objective semantics are separated; behavioral gradients are unified.** Count cannot update the
+   frozen encoder substrate, frozen utility branch, or utility critic. Utility cannot update the
+   count critic. Both utility and count actor surrogates update the private Tier-3 semantic adapters
+   and residual head; the document dual controls their relative force from measured utility
+   violation.
+7. **Training state is not inference calibration.** Document-setting dual variables, critics, utility
+   references, and tolerance schedules exist only during training. The served Tier-3 actor receives
+   no document-specific scalar; it receives only the user-selected finite-menu setting identity.
 
 ## Definitions
 
@@ -70,10 +76,24 @@ at matched realized privacy and identical settings.
   `decision_id`. Rule-masked PERSON/CODE values and entries with no policy choice are excluded.
 - **Fixed decision** — a rewrite decision present in the frozen environment but outside the
   ranker's action space. It never receives a policy gradient.
-- **Semantic action state `h_j`** — candidate-conditioned document context around decision `j`'s
-  occurrences, source-to-candidate utility relation, selected-action utility memory, and dynamic
-  legal mask. It excludes lambda, counts, predicted privacy, authored level position, and menu
-  size.
+- **Frozen substrate `B_j(a)`** — detached clinical token/relation banks, occurrence/chunk masks,
+  frozen action metadata, and canonical prior selected-action records available to both semantic
+  branches.
+- **Utility action state `x_U,j(a)`** — Tier-2 candidate-conditioned document context,
+  source-to-candidate relation, selected-action utility memory, and interaction features. It is
+  trained before lexicographic RL and then frozen.
+- **Lexicographic action state `x_lex,j(a)`** — Tier-3 semantic features computed from the same
+  substrate through frozen Tier-2 maps plus private rank-4 deltas. It excludes counts, authored
+  level position, dual state, and menu size.
+- **Lambda menu $\Lambda$** — a checkpoint-pinned ordered set
+  $\{\lambda_0,\ldots,\lambda_{K-1}\}$ with $3\le K\le5$. It is a finite set of user choices, not a
+  continuous scalar domain.
+- **Lambda setting $\lambda_k$** — one stable menu ID selected for a complete task/session and held
+  fixed for every decision and rollout in one document episode. $\lambda_0$ is the utility-only
+  identity; $k>0$ activates the conditioned lexicographic actor.
+- **Utility slack $\tau(\lambda_k)$** — the maximum pre-registered document-level utility reduction
+  allowed relative to $b_d$ for setting $\lambda_k$. It is not a reader-noise estimate and never
+  scales count reward.
 - **Utility assertion `q`** — one accepted context or delivered assertion scored from the complete
   round trip.
 - **Policy dependency set** — the unique policy decisions in assertion `q`'s
@@ -82,11 +102,11 @@ at matched realized privacy and identical settings.
 - **Exact count target `p_j(a)`** — frozen own-profile-relative score in `[0,1]` derived from the
   admitted `level_counts` for action `a` at decision `j`; used by shaping and diagnostics, never as
   an actor feature.
-- **Predicted privacy score `p_hat_j(a)`** — profile-menu normalization of the frozen semantic
-  privacy head's predicted log-count mean; used by the deployed controller.
 - **Document count score `P_count`** — equal mean of selected action scores over `D_d`.
-- **Supported lambda menu `Lambda`** — three to five pre-registered operating profiles,
-  including zero, served by one conditional checkpoint.
+- **Utility reference `b_d`** — the frozen utility-only policy's achieved expected return on
+  document `d` under a version-pinned rollout manifest.
+- **Document-setting dual `mu_d,k`** — nonnegative training-only multiplier that increases when the
+  served policy at $\lambda_k$ violates $b_d-\tau(\lambda_k)$ and is absent at inference.
 - **Utility counterfactual** — complete round-trip evaluation after changing one decision,
   rewriting all mapped occurrences together, and holding every other decision fixed.
 - **Passenger action** — an action cloned or reinforced because its complete trajectory won,
@@ -114,25 +134,25 @@ every assertion's `policy_dependency_decision_ids`.
 
 ## Episode and policy
 
-The policy factorizes over policy decisions in deterministic first-occurrence walk order:
+The served policy factorizes over policy decisions in deterministic first-occurrence walk order:
 
 ```text
-pi(a | d, lambda) = product_j pi(a_j | h_j, lambda)
+pi_lex(a | d, lambda_k) = product_j pi_lex(a_j | B_j, lambda_k)
 ```
 
 At each decision, the dynamic injectivity mask removes a level fill already claimed by an
 earlier decision. KEEP, legal lattice levels, and placeholder otherwise remain available. The
-selected action is applied consistently to every occurrence mapped to that decision. Lambda is
-not a legality constraint: it changes preference over the legal menu.
+selected action is applied consistently to every occurrence mapped to that decision.
 
 The deployed interface is:
 
 ```text
-rank(document, frozen_occurrences_and_decisions, lambda_profile) -> action_per_decision
+rank(document, frozen_occurrences_and_decisions, lambda_setting_id) -> action_per_decision
 ```
 
-The caller selects one supported profile before ranking the document. Changing profiles within
-one document is unsupported because it changes the objective mid-trajectory.
+The caller selects one registered `lambda_setting_id`; arbitrary numeric values and within-document
+setting changes are rejected. The same setting is used for every sequential decision, old-policy
+replay, counterfactual evaluation, and report record associated with that document.
 
 First-occurrence order is the selected prototype's canonical factorization. Selected-action
 memory contains only earlier decisions in this order and has no selection-step positional
@@ -141,29 +161,89 @@ reverse-order and seeded-order diagnostic walks while preserving legal-mask sema
 utility or action changes reopen a two-pass draft-and-refine policy; they do not authorize silent
 training-time order randomization.
 
-### Lambda conditioning
+### Three-tier policy branching
 
-Lambda does not enter the utility tower, semantic privacy head, document attention, relation
-features, or selected-action memory. The separately produced scores combine only at the action
-logit:
+The utility branch is frozen after BC, verified ExIt, and utility-only structured RL. The served
+path adds a zero-initialized action-conditioned residual produced by a private semantic side path:
 
-```text
-z_j(a, lambda) = u_theta(h_j, a) + alpha * g(lambda) * p_hat_j(a)
+$$
+x_{U,j}(a)=F_\theta(B_j(a)),
+\qquad
+u_j(a)=f_\theta(x_{U,j}(a)),
+$$
 
-alpha = softplus(alpha_raw)
-g(lambda) = log1p(lambda) / log1p(max(Lambda))
+$$
+x_{\mathrm{lex},j}(a)=F_{\theta,\Delta W_\psi}(B_j(a)),
+\qquad
+z_j(a;\lambda_k)=
+\begin{cases}
+u_j(a), & k=0,\\
+u_j(a)+r_\psi(x_{\mathrm{lex},j}(a),e_{\lambda_k}), & k>0.
+\end{cases}
+$$
+
+Tier 1, $F_\theta$, and $f_\theta$ are frozen during lexicographic RL. $\Delta W_\psi$ contains
+private rank-4 deltas on the allowlisted post-encoder semantic maps; $r_\psi$ is the normalized
+GELU-16 residual head with a learned finite-menu setting embedding added at its 16-dimensional
+pre-activation. Both actor surrogates update $\Delta W_\psi$, $r_\psi$, and the active positive
+setting row. Neither path receives count, numeric slack, or dual values as input, and no
+lexicographic actor gradient may reach the frozen utility reference. $\lambda_0$ bypasses Tier 3,
+so its logits remain bit-identical to utility logits after every update.
+
+### User-facing lambda menu
+
+The deployable checkpoint pins a three-to-five-entry
+`ranker-v2-lexicographic-lambda-menu-v1` manifest. The abbreviated schema below shows the two
+mandatory entries; deployment adds one to three higher-slack entries:
+
+```yaml
+artifact_version: ranker-v2-lexicographic-lambda-menu-v1
+scope: deployment
+settings:
+  - lambda_setting_id: lambda-0
+    ordinal: 0
+    display_label: utility
+    utility_slack: 0.0
+    mode: utility-identity
+  - lambda_setting_id: lambda-1
+    ordinal: 1
+    display_label: strict-count
+    utility_slack: 0.0
+    mode: lexicographic
 ```
 
-`g` is fixed by the supported numeric menu. There is no profile embedding, one-hot identity,
-FiLM, per-profile slope, or profile-specific head. `alpha` is one globally shared nonnegative
-scalar. At lambda zero the controller is identically zero for every parameter value, so combined
-logits equal utility logits exactly, not merely at initialization.
+The historical additive `ranker-v2-lambda-menu-v1` manifest is not compatible and must fail
+closed; its numeric switch points cannot be reinterpreted as utility slacks.
 
-The semantic privacy head is frozen before hybrid RL. Utility losses and exact count shaping both
-may update `alpha`; that shared scalar is where utility and privacy pressure balance. Exact count
-shaping cannot update `u_theta`, and utility losses cannot update the privacy head. `alpha` is
-frozen with the checkpoint before held-out evaluation and is never calibrated separately by
-profile, type, corpus, method, or evaluation set.
+Additional positive settings use `mode: lexicographic` and strictly increasing explicit slacks:
+
+$$
+\tau(\lambda_0)=\tau(\lambda_1)=0,
+\qquad
+\tau(\lambda_1)<\tau(\lambda_2)<\cdots<\tau(\lambda_{K-1}).
+$$
+
+`lambda-0` means pure utility. `lambda-1` means maximize count only where the learned policy can
+retain the exact frozen utility reference. Higher settings permit count optimization under larger
+user-approved document-level utility budgets. The display labels are product copy, not empirical
+privacy claims; reports always include the stable setting ID and exact slack.
+
+The caller chooses a setting by the maximum document-level task-utility loss it is willing to
+permit relative to the frozen utility reference. The interface must explain `lambda-0` as exact
+utility identity, `lambda-1` as strict count-second with zero slack, and every higher setting by its
+explicit pinned slack. It must not translate an ordinal into a privacy percentage or low/medium/high
+privacy label before held-out attacker evaluation establishes realized privacy for that checkpoint.
+
+The menu is frozen before training. Its order, size, labels, slacks, and hash are checkpoint state.
+Changing any of them creates a new experiment and invalidates previous policy, utility-reference,
+and operating-point comparisons. Historical additive lambdas, additive switch points, and the
+reader's historical `0.044` resolution are prohibited as slack values unless separately justified
+as user utility budgets.
+
+The bounded mechanism run is the only exception to the three-to-five-entry product rule. It uses a
+two-entry `scope: mechanism` manifest with `lambda-0` and strict `lambda-1`, is marked
+non-deployable, and cannot support a user-facing frontier claim. A promoted checkpoint must carry a
+new `scope: deployment` menu and be trained/evaluated against all of its entries.
 
 ## Count shaping
 
@@ -183,8 +263,8 @@ p_j(placeholder) = 1
 The denominator is computed only across that matched profile's lattice levels; KEEP and
 placeholder do not enter it. A one-level profile assigns its sole level score one and is tagged
 `singleton_profile_normalization`, including when its count is one. A profile with two or more
-levels whose admitted level log counts are all zero is flat and fails the validated
-privacy-head/count gate. Equal profile-relative scores across different profiles do not claim equal
+levels whose admitted level log counts are all zero is flat and fails the validated count-health
+gate. Equal profile-relative scores across different profiles do not claim equal
 anonymity-set size.
 
 Only counts admitted by the complete-count gate enter this target. Fail-closed `1.0`,
@@ -214,26 +294,39 @@ count-shaping weight. This is an accepted approximation for the current design a
 revisited in a future formal privacy audit against occurrence-aware attackers; it is not a claim
 that repetition is harmless.**
 
-Do not pass sampled `P_count` through document RLOO. At every sampled state, optimize the
-expected immediate exact count target over the complete legal menu. Construct a count-gradient
-policy view that detaches semantic outputs but preserves the controller scale:
+Count is an ordinary secondary reward for the served lexicographic policy, not a detached
+controller target.
 
-```text
-pi_count(a | h, lambda) = softmax(mask(
-    stop_gradient(u_theta(h, a))
-    + alpha * g(lambda) * stop_gradient(p_hat(a))))
+The current exact-count artifact is an experimental training shortcut. The intended deployment
+reward source is a separately trained, frozen k-anonymity estimator behind the same count-score
+interface. Replacing the shortcut changes the reward pin and requires retraining; it does not change
+the lambda menu or make count a policy input.
 
-L_count = -(1/G) sum_g,k [lambda_d / |D_d|]
-                         sum_a pi_count(a | h_gk, lambda_d) p_k(a)
-```
+At inference, neither exact counts nor estimator outputs are required by the actor. The user setting
+selects a learned conditioned policy behavior; it does not request a fresh count lookup or alter the
+reward function online.
+For rollout $g$, define per-step reward and return-to-go:
 
-This gives every legal action a dense exact-target gradient without remote calls, but only
-`alpha` receives that gradient. Utility and counterfactual losses use the ordinary policy and may
-also update `alpha`; without this opposing utility gradient, privacy-only optimization would drive
-the scale toward saturated privacy pressure. The objective captures immediate count value but not
-the effect of an early action on later injectivity masks. The gate reports collision frequency and
-count opportunity lost through collisions. A material effect triggers a privacy-return-to-go
-ablation; v2 does not add that variance preemptively.
+$$
+r^P_{g,j}=\frac{p_j(a_{g,j})}{|D_d|},
+$$
+
+$$
+G^P_{g,j}=\sum_{k=j}^{|D_d|}r^P_{g,k}.
+$$
+
+The count critic supplies a baseline only:
+
+$$
+\widehat A^P_{g,j}=G^P_{g,j}-V_P(s_{g,j}).
+$$
+
+Exact counts therefore produce no reward-model noise, while sampled trajectories preserve the
+effect of early actions on later injectivity masks. Count advantages are detached and enter the
+lexicographic actor surrogate. They update the Tier-3 semantic adapters and residual head but not
+Tier 1, Tier 2, the utility critic, or the document dual. Tier-3 selected-action memory projections
+are actor parameters; canonical selected-action records and frozen Tier-2 memory projections are
+not.
 
 ## Utility assertions and structured credit
 
@@ -279,7 +372,7 @@ not duplicate the assertion or policy log-probability. Fixed decisions never rec
 This is provisional many-to-many routing, not a claim that each policy decision independently
 caused the outcome.
 
-Within one document/lambda group, compute leave-one-out advantages independently per span:
+Within one document/mode group, compute leave-one-out advantages independently per span:
 
 ```text
 A_link[g,j] = U_link[g,j] - loo_mean(U_link[-g,j])
@@ -348,8 +441,8 @@ Convert the policy's full-menu probabilities into a distribution restricted to t
 pair:
 
 ```text
-q_pair[g,j] = pi(a_gj | h_gj, lambda_d) /
-              [pi(a_gj | h_gj, lambda_d) + pi(b_j | h_gj, lambda_d)]
+q_pair[g,j] = pi(a_gj | h_gj, mode_d) /
+              [pi(a_gj | h_gj, mode_d) + pi(b_j | h_gj, mode_d)]
 
 L_cf[g,j] = -delta_U[g,j] * [q_pair[g,j] - 1/2]
 ```
@@ -380,7 +473,7 @@ decision-rollout pairs. The remaining 80% is allocated lexicographically:
 
 1. decisions with no linked assertion;
 2. decisions with multi-decision (hyperedge) links;
-3. high policy entropy at the current supported lambda;
+3. high served-policy entropy;
 4. unseen adjacent action pairs;
 5. oldest measured pair, preventing priority-tier starvation.
 
@@ -390,52 +483,77 @@ include the complete reward pin and action vector, so repeated pairs reuse prior
 
 ## Hybrid ranker loss
 
-Define exactly one utility term for every rollout-decision pair:
+Freeze an old served-policy snapshot for every actor update and define
+$\rho_{g,j}=\pi_\psi(a_{g,j}\mid s_{g,j})/
+\pi_{\mathrm{old}}(a_{g,j}\mid s_{g,j})$. For an untested rollout-decision pair, use the clipped
+utility term
 
-```text
-ell[g,j] = -A_provisional[g,j] log pi(a_gj | h_gj, lambda_d)
-           if (g,j) is not counterfactually tested
+$$
+\ell^U_{g,j}=-\min\left(
+\rho_{g,j}A^U_{g,j},
+\operatorname{clip}(\rho_{g,j},1-\epsilon_{\mathrm{PPO}},1+\epsilon_{\mathrm{PPO}})A^U_{g,j}
+\right).
+$$
 
-ell[g,j] = L_cf[g,j]
-           otherwise
-```
+For a counterfactually tested pair, substitute the bounded contextual pair loss already defined in
+this specification. The counterfactual is never added as a separately averaged loss. Therefore
 
-Counterfactual credit substitutes in place; it is never added as a separately averaged loss.
-For one document group:
+$$
+L_U(d)=\frac{1}{G}\sum_g\sum_j\ell^U_{g,j}.
+$$
 
-```text
-L_utility(d) = (1/G) sum_g sum_j ell[g,j]
-```
+Use the same old-policy ratio and clipping rule with exact count return-to-go advantage
+$A^P_{g,j}$:
 
-The `1/G` weight is shared by provisional and counterfactual terms. It does not depend on the
-number of counterfactual calls, so changing the measurement budget does not silently rescale
-each causal correction. Utility is not divided by `|D_d|`: it is the return of the joint policy,
-whose trajectory log-probability is the sum over decisions. The complete minibatch loss is:
+$$
+L_P(d)=-\frac{1}{G}\sum_g\sum_j\min\left(
+\rho_{g,j}A^P_{g,j},
+\operatorname{clip}(\rho_{g,j},1-\epsilon_{\mathrm{PPO}},1+\epsilon_{\mathrm{PPO}})A^P_{g,j}
+\right).
+$$
 
-```text
-L = mean_d L_utility(d) + L_count - beta * entropy + eta * KL(pi || pi_ref)
-```
+Advantages are baseline-centered but never batch-standardized. Utility remains decision-summed;
+count is decision-averaged through its reward definition. For one positive setting $\lambda_k$
+held fixed over the document group, the Tier-3 actor loss is
 
-Gradient ownership is:
+$$
+L_{\mathrm{actor}}(d,k)=L_P(d,k)+\operatorname{stopgrad}(\mu_{d,k})L_U(d,k)
+-\beta H(\pi_\psi)+\eta\operatorname{KL}(\pi_\psi\Vert\pi_{\mathrm{old}}).
+$$
 
-```text
-L_utility, entropy, KL --> utility tower, selected-action memory, alpha
-L_count                --> alpha only
-L_privacy              --> privacy projection and semantic privacy head only
-```
+Let $b_d$ be the pinned expected utility of the frozen utility-only policy and
+$\widehat J_U(d,k)$ the served lexicographic policy's group-mean document utility at $\lambda_k$.
+Define
 
-The semantic privacy head remains frozen throughout hybrid RL. The exact target in `L_count`
-therefore cannot turn the predicted privacy score into an opaque policy preference, while the
-utility gradient prevents the globally shared controller scale from optimizing privacy alone.
+$$
+v_{d,k}=b_d-\tau(\lambda_k)-\widehat J_U(d,k),
+$$
 
-RLOO tie filtering is applied at the assertion-credit level: a span with tied linked and residual
-advantages contributes no provisional utility term, but its count objective remains active.
-Counterfactual pairs with `delta_U = 0` are retained in diagnostics and supply no pairwise
-utility gradient.
+$$
+L_{\mathrm{dual}}(d,k)=-\mu_{d,k}\operatorname{stopgrad}(v_{d,k}).
+$$
 
-Entropy and KL coefficients are fixed per run and are not rescaled by lambda. This is why the
-additive objective is used rather than `(1-lambda)U + lambda P`. KL begins off after ExIt and is
-enabled only by a pre-registered collapse rule; it is never tuned separately per lambda profile.
+After the dual optimizer step, project $\mu_{d,k}$ onto $[0,\infty)$. Positive violation raises the
+utility weight; slack lowers it. The dual loss cannot update actor or critic parameters. Actor,
+utility critic, count critic, and dual use separate optimizer parameter groups and separately
+reported gradient norms.
+
+Neither $L_P$ nor its exact count return is multiplied by $\lambda_k$ or
+$\tau(\lambda_k)$. Lambda changes the actor through its setting embedding and changes permitted
+utility loss through the document-setting constraint. This keeps count as a reward signal rather
+than a deployed policy input or a disguised weighted-sum coefficient. $\lambda_0$ bypasses this
+actor/dual update and executes the immutable utility branch.
+
+Critic losses are Huber regressions on routed utility returns and exact count return-to-go. The
+utility critic may reduce variance, but existing linked/residual RLOO and counterfactual
+substitution remain authoritative in the first mechanism experiment so critic error cannot silently
+change utility credit semantics.
+
+Counterfactual pairs with `delta_U = 0` remain in diagnostics and supply no utility gradient. Their
+count advantage remains active, which is the intended lexicographic tie behavior. KL is a
+previous-policy trust region, not a BC/reference anchor, and must be applied identically to utility
+and lexicographic rollouts. No fixed-reference KL, tie hinge, gain penalty, profile-sensitivity
+regularizer, additive `alpha`, or utility-logit softcap participates in this objective.
 
 ## Training sequence
 
@@ -447,14 +565,14 @@ Before optimization:
 - freeze action menus, own-profile counts, count provenance, and normalization tags;
 - freeze accepted utility assertions and routing fields;
 - freeze remote model, task prompt, extractor, reader, scorer, concurrency regime, and caches;
-- run reward-support, count-health, lambda-menu, and determinism gates.
+- run reward-support, count-health, utility-reference, and determinism gates.
 
-Changing any item invalidates cached utility, switch-point calibration, and trained-policy
+Changing any item invalidates cached utility, utility references, and trained-policy
 comparisons together.
 
 ### Complete-count pre-training gate
 
-This gate runs before lambda calibration, ExIt pool reuse for menu selection, or conditional
+This gate runs before utility-reference construction, ExIt reuse, or lexicographic
 RL. For every ranker-controlled profile and every non-KEEP, non-placeholder generalization
 level, require:
 
@@ -477,25 +595,10 @@ would silently change the action space or reward definition.
 KEEP remains the explicit score-zero endpoint and placeholder the explicit score-one endpoint;
 neither is required to carry a lattice count.
 
-### Semantic privacy-head pretraining
-
-Before policy optimization, train the privacy projection and log-count distribution head from the
-ordered source-to-candidate relation encoding. Split by complete profile so no source surface,
-candidate menu, or count trajectory crosses train and validation. Optimize log-count likelihood,
-within-menu ordering, and profile-relative calibration. KEEP and placeholder have fixed endpoint
-scores and do not enter learned-head calibration metrics.
-
-The head must beat authored-position, action-mode/type, profile-memorization, and candidate-only
-baselines on profile-held-out data. Freeze the validated head before behavior cloning, ExIt, lambda
-selection, and hybrid RL. Failure blocks the semantic prototype and triggers the separately logged
-direct-count fallback evaluation; it does not permit true count or authored position to enter the
-semantic actor.
-
 ### Behavior-cloning initialization
 
 Retain the existing deterministic behavior-cloning teacher as a support-preserving
-initialization. It is lambda-independent. Record its action distribution and utility/count
-point at every supported lambda, but do not represent it as an operating frontier.
+initialization. It is preference-independent and trains only the future utility base.
 
 ### Utility-only expert iteration
 
@@ -510,31 +613,60 @@ for each document:
     clone every action in the verified winner
 ```
 
-Lambda and count score do not affect ExIt selection. Complete winner cloning may include
+Count score does not affect ExIt selection. Complete winner cloning may include
 passenger actions; this is accepted only as initialization. The hybrid stage supplies the
 structured and causal correction.
 
-ExIt samples and verifies trajectories under lambda zero. Clone each verified winner once into
-the shared utility tower and selected-action memory. No profile replication is needed because the
-semantic policy has no lambda identity input and the controller is exactly zero at lambda zero.
+ExIt samples and verifies trajectories through the utility branch before Tier 3 exists. Clone each
+verified winner once into the utility feature stack, base actor, and selected-action memory. Continue with utility-only
+structured RL until the frozen selection rule chooses the utility-base checkpoint. Then freeze all
+Tier-1 and Tier-2 parameters before creating the private Tier-3 adapters, residual head, and
+critics. Verify the frozen utility-reference hash and exact Tier-3 initialization parity before
+continuing.
 
-### Lambda-conditioned hybrid optimization
+### Utility reference and critic warm start
 
-All rollouts in one document group use the same lambda. Use a seeded balanced Latin-cycle
-schedule over documents, epochs, and supported profiles:
+For every training document, replay the frozen utility-only checkpoint under a pinned set of seeds
+and cache-only action vectors. Store the exact vectors, utility keys, component scores, rollout
+seeds, mean expected utility $b_d$, estimator spread, and every environment/reward hash in the
+utility-reference manifest. A missing cache entry blocks a cache-only mechanism run.
 
-```text
-lambda_index = (permutation_epoch[doc_index mod |Lambda|] + epoch) mod |Lambda|
-```
+Fit utility and count critics from cached trajectories with actor parameters frozen. The utility
+critic target follows the same linked/residual/fallback routing as actor credit; the count critic
+target is exact count return-to-go. Report document-held-out error against train-mean baselines.
+Critic failure cannot be hidden by actor performance and does not authorize shared trainable trunks.
 
-Any equivalent scheduler is acceptable only if, over every block of `|Lambda|` epochs, each
-document is trained once at every supported profile and corpus/type exposure per profile is
-reported. Random independent sampling without balance is not allowed.
+### Lexicographic optimization
 
-## Selecting the supported lambda menu
+Each positive-setting document update samples served lexicographic trajectories, scores structured
+utility and exact count, replays old-policy probabilities under the same $\lambda_k$, updates
+lambda-conditioned critics, updates the Tier-3 adapters, residual head, and active setting row, then
+updates $\mu_{d,k}$. Frozen utility-reference replay is paired at every
+synchronous snapshot for audit but never updates Tier 1 or Tier 2. Critic, actor, and dual
+optimizers use fastest, middle, and slowest timescales respectively. The first mechanism run uses
+`lambda-0` as the immutable control and strict `lambda-1` with $\tau(\lambda_1)=0$ as the only
+trainable setting.
 
-The menu is chosen once from train/development artifacts before conditional RL. Final held-out
-attacker results never select or alter lambda values.
+Once a nonzero-slack menu is authorized, training uses one lambda setting per document rollout
+group. A deterministic balanced Latin cycle assigns every training document to every positive
+setting exactly once per cycle, rotating the setting order by document and seeded cycle. All
+rollouts, counterfactuals, old-policy probabilities, critics, and dual updates within one group use
+that same setting. $\lambda_0$ is evaluated each cycle for exact identity but supplies no Tier-3
+gradient. Sampling settings independently per decision or changing settings inside a trajectory is
+forbidden.
+
+The four cache-rich campaign documents form the first bounded mechanism run. One seed runs first.
+It compares the faithfully reconstructed additive controller against the lexicographic residual
+actor only to determine whether the new gradient architecture produces stable count movement under
+exact document utility retention. Passing authorizes two more seeds on the same documents, not a
+full-corpus or deployment run.
+
+## Historical additive lambda-menu selection (superseded 2026-08-05)
+
+The following section preserves the previous additive-controller calibration protocol for
+reproducing historical checkpoints only. It is non-normative for lexicographic training. Future
+multi-setting support uses the explicit utility-slack menu defined above and cannot reuse these
+switch-point lambdas.
 
 ### Calibration pool
 
@@ -634,29 +766,31 @@ before full RL and held-out evaluation.
 
 ### Count health
 
-- The complete-count pre-training gate passes at 100% level coverage before lambda selection.
+- The complete-count pre-training gate passes at 100% level coverage before lexicographic training.
 - Report own-profile denominators, provenance, singleton-profile rate, flat-menu rate, and
   adjacent exact-target `delta p` distributions per type and provenance.
 - Report expected count-gradient mass by type, profile, and provenance.
 - Assert that fallback/default provenance contributes exactly zero lattice-level gradient mass.
 - Count score monotonicity follows the stored counts; any lattice/count non-monotonicity blocks
   the run rather than being silently repaired or excluded at reward time.
-- Report profile-held-out semantic-head log-count likelihood, multiplicative error, interval
-  coverage, within-menu ordering, profile-relative calibration, paraphrase stability, and lexical
-  counterexamples separately for grounded and experimental count provenance.
+- Report selected count return, return-to-go critic error, and residual-actor count-gradient mass
+  by document, runtime type, provenance, action mode, and decision depth.
 
-### Conditional-policy responsiveness
+### Lexicographic-policy responsiveness
 
-- Fixed-state logits differ across supported lambda values only through
-  `alpha * g(lambda) * p_hat`; utility and privacy predictions remain lambda-invariant.
-- For a fixed state and legal menu, expected predicted privacy is non-decreasing with lambda.
-- Greedy predicted and exact `P_count` are reported across supported profiles on development
-  documents; whole-document non-monotonicity is diagnosed because earlier actions can change later
-  legal menus and prediction error can invert exact count ordering.
-- KEEP, level, and placeholder rates are reported by profile and type.
-- Every supported profile receives balanced document/corpus/type exposure during training.
-- Lambda zero is compared against a utility-only fixed-condition control to price conditional
-  interference.
+- Frozen utility-reference logits remain bit-identical to the selected utility checkpoint after
+  every update.
+- Tier-3 semantic deltas and residual logits are exactly zero at initialization; they become
+  non-uniform only through utility/count actor gradients.
+- Actor gradient tests prove staged reachability: residual head first, adapter output factors after
+  the residual map moves, and adapter input factors after their output factors move, with exact zero
+  gradients in Tier 1 and Tier 2 throughout.
+- Greedy exact `P_count`, complete-document utility keys, and action-mode rates are reported for
+  the frozen reference and served lexicographic policy by document and type.
+- Every document reports utility violation, dual value, actor-gradient norms by objective, and
+  final-three-snapshot count separation.
+- A temporary positive separation that decays to zero fails; sampled softness cannot substitute
+  for greedy-path behavior.
 - Deterministic reverse-order and seeded-order replays quantify first-occurrence-order sensitivity.
 
 ### Counterfactual scheduler
@@ -671,7 +805,7 @@ before full RL and held-out evaluation.
 
 ## Evaluation and verdict
 
-Evaluate every supported profile of the single checkpoint independently. For each profile:
+Evaluate the served lexicographic checkpoint and its pinned frozen utility reference independently:
 
 - measure utility on `out_final` with task metrics and whole-task regression metrics;
 - measure re-identification/inference attack success on `doc_p` and leak-through on `out_final`;
@@ -680,17 +814,15 @@ Evaluate every supported profile of the single checkpoint independently. For eac
 - compare against rule baselines and external methods only at matched realized privacy and
   identical settings.
 
-Train a fixed lambda-zero utility control in every run family. The conditioned checkpoint's
-lambda-zero profile must pass the pre-registered paired non-inferiority test against it; failure
-rejects the conditioned checkpoint. Additional fixed nonzero-lambda policies are optional
-certification ablations and are not deployment artifacts. If they are absent, no claim is made
-that the conditioned checkpoint matches the separate-policy frontier. If they are present, any
-frontier-equivalence or non-domination claim uses the frozen document-bootstrap procedure from
-the diagnostics manifest.
+The internal utility-reference path must be bit-identical to its frozen source checkpoint; a
+non-inferiority test is insufficient for this architectural invariant. This does not make it a
+second product mode. The served lexicographic policy must retain each document's exact utility key
+in the mechanism gate. Later held-out evaluation may use a
+pre-registered paired non-inferiority test only after this strict mechanism succeeds.
 
-Higher lambda is not required to produce monotonically better realized attacker privacy.
-Non-monotonicity is evidence that the count approximation fails in that region and is reported,
-never calibrated away.
+Count-score improvement is not privacy improvement. Any promoted method is compared with baselines
+only at matched realized attacker privacy. A count/attacker inversion terminates claims based on
+count shaping and is never calibrated away.
 
 ## Failure modes and stop conditions
 
@@ -701,13 +833,17 @@ never calibrated away.
   counterfactual utility. Price with measured pairwise disagreement and increase only the
   pre-registered counterfactual budget in a new run.
 - **Count coverage regression:** a profile rebuild introduces a missing, fallback, or
-  non-monotone level count. Invalidate lambda calibration and block training until the artifact
+  non-monotone level count. Invalidate lexicographic training and block the run until the artifact
   passes again.
-- **Conditional collapse:** all profiles produce one policy or high profiles collapse to
-  placeholder everywhere. Fail the responsiveness/menu gate.
-- **Semantic privacy transfer failure:** the head memorizes profiles, misorders unseen menus, or
-  fails calibration/paraphrase/lexical-counterexample gates. Reject the semantic prototype and
-  evaluate the strict direct-count fallback; do not expose true counts to the utility tower.
+- **Constraint failure:** the served policy improves count while any document falls below its
+  utility reference. Reject the run; do not increase a global count coefficient.
+- **No secondary movement:** utility constraints hold but Tier 3 remains inert or count separation
+  decays after a mid-run peak. Inspect count advantages, adapter/head gradients, and optimizer
+  timescales; do not revive additive authority controls.
+- **Uniform or inert dual dynamics:** violations do not increase the corresponding document dual,
+  or all documents share an accidental scalar. Fail the mechanism check.
+- **Critic corruption:** critic loss updates the actor/base or count targets alter the utility
+  critic. Fail closed on the gradient-isolation tests.
 - **Profile-normalization distortion:** profile-relative progress produces misleading cross-profile
   privacy pressure. Diagnose against raw-count and realized-attacker outcomes and run the logged
   strict type-normalized fallback as a new reward version; do not rewrite a completed run.
@@ -724,11 +860,18 @@ never calibrated away.
 The implementation should deepen these modules rather than scatter reward arithmetic through
 the trainer:
 
-- **Semantic policy interface:** `semantic_scores(state, legal) -> utility_logits,
-  predicted_logcount_distribution` owns candidate-conditioned context and selected-action memory;
-  neither output depends on lambda or true counts.
-- **Controller interface:** `combine(utility_logits, predicted_privacy, lambda) -> logits` owns the
-  fixed `g`, one nonnegative `alpha`, and exact lambda-zero identity.
+- **Frozen substrate interface:** `semantic_substrate(state, legal) -> FrozenSemanticSubstrate`
+  owns token/relation banks, occurrence masks, frozen action metadata, and canonical prior
+  selected-action records; it has no count dependency.
+- **Utility-stack interface:** `utility_action_stack(substrate) -> x_U, utility_logits` owns the
+  Tier-2 candidate-conditioned context and selected-action memory and is frozen during
+  lexicographic RL.
+- **Lexicographic actor interface:** `lexicographic_distribution(substrate, utility_logits,
+  lambda_setting_id) -> ActionDistribution` validates the frozen menu entry and owns the private
+  Tier-3 rank-4 adapters, setting-conditioned residual head, legal gather, and served policy.
+- **Objective interface:** consumes the active positive setting, utility/count advantages,
+  same-setting old-policy probabilities, entropy, KL, utility reference, configured slack, and
+  document-setting dual; returns separately auditable actor, critic, and dual losses.
 - **Exact count-target interface:** versioned own-profile counts plus
   `action_targets(decision, legal) -> scores, provenance` hide profile normalization and
   diagnostics; targets never enter actor features.
@@ -738,12 +881,12 @@ the trainer:
 - **Counterfactual scheduler interface:** consumes linked-assertion coverage, hyperedge status,
   entropy, pair history, and a fixed budget; returns intervention requests. It never sees or
   scales rewards.
-- **Lambda-menu selector:** consumes a frozen trajectory pool and emits values, switch points,
-  replay report, and hashes. It is offline and cannot inspect final attacker results.
+- **Utility-reference builder:** consumes the frozen utility policy and pinned rollout seeds and
+  emits per-document reference returns, exact utility keys, vectors, and hashes.
 
-Expected code destinations are focused model modules under `src/cloak/ranker/` for frozen encoding,
-semantic privacy, document context, selected-action memory, and the additive controller;
-`src/cloak/ranker/interactive.py` for trajectory/loss assembly;
+Expected code destinations are focused model modules under `src/cloak/ranker/` for the frozen
+substrate, utility stack, Tier-3 adapters and residual head, objective critics, and primal-dual losses;
+`src/cloak/ranker/interactive.py` for trajectory, credit, and counterfactual assembly;
 `src/cloak/reward/roundtrip.py` for assertion-vector output; and
 `scripts/train_interactive_ranker.py` for orchestration only. Exact paths are fixed by the
 implementation plan, but these responsibility boundaries are normative.
@@ -753,12 +896,14 @@ implementation plan, but these responsibility boundaries are normative.
 - frozen detector/span artifact shared by QA and RL;
 - versioned utility-assertion artifact with routing fields and fixed per-document denominators;
 - own-profile count-target artifact and count-health report;
-- frozen semantic privacy-head checkpoint with profile-held-out calibration report;
 - frozen document/relation encoder identity and content-addressed token/relation caches;
-- lambda calibration pool, switch points, replay report, and supported-menu manifest;
+- frozen utility-base checkpoint and per-document utility-reference manifest;
+- frozen finite lambda-menu manifest and hash;
+- Tier-3 adapter target manifest, zero-init setting-conditioned residual-head schema, critic
+  checkpoint, and document-setting dual-state audit;
 - counterfactual pair cache and scheduler report;
-- conditional-policy training record under `research-wiki/training/` written before the run;
-- per-profile held-out utility and attacker results.
+- lexicographic-policy training record under `research-wiki/training/` written before the run;
+- frozen-reference parity plus served-policy held-out utility and attacker results.
 
 ## Sources and predecessor specifications
 
@@ -770,14 +915,24 @@ implementation plan, but these responsibility boundaries are normative.
   profile-matching alternatives and honesty boundaries.
 - [Interactive ranker v2 decision log](interactive-ranker-v2-decision-log.md) — chosen forks and
   rejected alternatives.
-- [Ranker v2 architecture](ranker-v2-architecture.md) — normative model inputs, semantic privacy
-  head, context readout, selected-action memory, and additive controller.
+- [Ranker v2 architecture](ranker-v2-architecture.md) — normative three-tier model inputs, frozen
+  utility branch, private lexicographic semantic side path, objective critics, and dual state.
+- [Lexicographic actor-critic implementation plan](../../plans/2026-08-05-ranker-v2-lexicographic-actor-critic.md)
+  — implementation order, interfaces, gradient tests, and bounded real-data gate.
 - [Ranker v2 architecture decision log](ranker-v2-architecture-decision-log.md) — architecture
   alternatives and escalation evidence.
 - [QA builder v2](../qa-builder-v2.md) — implemented shared assertion artifact and scoring
   contract.
+- [Trainable multi-objective RL review](../../research/ranker-v2-trainable-multi-objective-rl-review.md)
+  — issue classification, literature comparison, and selected policy-based lexicographic design.
+- [Lexicographic Multi-Objective Reinforcement Learning](../../../research-wiki/papers/skalse2022_lexicographic_morl.md)
+  ([arXiv 2212.13769](https://arxiv.org/abs/2212.13769)).
+- [Reward Constrained Policy Optimization](../../../research-wiki/papers/tessler2018_reward_constrained_policy.md)
+  ([arXiv 1805.11074](https://arxiv.org/abs/1805.11074)).
+- [Constrained Policy Optimization](../../../research-wiki/papers/achiam2017_constrained_policy_optimization.md)
+  ([arXiv 1705.10528](https://arxiv.org/abs/1705.10528)).
 
-## Objective normalization (adjudicated 2026-07-28)
+## Historical objective normalization (superseded 2026-08-05)
 
 The hybrid group objective keeps its mixed normalization: utility, entropy, and KL
 decision-summed; the count term decision-averaged (×λ/decisions/rollouts). A
@@ -787,7 +942,7 @@ the practically binding controller question is strength/initialization of α, tr
 as its own fork. The decision-averaged alpha-routing variant remains available as
 default-off infrastructure (`train --alpha-utility-routing per-decision`).
 
-## Implementation status and interim deviations (2026-07-29)
+## Historical additive implementation status (superseded 2026-08-05)
 
 Enumerated deviations of the live implementation from the normative text above. Each is either
 an interim measure with a named exit condition or a candidate pending its preregistered gate;

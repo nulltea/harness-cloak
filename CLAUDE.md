@@ -149,6 +149,15 @@ and is **stable** (a completed run's version never renumbers, unlike plan/phase 
 in a filename, cross-reference, or discussion is correct. This exception is narrow: it does **not** license
 plan/phase/requirement/arm identifiers (`P7`, `D1`, `Arm B`) anywhere.
 
+## Prose formatting
+
+Never hard-wrap prose or Markdown paragraphs with manual line breaks.
+Write each paragraph as a single continuous line, no matter how long.
+Only insert a newline where a real paragraph break, list item, or heading
+belongs. Do not break lines at a target column width (e.g. ~80 chars) —
+let the renderer/editor soft-wrap on display. This applies to .md, .html files,
+commit messages, and any long-form text output.
+
 ## Picking the right models for workflows and subagents
 
 Rankings, higher = better. Cost reflects what I actually pay, not list price. Intelligence is how hard a problem you can hand the model unsupervised. Taste covers code quality, codebase design, and research judgment — picking research directions, designing experiments, analyzing results, drawing conclusions. (Not literature search/web search — that's a task, not a taste axis.)

@@ -126,7 +126,14 @@ def _token_spans(text: str) -> list[tuple[int, int]]:
     return [(m.start(), m.end()) for m in re.finditer(r"[A-Za-z0-9]+(?:[-'][A-Za-z0-9]+)*", text)]
 
 
-def _candidate_windows(fill: str, text: str) -> list[tuple[int, int, float, str]]:
+# Pure function of (fill, text), and RL scoring calls it with the same pairs over
+# and over: every rollout of a document re-inverts the same replacements against
+# near-identical outputs. The body is O(tokens x window sizes) rapidfuzz calls, so
+# it dominated wall-clock (GPU idle, one core pegged for minutes). Memoizing
+# changes no number -- identical inputs, identical output -- it only stops
+# recomputing them.
+@lru_cache(maxsize=4096)
+def _candidate_windows(fill: str, text: str) -> tuple[tuple[int, int, float, str], ...]:
     """Fuzzy 60-90 candidate slices for the semantic fallback, sorted best first."""
     from rapidfuzz import fuzz
 
@@ -152,7 +159,8 @@ def _candidate_windows(fill: str, text: str) -> list[tuple[int, int, float, str]
 
     ranked = [(lo, hi, score, snippet) for (lo, hi), (score, snippet) in candidates.items()]
     ranked.sort(key=lambda c: (-c[2], c[0], c[1]))
-    return ranked[:_MAX_CANDIDATES]
+    # tuple, not list: the result is memoized and must not be mutable
+    return tuple(ranked[:_MAX_CANDIDATES])
 
 
 def _has_numish(text: str) -> bool:
@@ -212,10 +220,14 @@ def _semantic_model():
     return SentenceTransformer(SEMANTIC_MODEL_ID, revision=SEMANTIC_MODEL_REVISION)
 
 
-def _semantic_scores(fill: str, snippets: tuple[str, ...]) -> list[float]:
+# Same reasoning as _candidate_windows: a pure function of its arguments, called
+# repeatedly with identical (fill, snippets) across rollouts. Memoizing keeps the
+# embeddings bit-identical while removing the repeat encodes.
+@lru_cache(maxsize=8192)
+def _semantic_scores(fill: str, snippets: tuple[str, ...]) -> tuple[float, ...]:
     model = _semantic_model()
     emb = model.encode([fill, *snippets], normalize_embeddings=True)
-    return [float(emb[0] @ e) for e in emb[1:]]
+    return tuple(float(emb[0] @ e) for e in emb[1:])
 
 
 def _semantic_invert(text: str, entry: dict) -> tuple[str, bool]:

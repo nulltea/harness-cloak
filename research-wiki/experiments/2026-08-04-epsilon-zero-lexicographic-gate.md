@@ -83,7 +83,17 @@ Cache-only, CPU. The run must report zero remote tasks and zero reader work item
 
 ## Real-data preflight
 
-_pending_
+Executed 2026-08-04 on `aci/D2N005` (campaign) plus the first two sorted support-complete non-campaign documents, selected from `candidate_support_status` before any gain was computed. Cache-only, no reward calls, no comparator checkpoints. Retained documents 63; validated candidates 327 of the 330 rows belonging to these three documents (3 excluded as `reader_refresh`, 0 pin mismatches, 0 incomplete, 0 illegal, 0 parity failures).
+
+| document | population | slate | cached | exact-tie set | `G_d` | lexicographic vector | utility-only vector |
+|---|---|---|---|---|---|---|---|
+| `aci/D2N001` | primary | 4 | 4 | 2 | 0.0 | `sha256:0f1a3bee…` | `sha256:0f1a3bee…` |
+| `aci/D2N002` | primary | 4 | 4 | 1 | 0.0 | `sha256:e48dd53d…` | `sha256:e48dd53d…` |
+| `aci/D2N005` | campaign | 4 | 4 | 2 | 0.0 | `sha256:62963cbf…` | `sha256:62963cbf…` |
+
+Manual verification: both selectors' vectors are cache rows (each carries a `result_hash`); every standardized anchor is present for all three; recomputed float utility matches the stored value on every retained row (`utility_parity_excluded = 0`); no structural dependency label, tower logit, or `alpha` is read anywhere in the gate; the lexicographic pick equals the maximum-count member of the exact-optimal set in every case. The `unsupported` branch could not be exercised on real data — **no** primary document is unsupported — so it is covered by fixtures only.
+
+**Two observations that bear on interpretation, recorded before the full run.** First, the five anchors deduplicate to **four** vectors per document, and their exact-utility argmax sets have size 1–2, so the standardized population offers very few tied pairs to choose between. Second, where a tie does exist the privacy-blind BC-nearest comparator already selects the maximum-count member, giving `G_d = 0`. The non-adjudicating expanded-cache diagnostic over the adaptively sampled pool (65 / 76 / 186 vectors) reports positive gain on all three documents (0.058 / 0.059 / 0.150) — evidence that the operator finds opportunity in a richer candidate pool, and that a zero corpus result would be a statement about the coarse standardized slate rather than about exact ties as such.
 
 ## Results
 

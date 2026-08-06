@@ -350,8 +350,8 @@ def test_document_records_score_gain_only_inside_the_exact_utility_optimum(tmp_p
 
     three = records["three-optima"]
     assert three["exact_optimal_set_size"] == 3
-    assert three["exact_optimal_privacy_min"] == 0.0
-    assert three["exact_optimal_privacy_max"] == 1.0
+    assert three["exact_optimal_count_min"] == 0.0
+    assert three["exact_optimal_count_max"] == 1.0
     assert three["free_count_gain"] == pytest.approx(0.4)
 
     for doc_id in ("missing-anchor", "one-vector"):
@@ -370,7 +370,7 @@ def test_two_exact_optima_with_equal_privacy_have_no_opportunity(tmp_path):
 
     row = records["equal-privacy"]
     assert row["exact_optimal_set_size"] == 2
-    assert row["exact_optimal_privacy_spread"] == 0.0
+    assert row["exact_optimal_count_spread"] == 0.0
     assert row["free_count_gain"] == 0.0
     assert row["selector_changes_baseline"] is False
     assert row["opportunity_status"] == "supported-no-opportunity"
@@ -562,20 +562,20 @@ def test_additive_comparator_reports_both_failure_modes_and_cache_misses(tmp_pat
     zero = detached["documents"]["doc-a"]["profiles"]["lambda-zero"]
     assert zero["status"] == "cache-hit"
     assert zero["inside_exact_optimal_set"] is True
-    assert zero["chooses_privacy_max_inside_exact_set"] is False
+    assert zero["chooses_count_max_inside_exact_set"] is False
     assert zero["utility_gap_to_exact_optimum"] == 0.0
-    assert zero["privacy_gap_to_lexicographic"] == pytest.approx(0.4)
+    assert zero["count_gap_to_lexicographic"] == pytest.approx(0.4)
     assert detached["documents"]["doc-a"]["profiles"]["lambda-max"]["status"] == "cache-miss"
     assert detached["cache_hit_count"] == 1 and detached["cache_miss_count"] == 1
     assert detached["fraction_below_exact_optimum"] == 0.0
-    assert detached["fraction_utility_feasible_missing_privacy_max"] == 1.0
+    assert detached["fraction_utility_feasible_missing_count_max"] == 1.0
 
     coupled = report["additive_comparators"]["coupled"]
     below = coupled["documents"]["doc-a"]["profiles"]["lambda-zero"]
     assert below["inside_exact_optimal_set"] is False
     assert below["utility_gap_to_exact_optimum"] == pytest.approx(0.5)
     assert coupled["fraction_below_exact_optimum"] == 0.5
-    assert coupled["fraction_utility_feasible_missing_privacy_max"] == 0.0
+    assert coupled["fraction_utility_feasible_missing_count_max"] == 0.0
 
 
 def test_additive_comparator_output_never_changes_the_verdict_or_the_selection(tmp_path):
@@ -601,6 +601,62 @@ def test_additive_comparator_output_never_changes_the_verdict_or_the_selection(t
     assert first["additive_comparators"] != second["additive_comparators"]
     for key in ("verdict", "adjudication_checks", "documents", "summary"):
         assert first[key] == second[key]
+
+
+def test_comparator_separates_below_equal_and_above_the_slate_optimum(tmp_path):
+    """A comparator vector from the expanded cache can EXCEED the slate optimum;
+    counting that as "not optimal" would report a utility loss that never happened."""
+    plans = {
+        "doc-a": [
+            (BC_VECTOR, 0.5), (KEEP_VECTOR, 0.25), (PLACEHOLDER_VECTOR, 0.5),
+            (PRIVATE_EXTRA_VECTOR, 1.0),   # adaptively cached, HIGHER utility
+        ],
+    }
+    vectors = {
+        "arm": {
+            "doc-a": {
+                "lambda-zero": KEEP_VECTOR,            # below
+                "lambda-max": PRIVATE_EXTRA_VECTOR,    # above
+            },
+        },
+    }
+    report = _comparator_report(tmp_path, plans, vectors)
+    block = report["additive_comparators"]["arm"]
+    profiles = block["documents"]["doc-a"]["profiles"]
+
+    assert profiles["lambda-zero"]["utility_relation_to_exact_optimum"] == "below"
+    assert profiles["lambda-max"]["utility_relation_to_exact_optimum"] == "above"
+    assert profiles["lambda-max"]["inside_exact_optimal_set"] is False
+    assert profiles["lambda-max"]["utility_gap_to_exact_optimum"] < 0.0
+    assert block["utility_relation_counts"] == {"below": 1, "equal": 0, "above": 1}
+    assert block["fraction_below_exact_optimum"] == 0.5
+    assert block["fraction_above_exact_optimum"] == 0.5
+    # no utility-feasible vector, so the tie-ownership rate is undefined, not zero
+    assert block["fraction_utility_feasible_missing_count_max"] is None
+    assert block["documents_with_utility_loss"] == ["doc-a"]
+    assert block["documents_missing_count_max_inside_exact_set"] == []
+
+
+def test_expected_input_hash_mismatch_is_invalid_before_any_evaluation(tmp_path):
+    plans = {"doc-a": [(vector, 1.0) for vector in SLATE]}
+    artifact = _artifact(tuple(plans))
+    rows = [_row("doc-a", vector, artifact, linked=1.0) for vector in SLATE]
+    report = gate.run_gate(
+        (_doc("doc-a"),),
+        _cache(tmp_path, rows),
+        artifact,
+        _count_reward(),
+        _count_state(),
+        environment_hash=ENVIRONMENT_HASH,
+        utility_artifact_hash=artifact["artifact_hash"],
+        input_hashes={"utility_cache": "aa" * 32},
+        expected_input_hashes={"utility_cache": "bb" * 32},
+    )
+    assert report["verdict"] == "invalid"
+    assert report["documents"] == [] and report["summary"] == {}
+    assert report["adjudication_checks"]["invalid_reasons"] == [
+        f"utility_cache: expected {'bb' * 32} got {'aa' * 32}"
+    ]
 
 
 def test_greedy_comparator_vectors_evaluates_only_lambda_zero_and_lambda_max():

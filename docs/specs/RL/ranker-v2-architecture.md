@@ -1,124 +1,160 @@
 ---
 type: reference
-status: partial
+status: current
 created: 2026-07-22
-updated: 2026-07-23
+updated: 2026-08-05
 tags: [rl, ranker, model-architecture, policy, context, privacy-utility,
-       bioclinical-modernbert, candidate-pair-encoding]
+       bioclinical-modernbert, candidate-pair-encoding, lexicographic-rl,
+       actor-critic, primal-dual, low-rank-adapters, freeze-policy]
 companion: [docs/specs/RL/ranker-v2-architecture-decision-log.md,
-            docs/specs/RL/interactive-ranker-v2.md]
+            docs/specs/RL/interactive-ranker-v2.md,
+            docs/research/ranker-v2-trainable-multi-objective-rl-review.md]
 ---
 
-# Ranker v2 architecture — semantic privacy-head prototype
+# Ranker v2 architecture — three-tier lexicographic actor-critic
 
-**Status: selected prototype design; not yet a production architecture.** This specification
-defines the first architecture to prototype for the metadata-shortcut and policy-state-aliasing
-problems. It fixes the semantic privacy head, additive lambda controller, and frozen bidirectional
-candidate-conditioned context readout. Candidate features come from an ordered joint encoding of
-runtime type, source, and candidate through the same frozen clinical encoder. The direct-count
-factorized policy remains the stricter, more auditable privacy-formal alternative in the companion
-decision log.
+**Status: selected experimental architecture; not yet production-validated.** This specification
+retains the frozen clinical encoder, candidate-conditioned document readout, and selected-action
+cross-attention memory from the semantic-v1 policy. It supersedes both the semantic privacy-head
+plus additive controller and the later head-only residual over a completely frozen semantic stack.
+The replacement is a three-tier policy-based lexicographic actor: a permanently frozen clinical
+encoder substrate, a utility semantic branch trained to convergence and then frozen, and a private
+trainable lexicographic semantic side path with a zero-initialized residual head. Objective critics
+remain separately supervised and document utility is protected by training-only primal-dual
+constraints.
+
+The deterministic epsilon-zero selector is not a deployment component. It remains an offline
+oracle/test utility only. The deployed ranker always executes one ordinary neural policy forward
+per sequential decision.
 
 ## Executive decision
 
-Ranker v2 learns two different semantic judgments:
+Ranker v2 serves one report policy: **utility-first/count-second**. Its logits are
 
-1. a utility tower judges whether a candidate preserves task-relevant document meaning;
-2. a semantic privacy head predicts a log-count distribution from the source-to-candidate
-   abstraction relation, then deterministic profile-menu normalization produces the policy's
-   privacy score.
+$$
+z_{\mathrm{lex}}(s_t,a;\lambda_k)=
+\begin{cases}
+u_\theta(s_t,a), & k=0,\\
+u_\theta(s_t,a)+r_\psi(x_{\mathrm{lex}}(s_t,a),e_{\lambda_k}), & k>0.
+\end{cases}
+$$
 
-The actor does not receive true count, authored level position, number of levels, lambda, or
-predicted privacy as generic features. Lambda combines the separately produced utility and privacy
-scores through a fixed explicit additive controller:
+The frozen utility policy is retained as an internal reference and audit path, not exposed as a
+second product mode in this prototype. BC, verified ExIt, and utility-only structured RL train the
+utility branch. Lexicographic RL then freezes that branch and trains only a private post-encoder
+semantic side path plus the residual head to improve exact profile-relative count return while a
+document-level primal-dual constraint preserves the frozen utility reference.
 
-```text
-z(s, a, lambda) = u_theta(s, a) + alpha * g(lambda) * p_hat_profile(a)
-```
+The lexicographic operator lives in the optimization update, not in an inference-time selector and
+not in a scalar logit bonus. Count and utility advantages both update the private Tier-3 semantic
+adapters and residual head. Utility targets update only the utility critic; count targets update
+only the count critic.
+Training-only dual variables increase the utility-gradient weight when a document violates its
+utility-retention constraint. They are absent from the deployed checkpoint's forward path.
 
-This design intentionally asks the model to generalize semantic abstraction to unseen candidate
-wording. Each matched profile's own frozen `level_counts` supervise log-count magnitude,
-within-profile ordering, and profile-relative privacy progress, but counts are not required as
-deployed action inputs.
+One checkpoint supports a frozen finite menu $\Lambda=\{\lambda_0,\ldots,\lambda_{K-1}\}$ with
+$3\le K\le5$. The caller selects one setting for a complete task/session and each document episode.
+$\lambda_0$ is the exact utility-only identity. Every $\lambda_k$ with $k>0$ activates the same
+shared Tier-3 actor under a setting condition $e_{\lambda_k}$. The ordered menu maps to explicit
+document-level utility slacks
 
-Utility context is candidate-specific. A frozen bidirectional encoder produces a cached token bank
+$$
+\tau(\lambda_0)=0,\qquad
+\tau(\lambda_1)=0,\qquad
+0=\tau(\lambda_1)<\tau(\lambda_2)<\cdots<\tau(\lambda_{K-1}).
+$$
+
+$\lambda_1$ therefore means strict count-second optimization at the frozen utility reference;
+higher settings permit pre-registered user-facing utility loss budgets. The numeric setting never
+multiplies count reward, utility reward, an advantage, or a logit. Additive `alpha`, gain heads, tie
+hinges, cycle projection, gap scaling, utility-logit softcaps, and profile-sensitivity training
+pressure are not part of this architecture. Historical additive-controller switch points and the
+historical `0.044` reader statistic cannot define the new slack menu.
+
+Utility context remains candidate-specific. A frozen bidirectional encoder produces a cached token bank
 for the complete document; a trainable query derived from the source-to-candidate relation attends
 over target, local, repeated-occurrence, and long-range evidence before the utility tower scores the
 action.
 
-For the selected semantic prototype, this specification overrides the type-normalized count score
-in `interactive-ranker-v2.md`: its exact local privacy objective uses the frozen profile-relative
-target defined below. The retained direct-count fallback continues to use the earlier strict
-type-normalized score.
+The count objective consumes the frozen own-profile-relative targets defined by
+`interactive-ranker-v2.md`. Counts are rewards and diagnostics, never actor input features and never
+realized-privacy measurements.
 
 ## Goals
 
 - Force utility decisions to depend on document context and candidate meaning rather than count or
   lattice position.
-- Learn an inspectable semantic privacy prediction that can transfer to unseen profiles and level
-  wording.
+- Let count supply a direct behavioral gradient where utility permits it, without relabeling any
+  model quantity as both utility and privacy.
 - Make every source region observable to the utility policy and let each candidate retrieve the
   evidence relevant to its own semantic preservation.
-- Preserve one checkpoint with a finite ordered lambda menu.
-- Keep lambda-zero behavior exactly equal to the semantic utility policy.
+- Preserve one checkpoint with an immutable utility reference branch and one served
+  lambda-conditioned lexicographic branch.
+- Let one checkpoint serve three to five ordered user settings without storing one model per
+  setting or claiming interpolation to untrained settings.
+- Keep utility-reference logits exactly equal to the selected utility checkpoint throughout
+  lexicographic training while allowing the private lexicographic semantic path to adapt.
+- Make utility-retention violations, count movement, dual dynamics, and every gradient edge
+  auditable.
 - Keep the architecture simple enough to falsify before adding deeper context encoders or sequence
   models.
 
 ## Non-goals
 
-- The semantic privacy prediction is not realized privacy, a formal anonymity guarantee, or a
-  replacement for held-out re-identification evaluation.
+- Count score is not realized privacy, a formal anonymity guarantee, or a replacement for held-out
+  re-identification evaluation.
 - The first prototype does not re-encode a candidate-rendered or partially rewritten document at
   every decision. It uses candidate-query attention over frozen `doc_orig` token states plus
   candidate-conditioned cross-attention over explicit selected-action utility memory.
-- The prototype does not infer missing training targets. Every supervised lattice level requires
+- The prototype does not infer missing count targets. Every trainable lattice level requires
   an explicit admitted count target and provenance; model-proposed targets remain experimental and
   are reported separately.
 - The first prototype does not fine-tune the frozen text encoder.
+- The first prototype does not claim held-out generalization, a Pareto frontier, or matched
+  realized privacy from its four-document mechanism run.
 
 ## Architecture
 
 ### Data flow
 
 ```text
-doc_orig --> overlapping chunks --> frozen bidirectional encoder --> cached token bank H_doc
-occurrence offsets -------------------------------------------------> target/position features M_j
+Tier 1 · permanently frozen clinical substrate
+doc_orig + source/candidate strings + sequential action records
+        -> BioClinical-ModernBERT token/relation banks, masks, raw selected-action records
+                         |                                |
+                         v                                v
+Tier 2 · utility branch, trained first then frozen       Tier 3 · lexicographic side path
+frozen post-encoder semantic maps                        frozen maps + private rank-4 deltas
+        -> x_U(s,a) -> u_theta(s,a)                      -> x_lex(s,a)
+lambda_k -> setting condition e_lambda -----------------> GELU-16 residual r_psi(x_lex,e_lambda)
+                         |                                |
+                         +-------------------------------> z_lex(s,a;lambda_k)
+                                                          -> legal gather -> pi_lex(.|s,lambda_k)
 
-runtime type -------------------+
-source surface -----------------+--> frozen shared pair encoder --> fixed r_pair(j, a)
-candidate wording --------------+                                 |                |
-                                                                    |                |
-                                                                    v                v
-                                                          utility projection   privacy projection
-                                                                    |                |
-H_doc + M_j -----------------------------+                          |                |
-r_U(j, a) --> candidate query -----------+--> trained attention --> c(j, a)          |
-selected-action utility memory ----------+             |                            |
-                                                       v                            v
-                                                utility tower                 mu_logK, sigma_logK
-                                                       |                            |
-                                                       v                  profile-menu normalization
-                                                    u(j, a)                         |
-                                                       |                     p_hat_profile(j, a)
-                                                       +-------------+--------------+
-                                                                     |
-supported lambda --> fixed g(lambda) --> global nonnegative alpha ---+
-                                                                     |
-                                                                     v
-                                                           combined action logit
-                                                                     |
-                                                            dynamic legal mask
-                                                                     |
-                                                                   softmax
+stop_gradient(x_U)   -> utility critic V_U
+stop_gradient(x_lex) -> count critic V_P
+
+utility advantage -------------------------------+
+count advantage ---------------------------------+--> Tier-3 adapters + residual head
+document utility violation --> dual mu_{d,k} -----+
 ```
 
-The frozen relation encoder is shared computation only. Separate trainable utility and privacy
-projections prevent branch-specific supervision from modifying the other branch. If a later design
-unfreezes any encoder parameters, it must use separate adapters or explicit gradient isolation.
+Tier 1 is frozen from the start. Tier 2 includes the utility relation projection,
+candidate-conditioned context readout, selected-action memory, interaction features, and utility
+head. BC, verified ExIt, and utility-only structured RL train Tier 2; its selected checkpoint is
+then frozen bit-for-bit. Tier 3 does **not** consume only a detached final utility feature vector.
+It reuses the same detached Tier-1 substrate and frozen Tier-2 maps while adding private rank-4
+low-rank deltas to selected post-encoder semantic transformations. This gives lexicographic RL a
+trainable semantic route without allowing count gradients to alter the utility reference.
+
+The utility and count actor surrogates both update Tier 3 and the active positive-setting
+condition. No lexicographic RL gradient reaches
+Tier 1, Tier 2, either critic from the actor loss, or a critic from the other critic's loss. No
+trainable parameter is shared between the utility and count critics.
 
 The first prototype uses one immutable bidirectional encoder checkpoint and tokenizer for both
 relation strings and document chunks. The two paths have separate cached inputs and separate
-trainable projections; only the frozen base parameters are shared. Using different relation and
+utility-initialization projections; only the frozen base parameters are shared. Using different relation and
 document encoders is a later optimization fork, not part of the prototype.
 
 ### Pinned encoder checkpoint
@@ -220,10 +256,12 @@ features; they are not unconditionally averaged. The target summary ensures that
 cannot ignore the controlled surface, while local and global summaries expose nearby and distant
 relations.
 
-The frozen base encoder is not trained. Candidate query, target/position embeddings, attention,
-occurrence aggregation, and context projection are trainable. Candidate-rendered re-encoding,
-LoRA, partial unfreezing, and full encoder fine-tuning are excluded from the first prototype and
-require new logged decisions after the frozen readout is evaluated.
+The frozen base encoder is never trained. During utility initialization, the utility candidate
+query, target/position embeddings, attention, occurrence aggregation, and context projection are
+trainable; they become Tier 2 and are frozen before lexicographic RL. Tier 3 then adds private
+low-rank deltas only to the selected post-encoder semantic maps. Candidate-rendered re-encoding,
+encoder LoRA, partial encoder unfreezing, and full encoder fine-tuning remain excluded. The selected
+post-encoder adapters are therefore not an exception to the frozen-encoder contract.
 
 ### Semantic relation input
 
@@ -265,35 +303,30 @@ through the joint bidirectional encoder. Ordered concatenation and the signed di
 shared semantic content. `r_pair` itself has no trainable parameters; the pinned BioClinical
 ModernBERT encoder remains frozen.
 
-Separate trainable projections derive `r_U(j, a)` and `r_P(j, a)` directly from `r_pair(j, a)`.
-The utility projection supplies the candidate query for document attention and the utility tower.
-The privacy projection supplies only the semantic privacy head. Utility losses update only the
-utility projection; privacy/count losses update only the privacy projection. Neither branch can
-modify the other branch's features or the frozen encoder.
+One utility projection derives `r_U(j, a)` from `r_pair(j, a)` and supplies the candidate query for
+document attention and the utility base. It is trained only during utility initialization and then
+frozen. The lexicographic side path applies its private low-rank delta to the same frozen relation
+map and derives `r_lex(j, a)` without modifying `r_U`. The utility critic consumes detached
+`x_U`; the count critic consumes detached `x_lex`. There is no count value or count-specific input
+embedding on the deployed path.
 
 The relation cache key includes the encoder revision, tokenizer revision, serialization version,
 runtime type, canonical source, rendered candidate, and action mode. KEEP, level, and placeholder
 actions all traverse the same relation path; learned free-standing KEEP or placeholder embeddings
 are not permitted.
 
-The privacy branch may additionally receive a frozen categorical count-basis/source-family token
-after the pair encoder, with an explicit unknown value when absent. This token never enters the
-utility projection and never contains a numeric count or universe size. Optional ontology
-definitions are excluded initially because availability and quality differ across profiles. They
-may be added only as a separately evaluated artifact-backed input.
-
 Action rendering is symmetric:
 
-| Action mode | Relation candidate text | Privacy target |
+| Action mode | Relation candidate text | Count reward |
 |---|---|---:|
 | KEEP | canonical source surface | exact `0` |
-| lattice level | rendered level wording | log-count distribution learned from own-profile `level_counts` |
+| lattice level | rendered level wording | frozen own-profile-relative target |
 | placeholder | type-specific placeholder description | exact `1` |
 
-KEEP and placeholder still receive semantic relation embeddings for utility scoring. Their privacy
-scores are fixed endpoints rather than learned predictions.
+KEEP and placeholder still receive semantic relation embeddings for utility scoring. Count rewards
+remain outside actor features.
 
-### Shared-pair encoder fitness spike
+## Historical shared-pair privacy-head fitness spike (superseded 2026-08-05)
 
 Run this bounded spike before full hybrid RL. Its purpose is to test whether a frozen MLM encoder
 plus separate trainable branch projections exposes enough ordered abstraction information for
@@ -301,7 +334,7 @@ utility and privacy learning. It does not select the base encoder; that checkpoi
 pinned. It selects whether the shared-pair representation is fit for the ranker or must be
 augmented.
 
-#### Comparison arms
+### Comparison arms
 
 Use the same frozen BioClinical ModernBERT revision, downstream head parameter budget, data split,
 optimizer budget, and seeds for all primary arms:
@@ -316,7 +349,7 @@ The comparison isolates the value of joint cross-field self-attention from domai
 candidate semantics, and ordered pair algebra. BioLORD is not part of the primary spike; it is the
 first conditional escalation if the selected representation fails in the specific ways below.
 
-#### Diagnostic data
+### Diagnostic data
 
 Construct a cached, auditable relation set from grounded profiles with real `level_counts` only.
 Split by complete profile so no source surface, candidate menu, or count trajectory from a held-out
@@ -340,7 +373,7 @@ assertions. ACI cases may be reported as development diagnostics, but encoder-re
 fitness and generalization conclusions require a non-ACI clinical validation slice because the
 pinned encoder saw ACI-BENCH during pretraining.
 
-#### Measurements
+### Measurements
 
 Train only the separate utility/privacy projections and small diagnostic heads. Measure:
 
@@ -361,7 +394,7 @@ Train only the separate utility/privacy projections and small diagnostic heads. 
 Geometry such as cosine distance may diagnose collapse but cannot pass the spike by itself. The
 load-bearing evidence is held-out outcome prediction and ordering.
 
-#### Promotion rule
+### Promotion rule
 
 Pre-register numeric thresholds after the diagnostic set's class balance and label reliability are
 measured. At minimum, the selected joint-pair arm must consistently outperform both baselines
@@ -373,7 +406,7 @@ Failure blocks promotion to full hybrid RL and triggers error attribution before
 Reader failures, noisy counts, invalid hard negatives, or context-attention failures must be fixed
 at their source rather than attributed to candidate representation.
 
-#### BioLORD escalation trigger
+### BioLORD escalation trigger
 
 [`FremyCompany/BioLORD-2023`](https://huggingface.co/FremyCompany/BioLORD-2023) is the first
 candidate-feature escalation only when failures concentrate in concept semantics or hierarchy:
@@ -388,7 +421,7 @@ candidate-feature escalation only when failures concentrate in concept semantics
   local and correctly retrieved.
 
 Do not trigger BioLORD for long-range context misses, QA-reader instability, count-grounding
-problems, lambda-controller errors, or user-defined concepts outside its ontology coverage.
+problems, preference-policy errors, or user-defined concepts outside its ontology coverage.
 
 If triggered, add frozen BioLORD ordered pair features to the failing branch only. Use a
 privacy-only auxiliary arm for direction, hierarchy, or privacy-order failures; use a utility-only
@@ -398,7 +431,7 @@ Compare against the selected pair encoder under identical profile-held-out split
 and complete a license/ontology-coverage review before running the arm. Promoting BioLORD beyond a
 branch-isolated auxiliary feature requires a new decision-log entry.
 
-### Selected-action utility memory
+## Selected-action utility memory
 
 The prototype represents earlier decisions as an explicit memory of the utility semantics that
 were selected. It does not compress the prefix into a recurrent hidden state. For each prior
@@ -431,8 +464,8 @@ h_hist(j, a) = CrossAttention(q_hist(j, a), M_<j, M_<j>)
 The first prototype uses one trainable cross-attention block, not a recurrent network, memory
 self-attention stack, or full Transformer. An empty memory returns the exact zero vector.
 
-The memory contains no count, predicted privacy, lambda, authored level index, menu size, profile
-identity, QA assertion identifier, or QA dependency identifier. Count and privacy losses cannot
+The memory contains no count, preference mode, dual value, authored level index, menu size, profile
+identity, QA assertion identifier, or QA dependency identifier. Count losses cannot
 update the memory projection, query projection, or cross-attention parameters. The legal-mask
 state, including fill-collision constraints, remains external to semantic memory.
 
@@ -454,7 +487,7 @@ Decisions are processed in deterministic first-occurrence walk order, matching
 Development diagnostics replay deterministic reverse and seeded alternative orders while
 preserving dynamic legality; material order sensitivity reopens a two-pass draft-and-refine design.
 
-#### History-module fitness spike
+### History-module fitness spike
 
 Before promotion, compare three matched-budget arms on the same data splits and seeds:
 
@@ -473,37 +506,400 @@ Promote selected-action cross-attention only if it improves validated multi-deci
 no history without regressing local cases or violating the invariance and selectivity tests. If it
 does not, remove action history. Do not silently fall back to the GRU.
 
-### Utility tower
+## Tier 2 — utility semantic branch
 
-The utility tower receives:
+The utility feature stack receives candidate-conditioned context, the source-to-candidate relation,
+their explicit interaction, action mode, runtime type, and candidate-specific selected-action
+memory. It excludes raw or normalized count, authored level index, number of levels, preference
+mode, count provenance, and every dual variable.
+
+The utility branch emits one feature vector and one logit per legal action:
+
+$$
+x_U(s_t,a)=F_\theta(\mathcal B(s_t,a)),
+\qquad
+u_\theta(s_t,a)=f_\theta(x_U(s_t,a)),
+$$
+
+where $\mathcal B$ is the detached Tier-1 substrate.
+
+BC, utility-only ExIt, structured utility policy gradients, and counterfactual utility comparisons
+train the complete utility feature stack and $f_\theta$. After utility initialization, freeze all
+of those parameters and record their exact state hash. Lexicographic training cannot change
+$x_U$, $u_\theta$, or the selected-action state used to replay the utility reference.
+
+The selected-action cross-attention block remains the normative history interface. Policy state
+stores canonical raw selected-action records—decision identity, chosen action identity, occurrence
+positions, and frozen relation/token-bank references—from which Tier 2 and Tier 3 build their own
+memory projections. This prevents the lexicographic path from depending only on the final utility
+feature while preserving one dynamic legal state. The legacy GRU and count-bearing
+`decision_action_inputs` remain rejected.
+
+## Tier 3 — trainable lexicographic semantic side path
+
+The served policy adds an action-conditioned residual to the frozen utility logits:
+
+$$
+x_{\mathrm{lex}}(s_t,a)=F_{\theta,\Delta W_\psi}(\operatorname{stopgrad}(\mathcal B(s_t,a))),
+$$
+
+$$
+z_{\mathrm{lex}}(s_t,a;\lambda_k)=
+\begin{cases}
+u_\theta(s_t,a), & k=0,\\
+u_\theta(s_t,a)+r_\psi(x_{\mathrm{lex}}(s_t,a),e_{\lambda_k}), & k>0.
+\end{cases}
+$$
+
+$F_{\theta,\Delta W_\psi}$ reuses frozen Tier-2 maps and adds private rank-4 low-rank deltas only
+to this allowlist:
 
 ```text
-context representation C(document, decision, action)
-utility projection of relation embedding r_U(source, candidate, type)
-explicit context-candidate interaction
-action mode and runtime type
-candidate-specific selected-action context h_hist(j, a)
+utility_projection
+context_readout.token_projection
+context_readout.query_projection
+context_readout.target_attention.{q,k,v,out}
+context_readout.local_attention.{q,k,v,out}
+context_readout.global_attention.{q,k,v,out}
+context_readout.context_projection
+memory.record_projection
+memory.query_projection
+memory.cross_attention.{q,k,v,out}
 ```
 
-It does not receive:
+For `nn.MultiheadAttention`, `{q,k,v,out}` names four logical maps even when PyTorch stores Q/K/V
+inside one packed `in_proj_weight`. The adapter registry must expose and hash the logical maps; it
+may not adapt the packed tensor as one undifferentiated block.
+
+No delta may target the clinical encoder, frozen utility head, utility mode/type embeddings, legal
+masking, or count-target code. Context/relation interaction remains deterministic. The exact module
+names, dimensions, rank, and parameter count are architecture-pinned; an implementation must fail
+closed if the allowlist resolves differently after a refactor.
+
+Each delta uses zero-product initialization: one low-rank factor receives the standard small random
+initialization and the output factor is exactly zero. Consequently Tier 3 initially reproduces the
+frozen semantic map while retaining a reachable gradient into the zero factor. The residual head's
+final map is also exactly zero, making $z_{\mathrm{lex}}=u_\theta$ at initialization.
+
+The lambda-conditioned residual head is `lexicographic-residual-lambda-ln-gelu16-v1`:
 
 ```text
-raw or normalized count
-predicted privacy score
-authored level index
-number of levels
-lambda magnitude or profile identity
-count provenance
+LayerNorm(feature_dim=4608, affine=False)
+-> Linear(4608, 16, bias=True)
+-> add learned setting embedding e_lambda[k] in R^16
+-> LayerNorm(16, affine=False)
+-> GELU
+-> Linear(16, 1, bias=False)
 ```
 
-`C(document, decision, action)` is the candidate-specific `c_context(j, a)` defined above, not a
-shared decision vector. Its output `u_theta(s, a)` is an action utility logit. It need not be
-calibrated as an absolute expected utility value for this prototype. Utility-only ExIt, document
-utility advantages, and counterfactual utility comparisons update this tower.
+The final linear map is initialized to exact zero. Input normalization controls feature-block
+scale; pre-activation normalization prevents the saturation that collapsed the previous tanh gain
+head. Width `16` is fixed for the first mechanism test; width `32` is not an automatic escalation.
+Rank `4` is fixed for the semantic deltas. The architecture figure's approximately 227K trainable
+parameter label is a non-binding planning estimate; the implementation must emit and pin the
+derived exact count from the resolved logical target registry.
 
-The selected-action cross-attention block is the normative history interface. The context token
-bank represents `doc_orig`; selected-action memory represents earlier choices without exposing
-privacy shortcuts. The legacy GRU and its count-bearing `decision_action_inputs` are not retained.
+The finite lambda menu owns one trainable 16-dimensional embedding row per setting. Row zero is
+initialized to exact zero, never receives a gradient, and is bypassed together with the complete
+Tier-3 residual at $\lambda_0$. Positive-setting rows are ordinary Tier-3 actor parameters. The
+semantic low-rank adapters are shared across settings; only the residual fusion is setting-specific.
+This is a finite-menu conditioned policy, not a continuous lambda model, and it makes no claim about
+interpolation to unregistered settings.
+
+Tier 3 receives no count value, authored action position, numeric slack, or dual variable as an input.
+It receives only the frozen setting identity through $e_{\lambda_k}$.
+Frozen action mode and runtime-type metadata may be reused because they are semantic action
+descriptors already available to the utility branch. Count affects Tier 3 only through the actor
+objective computed from selected actions and frozen count rewards. It must therefore learn from
+document context, candidate wording, and selection history rather than copy the reward table during
+inference.
+
+The prototype's exact profile-count artifact is a temporary reward shortcut. The final architecture
+replaces it with a separately trained, frozen k-anonymity estimator behind the same reward interface.
+That replacement creates a new reward pin and requires retraining, but it neither changes the lambda
+conditioning contract nor exposes estimated counts to the actor forward pass.
+
+## Objective critics
+
+The prototype has two separately parameterized state-value baselines over permutation-invariant
+pools of current legal-action features:
+
+$$
+V_U(s_t,\lambda_k;\phi), \qquad V_P(s_t,\lambda_k;\omega).
+$$
+
+The utility critic consumes `stop_gradient(x_U)` and the count critic consumes
+`stop_gradient(x_lex)`. Each also receives a detached encoding of the active finite-menu setting,
+applies a small action projection, mean-pools over the legal menu, and predicts one scalar. This is
+required because return distributions differ by setting. They may share frozen Tier-1 substrate but
+no trainable parameters. Neither critic is part of deployment.
+
+The utility critic target is the routed utility return assigned to that rollout-decision pair:
+linked plus residual utility for linked decisions, and complete-document utility for uncovered
+decisions. The count critic target is exact profile-relative count return-to-go from decision $t$
+through the end of the legal trajectory. Both losses use SmoothL1/Huber regression in their native
+reward units. Counterfactual utility terms continue to substitute for sampled utility terms on
+measured pairs; they do not train the count critic.
+
+Critic targets and advantages are detached before actor optimization. Critic losses cannot update
+Tier 1, Tier 2, Tier 3, or one another.
+
+## Training-only dual variables
+
+For every training document $d$ and positive setting $\lambda_k$, store one direct nonnegative
+multiplier $\mu_{d,k}$, initialized to zero and projected onto $[0,\infty)$ after every dual update.
+It enforces the document-level constraint
+
+$$
+J_U(\pi_{\mathrm{lex}}(\cdot\mid\lambda_k);d) \ge b_d-\tau(\lambda_k),
+$$
+
+where $b_d$ is the frozen utility-only policy's achieved expected return under a pinned rollout
+manifest. $\lambda_0$ has no dual because its actor path is the frozen utility identity. The first
+mechanism test uses only $\lambda_0$ and strict $\lambda_1$ with $\tau(\lambda_1)=0$. Nonzero slacks
+require a separately pinned three-to-five-setting menu and may not reuse the historical `0.044`
+reader statistic.
+
+The multipliers are optimizer state, not deployed model inputs. They may differ by document during
+training without creating per-document inference calibration. At held-out inference only the
+learned Tier-3 actor generalizes; no dual lookup or dual network is executed.
+
+## Served policy contract
+
+The served/report policy has one lambda-conditioned forward contract:
+
+$$
+z_{\mathrm{lex}}(s_t,a;\lambda_k)=
+\begin{cases}
+u_\theta(s_t,a), & k=0,\\
+u_\theta(s_t,a)+r_\psi(x_{\mathrm{lex}}(s_t,a),e_{\lambda_k}), & k>0.
+\end{cases}
+$$
+
+It uses the same dynamic legal mask and canonical sequential selected-action records as the frozen
+utility reference. The public ranker call requires one registered `lambda_setting_id`, held constant
+for the complete task/session and document episode. The checkpoint contains Tier 1, Tier 2, Tier-3
+adapters, the residual head, setting embeddings, and the exact frozen lambda-menu hash.
+The frozen utility path remains callable only for reference construction, parity tests, ablations,
+and audit; $\lambda_0$ reaches the same result through the public policy identity branch. Critics, duals,
+utility-reference manifests, and optimizer state remain training/audit artifacts.
+
+### User-facing lambda contract
+
+`lambda_setting_id` is a required public policy argument. It names one entry in a checkpoint-pinned
+finite menu; it is not accepted as an arbitrary float. A menu entry contains:
+
+```yaml
+lambda_setting_id: lambda-0
+ordinal: 0
+display_label: utility
+utility_slack: 0.0
+mode: utility-identity
+```
+
+The manifest uses `ranker-v2-lexicographic-lambda-menu-v1`. The historical additive
+`ranker-v2-lambda-menu-v1` artifact is a different schema and must fail closed.
+
+Positive entries use `mode: lexicographic` and carry their pre-registered
+`utility_slack: tau(lambda-k)`. The menu has three to five ordered entries, exactly one identity
+entry at ordinal zero, a strict positive entry with zero slack, and monotonically increasing slack
+thereafter. The manifest hash is part of checkpoint identity; changing labels, order, menu size, or
+slacks creates a new policy version and requires training/evaluation again.
+
+The setting is fixed for the complete task/session by the caller and for the complete document,
+rollout group, old-policy replay, counterfactual batch, and utility-reference comparison by the
+trainer. It cannot change between decisions. Unsupported settings fail closed. The report must show
+both the stable ID and display label; it must never present the ordinal as a calibrated privacy
+guarantee.
+
+The user chooses by tolerated task-utility loss, not by an asserted privacy percentage:
+
+- `lambda-0`: preserve the frozen utility policy exactly; apply no learned count-second behavior;
+- `lambda-1`: improve count only while satisfying the zero-slack utility constraint;
+- `lambda-2` and above: permit the exact document-level utility slack printed in the menu entry so
+  the actor may pursue more count return.
+
+Product copy may describe settings as utility-preserving, strict count-second, or by their explicit
+utility budget. It must not label them low/medium/high privacy until held-out attacker evaluation
+establishes those realized operating points.
+
+The first mechanism run uses a two-entry, explicitly non-deployable `scope: mechanism` manifest
+containing only `lambda-0` and strict `lambda-1`. It validates the conditioned interface and strict
+lexicographic update without inventing nonzero user tolerances. Promotion to a deployable checkpoint
+requires a separately pre-registered three-to-five-entry `scope: deployment` menu. Selecting its
+nonzero slack values is an operating-point decision based on explicit utility budgets and held-out
+behavior, not on historical additive switch points.
+
+## Lexicographic training protocol
+
+### Utility initialization
+
+Train BC and utility-only ExIt as before, then run utility-only structured RL until the frozen
+selection rule declares the base checkpoint. Build a pinned utility-reference manifest containing
+the utility-only action vectors, rollout seeds, exact utility keys, mean expected utility $b_d$, and
+artifact hashes for every training document used by lexicographic optimization. Freeze the utility
+feature stack and base logits before creating Tier-3 adapters, the residual head, or critics. Build
+Tier 3 from the frozen allowlisted maps with zero-product adapters and verify exact initialization
+parity before any lexicographic update.
+
+### Critic warm start
+
+Using cached utility-only and count-scored trajectories, fit $V_U$ and $V_P$ without updating either
+actor branch. Split diagnostics by document. A critic is usable only if its held-out-document error
+beats the corresponding train-mean baseline; failure does not authorize critic gradients into the
+actor. For the four-document mechanism test, critic quality is reported but the actor's structured
+LOO and counterfactual utility terms remain the authoritative utility advantages.
+
+### Lexicographic actor update
+
+For one positive setting $\lambda_k$ held fixed across the complete document rollout group, and for
+objective $i\in\{U,P\}$, define a separately auditable PPO surrogate
+
+$$
+S_i(\psi)=\mathbb{E}_t\left[
+\min\left(
+\rho_t\widehat A^i_t,
+\operatorname{clip}(\rho_t,1-\epsilon_{\mathrm{PPO}},1+\epsilon_{\mathrm{PPO}})
+\widehat A^i_t
+\right)
+\right].
+$$
+
+Do not combine or standardize the two advantages before clipping. The Tier-3 actor minimizes
+
+$$
+L_{\mathrm{actor}}(d,k)
+=-S_P-\operatorname{stopgrad}(\mu_{d,k})S_U
++\eta_{\mathrm{KL}}L_{\mathrm{KL}}-\beta_H H(\pi_{\mathrm{lex}}).
+$$
+
+The utility term retains the existing in-place counterfactual substitution and fixed policy-role
+denominator. The count term uses selected exact return-to-go and updates the Tier-3 adapters and
+residual head directly. On an exact utility tie, $\widehat A^U_t=0$, so count owns the actor update without
+inventing a utility preference.
+
+The count target and count advantage are not multiplied by $\lambda_k$ or $\tau(\lambda_k)$. The
+setting changes behavior only through $e_{\lambda_k}$ and the utility constraint. $\lambda_0$
+groups execute the frozen identity branch and are audit controls, not actor-training groups.
+
+The dual violation is
+
+$$
+v_{d,k}=b_d-\tau(\lambda_k)-\widehat J_U(\pi_{\mathrm{lex}}(\cdot\mid\lambda_k);d),
+$$
+
+and its minimization loss is
+
+$$
+L_{\mathrm{dual}}=-\mu_{d,k}\operatorname{stopgrad}(v_{d,k}).
+$$
+
+Gradient descent therefore increases $\mu_d$ when utility is below its target and decreases it when
+the constraint is slack. Critic updates run on the fastest timescale, Tier-3 actor updates on the
+middle timescale, and dual updates on the slowest. No batch-level standard-deviation normalization
+is permitted because it changes the dual's meaning.
+
+### Gradient ownership
+
+Tests must establish:
+
+```text
+utility-base initialization loss -> utility feature stack and utility base
+utility critic loss              -> utility critic only
+count critic loss                -> count critic only
+utility actor surrogate          -> Tier-3 adapters + residual head + active positive setting only
+count actor surrogate            -> Tier-3 adapters + residual head + active positive setting only
+dual loss                        -> document-setting dual parameter only
+
+grad(lex actor losses, Tier 1)      = 0
+grad(lex actor losses, Tier 2)      = 0
+grad(count losses, utility critic)  = 0
+grad(utility losses, count critic)  = 0
+grad(critic losses, Tier 3)         = 0
+grad(dual loss, actor or critics)   = 0
+grad(all losses at lambda_0, Tier 3)= 0
+```
+
+### Required mechanism gates
+
+Before any full-corpus or held-out claim:
+
+1. frozen utility-reference logits are bit-identical before and after lexicographic training;
+2. Tier-3 initialization reproduces the frozen semantic maps and logits exactly at every setting,
+   and $\lambda_0$ remains bit-identical after every update;
+3. count and utility actor terms both produce finite nonzero gradients in the residual head on the
+   first eligible update, in at least one adapter output factor after the residual map has moved,
+   and in its paired input factor after that output factor has moved;
+4. every lexicographic actor gradient is exactly zero in Tier 1 and Tier 2;
+5. count gradients are exactly zero in the utility critic;
+6. each final-three-snapshot lexicographic greedy document has an exact utility key no lower than
+   $b_d-\tau(\lambda_k)$ for every trained positive setting;
+7. at least one opportunity-bearing document has stable positive count-score separation for all
+   final three snapshots;
+8. no document passes only through a temporary mid-run peak followed by zero separation;
+9. document-setting dual variables respond in the correct direction to synthetic and real utility
+   violations without leaking across settings;
+10. critics beat train-mean baselines or remain report-only and excluded from actor advantages;
+11. the Tier-3 allowlist resolves to the pinned modules, rank, dimensions, and trainable-parameter
+    count; no encoder or utility-head parameter is trainable;
+12. no deterministic selector, evidence override, additive controller, gain head, or tie hinge is
+   active in the evaluated forward path.
+
+Passing on four cache-rich documents establishes only that the gradient architecture can express
+stable utility-first/count-second behavior. It does not establish document-held-out transfer,
+realized privacy, or a useful multi-setting frontier.
+
+### Deployment and artifact contract
+
+The architecture pin includes the frozen encoder/tokenizer revisions, Tier-1 substrate schema,
+utility-base checkpoint hash, Tier-2 frozen-parameter manifest, Tier-3 adapter target allowlist,
+adapter rank and initialization schema, residual-head schema, finite lambda-menu schema and hash,
+setting-embedding state, canonical action-memory schema, and dynamic legal-mask version. It excludes
+training-only dual values. Loading fails closed on an
+additive-controller checkpoint, a head-only residual checkpoint, a changed adapter target map, or
+a checkpoint whose Tier-1/Tier-2 parameters are not frozen.
+
+Required artifacts are the frozen environment and utility assertion artifact, complete profile
+count targets, frozen representation manifest, utility-base checkpoint, utility-reference
+manifest, frozen lambda-menu manifest, Tier-3 architecture manifest, lexicographic checkpoint,
+critic checkpoint, document-setting dual-state audit, epoch reports, and the training record written
+before the run.
+
+### Implementation boundaries
+
+- Tier-1 substrate extraction and Tier-2 utility semantics remain owned by
+  `src/cloak/ranker/semantic.py` behind typed substrate and utility-stack interfaces;
+- private low-rank adapters, the Tier-3 semantic side path, residual head, served lexicographic
+  distribution, and critic modules live in a focused lexicographic actor module;
+- sequential state stores canonical raw selected-action records; Tier 2 and Tier 3 project those
+  records independently rather than sharing mutable hidden state;
+- PPO surrogates, critic losses, document constraints, and dual updates live in a focused
+  lexicographic objective module;
+- structured utility credit and counterfactual scheduling remain in
+  `src/cloak/ranker/interactive.py` and expose typed advantages to the objective module;
+- orchestration and artifact validation remain in `scripts/train_interactive_ranker.py`;
+- `src/cloak/ranker/lexicographic.py` remains an offline selector/oracle utility and is prohibited
+  from the deployed policy path.
+
+## Sources
+
+- [Trainable multi-objective RL review](../../research/ranker-v2-trainable-multi-objective-rl-review.md).
+- [Lexicographic actor-critic implementation plan](../../plans/2026-08-05-ranker-v2-lexicographic-actor-critic.md).
+- [Interactive ranker v2 architecture report](../../html/interactive-ranker-v2.html).
+- [Lexicographic Multi-Objective Reinforcement Learning](../../../research-wiki/papers/skalse2022_lexicographic_morl.md)
+  ([arXiv 2212.13769](https://arxiv.org/abs/2212.13769)).
+- [Reward Constrained Policy Optimization](../../../research-wiki/papers/tessler2018_reward_constrained_policy.md)
+  ([arXiv 1805.11074](https://arxiv.org/abs/1805.11074)).
+- [Constrained Policy Optimization](../../../research-wiki/papers/achiam2017_constrained_policy_optimization.md)
+  ([arXiv 1705.10528](https://arxiv.org/abs/1705.10528)).
+- [State-Augmented Constrained Reinforcement Learning](../../../research-wiki/papers/calvofullana2021_state_augmented_constrained_rl.md)
+  ([arXiv 2102.11941](https://arxiv.org/abs/2102.11941)).
+
+## Historical additive-controller design (superseded 2026-08-05)
+
+The remaining sections preserve the previous semantic privacy-head/additive-controller prototype
+for archaeology only. They are non-normative and must not be used to implement or promote the
+current three-tier lexicographic actor.
 
 ### Semantic privacy head
 
@@ -645,7 +1041,7 @@ This local monotonicity follows from the scalar additive form and is verified nu
 document monotonicity remains an empirical diagnostic because earlier actions can change later
 legal menus.
 
-## Training protocol
+## Historical training protocol (superseded 2026-08-05)
 
 ### Privacy-head pretraining
 
@@ -722,7 +1118,7 @@ supervision plus held-out regression gates.
 Lambda-zero episodes remain in every hybrid training schedule. Their combined logits must remain
 bitwise equal to utility logits before masking.
 
-## Required diagnostics and gates
+## Historical diagnostics and gates (superseded 2026-08-05)
 
 ### Semantic privacy transfer
 
@@ -802,7 +1198,7 @@ normalization is set-valued. It does not require level counts as actor inputs. W
 available, they remain diagnostics and may be used to audit the predicted log-count distribution;
 they do not silently replace the semantic prediction.
 
-## Alternative retained for escalation
+## Historical direct-count additive fallback (superseded 2026-08-05)
 
 The direct-count factorized policy replaces `p_hat_profile(a)` with a strict type-normalized count
 and keeps the same explicit controller:
@@ -820,7 +1216,7 @@ version-pinned count state. Model-proposed counts are not admitted to this fallb
 controller. It is selected if the semantic privacy head fails profile-held-out transfer,
 calibration, or lexical-counterexample gates.
 
-## Prototype decision rule
+## Historical prototype decision rule (superseded 2026-08-05)
 
 Proceed to hybrid RL only if the semantic privacy head demonstrates profile-held-out controller
 signal beyond the candidate-only competitive baseline and the sanity floors. Prefer the semantic

@@ -203,7 +203,7 @@ def load_candidate_corpus(
     }
     reserved = {doc_id: _legality_state(document) for doc_id, document in by_id.items()}
     audit = {
-        "unknown_document_excluded": 0,
+        "rows_for_non_retained_documents": 0,
         "reader_refresh_excluded": 0,
         "pin_mismatch_excluded": 0,
         "incomplete_vector_excluded": 0,
@@ -218,7 +218,7 @@ def load_candidate_corpus(
         doc_id = str(identity["doc_id"])
         document = by_id.get(doc_id)
         if document is None:
-            audit["unknown_document_excluded"] += 1
+            audit["rows_for_non_retained_documents"] += 1
             continue
         if bool(identity["reader_refresh"]):
             audit["reader_refresh_excluded"] += 1
@@ -320,8 +320,8 @@ def _selector_record(selection, *, vector_hash: bool = True) -> dict[str, Any]:
         "vector": [[decision_id, action_id] for decision_id, action_id in candidate.vector_key],
         "utility_key": str(candidate.utility_key),
         "utility": candidate.utility,
-        "privacy_key": str(candidate.privacy_key),
-        "privacy_score": candidate.privacy_score,
+        "profile_count_key": str(candidate.privacy_key),
+        "profile_count_score": candidate.privacy_score,
         "result_hash": candidate.result_hash,
     }
     if vector_hash:
@@ -404,10 +404,10 @@ def evaluate_document(
             **coverage,
             "opportunity_status": None,
             "exact_optimal_set_size": None,
-            "exact_optimal_privacy_min": None,
-            "exact_optimal_privacy_baseline": None,
-            "exact_optimal_privacy_max": None,
-            "exact_optimal_privacy_spread": None,
+            "exact_optimal_count_min": None,
+            "exact_optimal_count_baseline": None,
+            "exact_optimal_count_max": None,
+            "exact_optimal_count_spread": None,
             "free_count_gain": None,
             "selector_changes_baseline": None,
             "epsilon_zero_lexicographic": None,
@@ -433,10 +433,10 @@ def evaluate_document(
             "supported-opportunity" if gain > 0 else "supported-no-opportunity"
         ),
         "exact_optimal_set_size": lexicographic.feasible_count,
-        "exact_optimal_privacy_min": float(lexicographic.feasible_privacy_min),
-        "exact_optimal_privacy_baseline": float(utility_only.selected.privacy_key),
-        "exact_optimal_privacy_max": float(lexicographic.feasible_privacy_max),
-        "exact_optimal_privacy_spread": float(
+        "exact_optimal_count_min": float(lexicographic.feasible_privacy_min),
+        "exact_optimal_count_baseline": float(utility_only.selected.privacy_key),
+        "exact_optimal_count_max": float(lexicographic.feasible_privacy_max),
+        "exact_optimal_count_spread": float(
             lexicographic.feasible_privacy_max - lexicographic.feasible_privacy_min
         ),
         "free_count_gain": float(gain),
@@ -575,10 +575,38 @@ def run_gate(
     environment_hash: str,
     utility_artifact_hash: str,
     input_hashes: dict[str, str] | None = None,
+    expected_input_hashes: dict[str, str] | None = None,
     comparator_vectors: dict[str, dict[str, dict[str, VectorKey]]] | None = None,
     comparator_metadata: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """The complete cache-only gate report. Canonical: no timestamps, no wall time."""
+    hash_mismatches = sorted(
+        f"{name}: expected {expected} got {(input_hashes or {}).get(name)}"
+        for name, expected in (expected_input_hashes or {}).items()
+        if (input_hashes or {}).get(name) != expected
+    )
+    if hash_mismatches:
+        # Fail BEFORE any evaluation: a pin difference makes every downstream number
+        # a measurement of a different experiment (plan §3.5 rule 1).
+        return {
+            "epsilon": "0",
+            "remote_tasks": 0,
+            "reader_work_items": 0,
+            "inputs": {
+                "environment_hash": environment_hash,
+                "utility_artifact_hash": utility_artifact_hash,
+                "count_target_artifact_hash": count_state.get("artifact_hash"),
+                "file_sha256": dict(sorted((input_hashes or {}).items())),
+                "expected_file_sha256": dict(sorted((expected_input_hashes or {}).items())),
+            },
+            "campaign_document_ids": list(CAMPAIGN_DOCUMENTS),
+            "rejection_audit": {},
+            "documents": [],
+            "summary": {},
+            "additive_comparators": {},
+            "adjudication_checks": {"invalid_reasons": hash_mismatches},
+            "verdict": GateVerdict.INVALID.value,
+        }
     corpus, audit = load_candidate_corpus(
         documents, cache, utility_artifact, targets,
         environment_hash=environment_hash,
@@ -613,6 +641,7 @@ def run_gate(
             "utility_artifact_hash": utility_artifact_hash,
             "count_target_artifact_hash": count_state.get("artifact_hash"),
             "file_sha256": dict(sorted((input_hashes or {}).items())),
+            "expected_file_sha256": dict(sorted((expected_input_hashes or {}).items())),
         },
         "campaign_document_ids": list(CAMPAIGN_DOCUMENTS),
         "rejection_audit": audit,
@@ -650,8 +679,10 @@ def load_comparator_policy(
 
     import torch
 
-    from cloak.ranker.semantic import enable_controller_gain
-    from train_interactive_ranker import _semantic_training_policy
+    from train_interactive_ranker import (
+        _apply_controller_options,
+        _semantic_training_policy,
+    )
 
     payload = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
     state_dict = payload.get("policy_state_dict") or payload.get("state_dict")
@@ -671,12 +702,20 @@ def load_comparator_policy(
         documents,
         profiles,
     )
-    if any("gain_head" in key for key in state_dict):
-        enable_controller_gain(
-            policy,
-            str(config.get("controller_gain", "evidence")),
-            hidden_dim=int(config.get("controller_gain_hidden", 32)),
-            bound=float(config.get("controller_gain_bound", 1.5)),
+    # Reconstruct EVERY archived controller option through the trainer's own helper,
+    # not a hand-picked subset: the softcap changes the forward pass, so replaying
+    # without it produces vectors that are not the archived policy's. The transform
+    # tag is retagged by exactly the options that change forward semantics, so
+    # comparing it against the checkpoint's own semantic contract turns any future
+    # omission into a hard failure instead of a silently different policy.
+    _apply_controller_options(policy, SimpleNamespace(**config))
+    contract = dict(payload.get("semantic_contract", {}))
+    expected_transform = contract.get("controller_transform")
+    rebuilt_transform = getattr(policy, "controller_transform", None)
+    if expected_transform is not None and rebuilt_transform != expected_transform:
+        raise ValueError(
+            f"replayed controller transform differs for {checkpoint_path}: "
+            f"{rebuilt_transform!r} != {expected_transform!r}"
         )
     policy.load_state_dict(state_dict)
     policy.eval()
@@ -692,7 +731,10 @@ def load_comparator_policy(
         "environment_hash": pinned,
         "controller_gain": config.get("controller_gain"),
         "count_to_gain": config.get("count_to_gain"),
-        "controller_softcap": config.get("controller_softcap"),
+        "utility_logit_softcap": config.get("utility_logit_softcap"),
+        "controller_gap_scaling": config.get("controller_gap_scaling"),
+        "controller_transform": rebuilt_transform,
+        "controller_transform_pin": expected_transform,
     }
     return policy, metadata
 
@@ -739,8 +781,17 @@ def score_comparator_vector(
     if candidate is None:
         return {**row, "status": "cache-miss"}
     optimum = max(item.utility_key for item in corpus_document.gate_candidates)
-    inside = candidate.utility_key == optimum
-    privacy_max = max(
+    # A comparator vector may come from the expanded cache and therefore EXCEED the
+    # standardized-slate optimum. "not inside the exact optimal set" is not the same
+    # claim as "loses utility", so the relation is reported three ways and the
+    # aggregates count strictly-below separately from above.
+    if candidate.utility_key == optimum:
+        relation = "equal"
+    elif candidate.utility_key < optimum:
+        relation = "below"
+    else:
+        relation = "above"
+    count_max = max(
         item.privacy_key for item in corpus_document.gate_candidates
         if item.utility_key == optimum
     )
@@ -751,15 +802,16 @@ def score_comparator_vector(
             item.vector_key for item in corpus_document.gate_candidates
         },
         "utility": candidate.utility,
+        "utility_relation_to_exact_optimum": relation,
         "utility_gap_to_exact_optimum": float(record["epsilon_zero_lexicographic"]["utility"])
         - candidate.utility,
-        "privacy_score": candidate.privacy_score,
-        "privacy_gap_to_lexicographic": float(
-            record["epsilon_zero_lexicographic"]["privacy_key"]
+        "profile_count_score": candidate.privacy_score,
+        "count_gap_to_lexicographic": float(
+            record["epsilon_zero_lexicographic"]["profile_count_key"]
         ) - candidate.privacy_score,
-        "inside_exact_optimal_set": inside,
-        "chooses_privacy_max_inside_exact_set": bool(
-            inside and candidate.privacy_key == privacy_max
+        "inside_exact_optimal_set": relation == "equal",
+        "chooses_count_max_inside_exact_set": bool(
+            relation == "equal" and candidate.privacy_key == count_max
         ),
     }
 
@@ -796,6 +848,32 @@ def build_comparator_report(
             if row["status"] == "cache-hit"
         ]
         feasible = [row for row in hits if row["inside_exact_optimal_set"]]
+        below = [
+            row for row in hits
+            if row["utility_relation_to_exact_optimum"] == "below"
+        ]
+        missing_max = [
+            row for row in feasible if not row["chooses_count_max_inside_exact_set"]
+        ]
+        # Vector-level fractions are what §3.4 asks for, but the document is the
+        # statistical unit everywhere else, so both are reported and neither is
+        # allowed to stand alone.
+        documents_with_loss = sorted({
+            doc_id for doc_id, document in rows.items()
+            if any(
+                row.get("utility_relation_to_exact_optimum") == "below"
+                for row in document["profiles"].values()
+            )
+        })
+        documents_missing_max = sorted({
+            doc_id for doc_id, document in rows.items()
+            if any(
+                row["status"] == "cache-hit"
+                and row["inside_exact_optimal_set"]
+                and not row["chooses_count_max_inside_exact_set"]
+                for row in document["profiles"].values()
+            )
+        })
         report[label] = {
             "adjudicating": False,
             "checkpoint": metadata_by_label.get(label, {}),
@@ -807,17 +885,27 @@ def build_comparator_report(
                 for row in document["profiles"].values()
                 if row["status"] == "cache-miss"
             ),
+            "utility_relation_counts": {
+                relation: sum(
+                    1 for row in hits
+                    if row["utility_relation_to_exact_optimum"] == relation
+                )
+                for relation in ("below", "equal", "above")
+            },
             "fraction_below_exact_optimum": (
-                sum(1 for row in hits if not row["inside_exact_optimal_set"]) / len(hits)
-                if hits else None
+                len(below) / len(hits) if hits else None
             ),
-            "fraction_utility_feasible_missing_privacy_max": (
+            "fraction_above_exact_optimum": (
                 sum(
-                    1 for row in feasible
-                    if not row["chooses_privacy_max_inside_exact_set"]
-                ) / len(feasible)
-                if feasible else None
+                    1 for row in hits
+                    if row["utility_relation_to_exact_optimum"] == "above"
+                ) / len(hits) if hits else None
             ),
+            "fraction_utility_feasible_missing_count_max": (
+                len(missing_max) / len(feasible) if feasible else None
+            ),
+            "documents_with_utility_loss": documents_with_loss,
+            "documents_missing_count_max_inside_exact_set": documents_missing_max,
         }
     return report
 
@@ -850,3 +938,220 @@ def load_scoped_documents(
         document for document in documents if document.policy_decisions
     )
     return documents, environment_hash
+
+
+def _file_hashes(paths: dict[str, Path]) -> dict[str, str]:
+    import hashlib
+
+    return {
+        name: hashlib.sha256(Path(path).read_bytes()).hexdigest()
+        for name, path in sorted(paths.items())
+    }
+
+
+def _lambda_profiles(lambda_menu_path: Path) -> tuple:
+    from cloak.ranker.environment import LambdaProfile
+
+    menu = json.loads(Path(lambda_menu_path).read_text())
+    return tuple(
+        LambdaProfile(name, float(value))
+        for name, value in zip(menu["profile_names"], menu["values"], strict=True)
+    )
+
+
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--environment", required=True)
+    parser.add_argument("--utility-artifact", required=True)
+    parser.add_argument("--profile-count-targets", required=True)
+    parser.add_argument("--utility-cache", required=True)
+    parser.add_argument(
+        "--checkpoint", action="append", default=[], metavar="LABEL=PATH",
+        help="archived additive controller, report-only; repeatable",
+    )
+    parser.add_argument(
+        "--representation-manifest",
+        default="results/ranker_v2/architecture/representation-full/manifest.json",
+    )
+    parser.add_argument(
+        "--lambda-menu", default="results/ranker_v2/preflight/lambda-menu.json",
+    )
+    parser.add_argument(
+        "--expect-sha256", action="append", default=[], metavar="NAME=HEX",
+        help="preregistered input hash; a mismatch is INVALID before any evaluation",
+    )
+    parser.add_argument("--doc-id", action="append", default=[])
+    parser.add_argument("--preflight-primary-docs", type=int, default=None)
+    parser.add_argument("--output")
+    parser.add_argument("--stdout", action="store_true")
+    return parser.parse_args(argv)
+
+
+def _evaluation_population(
+    documents: tuple[RankerDocument, ...],
+    corpus: dict[str, CandidateCorpusDocument],
+    args: argparse.Namespace,
+) -> tuple[RankerDocument, ...]:
+    """Preflight scoping: chosen from support status ONLY, before any gain is read."""
+    if not args.doc_id and args.preflight_primary_docs is None:
+        return documents
+    selected = list(dict.fromkeys(args.doc_id))
+    if args.preflight_primary_docs is not None:
+        eligible = [
+            doc_id for doc_id in sorted(corpus)
+            if doc_id not in CAMPAIGN_DOCUMENTS
+            and corpus[doc_id].candidate_support_status == "support-complete"
+            and doc_id not in selected
+        ]
+        if len(eligible) < args.preflight_primary_docs:
+            raise SystemExit(
+                f"{GateVerdict.INSUFFICIENT_CANDIDATE_BREADTH.value}: only "
+                f"{len(eligible)} support-complete non-campaign documents exist"
+            )
+        selected.extend(eligible[: args.preflight_primary_docs])
+    chosen = set(selected)
+    unknown = sorted(chosen - set(corpus))
+    if unknown:
+        raise SystemExit(f"unknown document ids: {unknown}")
+    return tuple(document for document in documents if document.doc_id in chosen)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = _parse_args(argv)
+    from cloak.ranker.profile_count import ProfileCountTargets
+    from cloak.reward.utility_cache import UtilityCache
+
+    utility_artifact = json.loads(Path(args.utility_artifact).read_text())
+    count_state = json.loads(Path(args.profile_count_targets).read_text())
+    targets = ProfileCountTargets.from_artifact(count_state)
+    documents, environment_hash = load_scoped_documents(
+        Path(args.environment), utility_artifact, count_state,
+    )
+    utility_artifact_hash = str(utility_artifact["artifact_hash"])
+    cache = UtilityCache(Path(args.utility_cache))
+    print(f"retained documents {len(documents)}  cache entries {len(cache.entries)}")
+
+    corpus, _audit = load_candidate_corpus(
+        documents, cache, utility_artifact, targets,
+        environment_hash=environment_hash,
+        utility_artifact_hash=utility_artifact_hash,
+    )
+    unsupported = [
+        (doc_id, corpus[doc_id].candidate_support_status, sorted({
+            source
+            for row in corpus[doc_id].missing_expected_vectors
+            for source in row.sources
+        }))
+        for doc_id in sorted(corpus)
+        if doc_id not in CAMPAIGN_DOCUMENTS
+        and corpus[doc_id].candidate_support_status != "support-complete"
+    ]
+    print(f"unsupported primary documents {len(unsupported)}")
+    for row in unsupported[:5]:
+        print(f"  {row[0]}  {row[1]}  missing anchors: {row[2]}")
+
+    evaluated = _evaluation_population(documents, corpus, args)
+    if len(evaluated) != len(documents):
+        print(f"evaluation population restricted to {len(evaluated)} documents: "
+              f"{sorted(document.doc_id for document in evaluated)}")
+
+    comparator_vectors: dict[str, dict[str, dict[str, VectorKey]]] = {}
+    comparator_metadata: dict[str, dict[str, Any]] = {}
+    if args.checkpoint:
+        profiles = _lambda_profiles(Path(args.lambda_menu))
+        for entry in args.checkpoint:
+            label, _, path = entry.partition("=")
+            if not label or not path:
+                raise SystemExit(f"--checkpoint expects LABEL=PATH, got {entry!r}")
+            policy, metadata = load_comparator_policy(
+                Path(path), documents, profiles,
+                representation_manifest=Path(args.representation_manifest),
+                profile_count_targets=Path(args.profile_count_targets),
+                environment_hash=environment_hash,
+            )
+            comparator_vectors[label] = greedy_comparator_vectors(
+                policy, evaluated, profiles,
+            )
+            comparator_metadata[label] = metadata
+            print(f"replayed comparator {label} over {len(evaluated)} documents")
+
+    hashed = {
+        "environment": Path(args.environment),
+        "utility_artifact": Path(args.utility_artifact),
+        "profile_count_targets": Path(args.profile_count_targets),
+        "utility_cache": Path(args.utility_cache),
+    }
+    if args.checkpoint:
+        # Comparator replay depends on these two as much as on the frozen artifacts.
+        hashed["representation_manifest"] = Path(args.representation_manifest)
+        hashed["lambda_menu"] = Path(args.lambda_menu)
+    expected: dict[str, str] = {}
+    for entry in args.expect_sha256:
+        name, _, digest = entry.partition("=")
+        if not name or not digest:
+            raise SystemExit(f"--expect-sha256 expects NAME=HEX, got {entry!r}")
+        if name not in hashed:
+            raise SystemExit(
+                f"--expect-sha256 names an unknown input {name!r}; known: {sorted(hashed)}"
+            )
+        expected[name] = digest.strip().lower()
+
+    report = run_gate(
+        evaluated, cache, utility_artifact, targets, count_state,
+        environment_hash=environment_hash,
+        utility_artifact_hash=utility_artifact_hash,
+        input_hashes=_file_hashes(hashed),
+        expected_input_hashes=expected,
+        comparator_vectors=comparator_vectors,
+        comparator_metadata=comparator_metadata,
+    )
+    _print_summary(report)
+    payload = json.dumps(report, indent=1, sort_keys=True) + "\n"
+    if args.stdout or not args.output:
+        print(payload)
+    if args.output:
+        destination = Path(args.output)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(payload)
+        print(f"wrote {destination}")
+    return 0
+
+
+def _print_summary(report: dict[str, Any]) -> None:
+    print(f"\n=== verdict: {report['verdict']} ===")
+    if report["verdict"] == GateVerdict.INVALID.value:
+        for reason in report["adjudication_checks"]["invalid_reasons"]:
+            print(f"  INVALID: {reason}")
+        return
+    print(f"  rejection audit: {report['rejection_audit']}")
+    for name in ("primary", "campaign"):
+        summary = report["summary"][name]
+        bootstrap = summary["bootstrap"]
+        print(f"  {name}: {summary['document_count']} documents, "
+              f"support-complete {summary['support_complete_count']}, "
+              f"positive gain {summary['positive_gain_document_count']}, "
+              f"mean G {summary['mean_free_count_gain']}, "
+              f"median G {summary['median_free_count_gain']}")
+        if bootstrap is not None:
+            print(f"    bootstrap 95% one-sided lower bound "
+                  f"{bootstrap['lower_bound_95_one_sided']:.6f} "
+                  f"over {bootstrap['document_count']} documents")
+        print(f"    exact-optimal-set sizes {summary['exact_optimal_set_size_distribution']}")
+        print(f"    standardized-slate coverage {summary['standardized_slate_coverage_distribution']}")
+    for label, block in report["additive_comparators"].items():
+        print(f"  comparator {label}: hits {block['cache_hit_count']}, "
+              f"misses {block['cache_miss_count']}, "
+              f"utility relation {block['utility_relation_counts']}, "
+              f"below optimum {block['fraction_below_exact_optimum']}, "
+              f"feasible-but-not-max-count "
+              f"{block['fraction_utility_feasible_missing_count_max']}")
+        print(f"    transform {block['checkpoint'].get('controller_transform')} "
+              f"(pin {block['checkpoint'].get('controller_transform_pin')}), "
+              f"softcap {block['checkpoint'].get('utility_logit_softcap')}")
+        print(f"    documents with utility loss "
+              f"{len(block['documents_with_utility_loss'])}, "
+              f"missing count max {len(block['documents_missing_count_max_inside_exact_set'])}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

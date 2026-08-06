@@ -1253,16 +1253,26 @@ class SemanticRankerPolicy(nn.Module):
                 # Evidence-supervised tie ownership (round-3 adjudication,
                 # decision log 2026-07-31): UNBOUNDED residual (the tie hinge
                 # is self-limiting; the v13 tanh ceiling froze differentiation)
-                # and the critical gradient split — the count objective sees
-                # the real current strength but trains ONLY global alpha_raw;
-                # the residual is trained by the tie-margin hinge and the
-                # lambda>0 sampling terms.
+                # and the count->gain routing below.
                 residual = self.gain_head(
                     utility_inputs.detach().mean(dim=0)
                 ).squeeze(-1)
                 alpha_value = F.softplus(self.alpha_raw + residual)
+                # "detached" is the v13/v14 gradient split: the count objective
+                # sees the real current strength but trains ONLY global
+                # alpha_raw, leaving the residual to the tie-margin hinge and
+                # the lambda>0 sampling terms. "coupled" removes that single
+                # detach so the dense expected-count objective also trains the
+                # per-decision residual — the one uniquely isolated edge in the
+                # controller (round-7 adjudication, 2026-08-03). Utility logits
+                # stay detached from count in BOTH modes: count must never train
+                # a quantity called utility.
                 alpha_count_value = F.softplus(
-                    self.alpha_raw + residual.detach()
+                    self.alpha_raw + (
+                        residual
+                        if getattr(self, "count_to_gain", "detached") == "coupled"
+                        else residual.detach()
+                    )
                 )
             elif gain_mode == "random":
                 offset = _random_gain_offset(
@@ -1374,8 +1384,11 @@ def enable_controller_gain(
     attested learned-multiplier failure is unbounded upward growth). "random"
     mode replaces delta_phi with a deterministic per-decision offset in
     [-bound, bound] — the mandatory random-gain control before any adoption
-    claim. Gradients reach delta_phi through the count objective and the
-    lambda>0 sampling terms; the utility tower stays count-free.
+    claim. In "learned" mode gradients reach delta_phi through the count
+    objective and the lambda>0 sampling terms. In "evidence" mode the residual
+    is unbounded and the count objective reaches it only when
+    `policy.count_to_gain == "coupled"` (see `distribution`). The utility tower
+    stays count-free in every mode.
     """
     if mode not in ("learned", "random", "evidence"):
         raise ValueError(f"unsupported controller gain mode: {mode!r}")

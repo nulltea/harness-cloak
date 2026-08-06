@@ -90,24 +90,27 @@
   <section id="model-internals">
     <header class="section-head">
       <div class="section-num">§03</div><h2 class="section-title">Ranker Model Architecture</h2>
-      <div class="section-meta">two judgments · one controller · what was chosen and why</div>
+      <div class="section-meta">frozen substrate · immutable utility · trainable lex side path · primal-dual</div>
     </header>
 
     <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
       <div class="diagram-cap">
-        <span class="l">FIG · M1: Ranker v2 semantic policy architecture</span>
-        <span>green = embedding/tensor · rust = linear · blue = attention · gray = normalization</span>
+        <span class="l">FIG · M1: Proposed Ranker v2 three-tier freeze policy architecture</span>
+        <span>solid outline/arrow = frozen or forward · dashed outline/arrow = trainable or backward</span>
       </div>
       <div
         id="ranker-model-diagram"
         class="ranker-model-diagram"
         role="img"
-        aria-label="Top-to-bottom computation graph for the Ranker v2 semantic policy architecture"
+        aria-label="Top-to-bottom computation graph for the Ranker v2 frozen clinical substrate, staged-frozen utility branch, trainable lexicographic side representation, served policy modes, critics, and document dual"
       >
-        <div class="ranker-model-diagram__layout">
+        <div class="ranker-model-diagram__layout" style="justify-items:center">
 
-          <section class="ranker-model-diagram__module" data-module-id="encoder">
-            <div class="ranker-model-diagram__module-label">Shared frozen encoder</div>
+          <section class="ranker-model-diagram__module" data-module-id="encoder" style="justify-self:center;width:max-content">
+            <div class="ranker-model-diagram__module-label">
+              Tier 1 · Frozen clinical substrate
+              <span class="ranker-model-diagram__module-sublabel">frozen from the start · shared by both policy modes</span>
+            </div>
             <div class="ranker-model-diagram__row" style="grid-template-columns:auto auto auto auto">
               <div class="ranker-model-diagram__col">
                 <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="document_chunks">
@@ -146,10 +149,13 @@
             </div>
           </section>
 
-          <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:2.5fr minmax(320px,1fr);gap:var(--dg-gap-lg)">
+          <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:max-content max-content;gap:var(--dg-gap-lg);justify-self:center;width:max-content">
 
-            <section class="ranker-model-diagram__module" data-module-id="utility">
-              <div class="ranker-model-diagram__module-label">Utility scoring</div>
+          <section class="ranker-model-diagram__module" data-module-id="utility">
+              <div class="ranker-model-diagram__module-label">
+                Tier 2 · Immutable utility branch
+                <span class="ranker-model-diagram__module-sublabel">BC → verified ExIt → utility-only structured RL · then frozen</span>
+              </div>
 
               <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:1.55fr 1fr">
                 <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="token-fusion">
@@ -273,15 +279,15 @@
                 <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="context_interaction" data-port-shape="circle">
                   <div class="ranker-model-diagram__node-title">⊙</div>
                 </div>
-                <div class="ranker-model-diagram__node" data-node-id="feature_concat">
-                  <div class="ranker-model-diagram__node-title">Feature concat</div>
-                  <div class="ranker-model-diagram__node-detail">r_U · c_context · interaction · h_hist · mode · type</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="feature_concat">
+                  <div class="ranker-model-diagram__node-title">xU(s, a) · utility semantic features</div>
+                  <div class="ranker-model-diagram__node-detail">r_U · c_context · interaction<br>h_hist · mode · type [A × 4608]</div>
                 </div>
                 <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="utility_hidden">
                     <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">4608 → 768</div>
-                    <div class="ranker-model-diagram__node-detail">Utility MLP · Linear</div>
+                    <div class="ranker-model-diagram__node-title">Frozen 4608 → 768</div>
+                    <div class="ranker-model-diagram__node-detail">utility base · Linear</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="utility_gelu">
                     <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
@@ -289,106 +295,219 @@
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="utility_output">
                     <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">768 → 1</div>
+                    <div class="ranker-model-diagram__node-title">Frozen 768 → 1</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="utility_logit">
-                    <div class="ranker-model-diagram__node-title">u(a)</div>
-                    <div class="ranker-model-diagram__node-detail">utility logit</div>
+                    <div class="ranker-model-diagram__node-title">uθ(s, a)</div>
+                    <div class="ranker-model-diagram__node-detail">frozen utility logit</div>
                   </div>
                 </div>
               </div>
-            </section>
+          </section>
 
-            <div class="ranker-model-diagram__col" style="grid-template-rows:1fr auto;gap:var(--dg-gap-lg);justify-items:stretch">
-
-              <section class="ranker-model-diagram__module" data-module-id="privacy">
-                <div class="ranker-model-diagram__module-label" data-node-id="m1_label_privacy">Semantic privacy estimation</div>
-                <div class="ranker-model-diagram__col" style="align-content:space-between;height:100%">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding" data-node-id="count_basis">
-                    <div class="ranker-model-diagram__node-title">count-basis token</div>
-                    <div class="ranker-model-diagram__node-detail">optional categorical B</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="privacy_join" data-port-shape="circle">
-                    <div class="ranker-model-diagram__node-title">⊕</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="privacy_projection">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">Privacy projection</div>
-                    <div class="ranker-model-diagram__node-detail">Linear (3840 + B) → 256</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="privacy_hidden">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">Hidden projection</div>
-                    <div class="ranker-model-diagram__node-detail">Linear 256 → 256</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="privacy_gelu">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">GELU</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="distribution_projection">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">Distribution projection</div>
-                    <div class="ranker-model-diagram__node-detail">Linear 256 → 2</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="positive_parameters">
-                    <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
-                    <div class="ranker-model-diagram__node-title">Softplus</div>
-                    <div class="ranker-model-diagram__node-detail">positive μ_logK and σ_logK</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="log_count">
-                    <div class="ranker-model-diagram__node-title">Log-count distribution</div>
-                    <div class="ranker-model-diagram__node-detail">μ_logK · σ_logK · σ retained for audit</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="profile_normalization">
-                    <div class="ranker-model-diagram__node-title">Profile-menu normalization</div>
-                    <div class="ranker-model-diagram__node-detail">μ / max(level μ) · KEEP = 0 · placeholder = 1</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="privacy_score">
-                    <div class="ranker-model-diagram__node-title">p̂(a)</div>
-                    <div class="ranker-model-diagram__node-detail">profile-relative</div>
-                  </div>
-                </div>
-              </section>
-
-              <section class="ranker-model-diagram__module" data-module-id="controller">
-                <div class="ranker-model-diagram__module-label" data-node-id="m1_label_controller">
-                  Additive lambda controller
-                  <span class="ranker-model-diagram__module-sublabel">b(a, λ) = α · g(λ) · gap · p̂(a)</span>
-                </div>
-                <div class="ranker-model-diagram__row" style="grid-template-columns:auto 1fr auto auto auto auto">
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="additive_controller" data-port-shape="circle">
-                    <div class="ranker-model-diagram__node-title">+</div>
-                  </div>
-                  <div></div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="utility_gap" data-port-shape="circle" title="utility-logit range max u − min u per legal menu · detached (stop-gradient)">
-                    <div class="ranker-model-diagram__node-title">gap</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="alpha" data-port-shape="circle" title="init = weighted-median switch threshold measured on BC menus (gap-normalized)">
-                    <div class="ranker-model-diagram__node-title">α</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="lambda_transform" data-port-shape="circle">
-                    <div class="ranker-model-diagram__node-title">g(λ)</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--controller" data-node-id="privacy_control" data-port-shape="circle">
-                    <div class="ranker-model-diagram__node-title">p̂</div>
-                  </div>
-                </div>
-                <div class="ranker-model-diagram__col">
-                  <div class="ranker-model-diagram__node" data-node-id="legal_gather">
-                    <div class="ranker-model-diagram__node-title">Legal-action gather</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="log_softmax">
-                    <div class="ranker-model-diagram__node-title">log_softmax</div>
-                  </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="policy_output">
-                    <div class="ranker-model-diagram__node-title">π(a | s, λ)</div>
-                  </div>
-                </div>
-                <div class="ranker-model-diagram__node-detail" style="text-align:center">λ = 0 → separate branch: combined logits ≡ utility logits</div>
-              </section>
-
+          <div class="ranker-model-diagram__col" style="align-content:start;gap:var(--dg-gap-lg)">
+          <section class="ranker-model-diagram__module ranker-model-diagram__module--trainable" data-module-id="lex-side-path">
+            <div class="ranker-model-diagram__module-label">
+              Tier 3 · Trainable lexicographic side path
+              <span class="ranker-model-diagram__module-sublabel">discrete λ conditioning + rank-4 semantic adapters + GELU-16 head</span>
             </div>
+            <div class="ranker-model-diagram__col ranker-model-diagram__col--tight" style="align-content:space-between;height:100%">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--control ranker-model-diagram__node--trainable" data-node-id="preference_conditioning">
+                <div class="ranker-model-diagram__node-title">User setting λk → preference condition eλ</div>
+                <div class="ranker-model-diagram__node-detail">fixed 3–5-setting menu · λ0 forces rψ = 0<br>λk&gt;0 conditions Tier 3 · τ(λk) sets the utility floor</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--attention ranker-model-diagram__node--trainable" data-node-id="lex_semantic_side_stack">
+                <div class="ranker-model-diagram__node-title">Lex-only semantic side stack</div>
+                <div class="ranker-model-diagram__node-detail">conditioned by eλ · rank-4 deltas over frozen utility maps:<br>relation projection · context attention<br>selected-action memory · mode/type interaction</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="lex_feature_concat">
+                <div class="ranker-model-diagram__node-title">xlex(s, a)</div>
+                <div class="ranker-model-diagram__node-detail">relation · context · interaction · history · mode · type [A × 4608]</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="residual_input_norm">
+                <div class="ranker-model-diagram__node-title">LayerNorm 4608</div>
+                <div class="ranker-model-diagram__node-detail">affine = false</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--linear ranker-model-diagram__node--trainable" data-node-id="residual_hidden">
+                <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                <div class="ranker-model-diagram__node-title">Linear 4608 → 16</div>
+                <div class="ranker-model-diagram__node-detail">bias = true</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="residual_pre_norm">
+                <div class="ranker-model-diagram__node-title">LayerNorm 16</div>
+                <div class="ranker-model-diagram__node-detail">affine = false · controls trained pre-activation scale</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--activation" data-node-id="residual_gelu">
+                <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M14 0 H86 L100 50 L86 100 H14 L0 50 Z"/></svg>
+                <div class="ranker-model-diagram__node-title">GELU</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--linear ranker-model-diagram__node--trainable" data-node-id="residual_output">
+                <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true" focusable="false"><path vector-effect="non-scaling-stroke" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                <div class="ranker-model-diagram__node-title">Linear 16 → 1</div>
+                <div class="ranker-model-diagram__node-detail">bias = false · exact-zero init</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="residual_logit">
+                <div class="ranker-model-diagram__node-title">rψ(s, a)</div>
+                <div class="ranker-model-diagram__node-detail">trainable lexicographic residual</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary ranker-model-diagram__module--trainable" data-module-id="lex-mode">
+            <div class="ranker-model-diagram__module-label">
+              Utility-first/count-second · learned branch
+              <span class="ranker-model-diagram__module-sublabel">one checkpoint · user-selectable λ setting · same dynamic legal mask</span>
+            </div>
+            <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="lexicographic_add" data-port-shape="circle">
+                <div class="ranker-model-diagram__node-title">+</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="lexicographic_logits">
+                <div class="ranker-model-diagram__node-title">zλ = uθ + rψ(xlex, eλ)</div>
+                <div class="ranker-model-diagram__node-detail">λ0: exact utility identity · λk&gt;0: conditioned residual</div>
+              </div>
+              <div class="ranker-model-diagram__node" data-node-id="lexicographic_legal_gather">
+                <div class="ranker-model-diagram__node-title">Dynamic legal gather</div>
+                <div class="ranker-model-diagram__node-detail">KEEP · levels · placeholder · injectivity mask</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="lexicographic_log_softmax">
+                <div class="ranker-model-diagram__node-title">log_softmax</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="lexicographic_policy_output">
+                <div class="ranker-model-diagram__node-title">πlex(a | s, λk)</div>
+                <div class="ranker-model-diagram__node-detail">one learned policy · user-selected operating point</div>
+              </div>
+            </div>
+          </section>
           </div>
+
+          </div>
+
+          <section class="ranker-model-diagram__module" data-module-id="count-training-only" style="justify-self:center;width:max-content">
+            <div class="ranker-model-diagram__module-label">
+              Training-only actor-critic
+              <span class="ranker-model-diagram__module-sublabel">Count reward trains πlex through PPO; no count value enters the deployed policy input</span>
+            </div>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:repeat(4,max-content);grid-template-rows:100px 86px;align-items:stretch">
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="count_reward_source" style="grid-column:1;grid-row:1 / span 2">
+                <div class="ranker-model-diagram__node-title">Count reward → return GP</div>
+                <div class="ranker-model-diagram__node-detail"><strong>Prototype reward source</strong><br>temporary exact level_count lookup<br><br><strong>Final reward source</strong><br>frozen k-anonymity estimator predicts K̂(s,a)<br><br>profile-relative return · reward only<br>λ never scales GP · not a policy input</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="count_advantage" style="grid-column:2;grid-row:1">
+                <div class="ranker-model-diagram__node-title">ÂP = GP − stopgrad(VP)</div>
+                <div class="ranker-model-diagram__node-detail">above-baseline count return<br>assigns the sampled action positive pressure</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="count_ppo" style="grid-column:3;grid-row:1">
+                <div class="ranker-model-diagram__node-title">Count PPO loss LP</div>
+                <div class="ranker-model-diagram__node-detail">−min(ρÂP, clip(ρ)ÂP)<br>turns count advantage into a policy loss</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="count_actor_gradient" style="grid-column:4;grid-row:1 / span 2">
+                <div class="ranker-model-diagram__node-title">BACKWARD into actual πlex</div>
+                <div class="ranker-model-diagram__node-detail"><strong>forward:</strong> λ-conditioned πlex supplies sampled log-probabilities<br><br><strong>backward:</strong> ∂LP/∂ψ traverses log πlex → rψ(xlex,eλ)<br>updates shared Tier-3 adapters, residual head, and preference conditioning<br><br>future actions change without a count input</div>
+              </div>
+
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--control ranker-model-diagram__node--trainable" data-node-id="count_critic" style="grid-column:2;grid-row:2">
+                <div class="ranker-model-diagram__node-title">Count critic VP(s)</div>
+                <div class="ranker-model-diagram__node-detail">Huber(VP, GP) · separate optimizer<br>stopgrad(xlex) baseline only · no actor gradient</div>
+              </div>
+              <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="count_policy_ratio" style="grid-column:3;grid-row:2">
+                <div class="ranker-model-diagram__node-title">ρ = πlex(a|s,λk) / πold(a|s,λk)</div>
+                <div class="ranker-model-diagram__node-detail">stored sampled log πlex + frozen πold<br>same λk · clipped probability-ratio correction</div>
+              </div>
+            </div>
+          </section>
+
+          <section class="ranker-model-diagram__module" data-module-id="training-only" style="justify-self:center;width:max-content">
+            <div class="ranker-model-diagram__module-label">
+              Training-only actor-critic and document dual
+              <span class="ranker-model-diagram__module-sublabel">temporarily isolated from the model graph while objective families are migrated</span>
+            </div>
+            <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:repeat(4,max-content);align-items:stretch">
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="frozen-measurements-column">
+                <div class="ranker-model-diagram__module-label">Frozen measurements</div>
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight" style="grid-template-rows:repeat(5,74px)">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="routed_utility_return" style="grid-row:2">
+                    <div class="ranker-model-diagram__node-title">Routed utility return ĜU</div>
+                    <div class="ranker-model-diagram__node-detail">assertion-linked slices + residual/fallback<br>document RLOO · measured pair substitution</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="previous_policy" style="grid-row:1">
+                    <div class="ranker-model-diagram__node-title">Stored utility actor probabilities</div>
+                    <div class="ranker-model-diagram__node-detail">sampled log πlex + frozen πold snapshot<br>self-contained record while this panel is isolated</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="utility_reference" style="grid-row:4">
+                    <div class="ranker-model-diagram__node-title">Utility reference bd</div>
+                    <div class="ranker-model-diagram__node-detail">frozen utility-only rollout manifest<br>setting-specific floor bd − τ(λk)</div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="advantages-column">
+                <div class="ranker-model-diagram__module-label">Advantages and constraint</div>
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight" style="grid-template-rows:repeat(5,74px)">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control ranker-model-diagram__node--trainable" data-node-id="utility_critic" style="grid-row:1">
+                    <div class="ranker-model-diagram__node-title">Utility critic VU(s)</div>
+                    <div class="ranker-model-diagram__node-detail">stopgrad(xU) · legal-menu mean<br>separate parameters</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="utility_advantage" style="grid-row:2">
+                    <div class="ranker-model-diagram__node-title">ÂU = ĜU − stopgrad(VU)</div>
+                    <div class="ranker-model-diagram__node-detail">structured LOO · no SD normalization</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--external" data-node-id="utility_violation" style="grid-row:4">
+                    <div class="ranker-model-diagram__node-title">vd,k = bd − τ(λk) − ĴU</div>
+                    <div class="ranker-model-diagram__node-detail">document-level utility violation</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control ranker-model-diagram__node--trainable" data-node-id="document_dual" style="grid-row:5">
+                    <div class="ranker-model-diagram__node-title">Document dual μd ≥ 0</div>
+                    <div class="ranker-model-diagram__node-detail">direct training-state multiplier</div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="objective-terms-column">
+                <div class="ranker-model-diagram__module-label">Separate objective terms</div>
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight" style="grid-template-rows:repeat(5,74px)">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization" data-node-id="policy_ratio" style="grid-row:1">
+                    <div class="ranker-model-diagram__node-title">ρ = πlex(a|s) / πold(a|s)</div>
+                    <div class="ranker-model-diagram__node-detail">one ratio · separately clipped surrogates</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="utility_ppo" style="grid-row:2">
+                    <div class="ranker-model-diagram__node-title">Utility PPO surrogate LU</div>
+                    <div class="ranker-model-diagram__node-detail">−min(ρÂU, clip(ρ)ÂU)</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="trust_terms" style="grid-row:3">
+                    <div class="ranker-model-diagram__node-title">−βH + η KL(πlex || πold)</div>
+                    <div class="ranker-model-diagram__node-detail">entropy + previous-policy trust region</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="critic_errors" style="grid-row:4">
+                    <div class="ranker-model-diagram__node-title">Utility critic error</div>
+                    <div class="ranker-model-diagram__node-detail">VU ↔ ĜU</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="dual_term" style="grid-row:5">
+                    <div class="ranker-model-diagram__node-title">−μd · stopgrad(vd)</div>
+                    <div class="ranker-model-diagram__node-detail">document dual objective</div>
+                  </div>
+                </div>
+              </section>
+
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="owned-updates-column">
+                <div class="ranker-model-diagram__module-label">Owned updates</div>
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight" style="grid-template-rows:repeat(5,74px)">
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="actor_objective" style="grid-row:2 / span 2">
+                    <div class="ranker-model-diagram__node-title">Remaining actor terms</div>
+                    <div class="ranker-model-diagram__node-detail">stopgrad(μd)LU − βH + ηKL<br>LP is isolated in the count panel above<br>this panel has no cross-section arrows during migration</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="critic_losses" style="grid-row:4">
+                    <div class="ranker-model-diagram__node-title">Utility Huber critic loss</div>
+                    <div class="ranker-model-diagram__node-detail">backward path terminates at VU only</div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="dual_loss" style="grid-row:5">
+                    <div class="ranker-model-diagram__node-title">Dual step, then project μd ≥ 0</div>
+                    <div class="ranker-model-diagram__node-detail">updates μd only · μd is never deployed</div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </section>
         </div>
 
         <svg class="ranker-model-diagram__edges" aria-hidden="true" focusable="false"></svg>
@@ -405,10 +524,9 @@ digraph RankerV2Edges {
   field_means -> pair_composition;
   pair_composition -> relation_pair;
 
-  /* ── edges: encoder representations feed both heads ── */
+  /* ── edges: encoder representations feed the frozen semantic stack ── */
   document_bank -> document_projection [color="#666d73", penwidth=1.35];
   relation_pair -> utility_projection [color="#666d73", penwidth=1.35];
-  relation_pair -> privacy_join [color="#666d73", penwidth=1.35, arrowhead=none];
 
   /* ── edges: token feature fusion ── */
   document_projection -> token_sum [arrowhead=none];
@@ -452,28 +570,81 @@ digraph RankerV2Edges {
   utility_gelu -> utility_output;
   utility_output -> utility_logit;
 
-  /* ── edges: semantic privacy estimation ── */
-  count_basis -> privacy_join [arrowhead=none];
-  privacy_join -> privacy_projection;
-  privacy_projection -> privacy_hidden;
-  privacy_hidden -> privacy_gelu;
-  privacy_gelu -> distribution_projection;
-  distribution_projection -> positive_parameters;
-  positive_parameters -> log_count;
-  log_count -> profile_normalization;
-  profile_normalization -> privacy_score;
+  /* ── edges: Tier 3 re-reads the frozen substrate through private semantic adapters ── */
+  preference_conditioning -> lex_semantic_side_stack [color="#765e82", penwidth=1.55];
+  relation_pair -> lex_semantic_side_stack [color="#884d66", penwidth=1.55];
+  document_bank -> lex_semantic_side_stack [color="#884d66", penwidth=1.55];
+  earlier_selections -> lex_semantic_side_stack [color="#884d66", penwidth=1.55];
+  relation_sequence -> lex_semantic_side_stack [color="#884d66", penwidth=1.35];
+  lex_semantic_side_stack -> lex_feature_concat [color="#884d66", penwidth=1.55];
+  lex_feature_concat -> residual_input_norm [color="#884d66", penwidth=1.55];
+  residual_input_norm -> residual_hidden;
+  residual_hidden -> residual_pre_norm;
+  residual_pre_norm -> residual_gelu;
+  residual_gelu -> residual_output;
+  residual_output -> residual_logit;
 
-  /* ── edges: additive lambda controller ── */
-  privacy_score -> privacy_control [color="#a06079", penwidth=1.6, arrowhead=none];
-  privacy_control -> lambda_transform [color="#a06079", penwidth=1.6, arrowhead=none];
-  lambda_transform -> alpha [color="#a06079", penwidth=1.6, arrowhead=none];
-  alpha -> utility_gap [color="#a06079", penwidth=1.6, arrowhead=none];
-  utility_gap -> additive_controller [color="#a06079", penwidth=1.6];
-  utility_logit -> utility_gap [color="#666d73", penwidth=1.15, style=dashed];
-  utility_logit -> additive_controller [arrowhead=none];
-  additive_controller -> legal_gather;
-  legal_gather -> log_softmax;
-  log_softmax -> policy_output;
+  /* ── edges: served lexicographic policy ── */
+  utility_logit -> lexicographic_add [arrowhead=none];
+  residual_logit -> lexicographic_add [arrowhead=none];
+  lexicographic_add -> lexicographic_logits;
+  lexicographic_logits -> lexicographic_legal_gather;
+  lexicographic_legal_gather -> lexicographic_log_softmax;
+  lexicographic_log_softmax -> lexicographic_policy_output;
+
+  /* ── edges: extracted count-only actor-critic ── */
+  count_reward_source -> count_advantage [color="#9a5c54", penwidth=2.0];
+  count_critic -> count_advantage [color="#9a5c54", penwidth=1.55];
+  count_advantage -> count_ppo [color="#9a5c54", penwidth=2.0];
+  count_policy_ratio -> count_ppo [color="#9a5c54", penwidth=1.55];
+  count_ppo -> count_actor_gradient [color="#a13f61", penwidth=2.15, style=dashed];
+  lexicographic_policy_output -> count_policy_ratio [color="#666d73", penwidth=1.35];
+  count_actor_gradient -> lexicographic_policy_output [color="#a13f61", penwidth=2.15, style=dashed];
+
+  /* ── count-loss reverse traversal through the actual served policy into Tier 3 ── */
+  lexicographic_policy_output -> lexicographic_log_softmax [color="#a13f61", penwidth=1.9, style=dashed];
+  lexicographic_log_softmax -> lexicographic_legal_gather [color="#a13f61", penwidth=1.9, style=dashed];
+  lexicographic_legal_gather -> lexicographic_logits [color="#a13f61", penwidth=1.9, style=dashed];
+  lexicographic_logits -> lexicographic_add [color="#a13f61", penwidth=1.9, style=dashed];
+  lexicographic_add -> residual_logit [color="#a13f61", penwidth=1.9, style=dashed];
+  residual_logit -> residual_output [color="#a13f61", penwidth=1.9, style=dashed];
+  residual_output -> residual_gelu [color="#a13f61", penwidth=1.9, style=dashed];
+  residual_gelu -> residual_pre_norm [color="#a13f61", penwidth=1.9, style=dashed];
+  residual_pre_norm -> residual_hidden [color="#a13f61", penwidth=1.9, style=dashed];
+  residual_hidden -> residual_input_norm [color="#a13f61", penwidth=1.9, style=dashed];
+  residual_input_norm -> lex_feature_concat [color="#a13f61", penwidth=1.9, style=dashed];
+  lex_feature_concat -> lex_semantic_side_stack [color="#a13f61", penwidth=1.9, style=dashed];
+  lex_semantic_side_stack -> preference_conditioning [color="#a13f61", penwidth=1.9, style=dashed];
+
+  /* ── edges: remaining training panel is internally complete but externally disconnected ── */
+  routed_utility_return -> utility_advantage [color="#496454", penwidth=1.35];
+  utility_critic -> utility_advantage [color="#496454", penwidth=1.35];
+  previous_policy -> policy_ratio [color="#666d73", penwidth=1.25];
+  utility_advantage -> utility_ppo [color="#496454", penwidth=1.35];
+  policy_ratio -> utility_ppo [color="#765e82", penwidth=1.35];
+  previous_policy -> trust_terms [color="#666d73", penwidth=1.15];
+
+  utility_reference -> utility_violation [color="#9b6a2d", penwidth=1.25];
+  routed_utility_return -> utility_violation [color="#9b6a2d", penwidth=1.25];
+  utility_violation -> dual_term [color="#765e82", penwidth=1.35];
+  document_dual -> dual_term [color="#765e82", penwidth=1.35];
+
+  routed_utility_return -> critic_errors [color="#496454", penwidth=1.15];
+  utility_critic -> critic_errors [color="#496454", penwidth=1.15];
+
+  utility_ppo -> actor_objective [color="#496454", penwidth=1.45];
+  trust_terms -> actor_objective [color="#765e82", penwidth=1.35];
+  document_dual -> actor_objective [color="#765e82", penwidth=1.35];
+  critic_errors -> critic_losses [color="#765e82", penwidth=1.35];
+  dual_term -> dual_loss [color="#765e82", penwidth=1.35];
+
+  /* ── remaining-panel reverse paths terminate inside the isolated panel ── */
+  actor_objective -> utility_ppo [color="#884d66", penwidth=1.55, style=dashed];
+  actor_objective -> trust_terms [color="#884d66", penwidth=1.55, style=dashed];
+  utility_ppo -> policy_ratio [color="#884d66", penwidth=1.55, style=dashed];
+  trust_terms -> policy_ratio [color="#884d66", penwidth=1.45, style=dashed];
+  critic_losses -> utility_critic [color="#884d66", penwidth=1.5, style=dashed];
+  dual_loss -> document_dual [color="#884d66", penwidth=1.5, style=dashed];
 }
         </script>
         <div class="ranker-model-diagram__status">Computing architecture rendering…</div>
@@ -481,23 +652,23 @@ digraph RankerV2Edges {
       <noscript><p class="lede">Figure M1 lays out without JavaScript; edge routing requires it.</p></noscript>
     </div>
 
-    <p class="lede">The policy scores one candidate rewrite at a time by asking two independent questions — does this wording preserve what the document is about, and how much anonymity does it buy — and lets a single transparent knob decide how far the second answer may move the first.</p>
+    <p class="lede">The proposal preserves a utility policy as an immutable reference while giving lexicographic RL its own small semantic path. Utility mode bypasses that path exactly; lexicographic mode adds its learned residual.</p>
     <div class="prose">
-      <p><strong>Scoring one action.</strong> A frozen clinical encoder reads the whole document once, and the vector it produces for every token is kept — one row per token, computed once and reused by every decision in that document. That cache is the <em>token bank</em> (<code>H_doc</code> in the figure, sized tokens × 768); no part of the policy fine-tunes the encoder that produced it. Each candidate action is written out as an ordered relation — <code>[TYPE] health-condition · [SOURCE] kidney transplant · [CANDIDATE] solid organ transplant</code> — and pushed through that same frozen encoder, so a candidate is always represented <em>relative to the value it would replace</em> rather than as a free-standing phrase. Two small trainable projections then split that relation vector: one serves the utility path, the other the privacy path, and neither can modify the other's features.</p>
-      <p><strong>The utility side</strong> turns its projection into a query and attends three times over the cached document: over summaries of the occurrences this decision controls, over the chunks containing them, and over every token in the document. A cross-attention block additionally looks up the decisions already made for this document. The concatenated readout, the relation, and their explicit interaction pass through one MLP to a single number, the utility logit \(u(a)\).</p>
-      <p><strong>The privacy side</strong> sees only the relation. It predicts a standardized log of the candidate's anonymity-set size, \(\mu_{\log K}(a)\); dividing by the largest predicted value in the current profile's own menu converts it into profile-relative privacy progress \(\hat{p}(a)\) in \([0,1]\), with KEEP pinned at \(0\) and the typed placeholder at \(1\). The two sides meet exactly once, in an additive controller — \(z(a,\lambda) = u(a) + \alpha\, g(\lambda)\, \hat{p}(a)\) — after which dynamic legality masks unavailable fills and a <code>log_softmax</code> over the legal menu yields the action distribution.</p>
-      <p><strong>Separate branches are not enough on their own.</strong> Two modules mean nothing if every loss updates both, so gradient ownership is explicit: utility and counterfactual losses update the utility tower and its memory; the exact count objective updates only the controller scale; privacy calibration updates only the privacy projection and head. The privacy head stays frozen through the first hybrid run so count pressure cannot quietly redefine what \(\hat{p}\) means. The controller scale is the one deliberate exception — it receives both utility and count gradients, because with privacy gradient alone its optimum would be unbounded privacy tilt. At \(\lambda = 0\) the controller contributes exactly zero, so combined logits are bitwise equal to utility logits; this is an architectural identity, not an initialization that training could erode.</p>
+      <p><strong>Tier 1 — frozen substrate.</strong> The clinical encoder produces the reusable document token bank and ordered source-to-candidate relation representation. It is frozen from the start. Both policy modes consume the same substrate, so the lexicographic branch cannot obtain a private document encoder or a count-coded input.</p>
+      <p><strong>Tier 2 — utility semantics, then freeze.</strong> Behaviour cloning, verified ExIt, and utility-only structured RL train the candidate-conditioned context readout, selected-action memory, semantic interactions, and utility head. The selected utility checkpoint is then frozen as a unit. Its output \(u_\theta(s,a)\) is a policy preference initialized by utility supervision; it is not claimed to be a calibrated utility value.</p>
+      <p><strong>Tier 3 — lexicographic adaptation.</strong> A private low-rank side path reuses Tier 2's frozen linear maps but adds rank-4 deltas to the relation, context, interaction, and selected-action-memory operations. It therefore sees the same raw semantic substrate rather than only a detached 4,608-dimensional utility bottleneck. A normalized GELU-16 head maps the resulting \(x_{\mathrm{lex}}(s,a)\) to the residual \(r_\psi(s,a)\).</p>
+      <p><strong>Two served modes, one protected identity.</strong> Utility mode is exactly \(z_{\mathrm{utility}}=u_\theta\) and does not execute Tier 3. Lexicographic mode is \(z_{\mathrm{lex}}=u_\theta+r_\psi\). Exact profile-relative counts appear only as training returns. The count and utility actor surrogates update Tier 3; critics update only themselves; the document dual enforces the frozen utility reference; Tiers 1 and 2 receive zero lexicographic-RL gradient.</p>
     </div>
 
     <h3>Design decisions</h3>
     <div class="prose">
-      <p><strong>Privacy signal — a semantic head, not the count itself.</strong> The head predicts a candidate's log-count from the source-to-candidate relation and normalizes it within that profile's own menu, so privacy pressure is an inspectable quantity the actor never sees. Predicting it rather than reading it off an artifact is what lets the policy score wording it has never encountered, and normalizing within the profile keeps the score meaningful when count scales differ between profiles. <em>Also considered:</em> one \(\lambda\)-conditioned scorer over all features, and strict type-normalized grounded counts — the latter retained as the more auditable fallback.</p>
-      <p><strong>\(\lambda\) conditioning — one global scalar, applied after both branches.</strong> A single trainable \(\alpha\) weights a fixed transform \(g(\lambda) = \log(1{+}\lambda)\,/\,\log(1{+}\lambda_{\max})\), which buys three things at once: \(\lambda = 0\) is exactly the utility policy by construction rather than by initialization, one checkpoint serves the whole operating menu, and the privacy weight stays legible because a scalar signal is matched by a scalar knob. It is also the smallest form that can fail informatively — if one \(\alpha\) cannot produce distinct operating points, the fork reopens instead of quietly growing capacity. <em>Also considered:</em> full-representation FiLM, privacy-only FiLM, per-profile slopes, profile embeddings, separate profile heads.</p>
+      <p><strong>Freeze boundary — preserve a behavior, not a generic representation.</strong> Tier 2 is frozen only after utility-specific initialization. This protects the utility-only deployment mode and gives the primal-dual constraint a stationary reference. The tradeoff is deliberate: lexicographic RL cannot repair utility features inside Tier 2, so Tier 3 must receive the frozen substrate through its own narrow semantic adapters rather than only consume \(x_U\).</p>
+      <p><strong>Preference composition — learned residual, not scalar authority.</strong> The old additive controller asked one scalar to overpower arbitrary utility-logit margins. The replacement lets policy gradients learn an action- and context-dependent residual while the document dual prices utility violations. No count score, authored level position, dual value, or preference-mode token enters the actor features.</p>
       <p><strong>Document context — read per candidate over the whole document.</strong> A candidate-conditioned query attends over the token bank — every token of the document, each encoded with both its left and right context — so two candidates for the same decision retrieve different evidence and the model can judge whether <em>this</em> generalization survives <em>this</em> document. Bidirectional and full-length both matter: clinical explanations often follow the mention rather than precede it, and the dependencies that decide utility are frequently nowhere near the span. Freezing the encoder is what makes that bank reusable at all, and keeps a readout gain distinguishable from corpus memorization. <em>Also considered:</em> local CLS plus occurrence mean, bidirectional local target-span pooling, a unidirectional state at the span, full fine-tuning or LoRA, a candidate-rendered cross-encoder.</p>
       <p><strong>Candidate features — encoded jointly with the value they replace.</strong> Type, source, and candidate go through one frozen pass, are pooled per field, and become an ordered vector carrying the signed difference and elementwise product. Encoding the pair rather than the phrase is the whole point: generality is a relation, not a property of wording, and the ordering makes <code>kidney transplant → solid organ transplant</code> distinguishable from its reverse. Because the vector has no parameters of its own, the two branch projections downstream cannot leak into each other. <em>Also considered:</em> candidate text alone, an independent bi-encoder, retrieval and synonymy embeddings (SapBERT, MedCPT, MedEmbed, NeuML), with BioLORD-2023 held as the first escalation.</p>
       <p><strong>Encoder checkpoint — one frozen clinical encoder, pinned to an immutable revision.</strong> <code>BioClinical-ModernBERT-base</code> adds clinical-note and biomedical pretraining while keeping the same architecture and 768-wide interface the policy already used, so it is a drop-in at base-model cost, and pinning the revision makes it part of the experiment's identity and cache key. One caveat travels with it: this encoder saw all of ACI-BENCH during pretraining, so ACI can support development and training but cannot be used to select an encoder or to claim out-of-corpus generalization. <em>Also considered:</em> the large variant, ClinicalMosaic, Clinical_ModernBERT, Bio_ClinicalBERT, PubMedBERT, and plain ModernBERT-base as a non-clinical control.</p>
       <p><strong>Action history — earlier decisions stored, not summarized.</strong> Prior selected actions stay as an explicit set that the current candidate queries by cross-attention, so a candidate can retrieve the one earlier choice that bears on it and ignore the rest. This matches the environment's semantics — the rewrite is assembled from the whole action vector, so semantic choices are not intrinsically ordered — and the memory therefore carries source position but no selection-step index, making the policy invariant to row order. With 4–38 decisions per document, one attention block is cheap. <em>Also considered:</em> no history at all (retained as the baseline that must be beaten), a count-blind GRU, a Decision Transformer.</p>
-      <p><strong>Privacy-head objective — fit the mean, quarantine the uncertainty.</strong> The controller consumes only the predicted mean, so the head optimizes exactly that: a deterministic mean on train-standardized log counts plus direct calibration of the profile-relative score the controller will actually use, with profiles weighted equally so no large menu dominates. Uncertainty is estimated once after the fact as a single clamped residual scale, which keeps it reportable for audit without letting variance calibration gate a controller that never reads it. <em>Also considered:</em> a learned heteroscedastic \(\sigma\), negative log likelihood as a blocking gate, an unbounded logistic rank loss.</p>
+      <p><strong>Count signal — reward only.</strong> The prototype temporarily uses frozen own-profile <code>level_counts</code> as an exact reward shortcut. The final build replaces that lookup with a frozen k-anonymity estimator that predicts K̂(s,a), from which the trainer derives the profile-relative count return used by the count actor objective and count critic. In both versions, the signal enters only through the training return and PPO gradient: no exact or predicted count is an actor feature. The deployed policy must encode the learned count-seeking behavior in its Tier-3 semantic adapters and residual head. Realized privacy still requires attacker evaluation and is not implied by either an exact or estimated count score.</p>
     </div>
 
     <h3>Shapes and parts</h3>
@@ -509,19 +680,20 @@ digraph RankerV2Edges {
         <li><strong>Attention heads — 8</strong> (falling back to 1 if the width were not divisible by 8), with <strong>dropout 0</strong> throughout.</li>
         <li><strong>Three context reads.</strong> Independent attention modules over occurrence summaries, target-containing chunks, and every document token; their outputs concatenate and project back to 768.</li>
         <li><strong>One memory block.</strong> A single eight-head cross-attention over 768-wide rows of prior selected actions, returning an exact zero vector when the memory is empty.</li>
-        <li><strong>Privacy projections — 256</strong> by default; a loaded privacy checkpoint carries its own widths.</li>
-        <li><strong>No normalization layers.</strong> There is no <code>LayerNorm</code>, batch normalization, or residual block anywhere in the model. The only normalizations are profile-menu normalization of predicted log counts and the final legal-action <code>log_softmax</code>.</li>
+        <li><strong>Lex side adapters — rank 4, about 153.6K parameters.</strong> They are private deltas over the frozen relation, context, interaction, and selected-action-memory maps; one factor is initialized normally and the output factor at zero.</li>
+        <li><strong>Residual head — about 73.8K parameters.</strong> <code>LayerNorm(4608, affine=false) → Linear(4608,16) → LayerNorm(16, affine=false) → GELU → Linear(16,1,bias=false)</code>; the final map starts at exact zero.</li>
+        <li><strong>Total Tier-3 actor capacity — about 227K parameters.</strong> This is below one percent of the approximately 23.7M-parameter frozen utility semantic stack and remains an explicit escalation surface.</li>
       </ul>
     </div>
 
     <h3>Hyperparameters</h3>
     <div class="prose">
-      <p>Two of these were measured rather than chosen — the controller scale and the \(\lambda\) menu. The rest are conventional defaults carried unchanged, and are named as such rather than presented as tuned.</p>
-      <p><strong>Controller.</strong></p>
+      <p>The proposal removes the additive controller, gap scaling, semantic privacy estimator, and finite \(\lambda\) menu from the served forward path. Its load-bearing settings are the freeze schedule, side-adapter rank, residual-head width, and primal-dual optimization timescales.</p>
+      <p><strong>Freeze and initialization.</strong></p>
       <ul>
-        <li><strong>\(\alpha\) — the controller scale, and the only trainable parameter outside the two towers.</strong> It converts profile-relative privacy into logit pressure, as \(\alpha = \mathrm{softplus}(\alpha_{\mathrm{raw}})\): one global scalar shared by every document, action, runtime type, and \(\lambda\). It is deliberately the smallest form that can express a privacy–utility tilt, so that failing to produce distinct operating points is a reportable result rather than something more capacity would paper over. Training pulls it from both sides, since utility and exact-count gradients both reach it, and it is frozen in the checkpoint before held-out evaluation.<br><em>Calibration:</em> the default carries the value over from the behaviour-cloning checkpoint. The adopted candidate measures it instead: for each decision, the smallest controller pressure that would move the argmax off the utility-preferred action onto a more private one, \(\min_j (u^* - u_j)/(\hat{p}_j - \hat{p}^*)\) over the more-private actions; each threshold is divided by that menu's utility-logit range, and the document-weighted median across behaviour-cloned menus becomes the initial \(\alpha\).</li>
-        <li><strong>gap — a scale match, not a free parameter.</strong> The detached per-menu utility range \(\mathrm{stopgrad}\big(\max_a u(a) - \min_a u(a)\big)\) multiplies the controller term. It exists because the raw controller measurably stopped working: at \(\alpha = 1\) the shift could not move behaviour-cloned utility logits at all — the selected count score sat at roughly 0.135–0.15 at <em>every</em> profile including the strongest, while \(\alpha\) drifted about 1e-3 per eight epochs, leaving \(\lambda\) behaviourally disconnected on trainable timescales. Expressing pressure in units of the menu's own utility spread makes the controller track the tower instead of being diluted as the tower sharpens. It was adopted against a preregistered rule over four composition-diverse documents spanning 4 to 22 decisions, twelve epochs, eight rollouts, one screening seed and two confirmation seeds, requiring exact \(\lambda\)-zero identity, a non-decreasing selected count score across profiles, and at least a 0.20 gain from the weakest to the strongest profile, among eight criteria.<br><em>Computation:</em> recomputed from the current legal menu at every forward pass as the detached spread of its utility logits, and detached so it contributes no gradient. There is no value to pick — the mechanism is only switched on or off by flag.</li>
-        <li><strong>\(g(\lambda)\) and the \(\lambda\) menu — fixed, not learned.</strong> \(g\) is the deterministic transform \(\log(1{+}\lambda)/\log(1{+}\lambda_{\max})\), and its shape is doing two specific jobs: \(g(0) = 0\) is what makes the \(\lambda\)-zero identity hold by construction rather than by initialization, and dividing by \(\log(1{+}\lambda_{\max})\) sets \(g(\lambda_{\max}) = 1\), so \(\alpha\) means exactly "controller pressure at the strongest supported profile" instead of an arbitrary scale. The menu is finite and ordered so one checkpoint can serve every operating point.<br><em>Derivation:</em> each document's cached utility–privacy trajectory points are de-duplicated, weakly dominated points dropped, and an upper convex envelope taken; every adjacent pair on that envelope yields the \(\lambda\) at which the frontier winner changes, \((u_{\text{left}} - u_{\text{right}})/(p_{\text{right}} - p_{\text{left}})\). Those switch points are pooled with each document carrying equal total weight, read off at fixed quantiles in log-\(\lambda\) space (0.25, 0.60, 0.90 for a four-value menu) with zero prepended, and values producing identical action vectors are merged. The candidate menu is replayed across the pool and rejected unless it clears the frozen feasibility gates — adjacent-profile winner change, a placeholder ceiling, per-corpus document support, per-type decision support — with at most two replacement passes. The deployed values (0, 0.48, 1.05, 1.53) passed with zero replacement passes.</li>
+        <li><strong>Tier 1.</strong> Frozen before policy training and identified by immutable encoder/tokenizer revisions.</li>
+        <li><strong>Tier 2.</strong> Selected after BC, verified ExIt, and utility-only structured RL; then frozen and hashed into the lexicographic checkpoint.</li>
+        <li><strong>Tier 3.</strong> Adapter deltas and the residual head start as an exact no-op, so lexicographic logits equal utility logits before the first update while preserving a separate trainable semantic route.</li>
       </ul>
       <p><strong>Hybrid RL objective.</strong></p>
       <ul>
@@ -530,7 +702,7 @@ digraph RankerV2Edges {
         <li><strong>G — rollouts per document group.</strong> It sets how many complete round trips each leave-one-out advantage is computed over, so it governs both credit quality and run cost: too few rollouts and duplicate trajectories drive the advantage to zero, killing the utility gradient outright.<br><em>Provenance:</em> supplied explicitly per run with no default, precisely because it is the cost knob and should be a visible choice; an opt-in mode derives it per document instead, scaling by the dominant-trajectory probability.</li>
         <li><strong>Learning rate — 1e-4 with AdamW</strong> for both behaviour cloning and hybrid RL, with one behaviour-cloning epoch by default.<br><em>Provenance:</em> conventional defaults, carried unchanged and never swept.</li>
       </ul>
-      <p><strong>Wired but off by default.</strong> Per-decision \(\alpha\) routing, gap scaling, switch-calibrated \(\alpha\) initialization, support-scaled rollouts, degeneracy-driven counterfactual coverage, always-on KL, reverse KL, a utility-logit softcap, and profile-sensitivity regularization all exist in the trainer behind flags whose defaults preserve the older behaviour, so enabling one is visible in the run command rather than implied by a code change.</p>
+      <p><strong>Excluded from the proposal.</strong> The additive <code>alpha</code> controller, gain head, tie hinge, cycle projection, gap scaling, utility softcap, semantic privacy-head input, deterministic selector, and profile-sensitivity regularizer are not active in the new forward or loss path.</p>
     </div>
   </section>
 

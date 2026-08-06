@@ -2,12 +2,14 @@
 type: reference
 status: current
 created: 2026-07-12
-updated: 2026-08-01
-tags: [rl, ranker, reward-design, credit-assignment, decision-log, privacy, utility]
+updated: 2026-08-05
+tags: [rl, ranker, reward-design, credit-assignment, decision-log, privacy, utility,
+       lexicographic-rl, low-rank-adapters, freeze-policy]
 companion: [docs/specs/RL/interactive-ranker-v2.md,
             docs/specs/RL/interactive-ranker-v2-diagnostics.md,
             docs/specs/qa-builder-v2.md,
-            docs/specs/RL/training-task-env.md]
+            docs/specs/RL/training-task-env.md,
+            docs/research/ranker-v2-trainable-multi-objective-rl-review.md]
 ---
 
 # Interactive ranker v2 — design decision log
@@ -698,34 +700,34 @@ restrictive" for a profile whose job is to leave the reference.
 
 **Failure-mode taxonomy (each root-cause link is a named phenomenon).**
 Link 1 (tie silence) = advantage collapse / value-function interference from a
-many-to-one utility — [vamplew2024_value_function_interference](../../research-wiki/papers/vamplew2024_value_function_interference.md)
+many-to-one utility — [vamplew2024_value_function_interference](../../../research-wiki/papers/vamplew2024_value_function_interference.md)
 ([arXiv 2402.06266](https://arxiv.org/abs/2402.06266)) is the closest published
 account of links 1->2->4 as one chain and prescribes DETERMINISTIC, stated
-tie-breaking; [yu2025_dapo_open_source_llm_rl](../../research-wiki/papers/yu2025_dapo_open_source_llm_rl.md)
+tie-breaking; [yu2025_dapo_open_source_llm_rl](../../../research-wiki/papers/yu2025_dapo_open_source_llm_rl.md)
 ([arXiv 2503.14476](https://arxiv.org/abs/2503.14476)) treats reward-homogeneous
 groups as gradient-dead and filters them at runtime. Link 2 (cross-doc drift) =
-underspecification — [damour2020_underspecification_ml](../../research-wiki/papers/damour2020_underspecification_ml.md)
+underspecification — [damour2020_underspecification_ml](../../../research-wiki/papers/damour2020_underspecification_ml.md)
 ([arXiv 2011.03395](https://arxiv.org/abs/2011.03395)) — plus policy churn —
-[schaul2022_policy_churn](../../research-wiki/papers/schaul2022_policy_churn.md)
+[schaul2022_policy_churn](../../../research-wiki/papers/schaul2022_policy_churn.md)
 ([arXiv 2206.00730](https://arxiv.org/abs/2206.00730)). Link 3 (unbounded
 sharpening) = entropy collapse with a derived covariance law explaining WHY a
 fixed entropy bonus is outrun rather than mis-tuned —
-[cui2025_entropy_mechanism_rl](../../research-wiki/papers/cui2025_entropy_mechanism_rl.md)
+[cui2025_entropy_mechanism_rl](../../../research-wiki/papers/cui2025_entropy_mechanism_rl.md)
 ([arXiv 2505.22617](https://arxiv.org/abs/2505.22617)). Link 4 (bounded shift
 loses the race) = preference-conditioning controllability failure —
-[delasheras2026_controllability_preference_morl](../../research-wiki/papers/delasheras2026_controllability_preference_morl.md)
+[delasheras2026_controllability_preference_morl](../../../research-wiki/papers/delasheras2026_controllability_preference_morl.md)
 ([arXiv 2605.10585](https://arxiv.org/abs/2605.10585)): conditioned agents can
 ace aggregate metrics while the conditioning input is behaviorally inert;
 controllability must be measured first-class (our synchronous snapshot IS that
 metric). Link 5 (fixed-ref KL pins lambda-zero) = the fixed-reference vs
 current-policy regularization tension, independently published as a premise —
-[he2026_unifying_stable_optimization_reference_regularization](../../research-wiki/papers/he2026_unifying_stable_optimization_reference_regularization.md)
+[he2026_unifying_stable_optimization_reference_regularization](../../../research-wiki/papers/he2026_unifying_stable_optimization_reference_regularization.md)
 ([arXiv 2602.11523](https://arxiv.org/abs/2602.11523)). Unpublished-synthesis
 gaps the sweep could NOT find sources for: (a) "bounded additive controller
 authority vs unbounded logit scale" as a named design quantity — our link 4
 appears novel; (b) regularizing specifically ON the reward-indifference set
 (closest precedent: runtime-statistic-gated KL,
-[lin2026_tepo_token_level_policy_optimization](../../research-wiki/papers/lin2026_tepo_token_level_policy_optimization.md)
+[lin2026_tepo_token_level_policy_optimization](../../../research-wiki/papers/lin2026_tepo_token_level_policy_optimization.md)
 ([arXiv 2604.12736](https://arxiv.org/abs/2604.12736))); (c) exact ties from a
 graded scorer as a distinct phenomenon.
 
@@ -733,7 +735,7 @@ graded scorer as a distinct phenomenon.
 - This session: entropy FLOOR first — bounded margins make the existing
   calibrated controller a deterministic tie-owner (satisfying Vamplew's
   prescription with zero new capacity); SAC-style auto-tuned target entropy
-  ([haarnoja2018_sac_algorithms_applications](../../research-wiki/papers/haarnoja2018_sac_algorithms_applications.md),
+  ([haarnoja2018_sac_algorithms_applications](../../../research-wiki/papers/haarnoja2018_sac_algorithms_applications.md),
   [arXiv 1812.05905](https://arxiv.org/abs/1812.05905)) replaces the dead
   beta=0.01 bonus with a dual variable. Learned gain = escalation.
 - Codex Sol High: learned state-conditioned monotone gain alpha_j =
@@ -789,9 +791,9 @@ The preregistered escalation was implemented (zero-init bounded state-conditione
 
 **Inputs.** This session's analysis (with a probe-latency measurement: on the tie document, counterfactual evidence reaches 3/4 decisions at round 0-1 — coverage is fastest exactly where ownership is needed), an independent Codex Sol High pass, and a 22-source verified literature sweep (8 papers registered). All three converge on the reclassification: the residual problem is a MISSING LEXICOGRAPHIC TIE-OWNERSHIP OPERATOR, implemented today as an evidence-to-authority routing failure — the trainer measures utility-equivalence exactly (counterfactual probes), the count scores rank within it, the controller can act, and no loss connects the first fact to the third. Softmax+additive control is NOT fundamentally incapable; what is refuted is global authority and authority learned from undifferentiated aggregate count gradients.
 
-**The mechanism has a formal home and a novel core.** The rule is tau-slack lexicographic filtering — [skalse2022_lexicographic_morl](../../research-wiki/papers/skalse2022_lexicographic_morl.md) ([arXiv 2212.13769](https://arxiv.org/abs/2212.13769)) — with two transferable theorems: exact ties contribute nothing to the admissibility bound (breaking them is FREE), and any epsilon-slack costs at most epsilon/(1-gamma) primary-objective worst case. The combination we would build — sets from runtime counterfactual measurement, epsilon derived from the instrument's own noise floor — appears unpublished; the nearest single-paper neighbors are Skalse's filter (arbitrary tau, no measurement) and gradient projection ([peri2025_nonconflicting_energy_minimization](../../research-wiki/papers/peri2025_nonconflicting_energy_minimization.md), [arXiv 2509.01765](https://arxiv.org/abs/2509.01765)) — the rival design, answered as follows: projection needs a primary gradient to project against, and on exact ties the utility gradient is identically zero, so projection passes the full undifferentiated count gradient and reproduces the v13 global-saturation dynamics.
+**The mechanism has a formal home and a novel core.** The rule is tau-slack lexicographic filtering — [skalse2022_lexicographic_morl](../../../research-wiki/papers/skalse2022_lexicographic_morl.md) ([arXiv 2212.13769](https://arxiv.org/abs/2212.13769)) — with two transferable theorems: exact ties contribute nothing to the admissibility bound (breaking them is FREE), and any epsilon-slack costs at most epsilon/(1-gamma) primary-objective worst case. The combination we would build — sets from runtime counterfactual measurement, epsilon derived from the instrument's own noise floor — appears unpublished; the nearest single-paper neighbors are Skalse's filter (arbitrary tau, no measurement) and gradient projection ([peri2025_nonconflicting_energy_minimization](../../../research-wiki/papers/peri2025_nonconflicting_energy_minimization.md), [arXiv 2509.01765](https://arxiv.org/abs/2509.01765)) — the rival design, answered as follows: projection needs a primary gradient to project against, and on exact ties the utility gradient is identically zero, so projection passes the full undifferentiated count gradient and reproduces the v13 global-saturation dynamics.
 
-**Adopted design (synthesis of Codex mechanism + literature statistics).** Evidence-supervised controller margin: (1) a value-bearing evidence ledger — per-pair Delta-U keyed by surrounding-action-vector hash with measurement age (pair_history currently stores only WHEN; delta_u is discarded after diagnostics); (2) membership by the VERIFIABLE CORE first — exact ties only (all probes Delta-U identically 0, >= 3 independent surrounding contexts), monotone-until-contradicted with a bound-based exit (hysteresis), absence-means-unknown, per [katzsamuels2019_true_sample_complexity_good_arms](../../research-wiki/papers/katzsamuels2019_true_sample_complexity_good_arms.md) ([arXiv 1906.06594](https://arxiv.org/abs/1906.06594)) the epsilon-band around an estimated max is finite-sample UNVERIFIABLE and ships later if ever, with CI/TOST-style tests per [mason2020_all_epsilon_good_arms](../../research-wiki/papers/mason2020_all_epsilon_good_arms.md) ([arXiv 2006.08850](https://arxiv.org/abs/2006.08850)) and per-decision (never global) thresholds per [tercan2024_thresholded_lexicographic](../../research-wiki/papers/tercan2024_thresholded_lexicographic.md) ([arXiv 2408.13493](https://arxiv.org/abs/2408.13493)); (3) a controller-only hinge loss max(0, m - [z_l3(a+) - z_l3(a-)]) on measured-tied pairs with utility logits detached, macro-averaged per decision, applied with a one-cycle lag (performative feedback: [mandal2023_performative_rl](../../research-wiki/papers/mandal2023_performative_rl.md), [arXiv 2207.00046](https://arxiv.org/abs/2207.00046)); (4) the CRITICAL GRADIENT SPLIT — global expected-count loss trains ONLY global alpha; the tie hinge plus high-lambda utility train the gain residual; no count gradient into u — restoring the differential forces whose absence saturated v13; (5) NO hard gain bound (the hinge is self-limiting once ordering holds; weak residual penalty + early-kill monitoring replace the ceiling that froze v13); (6) a fixed uniform probe quota independent of controller behavior (scheduler self-confirmation guard), deterministic tie-break (citably correct per Vamplew), and privacy gains reported from held-out probes (optimizer's curse). The measured object is formally an action-redundancy/equivalence set ([baram2021_action_redundancy](../../research-wiki/papers/baram2021_action_redundancy.md), [arXiv 2102.11329](https://arxiv.org/abs/2102.11329); [asadi2019_state_action_equivalence](../../research-wiki/papers/asadi2019_state_action_equivalence.md), [arXiv 1910.04077](https://arxiv.org/abs/1910.04077)).
+**Adopted design (synthesis of Codex mechanism + literature statistics).** Evidence-supervised controller margin: (1) a value-bearing evidence ledger — per-pair Delta-U keyed by surrounding-action-vector hash with measurement age (pair_history currently stores only WHEN; delta_u is discarded after diagnostics); (2) membership by the VERIFIABLE CORE first — exact ties only (all probes Delta-U identically 0, >= 3 independent surrounding contexts), monotone-until-contradicted with a bound-based exit (hysteresis), absence-means-unknown, per [katzsamuels2019_true_sample_complexity_good_arms](../../../research-wiki/papers/katzsamuels2019_true_sample_complexity_good_arms.md) ([arXiv 1906.06594](https://arxiv.org/abs/1906.06594)) the epsilon-band around an estimated max is finite-sample UNVERIFIABLE and ships later if ever, with CI/TOST-style tests per [mason2020_all_epsilon_good_arms](../../../research-wiki/papers/mason2020_all_epsilon_good_arms.md) ([arXiv 2006.08850](https://arxiv.org/abs/2006.08850)) and per-decision (never global) thresholds per [tercan2024_thresholded_lexicographic](../../../research-wiki/papers/tercan2024_thresholded_lexicographic.md) ([arXiv 2408.13493](https://arxiv.org/abs/2408.13493)); (3) a controller-only hinge loss max(0, m - [z_l3(a+) - z_l3(a-)]) on measured-tied pairs with utility logits detached, macro-averaged per decision, applied with a one-cycle lag (performative feedback: [mandal2023_performative_rl](../../../research-wiki/papers/mandal2023_performative_rl.md), [arXiv 2207.00046](https://arxiv.org/abs/2207.00046)); (4) the CRITICAL GRADIENT SPLIT — global expected-count loss trains ONLY global alpha; the tie hinge plus high-lambda utility train the gain residual; no count gradient into u — restoring the differential forces whose absence saturated v13; (5) NO hard gain bound (the hinge is self-limiting once ordering holds; weak residual penalty + early-kill monitoring replace the ceiling that froze v13); (6) a fixed uniform probe quota independent of controller behavior (scheduler self-confirmation guard), deterministic tie-break (citably correct per Vamplew), and privacy gains reported from held-out probes (optimizer's curse). The measured object is formally an action-redundancy/equivalence set ([baram2021_action_redundancy](../../../research-wiki/papers/baram2021_action_redundancy.md), [arXiv 2102.11329](https://arxiv.org/abs/2102.11329); [asadi2019_state_action_equivalence](../../../research-wiki/papers/asadi2019_state_action_equivalence.md), [arXiv 1910.04077](https://arxiv.org/abs/1910.04077)).
 
 **S-1 vs S-2 boundary (both analyses agree).** The evidence-supervised margin is the coordinate-wise approximation of the document-level epsilon-lexicographic program; equivalence needs separability/additive-composition assumptions that generally fail. Therefore: exact-tie ownership now, full-document utility verification after composing tie-owned changes, and per-document escalation to the joint allocation only where composed loss exceeds 0.044. S-3 (higher global-alpha quantile) is a diagnostic Pareto sweep only, with the required-alpha overlap statistic as the direct global-dial impossibility demonstration.
 
@@ -826,3 +828,157 @@ The preregistered escalation was implemented (zero-init bounded state-conditione
 **Preregistered traps.** The floor is a per-pair instrument resolution, not a per-decision allowance (spending it at D decisions bounds document loss at 0.044*D, which exceeds the utility scale by D=25; use a document-level budget spent delta/D per Wray 2015). The reader's resolution is not the user's utility tolerance and conflating them would be a calibration trick wearing a measurement's clothes. The round-3 rejection of deployment-time probing cited remote cross-query exposure, but the reader is LOCAL — that premise is faulty and the option needs a cost estimate rather than a privacy refusal.
 
 **Gate plan (approved 2026-08-01, Gate 0 executed).** Gate 0 (free, cache-only): recompute evidence on the linked statistic, re-derive strata, harvest structurally derivable labels — DONE, results above; certification tie-band 111 rows vs minimum 45, PASS. Gate 1 (cheap, CPU): representation gate — retrain the EXISTING utility head as a menu-centered advantage regressor on breadth-first evidence with policy-gradient, gain, hinge, sensitivity and count losses disabled, split strictly by document; does the current representation support the new role at all? Gate 2 (cache-only): selector gate — exact-tie-only filter first, then the sub-noise band metered against a document-level budget with measured aggregate utility drop reported against the bound. No RL run is justified before Gates 1 and 2 pass.
+
+## Policy-based lexicographic optimization replaces additive lambda training
+
+**Date:** 2026-08-05
+
+**Trigger.** The deterministic epsilon-zero selector was rejected as a deployment design. Its
+cache-only gate also showed that a four-vector standardized slate was usually support-singleton,
+while expanded campaign caches contained broad exact-optimal sets. Separately, corrected prefix
+replay measured the utility policy at approximately 59% live-pair ordering accuracy and found most
+utility-tied action pairs required more additive authority than the controller exposed. Those facts
+make another controller-strength intervention the wrong next step.
+
+**Formal classification.** The declared preference is lexicographic multi-objective RL: maximize
+document utility, then maximize frozen count return subject to retaining the achieved utility
+optimum. The previous `U + lambda P` training objective was linear scalarization, not an
+implementation of that priority order. Utility ties create an underspecified primary objective;
+count should supply the actor gradient there, while measured utility violation must oppose count on
+costly actions.
+
+**Decision.** Use two served modes:
+
+1. `utility-only`: immutable frozen utility policy;
+2. `utility-first-count-second`: zero-init residual actor trained by count and utility actor
+   surrogates under a document-level dual constraint.
+
+For document $d$, the strict first-prototype constraint is
+
+$$
+J_U(\pi_{\mathrm{lex}};d)\ge b_d,
+$$
+
+where $b_d$ is the frozen utility-only policy's pinned expected return. The actor minimizes
+
+$$
+L_P(d)+\operatorname{stopgrad}(\mu_d)L_U(d)
+-\beta H+\eta\operatorname{KL}(\pi_{\mathrm{lex}}\Vert\pi_{\mathrm{old}}),
+$$
+
+and the projected dual update is driven by
+
+$$
+L_{\mathrm{dual}}(d)=-\mu_d\operatorname{stopgrad}(b_d-\widehat J_U(d)).
+$$
+
+Critics update fastest, the residual actor updates on the middle timescale, and document duals
+update slowest. The first mechanism run uses zero utility slack. The historical `0.044` reader
+statistic is neither a constraint budget nor a tolerance.
+
+**Structured credit is retained.** Linked/residual/fallback utility advantages and bounded in-place
+counterfactual substitution remain the utility actor signal. Counterfactuals do not order exact
+utility ties; they correctly emit zero utility gradient there. Exact count return-to-go remains
+active and therefore owns those actor updates. Count reward is sampled through the trajectory so
+early actions' effects on future injectivity masks are retained.
+
+**Gradient-path correction.** The old rule “count never enters `u`” is narrowed to “count never
+enters the frozen utility base or utility critic.” Count must update the positive residual actor or
+the served policy cannot learn count-sensitive behavior. The old three-way split—utility tower,
+global alpha, evidence gain—was a systemic behavioral bottleneck, not semantic cleanliness.
+
+**Profile semantics.** Strict lexicographic optimization supplies two modes, not three-to-five
+weighted settings. A future menu must define explicit document-level utility slack budgets
+$0=\delta_0<\delta_1<\cdots$ and condition the residual policy on those budgets. Historical lambda
+switch points cannot be relabeled as slack budgets.
+
+**Deleted from the selected arm.** Additive `alpha`, semantic privacy-head controller input,
+controller gain, count-to-gain routing, tie hinge, cycle projection, gap scaling, utility-logit
+softcap, fixed-reference KL, profile-sensitivity training pressure, and deterministic selector.
+Previous-policy KL and entropy remain optimization aids only and cannot define the objective.
+
+**Alternatives.** CPO/RCPO is the escalation if utility constraints fail under first-order updates.
+Projected lexicographic policy gradients remain a fallback if dual oscillation is load-bearing.
+MO-MPO/LP3 is reserved for a product decision that asks for smooth tradeoffs instead of strict
+priority. Ordinary preference-conditioned scalarization remains a baseline only.
+
+**Evidence and literature.** See
+[Trainable multi-objective RL for ranker v2](../../research/ranker-v2-trainable-multi-objective-rl-review.md),
+[Lexicographic Multi-Objective Reinforcement Learning](../../../research-wiki/papers/skalse2022_lexicographic_morl.md)
+([arXiv 2212.13769](https://arxiv.org/abs/2212.13769)),
+[Reward Constrained Policy Optimization](../../../research-wiki/papers/tessler2018_reward_constrained_policy.md)
+([arXiv 1805.11074](https://arxiv.org/abs/1805.11074)),
+[Constrained Policy Optimization](../../../research-wiki/papers/achiam2017_constrained_policy_optimization.md)
+([arXiv 1705.10528](https://arxiv.org/abs/1705.10528)), and
+[State-Augmented Constrained Reinforcement Learning](../../../research-wiki/papers/calvofullana2021_state_augmented_constrained_rl.md)
+([arXiv 2102.11941](https://arxiv.org/abs/2102.11941)).
+
+**Adjudication scope.** Run one seed on the four cache-rich campaign documents before any broader
+training. A pass requires exact utility-only identity, every final-three positive-mode greedy
+utility key no lower than its utility-only counterpart, stable positive count separation on at
+least one opportunity-bearing document, responsive nonnegative duals, and no late collapse. A pass
+authorizes two additional seeds on the same documents only.
+
+**Crux.** The objectives remain semantically separate in their rewards and critics, but their
+advantages meet in the same residual actor under an explicit utility-retention constraint.
+
+## Lexicographic RL trains a private post-encoder semantic side path
+
+**Date:** 2026-08-05
+
+**Supersedes:** the head-only actor and two-served-mode details in “Policy-based lexicographic
+optimization replaces additive lambda training.” The strict document constraint, structured
+utility credit, exact count return, separate critics, and document dual remain unchanged.
+
+**Decision.** After BC, verified ExIt, and utility-only structured RL select the utility checkpoint,
+freeze both the clinical encoder substrate and the complete utility semantic branch. Construct a
+private lexicographic side path by adding rank-4 low-rank deltas to the allowlisted post-encoder
+relation, context-attention, context-projection, and selected-action-memory maps. Feed its
+`x_lex` feature to the normalized GELU-16 residual head and serve
+
+$$
+z_{\mathrm{lex}}(s_t,a)=u_\theta(s_t,a)+r_\psi(x_{\mathrm{lex}}(s_t,a)).
+$$
+
+The frozen utility branch is an internal reference/audit path, not a second report mode. It builds
+the pinned per-document reference $b_d$ and must remain bit-identical throughout lexicographic RL.
+
+**RL contract.** The utility and count PPO surrogates both backpropagate through the residual head
+and private Tier-3 semantic deltas. Neither may update the frozen encoder substrate or utility
+branch. The utility critic consumes detached `x_U`; the count critic consumes detached `x_lex`;
+their losses update only their own parameters. The dual loss updates only the document multiplier.
+Exact count targets remain reward-only and are absent from all policy inputs.
+
+**Sequential-state contract.** Policy state stores canonical raw selected-action records. Tier 2
+and Tier 3 derive separate memory projections from those records, so the lexicographic branch can
+learn history semantics without mutating the frozen utility memory or maintaining a second legality
+state. First-occurrence order and the injectivity mask remain unchanged.
+
+**Why the freeze boundary moved.** Freezing the whole semantic stack made the final utility feature
+an assumed sufficient statistic for a secondary objective it was never trained to represent.
+Unfreezing the shared stack would invalidate the utility reference. Private post-encoder adapters
+preserve the reference while giving both actor gradients a semantic route that can adapt to
+candidate wording, document context, and prior selections.
+
+**Mechanism gate changes.** A valid run now additionally requires exact Tier-3 initialization
+parity; staged actor-gradient reachability through the residual head, adapter output factors, and
+adapter input factors; exact zero actor gradients in Tier 1 and Tier 2; an architecture-pinned
+adapter allowlist/rank/parameter count; and canonical state parity between the reference and served
+paths. The existing final-three-snapshot utility, count-separation, dual-response, and
+no-late-collapse gates remain.
+
+**Alternatives.** The fully frozen feature plus residual head remains a cheap ablation. Shared
+utility-stack unfreezing is rejected because it destroys the reference semantics. Encoder LoRA is
+deferred because it invalidates the expensive frozen token cache and is not justified until the
+post-encoder side path is shown insufficient. A full duplicate semantic tower is rejected as an
+unnecessary capacity and audit burden.
+
+**Evidence and companions.** See the superseding
+[architecture decision](ranker-v2-architecture-decision-log.md), the
+[architecture specification](ranker-v2-architecture.md), the
+[implementation plan](../../plans/2026-08-05-ranker-v2-lexicographic-actor-critic.md), the
+[interactive architecture report](../../html/interactive-ranker-v2.html), and the
+[trainable multi-objective RL review](../../research/ranker-v2-trainable-multi-objective-rl-review.md).
+
+**Crux.** Both objectives train one behavior-producing lexicographic actor, but only through a
+private semantic route downstream of the immutable utility reference.

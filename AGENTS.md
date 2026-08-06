@@ -82,6 +82,7 @@ Frontmatter required: `type` (handoff·plan·prototype-note·research·theory·d
 plan|reference→`docs/plans/`, research|theory→`docs/research/`, prototype-note→`docs/dev/prototype/`,
 dev-log→`docs/dev/logs/`. Archive inactive handoffs to `docs/archive/handoffs/`; stale plans stay
 put with `status: stale` + `archive_reason`. `companion:` references repo-local docs only.
+In repository Markdown files, delimit LaTeX with dollar-sign notation only: `$...$` for inline math and `$$...$$` for display math. Do not use `\(...\)` or `\[...\]` delimiters in those files. In Codex app chat replies, use `\(...\)` for inline math and `\[...\]` for display math because the app does not render dollar-sign delimiters; this exception applies to replies only, never repository Markdown.
 `docs/research/` docs need a Definitions glossary (the IT vocabulary is dense and cross-community).
 
 ## Research wiki (`research-wiki/`)

@@ -1414,6 +1414,58 @@ def test_learned_controller_gain_zero_init_identity_bound_and_gradient():
     policy.controller_gain_mode = None
 
 
+def test_count_to_gain_coupling_moves_exactly_one_gradient_edge():
+    """Preregistered validity check for the count->gain coupling arm.
+
+    The two arms must differ in EXACTLY one edge: the dense expected-count
+    objective reaching the per-decision gain residual. Everything else is held
+    identical — alpha_raw is trained by count in both arms, and the utility
+    logits stay detached from count in both (count must never train a quantity
+    called utility). If this test fails, no outcome of the arm is interpretable.
+    """
+    from cloak.ranker.semantic import enable_controller_gain
+
+    measured = {}
+    for mode in ("detached", "coupled"):
+        policy, _, document, decision, profiles = _semantic_policy()
+        enable_controller_gain(policy, "evidence", hidden_dim=8, bound=1.5)
+        policy.count_to_gain = mode
+        policy.float()
+        nonzero = profiles[-1]
+        menu = tuple(action.action_id for action in decision.actions)
+        policy.zero_grad(set_to_none=True)
+        state = policy.begin_document(document, nonzero)
+        row = policy.distribution(state, decision, menu, nonzero)
+        # Same functional form as production `expected_profile_count_loss`
+        # (count-distribution probabilities weighted by per-action exact
+        # counts), i.e. a NON-FLAT objective. Plain `sum(count_log_probs)` is
+        # insensitive to a uniform shift of the count logits and could report a
+        # false zero for the wrong reason.
+        exact = torch.arange(1.0, len(menu) + 1.0)
+        (row.count_log_probs.exp() * exact).sum().backward()
+        measured[mode] = {
+            "gain": sum(
+                float(p.grad.abs().sum())
+                for p in policy.gain_head.parameters() if p.grad is not None
+            ),
+            "alpha_raw": (
+                None if policy.alpha_raw.grad is None
+                else float(policy.alpha_raw.grad.abs().sum())
+            ),
+            "utility_head": sum(
+                float(p.grad.abs().sum())
+                for p in policy.utility_head.parameters() if p.grad is not None
+            ),
+        }
+
+    assert measured["detached"]["gain"] == 0.0
+    assert measured["coupled"]["gain"] > 0.0
+    # held identical across arms: count trains alpha_raw, never the tower
+    assert measured["detached"]["alpha_raw"] and measured["coupled"]["alpha_raw"]
+    assert measured["detached"]["utility_head"] == 0.0
+    assert measured["coupled"]["utility_head"] == 0.0
+
+
 def test_random_controller_gain_is_deterministic_and_parameter_free():
     from cloak.ranker.semantic import (
         _random_gain_offset,

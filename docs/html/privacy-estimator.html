@@ -52,6 +52,13 @@
     left: 50%;
     transform: translateX(-50%);
   }
+  #privacy-estimator-diagram .privacy-gradient-junction {
+    width: 5px;
+    min-width: 5px;
+    height: 5px;
+    min-height: 5px;
+    background: #a15f54;
+  }
   #privacy-estimator-diagram .privacy-grad-port--bottom {
     top: auto;
     right: auto;
@@ -131,11 +138,11 @@
 
       <div class="diagram-frame" style="width:max-content;max-width:calc(100vw - 48px);box-sizing:border-box;margin-left:50%;transform:translateX(-50%)">
         <div class="diagram-cap">
-          <span class="l">FIG · M1: v5 semantic-fact privacy estimator computational graph</span>
-          <span>green = tensor/encoder · rust = head · blue = attention/control · gray = normalization/frozen · dashed outline = trainable · dashed arrow = training/backpropagation</span>
+          <span class="l">FIG · M1: v8 dual-path semantic-fact privacy estimator computational graph</span>
+          <span>green = tensor/encoder · rust = head · blue = attention/control · gray = normalization/frozen · dashed outline = trainable · dashed arrow = backpropagation only</span>
         </div>
         <div id="privacy-estimator-diagram" class="ranker-model-diagram" role="img"
-             aria-label="Component-level computational graph for the v5 semantic-fact privacy relation model and detached count stage">
+             aria-label="Component-level computational graph for the v8 dual-path privacy relation model and detached count stage">
           <div class="ranker-model-diagram__layout">
 
             <div id="relation-pass" class="ranker-model-diagram__module" data-module-id="relation-pass">
@@ -179,22 +186,18 @@
 
                 <div class="ranker-model-diagram__col">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding ranker-model-diagram__node--trainable" data-node-id="marker_embeddings">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="marker_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">Atomic marker embeddings</div>
                     <div class="ranker-model-diagram__node-detail">semantic initialization + noise<br>trainable with role decoder</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="encoder_low">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="encoder_low_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">Embeddings + layers 0–3</div>
                     <div class="ranker-model-diagram__node-detail">trainable · learning rate 5e-6</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="encoder_mid">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="encoder_mid_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">Encoder layers 4–7</div>
                     <div class="ranker-model-diagram__node-detail">trainable · learning rate 1e-5</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--encoder ranker-model-diagram__node--trainable" data-node-id="encoder_high">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--left" data-node-id="encoder_high_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">Encoder layers 8–11</div>
                     <div class="ranker-model-diagram__node-detail">trainable · learning rate 2e-5</div>
                   </div>
@@ -202,7 +205,6 @@
                     <div class="ranker-model-diagram__node-title">Final token states</div>
                     <div class="ranker-model-diagram__node-detail">H_rel [B × L × 768]<br>no pooling before retrieval</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-train-bus-anchor--left privacy-train-bus-anchor--bottom" data-node-id="encoder_train_split"></div>
                 </div>
 
                 <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
@@ -211,7 +213,6 @@
                     <div class="ranker-model-diagram__node-detail">H at [SRC] · [CAND] · [OCC] · [CLS]<br>occurrence anchor = 0 when absent · [B × 4 × 768]</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="memory_projection">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="memory_grad_port"></span>
                     <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
                     <div class="ranker-model-diagram__node-title">Shared input projection P</div>
                     <div class="ranker-model-diagram__node-detail">LayerNorm · Linear 768 → 384<br>called separately on H and S · tied weights</div>
@@ -222,13 +223,11 @@
                       <div class="ranker-model-diagram__node-detail">M = P(H)<br>[B × L × 384]</div>
                     </div>
                     <div class="ranker-model-diagram__node ranker-model-diagram__node--embedding ranker-model-diagram__node--trainable" data-node-id="slot_seeds">
-                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="seeds_grad_port"></span>
                       <div class="ranker-model-diagram__node-title">Initialized role queries</div>
                       <div class="ranker-model-diagram__node-detail">Q₀ = P(S) + E<sub>role</sub><br>[B × 4 × 384]</div>
                     </div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--attention ranker-model-diagram__node--trainable" data-node-id="slot_decoder">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="decoder_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">Multi-slot query decoder</div>
                     <div class="ranker-model-diagram__node-detail">tgt = Q₀ · memory = M<br>2 pre-norm layers · 6 heads<br>FFN 1,536 · dropout 0.1<br>each query attends all live tokens</div>
                   </div>
@@ -237,72 +236,100 @@
                     <div class="ranker-model-diagram__node-title">Retrieved role slots</div>
                     <div class="ranker-model-diagram__node-detail">s source · c candidate<br>o occurrence · x global/context<br>[B × 4 × 384]</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-train-bus-anchor--right privacy-train-bus-anchor--bottom" data-node-id="decoder_train_split"></div>
                 </div>
 
               </div>
 
               <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="classification-heads">
-                <div class="ranker-model-diagram__module-label">Classification heads · symmetric connectedness + ordered direction</div>
+                <div class="ranker-model-diagram__module-label">Dual-path feature learning · symmetric and ordered representations receive deep supervision</div>
                 <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="classification_split"></div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-gradient-junction" data-node-id="representation_gradient_join"></div>
                   <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
                     <div class="ranker-model-diagram__node" data-node-id="connected_features">
                       <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-feature-port privacy-feature-port--input" data-node-id="connected_feature_port"></span>
                       <div class="ranker-model-diagram__node-title">Symmetric features</div>
-                      <div class="ranker-model-diagram__node-detail">s+c · |s−c| · s⊙c · o · x<br>swap-invariant · 5 × 384</div>
+                      <div class="ranker-model-diagram__node-detail">s+c · |s−c| · s⊙c · o · x<br>swap-invariant · [B × 1,920]</div>
                     </div>
-                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear privacy-expanded-mlp" data-node-id="connected_head">
-                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--bottom" data-node-id="connected_grad_port"></span>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear ranker-model-diagram__node--trainable privacy-expanded-mlp" data-node-id="symmetric_tower">
+                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--bottom privacy-gradient-junction" data-node-id="symmetric_gradient_join"></span>
                       <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                      <div class="ranker-model-diagram__node-title">Connectedness head</div>
-                      <div class="ranker-model-diagram__node-detail">LayerNorm 1,920<br>Linear 1,920 → 256 · GELU · Dropout 0.1<br>Linear 256 → 1 · connectedness logit</div>
+                      <div class="ranker-model-diagram__node-title">Symmetric tower</div>
+                      <div class="ranker-model-diagram__node-detail">LayerNorm 1,920<br>Linear 1,920 → 256 · GELU · Dropout 0.1<br>h<sub>sym</sub> [B × 256]</div>
                     </div>
                     <div class="ranker-model-diagram__node" data-node-id="direction_features">
                       <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-feature-port privacy-feature-port--input" data-node-id="direction_feature_port"></span>
                       <div class="ranker-model-diagram__node-title">Ordered features</div>
-                      <div class="ranker-model-diagram__node-detail">s · c · s−c · |s−c| · s⊙c · o · x<br>direction-preserving · 7 × 384</div>
+                      <div class="ranker-model-diagram__node-detail">s · c · s−c · |s−c| · s⊙c · o · x<br>direction-preserving · [B × 2,688]</div>
                     </div>
-                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear privacy-expanded-mlp" data-node-id="direction_head">
-                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--bottom" data-node-id="direction_grad_port"></span>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear ranker-model-diagram__node--trainable privacy-expanded-mlp" data-node-id="ordered_tower">
+                      <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--bottom privacy-gradient-junction" data-node-id="ordered_gradient_join"></span>
                       <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
-                      <div class="ranker-model-diagram__node-title">Conditional direction head</div>
-                      <div class="ranker-model-diagram__node-detail">LayerNorm 2,688<br>Linear 2,688 → 256 · GELU · Dropout 0.1<br>Linear 256 → 3 · forward/reverse/neither logits</div>
+                      <div class="ranker-model-diagram__node-title">Ordered tower</div>
+                      <div class="ranker-model-diagram__node-detail">LayerNorm 2,688<br>Linear 2,688 → 256 · GELU · Dropout 0.1<br>h<sub>ord</sub> [B × 256]</div>
                     </div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="head_train_split"></div>
                 </div>
               </section>
 
-              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="hierarchical-output">
-                <div class="ranker-model-diagram__module-label">Hierarchical probability composition · ontology structure is explicit</div>
-                <div class="ranker-model-diagram__row" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="direct-output">
+                <div class="ranker-model-diagram__module-label">Direct four-class fusion · auxiliary heads do not compose inference probabilities</div>
+                <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
+                  <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear ranker-model-diagram__node--trainable" data-node-id="connected_auxiliary">
+                      <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                      <div class="ranker-model-diagram__node-title">Connectedness auxiliary</div>
+                      <div class="ranker-model-diagram__node-detail">Linear 256 → 1<br>connected iff label ≠ unrelated<br>training-only logit [B]</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="joint_features">
+                      <div class="ranker-model-diagram__node-title">Joint path representation</div>
+                      <div class="ranker-model-diagram__node-detail">concat(h<sub>sym</sub>, h<sub>ord</sub>)<br>[B × 512]</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear ranker-model-diagram__node--trainable privacy-expanded-mlp" data-node-id="joint_classifier">
+                      <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                      <div class="ranker-model-diagram__node-title">Joint four-class MLP</div>
+                      <div class="ranker-model-diagram__node-detail">LayerNorm 512<br>Linear 512 → 256 · GELU · Dropout 0.1<br>Linear 256 → 4</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--linear ranker-model-diagram__node--trainable" data-node-id="direction_auxiliary">
+                      <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
+                      <div class="ranker-model-diagram__node-title">Direction auxiliary</div>
+                      <div class="ranker-model-diagram__node-detail">Linear 256 → 3<br>valid · reversal · related<br>connected rows only · training-only logits [B × 3]</div>
+                    </div>
+                  </div>
+                  <div class="ranker-model-diagram__row ranker-model-diagram__row--stretch" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
+                    <div aria-hidden="true"></div>
+                    <div aria-hidden="true"></div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="relation_logits">
+                      <div class="ranker-model-diagram__node-title">Direct class logits</div>
+                      <div class="ranker-model-diagram__node-detail">valid · reversal · related · unrelated<br>[B × 4]</div>
+                    </div>
+                    <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_probabilities">
+                      <div class="ranker-model-diagram__node-title">Inference probabilities</div>
+                      <div class="ranker-model-diagram__node-detail">softmax(direct logits)<br>argmax selects one of four classes</div>
+                    </div>
+                  </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-gradient-junction" data-node-id="head_gradient_split"></div>
+                </div>
+              </section>
+
+              <section class="ranker-model-diagram__module ranker-model-diagram__module--secondary" data-module-id="relation-objectives">
+                <div class="ranker-model-diagram__module-label">Deeply supervised objective · direct four-class cross-entropy remains primary</div>
+                <div class="ranker-model-diagram__row ranker-model-diagram__row--top" style="grid-template-columns:240px 250px 245px 300px;gap:32px;justify-content:center">
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--input" data-node-id="relation_targets">
                     <div class="ranker-model-diagram__node-title">Audited fact label</div>
                     <div class="ranker-model-diagram__node-detail">one target per sampled semantic fact</div>
                   </div>
-                  <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
-                    <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="relation_loss_join"></div>
-                    <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="relation_optimizer">
-                      <div class="ranker-model-diagram__node-title">Exact four-class NLL → AdamW</div>
-                      <div class="ranker-model-diagram__node-detail">head 2e-4 · encoder LLRD above<br>weight decay 0.01 · norms/bias 0<br>warmup + global clip 1.0</div>
-                    </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_objective">
+                    <div class="ranker-model-diagram__node-title">Deeply supervised objective</div>
+                    <div class="ranker-model-diagram__node-detail">L<sub>4</sub> + 0.2 L<sub>conn</sub> + 0.2 L<sub>dir</sub><br>four-class CE · connectedness BCE<br>direction CE on connected rows</div>
                   </div>
-                  <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="relation_probabilities">
-                    <div class="ranker-model-diagram__node-title">Four-class probability</div>
-                    <div class="ranker-model-diagram__node-detail">valid = p_c p_f · reversal = p_c p_r<br>related = p_c p_n · unrelated = 1−p_c</div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--control" data-node-id="relation_backward">
+                    <div class="ranker-model-diagram__node-title">Reverse-mode autodiff</div>
+                    <div class="ranker-model-diagram__node-detail">seed ∂L<sub>total</sub>/∂outputs<br>accumulate parameter gradients ∇θ</div>
                   </div>
-                  <div class="ranker-model-diagram__row" style="grid-template-columns:52px 230px;gap:18px">
-                    <div class="ranker-model-diagram__node ranker-model-diagram__node--operator" data-node-id="probability_compose" data-port-shape="circle" title="Compose connectedness and conditional direction probabilities">
-                      <div class="ranker-model-diagram__node-title">×</div>
-                    </div>
-                    <div class="ranker-model-diagram__col ranker-model-diagram__col--tight">
-                      <div class="ranker-model-diagram__node ranker-model-diagram__node--via" data-node-id="head_merge"></div>
-                      <div class="ranker-model-diagram__node ranker-model-diagram__node--tensor" data-node-id="head_probabilities">
-                        <div class="ranker-model-diagram__node-title">Head probabilities</div>
-                        <div class="ranker-model-diagram__node-detail">p_c = sigmoid(connected)<br>p_f, p_r, p_n = softmax(direction)</div>
-                      </div>
-                    </div>
+                  <div class="ranker-model-diagram__node ranker-model-diagram__node--privacy" data-node-id="relation_optimizer">
+                    <div class="ranker-model-diagram__node-title">AdamW parameter update</div>
+                    <div class="ranker-model-diagram__node-detail">consumes accumulated ∇θ<br>head 2e-4 · encoder LLRD above<br>weight decay 0.01 · warmup · clip 1.0</div>
                   </div>
                 </div>
               </section>
@@ -362,12 +389,10 @@
                     <div class="ranker-model-diagram__node-detail">sampling_weight · 64 rows</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--normalization ranker-model-diagram__node--trainable" data-node-id="count_norm">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="count_norm_grad_port"></span>
                     <div class="ranker-model-diagram__node-title">LayerNorm</div>
                     <div class="ranker-model-diagram__node-detail">768 features</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="count_linear_64">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="count_linear_64_grad_port"></span>
                     <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
                     <div class="ranker-model-diagram__node-title">Linear 768 → 64</div>
                   </div>
@@ -376,7 +401,6 @@
                     <div class="ranker-model-diagram__node-title">GELU</div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--linear" data-node-id="count_linear_1">
-                    <span class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-grad-port privacy-grad-port--right" data-node-id="count_linear_1_grad_port"></span>
                     <svg class="ranker-model-diagram__node-outline" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><path vector-effect="non-scaling-stroke" stroke-dasharray="5 4" d="M7 0 H93 L100 100 H0 Z"/></svg>
                     <div class="ranker-model-diagram__node-title">Linear 64 → 1</div>
                   </div>
@@ -430,7 +454,6 @@
                       <div class="ranker-model-diagram__node-title">AdamW · head only</div>
                       <div class="ranker-model-diagram__node-detail">learning rate 3e-4 · decay 0.01<br>gradient norm ≤ 1.0</div>
                     </div>
-                    <div class="ranker-model-diagram__node ranker-model-diagram__node--via privacy-train-bus-anchor--left" data-node-id="count_train_split"></div>
                   </div>
                   <div class="ranker-model-diagram__node ranker-model-diagram__node--output" data-node-id="pair_loss">
                     <div class="ranker-model-diagram__node-title">L_pair</div>
@@ -474,38 +497,41 @@ digraph PrivacyEstimatorEdges {
   classification_split -> direction_feature_port [arrowhead=none, color="#3d6287", penwidth=1.45];
   connected_feature_port -> connected_features [color="#3d6287", penwidth=1.45];
   direction_feature_port -> direction_features [color="#3d6287", penwidth=1.45];
-  connected_features -> connected_head;
-  direction_features -> direction_head;
-  connected_head -> head_merge [arrowhead=none];
-  direction_head -> head_merge [arrowhead=none];
-  head_merge -> head_probabilities;
-  head_probabilities -> probability_compose;
-  probability_compose -> relation_probabilities;
+  connected_features -> symmetric_tower;
+  symmetric_tower -> connected_auxiliary;
+  direction_features -> ordered_tower;
+  ordered_tower -> direction_auxiliary;
+  symmetric_tower -> joint_features;
+  ordered_tower -> joint_features;
+  joint_features -> joint_classifier;
+  joint_classifier -> relation_logits;
+  relation_logits -> relation_probabilities;
 
-  relation_probabilities -> relation_loss_join [style=dashed, arrowhead=none, color="#884d66"];
-  relation_targets -> relation_loss_join [style=dashed, arrowhead=none, color="#884d66"];
-  relation_loss_join -> relation_optimizer [style=dashed, color="#884d66"];
-  relation_optimizer -> head_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  head_train_split -> connected_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  head_train_split -> direction_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  direction_grad_port -> direction_head [style=dashed, color="#a15f54", penwidth=1.45];
-  connected_grad_port -> connected_head [style=dashed, color="#a15f54", penwidth=1.45];
-  head_train_split -> decoder_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  decoder_train_split -> decoder_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  decoder_grad_port -> seeds_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  seeds_grad_port -> memory_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  decoder_grad_port -> slot_decoder [style=dashed, color="#a15f54", penwidth=1.45];
-  seeds_grad_port -> slot_seeds [style=dashed, color="#a15f54", penwidth=1.45];
-  memory_grad_port -> memory_projection [style=dashed, color="#a15f54", penwidth=1.45];
-  decoder_train_split -> encoder_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  encoder_train_split -> encoder_high_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  encoder_high_grad_port -> encoder_mid_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  encoder_mid_grad_port -> encoder_low_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  encoder_low_grad_port -> marker_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  encoder_high_grad_port -> encoder_high [style=dashed, color="#a15f54", penwidth=1.45];
-  encoder_mid_grad_port -> encoder_mid [style=dashed, color="#a15f54", penwidth=1.45];
-  encoder_low_grad_port -> encoder_low [style=dashed, color="#a15f54", penwidth=1.45];
-  marker_grad_port -> marker_embeddings [style=dashed, color="#a15f54", penwidth=1.45];
+  relation_logits -> relation_objective [color="#884d66"];
+  connected_auxiliary -> relation_objective [color="#884d66"];
+  direction_auxiliary -> relation_objective [color="#884d66"];
+  relation_targets -> relation_objective [color="#884d66"];
+  relation_objective -> relation_backward [style=dashed, color="#a15f54", penwidth=1.45];
+  relation_backward -> relation_optimizer [color="#a15f54", penwidth=1.45];
+  relation_backward -> head_gradient_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  head_gradient_split -> joint_classifier [style=dashed, color="#a15f54", penwidth=1.45];
+  head_gradient_split -> connected_auxiliary [style=dashed, color="#a15f54", penwidth=1.45];
+  head_gradient_split -> direction_auxiliary [style=dashed, color="#a15f54", penwidth=1.45];
+  joint_classifier -> symmetric_gradient_join [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  connected_auxiliary -> symmetric_gradient_join [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  symmetric_gradient_join -> symmetric_tower [style=dashed, color="#a15f54", penwidth=1.45];
+  joint_classifier -> ordered_gradient_join [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  direction_auxiliary -> ordered_gradient_join [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  ordered_gradient_join -> ordered_tower [style=dashed, color="#a15f54", penwidth=1.45];
+  symmetric_tower -> representation_gradient_join [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  ordered_tower -> representation_gradient_join [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
+  representation_gradient_join -> slot_decoder [style=dashed, color="#a15f54", penwidth=1.45];
+  slot_decoder -> slot_seeds [style=dashed, color="#a15f54", penwidth=1.45];
+  slot_decoder -> memory_projection [style=dashed, color="#a15f54", penwidth=1.45];
+  memory_projection -> encoder_high [style=dashed, color="#a15f54", penwidth=1.45];
+  encoder_high -> encoder_mid [style=dashed, color="#a15f54", penwidth=1.45];
+  encoder_mid -> encoder_low [style=dashed, color="#a15f54", penwidth=1.45];
+  encoder_low -> marker_embeddings [style=dashed, color="#a15f54", penwidth=1.45];
 
   count_fields -> count_serialization;
   count_serialization -> count_tokenizer;
@@ -528,24 +554,21 @@ digraph PrivacyEstimatorEdges {
   count_standardized -> count_prediction_split [arrowhead=none];
   count_prediction_split -> count_output;
 
-  count_target -> count_regression_join [style=dashed, arrowhead=none, color="#884d66"];
-  count_prediction_split -> count_regression_join [style=dashed, arrowhead=none, color="#884d66"];
-  count_regression_join -> count_regression [style=dashed, color="#884d66"];
+  count_target -> count_regression_join [arrowhead=none, color="#884d66"];
+  count_prediction_split -> count_regression_join [arrowhead=none, color="#884d66"];
+  count_regression_join -> count_regression [color="#884d66"];
   formal_pairs -> pair_input_join [arrowhead=none];
   count_cache_split -> pair_input_join [arrowhead=none];
   pair_input_join -> shared_pair_head;
   shared_pair_head -> pair_loss;
-  count_regression -> count_loss_join [style=dashed, arrowhead=none, color="#884d66"];
-  pair_loss -> count_loss_join [style=dashed, arrowhead=none, color="#884d66"];
-  count_loss_join -> count_loss [style=dashed, color="#884d66"];
-  count_loss -> count_optimizer [style=dashed, color="#a15f54", penwidth=1.45];
-  count_optimizer -> count_train_split [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  count_train_split -> count_linear_1_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  count_linear_1_grad_port -> count_linear_64_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  count_linear_64_grad_port -> count_norm_grad_port [style=dashed, arrowhead=none, color="#a15f54", penwidth=1.45];
-  count_linear_1_grad_port -> count_linear_1 [style=dashed, color="#a15f54", penwidth=1.45];
-  count_linear_64_grad_port -> count_linear_64 [style=dashed, color="#a15f54", penwidth=1.45];
-  count_norm_grad_port -> count_norm [style=dashed, color="#a15f54", penwidth=1.45];
+  count_regression -> count_loss_join [arrowhead=none, color="#884d66"];
+  pair_loss -> count_loss_join [arrowhead=none, color="#884d66"];
+  count_loss_join -> count_loss [color="#884d66"];
+  count_loss -> count_optimizer [color="#a15f54", penwidth=1.45];
+  count_loss -> count_linear_1 [style=dashed, color="#a15f54", penwidth=1.45];
+  count_loss -> shared_pair_head [style=dashed, color="#a15f54", penwidth=1.45];
+  count_linear_1 -> count_linear_64 [style=dashed, color="#a15f54", penwidth=1.45];
+  count_linear_64 -> count_norm [style=dashed, color="#a15f54", penwidth=1.45];
 }
           </script>
           <div class="ranker-model-diagram__status">Computing architecture rendering…</div>

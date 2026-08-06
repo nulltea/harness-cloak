@@ -10,6 +10,7 @@ import math
 import os
 import subprocess
 import sys
+import time
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
@@ -99,11 +100,21 @@ def _add_artifact_paths(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_runtime_options(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--remote-workers", type=int, default=1)
-    parser.add_argument("--reader-workers", type=int, default=1)
+    # 6-way concurrency against the local llama-swap server (medgemma-4b-it on
+    # :8060 serves BOTH the rewrite generation and the reader). The reward client
+    # uses single_flight_scope="request", so distinct requests occupy separate
+    # served slots while identical ones still dedupe. Serial workers (the old
+    # default of 1) cost ~30s per utility evaluation and made an 8-epoch arm
+    # take hours; every past run passed 6 explicitly, so 6 is the real default.
+    parser.add_argument("--remote-workers", type=int, default=6)
+    parser.add_argument("--reader-workers", type=int, default=6)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--cache-only", action="store_true")
-    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="cpu")
+    # "auto" so the policy trains on the GPU when one is present. The local
+    # llama-swap server (medgemma-4b-it on :8060) also uses the GPU for the
+    # rewrite generation and the reader, but the policy is small and sharing the
+    # device beats running the trainer on CPU.
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default="auto")
     parser.add_argument(
         "--doc-id",
         dest="doc_ids",
@@ -143,7 +154,10 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--fixed-lambda-zero-control", required=True)
     train.add_argument("--resume")
     train.add_argument("--max-docs", type=int)
-    train.add_argument("--max-epochs", type=int, required=True)
+    # 8 epochs is the sustainable screening budget: one arm must finish inside an
+    # hour or the development loop stops being usable. Raise it deliberately for
+    # a longer run rather than by habit.
+    train.add_argument("--max-epochs", type=int, default=8)
     train.add_argument("--rollouts", type=int, required=True)
     train.add_argument("--learning-rate", type=float, default=1e-4)
     train.add_argument("--beta", type=float, default=0.01)
@@ -181,6 +195,9 @@ def build_parser() -> argparse.ArgumentParser:
         default="none",
     )
     train.add_argument("--controller-gain-bound", type=float, default=1.5)
+    train.add_argument(
+        "--count-to-gain", choices=("detached", "coupled"), default="detached",
+    )
     train.add_argument("--controller-gain-hidden", type=int, default=32)
     train.add_argument("--controller-gain-lr", type=float, default=None)
     train.add_argument(
@@ -192,7 +209,17 @@ def build_parser() -> argparse.ArgumentParser:
     train.add_argument("--tie-projection-lr", type=float, default=1e-2)
     train.add_argument("--gain-penalty", type=float, default=1e-3)
     train.add_argument("--tie-evidence-bootstrap", action="store_true")
-    train.add_argument("--skip-lambda-zero-control", action="store_true")
+    # Default SKIP: the control is arm-independent (single lambda-zero profile,
+    # controller and tie machinery inert at the identity branch), so it only
+    # varies with seed and documents. Training it per arm doubled every A/B
+    # screening for a result that is identical across arms. Run it once per seed
+    # with --no-skip-lambda-zero-control and reuse it for the lambda-zero utility
+    # gate; the gate itself is unchanged.
+    train.add_argument(
+        "--skip-lambda-zero-control",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+    )
     train.add_argument("--batched-rollouts", action="store_true")
     return parser
 
@@ -831,6 +858,67 @@ def _load_reference_checkpoint(
     return state
 
 
+_PROGRESS_START = time.monotonic()
+
+
+def _report_epoch_progress(
+    run_name: str,
+    epoch: int,
+    max_epochs: int,
+    reports,
+    epoch_reports_path: str | Path | None,
+) -> None:
+    """One stdout line per finished epoch, plus an incremental report file.
+
+    Before this existed the only progress signals were the per-epoch checkpoint's
+    `epoch` field and utility-cache growth: `--epoch-reports` is written once
+    after every epoch completes, and nothing is printed between startup and the
+    final TRAIN PASS line. A run that was three epochs in looked identical to one
+    stuck in epoch 1, which cost an evening of guesswork.
+
+    Logging only -- it consumes no RNG and touches no policy state, so it cannot
+    change training. Run `.tmp` sibling files are rewritten atomically each epoch
+    and the final `_write_epoch_reports` still produces the authoritative file.
+    """
+    report = reports[-1] if reports else {}
+    elapsed = (time.monotonic() - _PROGRESS_START) / 60.0
+    done = epoch + 1
+    fields = [
+        f"epoch {done}/{max_epochs}",
+        f"{elapsed:.1f}m elapsed",
+        f"~{elapsed / max(1, done):.1f}m/epoch",
+    ]
+    for key, label in (
+        ("mean_utility", "U"),
+        ("mean_privacy", "P"),
+        ("kl_enabled_for_epoch", "kl"),
+    ):
+        value = report.get(key)
+        if isinstance(value, bool):
+            fields.append(f"{label}={'on' if value else 'off'}")
+        elif isinstance(value, int | float):
+            fields.append(f"{label}={float(value):.3f}")
+    print(f"[{run_name}] " + " | ".join(fields), flush=True)
+    if epoch_reports_path is None:
+        return
+    # Partial view for monitoring; the authoritative file is written at the end.
+    partial = Path(f"{epoch_reports_path}.partial")
+    try:
+        partial.parent.mkdir(parents=True, exist_ok=True)
+        # skipkeys: reports carry tuple-keyed sub-dicts (pair-indexed diagnostics)
+        # that json cannot represent as object keys; drop them rather than raise.
+        # No sort_keys for the same reason -- mixed key types are unorderable.
+        partial.write_text("".join(
+            json.dumps({"run": run_name, **row}, default=str, skipkeys=True) + "\n"
+            for row in reports
+        ))
+    except Exception:
+        # ponytail: monitoring only. A progress file must NEVER end a training
+        # run -- an earlier `except OSError` here let a TypeError from a
+        # tuple-keyed report kill an arm after epoch 1.
+        pass
+
+
 def _write_epoch_reports(
     path: str | Path,
     conditional_reports,
@@ -845,11 +933,17 @@ def _write_epoch_reports(
         ("fixed-lambda-zero-control", control_reports),
     ):
         for report in reports:
+            # skipkeys/default: a single non-JSON value must not destroy the
+            # report of a completed run. This file is written only after every
+            # epoch has finished, so raising here throws away hours of work --
+            # it happened once, via a tuple-keyed diagnostic. Root causes are
+            # still fixed at the source; this is the backstop.
             lines.append(json.dumps(
                 {"run": run_name, **dict(report)},
-                sort_keys=True,
                 separators=(",", ":"),
                 allow_nan=False,
+                skipkeys=True,
+                default=str,
             ))
     temporary.write_text("\n".join(lines) + "\n", encoding="utf-8")
     os.replace(temporary, destination)
@@ -892,6 +986,23 @@ def _apply_controller_options(policy, args) -> None:
             f"{getattr(policy, 'controller_transform', 'log1p-over-log1p-max-v1')}"
             f"+gain-{gain_mode}"
         )
+    # Count->gain coupling changes which parameters the count objective's
+    # GRADIENT reaches, not the forward values (softplus(a + r) and
+    # softplus(a + r.detach()) are numerically identical). So it must NOT retag
+    # controller_transform: that would give two numerically identical policies
+    # different architecture pins and stop them sharing one KL-reference
+    # artifact. The distinction is pinned in training_config instead. Validated
+    # here at top level, outside the gain-mode branch, so an inconsistent
+    # `--count-to-gain coupled --controller-gain none` cannot pass silently.
+    coupling = getattr(args, "count_to_gain", "detached")
+    if coupling not in ("detached", "coupled"):
+        raise ValueError("count-to-gain must be 'detached' or 'coupled'")
+    if coupling == "coupled":
+        if gain_mode != "evidence":
+            raise ValueError(
+                "count-to-gain coupling requires --controller-gain evidence"
+            )
+        policy.count_to_gain = "coupled"
 
 
 def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
@@ -920,6 +1031,7 @@ def _training_config(args, documents, *, fixed_control: bool) -> dict[str, Any]:
             getattr(args, "profile_sensitivity_reg", 0.0)
         ),
         "controller_gain": getattr(args, "controller_gain", "none"),
+        "count_to_gain": getattr(args, "count_to_gain", "detached"),
         "controller_gain_bound": float(
             getattr(args, "controller_gain_bound", 1.5)
         ),
@@ -1065,6 +1177,7 @@ def _run_train(args) -> None:
         from cloak.ranker.interactive import bootstrap_tie_evidence_from_cache
         tie_evidence = bootstrap_tie_evidence_from_cache(
             args.utility_cache, {d.doc_id: d for d in documents},
+            utility_artifact,
         )
         print(
             f"tie evidence bootstrapped from cache: {len(tie_evidence)} pairs, "
@@ -1162,6 +1275,9 @@ def _run_train(args) -> None:
         parameter.requires_grad_(False)
 
     def save_epoch(epoch, reports, history, enabled):
+        _report_epoch_progress(
+            "conditional", epoch, args.max_epochs, reports, args.epoch_reports,
+        )
         save_hybrid_checkpoint(
             args.out_checkpoint,
             policy=policy,
@@ -1272,6 +1388,9 @@ def _run_train(args) -> None:
     control_generator = torch.Generator().manual_seed(args.seed)
 
     def save_control_epoch(epoch, reports, history, enabled):
+        _report_epoch_progress(
+            "lambda-zero-control", epoch, args.max_epochs, reports, None,
+        )
         save_hybrid_checkpoint(
             args.fixed_lambda_zero_control,
             policy=control,

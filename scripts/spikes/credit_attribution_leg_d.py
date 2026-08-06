@@ -4,11 +4,20 @@ Preregistration: research-wiki/experiments/2026-08-03-credit-attribution-validat
 
 A credit signal is measured in the contexts the probe happened to visit, but the
 policy it trains acts in OTHER contexts. So the quantity that matters is how well
-a signal measured in one set of surrounding action-vectors predicts the TRUE
-(total-document) effect in held-out ones. Leave-one-context-out over every
-(document, decision, action-pair) group with repeats:
+a signal measured in one set of surrounding action-vectors predicts the
+total-document effect in held-out ones.
 
-  target       total document delta in the HELD-OUT context
+PROXY TARGET, not ground truth: the target is the cached total-document utility
+delta — itself computed from remote-model and reader outputs under the frozen
+reward pin, NOT from dataset-provided ground truth. Calling it "the true effect"
+(as an earlier version of this docstring did) overstates it. It is the objective
+the trainer actually optimizes, which is what makes it the right comparison
+target here, but agreement with it is agreement with a model-derived quantity.
+
+Leave-one-context-out over every (document, decision, action-pair) group with
+repeats:
+
+  target       cached total document delta in the HELD-OUT context
   attributed   mean attributed delta over the training contexts  (what we now use)
   total        mean total delta over the training contexts       (what we used before)
   corrected    attributed + a pooled spillover estimate, cross-fitted across

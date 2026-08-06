@@ -782,6 +782,93 @@ def _count_reward(*, alpha_level=0.2, beta_level=0.9):
     )
 
 
+def test_bootstrap_records_match_the_online_evidence_formula(tmp_path):
+    """Seed statistics must equal what an online probe records for the same pair.
+
+    Epoch-0 labels are qualified by the same rule as every later round, so a
+    seed computed under a different measurement contract would silently change
+    what the tie hinge means mid-run. Also covers the fail-closed rule: a cached
+    row without component scores is skipped, never defaulted to zero movement
+    (which would manufacture a false tie).
+    """
+    import json
+
+    from cloak.ranker.interactive import bootstrap_tie_evidence_from_cache
+    from cloak.reward.utility_credit import (
+        assertion_weights,
+        attributed_delta_utility,
+        decision_delta_utility,
+        document_denominator,
+        document_utility,
+        excerpt_changed_assertions,
+    )
+
+    artifact = _utility_artifact()
+    document = _document()
+    documents = {document.doc_id: document}
+    scores = {
+        "alpha-level": {"a-delivered": 1.0, "a-linked": 1.0},
+        "alpha-keep": {"a-delivered": 1.0, "a-linked": 0.0},
+    }
+    rows = [
+        {"result": {
+            "doc_id": document.doc_id,
+            "action_vector": {"alpha": action_id, "beta": "beta-keep"},
+            "component_scores": component_scores,
+            "doc_p": f"rendered under {action_id}",
+            "utility": document_utility(component_scores, artifact, document.doc_id),
+        }}
+        for action_id, component_scores in scores.items()
+    ]
+    # fail-closed row: same decision, no component scores
+    rows.append({"result": {
+        "doc_id": document.doc_id,
+        "action_vector": {"alpha": "alpha-placeholder", "beta": "beta-keep"},
+        "doc_p": "rendered without scores",
+        "utility": 0.5,
+    }})
+    cache = tmp_path / "utility-results.jsonl"
+    cache.write_text("\n".join(json.dumps(row) for row in rows))
+
+    ledger = bootstrap_tie_evidence_from_cache(cache, documents, artifact)
+
+    # only the two scored rows form a pair; the unscored row is skipped
+    assert list(ledger) == [(document.doc_id, "alpha", "alpha-keep", "alpha-level")]
+    records = next(iter(ledger.values()))
+    assert len(records) == 1
+    record = records[0]
+    assert record["round"] == -1
+
+    scores_a, scores_b = scores["alpha-level"], scores["alpha-keep"]
+    expected_total = (
+        document_utility(scores_a, artifact, document.doc_id)
+        - document_utility(scores_b, artifact, document.doc_id)
+    )
+    expected_attributed, expected_linked = decision_delta_utility(
+        scores_a, scores_b, artifact, document.doc_id, "alpha",
+    )
+    _, attributed = attributed_delta_utility(
+        scores_a, scores_b, artifact, document.doc_id, "alpha",
+        excerpt_changed_assertions(
+            artifact, document.doc_id,
+            "rendered under alpha-level", "rendered under alpha-keep",
+        ),
+    )
+    weights = assertion_weights(artifact, document.doc_id)
+    expected_movement = sum(
+        abs(scores_a[key] - scores_b[key]) * weights[key] for key in attributed
+    ) / document_denominator(artifact, document.doc_id)
+
+    # orientation is not part of the contract: qualification uses |delta| and
+    # the accepted pair is reoriented later by the frozen count score
+    assert abs(record["delta_u"]) == pytest.approx(abs(expected_total))
+    assert abs(record["delta_u_attributed"]) == pytest.approx(abs(expected_attributed))
+    assert abs(record["delta_u_linked"]) == pytest.approx(abs(expected_linked))
+    assert record["movement_l1"] == pytest.approx(expected_movement)
+    # a real effect on the decision's own assertion must not read as a tie
+    assert record["movement_l1"] > 0.0
+
+
 def _utility_artifact():
     from cloak.reward.utility_cache import stable_hash
 
@@ -3599,3 +3686,28 @@ def test_delivered_audit_quota_caps_probes_without_a_local_channel():
         profile_id="p", local_channel=False,
     )
     assert pair.local_channel is False
+
+
+def test_epoch_progress_reporting_never_fails_a_run(tmp_path, capsys):
+    """A monitoring feature must not be able to end a training run.
+
+    Regression: the first version caught only OSError, so a TypeError from a
+    tuple-keyed report dict (pair-indexed diagnostics are not JSON object keys)
+    propagated out of the epoch callback and killed an arm after epoch 1.
+    """
+    import sys
+
+    sys.path.insert(0, "scripts")
+    from train_interactive_ranker import _report_epoch_progress
+
+    reports = [
+        {"epoch": 0, "pair_diag": {("a", "b"): 1.0}, "kl_enabled_for_epoch": False},
+    ]
+    destination = tmp_path / "epochs.jsonl"
+    _report_epoch_progress("conditional", 0, 8, reports, destination)
+    assert "epoch 1/8" in capsys.readouterr().out
+    assert destination.with_suffix(".jsonl.partial").exists()
+
+    # unwritable destination must also be survivable
+    _report_epoch_progress("conditional", 1, 8, reports, tmp_path / "no" / "x.jsonl")
+    _report_epoch_progress("control", 0, 8, [], None)

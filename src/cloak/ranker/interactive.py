@@ -596,6 +596,7 @@ TIE_EXIT_BOUND = 0.044
 def bootstrap_tie_evidence_from_cache(
     cache_path: str | Path,
     documents: Mapping[str, RankerDocument],
+    utility_artifact: Mapping[str, Any],
 ) -> dict:
     """Seed the tie ledger from the utility cache's single-decision pairs.
 
@@ -604,10 +605,28 @@ def bootstrap_tie_evidence_from_cache(
     delta-U observation with a known surrounding context. Bootstrapping removes
     the cycle-0 evidence warm-up entirely (labels can qualify at epoch 0);
     bootstrap records carry round=-1 so the one-cycle label lag admits them
-    immediately."""
+    immediately.
+
+    Records carry the SAME statistics an online probe records — attributed and
+    linked deltas plus weighted-L1 movement — recomputed here from the cached
+    component scores. `utility_artifact` is required for exactly that reason: a
+    seed scored on the document-level delta alone would put epoch-0 labels under
+    a different measurement contract than every later round (the document delta
+    reported nonzero on 65% of provably-tied pairs), so the hinge would change
+    meaning mid-run. This is post-hoc aggregation over the existing cache; no
+    reward call is repeated and the cache is not invalidated."""
     import json as _json
 
-    vectors: dict[str, dict[tuple, float]] = {}
+    from cloak.reward.utility_credit import (
+        assertion_weights,
+        attributed_delta_utility,
+        decision_delta_utility,
+        document_denominator,
+        document_utility,
+        excerpt_changed_assertions,
+    )
+
+    vectors: dict[str, dict[tuple, tuple[dict, str]]] = {}
     for line in Path(cache_path).read_text().splitlines():
         try:
             row = _json.loads(line)["result"]
@@ -621,9 +640,17 @@ def bootstrap_tie_evidence_from_cache(
         vector = row.get("action_vector", {})
         if set(vector) != set(ids):
             continue
-        vectors.setdefault(doc_id, {})[
-            tuple(vector[i] for i in ids)
-        ] = float(row["utility"])
+        # Fail CLOSED on incomplete rows. A missing component_scores would make
+        # every movement zero, which manufactures false ties — the one direction
+        # that costs real utility. A row that cannot be scored is skipped, not
+        # defaulted.
+        scores = row.get("component_scores")
+        doc_p = row.get("doc_p")
+        if not isinstance(scores, dict) or not scores or not isinstance(doc_p, str):
+            continue
+        vectors.setdefault(doc_id, {})[tuple(vector[i] for i in ids)] = (
+            scores, doc_p,
+        )
     ledger: dict = {}
     for doc_id, cached in vectors.items():
         ids = [
@@ -642,14 +669,50 @@ def bootstrap_tie_evidence_from_cache(
                 ids[i]: rest[i] for i in range(len(ids)) if i != position
             }
             context_hash = stable_hash(sorted(context.items()))
+            decision_id = ids[position]
+            weights = assertion_weights(utility_artifact, doc_id)
+            denominator = document_denominator(utility_artifact, doc_id)
             for i in range(len(keys)):
                 for j in range(i + 1, len(keys)):
                     action_a, action_b = keys[i][position], keys[j][position]
                     pair = tuple(sorted((action_a, action_b)))
+                    scores_a, doc_p_a = cached[keys[i]]
+                    scores_b, doc_p_b = cached[keys[j]]
+                    # Recomputed with document_utility exactly as the online
+                    # path does, rather than trusting the cached scalar: the
+                    # helper also validates assertion completeness, so a seed
+                    # record cannot carry a delta the online formula would
+                    # refuse to produce.
+                    utility_a = document_utility(scores_a, utility_artifact, doc_id)
+                    utility_b = document_utility(scores_b, utility_artifact, doc_id)
+                    attributed_document, attributed_linked = (
+                        decision_delta_utility(
+                            scores_a, scores_b, utility_artifact,
+                            doc_id, decision_id,
+                        )
+                    )
+                    _, attributed = attributed_delta_utility(
+                        scores_a, scores_b, utility_artifact, doc_id,
+                        decision_id,
+                        excerpt_changed_assertions(
+                            utility_artifact, doc_id, doc_p_a, doc_p_b,
+                        ),
+                    )
+                    movement = sum(
+                        abs(scores_a[key] - scores_b[key]) * weights[key]
+                        for key in attributed
+                        if key in scores_a and key in scores_b
+                    ) / denominator
                     ledger.setdefault(
-                        (doc_id, ids[position], pair[0], pair[1]), [],
+                        (doc_id, decision_id, pair[0], pair[1]), [],
                     ).append({
-                        "delta_u": cached[keys[i]] - cached[keys[j]],
+                        "delta_u": utility_a - utility_b,
+                        "delta_u_attributed": float(attributed_document),
+                        "delta_u_linked": (
+                            None if attributed_linked is None
+                            else float(attributed_linked)
+                        ),
+                        "movement_l1": float(movement),
                         "context_hash": context_hash,
                         "round": -1,
                     })
@@ -2135,6 +2198,12 @@ def semantic_parameter_groups(
         "privacy": privacy,
         "alpha": alpha,
     }
+    # The controller gain head is a separate group so per-family gradient norms
+    # can report the count->gain edge directly. Without it the count-to-gain
+    # coupling arm's preregistered validity check is unmeasurable at runtime.
+    gain_head = getattr(policy, "gain_head", None)
+    if isinstance(gain_head, torch.nn.Module):
+        groups["gain"] = _unique_parameters(tuple(gain_head.parameters()))
     owners: dict[int, str] = {}
     for name, parameters in groups.items():
         for parameter in parameters:
@@ -2350,6 +2419,12 @@ def train_hybrid_document_group(
         utility_artifact,
         document.doc_id,
     )
+    # Internal handoff only, and it must not survive into the epoch report:
+    # its keys are (rollout_index, decision_id) TUPLES, which json cannot use as
+    # object keys. Leaving it in crashed the authoritative report write at the
+    # very END of a completed 8-epoch run.
+    if isinstance(scheduler_diagnostics, dict):
+        scheduler_diagnostics.pop("attributed_sets", None)
     utility_loss = hybrid_utility_loss(
         replayed, credit, counterfactual_losses, complement_advantage,
     )

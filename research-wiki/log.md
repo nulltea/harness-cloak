@@ -56,3 +56,13 @@ _Append-only timeline._
 - `2026-07-02T19:40:00Z` ingest_paper: added paper:gao2022_reward_overoptimization, paper:jiang2025_s3_search_agent, paper:chen2025_mmoa_rag (RL background for round-trip GRPO plan: frozen-proxy Goodharting, frozen-partner pipeline RL, shared-reward multi-component training)
 - `2026-07-02T19:40:00Z` add_edge: +2 edges (s3→Gao overoptimization; MMOA-RAG extends two-component pipeline RL)
 - `2026-07-02T22:30:00Z` result-to-claim: LatticeCloak §06/§07/§08 overhaul — C1 partial, C2 partial, C3 yes, C4 partial, C5 no (no matched-realized-privacy head-to-head); improvements over InferDPT are architectural/component-level only. Trace: .aris/traces/result-to-claim/2026-07-02_run01/
+- `2026-08-05T10:46:46Z` ingest_paper: ingested paper:achiam2017_constrained_policy_optimization (arxiv:1705.10528)
+- `2026-08-05T10:46:47Z` ingest_paper: ingested paper:tessler2018_reward_constrained_policy (arxiv:1805.11074)
+- `2026-08-05T10:46:47Z` ingest_paper: ingested paper:abdolmaleki2020_distributional_view_multiobjective (arxiv:2005.07513)
+- `2026-08-05T10:46:47Z` ingest_paper: ingested paper:qiu2025_lppgrl_lexicographically_projected (arxiv:2511.08339)
+- `2026-08-05T10:46:47Z` ingest_paper: ingested paper:huang2022_constrained_multiobjective_reinforcement (arxiv:)
+- `2026-08-05T10:48:15Z` wiki-enrich: enriched paper:achiam2017_constrained_policy_optimization from primary paper text/abstract (filled 9/10 sections)
+- `2026-08-05T10:48:15Z` wiki-enrich: enriched paper:tessler2018_reward_constrained_policy from primary paper text/abstract (filled 9/10 sections)
+- `2026-08-05T10:48:15Z` wiki-enrich: enriched paper:abdolmaleki2020_distributional_view_multiobjective from primary paper text/abstract (filled 9/10 sections)
+- `2026-08-05T10:48:15Z` wiki-enrich: enriched paper:qiu2025_lppgrl_lexicographically_projected from primary paper text/abstract (filled 9/10 sections)
+- `2026-08-05T10:48:15Z` wiki-enrich: enriched paper:huang2022_constrained_multiobjective_reinforcement from primary paper text/abstract (filled 9/10 sections)

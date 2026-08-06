@@ -868,6 +868,13 @@ html {
   border-radius: 10px;
   background: rgb(226 231 235 / 0.48);
 }
+#ranker-model-diagram .ranker-model-diagram__module {
+  border-style: solid;
+}
+#ranker-model-diagram .ranker-model-diagram__module--trainable {
+  border-style: dashed;
+  border-width: 1.35px;
+}
 /* a section whose first row nests another section needs headroom for the
    nested section's outside title */
 .ranker-model-diagram__module:has(
@@ -984,6 +991,10 @@ html {
 }
 .ranker-model-diagram__node--trainable {
   border-style: dashed;
+}
+.ranker-model-diagram__node--linear.ranker-model-diagram__node--trainable
+  > .ranker-model-diagram__node-outline path {
+  stroke-dasharray: 6 4;
 }
 /* document-excerpt nodes: real example text, left-aligned */
 .ranker-model-diagram__node--doc {
